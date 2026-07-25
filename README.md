@@ -115,6 +115,8 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 
 - Add and manage remote servers with SSH agent, key, or password authentication
 - Detect installed agent CLIs and create workspaces that run agent sessions over SSH on remote machines
+- Optionally clone a git repo into the remote path when creating a workspace
+- Remote git dashboard with per-file diffs (symlink-confined), staging, commit, and push — with an actionable message on a non-fast-forward push
 - Optional SSH password storage in the OS keyring (under `ssh-<server-id>`); otherwise prompted at connect time and held in memory only. Host-key pinning is enforced when a server's fingerprint is known, with a TOFU `accept-new` fallback for interactive PTY connections
 
 ### Issues — Work on This Issue
@@ -150,11 +152,11 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 ### Git Host Integration (GitHub + Gitea/Forgejo)
 
 - Cloud **GitHub** and self-hosted **Gitea/Forgejo** — both configurable at once; a workspace uses whichever host its `origin` remote belongs to, and the pane's icon/label follow that host
-- PAT authentication persisted in the OS keyring per connection (no re-prompt after restart)
+- PAT or GitHub OAuth **device-flow** authentication, persisted in the OS keyring per connection (no re-prompt after restart)
 - Repository listing and selection
 - Issue browsing with search, labels, and import-to-board
-- Pull request browsing with diff viewer, reviews, merge, and draft/label/reviewer actions
-- Notifications inbox
+- Pull request browsing with diff viewer, inline review comments, reviews, merge, and draft/label/reviewer actions
+- Releases view and a notifications inbox (with background polling for a live badge)
 - AI investigation of issues via Claude (GitHub only)
 
 ### Cost Dashboard & History

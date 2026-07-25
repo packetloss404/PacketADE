@@ -64,57 +64,34 @@ them up before that gate clears.
 
 ## SSH & remote workspaces
 
-> **Scoped into a gated loop:** [`dev/ssh-remote-loop.md`](./dev/ssh-remote-loop.md)
-> (S1–S11). Safety first (process-tree kill, keyPath hygiene, remote-git path
-> guards), then wire hygiene, then Windows-OpenSSH / `realpath` platform parity;
-> S11 (live smoke) is environment-gated.
+> **Loop shipped (S1–S8):** [`dev/ssh-remote-loop.md`](./dev/ssh-remote-loop.md).
+> Process-tree kill (S1), keyPath hygiene (S2), remote-git polish + confined
+> per-file diff (S3), backend-cancel fingerprint pinning (S4), resume live-config
+> (S5), clone-to-remote (S6), and portable `realpath`→`readlink` confinement
+> fallback (S8) all landed and merged. Only the environment-blocked items below
+> remain.
 
-- **P2 — Live Codex-over-SSH smoke.** The generic remote-sidecar route and
-  provider capability are regression-tested, but still need one real remote
-  host smoke with remote Codex auth and the installed sidecar. Follow
-  `dev/sidecar-over-ssh-verification.md` step 12. The 2026-07-19 development
-  environment had no configured SSH server, so this remains environment-gated.
-- **P3 — Rust bash/ssh tools orphan grandchildren on timeout.** The
-  abnormal-termination PR added `kill_on_drop(true)` to `tool_runtime.rs`
-  (`execute_bash`) and `tool_runtime_ssh.rs` (`ssh_run`), but that only reaps
-  the direct child (the `sh -c` / `cmd /C` shell or the local `ssh` client) —
-  not the grandchildren it spawned (build, `node`, dev server) or the remote
-  process. The sidecar bash tool now does a full process-group / `taskkill /T`
-  kill (`agent-sidecar/src/providers/openai-agents.ts::killTree`); the Rust
-  paths should reach parity (POSIX process-group kill, Windows `taskkill /T`,
-  and `ssh -tt`/`RequestTTY` so the remote command gets SIGHUP on disconnect).
-- **P3 — Remote Git polish.** Add per-file remote diff, a friendly non-fast-
-  forward push message, and defense-in-depth `..`/absolute-path rejection for
-  remote staging.
-- **P3 — `clone_repo_remote` has no frontend caller.** The `cloneRepoRemote`
-  wrapper (`src/lib/tauri.ts`) exists but nothing invokes it. Surface a "Clone
-  to remote workspace" action in `WorkspaceCreationModal` / ServersView, or
-  remove the binding.
-- **P3 — Rename `target_id` → `server_id` across the wire.** Field name
-  kept for in-flight back-compat (see `src/lib/tauri.ts:1331-1336`).
-- **P3 — `resumeApiConversation` partial live-config lookup.** Resolves
-  `port` / `keyPath` / `hostFingerprint` from live `ServerConfig` but uses
-  persisted `host` / `user` / `remotePath`. If a user renames or repoints
-  the server, resume hits the old host.
-- **P3 — `cancel_flight_attempt` fingerprint asymmetry**
-  (`src-tauri/src/commands/flight_attempts.rs:330-342`) — cleanup deferred
-  to FE, which carries fingerprint correctly.
-- **P3 — `keyPath` argv hygiene** — reject paths with non-printable / shell
-  metacharacters at `ServerFormModal` save.
-- **P3 — SFTP / port-forward / file size cap (Phase 4.3).** Files currently
-  cap at 2 MB (`src-tauri/src/core/tool_runtime_ssh.rs:10`).
-- **P3 — Windows-OpenSSH remote hosts.** `ssh_check_remote_path` and the
-  remote git commands use POSIX `[ -e ... ]` / `git -C` — fine on Unix
-  remotes, breaks on Windows OpenSSH targets.
-- **P3 — Remote file tools require `realpath` (fail-closed).** The symlink-
-  escape confinement added to the remote read/list/grep/write_file scripts
-  (`src-tauri/src/core/tool_runtime_ssh.rs::confine_prelude`) resolves paths
-  with `realpath` and FAILS CLOSED (exit 9 → error) when the remote lacks it.
-  This deepens the POSIX-sh dependency: remotes without `realpath` (some
-  BusyBox builds, Windows OpenSSH) lose the file tools entirely. Follow-up:
-  a portable fallback (`command -v realpath || readlink -f` probe) and/or a
-  Windows-OpenSSH-aware remote tool layer. Pairs with the Windows-OpenSSH
-  item above. `bash` is intentionally left unconfined on both transports.
+- **P2 — Live Codex-over-SSH smoke (S11).** Still needs one real remote host
+  with remote Codex auth + installed sidecar. Follow
+  `dev/sidecar-over-ssh-verification.md` step 12. Environment-gated (no SSH
+  server configured in the dev env).
+- **P3 — Rename `target_id` → `server_id` across the wire (S7).** Deferred:
+  the wire type is the ts-rs–generated `AttemptTargetDto`, so the rename needs
+  `pnpm generate:tauri-schema` + `check:tauri-schema`, both of which run a
+  `cargo test` that can't execute under WSL. Do on a native build (rename the
+  Rust field with `#[serde(alias="target_id")]` read shim + a deser test, regen
+  the schema, then sweep the ~14 `attempt.target.targetId` FE sites).
+- **P3 — Windows-OpenSSH remote hosts (S9).** `ssh_check_remote_path` and the
+  remote git scaffolding assume a POSIX remote shell (`[ -e ... ]`, `dirname`,
+  heredocs); they break where the remote default shell is cmd.exe/PowerShell.
+  Deferred: needs a real Windows-OpenSSH host to build+verify the cmd/PS
+  dialect. Keep POSIX as the default branch; add an OS-detection probe and a
+  unit-tested Windows command builder.
+- **P3 — SFTP / port-forward / raised file-size cap (S10, Phase 4.3).** Remote
+  files cap at 2 MB (`MAX_FILE_SIZE`, `src-tauri/src/core/tool_runtime_ssh.rs`).
+  Deferred: streamed-transfer correctness (chunk boundaries, reassembly of a
+  >2 MB file) needs a live remote to verify. Ship the streamed cap before
+  port-forward.
 
 ## Platform & distribution (from `dev/`)
 
@@ -207,30 +184,19 @@ still loads legacy data losslessly.
 
 ## GitHub pane v0.9+ (from v0.8 deferrals)
 
-> **Scoped into a gated loop:** [`dev/github-pane-v9-loop.md`](./dev/github-pane-v9-loop.md)
-> (GP1–GP7). New host-facing commands route through the dual-host
-> `active_host_session` seam and are capability-gated for Gitea.
+> **Loop shipped (GP1–GP7, merged 2026-07-25):**
+> [`dev/github-pane-v9-loop.md`](./dev/github-pane-v9-loop.md). Inline review
+> comments (GP1), notifications polling (GP2), OAuth device-flow (GP3), Windows
+> hook shell-detection (GP4), SSH draft-PR publish (GP5), releases view (GP6),
+> and the Issue⇄Flight mirror **design** (GP7,
+> [`issue-flight-mirror-design.md`](./dev/issue-flight-mirror-design.md)) all
+> landed. Peer-reviewed. Only the design-gated sync code remains:
 
-- **P3 — PR review concurrency and context.** Pin the fetched diff's head SHA as
-  `commit_id` when authoring line comments, and surface existing review comments
-  inline in the diff.
-- **P3 — Notifications background polling.** The inbox currently refreshes on
-  open or manually; add a conservative background cadence for a live badge.
-- **P3 — Issue → Flight auto-mirroring (bidirectional).** v0.8 has one-way
-  Flight spec handoff. A "mirror this Flight to GitHub issues"
-  toggle would create + update issues automatically. Two-way sync is risky
-  (collision, conflict resolution); requires a dedicated design pass.
-- **P3 — Releases / gists / Actions runs view.** Out of scope for v0.8;
-  worth picking up if the pane grows into a fuller GitHub client.
-- **P3 — Native `gh` CLI device-flow auth.** Token paste still works in
-  v0.8; OAuth device-flow would smooth onboarding.
-- **P3 — Windows hook shim.** v0.8's `prepare-commit-msg` hook is a POSIX
-  shell script that relies on Git for Windows' bundled MSYS sh. If a user
-  runs vanilla Windows OpenSSH with no sh on PATH, the hook silently
-  no-ops. Add a `prepare-commit-msg.cmd` shim or detect and warn.
-- **P3 — SSH attempt draft-PR publishing.** v0.8's "Publish attempts as
-  draft PRs" Flight option skips SSH attempts (logged as `errorMessage`).
-  Add support for running git push from the remote worktree host.
+- **P3 — Issue ⇄ Flight two-way mirroring (code).** The GP7 design is landed
+  (mapping, idempotency marker, revision-fence echo suppression, LWW-with-
+  attention conflicts, phased P0–P3). Implement P0 (pure `diffMirrorState`
+  planner + data model) first, then push-only, then pull, then conflicts —
+  each gated. Blocked on a review of the four open decisions in the design doc.
 
 ## Git host providers — GitHub + Gitea/Forgejo (dual-config)
 

@@ -9,6 +9,53 @@ task list.
 
 ## [Unreleased]
 
+### Added / Changed — GitHub Pane v0.9+ (`dev/github-pane-v9-loop.md`, GP1–GP7)
+
+- **Inline PR review comments (GP1).** Existing review-comment threads now
+  anchor on their diff line inside `DiffViewer`, with reply chaining; comments
+  on LEFT-side context lines resolve too.
+- **Background notification polling (GP2).** A visibility-aware poller refreshes
+  the notifications inbox on a 60s cadence, pausing when the window is hidden.
+- **GitHub OAuth device flow (GP3).** Authorize without pasting a PAT; the
+  affordance appears only when an OAuth app client id is configured, and the
+  poll loop cancels cleanly on unmount.
+- **Commit-hook shell detection (GP4).** On Windows we now warn when no POSIX
+  shell is on PATH, so the `prepare-commit-msg` trailer hook can't silently
+  no-op.
+- **Publish SSH flight attempts as draft PRs (GP5).** Remote worktree attempts
+  push from the host, then open a draft PR — previously local-only.
+- **Repo releases view (GP6).** A read-only Releases tab for GitHub and Gitea,
+  with loading/error states.
+- **Issue⇄Flight mirror design (GP7).** Design doc only
+  (`dev/issue-flight-mirror-design.md`); the two-way-sync code is design-gated.
+
+### Changed — SSH & remote-workspace hardening (`dev/ssh-remote-loop.md`, S1–S8)
+
+- **Process-tree reaping (S1).** A timed-out `bash` tool now kills its whole
+  process tree — Unix process-group `killpg`, Windows `taskkill /T` — instead
+  of orphaning backgrounded grandchildren; the remote `bash` tool runs under
+  `ssh -tt` so a dropped connection hangs up the remote job.
+- **Key-path hygiene (S2).** Server-form save rejects key paths containing
+  control bytes, shell metacharacters, or glob wildcards.
+- **Remote git polish (S3).** Path-escape guard on remote staging; an actionable
+  non-fast-forward push message; and a per-file diff viewer for remote
+  workspaces (symlink-confined, so a tracked symlink can't leak an external
+  file into the diff).
+- **Host-key pinning on backend cancel (S4).** A backend-initiated attempt
+  cancel re-resolves the saved server and pins the host key, matching the
+  frontend path.
+- **Resume uses live server identity (S5).** Resuming a remote conversation
+  resolves host/user/port/key/fingerprint from the current `ServerConfig`, so a
+  renamed or repointed server resumes to the right host.
+- **Clone-to-remote (S6).** Creating a remote workspace can clone a repo into
+  the target path first.
+- **Portable confinement (S8).** The remote file-tool symlink-escape guard falls
+  back from `realpath` to `readlink -f` (BusyBox / minimal hosts), failing
+  closed only when neither exists.
+- Deferred (environment-blocked): S7 (`target_id`→`server_id` wire rename —
+  needs native ts-rs regen), S9 (Windows-OpenSSH hosts), S10 (streamed
+  large-file transfer), S11 (live Codex-over-SSH smoke).
+
 ### Added — Gitea / Forgejo self-hosted git-host support
 
 A fourteen-item loop (`dev/gitea-support-loop.md`, G1–G14) that adds a
