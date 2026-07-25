@@ -192,11 +192,13 @@ still loads legacy data losslessly.
 > [`issue-flight-mirror-design.md`](./dev/issue-flight-mirror-design.md)) all
 > landed. Peer-reviewed. Only the design-gated sync code remains:
 
-- **P3 — Issue ⇄ Flight two-way mirroring (code).** The GP7 design is landed
-  (mapping, idempotency marker, revision-fence echo suppression, LWW-with-
-  attention conflicts, phased P0–P3). Implement P0 (pure `diffMirrorState`
-  planner + data model) first, then push-only, then pull, then conflicts —
-  each gated. Blocked on a review of the four open decisions in the design doc.
+- **P3 — Issue ⇄ Flight two-way mirroring (code).** Design + the four open
+  decisions are **locked** (milestone-grouped mapping, LWW-with-attention
+  conflicts, v1 fields = title/state/labels/milestone, GP2 60s poll — see
+  [`dev/issue-flight-mirror-design.md`](./dev/issue-flight-mirror-design.md)).
+  Implement the phased plan: **P0** (pure `diffMirrorState` planner + `mirror`
+  record/body-marker data model, fully unit-tested, no I/O) first, then P1
+  push-only, P2 pull, P3 conflicts — each gated. P0 can start now.
 
 ## Git host providers — GitHub + Gitea/Forgejo (dual-config)
 
