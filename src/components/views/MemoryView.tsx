@@ -24,6 +24,7 @@ import {
   serializeMemoryMarkdown,
   type MemoryDateRange,
 } from "@/stores/memoryStore";
+import { computeMemoryDigest, type MemoryDigest } from "@/lib/memoryDigest";
 import { useMemorySettingsStore } from "@/stores/memorySettingsStore";
 import { useAppStore } from "@/stores/appStore";
 import { MemoryEventCard } from "./memory/MemoryEventCard";
@@ -214,6 +215,13 @@ export function MemoryView() {
     }
     return groups;
   }, [patterns]);
+
+  // M7: rolling 30-day digest. Recomputes only when the corpus changes; the
+  // window anchors on render time (Date.now is fine in app code).
+  const digest = useMemo(
+    () => computeMemoryDigest(events, patterns, { now: Date.now() }),
+    [events, patterns],
+  );
 
   // P2-18 preview-truth: render the SAME budgeted brief the launch pipeline
   // injects (composeMemoryBrief) and derive the token estimate from
@@ -424,6 +432,7 @@ export function MemoryView() {
         <PatternsTab
           groupedPatterns={groupedPatterns}
           patternCount={patterns.length}
+          digest={digest}
           isLearning={isLearning}
           learningStatus={learningStatus}
           injectedPreview={injectedPreview}
@@ -497,6 +506,7 @@ function MemTab({ active, onClick, icon, label, badge, accent }: MemTabProps) {
 interface PatternsTabProps {
   groupedPatterns: Partial<Record<PatternCategory, LearnedPattern[]>>;
   patternCount: number;
+  digest: MemoryDigest;
   isLearning: boolean;
   learningStatus: string | null;
   injectedPreview: string;
@@ -506,9 +516,89 @@ interface PatternsTabProps {
   onTogglePinPattern: (id: string) => void;
 }
 
+// M7: rolling 30-day digest card in the Patterns right rail.
+const DIGEST_TYPE_LABELS: Record<MemoryEventType, string> = {
+  session_completed: "sessions",
+  task_completed: "tasks",
+  flight_completed: "flights",
+  manual_note: "notes",
+};
+
+function MemoryDigestCard({ digest }: { digest: MemoryDigest }) {
+  const typeRows = (Object.keys(digest.byType) as MemoryEventType[])
+    .filter((t) => digest.byType[t] > 0)
+    .map((t) => `${digest.byType[t]} ${DIGEST_TYPE_LABELS[t]}`);
+
+  return (
+    <div className="border-b border-bg-border px-3.5 py-3">
+      <div className="mb-2 flex items-center gap-1.5">
+        <Clock size={10} className="text-accent-green" />
+        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-text-secondary">
+          Last {digest.windowDays} days
+        </span>
+      </div>
+      {digest.isEmpty ? (
+        <div className="text-[10.5px] text-text-faint">
+          Nothing captured in this window yet.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[10.5px] text-text-secondary">
+            <span>
+              <span className="tabular-nums text-text-primary">{digest.eventCount}</span> event
+              {digest.eventCount === 1 ? "" : "s"}
+            </span>
+            <span>
+              <span className="tabular-nums text-text-primary">{digest.patternCount}</span> new
+              pattern{digest.patternCount === 1 ? "" : "s"}
+            </span>
+          </div>
+          {typeRows.length > 0 && (
+            <div className="text-[10px] text-text-faint">{typeRows.join(" · ")}</div>
+          )}
+          {digest.topPatterns.length > 0 && (
+            <div>
+              <div className="mb-1 text-[9.5px] font-semibold uppercase tracking-[0.06em] text-text-faint">
+                Top patterns
+              </div>
+              <ul className="flex flex-col gap-0.5">
+                {digest.topPatterns.map((p) => (
+                  <li key={p.id} className="flex items-baseline gap-1.5 text-[10px] leading-snug">
+                    <span className="tabular-nums text-accent-green">
+                      {Math.round(p.confidence * 100)}%
+                    </span>
+                    <span className="truncate text-text-secondary" title={p.pattern}>
+                      {p.pattern}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {digest.recentLessons.length > 0 && (
+            <div>
+              <div className="mb-1 text-[9.5px] font-semibold uppercase tracking-[0.06em] text-text-faint">
+                Recent lessons
+              </div>
+              <ul className="flex flex-col gap-0.5">
+                {digest.recentLessons.map((lesson, i) => (
+                  <li key={i} className="truncate text-[10px] leading-snug text-text-secondary" title={lesson}>
+                    • {lesson}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PatternsTab({
   groupedPatterns,
   patternCount,
+  digest,
   isLearning,
   learningStatus,
   injectedPreview,
@@ -561,6 +651,7 @@ function PatternsTab({
 
       {/* Right rail */}
       <div className="flex flex-col overflow-hidden border-l border-bg-border bg-bg-secondary">
+        <MemoryDigestCard digest={digest} />
         {isLearning && (
           <div className="border-b border-bg-border px-3.5 py-3">
             <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-text-secondary">
