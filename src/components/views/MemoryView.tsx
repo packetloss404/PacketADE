@@ -11,6 +11,8 @@ import {
   Check,
   X,
   Zap,
+  Download,
+  Upload,
 } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
 import {
@@ -18,6 +20,8 @@ import {
   memoryBriefStats,
   searchMemoryEvents,
   filterMemoryEventsByScope,
+  serializeMemoryExport,
+  serializeMemoryMarkdown,
   type MemoryDateRange,
 } from "@/stores/memoryStore";
 import { useMemorySettingsStore } from "@/stores/memorySettingsStore";
@@ -130,6 +134,7 @@ export function MemoryView() {
   const togglePinPattern = useMemoryStore((s) => s.togglePinPattern);
   const refreshPatterns = useMemoryStore((s) => s.refreshPatterns);
   const clearMemory = useMemoryStore((s) => s.clearMemory);
+  const importMemory = useMemoryStore((s) => s.importMemory);
   const composeMemoryBrief = useMemoryStore((s) => s.composeMemoryBrief);
   const captureSessions = useMemorySettingsStore((s) => s.captureSessions);
   const captureFlights = useMemorySettingsStore((s) => s.captureFlights);
@@ -238,6 +243,49 @@ export function MemoryView() {
     }
   }
 
+  // M3: download a Blob from the webview (no backend round-trip needed).
+  function downloadBlob(filename: string, contents: string, mime: string) {
+    const blob = new Blob([contents], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleExportJson() {
+    downloadBlob(
+      "packetade-memory.json",
+      serializeMemoryExport(events, patterns),
+      "application/json",
+    );
+  }
+
+  function handleExportMarkdown() {
+    downloadBlob(
+      "packetade-memory.md",
+      serializeMemoryMarkdown(events, patterns),
+      "text/markdown",
+    );
+  }
+
+  function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-importing the same file
+    if (!file) return;
+    void file.text().then((text) => {
+      const result = importMemory(text);
+      if (!result) {
+        window.alert("Import failed: the file is not a valid PacketADE memory export.");
+        return;
+      }
+      window.alert(
+        `Imported ${result.addedEvents} new event(s) and ${result.addedPatterns} new pattern(s).`,
+      );
+    });
+  }
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-bg-primary">
       {/* Header band */}
@@ -274,6 +322,34 @@ export function MemoryView() {
           <RefreshCw size={10} className={isLearning ? "animate-spin" : ""} />
           Refresh
         </button>
+        {(events.length > 0 || patterns.length > 0) && (
+          <>
+            <button
+              onClick={handleExportJson}
+              className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10.5px] text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary"
+              title="Export memory as JSON"
+            >
+              <Download size={10} />
+              JSON
+            </button>
+            <button
+              onClick={handleExportMarkdown}
+              className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10.5px] text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary"
+              title="Export memory as a Markdown digest"
+            >
+              <Download size={10} />
+              MD
+            </button>
+          </>
+        )}
+        <label
+          className="inline-flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-[10.5px] text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary"
+          title="Import a JSON memory export (merges by id)"
+        >
+          <Upload size={10} />
+          Import
+          <input type="file" accept="application/json,.json" className="hidden" onChange={handleImportFile} />
+        </label>
         {(events.length > 0 || patterns.length > 0) && (
           <button
             onClick={handleClear}
