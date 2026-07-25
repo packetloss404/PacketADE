@@ -30,6 +30,28 @@ pub fn worktree_path(base: &str, attempt_id: &str) -> Result<String, String> {
     Ok(format!("{}/{}/{}", trimmed, WORKTREES_DIR, attempt_id))
 }
 
+/// S3: defense-in-depth guard for a repo-relative path that will be handed to a
+/// remote `git add`/`restore`/`show`. Rejects absolute paths and any `..`
+/// traversal component. Sub-directory separators ARE allowed (`src/foo.rs`),
+/// unlike `validate_worktree_component`. Shell-safety is handled separately by
+/// `sh_quote` at the call site — this stops path escape, not injection.
+pub fn validate_remote_rel_path(path: &str) -> Result<(), String> {
+    if path.trim().is_empty() {
+        return Err("Path cannot be empty".to_string());
+    }
+    if std::path::Path::new(path).is_absolute() || path.starts_with('/') || path.starts_with('\\') {
+        return Err(format!("Path must be repo-relative, not absolute: {}", path));
+    }
+    // Split on both separators so a Windows-style `..\` is caught too.
+    let has_traversal = path
+        .split(['/', '\\'])
+        .any(|seg| seg == "..");
+    if has_traversal {
+        return Err(format!("Path cannot contain '..' traversal: {}", path));
+    }
+    Ok(())
+}
+
 fn validate_worktree_component(component: &str) -> Result<(), String> {
     if component.is_empty() {
         return Err("Worktree id cannot be empty".to_string());
@@ -962,6 +984,10 @@ pub async fn ssh_stage_files(
     if paths.is_empty() {
         return Ok(String::new());
     }
+    // S3: reject path escape before the paths reach the remote `git add`.
+    for p in paths {
+        validate_remote_rel_path(p)?;
+    }
     let mut args: Vec<&str> = vec!["add", "--"];
     args.extend(paths.iter().map(|s| s.as_str()));
     let (out, code) = ssh_git(cfg, remote_path, &args).await?;
@@ -979,6 +1005,9 @@ pub async fn ssh_unstage_files(
 ) -> Result<String, String> {
     if paths.is_empty() {
         return Ok(String::new());
+    }
+    for p in paths {
+        validate_remote_rel_path(p)?;
     }
     let mut args: Vec<&str> = vec!["restore", "--staged", "--"];
     args.extend(paths.iter().map(|s| s.as_str()));
@@ -1045,9 +1074,76 @@ pub async fn ssh_push(cfg: &SshConfig, remote_path: &str) -> Result<String, Stri
         ssh_git(cfg, remote_path, &["push"]).await?
     };
     if code != 0 {
-        return Err(format!("git push failed (exit {}): {}", code, out.trim()));
+        return Err(friendly_push_error(&out, code));
     }
     Ok(out)
+}
+
+/// S3: turn git's raw push failure into a message that says what to do next.
+/// A non-fast-forward rejection is the common one (remote moved on) and its
+/// default output ("Updates were rejected because the tip of your current
+/// branch is behind…") buries the fix, so we lead with it.
+pub fn friendly_push_error(out: &str, code: i32) -> String {
+    let lower = out.to_lowercase();
+    if lower.contains("non-fast-forward")
+        || lower.contains("fetch first")
+        || (lower.contains("rejected") && lower.contains("behind"))
+    {
+        return format!(
+            "Push rejected: the remote branch has commits you don't have yet. \
+             Pull (or rebase) to integrate them, then push again.\n\n{}",
+            out.trim()
+        );
+    }
+    format!("git push failed (exit {}): {}", code, out.trim())
+}
+
+/// S3: read a file's committed `HEAD` blob from the remote for the diff viewer.
+/// `Ok(None)` when the path isn't in HEAD (new/untracked file, empty repo).
+pub async fn ssh_show_head(
+    cfg: &SshConfig,
+    base: &str,
+    rel: &str,
+) -> Result<Option<String>, String> {
+    validate_remote_rel_path(rel)?;
+    let spec = format!("HEAD:{}", rel);
+    let (out, code) = ssh_git(cfg, base, &["show", &spec]).await?;
+    if code != 0 {
+        // Missing-in-HEAD is expected (added file); treat as "no baseline".
+        return Ok(None);
+    }
+    Ok(Some(out))
+}
+
+/// S3: read a working-tree file's content from the remote for the diff viewer.
+/// `Ok(None)` when the file doesn't exist on disk (deleted file). Size-capped to
+/// the same 2 MB limit the remote read-file tool enforces.
+pub async fn ssh_read_working_file(
+    cfg: &SshConfig,
+    base: &str,
+    rel: &str,
+) -> Result<Option<String>, String> {
+    validate_remote_rel_path(rel)?;
+    let full = format!("{}/{}", base.trim_end_matches(['/', '\\']), rel);
+    let script = format!(
+        "f={f}\n\
+         if [ ! -f \"$f\" ]; then exit 44; fi\n\
+         sz=$(wc -c <\"$f\")\n\
+         if [ \"$sz\" -gt 2000000 ]; then echo 'ERR:too_large' >&2; exit 45; fi\n\
+         cat -- \"$f\"\n",
+        f = sh_quote(&full),
+    );
+    let output = crate::core::tool_runtime_ssh::ssh_run_for_worktree(cfg, &script).await?;
+    let code = output.status.code().unwrap_or(-1);
+    match code {
+        0 => Ok(Some(String::from_utf8_lossy(&output.stdout).to_string())),
+        44 => Ok(None), // deleted / absent working file
+        45 => Err("File is too large to diff (over 2 MB)".to_string()),
+        _ => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(format!("read working file failed (exit {}): {}", code, stderr.trim()))
+        }
+    }
 }
 
 /// `git pull --ff-only` on the remote, refusing when the worktree is dirty
@@ -1153,6 +1249,42 @@ mod tests {
                 "{invalid:?} should be rejected"
             );
         }
+    }
+
+    // --- S3: remote git polish ---
+
+    #[test]
+    fn validate_remote_rel_path_accepts_repo_relative() {
+        for ok in ["file.rs", "src/foo.rs", "a/b/c.txt", "dir/.hidden"] {
+            assert!(validate_remote_rel_path(ok).is_ok(), "{ok:?} should be ok");
+        }
+    }
+
+    #[test]
+    fn validate_remote_rel_path_rejects_escape_and_absolute() {
+        for bad in [
+            "", "  ", "..", "../x", "a/../b", "a/..", "/etc/passwd", "\\\\server\\share",
+            "..\\win", "a\\..\\b",
+        ] {
+            assert!(
+                validate_remote_rel_path(bad).is_err(),
+                "{bad:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn friendly_push_error_explains_non_fast_forward() {
+        let raw = "! [rejected] main -> main (non-fast-forward)\nUpdates were rejected because the tip of your current branch is behind";
+        let msg = friendly_push_error(raw, 1);
+        assert!(msg.contains("remote branch has commits you don't have"));
+        assert!(msg.contains("Pull"));
+    }
+
+    #[test]
+    fn friendly_push_error_passes_through_other_failures() {
+        let msg = friendly_push_error("fatal: could not read from remote", 128);
+        assert!(msg.contains("git push failed (exit 128)"));
     }
 
     // --- Phase 3.2 input validation ---
