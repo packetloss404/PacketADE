@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useGitHubStore } from "@/stores/githubStore";
 import { capabilitiesFor, hostLabel } from "@/lib/git-hosts";
+import { useNotificationsPoller } from "@/hooks/useNotificationsPoller";
 import { HostIcon } from "@/components/HostIcon";
 import type { GitHostKind } from "@/lib/tauri";
 import type { ReviewComment } from "@/lib/reviewCommentThreads";
@@ -140,6 +141,9 @@ export function GitHubView() {
   useEffect(() => {
     initializeAuth();
   }, [initializeAuth]);
+
+  // GP2: keep the unread badge live while the pane is open (visibility-aware).
+  useNotificationsPoller();
 
   // G3: resolve which host this workspace belongs to (from its origin remote)
   // so the pane targets the right host and shows the right branding.
