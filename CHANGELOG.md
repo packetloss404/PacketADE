@@ -9,6 +9,38 @@ task list.
 
 ## [Unreleased]
 
+### Added — Gitea / Forgejo self-hosted git-host support
+
+A fourteen-item loop (`dev/gitea-support-loop.md`, G1–G14) that adds a
+self-hosted **Gitea/Forgejo** git host alongside cloud **GitHub**, with **both
+configurable at once**. Forgejo shares Gitea's `/api/v1`, so it's covered too.
+
+- **Dual-host, resolved per workspace.** Configure a GitHub connection and one
+  or more Gitea/Forgejo hosts; a workspace targets whichever host its `origin`
+  remote belongs to, and the pane's icon + label follow that host. A switcher
+  bar lets you override the active host when more than one is configured. There
+  is no global "active provider" toggle.
+- **`GitHost` provider seam.** A new `core/git_host.rs` abstraction (mirroring
+  the `LlmProvider` pattern) routes the ~45 GitHub commands through the active
+  connection; GitHub behavior is byte-identical when GitHub is active.
+- **Full GitHub-pane parity where the APIs align:** repos, issues (+comments),
+  PRs, diffs, branches, labels/milestones/assignees, issue + PR writes, PR
+  reviews, and notifications all work against Gitea, with per-endpoint handling
+  for the divergences (pagination `per_page`↔`limit`, diff media-type header vs
+  `.diff` suffix, merge `merge_method`↔`Do`, branch `commit.sha`↔`commit.id`,
+  label-name→id, review-state enum, notification id/`to-status=read`).
+- **Capability-gated degradation.** GitHub-only surfaces (Events activity feed,
+  check-runs, the GraphQL draft toggle, inline PR-review authoring, and the AI
+  assist features) are hidden or return a clear "GitHub only" message on Gitea
+  rather than failing.
+- **Tokens now persist in the OS keyring** keyed by connection id — GitHub
+  included, so there's no re-prompt after restart (the legacy token is migrated
+  in rather than scrubbed). Non-secret Gitea base URLs persist to
+  `git-hosts.json`.
+
+Peer-reviewed (backend + frontend) with fixes applied. Deferred: Gitea
+agent-tool (`gh_*`) parity and richer Gitea Actions/check-runs surfacing.
+
 ### Added — Memory v0.9+ (Memory pane, fully wired)
 
 A ten-item loop (`dev/memory-v9-loop.md`) that fixed the half-wired gaps and

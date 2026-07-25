@@ -6,6 +6,12 @@
 //! Token loading mirrors `commands/github.rs` — new keyring service first, then
 //! legacy service, then legacy file fallback. Read-only here — migration happens
 //! in `commands/github.rs` on app startup.
+//!
+//! G14 scope: these `gh_*` agent read-tools are **GitHub-scoped** by design —
+//! they load the GitHub connection's token directly and have no per-workspace
+//! host context. Gitea/Forgejo agent-tool parity is a deferred follow-up
+//! (see `dev/gitea-support-loop.md` → Deferred). The interactive GitHub pane is
+//! the primary Gitea surface and is fully host-aware.
 
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 use tracing::warn;
