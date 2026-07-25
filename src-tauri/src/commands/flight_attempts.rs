@@ -521,6 +521,38 @@ pub async fn update_attempt_status_by_session(
     .await
 }
 
+/// S4: build an `SshConfig` for a persisted attempt (which stores only
+/// `target_id` + paths, not the connection details) by re-resolving the saved
+/// `ServerConfig` from storage — the backend analogue of the frontend's
+/// `serverStore` lookup. Crucially this carries `host_fingerprint`, so a
+/// backend-initiated cancel/cleanup pins the host key exactly like the
+/// spec-driven path, instead of deferring to the frontend or falling back to
+/// TOFU. Returns `None` if the server is no longer configured.
+fn resolve_server_ssh_config(target_id: &str, base_path: &str) -> Option<SshConfig> {
+    let state = storage::load_state();
+    let server = state.servers.iter().find(|s| s.id == target_id)?;
+    Some(ssh_config_from_server(server, base_path))
+}
+
+/// Pure mapping from a saved `ServerConfig` to a per-cleanup `SshConfig`. Split
+/// out from the storage lookup so the fingerprint-propagation contract (S4) is
+/// unit-testable without touching disk.
+fn ssh_config_from_server(
+    server: &crate::core::storage::ServerConfig,
+    base_path: &str,
+) -> SshConfig {
+    SshConfig {
+        host: server.host.clone(),
+        port: server.port,
+        user: server.username.clone(),
+        remote_path: base_path.to_string(),
+        key_path: server.key_path.clone(),
+        auth_method: Some(server.auth_method.clone()),
+        target_id: Some(server.id.clone()),
+        host_fingerprint: server.host_fingerprint.clone(),
+    }
+}
+
 fn build_ssh_config_from_spec(spec: &AttemptTargetSpec) -> Option<SshConfig> {
     if let AttemptTargetSpec::Ssh {
         target_id,
@@ -855,13 +887,22 @@ pub async fn cancel_flight_attempt(
             target_id,
             ..
         } => {
-            // Reconstruct an SshConfig from saved attempt info. We don't have
-            // host/user/port here — for cleanup we leave the worktree in place
-            // if we can't authenticate, since attempting to reconnect from a
-            // partial config would error out. Frontend can re-issue cleanup
-            // later once it re-resolves the `ServerConfig` via `serverStore`.
-            let _ = (base_path, target_id);
-            warn!(attempt = %attempt_id, "SSH worktree cleanup deferred — requires frontend to call cleanup_attempt_worktree");
+            // S4: re-resolve the saved `ServerConfig` by target_id so we can
+            // clean up the remote worktree here, pinning the host key via the
+            // saved fingerprint — symmetric with the spec-driven cleanup path.
+            // Only if the server is gone do we defer to the frontend.
+            match resolve_server_ssh_config(target_id, base_path) {
+                Some(cfg) => {
+                    if let Err(e) =
+                        worktree::remove_remote_worktree(&cfg, base_path, &attempt_id).await
+                    {
+                        warn!(attempt = %attempt_id, error = %e, "Remote worktree cleanup failed");
+                    }
+                }
+                None => {
+                    warn!(attempt = %attempt_id, "SSH worktree cleanup deferred — server no longer configured; frontend may re-issue cleanup_attempt_worktree_ssh");
+                }
+            }
         }
     }
 
@@ -1078,6 +1119,51 @@ mod tests {
             failure_category: None,
             draft_pr_number: None,
         }
+    }
+
+    // S4: a backend-initiated cleanup must pin the host key by carrying the
+    // saved ServerConfig.host_fingerprint into the SshConfig — not drop it.
+    #[test]
+    fn ssh_config_from_server_propagates_fingerprint() {
+        let server = crate::core::storage::ServerConfig {
+            id: "srv-1".to_string(),
+            name: "prod".to_string(),
+            host: "example.test".to_string(),
+            port: 2222,
+            username: "ian".to_string(),
+            auth_method: "key".to_string(),
+            key_path: Some("~/.ssh/id_ed25519".to_string()),
+            remote_path: Some("/srv/work".to_string()),
+            last_connected_at: None,
+            installed_agents: vec![],
+            host_fingerprint: Some("SHA256:abc123".to_string()),
+        };
+        let cfg = ssh_config_from_server(&server, "/srv/work/base");
+        assert_eq!(cfg.host_fingerprint.as_deref(), Some("SHA256:abc123"));
+        assert_eq!(cfg.host, "example.test");
+        assert_eq!(cfg.port, 2222);
+        assert_eq!(cfg.user, "ian");
+        assert_eq!(cfg.target_id.as_deref(), Some("srv-1"));
+        assert_eq!(cfg.remote_path, "/srv/work/base");
+    }
+
+    #[test]
+    fn ssh_config_from_server_keeps_none_fingerprint_for_legacy() {
+        let server = crate::core::storage::ServerConfig {
+            id: "srv-2".to_string(),
+            name: "legacy".to_string(),
+            host: "old.test".to_string(),
+            port: 22,
+            username: "root".to_string(),
+            auth_method: "agent".to_string(),
+            key_path: None,
+            remote_path: None,
+            last_connected_at: None,
+            installed_agents: vec![],
+            host_fingerprint: None,
+        };
+        let cfg = ssh_config_from_server(&server, "/base");
+        assert!(cfg.host_fingerprint.is_none());
     }
 
     #[test]
