@@ -2,6 +2,7 @@ use crate::core::brand::{
     DATA_DIR_NAME, KEYRING_SERVICE, LEGACY_DATA_DIR_NAME, LEGACY_KEYRING_SERVICE,
     USER_AGENT as BRAND_USER_AGENT,
 };
+use crate::core::git_host::GitHost;
 use reqwest::header::{ACCEPT, AUTHORIZATION, LINK, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
@@ -170,31 +171,20 @@ pub fn create_github_auth_state() -> GitHubAuthState {
     GitHubAuthState::new()
 }
 
-fn github_client(token: &str) -> Result<reqwest::Client, String> {
-    let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(
-        AUTHORIZATION,
-        format!("Bearer {}", token)
-            .parse()
-            .map_err(|e| format!("Invalid header: {}", e))?,
-    );
-    headers.insert(
-        ACCEPT,
-        "application/vnd.github+json"
-            .parse()
-            .map_err(|e| format!("Invalid header: {}", e))?,
-    );
-    headers.insert(
-        USER_AGENT,
-        BRAND_USER_AGENT
-            .parse()
-            .map_err(|e| format!("Invalid header: {}", e))?,
-    );
+/// G1: the active git host for a request. Until G2 wires the multi-connection
+/// config, this always resolves to GitHub — so behaviour is unchanged. Command
+/// groups thread `host.url(...)` in place of the hardcoded base as their Gitea
+/// support lands (G4–G12).
+#[allow(dead_code)] // wired by G2 (multi-connection resolution)
+fn active_git_host(_auth: &GitHubAuthState) -> GitHost {
+    GitHost::github()
+}
 
-    reqwest::Client::builder()
-        .default_headers(headers)
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))
+/// Build an authenticated client for the given host + token. GitHub construction
+/// is byte-identical to the previous inline builder (Bearer + vnd.github+json +
+/// brand UA); Gitea uses the `token` scheme.
+fn github_client(token: &str) -> Result<reqwest::Client, String> {
+    GitHost::github().build_client(token)
 }
 
 fn sanitize_github_error(status: reqwest::StatusCode) -> String {
