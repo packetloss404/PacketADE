@@ -20,7 +20,7 @@ PacketADE is a Tauri v2 desktop app that brings AI coding agents, planning, issu
 - Launch and supervise larger units of work from the **Flight Deck** — a single-screen master-detail flight control surface
 - Track issues on a kanban board and send them directly to workspace sessions
 - Connect to remote servers via SSH and run agent sessions over the wire
-- Keep project context close with auto-learning memory, history, and GitHub integration
+- Keep project context close with auto-learning memory, history, and git-host integration (GitHub + self-hosted Gitea/Forgejo)
 - Manage MCP servers, inspect crashes, and run code-quality scans from the same UI
 
 ## Supported Agents
@@ -147,13 +147,15 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 
 - A dedicated quality module surface for running code-quality scans alongside the Dictation module
 
-### GitHub Integration
+### Git Host Integration (GitHub + Gitea/Forgejo)
 
-- GitHub PAT authentication stored in OS keyring
+- Cloud **GitHub** and self-hosted **Gitea/Forgejo** — both configurable at once; a workspace uses whichever host its `origin` remote belongs to, and the pane's icon/label follow that host
+- PAT authentication persisted in the OS keyring per connection (no re-prompt after restart)
 - Repository listing and selection
 - Issue browsing with search, labels, and import-to-board
-- Pull request browsing with diff viewer
-- AI investigation of issues via Claude
+- Pull request browsing with diff viewer, reviews, merge, and draft/label/reviewer actions
+- Notifications inbox
+- AI investigation of issues via Claude (GitHub only)
 
 ### Cost Dashboard & History
 

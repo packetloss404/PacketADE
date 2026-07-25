@@ -225,13 +225,20 @@ still loads legacy data losslessly.
 
 ## Git host providers — GitHub + Gitea/Forgejo (dual-config)
 
-> **Scoped into a gated loop:** [`dev/gitea-support-loop.md`](./dev/gitea-support-loop.md)
-> (G1–G14). Adds self-hosted **Gitea/Forgejo** alongside cloud GitHub, **both
-> configurable at once** — a workspace uses whichever host its `origin` remote
-> belongs to, and the pane's logo/labels follow that host. Central change: the
-> single in-memory GitHub token becomes a **list of git-host connections** behind
-> a new `core/git_host.rs` `GitHost` trait (mirroring the `LlmProvider` pattern).
-> Foundation slice (G1–G3) keeps GitHub byte-identical while introducing the seam.
+> **Shipped (G1–G14), peer-reviewed on `feat/gitea-support` — pending merge.**
+> Ledger: [`dev/gitea-support-loop.md`](./dev/gitea-support-loop.md). Self-hosted
+> **Gitea/Forgejo** alongside cloud GitHub, **both configurable at once** — a
+> workspace uses whichever host its `origin` remote belongs to, and the pane's
+> icon/labels follow that host. The single in-memory GitHub token became a
+> keyring-backed **list of git-host connections** behind `core/git_host.rs`; the
+> ~45 GitHub commands route through the active connection. Read + write paths,
+> reviews, notifications, capability-gating, and branding all land.
+>
+> **Deferred follow-ups:** Gitea agent-tool (`gh_*`) parity + a `tea`/API
+> create-PR path (`core/tool_github.rs`, `core/tool_pull_request.rs` stay
+> GitHub-scoped); richer Gitea Actions/check-runs surfacing (currently degraded
+> to empty); Gitea inline PR-review-comment authoring (v1 gated — viewing works);
+> AI compare-diff for Gitea multi-commit PRs.
 
 ## Memory v0.9+ (from v0.8 deferrals)
 
