@@ -251,8 +251,16 @@ fn should_full_scan(cache: &CodexStatusCache, now: u64) -> bool {
         || now.saturating_sub(cache.last_full_scan_epoch) >= CODEX_FULL_SCAN_INTERVAL_SECONDS
 }
 
+// Polled on mount + every 5s. Blocking fs work runs off the main thread via
+// `spawn_blocking` so it never freezes the window.
 #[tauri::command]
-pub fn read_codex_statusline_states() -> Vec<CodexStatusLineData> {
+pub async fn read_codex_statusline_states() -> Vec<CodexStatusLineData> {
+    tokio::task::spawn_blocking(read_codex_statusline_states_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn read_codex_statusline_states_blocking() -> Vec<CodexStatusLineData> {
     let home = match home_dir() {
         Some(h) => h,
         None => return vec![],

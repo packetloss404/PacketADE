@@ -17,8 +17,16 @@ pub struct OpenCodeStatusLineData {
     pub timestamp: u64,
 }
 
+// Polled on mount + every 5s. Blocking fs work runs off the main thread via
+// `spawn_blocking` so it never freezes the window.
 #[tauri::command]
-pub fn read_opencode_statusline_states() -> Vec<OpenCodeStatusLineData> {
+pub async fn read_opencode_statusline_states() -> Vec<OpenCodeStatusLineData> {
+    tokio::task::spawn_blocking(read_opencode_statusline_states_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn read_opencode_statusline_states_blocking() -> Vec<OpenCodeStatusLineData> {
     let home = match home_dir() {
         Some(h) => h,
         None => return vec![],
