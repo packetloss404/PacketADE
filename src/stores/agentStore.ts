@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { detectAgent, loadPersistedState, saveAgentsSlice } from "@/lib/tauri";
+import { detectCliCatalog, loadPersistedState, saveAgentsSlice } from "@/lib/tauri";
 import type { AgentConfig } from "@/types/agent";
 import { CLAUDE_CODE_CONFIG } from "@/agents/claude-code";
 import { OPENCODE_CONFIG } from "@/agents/opencode";
@@ -96,19 +96,24 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     set({ detecting: true });
     try {
       const agents = get().agents;
-      const updates: { id: string; installed: boolean }[] = [];
 
-      // Check all agents in parallel
-      await Promise.all(
-        agents.map(async (agent) => {
-          try {
-            const installed = await detectAgent(agent.command);
-            updates.push({ id: agent.id, installed });
-          } catch {
-            updates.push({ id: agent.id, installed: false });
-          }
-        }),
-      );
+      // Startup-perf: use the bulk `detect_cli_catalog` command rather than one
+      // sync `detect_agent` per agent. `detect_agent` is a SYNChronous Tauri
+      // command, so N of them serialize on the main/event-loop thread and each
+      // spawns a blocking `where`/`which` (up to 2 spawns per missing agent on
+      // Windows) with no timeout — that froze the window for ~seconds at launch.
+      // `detect_cli_catalog` is async (off the main thread), probes all entries
+      // concurrently, and bounds each probe to 2s so a hung PATH lookup can't
+      // stall startup.
+      let updates: { id: string; installed: boolean }[] = [];
+      try {
+        const results = await detectCliCatalog(
+          agents.map((a) => ({ id: a.id, binary: a.command })),
+        );
+        updates = results.map((r) => ({ id: r.id, installed: r.installed }));
+      } catch {
+        updates = agents.map((a) => ({ id: a.id, installed: false }));
+      }
 
       set((s) => {
         const updatedAgents = s.agents.map((a) => {
