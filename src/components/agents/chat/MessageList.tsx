@@ -7,12 +7,14 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { Pencil, RotateCcw, RotateCw } from "lucide-react";
+import { BookmarkPlus, Pencil, RotateCcw, RotateCw } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { Spinner } from "@/components/ui/Spinner";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { estimateTurnCostUsd } from "@/lib/conversationCost";
+import { buildTranscriptMemoryInput } from "@/lib/memoryCapture";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
+import { useMemoryStore } from "@/stores/memoryStore";
 import { ExplorationRollupCard } from "../ExplorationRollupCard";
 import { PlanModeApprovalMenu } from "../PlanModeApprovalMenu";
 import { ThinkingBlock } from "../ThinkingBlock";
@@ -286,6 +288,11 @@ function MessageBubble({
   // hover-click must not be destructive. Local state is safe here: rows
   // are mount-once (LazyMessageRow never unmounts them).
   const [confirmingRestore, setConfirmingRestore] = useState(false);
+  // M4: manual "+ Add to memory" on assistant turns. Both hooks read
+  // unconditionally at the top so hook order stays stable across the role
+  // early-returns below.
+  const [captured, setCaptured] = useState(false);
+  const captureManually = useMemoryStore((s) => s.captureManually);
   // Global transcript view mode (P1-17) — read unconditionally at the top so
   // this hook call stays stable across the role early-returns below.
   const verbosity = useAgentSettingsStore((s) => s.transcriptViewMode);
@@ -491,6 +498,21 @@ function MessageBubble({
                 className="text-text-muted hover:text-text-primary text-meta p-0.5 rounded transition-colors"
               >
                 <RotateCw size={11} />
+              </button>
+            </Tooltip>
+          )}
+          {!message.isStreaming && message.content && conversation.projectPath && (
+            <Tooltip content={captured ? "Saved to memory" : "Add this turn to project memory"}>
+              <button
+                type="button"
+                disabled={captured}
+                onClick={() => {
+                  captureManually(buildTranscriptMemoryInput(message, conversation));
+                  setCaptured(true);
+                }}
+                className="text-text-muted hover:text-accent-green text-meta p-0.5 rounded transition-colors disabled:text-accent-green"
+              >
+                <BookmarkPlus size={11} />
               </button>
             </Tooltip>
           )}

@@ -12,11 +12,13 @@ import {
   FileCheck2,
   GitCommit,
   ShieldCheck,
+  BookmarkPlus,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAsyncFlightStore } from "@/stores/asyncFlightStore";
 import { reassignTargetFromEscalation } from "@/lib/flightCoordination";
+import { buildCoordinationMemoryInput } from "@/lib/memoryCapture";
 import { getProviderForAgent } from "@/lib/api-models";
 import type { AgentCli } from "@/stores/agentTaskStore";
 import { useMemoryStore } from "@/stores/memoryStore";
@@ -1013,6 +1015,14 @@ function TimelineRow({ event, flight }: { event: CoordinationEvent; flight: Flig
   const [dismissed, setDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [captured, setCaptured] = useState(false);
+  const captureManually = useMemoryStore((s) => s.captureManually);
+
+  const doCapture = () => {
+    if (captured) return;
+    captureManually(buildCoordinationMemoryInput(event, flight));
+    setCaptured(true);
+  };
 
   // E5: an escalation that carries a concrete suggestion becomes a one-click
   // reassignment. Other event types render as display-only text.
@@ -1041,14 +1051,24 @@ function TimelineRow({ event, flight }: { event: CoordinationEvent; flight: Flig
   };
 
   return (
-    <div className="flex items-start gap-2">
+    <div className="group flex items-start gap-2">
       <span className="w-[32px] shrink-0 pt-px font-mono text-[10px] text-text-muted">
         {eventTimeShort(event.timestamp)}
       </span>
       <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${DOT_BG[dot]}`} />
       <span className="flex-1 leading-snug">
         <span className="font-medium text-text-primary">{actor}</span>{" "}
-        <span className="text-text-secondary">{event.summary}</span>
+        <span className="text-text-secondary">{event.summary}</span>{" "}
+        <button
+          type="button"
+          onClick={doCapture}
+          disabled={captured}
+          title={captured ? "Saved to memory" : "Add this event to project memory"}
+          className="ml-0.5 inline-flex items-center gap-0.5 align-baseline text-[10px] text-text-muted opacity-0 transition-opacity hover:text-accent-green group-hover:opacity-100 disabled:text-accent-green disabled:opacity-100"
+        >
+          <BookmarkPlus size={10} />
+          {captured ? "Saved" : "Memory"}
+        </button>
         {showAction && (
           <span className="mt-1 flex items-center gap-2">
             <button
