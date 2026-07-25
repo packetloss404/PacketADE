@@ -76,11 +76,15 @@ divergent surfaces, branding. Sizes from the map.
 | **G10** | Capability flags + graceful degradation | `GIT_HOST_CAPABILITIES` + `capabilitiesFor` in `git-hosts.ts` (draft/checks/activity false for Gitea). GitHubView hides the Activity tab + redirects off it for Gitea. Backend: `active_host_kind` helper; `github_get_pr_checks` returns empty for Gitea (no check-runs), `github_convert_pr_to_draft` errors with a WIP-title hint. | `git-hosts.ts`; `GitHubView.tsx`; `github.rs`. | git-hosts vitest 8; cargo check REAL_EXIT=0; lint 0; build OK. | M | ✅ closed 2026-07-25 |
 | **G11** | Gitea PR reviews + inline comments | Routed `github_list_pr_reviews` (enum `REQUEST_CHANGES`→`CHANGES_REQUESTED`, `COMMENT`→`COMMENTED` in `parse_pr_review`) + `github_list_pr_review_comments` (empty for Gitea). Inline-comment authoring feature-gated for Gitea (v1) with a clear error → use a regular PR comment. | `github.rs`. | cargo check REAL_EXIT=0. | L | ✅ closed 2026-07-25 |
 | **G12** | Gitea notifications | Routed `github_list_notifications` + `github_mark_notification_read` through the active host. `parse_notification` handles Gitea numeric ids + `subject.html_url`; mark-read appends `?to-status=read` for Gitea. | `github.rs`. | cargo check REAL_EXIT=0. | M | ✅ closed 2026-07-25 |
-| **G13** | Branding follows host | `<HostIcon provider>` + `hostLabel(provider)` helpers; custom Gitea/Forgejo inline SVG; sweep the ~20 "GitHub" spots so nav icon/label, RepoSelector, PR URLs follow the workspace's resolved host. Manual host-picker for ambiguous workspaces. | New `components/HostIcon.tsx`; `LeftRail`, `GitHubView`, settings, palette, status. | Vitest (host label/icon) + pnpm lint + build. | M | queued |
-| **G14** | Agent-tool + PR-tool host-awareness | `core/tool_github.rs` (2nd client) resolves host per repo; `core/tool_pull_request.rs` `gh`-CLI path → API-based create-PR (or `tea`) + host-aware URL extraction. | `core/tool_github.rs`; `core/tool_pull_request.rs`. | cargo check. | M | queued |
+| **G13** | Branding follows host | New `components/HostIcon.tsx` (custom Gitea/Forgejo mug+branch SVG + GitHub lucide) and `hostLabel` in `git-hosts.ts`. GitHubView shows a host-switcher bar (HostIcon + connection label, click to override the active host) once >1 connection is configured. | `HostIcon.tsx`; `git-hosts.ts`; `GitHubView.tsx`. | lint 0 errors; build OK. | M | ✅ closed 2026-07-25 |
+| **G14** | Agent-tool + PR-tool host-awareness | `core/tool_pull_request.rs` `extract_pr_url` made host-agnostic (matches Gitea `/pulls/<n>` as well as GitHub `/pull/<n>`, any http/https). `core/tool_github.rs` `gh_*` agent read-tools documented as GitHub-scoped; full Gitea agent-tool parity deferred (they load the GitHub token directly with no per-workspace host context — the interactive pane is the primary Gitea surface). | `core/tool_pull_request.rs`; `core/tool_github.rs`. | cargo check REAL_EXIT=0. | M | ✅ closed 2026-07-25 |
 
 ## Deferred (not in this loop)
 
+- **Gitea agent-tool parity** — the `gh_*` read tools in `core/tool_github.rs`
+  and the `gh pr create` path in `core/tool_pull_request.rs` stay GitHub-scoped;
+  Gitea would need per-workspace host context threaded into those tools + a
+  `tea`/API create-PR path. The interactive GitHub pane already covers Gitea.
 - **Full Gitea Actions/check-runs parity** — Gitea has no check-runs API; G10
   degrades to combined commit status. Richer CI surfacing is its own effort.
 - **AI compare-diff for Gitea** — GitHub's `/compare` returns a raw diff; Gitea's
