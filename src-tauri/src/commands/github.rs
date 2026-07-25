@@ -2,7 +2,8 @@ use crate::core::brand::{
     DATA_DIR_NAME, KEYRING_SERVICE, LEGACY_DATA_DIR_NAME, LEGACY_KEYRING_SERVICE,
     USER_AGENT as BRAND_USER_AGENT,
 };
-use crate::core::git_host::GitHost;
+use crate::core::git_host::{GitHost, GitHostKind};
+use std::collections::HashMap;
 use reqwest::header::{ACCEPT, AUTHORIZATION, LINK, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
@@ -85,85 +86,219 @@ fn clear_persisted_token() {
     }
 }
 
-fn load_legacy_persisted_token() -> Option<String> {
-    let mut loaded: Option<String> = None;
-    let mut found_persisted = false;
+// ============================================================================
+// G2 — multi-connection git-host config (GitHub + Gitea/Forgejo)
+//
+// Connection *metadata* for Gitea hosts persists to `git-hosts.json` (not a
+// secret; the base URL is required to build any request). Every connection's
+// *token* persists in the OS keyring keyed by connection id — so no re-prompt
+// after restart, for GitHub and Gitea alike. The GitHub connection is always
+// present implicitly (id "github").
+// ============================================================================
 
-    // Read old/current persisted locations once, then scrub them. GitHub auth
-    // is process-memory-only after startup.
-    if let Some(entry) = keyring_entry() {
-        match entry.get_password() {
-            Ok(token) => {
-                found_persisted = true;
-                let trimmed = token.trim();
-                if !trimmed.is_empty() {
-                    loaded = Some(trimmed.to_string());
-                }
-            }
-            Err(keyring::Error::NoEntry) => {}
-            Err(e) => {
-                warn!("Failed to read token from keyring: {}", e);
-            }
+pub const GITHUB_CONNECTION_ID: &str = "github";
+
+/// A configured git-host connection. Serialized (minus the token) to
+/// `git-hosts.json` for Gitea hosts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHostConnection {
+    pub id: String,
+    pub kind: GitHostKind,
+    /// GitHub: `https://api.github.com`. Gitea: the instance origin
+    /// (e.g. `https://git.example.com`), `/api/v1` appended when building URLs.
+    pub base_url: String,
+    pub label: String,
+}
+
+impl GitHostConnection {
+    fn github() -> Self {
+        Self {
+            id: GITHUB_CONNECTION_ID.to_string(),
+            kind: GitHostKind::GitHub,
+            base_url: "https://api.github.com".to_string(),
+            label: "GitHub".to_string(),
         }
     }
 
-    if loaded.is_none() {
-        if let Some(legacy) = legacy_keyring_entry() {
-            if let Ok(token) = legacy.get_password() {
-                found_persisted = true;
-                let trimmed = token.trim();
-                if !trimmed.is_empty() {
-                    loaded = Some(trimmed.to_string());
-                }
-            }
+    /// Resolve this connection to a `GitHost` for request building.
+    fn to_host(&self) -> GitHost {
+        match self.kind {
+            GitHostKind::GitHub => GitHost::github(),
+            GitHostKind::Gitea => GitHost::gitea(&self.base_url),
         }
     }
+}
 
-    if loaded.is_none() {
+/// Keyring account name for a connection's token. The GitHub connection reuses
+/// the historical `github-token` account so existing tokens carry over.
+fn host_token_account(id: &str) -> String {
+    if id == GITHUB_CONNECTION_ID {
+        "github-token".to_string()
+    } else {
+        format!("git-host-token-{}", id)
+    }
+}
+
+fn host_token_entry(id: &str) -> Option<keyring::Entry> {
+    keyring::Entry::new(KEYRING_SERVICE, &host_token_account(id)).ok()
+}
+
+fn load_host_token(id: &str) -> Option<String> {
+    let raw = host_token_entry(id)?.get_password().ok()?;
+    let trimmed = raw.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+fn save_host_token(id: &str, token: &str) -> Result<(), String> {
+    host_token_entry(id)
+        .ok_or_else(|| "OS keyring unavailable".to_string())?
+        .set_password(token)
+        .map_err(|e| format!("Failed to store token in keyring: {}", e))
+}
+
+fn delete_host_token(id: &str) {
+    if let Some(entry) = host_token_entry(id) {
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => {}
+            Err(e) => warn!("Failed to delete token for '{}' from keyring: {}", id, e),
+        }
+    }
+}
+
+fn git_hosts_config_path() -> Option<std::path::PathBuf> {
+    super::shared::home_dir().map(|h| {
+        std::path::PathBuf::from(h)
+            .join(DATA_DIR_NAME)
+            .join("git-hosts.json")
+    })
+}
+
+/// Load persisted Gitea connections (metadata only). GitHub is never persisted
+/// here — it is seeded implicitly.
+fn load_gitea_connections() -> Vec<GitHostConnection> {
+    let Some(path) = git_hosts_config_path() else {
+        return vec![];
+    };
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return vec![];
+    };
+    serde_json::from_str::<Vec<GitHostConnection>>(&raw)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|c| c.kind == GitHostKind::Gitea && c.id != GITHUB_CONNECTION_ID)
+        .collect()
+}
+
+fn save_gitea_connections(conns: &[GitHostConnection]) -> Result<(), String> {
+    let path = git_hosts_config_path().ok_or_else(|| "no data dir".to_string())?;
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let gitea: Vec<&GitHostConnection> = conns
+        .iter()
+        .filter(|c| c.kind == GitHostKind::Gitea)
+        .collect();
+    let json = serde_json::to_string_pretty(&gitea).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| format!("Failed to write git-hosts.json: {}", e))
+}
+
+/// Migrate any legacy GitHub token (legacy keyring service / plaintext files)
+/// into the current keyring account, then remove the plaintext copies. Unlike
+/// the old scrub-on-load, the token now PERSISTS in the current keyring so the
+/// user isn't re-prompted after restart.
+fn migrate_github_token_to_keyring() {
+    if load_host_token(GITHUB_CONNECTION_ID).is_some() {
+        // Already in the current keyring — just clear any leftover plaintext.
         for path in [token_file_path(), legacy_token_file_path()]
             .into_iter()
             .flatten()
         {
-            if !path.exists() {
-                continue;
-            }
-            found_persisted = true;
-            let raw = match std::fs::read_to_string(&path) {
-                Ok(raw) => Zeroizing::new(raw),
-                Err(e) => {
-                    warn!("Failed to read GitHub token file {:?}: {}", path, e);
-                    continue;
-                }
-            };
-            let trimmed = raw.trim().to_string();
+            let _ = std::fs::remove_file(path);
+        }
+        return;
+    }
+
+    let mut found: Option<String> = None;
+    if let Some(entry) = legacy_keyring_entry() {
+        if let Ok(token) = entry.get_password() {
+            let trimmed = token.trim();
             if !trimmed.is_empty() {
-                loaded = Some(trimmed);
-                break;
+                found = Some(trimmed.to_string());
+            }
+        }
+    }
+    if found.is_none() {
+        for path in [token_file_path(), legacy_token_file_path()]
+            .into_iter()
+            .flatten()
+        {
+            if let Ok(raw) = std::fs::read_to_string(&path) {
+                let raw = Zeroizing::new(raw);
+                let trimmed = raw.trim();
+                if !trimmed.is_empty() {
+                    found = Some(trimmed.to_string());
+                    break;
+                }
             }
         }
     }
 
-    if found_persisted {
-        clear_persisted_token();
-        if loaded.is_some() {
-            info!("Loaded GitHub token into memory and removed persisted legacy copies");
+    if let Some(token) = found {
+        if let Err(e) = save_host_token(GITHUB_CONNECTION_ID, &token) {
+            warn!("Failed to migrate GitHub token into keyring: {}", e);
         } else {
-            info!("Removed empty persisted GitHub token copies");
+            info!("Migrated legacy GitHub token into the OS keyring");
         }
     }
 
-    loaded
+    // Plaintext files + the legacy keyring service are superseded by the current
+    // keyring account.
+    for path in [token_file_path(), legacy_token_file_path()]
+        .into_iter()
+        .flatten()
+    {
+        let _ = std::fs::remove_file(path);
+    }
+    delete_keyring_credential(legacy_keyring_entry(), "legacy");
 }
 
 pub struct GitHubAuthState {
-    token: RwLock<Option<String>>,
+    /// All connections: GitHub (implicit, always present) + persisted Gitea.
+    connections: RwLock<Vec<GitHostConnection>>,
+    /// Connection id → token, hydrated from the OS keyring on startup and kept
+    /// there (no re-prompt after restart).
+    tokens: RwLock<HashMap<String, String>>,
 }
 
 impl GitHubAuthState {
     pub fn new() -> Self {
-        Self {
-            token: RwLock::new(load_legacy_persisted_token()),
+        migrate_github_token_to_keyring();
+
+        let mut connections = vec![GitHostConnection::github()];
+        connections.extend(load_gitea_connections());
+
+        let mut tokens = HashMap::new();
+        for c in &connections {
+            if let Some(t) = load_host_token(&c.id) {
+                tokens.insert(c.id.clone(), t);
+            }
         }
+
+        Self {
+            connections: RwLock::new(connections),
+            tokens: RwLock::new(tokens),
+        }
+    }
+
+    /// Resolve a connection by id.
+    async fn connection(&self, id: &str) -> Option<GitHostConnection> {
+        self.connections
+            .read()
+            .await
+            .iter()
+            .find(|c| c.id == id)
+            .cloned()
     }
 }
 
@@ -171,13 +306,29 @@ pub fn create_github_auth_state() -> GitHubAuthState {
     GitHubAuthState::new()
 }
 
-/// G1: the active git host for a request. Until G2 wires the multi-connection
-/// config, this always resolves to GitHub — so behaviour is unchanged. Command
-/// groups thread `host.url(...)` in place of the hardcoded base as their Gitea
-/// support lands (G4–G12).
-#[allow(dead_code)] // wired by G2 (multi-connection resolution)
-fn active_git_host(_auth: &GitHubAuthState) -> GitHost {
-    GitHost::github()
+/// Build an authenticated client + resolved `GitHost` for a connection id. The
+/// Gitea command groups (G4–G12) route through this; GitHub commands keep using
+/// `github_client_from_state` (the `"github"` connection). G3 feeds the
+/// per-workspace connection id here.
+#[allow(dead_code)] // consumed by G3+ per-workspace routing
+async fn git_host_session(
+    auth: &GitHubAuthState,
+    connection_id: &str,
+) -> Result<(reqwest::Client, GitHost), String> {
+    let conn = auth
+        .connection(connection_id)
+        .await
+        .ok_or_else(|| format!("Unknown git-host connection '{}'.", connection_id))?;
+    let token = auth
+        .tokens
+        .read()
+        .await
+        .get(connection_id)
+        .cloned()
+        .ok_or_else(|| format!("No token for '{}'. Connect first.", conn.label))?;
+    let host = conn.to_host();
+    let client = host.build_client(&token)?;
+    Ok((client, host))
 }
 
 /// Build an authenticated client for the given host + token. GitHub construction
@@ -225,34 +376,191 @@ pub async fn github_set_token(
     if trimmed.is_empty() {
         return Err("GitHub token cannot be empty".to_string());
     }
-    clear_persisted_token();
-    let mut guard = auth.token.write().await;
-    *guard = Some(trimmed.to_string());
-    info!("GitHub token set");
+    save_host_token(GITHUB_CONNECTION_ID, trimmed)?;
+    auth.tokens
+        .write()
+        .await
+        .insert(GITHUB_CONNECTION_ID.to_string(), trimmed.to_string());
+    info!("GitHub token set (persisted to keyring)");
     Ok(())
 }
 
 #[tauri::command]
 pub async fn github_clear_token(auth: State<'_, GitHubAuthState>) -> Result<(), String> {
+    delete_host_token(GITHUB_CONNECTION_ID);
+    // Scrub any lingering legacy plaintext/keyring copies too.
     clear_persisted_token();
-    let mut guard = auth.token.write().await;
-    *guard = None;
+    auth.tokens.write().await.remove(GITHUB_CONNECTION_ID);
     info!("GitHub token cleared");
     Ok(())
 }
 
 #[tauri::command]
 pub async fn github_has_token(auth: State<'_, GitHubAuthState>) -> Result<bool, String> {
-    let guard = auth.token.read().await;
-    Ok(guard.is_some())
+    Ok(auth
+        .tokens
+        .read()
+        .await
+        .contains_key(GITHUB_CONNECTION_ID))
+}
+
+// ---- G2: multi-connection commands (GitHub + Gitea) ----
+
+/// Connection info surfaced to the frontend (token value never leaves Rust).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHostConnectionInfo {
+    pub id: String,
+    pub kind: GitHostKind,
+    pub base_url: String,
+    pub label: String,
+    pub has_token: bool,
+}
+
+#[tauri::command]
+pub async fn git_host_list_connections(
+    auth: State<'_, GitHubAuthState>,
+) -> Result<Vec<GitHostConnectionInfo>, String> {
+    let conns = auth.connections.read().await;
+    let tokens = auth.tokens.read().await;
+    Ok(conns
+        .iter()
+        .map(|c| GitHostConnectionInfo {
+            id: c.id.clone(),
+            kind: c.kind,
+            base_url: c.base_url.clone(),
+            label: c.label.clone(),
+            has_token: tokens.contains_key(&c.id),
+        })
+        .collect())
+}
+
+/// Derive a stable, unique connection id from a Gitea base URL host.
+fn unique_gitea_id(base_url: &str, existing: &[GitHostConnection]) -> String {
+    let host = base_url
+        .split("://")
+        .nth(1)
+        .unwrap_or(base_url)
+        .split('/')
+        .next()
+        .unwrap_or("host");
+    let slug: String = host
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let base = format!("gitea-{}", slug.trim_matches('-'));
+    if !existing.iter().any(|c| c.id == base) {
+        return base;
+    }
+    (2..)
+        .map(|n| format!("{}-{}", base, n))
+        .find(|candidate| !existing.iter().any(|c| &c.id == candidate))
+        .unwrap_or(base)
+}
+
+#[tauri::command]
+pub async fn git_host_add_gitea(
+    auth: State<'_, GitHubAuthState>,
+    base_url: String,
+    label: String,
+    token: String,
+) -> Result<String, String> {
+    let base = base_url.trim().trim_end_matches('/');
+    if !(base.starts_with("http://") || base.starts_with("https://")) {
+        return Err("Gitea base URL must start with http:// or https://".to_string());
+    }
+    let token = token.trim();
+    if token.is_empty() {
+        return Err("Gitea token cannot be empty".to_string());
+    }
+    let label = {
+        let l = label.trim();
+        if l.is_empty() {
+            base.to_string()
+        } else {
+            l.to_string()
+        }
+    };
+
+    let mut conns = auth.connections.write().await;
+    let id = unique_gitea_id(base, &conns);
+    conns.push(GitHostConnection {
+        id: id.clone(),
+        kind: GitHostKind::Gitea,
+        base_url: base.to_string(),
+        label,
+    });
+    save_gitea_connections(&conns)?;
+    drop(conns);
+
+    save_host_token(&id, token)?;
+    auth.tokens.write().await.insert(id.clone(), token.to_string());
+    info!("Added Gitea connection '{}'", id);
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn git_host_remove_connection(
+    auth: State<'_, GitHubAuthState>,
+    id: String,
+) -> Result<(), String> {
+    if id == GITHUB_CONNECTION_ID {
+        return Err("The GitHub connection cannot be removed.".to_string());
+    }
+    let mut conns = auth.connections.write().await;
+    let before = conns.len();
+    conns.retain(|c| c.id != id);
+    if conns.len() == before {
+        return Err(format!("Unknown connection '{}'.", id));
+    }
+    save_gitea_connections(&conns)?;
+    drop(conns);
+
+    delete_host_token(&id);
+    auth.tokens.write().await.remove(&id);
+    info!("Removed git-host connection '{}'", id);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn git_host_set_token(
+    auth: State<'_, GitHubAuthState>,
+    id: String,
+    token: String,
+) -> Result<(), String> {
+    let token = token.trim();
+    if token.is_empty() {
+        return Err("Token cannot be empty".to_string());
+    }
+    if auth.connection(&id).await.is_none() {
+        return Err(format!("Unknown connection '{}'.", id));
+    }
+    save_host_token(&id, token)?;
+    auth.tokens.write().await.insert(id, token.to_string());
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn git_host_has_token(
+    auth: State<'_, GitHubAuthState>,
+    id: String,
+) -> Result<bool, String> {
+    Ok(auth.tokens.read().await.contains_key(&id))
 }
 
 async fn github_client_from_state(auth: &GitHubAuthState) -> Result<reqwest::Client, String> {
     let token = auth
-        .token
+        .tokens
         .read()
         .await
-        .clone()
+        .get(GITHUB_CONNECTION_ID)
+        .cloned()
         .ok_or_else(|| "GitHub token not set. Connect first.".to_string())?;
     github_client(&token)
 }
@@ -440,10 +748,11 @@ pub async fn github_get_pr_diff(
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
     let token = auth
-        .token
+        .tokens
         .read()
         .await
-        .clone()
+        .get(GITHUB_CONNECTION_ID)
+        .cloned()
         .ok_or_else(|| "GitHub token not set".to_string())?;
 
     let url = format!(
@@ -964,10 +1273,11 @@ async fn fetch_compare_patch(
     head: &str,
 ) -> Result<String, String> {
     let token = auth
-        .token
+        .tokens
         .read()
         .await
-        .clone()
+        .get(GITHUB_CONNECTION_ID)
+        .cloned()
         .ok_or_else(|| "GitHub token not set".to_string())?;
     let url = format!(
         "https://api.github.com/repos/{}/{}/compare/{}...{}",
@@ -1241,10 +1551,11 @@ pub async fn github_ai_pr_review(
         .to_string();
 
     let token = auth
-        .token
+        .tokens
         .read()
         .await
-        .clone()
+        .get(GITHUB_CONNECTION_ID)
+        .cloned()
         .ok_or_else(|| "GitHub token not set".to_string())?;
     let raw_client = reqwest::Client::new();
     let diff_resp = raw_client

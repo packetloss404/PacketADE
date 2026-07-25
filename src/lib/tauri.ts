@@ -1765,6 +1765,42 @@ export async function githubHasToken(): Promise<boolean> {
   return invoke<boolean>("github_has_token");
 }
 
+// G2: multi-connection git-host config (GitHub + Gitea/Forgejo).
+export type GitHostKind = "github" | "gitea";
+
+export interface GitHostConnectionInfo {
+  id: string;
+  kind: GitHostKind;
+  baseUrl: string;
+  label: string;
+  hasToken: boolean;
+}
+
+export async function gitHostListConnections(): Promise<GitHostConnectionInfo[]> {
+  return invoke<GitHostConnectionInfo[]>("git_host_list_connections");
+}
+
+/** Add a Gitea/Forgejo host (base URL + PAT). Returns the new connection id. */
+export async function gitHostAddGitea(
+  baseUrl: string,
+  label: string,
+  token: string,
+): Promise<string> {
+  return invoke<string>("git_host_add_gitea", { baseUrl, label, token });
+}
+
+export async function gitHostRemoveConnection(id: string): Promise<void> {
+  return invoke("git_host_remove_connection", { id });
+}
+
+export async function gitHostSetToken(id: string, token: string): Promise<void> {
+  return invoke("git_host_set_token", { id, token });
+}
+
+export async function gitHostHasToken(id: string): Promise<boolean> {
+  return invoke<boolean>("git_host_has_token", { id });
+}
+
 export async function githubListRepos(): Promise<string> {
   return invoke<string>("github_list_repos");
 }
