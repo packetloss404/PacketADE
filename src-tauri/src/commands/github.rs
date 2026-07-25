@@ -460,6 +460,140 @@ pub async fn github_has_token(auth: State<'_, GitHubAuthState>) -> Result<bool, 
         .contains_key(GITHUB_CONNECTION_ID))
 }
 
+// ---- GP3: GitHub OAuth device-flow auth (GitHub only) ----
+
+const GITHUB_DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
+const GITHUB_DEVICE_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
+const GITHUB_DEVICE_SCOPES: &str = "repo read:org notifications";
+
+/// The OAuth App client id: runtime override first, then the baked brand const.
+fn github_oauth_client_id() -> Option<String> {
+    if let Ok(id) = std::env::var("PACKETADE_GITHUB_CLIENT_ID") {
+        let id = id.trim().to_string();
+        if !id.is_empty() {
+            return Some(id);
+        }
+    }
+    let baked = crate::core::brand::GITHUB_OAUTH_CLIENT_ID;
+    (!baked.is_empty()).then(|| baked.to_string())
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceFlowStart {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub interval: u64,
+    pub expires_in: u64,
+}
+
+/// Begin GitHub OAuth device flow — returns the user-code + verification URL the
+/// user visits, plus the poll interval.
+#[tauri::command]
+pub async fn github_device_flow_start() -> Result<DeviceFlowStart, String> {
+    let client_id = github_oauth_client_id().ok_or_else(|| {
+        "GitHub OAuth app not configured — paste a personal access token instead.".to_string()
+    })?;
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(GITHUB_DEVICE_CODE_URL)
+        .header(ACCEPT, "application/json")
+        .header(USER_AGENT, BRAND_USER_AGENT)
+        .form(&[
+            ("client_id", client_id.as_str()),
+            ("scope", GITHUB_DEVICE_SCOPES),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let body = github_response_text(resp).await?;
+    let v: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse device response: {}", e))?;
+    Ok(DeviceFlowStart {
+        device_code: v["device_code"].as_str().unwrap_or_default().to_string(),
+        user_code: v["user_code"].as_str().unwrap_or_default().to_string(),
+        verification_uri: v["verification_uri"]
+            .as_str()
+            .unwrap_or("https://github.com/login/device")
+            .to_string(),
+        interval: v["interval"].as_u64().unwrap_or(5),
+        expires_in: v["expires_in"].as_u64().unwrap_or(900),
+    })
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceFlowPoll {
+    /// `authorized` | `pending` | `slow_down` | `error`.
+    pub status: String,
+    pub message: Option<String>,
+}
+
+/// Poll for the device-flow token. On `authorized`, persists the token to the
+/// keyring exactly like a pasted PAT.
+#[tauri::command]
+pub async fn github_device_flow_poll(
+    auth: State<'_, GitHubAuthState>,
+    device_code: String,
+) -> Result<DeviceFlowPoll, String> {
+    let client_id = github_oauth_client_id()
+        .ok_or_else(|| "GitHub OAuth app not configured.".to_string())?;
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(GITHUB_DEVICE_TOKEN_URL)
+        .header(ACCEPT, "application/json")
+        .header(USER_AGENT, BRAND_USER_AGENT)
+        .form(&[
+            ("client_id", client_id.as_str()),
+            ("device_code", device_code.as_str()),
+            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+    let v: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse token response: {}", e))?;
+
+    if let Some(token) = v["access_token"].as_str() {
+        save_host_token(GITHUB_CONNECTION_ID, token)?;
+        auth.tokens
+            .write()
+            .await
+            .insert(GITHUB_CONNECTION_ID.to_string(), token.to_string());
+        info!("GitHub device-flow authorized; token persisted to keyring");
+        return Ok(DeviceFlowPoll {
+            status: "authorized".to_string(),
+            message: None,
+        });
+    }
+
+    let status = match v["error"].as_str() {
+        Some("authorization_pending") => "pending",
+        Some("slow_down") => "slow_down",
+        _ => "error",
+    };
+    let message = if status == "error" {
+        Some(
+            v["error_description"]
+                .as_str()
+                .or_else(|| v["error"].as_str())
+                .unwrap_or("Device flow failed")
+                .to_string(),
+        )
+    } else {
+        None
+    };
+    Ok(DeviceFlowPoll {
+        status: status.to_string(),
+        message,
+    })
+}
+
 // ---- G2: multi-connection commands (GitHub + Gitea) ----
 
 /// Connection info surfaced to the frontend (token value never leaves Rust).
