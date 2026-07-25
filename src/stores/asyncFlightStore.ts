@@ -475,6 +475,12 @@ function composeAsyncLaunchPrompt(
     .getState()
     .composeMemoryBrief({ kind: "local", projectPath }, { query: prompt });
   if (!brief.text.trim()) return prompt;
+  // M5: remember which learned patterns rode along in this brief so their
+  // confidence can be rerated when the flight settles.
+  if (flight) {
+    const patternIds = brief.items.filter((i) => i.kind === "pattern").map((i) => i.id);
+    useMemoryStore.getState().recordInjectedPatterns(flight.id, patternIds);
+  }
   return `${brief.text}\n\n---\n\n${prompt}`;
 }
 
@@ -571,9 +577,13 @@ function captureFlightCompletionOnTransition(flightId: string, statusBefore: str
   if (flightStore.computeFlightStatus(flightId) !== "done") return;
   const flight = flightStore.flights.find((f) => f.id === flightId);
   if (!flight) return;
-  useMemoryStore
-    .getState()
-    .captureFlightCompleted(buildFlightCompletedPayload(flight), flight.projectPath);
+  const memory = useMemoryStore.getState();
+  memory.captureFlightCompleted(buildFlightCompletedPayload(flight), flight.projectPath);
+  // M5: rerate the patterns injected into this flight's launch brief — a
+  // completed attempt is a success signal, an all-failed/cancelled flight a
+  // decay signal.
+  const success = (flight.attempts ?? []).some((a) => a.status === "completed");
+  memory.adjustConfidenceForFlight(flightId, success);
 }
 
 async function cleanupSshAttemptWorktree(flightId: string, attempt: Attempt): Promise<void> {
