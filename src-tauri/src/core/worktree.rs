@@ -1100,38 +1100,70 @@ pub fn friendly_push_error(out: &str, code: i32) -> String {
 
 /// S3: read a file's committed `HEAD` blob from the remote for the diff viewer.
 /// `Ok(None)` when the path isn't in HEAD (new/untracked file, empty repo).
+/// Reviewer fix: reads only stdout (git warnings on stderr are discarded so they
+/// can't corrupt the baseline) and enforces the same 2 MB cap as the working
+/// side via `git cat-file -s` before materializing the blob.
 pub async fn ssh_show_head(
     cfg: &SshConfig,
     base: &str,
     rel: &str,
 ) -> Result<Option<String>, String> {
     validate_remote_rel_path(rel)?;
-    let spec = format!("HEAD:{}", rel);
-    let (out, code) = ssh_git(cfg, base, &["show", &spec]).await?;
-    if code != 0 {
-        // Missing-in-HEAD is expected (added file); treat as "no baseline".
-        return Ok(None);
+    let script = format!(
+        "cd {base} || exit 12\n\
+         r={rel}\n\
+         if ! git cat-file -e \"HEAD:$r\" 2>/dev/null; then exit 44; fi\n\
+         sz=$(git cat-file -s \"HEAD:$r\" 2>/dev/null) || exit 44\n\
+         if [ \"$sz\" -gt {max} ]; then exit 45; fi\n\
+         git show \"HEAD:$r\" 2>/dev/null\n",
+        base = sh_quote(base),
+        rel = sh_quote(rel),
+        max = crate::core::tool_runtime_ssh::MAX_FILE_SIZE,
+    );
+    let output = crate::core::tool_runtime_ssh::ssh_run_for_worktree(cfg, &script).await?;
+    match output.status.code().unwrap_or(-1) {
+        0 => Ok(Some(String::from_utf8_lossy(&output.stdout).to_string())),
+        // 44 = not in HEAD (added file / empty repo); 12 = not a repo → no baseline.
+        44 | 12 => Ok(None),
+        45 => Err("File is too large to diff (over 2 MB)".to_string()),
+        code => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(format!("git show HEAD failed (exit {}): {}", code, stderr.trim()))
+        }
     }
-    Ok(Some(out))
 }
 
 /// S3: read a working-tree file's content from the remote for the diff viewer.
-/// `Ok(None)` when the file doesn't exist on disk (deleted file). Size-capped to
-/// the same 2 MB limit the remote read-file tool enforces.
+/// `Ok(None)` when the file doesn't exist on disk (deleted file).
+///
+/// Reviewer fix (security): a symlink LEAF returns its link text (git's own
+/// representation of a symlink — and we never read the target, so a tracked
+/// `creds -> /etc/passwd` can't leak), while regular files are realpath-confined
+/// so a symlinked PARENT directory can't escape the workspace either. Size-capped
+/// to the shared `MAX_FILE_SIZE`.
 pub async fn ssh_read_working_file(
     cfg: &SshConfig,
     base: &str,
     rel: &str,
 ) -> Result<Option<String>, String> {
+    use crate::core::tool_runtime_ssh::{
+        confine_prelude, confinement_error, ConfineTarget, MAX_FILE_SIZE,
+    };
     validate_remote_rel_path(rel)?;
     let full = format!("{}/{}", base.trim_end_matches(['/', '\\']), rel);
+    let full_q = sh_quote(&full);
     let script = format!(
         "f={f}\n\
-         if [ ! -f \"$f\" ]; then exit 44; fi\n\
+         if [ -L \"$f\" ]; then readlink -- \"$f\"; exit 0; fi\n\
+         if [ ! -e \"$f\" ]; then exit 44; fi\n\
+         if [ ! -f \"$f\" ]; then exit 46; fi\n\
+         {confine}\
          sz=$(wc -c <\"$f\")\n\
-         if [ \"$sz\" -gt 2000000 ]; then echo 'ERR:too_large' >&2; exit 45; fi\n\
+         if [ \"$sz\" -gt {max} ]; then exit 45; fi\n\
          cat -- \"$f\"\n",
-        f = sh_quote(&full),
+        f = full_q,
+        confine = confine_prelude(&sh_quote(base), "\"$f\"", ConfineTarget::Existing),
+        max = MAX_FILE_SIZE,
     );
     let output = crate::core::tool_runtime_ssh::ssh_run_for_worktree(cfg, &script).await?;
     let code = output.status.code().unwrap_or(-1);
@@ -1139,7 +1171,11 @@ pub async fn ssh_read_working_file(
         0 => Ok(Some(String::from_utf8_lossy(&output.stdout).to_string())),
         44 => Ok(None), // deleted / absent working file
         45 => Err("File is too large to diff (over 2 MB)".to_string()),
+        46 => Err("Path is not a regular file".to_string()),
         _ => {
+            if let Some(msg) = confinement_error(code) {
+                return Err(msg);
+            }
             let stderr = String::from_utf8_lossy(&output.stderr);
             Err(format!("read working file failed (exit {}): {}", code, stderr.trim()))
         }

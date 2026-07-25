@@ -7,17 +7,17 @@ use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tracing::info;
 
-const MAX_FILE_SIZE: u64 = 2_000_000;
+pub(crate) const MAX_FILE_SIZE: u64 = 2_000_000;
 const MAX_OUTPUT_SIZE: usize = 262_144;
 const DEFAULT_BASH_TIMEOUT: u64 = 30;
 const SSH_OVERHEAD_SECS: u64 = 10;
 
 /// Exit code emitted by the remote scripts when the resolved (symlink-followed)
 /// path escapes the workspace base.
-const EXIT_ESCAPE: i32 = 8;
+pub(crate) const EXIT_ESCAPE: i32 = 8;
 /// Exit code emitted by the remote scripts when neither `realpath` nor
 /// `readlink -f` is available, so confinement cannot be verified (fail closed).
-const EXIT_NO_REALPATH: i32 = 9;
+pub(crate) const EXIT_NO_REALPATH: i32 = 9;
 
 /// S8: portable canonicalizer shell function injected before any confinement
 /// check. Prefers `realpath`, falls back to `readlink -f` (present on BusyBox /
@@ -52,14 +52,14 @@ fn resolve_fn_def() -> String {
 /// list / grep) or only its parent directory must resolve (`Parent`, for
 /// write_file whose leaf may not exist yet — mirroring the local
 /// canonicalize-the-parent behaviour).
-enum ConfineTarget {
+pub(crate) enum ConfineTarget {
     /// The target path must already exist and realpath-resolve.
     Existing,
     /// Only the target's parent must resolve (leaf may be created).
     Parent,
 }
 
-fn confine_prelude(base_q: &str, tgt_q: &str, mode: ConfineTarget) -> String {
+pub(crate) fn confine_prelude(base_q: &str, tgt_q: &str, mode: ConfineTarget) -> String {
     // `realpath -- <base>` first; if realpath is missing on the remote the
     // command fails and we exit EXIT_NO_REALPATH (fail closed). The trailing
     // slash on both the base and the candidate prevents "/workspace-evil"
@@ -127,7 +127,7 @@ fn confine_creation_ancestor_prelude(base_q: &str, tgt_q: &str) -> String {
 /// Map a remote-script exit status to a confinement-specific error message,
 /// or `None` if the failure was not a confinement failure (caller handles
 /// the generic case).
-fn confinement_error(code: i32) -> Option<String> {
+pub(crate) fn confinement_error(code: i32) -> Option<String> {
     match code {
         EXIT_ESCAPE => {
             Some("Path escapes the workspace (resolved outside via symlink)".to_string())
@@ -184,9 +184,13 @@ async fn ssh_run_inner(
 
     let mut cmd = tokio::process::Command::new("ssh");
     // `-tt` must precede the host; ssh options come before `user@host` in the
-    // arg vector (host is last, remote_cmd is appended after).
+    // arg vector (host is last, remote_cmd is appended after). `LogLevel=ERROR`
+    // suppresses ssh's own "Connection to <host> closed." teardown notice, which
+    // otherwise lands on the client's stderr and pollutes the tool result.
     if request_tty && !password_auth {
         cmd.arg("-tt");
+        cmd.arg("-o");
+        cmd.arg("LogLevel=ERROR");
     }
     cmd.args(config.ssh_args(password_auth));
     cmd.arg(remote_cmd);

@@ -201,6 +201,8 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
               value={keyPath}
               onChange={(e) => setKeyPath(e.target.value)}
               placeholder="~/.ssh/id_rsa"
+              aria-invalid={keyPathInvalid}
+              aria-describedby={keyPathInvalid ? "keypath-error" : undefined}
               className={`bg-bg-primary text-xs text-text-primary font-mono px-3 py-2 rounded border outline-none ${
                 keyPathInvalid
                   ? "border-accent-red/60 focus:border-accent-red"
@@ -208,7 +210,9 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
               }`}
             />
             {keyPathInvalid && (
-              <p className="text-[10px] text-accent-red">{UNSAFE_KEYPATH_MESSAGE}</p>
+              <p id="keypath-error" className="text-[10px] text-accent-red">
+                {UNSAFE_KEYPATH_MESSAGE}
+              </p>
             )}
           </div>
         )}

@@ -29,6 +29,11 @@ describe("isSafeKeyPath", () => {
     expect(isSafeKeyPath('/tmp/"key"')).toBe(false);
   });
 
+  it("rejects glob wildcards", () => {
+    expect(isSafeKeyPath("/tmp/*/key")).toBe(false);
+    expect(isSafeKeyPath("/tmp/key?")).toBe(false);
+  });
+
   it("rejects control and non-printable bytes", () => {
     expect(isSafeKeyPath("/tmp/key\n")).toBe(false);
     expect(isSafeKeyPath("/tmp/\tkey")).toBe(false);

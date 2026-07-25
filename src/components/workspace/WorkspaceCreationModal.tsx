@@ -382,8 +382,15 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
 
     // S6: if the user asked to clone a repo into the remote path, do it first.
     // A clone failure aborts creation (we don't want a workspace pointing at a
-    // half-cloned / empty directory).
-    if (locationMode === "remote") {
+    // half-cloned / empty directory). Reviewer fix: only clone when the affordance
+    // is actually applicable for the CURRENT probe (target isn't already a repo)
+    // — otherwise a stale repo URL left in state after the user retargeted an
+    // existing repo would clone-into-existing, fail, and dead-end invisibly.
+    const cloneApplicable =
+      locationMode === "remote" &&
+      pathProbe.kind === "ok" &&
+      shouldOfferRemoteClone(pathProbe.result.exists, pathProbe.result.isGitRepo);
+    if (cloneApplicable) {
       const cloneArgs = buildRemoteCloneArgs(server, cloneRepoUrl, effectivePath, cloneBranch);
       if (cloneArgs) {
         setCloning(true);
