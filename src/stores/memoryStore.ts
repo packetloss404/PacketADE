@@ -95,6 +95,13 @@ interface MemoryStore {
 
   // Auto-capture (called from the flight lifecycle)
   captureFlightCompleted: (payload: FlightCompletedPayload, projectPath: string) => void;
+  /** M9: merge a rich LLM retrospective onto the already-captured
+   *  `flight_completed` event for `flightId` (async enrichment). No-op if the
+   *  event was never captured (e.g. `captureFlights` disabled). */
+  updateFlightRetrospective: (
+    flightId: string,
+    retro: Partial<FlightCompletedPayload>,
+  ) => void;
   /**
    * v0.8-D — manual capture from any UI surface (initial caller is GitHub
    * "Save as memory"). Bypasses the per-type capture toggles in
@@ -134,6 +141,22 @@ interface MemoryStore {
    * first in injected context and are exempt from eviction. */
   togglePinPattern: (id: string) => void;
   clearMemory: () => void;
+
+  /** M3: merge a JSON memory export into the corpus (dedup by id). Returns the
+   *  counts of newly-added items, or null if the JSON was invalid. */
+  importMemory: (json: string) => { addedEvents: number; addedPatterns: number } | null;
+
+  /** M5: record which learned-pattern ids were injected into a flight's launch
+   *  brief, so their confidence can be rerated when the flight settles. Unions
+   *  with any prior record for the same flight. */
+  recordInjectedPatterns: (flightId: string, patternIds: string[]) => void;
+  /** M5: drop a flight's injection provenance without rerating (e.g. the flight
+   *  was cancelled — not the pattern's fault). */
+  clearInjectedPatterns: (flightId: string) => void;
+  /** M5: rerate the confidence of every pattern injected into `flightId` by the
+   *  flight's success, then clear that flight's provenance. No-op if nothing was
+   *  recorded (e.g. injection disabled, or the flight settled after a restart). */
+  adjustConfidenceForFlight: (flightId: string, success: boolean) => void;
 
   /** Context injection (live, not snapshot). Accepts either a project-path
    * string (legacy single-arg form) or an options object so callers can
@@ -325,6 +348,214 @@ function relevanceScores(query: string, candidates: string[]): number[] {
     return matched / totalIdf;
   });
 }
+
+/**
+ * M1: rank/filter memory events for the Timeline search box using the IDF
+ * scorer (`relevanceScores`) instead of a naive substring match. Keeps any
+ * substring hit (so no result the old search found is lost) but orders by
+ * relevance, best first; chronological order (the caller's array order) is the
+ * tie-break. A blank query returns the input unchanged.
+ */
+export function searchMemoryEvents<T extends { payload: unknown }>(
+  events: T[],
+  query: string,
+): T[] {
+  const q = query.trim();
+  if (!q) return events;
+  const ql = q.toLowerCase();
+  // `?? {}` guards against a malformed event whose payload is undefined —
+  // JSON.stringify(undefined) returns undefined, and .toLowerCase() would throw.
+  const candidates = events.map((e) => JSON.stringify(e.payload ?? {}).toLowerCase());
+  const scores = relevanceScores(ql, candidates);
+  return events
+    .map((e, i) => ({ e, i, score: scores[i], substr: candidates[i].includes(ql) }))
+    .filter((x) => x.score > 0 || x.substr)
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .map((x) => x.e);
+}
+
+export type MemoryDateRange = "all" | "24h" | "7d" | "30d";
+
+const MEMORY_RANGE_MS: Record<Exclude<MemoryDateRange, "all">, number> = {
+  "24h": 24 * 60 * 60_000,
+  "7d": 7 * 24 * 60 * 60_000,
+  "30d": 30 * 24 * 60 * 60_000,
+};
+
+/**
+ * M2: scope memory events by project path and/or a rolling date window. Pure;
+ * `now` is injectable for tests. `project = null` and `dateRange = "all"` are
+ * both no-ops, so this composes cleanly with the type + search filters.
+ */
+export function filterMemoryEventsByScope<
+  T extends { projectPath?: string | null; timestamp: number },
+>(
+  events: T[],
+  opts: { project?: string | null; dateRange?: MemoryDateRange; now?: number },
+): T[] {
+  const { project = null, dateRange = "all", now = Date.now() } = opts;
+  const cutoff = dateRange === "all" ? null : now - MEMORY_RANGE_MS[dateRange];
+  return events.filter((e) => {
+    if (project && e.projectPath !== project) return false;
+    if (cutoff !== null && e.timestamp < cutoff) return false;
+    return true;
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * M3 — export / import.
+ * ------------------------------------------------------------------ */
+
+/** M3: stable, import-round-trippable JSON export of the memory corpus. */
+export function serializeMemoryExport(events: MemoryEvent[], patterns: LearnedPattern[]): string {
+  return JSON.stringify({ version: 1, events, patterns }, null, 2);
+}
+
+const IMPORTABLE_EVENT_TYPES = new Set<MemoryEventType>([
+  "session_completed",
+  "task_completed",
+  "flight_completed",
+  "manual_note",
+]);
+
+/** A structurally-valid MemoryEvent: correct id/type/timestamp and an object
+ *  payload. This is the import trust boundary — a malformed entry (e.g. a
+ *  `flight_completed` with no `payload.lessonsLearned`) would otherwise crash
+ *  the digest / hint / search consumers that assume the shape. */
+function isValidMemoryEvent(e: unknown): e is MemoryEvent {
+  if (!e || typeof e !== "object") return false;
+  const ev = e as Record<string, unknown>;
+  return (
+    typeof ev.id === "string" &&
+    typeof ev.timestamp === "number" &&
+    IMPORTABLE_EVENT_TYPES.has(ev.type as MemoryEventType) &&
+    typeof ev.payload === "object" &&
+    ev.payload !== null
+  );
+}
+
+/** M3: parse + validate a JSON memory export. Returns null on bad input. */
+export function parseMemoryImport(
+  json: string,
+): { events: MemoryEvent[]; patterns: LearnedPattern[] } | null {
+  try {
+    const parsed = JSON.parse(json) as { events?: unknown; patterns?: unknown };
+    if (!parsed || typeof parsed !== "object") return null;
+    const events = Array.isArray(parsed.events) ? parsed.events : [];
+    const patterns = Array.isArray(parsed.patterns) ? (parsed.patterns as LearnedPattern[]) : [];
+    return {
+      // Structurally validate events (untrusted import data); patterns only need
+      // a string id to be a dedup candidate.
+      events: events.filter(isValidMemoryEvent),
+      patterns: patterns.filter((p) => p && typeof p.id === "string"),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * M3: merge imported events/patterns into the current corpus, deduped by id
+ * (existing entries win). Returns the merged arrays plus counts of new items.
+ */
+export function mergeMemoryImport(
+  current: { events: MemoryEvent[]; patterns: LearnedPattern[] },
+  imported: { events: MemoryEvent[]; patterns: LearnedPattern[] },
+): {
+  events: MemoryEvent[];
+  patterns: LearnedPattern[];
+  addedEvents: number;
+  addedPatterns: number;
+} {
+  const merge = <T extends { id: string }>(
+    existing: T[],
+    incoming: T[],
+  ): { merged: T[]; added: number } => {
+    const map = new Map(existing.map((x) => [x.id, x]));
+    let added = 0;
+    for (const x of incoming) {
+      if (!map.has(x.id)) {
+        map.set(x.id, x);
+        added++;
+      }
+    }
+    return { merged: [...map.values()], added };
+  };
+  const e = merge(current.events, imported.events);
+  const p = merge(current.patterns, imported.patterns);
+  return { events: e.merged, patterns: p.merged, addedEvents: e.added, addedPatterns: p.added };
+}
+
+/** M3: a human-readable Markdown digest of the memory corpus. */
+export function serializeMemoryMarkdown(events: MemoryEvent[], patterns: LearnedPattern[]): string {
+  const lines: string[] = ["# PacketADE memory export", ""];
+  const byType = new Map<string, number>();
+  for (const ev of events) byType.set(ev.type, (byType.get(ev.type) ?? 0) + 1);
+  lines.push(`- Events: ${events.length}`);
+  for (const [t, n] of byType) lines.push(`  - ${t}: ${n}`);
+  lines.push(`- Learned patterns: ${patterns.length}`, "");
+
+  if (patterns.length) {
+    const byCat = new Map<string, LearnedPattern[]>();
+    for (const p of patterns) {
+      const arr = byCat.get(p.category) ?? [];
+      arr.push(p);
+      byCat.set(p.category, arr);
+    }
+    lines.push("## Learned patterns", "");
+    for (const [cat, ps] of byCat) {
+      lines.push(`### ${cat}`, "");
+      for (const p of [...ps].sort((a, b) => b.confidence - a.confidence)) {
+        lines.push(`- ${p.pinned ? "📌 " : ""}(${Math.round(p.confidence * 100)}%) ${p.pattern}`);
+      }
+      lines.push("");
+    }
+  }
+  return lines.join("\n");
+}
+
+/* ------------------------------------------------------------------ *
+ * M5 — outcome-based confidence rerating.
+ * ------------------------------------------------------------------ */
+
+// A pattern that was injected into a flight's brief earns a small confidence
+// bump when that flight succeeds and a steeper decay when it fails — a burned
+// pattern loses trust faster than an unproven one earns it. Both are clamped.
+const CONFIDENCE_BUMP = 0.05;
+const CONFIDENCE_DECAY = 0.1;
+const CONFIDENCE_FLOOR = 0.1;
+const CONFIDENCE_CEIL = 1;
+
+/** M5: pure — the new confidence after an outcome, clamped to [floor, 1]. */
+export function rerateConfidence(current: number, success: boolean): number {
+  const next = success ? current + CONFIDENCE_BUMP : current - CONFIDENCE_DECAY;
+  return Math.max(CONFIDENCE_FLOOR, Math.min(CONFIDENCE_CEIL, next));
+}
+
+/**
+ * M5: pure — rerate every pattern whose id is in `injectedIds` by the flight's
+ * outcome, returning a new array. Untouched entries are preserved by reference
+ * so a no-op rerate leaves the array referentially stable per-element.
+ */
+export function applyConfidenceRerate(
+  patterns: LearnedPattern[],
+  injectedIds: Iterable<string>,
+  success: boolean,
+): LearnedPattern[] {
+  const idSet = new Set(injectedIds);
+  if (idSet.size === 0) return patterns;
+  return patterns.map((p) => {
+    if (!idSet.has(p.id)) return p;
+    const confidence = rerateConfidence(p.confidence, success);
+    return confidence === p.confidence ? p : { ...p, confidence };
+  });
+}
+
+// In-session provenance: which learned-pattern ids were injected into each
+// flight's launch brief. Deliberately NOT persisted — rerating is best-effort,
+// and a flight that only settles in a later session simply goes unrerated
+// rather than dragging a provenance map through the backend state schema.
+const injectedPatternsByFlight = new Map<string, string[]>();
 
 /**
  * v0.8-H: structured context items used by both `getContextForSession`
@@ -536,6 +767,41 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     const events = capEvents([...get().events, event]);
     set({ events });
     void persistState(events, get().patterns);
+  },
+
+  updateFlightRetrospective: (flightId, retro) => {
+    let changed = false;
+    const events = get().events.map((e) => {
+      if (e.type !== "flight_completed" || e.payload.flightId !== flightId) return e;
+      changed = true;
+      return { ...e, payload: { ...e.payload, ...retro } };
+    });
+    if (!changed) return;
+    set({ events });
+    void persistState(events, get().patterns);
+  },
+
+  recordInjectedPatterns: (flightId, patternIds) => {
+    if (patternIds.length === 0) return;
+    // Union with any prior record: a flight can be launched more than once
+    // (e.g. extra attempts added later) with different injected sets, and every
+    // pattern that ever rode along should be eligible for rerating.
+    const prior = injectedPatternsByFlight.get(flightId);
+    const merged = prior ? [...new Set([...prior, ...patternIds])] : patternIds;
+    injectedPatternsByFlight.set(flightId, merged);
+  },
+
+  clearInjectedPatterns: (flightId) => {
+    injectedPatternsByFlight.delete(flightId);
+  },
+
+  adjustConfidenceForFlight: (flightId, success) => {
+    const ids = injectedPatternsByFlight.get(flightId);
+    if (!ids || ids.length === 0) return;
+    injectedPatternsByFlight.delete(flightId);
+    const patterns = applyConfidenceRerate(get().patterns, ids, success);
+    set({ patterns });
+    void persistState(get().events, patterns);
   },
 
   captureManually: ({ projectPath, source, summary, body, tags }) => {
@@ -750,6 +1016,17 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
       summariesSinceLastRefresh: 0,
     });
     void persistState([], []);
+  },
+
+  importMemory: (json) => {
+    const parsed = parseMemoryImport(json);
+    if (!parsed) return null;
+    const merged = mergeMemoryImport({ events: get().events, patterns: get().patterns }, parsed);
+    const events = capEvents(merged.events);
+    const patterns = capPatterns(merged.patterns);
+    set({ events, patterns });
+    void persistState(events, patterns);
+    return { addedEvents: merged.addedEvents, addedPatterns: merged.addedPatterns };
   },
 
   getContextForSession: (input) => {

@@ -401,6 +401,30 @@ export async function extractPatterns(projectPath: string, summaries: string): P
   return invoke<string>("extract_patterns", { projectPath, summaries });
 }
 
+/** M9: input to the `summarize_flight` LLM retrospective. Mirrors the Rust
+ *  `FlightSummaryInput` DTO, which carries `#[serde(rename_all = "camelCase")]`
+ *  so these camelCase keys deserialize into its snake_case fields (Tauri only
+ *  auto-converts the top-level command args, not nested struct fields). */
+export interface FlightSummaryInput {
+  title: string;
+  objective: string;
+  priority: string;
+  status: string;
+  taskCount: number;
+  tasksDone: number;
+  tasksFailed: number;
+  durationDescription: string;
+}
+
+/** M9: generate a rich flight retrospective (returns the model's JSON string). */
+export async function summarizeFlight(
+  projectPath: string,
+  flightSummary: FlightSummaryInput,
+  sessionLogs: string,
+): Promise<string> {
+  return invoke<string>("summarize_flight", { projectPath, flightSummary, sessionLogs });
+}
+
 // Git
 export async function getGitBranch(projectPath: string): Promise<string> {
   return invoke<string>("get_git_branch", { projectPath });

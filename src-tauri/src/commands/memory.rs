@@ -46,6 +46,7 @@ Session summaries:
 // === Flight Retrospectives (self-improving feedback loop) ===
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FlightSummaryInput {
     pub title: String,
     pub objective: String,

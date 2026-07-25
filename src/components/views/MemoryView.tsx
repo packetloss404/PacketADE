@@ -11,25 +11,74 @@ import {
   Check,
   X,
   Zap,
+  Download,
+  Upload,
+  MessageSquare,
+  Lightbulb,
+  FileText,
 } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useMemoryStore, memoryBriefStats } from "@/stores/memoryStore";
+import {
+  useMemoryStore,
+  memoryBriefStats,
+  searchMemoryEvents,
+  filterMemoryEventsByScope,
+  serializeMemoryExport,
+  serializeMemoryMarkdown,
+  computeContextItems,
+  type MemoryDateRange,
+  type ContextItem,
+} from "@/stores/memoryStore";
+import { computeMemoryDigest, type MemoryDigest } from "@/lib/memoryDigest";
 import { useMemorySettingsStore } from "@/stores/memorySettingsStore";
 import { useAppStore } from "@/stores/appStore";
 import { MemoryEventCard } from "./memory/MemoryEventCard";
+import { TIMELINE_FILTERS, type FilterType } from "./memory/timelineFilters";
 import type { MemoryEvent, MemoryEventType, PatternCategory, LearnedPattern } from "@/types/memory";
 import { relativeTime } from "@/lib/time";
 
-type Tab = "patterns" | "timeline";
-type FilterType = "all" | MemoryEventType;
+type Tab = "patterns" | "timeline" | "ask";
 
-const FILTERS: { key: FilterType; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "session_completed", label: "Sessions" },
-  { key: "task_completed", label: "Tasks" },
-  { key: "flight_completed", label: "Flights" },
-  { key: "manual_note", label: "Notes" },
+// M2: rolling date-window chips for the Timeline.
+const DATE_RANGES: { key: MemoryDateRange; label: string }[] = [
+  { key: "all", label: "All time" },
+  { key: "24h", label: "24h" },
+  { key: "7d", label: "7d" },
+  { key: "30d", label: "30d" },
 ];
+
+/** Last path segment of a project path, for a compact project chip label. */
+function projectBasename(p: string): string {
+  const parts = p.replace(/[\\/]+$/, "").split(/[\\/]/);
+  return parts[parts.length - 1] || p;
+}
+
+function ScopeChip({
+  active,
+  label,
+  title,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  title?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={`max-w-[140px] truncate rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
+        active
+          ? "border-accent-line bg-accent-soft font-semibold text-accent-green"
+          : "border-transparent bg-transparent font-medium text-text-muted hover:text-text-secondary"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
 
 const CATEGORY_ORDER: PatternCategory[] = ["architecture", "convention", "preference", "pitfall"];
 
@@ -83,6 +132,7 @@ export function MemoryView() {
   const togglePinPattern = useMemoryStore((s) => s.togglePinPattern);
   const refreshPatterns = useMemoryStore((s) => s.refreshPatterns);
   const clearMemory = useMemoryStore((s) => s.clearMemory);
+  const importMemory = useMemoryStore((s) => s.importMemory);
   const composeMemoryBrief = useMemoryStore((s) => s.composeMemoryBrief);
   const captureSessions = useMemorySettingsStore((s) => s.captureSessions);
   const captureFlights = useMemorySettingsStore((s) => s.captureFlights);
@@ -98,6 +148,8 @@ export function MemoryView() {
   const [activeTab, setActiveTab] = useState<Tab>("patterns");
   const [filter, setFilter] = useState<FilterType>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [dateRange, setDateRange] = useState<MemoryDateRange>("all");
+  const [projectFilter, setProjectFilter] = useState<string | null>(null);
 
   useEffect(() => {
     if (incomingFilter?.flightId) {
@@ -140,12 +192,15 @@ export function MemoryView() {
     let result = [...events].reverse();
     if (matchesFlightFilter) result = result.filter(matchesFlightFilter);
     if (filter !== "all") result = result.filter((e) => e.type === filter);
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter((e) => JSON.stringify(e.payload).toLowerCase().includes(q));
-    }
+    result = filterMemoryEventsByScope(result, { project: projectFilter, dateRange });
+    result = searchMemoryEvents(result, searchQuery);
     return result;
-  }, [events, filter, searchQuery, matchesFlightFilter]);
+  }, [events, filter, searchQuery, matchesFlightFilter, projectFilter, dateRange]);
+
+  const projects = useMemo(
+    () => [...new Set(events.map((e) => e.projectPath).filter((p): p is string => Boolean(p)))].sort(),
+    [events],
+  );
 
   const groupedPatterns = useMemo(() => {
     const groups: Partial<Record<PatternCategory, LearnedPattern[]>> = {};
@@ -157,6 +212,13 @@ export function MemoryView() {
     }
     return groups;
   }, [patterns]);
+
+  // M7: rolling 30-day digest. Recomputes only when the corpus changes; the
+  // window anchors on render time (Date.now is fine in app code).
+  const digest = useMemo(
+    () => computeMemoryDigest(events, patterns, { now: Date.now() }),
+    [events, patterns],
+  );
 
   // P2-18 preview-truth: render the SAME budgeted brief the launch pipeline
   // injects (composeMemoryBrief) and derive the token estimate from
@@ -184,6 +246,49 @@ export function MemoryView() {
     if (window.confirm("Clear all memory? This removes all events and learned patterns.")) {
       clearMemory();
     }
+  }
+
+  // M3: download a Blob from the webview (no backend round-trip needed).
+  function downloadBlob(filename: string, contents: string, mime: string) {
+    const blob = new Blob([contents], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleExportJson() {
+    downloadBlob(
+      "packetade-memory.json",
+      serializeMemoryExport(events, patterns),
+      "application/json",
+    );
+  }
+
+  function handleExportMarkdown() {
+    downloadBlob(
+      "packetade-memory.md",
+      serializeMemoryMarkdown(events, patterns),
+      "text/markdown",
+    );
+  }
+
+  function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-importing the same file
+    if (!file) return;
+    void file.text().then((text) => {
+      const result = importMemory(text);
+      if (!result) {
+        window.alert("Import failed: the file is not a valid PacketADE memory export.");
+        return;
+      }
+      window.alert(
+        `Imported ${result.addedEvents} new event(s) and ${result.addedPatterns} new pattern(s).`,
+      );
+    });
   }
 
   return (
@@ -223,6 +328,34 @@ export function MemoryView() {
           Refresh
         </button>
         {(events.length > 0 || patterns.length > 0) && (
+          <>
+            <button
+              onClick={handleExportJson}
+              className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10.5px] text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary"
+              title="Export memory as JSON"
+            >
+              <Download size={10} />
+              JSON
+            </button>
+            <button
+              onClick={handleExportMarkdown}
+              className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10.5px] text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary"
+              title="Export memory as a Markdown digest"
+            >
+              <Download size={10} />
+              MD
+            </button>
+          </>
+        )}
+        <label
+          className="inline-flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-[10.5px] text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary"
+          title="Import a JSON memory export (merges by id)"
+        >
+          <Upload size={10} />
+          Import
+          <input type="file" accept="application/json,.json" className="hidden" onChange={handleImportFile} />
+        </label>
+        {(events.length > 0 || patterns.length > 0) && (
           <button
             onClick={handleClear}
             className="rounded p-1 text-text-muted transition-colors hover:bg-bg-elevated hover:text-accent-red"
@@ -249,6 +382,12 @@ export function MemoryView() {
           icon={<Clock size={10} />}
           label="Events"
           badge={events.length}
+        />
+        <MemTab
+          active={activeTab === "ask"}
+          onClick={() => setActiveTab("ask")}
+          icon={<MessageSquare size={10} />}
+          label="Ask"
         />
         <div className="flex-1" />
         <span className="text-[10px] text-text-faint">
@@ -296,6 +435,7 @@ export function MemoryView() {
         <PatternsTab
           groupedPatterns={groupedPatterns}
           patternCount={patterns.length}
+          digest={digest}
           isLearning={isLearning}
           learningStatus={learningStatus}
           injectedPreview={injectedPreview}
@@ -317,7 +457,16 @@ export function MemoryView() {
           totalEvents={events.length}
           captureEnabled={captureEnabled}
           onDeleteEvent={deleteEvent}
+          dateRange={dateRange}
+          onDateRangeChange={setDateRange}
+          projectFilter={projectFilter}
+          onProjectChange={setProjectFilter}
+          projects={projects}
         />
+      )}
+
+      {activeTab === "ask" && (
+        <AskTab events={events} patterns={patterns} projectPath={projectPath} />
       )}
     </div>
   );
@@ -328,7 +477,7 @@ interface MemTabProps {
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
-  badge: number;
+  badge?: number;
   accent?: boolean;
 }
 
@@ -364,6 +513,7 @@ function MemTab({ active, onClick, icon, label, badge, accent }: MemTabProps) {
 interface PatternsTabProps {
   groupedPatterns: Partial<Record<PatternCategory, LearnedPattern[]>>;
   patternCount: number;
+  digest: MemoryDigest;
   isLearning: boolean;
   learningStatus: string | null;
   injectedPreview: string;
@@ -373,9 +523,89 @@ interface PatternsTabProps {
   onTogglePinPattern: (id: string) => void;
 }
 
+// M7: rolling 30-day digest card in the Patterns right rail.
+const DIGEST_TYPE_LABELS: Record<MemoryEventType, string> = {
+  session_completed: "sessions",
+  task_completed: "tasks",
+  flight_completed: "flights",
+  manual_note: "notes",
+};
+
+function MemoryDigestCard({ digest }: { digest: MemoryDigest }) {
+  const typeRows = (Object.keys(digest.byType) as MemoryEventType[])
+    .filter((t) => digest.byType[t] > 0)
+    .map((t) => `${digest.byType[t]} ${DIGEST_TYPE_LABELS[t]}`);
+
+  return (
+    <div className="border-b border-bg-border px-3.5 py-3">
+      <div className="mb-2 flex items-center gap-1.5">
+        <Clock size={10} className="text-accent-green" />
+        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-text-secondary">
+          Last {digest.windowDays} days
+        </span>
+      </div>
+      {digest.isEmpty ? (
+        <div className="text-[10.5px] text-text-faint">
+          Nothing captured in this window yet.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[10.5px] text-text-secondary">
+            <span>
+              <span className="tabular-nums text-text-primary">{digest.eventCount}</span> event
+              {digest.eventCount === 1 ? "" : "s"}
+            </span>
+            <span>
+              <span className="tabular-nums text-text-primary">{digest.patternCount}</span> new
+              pattern{digest.patternCount === 1 ? "" : "s"}
+            </span>
+          </div>
+          {typeRows.length > 0 && (
+            <div className="text-[10px] text-text-faint">{typeRows.join(" · ")}</div>
+          )}
+          {digest.topPatterns.length > 0 && (
+            <div>
+              <div className="mb-1 text-[9.5px] font-semibold uppercase tracking-[0.06em] text-text-faint">
+                Top patterns
+              </div>
+              <ul className="flex flex-col gap-0.5">
+                {digest.topPatterns.map((p) => (
+                  <li key={p.id} className="flex items-baseline gap-1.5 text-[10px] leading-snug">
+                    <span className="tabular-nums text-accent-green">
+                      {Math.round(p.confidence * 100)}%
+                    </span>
+                    <span className="truncate text-text-secondary" title={p.pattern}>
+                      {p.pattern}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {digest.recentLessons.length > 0 && (
+            <div>
+              <div className="mb-1 text-[9.5px] font-semibold uppercase tracking-[0.06em] text-text-faint">
+                Recent lessons
+              </div>
+              <ul className="flex flex-col gap-0.5">
+                {digest.recentLessons.map((lesson, i) => (
+                  <li key={i} className="truncate text-[10px] leading-snug text-text-secondary" title={lesson}>
+                    • {lesson}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PatternsTab({
   groupedPatterns,
   patternCount,
+  digest,
   isLearning,
   learningStatus,
   injectedPreview,
@@ -428,6 +658,7 @@ function PatternsTab({
 
       {/* Right rail */}
       <div className="flex flex-col overflow-hidden border-l border-bg-border bg-bg-secondary">
+        <MemoryDigestCard digest={digest} />
         {isLearning && (
           <div className="border-b border-bg-border px-3.5 py-3">
             <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-text-secondary">
@@ -648,6 +879,11 @@ interface TimelineTabProps {
   totalEvents: number;
   captureEnabled: boolean;
   onDeleteEvent: (id: string) => void;
+  dateRange: MemoryDateRange;
+  onDateRangeChange: (r: MemoryDateRange) => void;
+  projectFilter: string | null;
+  onProjectChange: (p: string | null) => void;
+  projects: string[];
 }
 
 function TimelineTab({
@@ -660,12 +896,17 @@ function TimelineTab({
   totalEvents,
   captureEnabled,
   onDeleteEvent,
+  dateRange,
+  onDateRangeChange,
+  projectFilter,
+  onProjectChange,
+  projects,
 }: TimelineTabProps) {
   return (
     <>
       {/* Filter row */}
       <div className="flex flex-shrink-0 items-center gap-1 border-b border-bg-border bg-bg-secondary px-3.5 py-2">
-        {FILTERS.map((f) => {
+        {TIMELINE_FILTERS.map((f) => {
           const active = filter === f.key;
           return (
             <button
@@ -701,6 +942,42 @@ function TimelineTab({
         </div>
       </div>
 
+      {/* M2: date-range + project scope chips */}
+      {(projects.length > 0 || dateRange !== "all" || projectFilter !== null) && (
+        <div className="flex flex-shrink-0 flex-wrap items-center gap-1 border-b border-bg-border bg-bg-secondary px-3.5 py-1.5">
+          <span className="mr-0.5 text-[9px] uppercase tracking-wide text-text-faint">When</span>
+          {DATE_RANGES.map((r) => (
+            <ScopeChip
+              key={r.key}
+              active={dateRange === r.key}
+              label={r.label}
+              onClick={() => onDateRangeChange(r.key)}
+            />
+          ))}
+          {projects.length > 0 && (
+            <>
+              <span className="ml-2 mr-0.5 text-[9px] uppercase tracking-wide text-text-faint">
+                Project
+              </span>
+              <ScopeChip
+                active={projectFilter === null}
+                label="All"
+                onClick={() => onProjectChange(null)}
+              />
+              {projects.map((p) => (
+                <ScopeChip
+                  key={p}
+                  active={projectFilter === p}
+                  label={projectBasename(p)}
+                  title={p}
+                  onClick={() => onProjectChange(p)}
+                />
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
       {/* Event list */}
       <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-3.5 py-3">
         {events.length === 0 ? (
@@ -726,6 +1003,101 @@ function TimelineTab({
         )}
       </div>
     </>
+  );
+}
+
+// M8: "Ask your project" — a keyword-ranked answer over the memory corpus.
+// No LLM: reuses computeContextItems (the same query-aware ranker the launch
+// pipeline uses) so results match what would actually be injected.
+const ASK_ICON: Record<ContextItem["kind"], React.ReactNode> = {
+  pattern: <Sparkles size={11} className="text-accent-green" />,
+  lesson: <Lightbulb size={11} className="text-accent-amber" />,
+  session: <FileText size={11} className="text-text-muted" />,
+};
+
+function AskTab({
+  events,
+  patterns,
+  projectPath,
+}: {
+  events: MemoryEvent[];
+  patterns: LearnedPattern[];
+  projectPath: string | null;
+}) {
+  const [query, setQuery] = useState("");
+  const [submitted, setSubmitted] = useState("");
+
+  const results = useMemo(() => {
+    const q = submitted.trim();
+    if (!q || !projectPath) return [];
+    return computeContextItems(events, patterns, { kind: "local", projectPath }, q);
+  }, [events, patterns, projectPath, submitted]);
+
+  const submit = () => setSubmitted(query);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex flex-shrink-0 items-center gap-2 border-b border-bg-border bg-bg-secondary px-3.5 py-2.5">
+        <MessageSquare size={12} className="text-accent-green" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submit();
+          }}
+          placeholder="Ask your project memory — e.g. how do we handle SSH auth?"
+          className="focus:border-accent-green/50 flex-1 rounded border border-bg-border bg-bg-primary px-2.5 py-1.5 text-xs text-text-primary outline-none placeholder:text-text-muted"
+        />
+        <button
+          onClick={submit}
+          disabled={!query.trim() || !projectPath}
+          className="rounded bg-accent-green/20 px-2.5 py-1.5 text-[11px] font-medium text-accent-green transition-colors hover:bg-accent-green/30 disabled:opacity-40"
+        >
+          Ask
+        </button>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-3.5 py-3">
+        {!projectPath ? (
+          <EmptyState
+            icon={<MessageSquare size={20} className="text-text-faint" />}
+            title="No project open"
+            body="Open a workspace to ask its accumulated memory."
+          />
+        ) : !submitted.trim() ? (
+          <EmptyState
+            icon={<MessageSquare size={20} className="text-text-faint" />}
+            title="Ask your project"
+            body="Type a question to search learned patterns and flight lessons, ranked by relevance. No AI call — this is your own memory."
+          />
+        ) : results.length === 0 ? (
+          <EmptyState
+            icon={<Search size={20} className="text-text-faint" />}
+            title="Nothing relevant found"
+            body="No patterns or recent lessons matched that question for this project."
+          />
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            <div className="mb-1 text-[10px] text-text-faint">
+              {results.length} result{results.length === 1 ? "" : "s"} for{" "}
+              <span className="font-mono text-text-muted">“{submitted.trim()}”</span>
+            </div>
+            {results.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-start gap-2 rounded border border-bg-border bg-bg-primary px-2.5 py-2"
+              >
+                <span className="mt-px shrink-0">{ASK_ICON[item.kind]}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] leading-snug text-text-primary">{item.title}</div>
+                  <div className="mt-0.5 text-[9.5px] text-text-faint">{item.reason}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
