@@ -117,6 +117,8 @@ export function GitHubView() {
     notifications,
     fetchNotifications,
     releases,
+    isReleasesLoading,
+    releasesError,
     fetchReleases,
   } = useGitHubStore();
 
@@ -615,7 +617,11 @@ export function GitHubView() {
           )}
         </div>
       ) : tab === "releases" ? (
-        <ReleasesList releases={releases} />
+        <ReleasesList
+          releases={releases}
+          loading={isReleasesLoading}
+          error={releasesError}
+        />
       ) : (
         <ActivityFeed
           issues={issues}
@@ -654,7 +660,29 @@ export function GitHubView() {
 }
 
 /** GP6: read-only list of the selected repo's releases (GitHub + Gitea). */
-function ReleasesList({ releases }: { releases: GitHubRelease[] }) {
+function ReleasesList({
+  releases,
+  loading,
+  error,
+}: {
+  releases: GitHubRelease[];
+  loading: boolean;
+  error: string | null;
+}) {
+  if (loading && releases.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-[11px] text-text-muted">
+        Loading releases…
+      </div>
+    );
+  }
+  if (error && releases.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center px-4 text-center text-[11px] text-accent-red">
+        Couldn’t load releases: {error}
+      </div>
+    );
+  }
   if (releases.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-[11px] text-text-muted">

@@ -293,6 +293,9 @@ fn sanitize_trailer_value(s: &str) -> String {
 /// hook? Git for Windows bundles its own `sh`, but a vanilla Windows-OpenSSH /
 /// plain-git environment may have none — in which case the POSIX
 /// `prepare-commit-msg` hook silently no-ops. `exists` is injected for testing.
+// Only consumed on Windows (the warn path) and in tests; `#[cfg]` avoids a
+// dead_code warning on the documented Linux/macOS build targets.
+#[cfg(any(windows, test))]
 fn posix_shell_on_path_with<F: Fn(&std::path::Path) -> bool>(path_var: &str, exists: F) -> bool {
     let sep = if cfg!(windows) { ';' } else { ':' };
     path_var

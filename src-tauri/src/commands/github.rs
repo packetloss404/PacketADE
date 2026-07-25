@@ -510,8 +510,19 @@ pub async fn github_device_flow_start() -> Result<DeviceFlowStart, String> {
     let body = github_response_text(resp).await?;
     let v: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("Failed to parse device response: {}", e))?;
+    // GitHub can return HTTP 200 with an `{"error": ...}` body (e.g. a suspended
+    // or misconfigured OAuth app). Without device_code the poll loop would spin
+    // to expiry showing a blank code — surface the error instead of empty codes.
+    let device_code = v["device_code"].as_str().unwrap_or_default();
+    if device_code.is_empty() {
+        let msg = v["error_description"]
+            .as_str()
+            .or_else(|| v["error"].as_str())
+            .unwrap_or("GitHub did not return a device code");
+        return Err(msg.to_string());
+    }
     Ok(DeviceFlowStart {
-        device_code: v["device_code"].as_str().unwrap_or_default().to_string(),
+        device_code: device_code.to_string(),
         user_code: v["user_code"].as_str().unwrap_or_default().to_string(),
         verification_uri: v["verification_uri"]
             .as_str()
@@ -520,6 +531,14 @@ pub async fn github_device_flow_start() -> Result<DeviceFlowStart, String> {
         interval: v["interval"].as_u64().unwrap_or(5),
         expires_in: v["expires_in"].as_u64().unwrap_or(900),
     })
+}
+
+/// Whether a GitHub OAuth app client id is configured (env or baked brand const).
+/// The device-flow UI gates its button on this so stock builds don't show an
+/// affordance that always errors.
+#[tauri::command]
+pub fn github_oauth_configured() -> bool {
+    github_oauth_client_id().is_some()
 }
 
 #[derive(Debug, Serialize)]

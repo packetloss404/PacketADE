@@ -142,6 +142,10 @@ interface GitHubStore {
   prs: GitHubPr[];
   /** GP6: the selected repo's releases (read-only view). */
   releases: GitHubRelease[];
+  /** GP6: releases fetch in flight — distinguishes "loading" from "genuinely none". */
+  isReleasesLoading: boolean;
+  /** GP6: last releases fetch failed (vs. an empty repo) so the UI can say so. */
+  releasesError: string | null;
   prDiff: string | null;
   isPrLoading: boolean;
   /** Unix millis of the last successful repos/issues/PRs fetch. */
@@ -315,6 +319,8 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   isInvestigating: false,
   prs: [],
   releases: [],
+  isReleasesLoading: false,
+  releasesError: null,
   prDiff: null,
   isPrLoading: false,
   lastSyncAt: null,
@@ -690,13 +696,18 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   fetchReleases: async () => {
     const { config } = get();
     if (!get().isConnected || !config.selectedRepo) return;
+    set({ isReleasesLoading: true, releasesError: null });
     try {
       const json = await githubListReleases(config.selectedRepo.owner, config.selectedRepo.repo);
       const releases: GitHubRelease[] = JSON.parse(json);
-      set({ releases });
+      set({ releases, isReleasesLoading: false, releasesError: null });
     } catch (e) {
       logSwallowed("githubStore.fetchReleases")(e);
-      set({ releases: [] });
+      set({
+        releases: [],
+        isReleasesLoading: false,
+        releasesError: e instanceof Error ? e.message : String(e),
+      });
     }
   },
 
