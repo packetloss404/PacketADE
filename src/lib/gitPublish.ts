@@ -31,6 +31,10 @@ export interface PublishBranchAsPrInput {
   body: string;
   /** Open as a draft PR. Defaults to true (the async-Flight contract). */
   draft?: boolean;
+  /** GP5: transport-agnostic push. When provided (SSH attempts), it replaces
+   *  the local `git push` — the branch is pushed from the remote worktree host
+   *  so origin has it before the PR is opened via the GitHub API. */
+  remotePush?: () => Promise<void>;
 }
 
 export type PublishBranchAsPrResult =
@@ -65,9 +69,14 @@ function errMessage(err: unknown, fallback: string): string {
 export async function publishBranchAsPr(
   input: PublishBranchAsPrInput,
 ): Promise<PublishBranchAsPrResult> {
-  // 1. Push the branch to origin (sets upstream on first push).
+  // 1. Push the branch to origin (sets upstream on first push). SSH attempts
+  //    supply a `remotePush` that pushes from the remote worktree host instead.
   try {
-    await gitPushBranch(input.worktreePath, input.branch, false);
+    if (input.remotePush) {
+      await input.remotePush();
+    } else {
+      await gitPushBranch(input.worktreePath, input.branch, false);
+    }
   } catch (err) {
     return { ok: false, stage: "push", message: errMessage(err, "push failed") };
   }

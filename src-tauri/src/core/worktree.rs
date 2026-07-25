@@ -289,6 +289,25 @@ fn sanitize_trailer_value(s: &str) -> String {
 /// variant needs `auto_commit_trailer_format`, the issue variant ignores it —
 /// and is only invoked when the toggle is enabled. Returns the written hook
 /// path, or `None` when installation was skipped because the toggle is off.
+/// GP4: does a PATH contain a POSIX shell (sh/bash) that git could use to run a
+/// hook? Git for Windows bundles its own `sh`, but a vanilla Windows-OpenSSH /
+/// plain-git environment may have none — in which case the POSIX
+/// `prepare-commit-msg` hook silently no-ops. `exists` is injected for testing.
+// Only consumed on Windows (the warn path) and in tests; `#[cfg]` avoids a
+// dead_code warning on the documented Linux/macOS build targets.
+#[cfg(any(windows, test))]
+fn posix_shell_on_path_with<F: Fn(&std::path::Path) -> bool>(path_var: &str, exists: F) -> bool {
+    let sep = if cfg!(windows) { ';' } else { ':' };
+    path_var
+        .split(sep)
+        .filter(|d| !d.is_empty())
+        .any(|dir| {
+            ["sh.exe", "bash.exe", "sh", "bash"]
+                .iter()
+                .any(|exe| exists(&std::path::Path::new(dir).join(exe)))
+        })
+}
+
 async fn write_prepare_commit_msg_hook(
     worktree_path: &str,
     skip_note: &str,
@@ -344,7 +363,53 @@ async fn write_prepare_commit_msg_hook(
             }
         }
     }
+
+    // GP4: on Windows, the POSIX hook only runs if git can find an `sh`. Warn
+    // (once, non-fatal) when none is discoverable so the silent no-op is visible.
+    #[cfg(windows)]
+    {
+        let has_sh = std::env::var("PATH")
+            .map(|p| posix_shell_on_path_with(&p, |x| x.exists()))
+            .unwrap_or(false);
+        if !has_sh {
+            warn!(
+                path = ?hook_path,
+                "prepare-commit-msg hook installed but no POSIX shell (sh/bash) is on PATH — \
+                 the auto-trailer hook will not run under vanilla Windows OpenSSH. Install Git \
+                 for Windows (it bundles sh) to enable it."
+            );
+        }
+    }
+
     Ok(Some(hook_path))
+}
+
+#[cfg(test)]
+mod gp4_tests {
+    use super::posix_shell_on_path_with;
+    use std::path::Path;
+
+    #[test]
+    fn detects_sh_on_path() {
+        let sep = if cfg!(windows) { ";" } else { ":" };
+        let path = ["/usr/local/bin", "/opt/git/bin"].join(sep);
+        // sh present only in the second dir.
+        let exists = |p: &Path| p == Path::new("/opt/git/bin").join("sh") || p == Path::new("/opt/git/bin").join("sh.exe");
+        assert!(posix_shell_on_path_with(&path, exists));
+    }
+
+    #[test]
+    fn reports_missing_sh() {
+        let sep = if cfg!(windows) { ";" } else { ":" };
+        let path = ["/usr/local/bin", "/opt/git/bin"].join(sep);
+        assert!(!posix_shell_on_path_with(&path, |_| false));
+    }
+
+    #[test]
+    fn empty_path_has_no_shell() {
+        // No directories to probe, so nothing is found even if `exists` says yes.
+        assert!(!posix_shell_on_path_with("", |_| true));
+    }
 }
 
 async fn install_prepare_commit_msg_hook(

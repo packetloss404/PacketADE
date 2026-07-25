@@ -1806,6 +1806,51 @@ export async function gitHostSetActive(id: string): Promise<void> {
   return invoke("git_host_set_active", { id });
 }
 
+// GP3: GitHub OAuth device-flow auth.
+export interface DeviceFlowStart {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  interval: number;
+  expiresIn: number;
+}
+
+export type DeviceFlowStatus = "authorized" | "pending" | "slow_down" | "error";
+
+export interface DeviceFlowPoll {
+  status: DeviceFlowStatus;
+  message: string | null;
+}
+
+export async function githubDeviceFlowStart(): Promise<DeviceFlowStart> {
+  return invoke<DeviceFlowStart>("github_device_flow_start");
+}
+
+export async function githubDeviceFlowPoll(deviceCode: string): Promise<DeviceFlowPoll> {
+  return invoke<DeviceFlowPoll>("github_device_flow_poll", { deviceCode });
+}
+
+/** Whether an OAuth app client id is configured — gate the device-flow button on this. */
+export async function githubOauthConfigured(): Promise<boolean> {
+  return invoke<boolean>("github_oauth_configured");
+}
+
+// GP6: repo releases (raw passthrough JSON — parse into GitHubRelease[]).
+export interface GitHubRelease {
+  id: number;
+  tag_name: string;
+  name: string | null;
+  html_url: string;
+  published_at: string | null;
+  draft: boolean;
+  prerelease: boolean;
+  body: string | null;
+}
+
+export async function githubListReleases(owner: string, repo: string): Promise<string> {
+  return invoke<string>("github_list_releases", { owner, repo });
+}
+
 export async function githubListRepos(): Promise<string> {
   return invoke<string>("github_list_repos");
 }

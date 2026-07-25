@@ -30,6 +30,12 @@ pub const LEGACY_KEYRING_SERVICE: &str = "packetcode";
 /// HTTP User-Agent for outbound requests (GitHub API, web fetch, OpenRouter).
 pub const USER_AGENT: &str = "PacketADE/1.0";
 
+/// GP3: GitHub OAuth App client id for device-flow auth. A device-flow client
+/// id is public (not a secret), but each install must register its own OAuth
+/// App and bake it here (or override at runtime via `PACKETADE_GITHUB_CLIENT_ID`).
+/// Empty = device-flow disabled (PAT paste still works).
+pub const GITHUB_OAUTH_CLIENT_ID: &str = "";
+
 /// Prefix for temporary directories created under std::env::temp_dir().
 pub const TEMP_DIR_PREFIX: &str = "packetade";
 

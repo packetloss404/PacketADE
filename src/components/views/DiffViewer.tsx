@@ -1,5 +1,13 @@
 import { useMemo, useRef, useState } from "react";
 import { FileText, FilePlus, FileMinus, FileEdit, MessageSquarePlus, Loader2 } from "lucide-react";
+import {
+  groupCommentThreads,
+  threadsByAnchor,
+  lineAnchorKey,
+  type ReviewComment,
+  type CommentThread,
+} from "@/lib/reviewCommentThreads";
+import { relativeTime } from "@/lib/time";
 
 /** GitHub side + file line number that a comment anchors to. */
 export interface DiffCommentAnchor {
@@ -14,6 +22,8 @@ interface DiffViewerProps {
   /** When provided, each diff line gets a hover affordance to author an inline
    *  review comment. Omit for a read-only diff. */
   onAddComment?: (anchor: DiffCommentAnchor, body: string) => Promise<void>;
+  /** GP1: existing PR review comments, rendered inline under their anchor line. */
+  reviewComments?: ReviewComment[];
 }
 
 interface DiffLine {
@@ -190,8 +200,18 @@ function StatusIcon({ status }: { status: DiffFile["status"] }) {
   return <FileEdit size={11} className="text-accent-blue" />;
 }
 
-export function DiffViewer({ diff, className = "", onAddComment }: DiffViewerProps) {
+export function DiffViewer({
+  diff,
+  className = "",
+  onAddComment,
+  reviewComments,
+}: DiffViewerProps) {
   const parsed = useMemo(() => parseDiff(diff), [diff]);
+  // GP1: index review-comment threads by their diff-line anchor for O(1) lookup.
+  const threadIndex = useMemo(
+    () => threadsByAnchor(groupCommentThreads(reviewComments ?? [])),
+    [reviewComments],
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
@@ -301,6 +321,24 @@ export function DiffViewer({ diff, className = "", onAddComment }: DiffViewerPro
         >
           {parsed.lines.map((line, i) => {
             const anchor = onAddComment ? anchorForLine(line) : null;
+            // GP1: existing review threads anchored on this line. A context line
+            // carries both an old (LEFT) and new (RIGHT) coordinate, and a
+            // comment can be anchored on either side — so look up both keys and
+            // merge, rather than only the RIGHT side `anchorForLine` prefers
+            // (which silently dropped LEFT-side comments on context lines).
+            const linePath =
+              line.fileIndex != null ? parsed.files[line.fileIndex]?.path : undefined;
+            const threads =
+              line.type === "header" || !linePath
+                ? undefined
+                : ((p: string) => {
+                    const keys = [
+                      lineAnchorKey(p, line.newLine, "RIGHT"),
+                      lineAnchorKey(p, line.oldLine, "LEFT"),
+                    ].filter((k): k is string => k != null);
+                    const merged = keys.flatMap((k) => threadIndex.get(k) ?? []);
+                    return merged.length > 0 ? merged : undefined;
+                  })(linePath);
             return (
               <div
                 key={i}
@@ -332,6 +370,9 @@ export function DiffViewer({ diff, className = "", onAddComment }: DiffViewerPro
                     ))}
                   <span className="flex-1 whitespace-pre pr-3">{line.content}</span>
                 </div>
+                {threads?.map((t) => (
+                  <InlineThread key={t.root.id} thread={t} />
+                ))}
                 {composerLine === i && anchor && (
                   <CommentComposer
                     anchor={anchor}
@@ -348,6 +389,28 @@ export function DiffViewer({ diff, className = "", onAddComment }: DiffViewerPro
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** GP1: an existing review-comment thread rendered beneath its anchor line. */
+function InlineThread({ thread }: { thread: CommentThread }) {
+  const comments = [thread.root, ...thread.replies];
+  return (
+    <div className="border-y border-bg-border bg-bg-secondary/70 px-3 py-2">
+      <ul className="flex flex-col gap-1.5">
+        {comments.map((c) => (
+          <li key={c.id} className="font-sans">
+            <div className="flex items-baseline gap-1.5 text-[10px] text-text-muted">
+              <span className="font-semibold text-text-secondary">{c.user.login}</span>
+              {c.createdAt && <span>{relativeTime(Date.parse(c.createdAt))}</span>}
+            </div>
+            <div className="whitespace-pre-wrap break-words text-[11px] leading-snug text-text-primary">
+              {c.body}
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
