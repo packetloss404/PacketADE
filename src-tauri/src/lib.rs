@@ -224,6 +224,7 @@ pub fn run() {
             commands::git::git_unstage_files_remote,
             commands::git::git_commit_remote,
             commands::git::git_push_remote,
+            commands::git::git_diff_file_remote,
             commands::git::git_pull_remote,
             commands::git::git_create_branch_remote,
             commands::git::git_commit,
