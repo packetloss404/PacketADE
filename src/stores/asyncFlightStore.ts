@@ -577,19 +577,37 @@ function buildFlightCompletedPayload(flight: Flight): FlightCompletedPayload {
  * on subsequent no-op status writes. `captureFlightCompleted` itself
  * respects the `captureFlights` setting.
  */
+// A flight is settled once it reaches one of these. `done` = at least one
+// completed attempt and no failures; `failed` = any failed attempt (incl. mixed
+// terminal sets); `paused` = every attempt cancelled.
+const TERMINAL_FLIGHT_STATUSES = new Set(["done", "failed", "paused"]);
+
 function captureFlightCompletionOnTransition(flightId: string, statusBefore: string): void {
-  if (statusBefore === "done") return;
+  // Fire once, on the transition from a non-terminal status into any terminal
+  // one — not just `done`, so the M5 decay path is reachable and provenance is
+  // always cleaned up.
+  if (TERMINAL_FLIGHT_STATUSES.has(statusBefore)) return;
   const flightStore = useFlightStore.getState();
-  if (flightStore.computeFlightStatus(flightId) !== "done") return;
+  const status = flightStore.computeFlightStatus(flightId);
+  if (!TERMINAL_FLIGHT_STATUSES.has(status)) return;
   const flight = flightStore.flights.find((f) => f.id === flightId);
   if (!flight) return;
   const memory = useMemoryStore.getState();
+
+  // M5: rerate the patterns injected into this flight's launch brief. `done`
+  // bumps their confidence, `failed` decays it. An all-cancelled (`paused`)
+  // flight is a user abort, not a pattern failure, so drop its provenance
+  // without rerating.
+  if (status === "paused") {
+    memory.clearInjectedPatterns(flightId);
+  } else {
+    memory.adjustConfidenceForFlight(flightId, status === "done");
+  }
+
+  // Memory capture + the LLM retrospective are only meaningful for a flight
+  // that actually landed work — keep those gated on `done`.
+  if (status !== "done") return;
   memory.captureFlightCompleted(buildFlightCompletedPayload(flight), flight.projectPath);
-  // M5: rerate the patterns injected into this flight's launch brief — a
-  // completed attempt is a success signal, an all-failed/cancelled flight a
-  // decay signal.
-  const success = (flight.attempts ?? []).some((a) => a.status === "completed");
-  memory.adjustConfidenceForFlight(flightId, success);
   // M9: opt-in LLM retrospective enrichment (fire-and-forget). Runs after the
   // mechanical capture so a missing/unauthed CLI just leaves the derived
   // payload in place.

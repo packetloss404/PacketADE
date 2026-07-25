@@ -82,6 +82,19 @@ describe("parseFlightRetrospective (M9)", () => {
     expect(retro?.whatFailed).toEqual(["flaky test"]); // non-string dropped
   });
 
+  it("omits fields the model left empty so a merge won't clobber mechanical data", () => {
+    // Only summary + lessons present; tags/whatWorked/etc. must be ABSENT keys,
+    // not [] — otherwise {...mechanical, ...retro} would erase the flight tag.
+    const retro = parseFlightRetrospective(
+      JSON.stringify({ summary: "s", lessonsLearned: ["l"], whatWorked: [], tags: [] }),
+    );
+    expect(retro).not.toBeNull();
+    expect("tags" in retro!).toBe(false);
+    expect("whatWorked" in retro!).toBe(false);
+    expect("suggestedImprovements" in retro!).toBe(false);
+    expect(retro).toEqual({ summary: "s", lessonsLearned: ["l"] });
+  });
+
   it("returns null for non-JSON output", () => {
     expect(parseFlightRetrospective("the model refused")).toBeNull();
   });

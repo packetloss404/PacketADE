@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   captureFlightCompleted: vi.fn(),
   adjustConfidenceForFlight: vi.fn(),
   recordInjectedPatterns: vi.fn(),
+  clearInjectedPatterns: vi.fn(),
   updateFlightRetrospective: vi.fn(),
   conversations: [] as Array<{
     id: string;
@@ -89,6 +90,7 @@ vi.mock("@/stores/memoryStore", () => ({
       captureFlightCompleted: mocks.captureFlightCompleted,
       adjustConfidenceForFlight: mocks.adjustConfidenceForFlight,
       recordInjectedPatterns: mocks.recordInjectedPatterns,
+      clearInjectedPatterns: mocks.clearInjectedPatterns,
       updateFlightRetrospective: mocks.updateFlightRetrospective,
     }),
   },

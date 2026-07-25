@@ -11,9 +11,11 @@ import type { FlightSummaryInput } from "@/lib/tauri";
 import type { Flight, Attempt } from "@/types/flight";
 import type { FlightCompletedPayload } from "@/types/memory";
 
-export type FlightRetrospective = Pick<
-  FlightCompletedPayload,
-  "summary" | "whatWorked" | "whatFailed" | "lessonsLearned" | "suggestedImprovements" | "tags"
+export type FlightRetrospective = Partial<
+  Pick<
+    FlightCompletedPayload,
+    "summary" | "whatWorked" | "whatFailed" | "lessonsLearned" | "suggestedImprovements" | "tags"
+  >
 >;
 
 function terminalCounts(attempts: Attempt[]) {
@@ -94,5 +96,16 @@ export function parseFlightRetrospective(raw: string): FlightRetrospective | nul
     return null;
   }
 
-  return { summary, whatWorked, whatFailed, lessonsLearned, suggestedImprovements, tags };
+  // Only include fields the model actually populated. Empty fields are OMITTED
+  // (not returned as [] / "") so the caller's `{...mechanical, ...retro}` merge
+  // never erases mechanically-derived data — e.g. the `tags:["flight"]` marker
+  // or the completed-attempt `whatWorked` list — when the model leaves a field out.
+  const retro: FlightRetrospective = {};
+  if (summary) retro.summary = summary;
+  if (whatWorked.length) retro.whatWorked = whatWorked;
+  if (whatFailed.length) retro.whatFailed = whatFailed;
+  if (lessonsLearned.length) retro.lessonsLearned = lessonsLearned;
+  if (suggestedImprovements.length) retro.suggestedImprovements = suggestedImprovements;
+  if (tags.length) retro.tags = tags;
+  return retro;
 }

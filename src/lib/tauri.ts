@@ -402,7 +402,9 @@ export async function extractPatterns(projectPath: string, summaries: string): P
 }
 
 /** M9: input to the `summarize_flight` LLM retrospective. Mirrors the Rust
- *  `FlightSummaryInput` DTO (serde renames to snake_case fields). */
+ *  `FlightSummaryInput` DTO, which carries `#[serde(rename_all = "camelCase")]`
+ *  so these camelCase keys deserialize into its snake_case fields (Tauri only
+ *  auto-converts the top-level command args, not nested struct fields). */
 export interface FlightSummaryInput {
   title: string;
   objective: string;
