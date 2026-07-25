@@ -12,7 +12,8 @@ import { useAppStore } from "@/stores/appStore";
 import { computeGridLayout } from "@/lib/gridLayout";
 import { INSTALL_HINTS } from "@/lib/agent-install-hints";
 import { CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS, OPENCODE_MODELS, PACKETCODE_MODELS, EFFORT_LEVELS, type EffortLevel } from "@/lib/models";
-import { sshCheckRemotePath, gitGetOriginUrl, type RemotePathCheck } from "@/lib/tauri";
+import { sshCheckRemotePath, gitGetOriginUrl, cloneRepoRemote, type RemotePathCheck } from "@/lib/tauri";
+import { buildRemoteCloneArgs, shouldOfferRemoteClone } from "@/lib/remoteClone";
 import { parseGithubRemote } from "@/lib/git";
 import { storageKey } from "@/lib/brand";
 import { AdvancedAccordion } from "@/components/agents/composer/AdvancedAccordion";
@@ -97,6 +98,14 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   const [serverDropdownOpen, setServerDropdownOpen] = useState(false);
   const serverDropdownRef = useRef<HTMLDivElement>(null);
   const [pathProbe, setPathProbe] = useState<PathProbeState>({ kind: "idle" });
+
+  // S6: optional "clone a repo into this remote path" flow. When the target
+  // path isn't already a git repo, the user can paste a repo URL and we clone
+  // it (via clone_repo_remote) before creating the workspace.
+  const [cloneRepoUrl, setCloneRepoUrl] = useState("");
+  const [cloneBranch, setCloneBranch] = useState("");
+  const [cloning, setCloning] = useState(false);
+  const [cloneError, setCloneError] = useState<string | null>(null);
 
   // Local project path (only used when locationMode === "local").
   const [selectedProjectPath, setSelectedProjectPath] = useState(projectPath);
@@ -355,8 +364,8 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
     }
   }, [selectedProjectPath]);
 
-  function handleCreate() {
-    if (saveBlockedReason) return;
+  async function handleCreate() {
+    if (saveBlockedReason || cloning) return;
 
     const orderedAgents = AGENT_SLOTS
       .filter((s) => selected.has(s.id) && isAgentInstalled(s.id))
@@ -370,6 +379,25 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
     // (workspaceStore will use it as `projectPath`). For local workspaces
     // we keep using the user-selected local directory.
     const effectivePath = locationMode === "remote" ? remoteProjectPath.trim() : selectedProjectPath;
+
+    // S6: if the user asked to clone a repo into the remote path, do it first.
+    // A clone failure aborts creation (we don't want a workspace pointing at a
+    // half-cloned / empty directory).
+    if (locationMode === "remote") {
+      const cloneArgs = buildRemoteCloneArgs(server, cloneRepoUrl, effectivePath, cloneBranch);
+      if (cloneArgs) {
+        setCloning(true);
+        setCloneError(null);
+        try {
+          await cloneRepoRemote(cloneArgs);
+        } catch (e) {
+          setCloneError(e instanceof Error ? e.message : String(e));
+          setCloning(false);
+          return;
+        }
+        setCloning(false);
+      }
+    }
 
     createWorkspace(name.trim(), orderedAgents, effectivePath, {
       prompt: finalPrompt || undefined,
@@ -416,11 +444,12 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
           </button>
           <button
             onClick={handleCreate}
-            disabled={saveBlockedReason !== null}
+            disabled={saveBlockedReason !== null || cloning}
             title={saveBlockedReason ?? undefined}
-            className="px-4 py-1.5 text-ui bg-accent-green/15 text-accent-green border border-accent-green/30 rounded font-medium hover:bg-accent-green/25 transition-colors disabled:opacity-40"
+            className="px-4 py-1.5 text-ui bg-accent-green/15 text-accent-green border border-accent-green/30 rounded font-medium hover:bg-accent-green/25 transition-colors disabled:opacity-40 inline-flex items-center gap-1.5"
           >
-            Create Workspace
+            {cloning && <Loader2 size={11} className="animate-spin" />}
+            {cloning ? "Cloning…" : "Create Workspace"}
           </button>
         </div>
       }
@@ -721,6 +750,43 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                       className="w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-blue"
                     />
                     <RemotePathProbeIndicator state={pathProbe} />
+
+                    {/* S6: clone-a-repo affordance — only when the target path
+                        isn't already a git repo. */}
+                    {pathProbe.kind === "ok" &&
+                      shouldOfferRemoteClone(
+                        pathProbe.result.exists,
+                        pathProbe.result.isGitRepo,
+                      ) && (
+                        <div className="mt-2 rounded border border-bg-border bg-bg-primary/50 p-2">
+                          <label className="text-meta text-text-muted block mb-1 uppercase tracking-wider">
+                            Clone a repo here <span className="normal-case text-text-muted/70">(optional)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={cloneRepoUrl}
+                            onChange={(e) => {
+                              setCloneRepoUrl(e.target.value);
+                              setCloneError(null);
+                            }}
+                            placeholder="https://github.com/owner/repo.git"
+                            className="w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-blue"
+                          />
+                          <input
+                            type="text"
+                            value={cloneBranch}
+                            onChange={(e) => setCloneBranch(e.target.value)}
+                            placeholder="branch (optional — defaults to the repo's default)"
+                            className="mt-1.5 w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-blue"
+                          />
+                          <p className="mt-1 text-meta text-text-muted">
+                            The repo is cloned into the path above when you create the workspace.
+                          </p>
+                          {cloneError && (
+                            <p className="mt-1 text-meta text-accent-red">{cloneError}</p>
+                          )}
+                        </div>
+                      )}
                   </div>
                 )}
               </div>
