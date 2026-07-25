@@ -46,6 +46,24 @@ describe("gitPublish.publishBranchAsPr", () => {
     expect(result).toEqual({ ok: true, prNumber: 42 });
   });
 
+  it("GP5: uses remotePush instead of the local push when provided (SSH attempts)", async () => {
+    const remotePush = vi.fn().mockResolvedValue(undefined);
+    const result = await publishBranchAsPr({ ...baseInput, remotePush });
+
+    expect(remotePush).toHaveBeenCalledOnce();
+    expect(mocks.gitPushBranch).not.toHaveBeenCalled();
+    // The PR is still opened via the GitHub API once the remote push lands.
+    expect(mocks.githubCreatePr).toHaveBeenCalled();
+    expect(result).toEqual({ ok: true, prNumber: 42 });
+  });
+
+  it("GP5: a failed remotePush surfaces as a push-stage error", async () => {
+    const remotePush = vi.fn().mockRejectedValue(new Error("ssh push denied"));
+    const result = await publishBranchAsPr({ ...baseInput, remotePush });
+    expect(result).toEqual({ ok: false, stage: "push", message: "ssh push denied" });
+    expect(mocks.githubCreatePr).not.toHaveBeenCalled();
+  });
+
   it("passes draft:false through to githubCreatePr", async () => {
     await publishBranchAsPr({ ...baseInput, draft: false });
     expect(mocks.githubCreatePr).toHaveBeenCalledWith(
