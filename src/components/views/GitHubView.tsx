@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { useGitHubStore } from "@/stores/githubStore";
+import { capabilitiesFor } from "@/lib/git-hosts";
 import { useIssueStore } from "@/stores/issueStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore } from "@/stores/appStore";
@@ -143,6 +144,18 @@ export function GitHubView() {
   useEffect(() => {
     if (projectPath) void resolveActiveConnectionForProject(projectPath);
   }, [projectPath, resolveActiveConnectionForProject]);
+
+  // G10: capability gating for the active host (Gitea hides GitHub-only surfaces).
+  const connections = useGitHubStore((s) => s.connections);
+  const activeConnectionId = useGitHubStore((s) => s.activeConnectionId);
+  const activeCaps = useMemo(() => {
+    const kind = connections.find((c) => c.id === activeConnectionId)?.kind ?? "github";
+    return capabilitiesFor(kind);
+  }, [connections, activeConnectionId]);
+  useEffect(() => {
+    // If we land on a tab the active host doesn't support, fall back to Issues.
+    if (tab === "activity" && !activeCaps.activityFeed) setTab("issues");
+  }, [tab, activeCaps.activityFeed]);
 
   useEffect(() => {
     if (isConnected && repos.length === 0) {
@@ -333,6 +346,7 @@ export function GitHubView() {
         prCount={prs.length}
         unreadCount={unreadCount}
         lastSyncAt={lastSyncAt}
+        showActivity={activeCaps.activityFeed}
       />
 
       {error && (
@@ -636,6 +650,8 @@ interface SubTabsProps {
   prCount: number;
   unreadCount: number;
   lastSyncAt: number | null;
+  /** G10: Gitea has no Events activity feed — hide the tab for it. */
+  showActivity: boolean;
 }
 
 function SubTabs({
@@ -645,6 +661,7 @@ function SubTabs({
   prCount,
   unreadCount,
   lastSyncAt,
+  showActivity,
 }: SubTabsProps) {
   return (
     <div className="flex items-center px-2.5 bg-bg-secondary border-b border-bg-border flex-shrink-0">
@@ -664,13 +681,15 @@ function SubTabs({
         badge={prCount}
         accent="purple"
       />
-      <GhTab
-        active={tab === "activity"}
-        onClick={() => onTab("activity")}
-        icon={<Clock size={10} />}
-        label="Activity"
-        accent="default"
-      />
+      {showActivity && (
+        <GhTab
+          active={tab === "activity"}
+          onClick={() => onTab("activity")}
+          icon={<Clock size={10} />}
+          label="Activity"
+          accent="default"
+        />
+      )}
       <GhTab
         active={tab === "inbox"}
         onClick={() => onTab("inbox")}

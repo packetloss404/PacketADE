@@ -359,6 +359,16 @@ pub async fn git_host_set_active(
     Ok(())
 }
 
+/// G10: the kind of the currently-active host, for capability gating of
+/// GitHub-only surfaces (check-runs, GraphQL draft toggle).
+async fn active_host_kind(auth: &GitHubAuthState) -> GitHostKind {
+    let id = auth.active_connection_id.read().await.clone();
+    auth.connection(&id)
+        .await
+        .map(|c| c.kind)
+        .unwrap_or(GitHostKind::GitHub)
+}
+
 /// Build an authenticated client for the given host + token. GitHub construction
 /// is byte-identical to the previous inline builder (Bearer + vnd.github+json +
 /// brand UA); Gitea uses the `token` scheme.
@@ -2638,6 +2648,14 @@ pub async fn github_convert_pr_to_draft(
 ) -> Result<bool, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
+    // G10: the draft toggle uses GitHub's GraphQL API, which Gitea has no
+    // equivalent for (Gitea marks drafts via a `WIP:` title prefix).
+    if active_host_kind(auth.inner()).await == GitHostKind::Gitea {
+        return Err(
+            "Draft toggle isn't supported on Gitea — prefix the PR title with \"WIP:\" instead."
+                .to_string(),
+        );
+    }
     let client = github_client_from_state(auth.inner()).await?;
 
     // Step 1: REST fetch to resolve the GraphQL node_id for this PR.
@@ -2812,6 +2830,17 @@ pub async fn github_get_pr_checks(
 ) -> Result<GitHubPrChecksDto, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
+    // G10: Gitea has no check-runs API — degrade to empty rather than 404.
+    if active_host_kind(auth.inner()).await == GitHostKind::Gitea {
+        return Ok(GitHubPrChecksDto {
+            combined_state: "none".to_string(),
+            total: 0,
+            passing: 0,
+            failing: 0,
+            pending: 0,
+            runs: vec![],
+        });
+    }
     let client = github_client_from_state(auth.inner()).await?;
 
     // --- Step A: PR head SHA -------------------------------------------------

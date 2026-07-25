@@ -34,6 +34,31 @@ export const GIT_HOSTS: Record<GitHostKind, GitHostMeta> = {
   },
 };
 
+/**
+ * Per-host feature capabilities (the git-host analogue of `api-models.ts`'s
+ * provider capability flags). Drives UI gating so GitHub-only surfaces don't
+ * render broken on a Gitea/Forgejo workspace.
+ */
+export interface GitHostCapabilities {
+  /** GraphQL draft ⇄ ready toggle (GitHub). Gitea uses a `WIP:` title. */
+  draftPrToggle: boolean;
+  /** Modern check-runs API. Gitea has combined commit status only. */
+  checkRuns: boolean;
+  /** Typed Events activity feed. Gitea has no equivalent. */
+  activityFeed: boolean;
+  /** Inline PR reviews + review comments (both hosts, via G11). */
+  prReviews: boolean;
+}
+
+export const GIT_HOST_CAPABILITIES: Record<GitHostKind, GitHostCapabilities> = {
+  github: { draftPrToggle: true, checkRuns: true, activityFeed: true, prReviews: true },
+  gitea: { draftPrToggle: false, checkRuns: false, activityFeed: false, prReviews: true },
+};
+
+export function capabilitiesFor(kind: GitHostKind): GitHostCapabilities {
+  return GIT_HOST_CAPABILITIES[kind];
+}
+
 export type NormalizeResult = { value: string } | { error: string };
 
 /**
