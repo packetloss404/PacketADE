@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Check,
   Eye,
@@ -18,7 +18,11 @@ import {
   type GitHubMergeStrategy,
 } from "@/stores/githubStore";
 import { normalizeGiteaBaseUrl } from "@/lib/git-hosts";
-import { githubDeviceFlowStart, githubDeviceFlowPoll } from "@/lib/tauri";
+import {
+  githubDeviceFlowStart,
+  githubDeviceFlowPoll,
+  githubOauthConfigured,
+} from "@/lib/tauri";
 import { deviceFlowNextDelayMs, deviceFlowIsTerminal } from "@/lib/deviceFlow";
 
 /**
@@ -138,21 +142,45 @@ export function GitHubSettingsCard() {
   );
   const [deviceBusy, setDeviceBusy] = useState(false);
   const [deviceError, setDeviceError] = useState<string | null>(null);
+  // Only expose the device-flow button when an OAuth app client id is baked/env
+  // configured — otherwise start() always errors and the button is dead on arrival.
+  const [deviceFlowAvailable, setDeviceFlowAvailable] = useState(false);
+  // Guards the hand-rolled poll loop: flips false on unmount so we stop polling
+  // GitHub (up to ~15 min) and never setState on an unmounted component.
+  const deviceMountedRef = useRef(true);
+
+  useEffect(() => {
+    deviceMountedRef.current = true;
+    void githubOauthConfigured()
+      .then((ok) => {
+        if (deviceMountedRef.current) setDeviceFlowAvailable(ok);
+      })
+      .catch(() => {
+        /* leave button hidden on probe failure */
+      });
+    return () => {
+      deviceMountedRef.current = false;
+    };
+  }, []);
 
   async function handleDeviceAuth() {
     setDeviceBusy(true);
     setDeviceError(null);
     try {
       const start = await githubDeviceFlowStart();
+      if (!deviceMountedRef.current) return;
       setDeviceInfo({ userCode: start.userCode, verificationUri: start.verificationUri });
       let delay = Math.max(start.interval, 1) * 1000;
       const deadline = Date.now() + start.expiresIn * 1000;
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, delay));
+        if (!deviceMountedRef.current) return; // unmounted mid-wait → stop polling
         const poll = await githubDeviceFlowPoll(start.deviceCode);
+        if (!deviceMountedRef.current) return;
         delay = deviceFlowNextDelayMs(poll.status, delay);
         if (poll.status === "authorized") {
           await initializeAuth();
+          if (!deviceMountedRef.current) return;
           setDeviceInfo(null);
           setShowTokenInput(false);
           return;
@@ -166,10 +194,12 @@ export function GitHubSettingsCard() {
       setDeviceError("Device code expired — try again.");
       setDeviceInfo(null);
     } catch (e) {
-      setDeviceError(e instanceof Error ? e.message : String(e));
-      setDeviceInfo(null);
+      if (deviceMountedRef.current) {
+        setDeviceError(e instanceof Error ? e.message : String(e));
+        setDeviceInfo(null);
+      }
     } finally {
-      setDeviceBusy(false);
+      if (deviceMountedRef.current) setDeviceBusy(false);
     }
   }
 
@@ -287,7 +317,9 @@ export function GitHubSettingsCard() {
             <p className="text-[10px] text-accent-red mt-1.5">{error}</p>
           )}
 
-          {/* GP3: device-flow alternative to pasting a PAT */}
+          {/* GP3: device-flow alternative to pasting a PAT (only when an OAuth
+              app client id is configured — otherwise it would always error) */}
+          {deviceFlowAvailable && (
           <div className="mt-2 border-t border-bg-border pt-2">
             {deviceInfo ? (
               <div className="text-[10px] text-text-secondary">
@@ -321,6 +353,7 @@ export function GitHubSettingsCard() {
               <p className="text-[10px] text-accent-red mt-1">{deviceError}</p>
             )}
           </div>
+          )}
         </div>
       )}
 

@@ -7,6 +7,7 @@ import {
   setAttemptDraftPr,
   summarizeFlight,
   gitPushRemote,
+  toGitServerConfigInput,
   type AttemptTargetSpec,
 } from "@/lib/tauri";
 import {
@@ -194,6 +195,11 @@ async function publishAttemptAsDraftPr(flight: Flight, attempt: Attempt): Promis
   // GP5: pick the push transport. Local pushes from the app's checkout; SSH
   // pushes from the remote worktree host (`git_push_remote`) so origin has the
   // branch before we open the PR via the GitHub API — no remote `gh` needed.
+  // NOTE: this assumes the remote worktree's `origin` resolves to the same repo
+  // the GitHub pane has selected. If a user points the SSH host's origin at a
+  // different repo/host than `selectedRepo`, the push lands on one repo and the
+  // PR create runs against another (surfaced as a push/create-stage error, not
+  // silent). Cross-repo publish is out of scope for GP5.
   const worktreePath = attempt.target.worktreePath;
   let remotePush: (() => Promise<void>) | undefined;
   if (attempt.target.kind === "ssh") {
@@ -205,14 +211,9 @@ async function publishAttemptAsDraftPr(flight: Flight, attempt: Attempt): Promis
       });
       return;
     }
-    const serverConfig = {
-      id: server.id,
-      host: server.host,
-      port: server.port,
-      username: server.username,
-      keyPath: server.keyPath ?? null,
-      hostFingerprint: server.hostFingerprint ?? null,
-    };
+    // Use the shared converter so hostFingerprint is always forwarded (avoids a
+    // silent TOFU downgrade) — don't hand-roll the shape here.
+    const serverConfig = toGitServerConfigInput(server);
     remotePush = async () => {
       await gitPushRemote(serverConfig, worktreePath);
     };

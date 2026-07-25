@@ -1830,6 +1830,11 @@ export async function githubDeviceFlowPoll(deviceCode: string): Promise<DeviceFl
   return invoke<DeviceFlowPoll>("github_device_flow_poll", { deviceCode });
 }
 
+/** Whether an OAuth app client id is configured — gate the device-flow button on this. */
+export async function githubOauthConfigured(): Promise<boolean> {
+  return invoke<boolean>("github_oauth_configured");
+}
+
 // GP6: repo releases (raw passthrough JSON — parse into GitHubRelease[]).
 export interface GitHubRelease {
   id: number;
