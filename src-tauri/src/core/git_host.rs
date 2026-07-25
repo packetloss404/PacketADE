@@ -81,6 +81,24 @@ impl GitHost {
         }
     }
 
+    /// PR diff endpoint. GitHub returns the diff from the PR resource via a
+    /// media-type `Accept` header; Gitea serves it at a `.diff` URL suffix.
+    pub fn pr_diff_path(&self, owner: &str, repo: &str, number: u32) -> String {
+        match self.kind {
+            GitHostKind::GitHub => format!("/repos/{}/{}/pulls/{}", owner, repo, number),
+            GitHostKind::Gitea => format!("/repos/{}/{}/pulls/{}.diff", owner, repo, number),
+        }
+    }
+
+    /// The `Accept` header to request a PR diff, or `None` when the diff comes
+    /// from a URL suffix (Gitea) and no special media type is needed.
+    pub fn pr_diff_accept(&self) -> Option<&'static str> {
+        match self.kind {
+            GitHostKind::GitHub => Some("application/vnd.github.diff"),
+            GitHostKind::Gitea => None,
+        }
+    }
+
     /// Authorization header value. GitHub uses `Bearer`; Gitea uses `token`
     /// (Gitea also accepts `Bearer`, but `token` is its documented scheme).
     fn auth_header(&self, token: &str) -> String {
