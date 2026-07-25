@@ -2,13 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PersistedState } from "@/lib/tauri";
 
 const mocks = vi.hoisted(() => ({
-  detectAgent: vi.fn(),
+  detectCliCatalog: vi.fn(),
   loadPersistedState: vi.fn(),
   saveAgentsSlice: vi.fn(),
 }));
 
 vi.mock("@/lib/tauri", () => ({
-  detectAgent: mocks.detectAgent,
+  detectCliCatalog: mocks.detectCliCatalog,
   loadPersistedState: mocks.loadPersistedState,
   saveAgentsSlice: mocks.saveAgentsSlice,
 }));
