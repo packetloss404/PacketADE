@@ -18,6 +18,8 @@ import {
   type GitHubMergeStrategy,
 } from "@/stores/githubStore";
 import { normalizeGiteaBaseUrl } from "@/lib/git-hosts";
+import { githubDeviceFlowStart, githubDeviceFlowPoll } from "@/lib/tauri";
+import { deviceFlowNextDelayMs, deviceFlowIsTerminal } from "@/lib/deviceFlow";
 
 /**
  * v0.8: Settings → GitHub card.
@@ -126,6 +128,49 @@ export function GitHubSettingsCard() {
 
   async function handleDisconnect() {
     await disconnect();
+  }
+
+  // GP3: GitHub OAuth device-flow. Falls back gracefully (a clear error) when no
+  // OAuth app client id is configured — PAT paste still works.
+  const initializeAuth = useGitHubStore((s) => s.initializeAuth);
+  const [deviceInfo, setDeviceInfo] = useState<{ userCode: string; verificationUri: string } | null>(
+    null,
+  );
+  const [deviceBusy, setDeviceBusy] = useState(false);
+  const [deviceError, setDeviceError] = useState<string | null>(null);
+
+  async function handleDeviceAuth() {
+    setDeviceBusy(true);
+    setDeviceError(null);
+    try {
+      const start = await githubDeviceFlowStart();
+      setDeviceInfo({ userCode: start.userCode, verificationUri: start.verificationUri });
+      let delay = Math.max(start.interval, 1) * 1000;
+      const deadline = Date.now() + start.expiresIn * 1000;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, delay));
+        const poll = await githubDeviceFlowPoll(start.deviceCode);
+        delay = deviceFlowNextDelayMs(poll.status, delay);
+        if (poll.status === "authorized") {
+          await initializeAuth();
+          setDeviceInfo(null);
+          setShowTokenInput(false);
+          return;
+        }
+        if (deviceFlowIsTerminal(poll.status)) {
+          setDeviceError(poll.message ?? "Authorization failed");
+          setDeviceInfo(null);
+          return;
+        }
+      }
+      setDeviceError("Device code expired — try again.");
+      setDeviceInfo(null);
+    } catch (e) {
+      setDeviceError(e instanceof Error ? e.message : String(e));
+      setDeviceInfo(null);
+    } finally {
+      setDeviceBusy(false);
+    }
   }
 
   return (
@@ -241,6 +286,41 @@ export function GitHubSettingsCard() {
           {error && (
             <p className="text-[10px] text-accent-red mt-1.5">{error}</p>
           )}
+
+          {/* GP3: device-flow alternative to pasting a PAT */}
+          <div className="mt-2 border-t border-bg-border pt-2">
+            {deviceInfo ? (
+              <div className="text-[10px] text-text-secondary">
+                Enter code{" "}
+                <span className="font-mono font-semibold text-text-primary">
+                  {deviceInfo.userCode}
+                </span>{" "}
+                at{" "}
+                <a
+                  href={deviceInfo.verificationUri}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-accent-green underline"
+                >
+                  {deviceInfo.verificationUri}
+                </a>
+                <span className="ml-1.5 text-text-muted">· waiting for authorization…</span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void handleDeviceAuth()}
+                disabled={deviceBusy}
+                className="inline-flex items-center gap-1 text-[10px] text-accent-green hover:text-accent-green/80 disabled:opacity-50"
+              >
+                <Github size={10} />
+                {deviceBusy ? "Starting…" : "Or authorize with GitHub (device flow)"}
+              </button>
+            )}
+            {deviceError && (
+              <p className="text-[10px] text-accent-red mt-1">{deviceError}</p>
+            )}
+          </div>
         </div>
       )}
 

@@ -1806,6 +1806,30 @@ export async function gitHostSetActive(id: string): Promise<void> {
   return invoke("git_host_set_active", { id });
 }
 
+// GP3: GitHub OAuth device-flow auth.
+export interface DeviceFlowStart {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  interval: number;
+  expiresIn: number;
+}
+
+export type DeviceFlowStatus = "authorized" | "pending" | "slow_down" | "error";
+
+export interface DeviceFlowPoll {
+  status: DeviceFlowStatus;
+  message: string | null;
+}
+
+export async function githubDeviceFlowStart(): Promise<DeviceFlowStart> {
+  return invoke<DeviceFlowStart>("github_device_flow_start");
+}
+
+export async function githubDeviceFlowPoll(deviceCode: string): Promise<DeviceFlowPoll> {
+  return invoke<DeviceFlowPoll>("github_device_flow_poll", { deviceCode });
+}
+
 export async function githubListRepos(): Promise<string> {
   return invoke<string>("github_list_repos");
 }
