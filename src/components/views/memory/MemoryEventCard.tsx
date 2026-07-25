@@ -213,6 +213,10 @@ function SessionCard({
   );
 }
 
+// M10: read-compat only. Nothing emits `task_completed` anymore (the autonomous
+// task scheduler that did was removed in July 2026), and the Timeline no longer
+// offers a "Tasks" filter chip — but this renderer stays so any events persisted
+// before that removal still display under the "All" filter instead of vanishing.
 function TaskCard({
   event,
 }: {

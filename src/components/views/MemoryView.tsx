@@ -33,19 +33,11 @@ import { computeMemoryDigest, type MemoryDigest } from "@/lib/memoryDigest";
 import { useMemorySettingsStore } from "@/stores/memorySettingsStore";
 import { useAppStore } from "@/stores/appStore";
 import { MemoryEventCard } from "./memory/MemoryEventCard";
+import { TIMELINE_FILTERS, type FilterType } from "./memory/timelineFilters";
 import type { MemoryEvent, MemoryEventType, PatternCategory, LearnedPattern } from "@/types/memory";
 import { relativeTime } from "@/lib/time";
 
 type Tab = "patterns" | "timeline" | "ask";
-type FilterType = "all" | MemoryEventType;
-
-const FILTERS: { key: FilterType; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "session_completed", label: "Sessions" },
-  { key: "task_completed", label: "Tasks" },
-  { key: "flight_completed", label: "Flights" },
-  { key: "manual_note", label: "Notes" },
-];
 
 // M2: rolling date-window chips for the Timeline.
 const DATE_RANGES: { key: MemoryDateRange; label: string }[] = [
@@ -914,7 +906,7 @@ function TimelineTab({
     <>
       {/* Filter row */}
       <div className="flex flex-shrink-0 items-center gap-1 border-b border-bg-border bg-bg-secondary px-3.5 py-2">
-        {FILTERS.map((f) => {
+        {TIMELINE_FILTERS.map((f) => {
           const active = filter === f.key;
           return (
             <button
