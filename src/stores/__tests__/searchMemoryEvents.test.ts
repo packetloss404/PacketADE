@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { searchMemoryEvents } from "@/stores/memoryStore";
+import { searchMemoryEvents, filterMemoryEventsByScope } from "@/stores/memoryStore";
 
 // searchMemoryEvents only reads `.payload` (JSON-stringified), so a minimal
 // shape is enough to exercise the ranker.
@@ -30,5 +30,41 @@ describe("searchMemoryEvents (M1)", () => {
   it("drops events that match neither by token nor substring", () => {
     const events = [ev("a", "database schema notes"), ev("b", "completely unrelated")];
     expect(searchMemoryEvents(events, "database").map((e) => e.id)).toEqual(["a"]);
+  });
+});
+
+describe("filterMemoryEventsByScope (M2)", () => {
+  const now = 1_000_000_000_000;
+  const day = 24 * 60 * 60_000;
+  const e = (id: string, projectPath: string, ageMs: number) => ({
+    id,
+    projectPath,
+    timestamp: now - ageMs,
+  });
+
+  it("keeps everything with the default (all / null) scope", () => {
+    const events = [e("a", "/p1", 0), e("b", "/p2", 100 * day)];
+    expect(filterMemoryEventsByScope(events, { now }).map((x) => x.id)).toEqual(["a", "b"]);
+  });
+
+  it("filters by project path", () => {
+    const events = [e("a", "/p1", 0), e("b", "/p2", 0)];
+    expect(filterMemoryEventsByScope(events, { project: "/p1", now }).map((x) => x.id)).toEqual([
+      "a",
+    ]);
+  });
+
+  it("drops events older than the date window", () => {
+    const events = [e("recent", "/p", 2 * day), e("old", "/p", 40 * day)];
+    expect(filterMemoryEventsByScope(events, { dateRange: "30d", now }).map((x) => x.id)).toEqual([
+      "recent",
+    ]);
+  });
+
+  it("composes project + date window", () => {
+    const events = [e("a", "/p1", 2 * day), e("b", "/p2", 2 * day), e("c", "/p1", 40 * day)];
+    expect(
+      filterMemoryEventsByScope(events, { project: "/p1", dateRange: "30d", now }).map((x) => x.id),
+    ).toEqual(["a"]);
   });
 });
