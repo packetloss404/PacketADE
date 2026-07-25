@@ -18,6 +18,8 @@ import {
   buildFlightPlanningSystemPrompt,
   FLIGHT_PLANNING_ALLOWED_TOOLS,
 } from "@/lib/flightPlanning";
+import { useMemoryStore } from "@/stores/memoryStore";
+import { selectRecurringErrorHint } from "@/lib/recurringErrorHint";
 import { MultiTargetPicker, type PickedTarget } from "./MultiTargetPicker";
 import { type AttemptTargetSpec } from "@/lib/tauri";
 import type { FlightPriority } from "@/types/flight";
@@ -109,6 +111,15 @@ export function LaunchAsyncFlightModal({
   const promptShort = useMemo(
     () => (prompt.length > 60 ? prompt.slice(0, 57) + "…" : prompt),
     [prompt],
+  );
+
+  // M6: "this looks familiar" — warn when the prompt overlaps a known pitfall
+  // pattern or a lesson that has recurred across prior flights.
+  const memoryPatterns = useMemoryStore((s) => s.patterns);
+  const memoryEvents = useMemoryStore((s) => s.events);
+  const recurringHint = useMemo(
+    () => selectRecurringErrorHint(prompt, memoryPatterns, memoryEvents),
+    [prompt, memoryPatterns, memoryEvents],
   );
 
   const targetSpecs = useMemo(() => picked.map(pickedToSpec), [picked]);
@@ -363,6 +374,18 @@ export function LaunchAsyncFlightModal({
             rows={4}
             className="focus:border-accent-green/50 w-full resize-none rounded border border-bg-border bg-bg-primary px-3 py-2 text-xs text-text-primary outline-none placeholder:text-text-muted"
           />
+          {recurringHint && (
+            <div className="flex items-start gap-1.5 rounded border border-accent-amber/40 bg-accent-amber/10 px-2.5 py-1.5 text-[11px] leading-snug text-accent-amber">
+              <AlertTriangle size={12} className="mt-px shrink-0" />
+              <span>
+                <span className="font-medium">This looks familiar</span>
+                {recurringHint.source === "failure" && recurringHint.occurrences
+                  ? ` (hit in ${recurringHint.occurrences} prior flight${recurringHint.occurrences === 1 ? "" : "s"})`
+                  : ""}
+                : {recurringHint.text}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Title (optional) */}
