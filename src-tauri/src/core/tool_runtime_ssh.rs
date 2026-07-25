@@ -15,9 +15,27 @@ const SSH_OVERHEAD_SECS: u64 = 10;
 /// Exit code emitted by the remote scripts when the resolved (symlink-followed)
 /// path escapes the workspace base.
 const EXIT_ESCAPE: i32 = 8;
-/// Exit code emitted by the remote scripts when `realpath` is unavailable so
-/// confinement cannot be verified (fail closed).
+/// Exit code emitted by the remote scripts when neither `realpath` nor
+/// `readlink -f` is available, so confinement cannot be verified (fail closed).
 const EXIT_NO_REALPATH: i32 = 9;
+
+/// S8: portable canonicalizer shell function injected before any confinement
+/// check. Prefers `realpath`, falls back to `readlink -f` (present on BusyBox /
+/// minimal remotes that lack `realpath`), and fails CLOSED with
+/// [`EXIT_NO_REALPATH`] only when neither exists. Both resolve symlinks and
+/// require the path (or, for a parent probe, that path) to exist — matching the
+/// previous `realpath --` semantics. Defining it more than once in a single
+/// script (write_file uses two preludes) is harmless.
+fn resolve_fn_def() -> String {
+    format!(
+        "__pkt_resolve() {{\n\
+         if command -v realpath >/dev/null 2>&1; then realpath -- \"$1\"\n\
+         elif command -v readlink >/dev/null 2>&1; then readlink -f -- \"$1\"\n\
+         else exit {nr}; fi\n\
+         }}\n",
+        nr = EXIT_NO_REALPATH,
+    )
+}
 
 /// Emit a POSIX-sh confinement prelude that realpath-resolves the workspace
 /// `base` (which may itself be reached via a symlink) and the resolved
@@ -47,13 +65,14 @@ fn confine_prelude(base_q: &str, tgt_q: &str, mode: ConfineTarget) -> String {
     // slash on both the base and the candidate prevents "/workspace-evil"
     // from matching "/workspace".
     let base_line = format!(
-        "__base=$(realpath -- {base}) || exit {nr}\n",
+        "{resolve}__base=$(__pkt_resolve {base}) || exit {nr}\n",
+        resolve = resolve_fn_def(),
         base = base_q,
         nr = EXIT_NO_REALPATH
     );
     match mode {
         ConfineTarget::Existing => format!(
-            "{base}__rp=$(realpath -- {tgt}) || exit {nr}\n\
+            "{base}__rp=$(__pkt_resolve {tgt}) || exit {nr}\n\
              case \"$__rp/\" in \"$__base\"/*) : ;; *) exit {esc};; esac\n",
             base = base_line,
             tgt = tgt_q,
@@ -68,10 +87,10 @@ fn confine_prelude(base_q: &str, tgt_q: &str, mode: ConfineTarget) -> String {
         // reason, so we mirror that defense rather than confining the parent
         // alone.
         ConfineTarget::Parent => format!(
-            "{base}__rp=$(realpath -- \"$(dirname -- {tgt})\") || exit {nr}\n\
+            "{base}__rp=$(__pkt_resolve \"$(dirname -- {tgt})\") || exit {nr}\n\
              case \"$__rp/\" in \"$__base\"/*) : ;; *) exit {esc};; esac\n\
              if [ -e {tgt} ] || [ -L {tgt} ]; then\n\
-             __rpl=$(realpath -- {tgt}) || exit {nr}\n\
+             __rpl=$(__pkt_resolve {tgt}) || exit {nr}\n\
              case \"$__rpl/\" in \"$__base\"/*) : ;; *) exit {esc};; esac\n\
              fi\n",
             base = base_line,
@@ -88,15 +107,16 @@ fn confine_prelude(base_q: &str, tgt_q: &str, mode: ConfineTarget) -> String {
 /// the normal parent confinement ran.
 fn confine_creation_ancestor_prelude(base_q: &str, tgt_q: &str) -> String {
     format!(
-        "__base=$(realpath -- {base}) || exit {nr}\n\
+        "{resolve}__base=$(__pkt_resolve {base}) || exit {nr}\n\
          __probe=$(dirname -- {tgt})\n\
          while [ ! -e \"$__probe\" ] && [ ! -L \"$__probe\" ]; do\n\
          __next=$(dirname -- \"$__probe\")\n\
          [ \"$__next\" = \"$__probe\" ] && exit {esc}\n\
          __probe=$__next\n\
          done\n\
-         __ancestor=$(realpath -- \"$__probe\") || exit {nr}\n\
+         __ancestor=$(__pkt_resolve \"$__probe\") || exit {nr}\n\
          case \"$__ancestor/\" in \"$__base\"/*) : ;; *) exit {esc};; esac\n",
+        resolve = resolve_fn_def(),
         base = base_q,
         tgt = tgt_q,
         nr = EXIT_NO_REALPATH,
@@ -112,9 +132,10 @@ fn confinement_error(code: i32) -> Option<String> {
         EXIT_ESCAPE => {
             Some("Path escapes the workspace (resolved outside via symlink)".to_string())
         }
-        EXIT_NO_REALPATH => {
-            Some("Remote host lacks 'realpath'; cannot verify workspace confinement".to_string())
-        }
+        EXIT_NO_REALPATH => Some(
+            "Remote host lacks both 'realpath' and 'readlink'; cannot verify workspace confinement"
+                .to_string(),
+        ),
         _ => None,
     }
 }
@@ -531,14 +552,15 @@ mod tests {
             "existing-leaf branch present"
         );
         assert!(
-            s.contains("__rpl=$(realpath -- \"$p\")"),
-            "leaf is realpath-resolved"
+            s.contains("__rpl=$(__pkt_resolve \"$p\")"),
+            "leaf is canonicalized"
         );
-        // base + parent + leaf each fail closed when realpath is missing.
+        // base + parent + leaf each fail closed, plus the one in the resolver
+        // fn's neither-tool-available branch (S8).
         assert_eq!(
             s.matches(&format!("exit {}", EXIT_NO_REALPATH)).count(),
-            3,
-            "fail-closed on base, parent, and leaf"
+            4,
+            "fail-closed on base, parent, leaf, and no-resolver"
         );
         // parent-escape and leaf-escape are both rejected.
         assert_eq!(
@@ -553,8 +575,9 @@ mod tests {
         let s = confine_prelude("'/ws'", "\"$p\"", ConfineTarget::Existing);
         assert!(!s.contains("dirname --"));
         assert!(!s.contains("__rpl"));
-        // base + the single existing-target resolve.
-        assert_eq!(s.matches(&format!("exit {}", EXIT_NO_REALPATH)).count(), 2);
+        // base + the single existing-target resolve, plus the resolver fn's
+        // no-tool branch (S8).
+        assert_eq!(s.matches(&format!("exit {}", EXIT_NO_REALPATH)).count(), 3);
         assert_eq!(s.matches(&format!("exit {}", EXIT_ESCAPE)).count(), 1);
     }
 
@@ -566,10 +589,33 @@ mod tests {
             ancestor
         );
 
-        let confine_pos = script.find("__ancestor=$(realpath").unwrap();
+        let confine_pos = script.find("__ancestor=$(__pkt_resolve").unwrap();
         let mkdir_pos = script.find("mkdir -p").unwrap();
         assert!(confine_pos < mkdir_pos);
         assert!(ancestor.contains("while [ ! -e \"$__probe\" ] && [ ! -L \"$__probe\" ]"));
         assert!(ancestor.contains("case \"$__ancestor/\""));
+    }
+
+    // S8: the confinement resolver prefers realpath, falls back to readlink -f
+    // (BusyBox / minimal remotes), and fails closed only when neither exists.
+    #[test]
+    fn resolver_falls_back_to_readlink_then_fails_closed() {
+        let s = confine_prelude("'/ws'", "\"$p\"", ConfineTarget::Existing);
+        assert!(
+            s.contains("command -v realpath >/dev/null 2>&1; then realpath -- \"$1\""),
+            "prefers realpath"
+        );
+        assert!(
+            s.contains("command -v readlink >/dev/null 2>&1; then readlink -f -- \"$1\""),
+            "falls back to readlink -f"
+        );
+        assert!(
+            s.contains(&format!("else exit {}", EXIT_NO_REALPATH)),
+            "fails closed when neither tool exists"
+        );
+        // The resolver function is defined before it is first used.
+        let def_pos = s.find("__pkt_resolve() {").unwrap();
+        let use_pos = s.find("__base=$(__pkt_resolve").unwrap();
+        assert!(def_pos < use_pos, "resolver defined before use");
     }
 }
