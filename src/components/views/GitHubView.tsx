@@ -135,6 +135,15 @@ export function GitHubView() {
     initializeAuth();
   }, [initializeAuth]);
 
+  // G3: resolve which host this workspace belongs to (from its origin remote)
+  // so the pane targets the right host and shows the right branding.
+  const resolveActiveConnectionForProject = useGitHubStore(
+    (s) => s.resolveActiveConnectionForProject,
+  );
+  useEffect(() => {
+    if (projectPath) void resolveActiveConnectionForProject(projectPath);
+  }, [projectPath, resolveActiveConnectionForProject]);
+
   useEffect(() => {
     if (isConnected && repos.length === 0) {
       fetchRepos();

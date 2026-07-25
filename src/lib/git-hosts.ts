@@ -5,6 +5,9 @@
 
 import type { GitHostKind } from "@/lib/tauri";
 
+/** The always-present GitHub connection id (mirrors the Rust constant). */
+export const GITHUB_CONNECTION_ID = "github";
+
 export interface GitHostMeta {
   kind: GitHostKind;
   name: string;
