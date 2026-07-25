@@ -139,6 +139,14 @@ interface MemoryStore {
    *  counts of newly-added items, or null if the JSON was invalid. */
   importMemory: (json: string) => { addedEvents: number; addedPatterns: number } | null;
 
+  /** M5: record which learned-pattern ids were injected into a flight's launch
+   *  brief, so their confidence can be rerated when the flight settles. */
+  recordInjectedPatterns: (flightId: string, patternIds: string[]) => void;
+  /** M5: rerate the confidence of every pattern injected into `flightId` by the
+   *  flight's success, then clear that flight's provenance. No-op if nothing was
+   *  recorded (e.g. injection disabled, or the flight settled after a restart). */
+  adjustConfidenceForFlight: (flightId: string, success: boolean) => void;
+
   /** Context injection (live, not snapshot). Accepts either a project-path
    * string (legacy single-arg form) or an options object so callers can
    * pass a sessionId without breaking back-compat. */
@@ -469,6 +477,49 @@ export function serializeMemoryMarkdown(events: MemoryEvent[], patterns: Learned
   return lines.join("\n");
 }
 
+/* ------------------------------------------------------------------ *
+ * M5 — outcome-based confidence rerating.
+ * ------------------------------------------------------------------ */
+
+// A pattern that was injected into a flight's brief earns a small confidence
+// bump when that flight succeeds and a steeper decay when it fails — a burned
+// pattern loses trust faster than an unproven one earns it. Both are clamped.
+const CONFIDENCE_BUMP = 0.05;
+const CONFIDENCE_DECAY = 0.1;
+const CONFIDENCE_FLOOR = 0.1;
+const CONFIDENCE_CEIL = 1;
+
+/** M5: pure — the new confidence after an outcome, clamped to [floor, 1]. */
+export function rerateConfidence(current: number, success: boolean): number {
+  const next = success ? current + CONFIDENCE_BUMP : current - CONFIDENCE_DECAY;
+  return Math.max(CONFIDENCE_FLOOR, Math.min(CONFIDENCE_CEIL, next));
+}
+
+/**
+ * M5: pure — rerate every pattern whose id is in `injectedIds` by the flight's
+ * outcome, returning a new array. Untouched entries are preserved by reference
+ * so a no-op rerate leaves the array referentially stable per-element.
+ */
+export function applyConfidenceRerate(
+  patterns: LearnedPattern[],
+  injectedIds: Iterable<string>,
+  success: boolean,
+): LearnedPattern[] {
+  const idSet = new Set(injectedIds);
+  if (idSet.size === 0) return patterns;
+  return patterns.map((p) => {
+    if (!idSet.has(p.id)) return p;
+    const confidence = rerateConfidence(p.confidence, success);
+    return confidence === p.confidence ? p : { ...p, confidence };
+  });
+}
+
+// In-session provenance: which learned-pattern ids were injected into each
+// flight's launch brief. Deliberately NOT persisted — rerating is best-effort,
+// and a flight that only settles in a later session simply goes unrerated
+// rather than dragging a provenance map through the backend state schema.
+const injectedPatternsByFlight = new Map<string, string[]>();
+
 /**
  * v0.8-H: structured context items used by both `getContextForSession`
  * (rendered preview) and `composeMemoryBrief` (prompt injection). Kept as
@@ -679,6 +730,19 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     const events = capEvents([...get().events, event]);
     set({ events });
     void persistState(events, get().patterns);
+  },
+
+  recordInjectedPatterns: (flightId, patternIds) => {
+    if (patternIds.length > 0) injectedPatternsByFlight.set(flightId, patternIds);
+  },
+
+  adjustConfidenceForFlight: (flightId, success) => {
+    const ids = injectedPatternsByFlight.get(flightId);
+    if (!ids || ids.length === 0) return;
+    injectedPatternsByFlight.delete(flightId);
+    const patterns = applyConfidenceRerate(get().patterns, ids, success);
+    set({ patterns });
+    void persistState(get().events, patterns);
   },
 
   captureManually: ({ projectPath, source, summary, body, tags }) => {

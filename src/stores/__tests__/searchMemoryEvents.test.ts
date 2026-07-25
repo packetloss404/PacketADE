@@ -6,6 +6,8 @@ import {
   parseMemoryImport,
   mergeMemoryImport,
   serializeMemoryMarkdown,
+  rerateConfidence,
+  applyConfidenceRerate,
 } from "@/stores/memoryStore";
 import type { MemoryEvent, LearnedPattern } from "@/types/memory";
 
@@ -139,5 +141,45 @@ describe("memory export / import (M3)", () => {
     expect(md).toContain("(30%) low conf");
     // higher confidence sorts first within a category
     expect(md.indexOf("high conf")).toBeLessThan(md.indexOf("low conf"));
+  });
+});
+
+describe("confidence rerating (M5)", () => {
+  it("bumps up on success and decays down on failure", () => {
+    expect(rerateConfidence(0.6, true)).toBeCloseTo(0.65);
+    expect(rerateConfidence(0.6, false)).toBeCloseTo(0.5);
+  });
+
+  it("clamps to the ceiling on success and the floor on failure", () => {
+    expect(rerateConfidence(0.98, true)).toBe(1);
+    expect(rerateConfidence(0.12, false)).toBe(0.1);
+  });
+
+  it("only rerates the injected ids, preserving others by reference", () => {
+    const pat = (id: string, confidence: number): LearnedPattern => ({
+      id,
+      pattern: id,
+      category: "convention",
+      confidence,
+      extractedAt: 1,
+    });
+    const untouched = pat("keep", 0.6);
+    const patterns = [pat("inj", 0.6), untouched];
+    const out = applyConfidenceRerate(patterns, ["inj"], true);
+    expect(out.find((p) => p.id === "inj")?.confidence).toBeCloseTo(0.65);
+    // the un-injected pattern is the same object, not a rerated copy
+    expect(out.find((p) => p.id === "keep")).toBe(untouched);
+  });
+
+  it("is a no-op when no ids are supplied", () => {
+    const pat = (id: string): LearnedPattern => ({
+      id,
+      pattern: id,
+      category: "convention",
+      confidence: 0.5,
+      extractedAt: 1,
+    });
+    const patterns = [pat("a")];
+    expect(applyConfidenceRerate(patterns, [], true)).toBe(patterns);
   });
 });
