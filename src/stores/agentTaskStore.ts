@@ -20,6 +20,7 @@ import {
   type ResumeMessage,
 } from "@/lib/tauri";
 import { isWorktreeDirty } from "@/lib/worktreeLifecycle";
+import { buildResumeSshConfig, type ResumeSshConfig } from "@/lib/resumeSshConfig";
 import { logSwallowed } from "@/lib/logSwallowed";
 /** Phase 2: SSH conversations now reference a `ServerConfig` from
  *  `serverStore` plus a per-session remote path. This payload is what the
@@ -1338,35 +1339,17 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       await ensureApiAgentListeners(conversationId);
       const resumeMessages = buildConversationResumeMessages(conv.messages);
 
-      // Phase 2: resolve the live ServerConfig from `serverStore` to pick
-      // up the port, keyPath, and pinned host fingerprint — the persisted
-      // conversation only stored the display subset (host/user/remotePath).
-      // If the server was deleted since the conversation was created we
-      // fall back to the stored values; the backend will fail-fast on bad
-      // creds, which is the right failure mode.
-      let sshConfig: {
-        host: string;
-        port: number;
-        user: string;
-        remote_path: string;
-        key_path: string | null;
-        auth_method: "agent" | "key" | "password" | null;
-        target_id: string;
-        host_fingerprint: string | null;
-      } | null = null;
+      // S5: resolve the live ServerConfig from `serverStore` for the full
+      // connection identity — host, user, port, keyPath, authMethod, and the
+      // pinned host fingerprint — so a server renamed or repointed since the
+      // conversation was created resumes to the right host, not the stale copy
+      // frozen into the conversation. `remote_path` stays the conversation's own
+      // working directory. See `buildResumeSshConfig` for the full contract.
+      let sshConfig: ResumeSshConfig | null = null;
       if (conv.sshTarget) {
         const { useServerStore } = await import("@/stores/serverStore");
         const server = useServerStore.getState().getServer(conv.sshTarget.id);
-        sshConfig = {
-          host: conv.sshTarget.host,
-          port: server?.port ?? 22,
-          user: conv.sshTarget.user,
-          remote_path: conv.sshTarget.remotePath,
-          key_path: server?.keyPath ?? null,
-          auth_method: server?.authMethod ?? null,
-          target_id: conv.sshTarget.id,
-          host_fingerprint: server?.hostFingerprint ?? null,
-        };
+        sshConfig = buildResumeSshConfig(conv.sshTarget, server);
       }
 
       await startApiAgentSession(
