@@ -250,6 +250,42 @@ describe("memoryStore settings integration", () => {
     expect(items.map((i) => i.id)).toEqual(["p-low-pinned", "p-high"]);
   });
 
+  it("M8: ranks eligible patterns by relevance to a query (Ask-your-project)", async () => {
+    const { useMemoryStore, computeContextItems } = await loadStores();
+    useMemoryStore.setState({
+      events: [],
+      patterns: [
+        {
+          id: "db",
+          pattern: "database migrations must run in a deterministic order",
+          category: "convention",
+          confidence: 0.8,
+          extractedAt: 1,
+          projectPath: "D:/projects/A",
+        },
+        {
+          id: "ui",
+          pattern: "prefer tailwind theme tokens over raw colors",
+          category: "convention",
+          confidence: 0.8,
+          extractedAt: 2,
+          projectPath: "D:/projects/A",
+        },
+      ],
+    });
+
+    const s = useMemoryStore.getState();
+    const items = computeContextItems(
+      s.events,
+      s.patterns,
+      { projectPath: "D:/projects/A" },
+      "how do database migrations run",
+    );
+    // both patterns are eligible (conf ≥ 0.6); the query pulls the relevant
+    // one to the top rather than falling back to extractedAt order.
+    expect(items[0].id).toBe("db");
+  });
+
   it("togglePinPattern flips the in-memory flag immediately (optimistic)", async () => {
     mocks.togglePinnedPattern.mockResolvedValue(true);
     const { useMemoryStore } = await loadStores();
