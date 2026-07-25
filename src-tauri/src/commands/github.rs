@@ -724,8 +724,8 @@ pub async fn github_create_pr(
 ) -> Result<String, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!("https://api.github.com/repos/{}/{}/pulls", owner, repo);
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!("/repos/{}/{}/pulls", owner, repo));
 
     let mut payload = serde_json::json!({
         "title": title,
@@ -733,12 +733,16 @@ pub async fn github_create_pr(
         "head": head,
         "base": base,
     });
-    if let Some(d) = draft {
-        payload["draft"] = serde_json::Value::Bool(d);
+    // GitHub accepts a `draft` flag at creation; Gitea does not (draft is a
+    // WIP: title convention — see G10), so only send it to GitHub.
+    if host.kind == GitHostKind::GitHub {
+        if let Some(d) = draft {
+            payload["draft"] = serde_json::Value::Bool(d);
+        }
     }
 
     let resp = client
-        .post(&url)
+        .post(url)
         .json(&payload)
         .send()
         .await
@@ -1777,14 +1781,14 @@ pub async fn github_set_pr_reviewers(
     if reviewers.is_empty() {
         return Ok("{}".to_string());
     }
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/pulls/{}/requested_reviewers",
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!(
+        "/repos/{}/{}/pulls/{}/requested_reviewers",
         owner, repo, number
-    );
+    ));
     let payload = serde_json::json!({ "reviewers": reviewers });
     let resp = client
-        .post(&url)
+        .post(url)
         .json(&payload)
         .send()
         .await
@@ -1805,14 +1809,18 @@ pub async fn github_set_pr_labels(
 ) -> Result<String, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/issues/{}/labels",
-        owner, repo, number
-    );
-    let payload = serde_json::json!({ "labels": labels });
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!("/repos/{}/{}/issues/{}/labels", owner, repo, number));
+    // Gitea expects label ids; GitHub accepts names.
+    let payload = match host.kind {
+        GitHostKind::GitHub => serde_json::json!({ "labels": labels }),
+        GitHostKind::Gitea => {
+            let ids = resolve_gitea_label_ids(&client, &host, &owner, &repo, &labels).await?;
+            serde_json::json!({ "labels": ids })
+        }
+    };
     let resp = client
-        .put(&url)
+        .put(url)
         .json(&payload)
         .send()
         .await
@@ -1833,17 +1841,14 @@ pub async fn github_set_pr_milestone(
 ) -> Result<String, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/issues/{}",
-        owner, repo, number
-    );
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!("/repos/{}/{}/issues/{}", owner, repo, number));
     let payload = match milestone {
         Some(n) => serde_json::json!({ "milestone": n }),
         None => serde_json::json!({ "milestone": serde_json::Value::Null }),
     };
     let resp = client
-        .patch(&url)
+        .patch(url)
         .json(&payload)
         .send()
         .await
@@ -2545,14 +2550,16 @@ pub async fn github_merge_pr(
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
     let method = validate_merge_method(&merge_method)?;
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/pulls/{}/merge",
-        owner, repo, number
-    );
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!("/repos/{}/{}/pulls/{}/merge", owner, repo, number));
+    // GitHub keys the merge strategy as `merge_method`; Gitea as `Do`.
+    let payload = match host.kind {
+        GitHostKind::GitHub => serde_json::json!({ "merge_method": method }),
+        GitHostKind::Gitea => serde_json::json!({ "Do": method }),
+    };
     let resp = client
-        .put(&url)
-        .json(&serde_json::json!({ "merge_method": method }))
+        .put(url)
+        .json(&payload)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -2581,13 +2588,10 @@ async fn patch_pr_state(
     number: u32,
     state: &str,
 ) -> Result<String, String> {
-    let client = github_client_from_state(auth).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/pulls/{}",
-        owner, repo, number
-    );
+    let (client, host) = active_host_session(auth).await?;
+    let url = host.url(&format!("/repos/{}/{}/pulls/{}", owner, repo, number));
     let resp = client
-        .patch(&url)
+        .patch(url)
         .json(&serde_json::json!({ "state": state }))
         .send()
         .await
