@@ -4,6 +4,10 @@
 
 export type MemoryEventType =
   | "session_completed"
+  // M10: `task_completed` is legacy/read-only. The autonomous task scheduler
+  // that emitted it was removed in July 2026; the type and its renderer remain
+  // only so pre-removal persisted events still deserialize and display. No new
+  // code should emit it, and the Timeline offers no dedicated filter chip.
   | "task_completed"
   | "flight_completed"
   | "manual_note";
