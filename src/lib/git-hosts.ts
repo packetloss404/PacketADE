@@ -48,11 +48,26 @@ export interface GitHostCapabilities {
   activityFeed: boolean;
   /** Inline PR reviews + review comments (both hosts, via G11). */
   prReviews: boolean;
+  /** AI assist (investigate / PR description / review / catch-up / triage).
+   *  These query api.github.com directly, so they're GitHub-only. */
+  aiAssist: boolean;
 }
 
 export const GIT_HOST_CAPABILITIES: Record<GitHostKind, GitHostCapabilities> = {
-  github: { draftPrToggle: true, checkRuns: true, activityFeed: true, prReviews: true },
-  gitea: { draftPrToggle: false, checkRuns: false, activityFeed: false, prReviews: true },
+  github: {
+    draftPrToggle: true,
+    checkRuns: true,
+    activityFeed: true,
+    prReviews: true,
+    aiAssist: true,
+  },
+  gitea: {
+    draftPrToggle: false,
+    checkRuns: false,
+    activityFeed: false,
+    prReviews: true,
+    aiAssist: false,
+  },
 };
 
 export function capabilitiesFor(kind: GitHostKind): GitHostCapabilities {

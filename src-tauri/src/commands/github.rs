@@ -209,13 +209,14 @@ fn save_gitea_connections(conns: &[GitHostConnection]) -> Result<(), String> {
 /// user isn't re-prompted after restart.
 fn migrate_github_token_to_keyring() {
     if load_host_token(GITHUB_CONNECTION_ID).is_some() {
-        // Already in the current keyring — just clear any leftover plaintext.
+        // Already in the current keyring — clear any leftover legacy copies.
         for path in [token_file_path(), legacy_token_file_path()]
             .into_iter()
             .flatten()
         {
             let _ = std::fs::remove_file(path);
         }
+        delete_keyring_credential(legacy_keyring_entry(), "legacy");
         return;
     }
 
@@ -244,23 +245,30 @@ fn migrate_github_token_to_keyring() {
         }
     }
 
+    let mut migrated = false;
     if let Some(token) = found {
-        if let Err(e) = save_host_token(GITHUB_CONNECTION_ID, &token) {
-            warn!("Failed to migrate GitHub token into keyring: {}", e);
-        } else {
-            info!("Migrated legacy GitHub token into the OS keyring");
+        match save_host_token(GITHUB_CONNECTION_ID, &token) {
+            Ok(()) => {
+                migrated = true;
+                info!("Migrated legacy GitHub token into the OS keyring");
+            }
+            // Do NOT delete the source copies if the write failed — that would
+            // erase the only copy of the token (data loss).
+            Err(e) => warn!("Failed to migrate GitHub token into keyring: {}", e),
         }
     }
 
-    // Plaintext files + the legacy keyring service are superseded by the current
-    // keyring account.
-    for path in [token_file_path(), legacy_token_file_path()]
-        .into_iter()
-        .flatten()
-    {
-        let _ = std::fs::remove_file(path);
+    // Only supersede the legacy plaintext/keyring copies once the token is
+    // safely in the current keyring account (just migrated, or already present).
+    if migrated || load_host_token(GITHUB_CONNECTION_ID).is_some() {
+        for path in [token_file_path(), legacy_token_file_path()]
+            .into_iter()
+            .flatten()
+        {
+            let _ = std::fs::remove_file(path);
+        }
+        delete_keyring_credential(legacy_keyring_entry(), "legacy");
     }
-    delete_keyring_credential(legacy_keyring_entry(), "legacy");
 }
 
 pub struct GitHubAuthState {
@@ -367,6 +375,16 @@ async fn active_host_kind(auth: &GitHubAuthState) -> GitHostKind {
         .await
         .map(|c| c.kind)
         .unwrap_or(GitHostKind::GitHub)
+}
+
+/// Guard GitHub-only commands (the AI features query api.github.com directly
+/// via the GitHub connection). On a Gitea workspace, refuse with a clear error
+/// rather than firing the GitHub token at api.github.com with a Gitea repo.
+async fn require_github_host(auth: &GitHubAuthState) -> Result<(), String> {
+    if active_host_kind(auth).await == GitHostKind::Gitea {
+        return Err("This AI feature is available on GitHub workspaces only.".to_string());
+    }
+    Ok(())
 }
 
 /// Build an authenticated client for the given host + token. GitHub construction
@@ -562,6 +580,14 @@ pub async fn git_host_remove_connection(
 
     delete_host_token(&id);
     auth.tokens.write().await.remove(&id);
+    // If the removed connection was active, fall back to GitHub so subsequent
+    // commands don't resolve to a now-unknown connection.
+    {
+        let mut active = auth.active_connection_id.write().await;
+        if *active == id {
+            *active = GITHUB_CONNECTION_ID.to_string();
+        }
+    }
     info!("Removed git-host connection '{}'", id);
     Ok(())
 }
@@ -1019,6 +1045,14 @@ pub async fn github_set_issue_labels(
         GitHostKind::GitHub => serde_json::json!({ "labels": labels }),
         GitHostKind::Gitea => {
             let ids = resolve_gitea_label_ids(&client, &host, &owner, &repo, &labels).await?;
+            // Labels PUT is a full replace — if the caller asked for labels but
+            // NONE resolved to a Gitea id, refuse rather than silently clearing
+            // every existing label.
+            if !labels.is_empty() && ids.is_empty() {
+                return Err(
+                    "None of the requested labels exist on this Gitea repository.".to_string(),
+                );
+            }
             serde_json::json!({ "labels": ids })
         }
     };
@@ -1254,6 +1288,7 @@ pub async fn github_investigate_issue(
     issue_number: u32,
 ) -> Result<String, String> {
     super::validate_project_path(&project_path)?;
+    require_github_host(auth.inner()).await?;
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
     let client = github_client_from_state(auth.inner()).await?;
@@ -1473,6 +1508,7 @@ pub async fn github_ai_pr_description(
 ) -> Result<String, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
+    require_github_host(auth.inner()).await?;
 
     let auth_inner = auth.inner();
 
@@ -1609,6 +1645,7 @@ pub async fn github_ai_pr_review(
 ) -> Result<String, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
+    require_github_host(auth.inner()).await?;
 
     let client = github_client_from_state(auth.inner()).await?;
     let pr_url = format!(
@@ -1826,6 +1863,14 @@ pub async fn github_set_pr_labels(
         GitHostKind::GitHub => serde_json::json!({ "labels": labels }),
         GitHostKind::Gitea => {
             let ids = resolve_gitea_label_ids(&client, &host, &owner, &repo, &labels).await?;
+            // Labels PUT is a full replace — if the caller asked for labels but
+            // NONE resolved to a Gitea id, refuse rather than silently clearing
+            // every existing label.
+            if !labels.is_empty() && ids.is_empty() {
+                return Err(
+                    "None of the requested labels exist on this Gitea repository.".to_string(),
+                );
+            }
             serde_json::json!({ "labels": ids })
         }
     };
@@ -2117,6 +2162,7 @@ pub async fn github_ai_catch_up(
 ) -> Result<(), String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
+    require_github_host(auth.inner()).await?;
     if session_id.trim().is_empty() {
         return Err("session_id cannot be empty".to_string());
     }
@@ -2366,6 +2412,7 @@ pub async fn github_ai_triage(
 ) -> Result<Vec<TriageSuggestion>, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
+    require_github_host(auth.inner()).await?;
     if issue_numbers.is_empty() {
         return Ok(Vec::new());
     }
@@ -2562,17 +2609,35 @@ pub async fn github_merge_pr(
     let method = validate_merge_method(&merge_method)?;
     let (client, host) = active_host_session(auth.inner()).await?;
     let url = host.url(&format!("/repos/{}/{}/pulls/{}/merge", owner, repo, number));
-    // GitHub keys the merge strategy as `merge_method`; Gitea as `Do`.
-    let payload = match host.kind {
-        GitHostKind::GitHub => serde_json::json!({ "merge_method": method }),
-        GitHostKind::Gitea => serde_json::json!({ "Do": method }),
+    // GitHub: PUT with `merge_method`, returns {sha, merged, message}.
+    // Gitea:  POST with `Do`, returns an empty 2xx body on success.
+    let req = match host.kind {
+        GitHostKind::GitHub => client.put(url).json(&serde_json::json!({ "merge_method": method })),
+        GitHostKind::Gitea => client.post(url).json(&serde_json::json!({ "Do": method })),
     };
-    let resp = client
-        .put(url)
-        .json(&payload)
+    let resp = req
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
+
+    if host.kind == GitHostKind::Gitea {
+        // Empty body — treat any 2xx as a successful merge.
+        if !resp.status().is_success() {
+            let status = resp.status();
+            warn!(
+                "Gitea merge error {}: {}",
+                status,
+                resp.text().await.unwrap_or_default()
+            );
+            return Err(sanitize_github_error(status));
+        }
+        return Ok(GitHubMergeResult {
+            sha: String::new(),
+            merged: true,
+            message: "Merged".to_string(),
+        });
+    }
+
     let body = github_response_text(resp).await?;
     let v: serde_json::Value = serde_json::from_str(&body)
         .map_err(|e| format!("Failed to parse merge response: {}", e))?;
