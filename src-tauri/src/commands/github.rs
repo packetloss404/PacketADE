@@ -821,6 +821,31 @@ pub async fn github_get_authenticated_user(
     Ok(GhUser { login, avatar_url })
 }
 
+/// GP6: list a repo's releases (raw passthrough JSON). Both GitHub and Gitea
+/// expose `/repos/{o}/{r}/releases` with a compatible shape.
+#[tauri::command]
+pub async fn github_list_releases(
+    auth: State<'_, GitHubAuthState>,
+    owner: String,
+    repo: String,
+) -> Result<String, String> {
+    validate_github_name(&owner, "owner")?;
+    validate_github_name(&repo, "repo")?;
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!(
+        "/repos/{}/{}/releases?{}",
+        owner,
+        repo,
+        host.page_params(30, 1)
+    ));
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    github_response_text(resp).await
+}
+
 #[tauri::command]
 pub async fn github_list_issues(
     auth: State<'_, GitHubAuthState>,

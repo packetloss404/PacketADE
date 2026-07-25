@@ -4,6 +4,7 @@ import type { DiffCommentAnchor } from "@/components/views/DiffViewer";
 import {
   AlertCircle,
   Bell,
+  Tag,
   Brain,
   Check,
   Clock,
@@ -21,7 +22,7 @@ import { useGitHubStore } from "@/stores/githubStore";
 import { capabilitiesFor, hostLabel } from "@/lib/git-hosts";
 import { useNotificationsPoller } from "@/hooks/useNotificationsPoller";
 import { HostIcon } from "@/components/HostIcon";
-import type { GitHostKind } from "@/lib/tauri";
+import type { GitHostKind, GitHubRelease } from "@/lib/tauri";
 import type { ReviewComment } from "@/lib/reviewCommentThreads";
 import { useIssueStore } from "@/stores/issueStore";
 import { useLayoutStore } from "@/stores/layoutStore";
@@ -68,7 +69,7 @@ function slugifyIssueTitle(title: string): string {
     .replace(/-+$/g, "");
 }
 
-type TabKey = "issues" | "prs" | "activity" | "inbox";
+type TabKey = "issues" | "prs" | "activity" | "inbox" | "releases";
 
 export function GitHubView() {
   const {
@@ -115,6 +116,8 @@ export function GitHubView() {
     unreadCount,
     notifications,
     fetchNotifications,
+    releases,
+    fetchReleases,
   } = useGitHubStore();
 
   const addIssue = useIssueStore((s) => s.addIssue);
@@ -219,6 +222,13 @@ export function GitHubView() {
       fetchNotifications();
     }
   }, [isConnected, tab, notifications.length, activeConnectionId, fetchNotifications]);
+
+  // GP6: lazy-load releases when the Releases tab opens (or host/repo changes).
+  useEffect(() => {
+    if (isConnected && tab === "releases" && config.selectedRepo) {
+      void fetchReleases();
+    }
+  }, [isConnected, tab, config.selectedRepo, activeConnectionId, fetchReleases]);
 
   useEffect(() => {
     if (selectedIssueNum == null && issues.length > 0) {
@@ -604,6 +614,8 @@ export function GitHubView() {
             </div>
           )}
         </div>
+      ) : tab === "releases" ? (
+        <ReleasesList releases={releases} />
       ) : (
         <ActivityFeed
           issues={issues}
@@ -637,6 +649,59 @@ export function GitHubView() {
           onApply={handleTriageApply}
         />
       )}
+    </div>
+  );
+}
+
+/** GP6: read-only list of the selected repo's releases (GitHub + Gitea). */
+function ReleasesList({ releases }: { releases: GitHubRelease[] }) {
+  if (releases.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-[11px] text-text-muted">
+        No releases published for this repository.
+      </div>
+    );
+  }
+  return (
+    <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
+      {releases.map((r) => (
+        <a
+          key={r.id}
+          href={r.html_url}
+          target="_blank"
+          rel="noreferrer"
+          className="block rounded-lg border border-bg-border bg-bg-primary px-3 py-2 hover:border-line-strong transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Tag size={11} className="text-text-muted flex-shrink-0" />
+            <span className="text-[12px] font-semibold text-text-primary truncate">
+              {r.name || r.tag_name}
+            </span>
+            <span className="text-[10px] font-mono text-text-muted">{r.tag_name}</span>
+            {r.draft && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent-amber/15 text-accent-amber">
+                draft
+              </span>
+            )}
+            {r.prerelease && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent-blue/15 text-accent-blue">
+                pre-release
+              </span>
+            )}
+            <span className="flex-1" />
+            {r.published_at && (
+              <span className="text-[10px] text-text-muted flex-shrink-0">
+                {relativeTime(Date.parse(r.published_at))}
+              </span>
+            )}
+          </div>
+          {r.body && (
+            <p className="mt-1 text-[11px] text-text-secondary leading-snug line-clamp-3 whitespace-pre-wrap">
+              {r.body.slice(0, 400)}
+            </p>
+          )}
+        </a>
+      ))}
     </div>
   );
 }
@@ -765,6 +830,13 @@ function SubTabs({
         icon={<Bell size={10} />}
         label="Inbox"
         badge={unreadCount > 0 ? unreadCount : undefined}
+        accent="default"
+      />
+      <GhTab
+        active={tab === "releases"}
+        onClick={() => onTab("releases")}
+        icon={<Tag size={10} />}
+        label="Releases"
         accent="default"
       />
       <div className="flex-1" />

@@ -325,6 +325,7 @@ pub fn run() {
             commands::github::git_host_set_active,
             commands::github::github_device_flow_start,
             commands::github::github_device_flow_poll,
+            commands::github::github_list_releases,
             commands::github::github_list_repos,
             commands::github::github_get_authenticated_user,
             commands::github::github_list_issues,

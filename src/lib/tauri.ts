@@ -1830,6 +1830,22 @@ export async function githubDeviceFlowPoll(deviceCode: string): Promise<DeviceFl
   return invoke<DeviceFlowPoll>("github_device_flow_poll", { deviceCode });
 }
 
+// GP6: repo releases (raw passthrough JSON — parse into GitHubRelease[]).
+export interface GitHubRelease {
+  id: number;
+  tag_name: string;
+  name: string | null;
+  html_url: string;
+  published_at: string | null;
+  draft: boolean;
+  prerelease: boolean;
+  body: string | null;
+}
+
+export async function githubListReleases(owner: string, repo: string): Promise<string> {
+  return invoke<string>("github_list_releases", { owner, repo });
+}
+
 export async function githubListRepos(): Promise<string> {
   return invoke<string>("github_list_repos");
 }
