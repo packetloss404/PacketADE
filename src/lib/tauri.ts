@@ -1801,6 +1801,11 @@ export async function gitHostHasToken(id: string): Promise<boolean> {
   return invoke<boolean>("git_host_has_token", { id });
 }
 
+/** G4: set which connection the git-host commands target (per-workspace). */
+export async function gitHostSetActive(id: string): Promise<void> {
+  return invoke("git_host_set_active", { id });
+}
+
 export async function githubListRepos(): Promise<string> {
   return invoke<string>("github_list_repos");
 }

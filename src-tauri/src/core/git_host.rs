@@ -61,6 +61,26 @@ impl GitHost {
         format!("{}{}", self.api_base, path)
     }
 
+    /// Pagination query fragment — GitHub uses `per_page`, Gitea uses `limit`.
+    /// Both accept `page`. Returned without a leading `?`/`&`.
+    pub fn page_params(&self, per_page: u32, page: u32) -> String {
+        match self.kind {
+            GitHostKind::GitHub => format!("per_page={}&page={}", per_page, page),
+            GitHostKind::Gitea => format!("limit={}&page={}", per_page, page),
+        }
+    }
+
+    /// Path for the authenticated user's repos, page `page` (30/page). GitHub
+    /// sorts by last-updated; Gitea's `/user/repos` returns all owned repos.
+    pub fn user_repos_path(&self, page: u32) -> String {
+        match self.kind {
+            GitHostKind::GitHub => {
+                format!("/user/repos?sort=updated&{}", self.page_params(30, page))
+            }
+            GitHostKind::Gitea => format!("/user/repos?{}", self.page_params(30, page)),
+        }
+    }
+
     /// Authorization header value. GitHub uses `Bearer`; Gitea uses `token`
     /// (Gitea also accepts `Bearer`, but `token` is its documented scheme).
     fn auth_header(&self, token: &str) -> String {
@@ -149,5 +169,19 @@ mod tests {
             h.url("/repos/o/r/pulls"),
             "https://git.example.com/api/v1/repos/o/r/pulls"
         );
+    }
+
+    #[test]
+    fn pagination_and_repos_paths_differ_by_host() {
+        let gh = GitHost::github();
+        let gt = GitHost::gitea("https://git.example.com");
+        assert_eq!(gh.page_params(30, 2), "per_page=30&page=2");
+        assert_eq!(gt.page_params(30, 2), "limit=30&page=2");
+        // GitHub keeps its sort=updated; both carry page params.
+        assert_eq!(
+            gh.user_repos_path(2),
+            "/user/repos?sort=updated&per_page=30&page=2"
+        );
+        assert_eq!(gt.user_repos_path(2), "/user/repos?limit=30&page=2");
     }
 }

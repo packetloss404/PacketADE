@@ -269,6 +269,9 @@ pub struct GitHubAuthState {
     /// Connection id → token, hydrated from the OS keyring on startup and kept
     /// there (no re-prompt after restart).
     tokens: RwLock<HashMap<String, String>>,
+    /// G4: the connection the pane's commands target, set per-workspace by the
+    /// frontend (`git_host_set_active`) from the resolved origin remote.
+    active_connection_id: RwLock<String>,
 }
 
 impl GitHubAuthState {
@@ -288,6 +291,7 @@ impl GitHubAuthState {
         Self {
             connections: RwLock::new(connections),
             tokens: RwLock::new(tokens),
+            active_connection_id: RwLock::new(GITHUB_CONNECTION_ID.to_string()),
         }
     }
 
@@ -310,7 +314,6 @@ pub fn create_github_auth_state() -> GitHubAuthState {
 /// Gitea command groups (G4–G12) route through this; GitHub commands keep using
 /// `github_client_from_state` (the `"github"` connection). G3 feeds the
 /// per-workspace connection id here.
-#[allow(dead_code)] // consumed by G3+ per-workspace routing
 async fn git_host_session(
     auth: &GitHubAuthState,
     connection_id: &str,
@@ -329,6 +332,31 @@ async fn git_host_session(
     let host = conn.to_host();
     let client = host.build_client(&token)?;
     Ok((client, host))
+}
+
+/// Build a client + host for whichever connection is currently active (set
+/// per-workspace by the frontend). The Gitea-aware command groups (G4+) route
+/// through this instead of `github_client_from_state`.
+#[allow(dead_code)] // consumed as each command group is routed (G4+)
+async fn active_host_session(
+    auth: &GitHubAuthState,
+) -> Result<(reqwest::Client, GitHost), String> {
+    let id = auth.active_connection_id.read().await.clone();
+    git_host_session(auth, &id).await
+}
+
+/// G4: set the connection the pane's commands target (resolved per-workspace on
+/// the frontend from the repo's origin remote).
+#[tauri::command]
+pub async fn git_host_set_active(
+    auth: State<'_, GitHubAuthState>,
+    id: String,
+) -> Result<(), String> {
+    if auth.connection(&id).await.is_none() {
+        return Err(format!("Unknown connection '{}'.", id));
+    }
+    *auth.active_connection_id.write().await = id;
+    Ok(())
 }
 
 /// Build an authenticated client for the given host + token. GitHub construction
@@ -585,9 +613,9 @@ async fn github_get_issue_with_client(
 
 #[tauri::command]
 pub async fn github_list_repos(auth: State<'_, GitHubAuthState>) -> Result<String, String> {
-    let client = github_client_from_state(auth.inner()).await?;
+    let (client, host) = active_host_session(auth.inner()).await?;
     let resp = client
-        .get("https://api.github.com/user/repos?sort=updated&per_page=30")
+        .get(host.url(&host.user_repos_path(1)))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -607,9 +635,11 @@ pub struct GhUser {
 pub async fn github_get_authenticated_user(
     auth: State<'_, GitHubAuthState>,
 ) -> Result<GhUser, String> {
-    let client = github_client_from_state(auth.inner()).await?;
+    // G4: route to the active host (GitHub or Gitea). Both return {login,
+    // avatar_url} from `/user`, so no normalization is needed.
+    let (client, host) = active_host_session(auth.inner()).await?;
     let resp = client
-        .get("https://api.github.com/user")
+        .get(host.url("/user"))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -1150,13 +1180,9 @@ pub async fn github_list_repos_page(
     auth: State<'_, GitHubAuthState>,
     page: u32,
 ) -> Result<String, String> {
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/user/repos?sort=updated&per_page=30&page={}",
-        page
-    );
+    let (client, host) = active_host_session(auth.inner()).await?;
     let resp = client
-        .get(&url)
+        .get(host.url(&host.user_repos_path(page)))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;

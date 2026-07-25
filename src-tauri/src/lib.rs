@@ -322,6 +322,7 @@ pub fn run() {
             commands::github::git_host_remove_connection,
             commands::github::git_host_set_token,
             commands::github::git_host_has_token,
+            commands::github::git_host_set_active,
             commands::github::github_list_repos,
             commands::github::github_get_authenticated_user,
             commands::github::github_list_issues,
