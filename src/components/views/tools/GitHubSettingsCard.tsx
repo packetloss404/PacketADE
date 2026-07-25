@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Check,
   Eye,
@@ -6,14 +6,18 @@ import {
   Github,
   GitMerge,
   LogOut,
+  Plus,
   RefreshCw,
+  Server,
   ShieldAlert,
+  Trash2,
   X,
 } from "lucide-react";
 import {
   useGitHubStore,
   type GitHubMergeStrategy,
 } from "@/stores/githubStore";
+import { normalizeGiteaBaseUrl } from "@/lib/git-hosts";
 
 /**
  * v0.8: Settings → GitHub card.
@@ -60,6 +64,49 @@ export function GitHubSettingsCard() {
   const [showTokenInput, setShowTokenInput] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
   const [showToken, setShowToken] = useState(false);
+
+  // G2: Gitea/Forgejo self-hosted connections.
+  const connections = useGitHubStore((s) => s.connections);
+  const loadConnections = useGitHubStore((s) => s.loadConnections);
+  const addGiteaHost = useGitHubStore((s) => s.addGiteaHost);
+  const removeGitHostConnection = useGitHubStore((s) => s.removeGitHostConnection);
+  const giteaConnections = connections.filter((c) => c.kind === "gitea");
+
+  const [giteaOpen, setGiteaOpen] = useState(false);
+  const [giteaUrl, setGiteaUrl] = useState("");
+  const [giteaLabel, setGiteaLabel] = useState("");
+  const [giteaToken, setGiteaToken] = useState("");
+  const [giteaError, setGiteaError] = useState<string | null>(null);
+  const [giteaBusy, setGiteaBusy] = useState(false);
+
+  useEffect(() => {
+    void loadConnections();
+  }, [loadConnections]);
+
+  async function handleAddGitea() {
+    const normalized = normalizeGiteaBaseUrl(giteaUrl);
+    if ("error" in normalized) {
+      setGiteaError(normalized.error);
+      return;
+    }
+    if (!giteaToken.trim()) {
+      setGiteaError("Access token is required");
+      return;
+    }
+    setGiteaBusy(true);
+    setGiteaError(null);
+    try {
+      await addGiteaHost(normalized.value, giteaLabel.trim(), giteaToken.trim());
+      setGiteaUrl("");
+      setGiteaLabel("");
+      setGiteaToken("");
+      setGiteaOpen(false);
+    } catch (e) {
+      setGiteaError(String(e));
+    } finally {
+      setGiteaBusy(false);
+    }
+  }
 
   async function handleSaveToken() {
     const trimmed = tokenInput.trim();
@@ -274,6 +321,112 @@ export function GitHubSettingsCard() {
             attempts as draft PRs&quot; option.
           </p>
         </div>
+      </div>
+
+      {/* G2: self-hosted Gitea / Forgejo connections */}
+      <div className="mt-4 pt-4 border-t border-bg-border">
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-[11px] font-semibold text-text-primary flex items-center gap-2">
+            <Server size={12} className="text-text-muted" />
+            Self-hosted (Gitea / Forgejo)
+          </h4>
+          {!giteaOpen && (
+            <button
+              type="button"
+              onClick={() => setGiteaOpen(true)}
+              className="inline-flex items-center gap-1 text-[11px] text-accent-green hover:text-accent-green/80"
+            >
+              <Plus size={11} />
+              Add host
+            </button>
+          )}
+        </div>
+
+        {giteaConnections.length === 0 && !giteaOpen && (
+          <p className="text-[10px] text-text-muted leading-snug">
+            Connect an on-prem Gitea or Forgejo instance. Each workspace uses the
+            host its <code className="text-text-secondary">origin</code> remote
+            belongs to.
+          </p>
+        )}
+
+        {giteaConnections.length > 0 && (
+          <div className="flex flex-col gap-1.5 mb-2">
+            {giteaConnections.map((c) => (
+              <div
+                key={c.id}
+                className="flex items-center justify-between gap-2 rounded border border-bg-border bg-bg-primary px-2.5 py-1.5"
+              >
+                <div className="min-w-0">
+                  <div className="text-[11px] text-text-primary truncate">{c.label}</div>
+                  <div className="text-[10px] text-text-muted truncate font-mono">
+                    {c.baseUrl}
+                    {!c.hasToken && (
+                      <span className="text-accent-amber ml-1.5">· no token</span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void removeGitHostConnection(c.id)}
+                  title="Remove host"
+                  className="text-text-muted hover:text-accent-red p-1 rounded"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {giteaOpen && (
+          <div className="flex flex-col gap-2 rounded border border-bg-border bg-bg-primary p-2.5">
+            <input
+              type="text"
+              value={giteaUrl}
+              onChange={(e) => setGiteaUrl(e.target.value)}
+              placeholder="https://git.example.com"
+              className="w-full rounded border border-bg-border bg-bg-secondary px-2 py-1.5 text-[11px] text-text-primary outline-none focus:border-accent-green/50"
+            />
+            <input
+              type="text"
+              value={giteaLabel}
+              onChange={(e) => setGiteaLabel(e.target.value)}
+              placeholder="Label (optional)"
+              className="w-full rounded border border-bg-border bg-bg-secondary px-2 py-1.5 text-[11px] text-text-primary outline-none focus:border-accent-green/50"
+            />
+            <input
+              type="password"
+              value={giteaToken}
+              onChange={(e) => setGiteaToken(e.target.value)}
+              placeholder="Access token"
+              className="w-full rounded border border-bg-border bg-bg-secondary px-2 py-1.5 text-[11px] text-text-primary outline-none focus:border-accent-green/50"
+            />
+            {giteaError && (
+              <p className="text-[10px] text-accent-red leading-snug">{giteaError}</p>
+            )}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={giteaBusy}
+                onClick={handleAddGitea}
+                className="inline-flex items-center gap-1 rounded bg-accent-green/20 px-2.5 py-1 text-[11px] font-medium text-accent-green hover:bg-accent-green/30 disabled:opacity-40"
+              >
+                {giteaBusy ? "Adding…" : "Add host"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setGiteaOpen(false);
+                  setGiteaError(null);
+                }}
+                className="text-[11px] text-text-muted hover:text-text-secondary"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

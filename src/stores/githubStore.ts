@@ -23,8 +23,11 @@ import {
   githubGetPrDiff,
   githubListNotifications,
   githubMarkNotificationRead,
+  gitHostListConnections,
+  gitHostAddGitea,
+  gitHostRemoveConnection,
 } from "@/lib/tauri";
-import type { GithubNotification } from "@/lib/tauri";
+import type { GithubNotification, GitHostConnectionInfo } from "@/lib/tauri";
 import type {
   GitHubRepo,
   GitHubIssue,
@@ -137,9 +140,18 @@ interface GitHubStore {
   /** Unix millis of the last successful repos/issues/PRs fetch. */
   lastSyncAt: number | null;
 
+  /** G2: all configured git-host connections (GitHub + Gitea/Forgejo). */
+  connections: GitHostConnectionInfo[];
+
   initializeAuth: () => Promise<void>;
   connect: (token: string) => Promise<void>;
   disconnect: () => Promise<void>;
+  /** G2: refresh the connection list from the backend. */
+  loadConnections: () => Promise<void>;
+  /** G2: add a Gitea/Forgejo host (base URL already normalized). */
+  addGiteaHost: (baseUrl: string, label: string, token: string) => Promise<void>;
+  /** G2: remove a non-GitHub connection. */
+  removeGitHostConnection: (id: string) => Promise<void>;
   fetchRepos: () => Promise<void>;
   selectRepo: (owner: string, repo: string) => void;
   fetchIssues: () => Promise<void>;
@@ -289,6 +301,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   prDiff: null,
   isPrLoading: false,
   lastSyncAt: null,
+  connections: [],
 
   // v0.8-B: per-PR CI status cache.
   prChecks: {},
@@ -403,6 +416,24 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         error: String(e),
       });
     }
+  },
+
+  loadConnections: async () => {
+    try {
+      set({ connections: await gitHostListConnections() });
+    } catch (e) {
+      console.warn("[githubStore] loadConnections failed:", e);
+    }
+  },
+
+  addGiteaHost: async (baseUrl, label, token) => {
+    await gitHostAddGitea(baseUrl, label, token);
+    await get().loadConnections();
+  },
+
+  removeGitHostConnection: async (id) => {
+    await gitHostRemoveConnection(id);
+    await get().loadConnections();
   },
 
   fetchRepos: async () => {
