@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useGitHubStore } from "@/stores/githubStore";
 import { capabilitiesFor } from "@/lib/git-hosts";
+import { HostIcon } from "@/components/HostIcon";
 import { useIssueStore } from "@/stores/issueStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore } from "@/stores/appStore";
@@ -148,10 +149,12 @@ export function GitHubView() {
   // G10: capability gating for the active host (Gitea hides GitHub-only surfaces).
   const connections = useGitHubStore((s) => s.connections);
   const activeConnectionId = useGitHubStore((s) => s.activeConnectionId);
-  const activeCaps = useMemo(() => {
-    const kind = connections.find((c) => c.id === activeConnectionId)?.kind ?? "github";
-    return capabilitiesFor(kind);
-  }, [connections, activeConnectionId]);
+  const activeHostKind = useMemo(
+    () => connections.find((c) => c.id === activeConnectionId)?.kind ?? "github",
+    [connections, activeConnectionId],
+  );
+  const activeCaps = useMemo(() => capabilitiesFor(activeHostKind), [activeHostKind]);
+  const setActiveConnection = useGitHubStore((s) => s.setActiveConnection);
   useEffect(() => {
     // If we land on a tab the active host doesn't support, fall back to Issues.
     if (tab === "activity" && !activeCaps.activityFeed) setTab("issues");
@@ -338,6 +341,29 @@ export function GitHubView() {
         onNewPR={() => setShowPRModal(true)}
         onDisconnect={disconnect}
       />
+
+      {/* G13: host indicator + override (shown once a second host is configured) */}
+      {connections.length > 1 && (
+        <div className="flex items-center gap-1.5 px-3 py-1 bg-bg-secondary border-b border-bg-border flex-shrink-0">
+          <span className="text-[10px] text-text-muted">Host</span>
+          {connections.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setActiveConnection(c.id)}
+              title={c.baseUrl}
+              className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] transition-colors ${
+                c.id === activeConnectionId
+                  ? "bg-bg-elevated text-text-primary border border-line-strong"
+                  : "text-text-muted hover:text-text-secondary border border-transparent"
+              }`}
+            >
+              <HostIcon kind={c.kind} size={11} />
+              {c.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <SubTabs
         tab={tab}

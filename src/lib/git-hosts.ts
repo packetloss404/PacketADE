@@ -59,6 +59,11 @@ export function capabilitiesFor(kind: GitHostKind): GitHostCapabilities {
   return GIT_HOST_CAPABILITIES[kind];
 }
 
+/** Display name for a host kind (branding). */
+export function hostLabel(kind: GitHostKind): string {
+  return kind === "gitea" ? "Gitea" : "GitHub";
+}
+
 export type NormalizeResult = { value: string } | { error: string };
 
 /**
