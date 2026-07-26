@@ -128,8 +128,21 @@ The four open questions were reviewed and decided — P0 is now unblocked.
 
 ## GP7 status
 
-Design + decisions are **locked**. Implementation is the phased P0→P3 plan
-above; **P0** (the pure `diffMirrorState(local, host, lastSynced)` planner + the
-`mirror` record/body-marker data model, fully unit-tested, no I/O) is the first
-committable slice and can start now. Do not enable P2 (pull) until P0's planner
-is green.
+Design + decisions are **locked**. Implementation is the phased P0→P3 plan.
+
+**P0 — LANDED (2026-07-25).** `src/lib/issueFlightMirror.ts` +
+`src/lib/__tests__/issueFlightMirror.test.ts` (36 tests, peer-reviewed):
+- `diffMirrorState(local, host, base)` — the pure 3-way field planner
+  (push / pull / conflict / noop), entity-granular LWW with the losing value
+  preserved in `conflicts[]`, and a `resolvedFields` post-sync snapshot.
+- `MirrorRecord` + `advanceMirrorRecord` (post-write fence stamping;
+  push- and pull-side echo suppression are both tested).
+- Hidden body marker: `build`/`parse`/`strip`/`embed` (global strip, last-match
+  parse, idempotent single-marker guarantee).
+- `resolveMirrorTarget(record, markerFound)` — the update/adopt/create identity
+  trichotomy, so P1/P2 don't re-decide it.
+- `hasPendingChange` — advisory coarse fence gate (not authoritative).
+
+**Next: P1 (push-only I/O)** builds on `diffMirrorState.toPush` + the marker;
+then P2 (pull), then P3 (conflict-resolution UI). Do not enable P2 until P1 is
+green. Mapping-B milestone-name derivation is P1 mapping work (not in P0).
