@@ -26,9 +26,16 @@ import { useAppStore } from "@/stores/appStore";
 import { LaunchAsyncFlightModal } from "@/components/flights/LaunchAsyncFlightModal";
 import { AsyncFlightGrid } from "@/components/flights/AsyncFlightGrid";
 import { FlightPlanningCard } from "@/components/flights/FlightPlanningCard";
+import { CooperativeFlightCard } from "@/components/flights/CooperativeFlightCard";
+import { FlightCoordinationInbox } from "@/components/flights/FlightCoordinationInbox";
+import { FlightAutonomyCard } from "@/components/flights/FlightAutonomyCard";
 import { relativeTime } from "@/lib/time";
 import { summarizeFlightAttention, summarizeFlightReview } from "@/lib/flightReview";
-import { FLIGHT_STATUS_CONFIG, FLIGHT_PRIORITY_COLORS, TASK_ROLE_CONFIG } from "@/lib/flight-colors";
+import {
+  FLIGHT_STATUS_CONFIG,
+  FLIGHT_PRIORITY_COLORS,
+  TASK_ROLE_CONFIG,
+} from "@/lib/flight-colors";
 import type {
   Flight,
   FlightPriority,
@@ -190,15 +197,14 @@ function eventTimeShort(ts: number): string {
 }
 
 export function FlightsView() {
-  const { flights, activeFlightId, setActiveFlight, computeFlightStatus } =
-    useFlightStore(
-      useShallow((s) => ({
-        flights: s.flights,
-        activeFlightId: s.activeFlightId,
-        setActiveFlight: s.setActiveFlight,
-        computeFlightStatus: s.computeFlightStatus,
-      })),
-    );
+  const { flights, activeFlightId, setActiveFlight, computeFlightStatus } = useFlightStore(
+    useShallow((s) => ({
+      flights: s.flights,
+      activeFlightId: s.activeFlightId,
+      setActiveFlight: s.setActiveFlight,
+      computeFlightStatus: s.computeFlightStatus,
+    })),
+  );
   const [modal, setModal] = useState<ModalKind>(null);
   const [launchTargetFlightId, setLaunchTargetFlightId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -263,8 +269,8 @@ export function FlightsView() {
           <Plane size={32} />
           <span className="text-sm font-medium text-text-primary">No flights yet</span>
           <span className="max-w-md text-center text-xs">
-            Launch a worktree attempt against a target agent and branch — track
-            progress, review the diff, and accept or reject the result.
+            Launch a worktree attempt against a target agent and branch — track progress, review the
+            diff, and accept or reject the result.
           </span>
           <div className="mt-2 flex flex-col items-center gap-2">
             <button
@@ -686,7 +692,16 @@ function FlightDetailPane({ flight, status, onLaunchAttempt }: DetailProps) {
 
         <FlightPlanningCard flight={flight} />
 
-        <AsyncFlightGrid flight={flight} onLaunch={onLaunchAttempt} />
+        <FlightAutonomyCard flight={flight} />
+
+        <CooperativeFlightCard flight={flight} />
+
+        <FlightCoordinationInbox flight={flight} />
+
+        <AsyncFlightGrid
+          flight={flight}
+          onLaunch={flight.executionMode === "cooperative" ? undefined : onLaunchAttempt}
+        />
 
         <AttentionCard flight={flight} />
 
@@ -706,23 +721,25 @@ function AttentionCard({ flight }: { flight: Flight }) {
   const attention = summarizeFlightAttention(flight);
   if (attention.total === 0) return null;
   return (
-    <div className="rounded border border-accent-amber/30 bg-accent-amber/10 px-3 py-2">
+    <div className="border-accent-amber/30 bg-accent-amber/10 rounded border px-3 py-2">
       <div className="flex items-center gap-2 text-[11px] font-semibold text-accent-amber">
         <span>Needs attention</span>
-        <span className="rounded-full bg-accent-amber/20 px-1.5 text-[10px]">{attention.total}</span>
+        <span className="bg-accent-amber/20 rounded-full px-1.5 text-[10px]">
+          {attention.total}
+        </span>
       </div>
       <div className="mt-1 flex flex-col gap-0.5 text-[11px] text-text-secondary">
         {attention.reviewing.length > 0 && (
           <span>
-            {attention.reviewing.length} attempt{attention.reviewing.length === 1 ? "" : "s"} awaiting
-            review — accept or reject below.
+            {attention.reviewing.length} attempt{attention.reviewing.length === 1 ? "" : "s"}{" "}
+            awaiting review — accept or reject below.
           </span>
         )}
         {attention.failed.map((a) => (
           <span key={a.id} className="text-text-muted">
             {a.provider} failed
-            {a.failureCategory ? ` (${a.failureCategory.replace(/_/g, " ")})` : ""} — review the diff,
-            or reassign from the timeline when a suggestion appears.
+            {a.failureCategory ? ` (${a.failureCategory.replace(/_/g, " ")})` : ""} — review the
+            diff, or reassign from the timeline when a suggestion appears.
           </span>
         ))}
       </div>
@@ -1064,7 +1081,7 @@ function TimelineRow({ event, flight }: { event: CoordinationEvent; flight: Flig
           onClick={doCapture}
           disabled={captured}
           title={captured ? "Saved to memory" : "Add this event to project memory"}
-          className="ml-0.5 inline-flex items-center gap-0.5 align-baseline text-[10px] text-text-muted opacity-0 transition-opacity hover:text-accent-green group-hover:opacity-100 disabled:text-accent-green disabled:opacity-100"
+          className="ml-0.5 inline-flex items-center gap-0.5 align-baseline text-[10px] text-text-muted opacity-0 transition-opacity hover:text-accent-green disabled:text-accent-green disabled:opacity-100 group-hover:opacity-100"
         >
           <BookmarkPlus size={10} />
           {captured ? "Saved" : "Memory"}
@@ -1075,7 +1092,7 @@ function TimelineRow({ event, flight }: { event: CoordinationEvent; flight: Flig
               type="button"
               disabled={busy}
               onClick={doReassign}
-              className="rounded border border-accent-green/40 bg-accent-green/10 px-1.5 py-0.5 text-[10px] text-accent-green hover:bg-accent-green/20 disabled:opacity-50"
+              className="border-accent-green/40 bg-accent-green/10 hover:bg-accent-green/20 rounded border px-1.5 py-0.5 text-[10px] text-accent-green disabled:opacity-50"
             >
               {busy
                 ? "Reassigning…"

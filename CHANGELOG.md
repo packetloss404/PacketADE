@@ -9,6 +9,39 @@ task list.
 
 ## [Unreleased]
 
+### Added — Flight supervision and bounded autonomy
+
+- **Reviewer Gate (RG1–RG7).** Flights may opt into one selected read-only
+  reviewer. Structured pass/changes-requested/blocked verdicts gate normal
+  acceptance; retry, findings handoff, and recorded human override remain
+  explicit bounded actions.
+- **Cooperative Flight graph (CG1–CG8).** Applied plans can become validated,
+  role-assigned dependency graphs. Users launch ready batches, each task keeps
+  its worktree, and accepted work integrates serially on a Flight-owned branch
+  with conflict recovery instead of silent resolution.
+- **Coordination Inbox (CI1–CI8).** Persisted typed messages, acknowledgements,
+  role/attempt/task/Flight targeting, safe API-agent delivery, and an opt-in
+  PacketADE MCP inbox give builders and operators one steering channel without
+  background terminal keystroke injection.
+- **Bounded YOLO policy (AP1–AP8).** Assisted remains the default. Settings and
+  per-Flight policy snapshots independently control recovery, review
+  remediation, graph execution, routing, and tool posture under hard
+  cost/time/retry/concurrency/root/target limits and a kill switch. Reviewer
+  overrides, conflict resolution, and protected/base-branch landing never
+  become implicit.
+
+### Added / Changed — PacketCode integration
+
+- PacketCode now has strict PATH/manual/fallback version detection, separate
+  executable, developer-checkout, release-channel, and local/remote data-home
+  settings, plus a bounded `doctor --json` integration probe.
+- Local and SSH PacketCode panes receive only their configured
+  `PACKETCODE_HOME`; remote launches use the remote executable rather than a
+  local absolute path. Missing remote installations use the existing
+  detect/install flow.
+- Stable/preview install actions are explicit and re-detect on completion.
+  PacketCode remains an independent product and is not bundled into PacketADE.
+
 ### Added / Changed — GitHub Pane v0.9+ (`dev/github-pane-v9-loop.md`, GP1–GP7)
 
 - **Inline PR review comments (GP1).** Existing review-comment threads now

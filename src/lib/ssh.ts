@@ -75,6 +75,7 @@ export function buildSshArgs(
   remoteCommand: string,
   remoteArgs?: string[],
   knownHostsPath?: string,
+  remoteEnv?: Record<string, string>,
 ): string[] {
   const args = baseSshArgs(server, knownHostsPath);
   args.push(`${server.username}@${server.host}`);
@@ -87,9 +88,18 @@ export function buildSshArgs(
     shellEscape(remoteCommand),
     ...(remoteArgs ?? []).map(shellEscape),
   ].join(" ");
+  const envSetup = Object.entries(remoteEnv ?? {})
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, value]) => {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+        throw new Error(`Invalid remote environment variable name: ${name}`);
+      }
+      return `export ${name}=${shellEscape(value)};`;
+    })
+    .join(" ");
   const remoteCmd = remotePath
-    ? `${PATH_SETUP} cd ${shellEscape(remotePath)} && ${cmdParts}`
-    : `${PATH_SETUP} ${cmdParts}`;
+    ? `${PATH_SETUP} ${envSetup} cd ${shellEscape(remotePath)} && ${cmdParts}`
+    : `${PATH_SETUP} ${envSetup} ${cmdParts}`;
   args.push(remoteCmd);
 
   return args;
@@ -116,6 +126,8 @@ export const REMOTE_INSTALL_COMMANDS: Record<string, string> = {
   opencode: "curl -fsSL https://opencode.ai/install | bash",
   codex: "npm install -g @openai/codex",
   gemini: "npm install -g @anthropic-ai/gemini-cli",
+  packetcode:
+    "curl -fsSL https://raw.githubusercontent.com/packetloss404/packetcode/main/install.sh | INSTALL_DIR=\"$HOME/.local/bin\" bash",
 };
 
 /** Map agent IDs to the CLI command name to check on the remote. */
@@ -124,4 +136,5 @@ export const AGENT_CLI_NAMES: Record<string, string> = {
   opencode: "opencode",
   codex: "codex",
   gemini: "gemini",
+  packetcode: "packetcode",
 };

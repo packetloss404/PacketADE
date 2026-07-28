@@ -142,6 +142,12 @@ pub struct OrchestratorSettingsDto {
     pub auto_commit_trailer_enabled: bool,
     #[serde(default = "crate::api::default_auto_commit_trailer_format_dto")]
     pub auto_commit_trailer_format: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub autonomy_default_mode: Option<AutonomyDefaultModeDto>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub autonomy_default_policy: Option<AutonomyPolicyDto>,
 }
 
 pub(crate) fn default_auto_commit_trailer_enabled_dto() -> bool {
@@ -496,6 +502,374 @@ pub enum AttemptTargetDto {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewGateVerdictDto {
+    Pass,
+    ChangesRequested,
+    Blocked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewGateStatusDto {
+    Pending,
+    Running,
+    Passed,
+    ChangesRequested,
+    Blocked,
+    Error,
+    Overridden,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewGateFindingSeverityDto {
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewGateFindingDto {
+    pub severity: ReviewGateFindingSeverityDto,
+    pub title: String,
+    pub details: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub file_path: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    #[ts(type = "number")]
+    pub line: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewGateReportDto {
+    #[ts(type = "1")]
+    pub schema_version: u32,
+    pub verdict: ReviewGateVerdictDto,
+    pub summary: String,
+    #[serde(default)]
+    pub findings: Vec<ReviewGateFindingDto>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewGatePolicyDto {
+    #[serde(default)]
+    pub enabled: bool,
+    pub reviewer_agent_config_id: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub reviewer_model: Option<String>,
+    #[serde(default)]
+    pub acceptance_criteria: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AttemptReviewGateDto {
+    pub status: ReviewGateStatusDto,
+    #[serde(default)]
+    #[ts(optional)]
+    pub reviewer_conversation_id: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub reviewer_agent_config_id: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub reviewer_model: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub report: Option<ReviewGateReportDto>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub error_message: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    #[ts(type = "number")]
+    pub started_at: Option<u64>,
+    #[serde(default)]
+    #[ts(optional)]
+    #[ts(type = "number")]
+    pub completed_at: Option<u64>,
+    #[serde(default)]
+    #[ts(optional)]
+    #[ts(type = "number")]
+    pub overridden_at: Option<u64>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub override_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum FlightExecutionModeDto {
+    Independent,
+    Cooperative,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum IntegrationBranchStatusDto {
+    Uninitialized,
+    Ready,
+    Integrating,
+    NeedsAttention,
+    Landed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct FlightIntegrationBranchDto {
+    pub branch: String,
+    pub base_branch: String,
+    pub base_sha: String,
+    pub head_sha: String,
+    pub worktree_path: String,
+    pub target_kind: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub target_id: Option<String>,
+    pub status: IntegrationBranchStatusDto,
+    #[serde(default)]
+    #[ts(optional)]
+    pub error_message: Option<String>,
+    #[serde(default)]
+    pub conflict_files: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomyFlightModeDto {
+    Assisted,
+    SettingsDefault,
+    Yolo,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomyDefaultModeDto {
+    Assisted,
+    Yolo,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomyToolPostureDto {
+    ApprovalGated,
+    AllowInProject,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomyRunStatusDto {
+    Idle,
+    Running,
+    Paused,
+    Stopped,
+    NeedsAttention,
+    Completed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomyActionStatusDto {
+    Started,
+    Completed,
+    Failed,
+    Denied,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomyActionKindDto {
+    Continue,
+    RecoverAttempt,
+    ReviewRemediation,
+    RetryReview,
+    AcceptReviewPass,
+    LaunchReadyTask,
+    IntegrateAttempt,
+    SetToolPosture,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AutonomyPolicyDto {
+    #[ts(type = "1")]
+    pub schema_version: u32,
+    pub auto_recovery: bool,
+    pub auto_review_remediation: bool,
+    pub auto_run_task_graph: bool,
+    pub tool_posture: AutonomyToolPostureDto,
+    pub max_total_cost: f64,
+    pub max_duration_minutes: u32,
+    pub max_retries_per_task: u32,
+    pub max_review_rounds: u32,
+    pub max_concurrent_agents: u32,
+    #[serde(default)]
+    pub allowed_roots: Vec<String>,
+    #[serde(default)]
+    pub allowed_targets: Vec<String>,
+    #[serde(default)]
+    pub allow_draft_pr_publishing: bool,
+}
+
+impl Default for AutonomyPolicyDto {
+    fn default() -> Self {
+        core_flight::AutonomyPolicy::default().into()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AutonomyActionRecordDto {
+    pub id: String,
+    pub kind: AutonomyActionKindDto,
+    #[serde(default)]
+    #[ts(optional)]
+    pub subject_id: Option<String>,
+    pub status: AutonomyActionStatusDto,
+    pub reason: String,
+    #[ts(type = "number")]
+    pub timestamp: u64,
+    pub cost: f64,
+    #[serde(default)]
+    #[ts(optional)]
+    #[ts(type = "Record<string, string | number | boolean | null>")]
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AutonomyRuntimeDto {
+    pub status: AutonomyRunStatusDto,
+    #[serde(default)]
+    #[ts(optional)]
+    #[ts(type = "number")]
+    pub started_at: Option<u64>,
+    #[serde(default)]
+    #[ts(optional)]
+    #[ts(type = "number")]
+    pub paused_at: Option<u64>,
+    #[serde(default)]
+    #[ts(optional)]
+    #[ts(type = "number")]
+    pub stopped_at: Option<u64>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub hard_stop_reason: Option<String>,
+    #[serde(default)]
+    pub action_history: Vec<AutonomyActionRecordDto>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum CoordinationMessageKindDto {
+    Instruction,
+    Question,
+    Answer,
+    Blocker,
+    Finding,
+    Handoff,
+    Artifact,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum CoordinationDeliveryStatusDto {
+    Queued,
+    Delivered,
+    Acknowledged,
+    Failed,
+    Archived,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CoordinationMessagePartyDto {
+    pub kind: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub id: Option<String>,
+    pub display_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CoordinationMessageRecipientDto {
+    pub kind: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub id: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CoordinationArtifactRefDto {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub uri: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub mime_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CoordinationAcknowledgementDto {
+    pub by: CoordinationMessagePartyDto,
+    #[ts(type = "number")]
+    pub at: u64,
+    #[serde(default)]
+    #[ts(optional)]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CoordinationMessageDto {
+    #[ts(type = "1")]
+    pub schema_version: u32,
+    pub id: String,
+    pub flight_id: String,
+    pub kind: CoordinationMessageKindDto,
+    pub sender: CoordinationMessagePartyDto,
+    pub recipient: CoordinationMessageRecipientDto,
+    pub body: String,
+    #[serde(default)]
+    pub artifacts: Vec<CoordinationArtifactRefDto>,
+    pub status: CoordinationDeliveryStatusDto,
+    #[ts(type = "number")]
+    pub created_at: u64,
+    #[serde(default)]
+    #[ts(optional)]
+    #[ts(type = "number")]
+    pub delivered_at: Option<u64>,
+    #[serde(default)]
+    pub acknowledgements: Vec<CoordinationAcknowledgementDto>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub reply_to_id: Option<String>,
+    pub dedupe_key: String,
+    #[serde(default)]
+    pub hop_count: u32,
+    #[serde(default)]
+    #[ts(optional)]
+    pub error_message: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AttemptDto {
@@ -530,6 +904,14 @@ pub struct AttemptDto {
     #[serde(default)]
     #[ts(optional)]
     pub failure_category: Option<String>,
+    /// RG1: independent reviewer lifecycle and verdict.
+    #[serde(default)]
+    #[ts(optional)]
+    pub review_gate: Option<AttemptReviewGateDto>,
+    /// Cooperative graph task that owns this attempt.
+    #[serde(default)]
+    #[ts(optional)]
+    pub task_id: Option<String>,
     /// v0.8-G: when the parent Flight publishes attempts as draft PRs, the
     /// resulting PR number is round-tripped here. Optional everywhere
     /// because most attempts will not have a draft PR.
@@ -572,6 +954,28 @@ pub struct FlightDto {
     pub prompt: Option<String>,
     #[serde(default)]
     pub attempts: Vec<AttemptDto>,
+    /// RG1: opt-in reviewer policy. Absent means disabled.
+    #[serde(default)]
+    #[ts(optional)]
+    pub review_gate_policy: Option<ReviewGatePolicyDto>,
+    /// Cooperative execution is opt-in; absent means independent.
+    #[serde(default)]
+    #[ts(optional)]
+    pub execution_mode: Option<FlightExecutionModeDto>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub integration_branch: Option<FlightIntegrationBranchDto>,
+    #[serde(default)]
+    pub coordination_inbox: Vec<CoordinationMessageDto>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub autonomy_mode: Option<AutonomyFlightModeDto>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub autonomy_policy: Option<AutonomyPolicyDto>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub autonomy_runtime: Option<AutonomyRuntimeDto>,
     /// Normal API-agent conversation used to refine the current upfront plan.
     #[serde(default)]
     #[ts(optional)]
@@ -893,6 +1297,8 @@ impl From<core_orchestrator::OrchestratorSettings> for OrchestratorSettingsDto {
             project_path: value.project_path,
             auto_commit_trailer_enabled: value.auto_commit_trailer_enabled,
             auto_commit_trailer_format: value.auto_commit_trailer_format,
+            autonomy_default_mode: Some(value.autonomy_default_mode.into()),
+            autonomy_default_policy: Some(value.autonomy_default_policy.into()),
         }
     }
 }
@@ -905,6 +1311,11 @@ impl From<OrchestratorSettingsDto> for core_orchestrator::OrchestratorSettings {
             project_path: value.project_path,
             auto_commit_trailer_enabled: value.auto_commit_trailer_enabled,
             auto_commit_trailer_format: value.auto_commit_trailer_format,
+            autonomy_default_mode: value
+                .autonomy_default_mode
+                .unwrap_or(AutonomyDefaultModeDto::Assisted)
+                .into(),
+            autonomy_default_policy: value.autonomy_default_policy.unwrap_or_default().into(),
         }
     }
 }
@@ -1420,6 +1831,664 @@ impl From<AttemptTargetDto> for core_flight::AttemptTarget {
     }
 }
 
+impl From<core_flight::ReviewGateVerdict> for ReviewGateVerdictDto {
+    fn from(value: core_flight::ReviewGateVerdict) -> Self {
+        match value {
+            core_flight::ReviewGateVerdict::Pass => Self::Pass,
+            core_flight::ReviewGateVerdict::ChangesRequested => Self::ChangesRequested,
+            core_flight::ReviewGateVerdict::Blocked => Self::Blocked,
+        }
+    }
+}
+
+impl From<ReviewGateVerdictDto> for core_flight::ReviewGateVerdict {
+    fn from(value: ReviewGateVerdictDto) -> Self {
+        match value {
+            ReviewGateVerdictDto::Pass => Self::Pass,
+            ReviewGateVerdictDto::ChangesRequested => Self::ChangesRequested,
+            ReviewGateVerdictDto::Blocked => Self::Blocked,
+        }
+    }
+}
+
+impl From<core_flight::ReviewGateStatus> for ReviewGateStatusDto {
+    fn from(value: core_flight::ReviewGateStatus) -> Self {
+        match value {
+            core_flight::ReviewGateStatus::Pending => Self::Pending,
+            core_flight::ReviewGateStatus::Running => Self::Running,
+            core_flight::ReviewGateStatus::Passed => Self::Passed,
+            core_flight::ReviewGateStatus::ChangesRequested => Self::ChangesRequested,
+            core_flight::ReviewGateStatus::Blocked => Self::Blocked,
+            core_flight::ReviewGateStatus::Error => Self::Error,
+            core_flight::ReviewGateStatus::Overridden => Self::Overridden,
+        }
+    }
+}
+
+impl From<ReviewGateStatusDto> for core_flight::ReviewGateStatus {
+    fn from(value: ReviewGateStatusDto) -> Self {
+        match value {
+            ReviewGateStatusDto::Pending => Self::Pending,
+            ReviewGateStatusDto::Running => Self::Running,
+            ReviewGateStatusDto::Passed => Self::Passed,
+            ReviewGateStatusDto::ChangesRequested => Self::ChangesRequested,
+            ReviewGateStatusDto::Blocked => Self::Blocked,
+            ReviewGateStatusDto::Error => Self::Error,
+            ReviewGateStatusDto::Overridden => Self::Overridden,
+        }
+    }
+}
+
+impl From<core_flight::ReviewGateFindingSeverity> for ReviewGateFindingSeverityDto {
+    fn from(value: core_flight::ReviewGateFindingSeverity) -> Self {
+        match value {
+            core_flight::ReviewGateFindingSeverity::Info => Self::Info,
+            core_flight::ReviewGateFindingSeverity::Warning => Self::Warning,
+            core_flight::ReviewGateFindingSeverity::Error => Self::Error,
+        }
+    }
+}
+
+impl From<ReviewGateFindingSeverityDto> for core_flight::ReviewGateFindingSeverity {
+    fn from(value: ReviewGateFindingSeverityDto) -> Self {
+        match value {
+            ReviewGateFindingSeverityDto::Info => Self::Info,
+            ReviewGateFindingSeverityDto::Warning => Self::Warning,
+            ReviewGateFindingSeverityDto::Error => Self::Error,
+        }
+    }
+}
+
+impl From<core_flight::ReviewGateFinding> for ReviewGateFindingDto {
+    fn from(value: core_flight::ReviewGateFinding) -> Self {
+        Self {
+            severity: value.severity.into(),
+            title: value.title,
+            details: value.details,
+            file_path: value.file_path,
+            line: value.line,
+        }
+    }
+}
+
+impl From<ReviewGateFindingDto> for core_flight::ReviewGateFinding {
+    fn from(value: ReviewGateFindingDto) -> Self {
+        Self {
+            severity: value.severity.into(),
+            title: value.title,
+            details: value.details,
+            file_path: value.file_path,
+            line: value.line,
+        }
+    }
+}
+
+impl From<core_flight::ReviewGateReport> for ReviewGateReportDto {
+    fn from(value: core_flight::ReviewGateReport) -> Self {
+        Self {
+            schema_version: value.schema_version,
+            verdict: value.verdict.into(),
+            summary: value.summary,
+            findings: value.findings.into_iter().map(Into::into).collect(),
+            evidence: value.evidence,
+        }
+    }
+}
+
+impl From<ReviewGateReportDto> for core_flight::ReviewGateReport {
+    fn from(value: ReviewGateReportDto) -> Self {
+        Self {
+            schema_version: value.schema_version,
+            verdict: value.verdict.into(),
+            summary: value.summary,
+            findings: value.findings.into_iter().map(Into::into).collect(),
+            evidence: value.evidence,
+        }
+    }
+}
+
+impl From<core_flight::ReviewGatePolicy> for ReviewGatePolicyDto {
+    fn from(value: core_flight::ReviewGatePolicy) -> Self {
+        Self {
+            enabled: value.enabled,
+            reviewer_agent_config_id: value.reviewer_agent_config_id,
+            reviewer_model: value.reviewer_model,
+            acceptance_criteria: value.acceptance_criteria,
+        }
+    }
+}
+
+impl From<ReviewGatePolicyDto> for core_flight::ReviewGatePolicy {
+    fn from(value: ReviewGatePolicyDto) -> Self {
+        Self {
+            enabled: value.enabled,
+            reviewer_agent_config_id: value.reviewer_agent_config_id,
+            reviewer_model: value.reviewer_model,
+            acceptance_criteria: value.acceptance_criteria,
+        }
+    }
+}
+
+impl From<core_flight::AttemptReviewGate> for AttemptReviewGateDto {
+    fn from(value: core_flight::AttemptReviewGate) -> Self {
+        Self {
+            status: value.status.into(),
+            reviewer_conversation_id: value.reviewer_conversation_id,
+            reviewer_agent_config_id: value.reviewer_agent_config_id,
+            reviewer_model: value.reviewer_model,
+            report: value.report.map(Into::into),
+            error_message: value.error_message,
+            started_at: value.started_at,
+            completed_at: value.completed_at,
+            overridden_at: value.overridden_at,
+            override_reason: value.override_reason,
+        }
+    }
+}
+
+impl From<AttemptReviewGateDto> for core_flight::AttemptReviewGate {
+    fn from(value: AttemptReviewGateDto) -> Self {
+        Self {
+            status: value.status.into(),
+            reviewer_conversation_id: value.reviewer_conversation_id,
+            reviewer_agent_config_id: value.reviewer_agent_config_id,
+            reviewer_model: value.reviewer_model,
+            report: value.report.map(Into::into),
+            error_message: value.error_message,
+            started_at: value.started_at,
+            completed_at: value.completed_at,
+            overridden_at: value.overridden_at,
+            override_reason: value.override_reason,
+        }
+    }
+}
+
+impl From<core_flight::FlightExecutionMode> for FlightExecutionModeDto {
+    fn from(value: core_flight::FlightExecutionMode) -> Self {
+        match value {
+            core_flight::FlightExecutionMode::Independent => Self::Independent,
+            core_flight::FlightExecutionMode::Cooperative => Self::Cooperative,
+        }
+    }
+}
+
+impl From<FlightExecutionModeDto> for core_flight::FlightExecutionMode {
+    fn from(value: FlightExecutionModeDto) -> Self {
+        match value {
+            FlightExecutionModeDto::Independent => Self::Independent,
+            FlightExecutionModeDto::Cooperative => Self::Cooperative,
+        }
+    }
+}
+
+impl From<core_flight::IntegrationBranchStatus> for IntegrationBranchStatusDto {
+    fn from(value: core_flight::IntegrationBranchStatus) -> Self {
+        match value {
+            core_flight::IntegrationBranchStatus::Uninitialized => Self::Uninitialized,
+            core_flight::IntegrationBranchStatus::Ready => Self::Ready,
+            core_flight::IntegrationBranchStatus::Integrating => Self::Integrating,
+            core_flight::IntegrationBranchStatus::NeedsAttention => Self::NeedsAttention,
+            core_flight::IntegrationBranchStatus::Landed => Self::Landed,
+        }
+    }
+}
+
+impl From<IntegrationBranchStatusDto> for core_flight::IntegrationBranchStatus {
+    fn from(value: IntegrationBranchStatusDto) -> Self {
+        match value {
+            IntegrationBranchStatusDto::Uninitialized => Self::Uninitialized,
+            IntegrationBranchStatusDto::Ready => Self::Ready,
+            IntegrationBranchStatusDto::Integrating => Self::Integrating,
+            IntegrationBranchStatusDto::NeedsAttention => Self::NeedsAttention,
+            IntegrationBranchStatusDto::Landed => Self::Landed,
+        }
+    }
+}
+
+impl From<core_flight::FlightIntegrationBranch> for FlightIntegrationBranchDto {
+    fn from(value: core_flight::FlightIntegrationBranch) -> Self {
+        Self {
+            branch: value.branch,
+            base_branch: value.base_branch,
+            base_sha: value.base_sha,
+            head_sha: value.head_sha,
+            worktree_path: value.worktree_path,
+            target_kind: value.target_kind,
+            target_id: value.target_id,
+            status: value.status.into(),
+            error_message: value.error_message,
+            conflict_files: value.conflict_files,
+        }
+    }
+}
+
+impl From<FlightIntegrationBranchDto> for core_flight::FlightIntegrationBranch {
+    fn from(value: FlightIntegrationBranchDto) -> Self {
+        Self {
+            branch: value.branch,
+            base_branch: value.base_branch,
+            base_sha: value.base_sha,
+            head_sha: value.head_sha,
+            worktree_path: value.worktree_path,
+            target_kind: value.target_kind,
+            target_id: value.target_id,
+            status: value.status.into(),
+            error_message: value.error_message,
+            conflict_files: value.conflict_files,
+        }
+    }
+}
+
+impl From<core_flight::AutonomyFlightMode> for AutonomyFlightModeDto {
+    fn from(value: core_flight::AutonomyFlightMode) -> Self {
+        match value {
+            core_flight::AutonomyFlightMode::Assisted => Self::Assisted,
+            core_flight::AutonomyFlightMode::SettingsDefault => Self::SettingsDefault,
+            core_flight::AutonomyFlightMode::Yolo => Self::Yolo,
+        }
+    }
+}
+
+impl From<AutonomyFlightModeDto> for core_flight::AutonomyFlightMode {
+    fn from(value: AutonomyFlightModeDto) -> Self {
+        match value {
+            AutonomyFlightModeDto::Assisted => Self::Assisted,
+            AutonomyFlightModeDto::SettingsDefault => Self::SettingsDefault,
+            AutonomyFlightModeDto::Yolo => Self::Yolo,
+        }
+    }
+}
+
+impl From<core_flight::AutonomyDefaultMode> for AutonomyDefaultModeDto {
+    fn from(value: core_flight::AutonomyDefaultMode) -> Self {
+        match value {
+            core_flight::AutonomyDefaultMode::Assisted => Self::Assisted,
+            core_flight::AutonomyDefaultMode::Yolo => Self::Yolo,
+        }
+    }
+}
+
+impl From<AutonomyDefaultModeDto> for core_flight::AutonomyDefaultMode {
+    fn from(value: AutonomyDefaultModeDto) -> Self {
+        match value {
+            AutonomyDefaultModeDto::Assisted => Self::Assisted,
+            AutonomyDefaultModeDto::Yolo => Self::Yolo,
+        }
+    }
+}
+
+impl From<core_flight::AutonomyToolPosture> for AutonomyToolPostureDto {
+    fn from(value: core_flight::AutonomyToolPosture) -> Self {
+        match value {
+            core_flight::AutonomyToolPosture::ApprovalGated => Self::ApprovalGated,
+            core_flight::AutonomyToolPosture::AllowInProject => Self::AllowInProject,
+        }
+    }
+}
+
+impl From<AutonomyToolPostureDto> for core_flight::AutonomyToolPosture {
+    fn from(value: AutonomyToolPostureDto) -> Self {
+        match value {
+            AutonomyToolPostureDto::ApprovalGated => Self::ApprovalGated,
+            AutonomyToolPostureDto::AllowInProject => Self::AllowInProject,
+        }
+    }
+}
+
+impl From<core_flight::AutonomyRunStatus> for AutonomyRunStatusDto {
+    fn from(value: core_flight::AutonomyRunStatus) -> Self {
+        match value {
+            core_flight::AutonomyRunStatus::Idle => Self::Idle,
+            core_flight::AutonomyRunStatus::Running => Self::Running,
+            core_flight::AutonomyRunStatus::Paused => Self::Paused,
+            core_flight::AutonomyRunStatus::Stopped => Self::Stopped,
+            core_flight::AutonomyRunStatus::NeedsAttention => Self::NeedsAttention,
+            core_flight::AutonomyRunStatus::Completed => Self::Completed,
+        }
+    }
+}
+
+impl From<AutonomyRunStatusDto> for core_flight::AutonomyRunStatus {
+    fn from(value: AutonomyRunStatusDto) -> Self {
+        match value {
+            AutonomyRunStatusDto::Idle => Self::Idle,
+            AutonomyRunStatusDto::Running => Self::Running,
+            AutonomyRunStatusDto::Paused => Self::Paused,
+            AutonomyRunStatusDto::Stopped => Self::Stopped,
+            AutonomyRunStatusDto::NeedsAttention => Self::NeedsAttention,
+            AutonomyRunStatusDto::Completed => Self::Completed,
+        }
+    }
+}
+
+impl From<core_flight::AutonomyActionStatus> for AutonomyActionStatusDto {
+    fn from(value: core_flight::AutonomyActionStatus) -> Self {
+        match value {
+            core_flight::AutonomyActionStatus::Started => Self::Started,
+            core_flight::AutonomyActionStatus::Completed => Self::Completed,
+            core_flight::AutonomyActionStatus::Failed => Self::Failed,
+            core_flight::AutonomyActionStatus::Denied => Self::Denied,
+        }
+    }
+}
+
+impl From<AutonomyActionStatusDto> for core_flight::AutonomyActionStatus {
+    fn from(value: AutonomyActionStatusDto) -> Self {
+        match value {
+            AutonomyActionStatusDto::Started => Self::Started,
+            AutonomyActionStatusDto::Completed => Self::Completed,
+            AutonomyActionStatusDto::Failed => Self::Failed,
+            AutonomyActionStatusDto::Denied => Self::Denied,
+        }
+    }
+}
+
+impl From<core_flight::AutonomyActionKind> for AutonomyActionKindDto {
+    fn from(value: core_flight::AutonomyActionKind) -> Self {
+        match value {
+            core_flight::AutonomyActionKind::Continue => Self::Continue,
+            core_flight::AutonomyActionKind::RecoverAttempt => Self::RecoverAttempt,
+            core_flight::AutonomyActionKind::ReviewRemediation => Self::ReviewRemediation,
+            core_flight::AutonomyActionKind::RetryReview => Self::RetryReview,
+            core_flight::AutonomyActionKind::AcceptReviewPass => Self::AcceptReviewPass,
+            core_flight::AutonomyActionKind::LaunchReadyTask => Self::LaunchReadyTask,
+            core_flight::AutonomyActionKind::IntegrateAttempt => Self::IntegrateAttempt,
+            core_flight::AutonomyActionKind::SetToolPosture => Self::SetToolPosture,
+        }
+    }
+}
+
+impl From<AutonomyActionKindDto> for core_flight::AutonomyActionKind {
+    fn from(value: AutonomyActionKindDto) -> Self {
+        match value {
+            AutonomyActionKindDto::Continue => Self::Continue,
+            AutonomyActionKindDto::RecoverAttempt => Self::RecoverAttempt,
+            AutonomyActionKindDto::ReviewRemediation => Self::ReviewRemediation,
+            AutonomyActionKindDto::RetryReview => Self::RetryReview,
+            AutonomyActionKindDto::AcceptReviewPass => Self::AcceptReviewPass,
+            AutonomyActionKindDto::LaunchReadyTask => Self::LaunchReadyTask,
+            AutonomyActionKindDto::IntegrateAttempt => Self::IntegrateAttempt,
+            AutonomyActionKindDto::SetToolPosture => Self::SetToolPosture,
+        }
+    }
+}
+
+impl From<core_flight::AutonomyPolicy> for AutonomyPolicyDto {
+    fn from(value: core_flight::AutonomyPolicy) -> Self {
+        Self {
+            schema_version: value.schema_version,
+            auto_recovery: value.auto_recovery,
+            auto_review_remediation: value.auto_review_remediation,
+            auto_run_task_graph: value.auto_run_task_graph,
+            tool_posture: value.tool_posture.into(),
+            max_total_cost: value.max_total_cost,
+            max_duration_minutes: value.max_duration_minutes,
+            max_retries_per_task: value.max_retries_per_task,
+            max_review_rounds: value.max_review_rounds,
+            max_concurrent_agents: value.max_concurrent_agents,
+            allowed_roots: value.allowed_roots,
+            allowed_targets: value.allowed_targets,
+            allow_draft_pr_publishing: value.allow_draft_pr_publishing,
+        }
+    }
+}
+
+impl From<AutonomyPolicyDto> for core_flight::AutonomyPolicy {
+    fn from(value: AutonomyPolicyDto) -> Self {
+        Self {
+            schema_version: value.schema_version,
+            auto_recovery: value.auto_recovery,
+            auto_review_remediation: value.auto_review_remediation,
+            auto_run_task_graph: value.auto_run_task_graph,
+            tool_posture: value.tool_posture.into(),
+            max_total_cost: value.max_total_cost,
+            max_duration_minutes: value.max_duration_minutes,
+            max_retries_per_task: value.max_retries_per_task,
+            max_review_rounds: value.max_review_rounds,
+            max_concurrent_agents: value.max_concurrent_agents,
+            allowed_roots: value.allowed_roots,
+            allowed_targets: value.allowed_targets,
+            allow_draft_pr_publishing: value.allow_draft_pr_publishing,
+        }
+    }
+}
+
+impl From<core_flight::AutonomyActionRecord> for AutonomyActionRecordDto {
+    fn from(value: core_flight::AutonomyActionRecord) -> Self {
+        Self {
+            id: value.id,
+            kind: value.kind.into(),
+            subject_id: value.subject_id,
+            status: value.status.into(),
+            reason: value.reason,
+            timestamp: value.timestamp,
+            cost: value.cost,
+            metadata: value.metadata,
+        }
+    }
+}
+
+impl From<AutonomyActionRecordDto> for core_flight::AutonomyActionRecord {
+    fn from(value: AutonomyActionRecordDto) -> Self {
+        Self {
+            id: value.id,
+            kind: value.kind.into(),
+            subject_id: value.subject_id,
+            status: value.status.into(),
+            reason: value.reason,
+            timestamp: value.timestamp,
+            cost: value.cost,
+            metadata: value.metadata,
+        }
+    }
+}
+
+impl From<core_flight::AutonomyRuntime> for AutonomyRuntimeDto {
+    fn from(value: core_flight::AutonomyRuntime) -> Self {
+        Self {
+            status: value.status.into(),
+            started_at: value.started_at,
+            paused_at: value.paused_at,
+            stopped_at: value.stopped_at,
+            hard_stop_reason: value.hard_stop_reason,
+            action_history: value.action_history.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<AutonomyRuntimeDto> for core_flight::AutonomyRuntime {
+    fn from(value: AutonomyRuntimeDto) -> Self {
+        Self {
+            status: value.status.into(),
+            started_at: value.started_at,
+            paused_at: value.paused_at,
+            stopped_at: value.stopped_at,
+            hard_stop_reason: value.hard_stop_reason,
+            action_history: value.action_history.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<core_flight::CoordinationMessageKind> for CoordinationMessageKindDto {
+    fn from(value: core_flight::CoordinationMessageKind) -> Self {
+        match value {
+            core_flight::CoordinationMessageKind::Instruction => Self::Instruction,
+            core_flight::CoordinationMessageKind::Question => Self::Question,
+            core_flight::CoordinationMessageKind::Answer => Self::Answer,
+            core_flight::CoordinationMessageKind::Blocker => Self::Blocker,
+            core_flight::CoordinationMessageKind::Finding => Self::Finding,
+            core_flight::CoordinationMessageKind::Handoff => Self::Handoff,
+            core_flight::CoordinationMessageKind::Artifact => Self::Artifact,
+        }
+    }
+}
+
+impl From<CoordinationMessageKindDto> for core_flight::CoordinationMessageKind {
+    fn from(value: CoordinationMessageKindDto) -> Self {
+        match value {
+            CoordinationMessageKindDto::Instruction => Self::Instruction,
+            CoordinationMessageKindDto::Question => Self::Question,
+            CoordinationMessageKindDto::Answer => Self::Answer,
+            CoordinationMessageKindDto::Blocker => Self::Blocker,
+            CoordinationMessageKindDto::Finding => Self::Finding,
+            CoordinationMessageKindDto::Handoff => Self::Handoff,
+            CoordinationMessageKindDto::Artifact => Self::Artifact,
+        }
+    }
+}
+
+impl From<core_flight::CoordinationDeliveryStatus> for CoordinationDeliveryStatusDto {
+    fn from(value: core_flight::CoordinationDeliveryStatus) -> Self {
+        match value {
+            core_flight::CoordinationDeliveryStatus::Queued => Self::Queued,
+            core_flight::CoordinationDeliveryStatus::Delivered => Self::Delivered,
+            core_flight::CoordinationDeliveryStatus::Acknowledged => Self::Acknowledged,
+            core_flight::CoordinationDeliveryStatus::Failed => Self::Failed,
+            core_flight::CoordinationDeliveryStatus::Archived => Self::Archived,
+        }
+    }
+}
+
+impl From<CoordinationDeliveryStatusDto> for core_flight::CoordinationDeliveryStatus {
+    fn from(value: CoordinationDeliveryStatusDto) -> Self {
+        match value {
+            CoordinationDeliveryStatusDto::Queued => Self::Queued,
+            CoordinationDeliveryStatusDto::Delivered => Self::Delivered,
+            CoordinationDeliveryStatusDto::Acknowledged => Self::Acknowledged,
+            CoordinationDeliveryStatusDto::Failed => Self::Failed,
+            CoordinationDeliveryStatusDto::Archived => Self::Archived,
+        }
+    }
+}
+
+impl From<core_flight::CoordinationMessageParty> for CoordinationMessagePartyDto {
+    fn from(value: core_flight::CoordinationMessageParty) -> Self {
+        Self {
+            kind: value.kind,
+            id: value.id,
+            display_name: value.display_name,
+        }
+    }
+}
+
+impl From<CoordinationMessagePartyDto> for core_flight::CoordinationMessageParty {
+    fn from(value: CoordinationMessagePartyDto) -> Self {
+        Self {
+            kind: value.kind,
+            id: value.id,
+            display_name: value.display_name,
+        }
+    }
+}
+
+impl From<core_flight::CoordinationMessageRecipient> for CoordinationMessageRecipientDto {
+    fn from(value: core_flight::CoordinationMessageRecipient) -> Self {
+        Self {
+            kind: value.kind,
+            id: value.id,
+            label: value.label,
+        }
+    }
+}
+
+impl From<CoordinationMessageRecipientDto> for core_flight::CoordinationMessageRecipient {
+    fn from(value: CoordinationMessageRecipientDto) -> Self {
+        Self {
+            kind: value.kind,
+            id: value.id,
+            label: value.label,
+        }
+    }
+}
+
+impl From<core_flight::CoordinationArtifactRef> for CoordinationArtifactRefDto {
+    fn from(value: core_flight::CoordinationArtifactRef) -> Self {
+        Self {
+            id: value.id,
+            label: value.label,
+            uri: value.uri,
+            mime_type: value.mime_type,
+        }
+    }
+}
+
+impl From<CoordinationArtifactRefDto> for core_flight::CoordinationArtifactRef {
+    fn from(value: CoordinationArtifactRefDto) -> Self {
+        Self {
+            id: value.id,
+            label: value.label,
+            uri: value.uri,
+            mime_type: value.mime_type,
+        }
+    }
+}
+
+impl From<core_flight::CoordinationAcknowledgement> for CoordinationAcknowledgementDto {
+    fn from(value: core_flight::CoordinationAcknowledgement) -> Self {
+        Self {
+            by: value.by.into(),
+            at: value.at,
+            note: value.note,
+        }
+    }
+}
+
+impl From<CoordinationAcknowledgementDto> for core_flight::CoordinationAcknowledgement {
+    fn from(value: CoordinationAcknowledgementDto) -> Self {
+        Self {
+            by: value.by.into(),
+            at: value.at,
+            note: value.note,
+        }
+    }
+}
+
+impl From<core_flight::CoordinationMessage> for CoordinationMessageDto {
+    fn from(value: core_flight::CoordinationMessage) -> Self {
+        Self {
+            schema_version: value.schema_version,
+            id: value.id,
+            flight_id: value.flight_id,
+            kind: value.kind.into(),
+            sender: value.sender.into(),
+            recipient: value.recipient.into(),
+            body: value.body,
+            artifacts: value.artifacts.into_iter().map(Into::into).collect(),
+            status: value.status.into(),
+            created_at: value.created_at,
+            delivered_at: value.delivered_at,
+            acknowledgements: value.acknowledgements.into_iter().map(Into::into).collect(),
+            reply_to_id: value.reply_to_id,
+            dedupe_key: value.dedupe_key,
+            hop_count: value.hop_count,
+            error_message: value.error_message,
+        }
+    }
+}
+
+impl From<CoordinationMessageDto> for core_flight::CoordinationMessage {
+    fn from(value: CoordinationMessageDto) -> Self {
+        Self {
+            schema_version: value.schema_version,
+            id: value.id,
+            flight_id: value.flight_id,
+            kind: value.kind.into(),
+            sender: value.sender.into(),
+            recipient: value.recipient.into(),
+            body: value.body,
+            artifacts: value.artifacts.into_iter().map(Into::into).collect(),
+            status: value.status.into(),
+            created_at: value.created_at,
+            delivered_at: value.delivered_at,
+            acknowledgements: value.acknowledgements.into_iter().map(Into::into).collect(),
+            reply_to_id: value.reply_to_id,
+            dedupe_key: value.dedupe_key,
+            hop_count: value.hop_count,
+            error_message: value.error_message,
+        }
+    }
+}
+
 impl From<core_flight::Attempt> for AttemptDto {
     fn from(a: core_flight::Attempt) -> Self {
         Self {
@@ -1439,6 +2508,8 @@ impl From<core_flight::Attempt> for AttemptDto {
             tokens: a.tokens,
             error_message: a.error_message,
             failure_category: a.failure_category,
+            review_gate: a.review_gate.map(Into::into),
+            task_id: a.task_id,
             draft_pr_number: a.draft_pr_number,
         }
     }
@@ -1463,6 +2534,8 @@ impl From<AttemptDto> for core_flight::Attempt {
             tokens: a.tokens,
             error_message: a.error_message,
             failure_category: a.failure_category,
+            review_gate: a.review_gate.map(Into::into),
+            task_id: a.task_id,
             draft_pr_number: a.draft_pr_number,
         }
     }
@@ -1489,6 +2562,17 @@ impl From<core_flight::Flight> for FlightDto {
             total_tokens: value.total_tokens,
             prompt: value.prompt,
             attempts: value.attempts.into_iter().map(Into::into).collect(),
+            review_gate_policy: value.review_gate_policy.map(Into::into),
+            execution_mode: value.execution_mode.map(Into::into),
+            integration_branch: value.integration_branch.map(Into::into),
+            coordination_inbox: value
+                .coordination_inbox
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            autonomy_mode: value.autonomy_mode.map(Into::into),
+            autonomy_policy: value.autonomy_policy.map(Into::into),
+            autonomy_runtime: value.autonomy_runtime.map(Into::into),
             planning_conversation_id: value.planning_conversation_id,
             planner_session_id: value.planner_session_id,
             planner_status: value.planner_status.map(Into::into),
@@ -1521,6 +2605,17 @@ impl From<FlightDto> for core_flight::Flight {
             total_tokens: value.total_tokens,
             prompt: value.prompt,
             attempts: value.attempts.into_iter().map(Into::into).collect(),
+            review_gate_policy: value.review_gate_policy.map(Into::into),
+            execution_mode: value.execution_mode.map(Into::into),
+            integration_branch: value.integration_branch.map(Into::into),
+            coordination_inbox: value
+                .coordination_inbox
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            autonomy_mode: value.autonomy_mode.map(Into::into),
+            autonomy_policy: value.autonomy_policy.map(Into::into),
+            autonomy_runtime: value.autonomy_runtime.map(Into::into),
             planning_conversation_id: value.planning_conversation_id,
             planner_session_id: value.planner_session_id,
             planner_status: value.planner_status.map(Into::into),
@@ -1626,6 +2721,32 @@ fn generated_typescript_schema() -> String {
     push_decl!(MilestoneDto);
     push_decl!(AttemptStatusDto);
     push_decl!(AttemptTargetDto);
+    push_decl!(ReviewGateVerdictDto);
+    push_decl!(ReviewGateStatusDto);
+    push_decl!(ReviewGateFindingSeverityDto);
+    push_decl!(ReviewGateFindingDto);
+    push_decl!(ReviewGateReportDto);
+    push_decl!(ReviewGatePolicyDto);
+    push_decl!(AttemptReviewGateDto);
+    push_decl!(FlightExecutionModeDto);
+    push_decl!(IntegrationBranchStatusDto);
+    push_decl!(FlightIntegrationBranchDto);
+    push_decl!(AutonomyFlightModeDto);
+    push_decl!(AutonomyDefaultModeDto);
+    push_decl!(AutonomyToolPostureDto);
+    push_decl!(AutonomyRunStatusDto);
+    push_decl!(AutonomyActionStatusDto);
+    push_decl!(AutonomyActionKindDto);
+    push_decl!(AutonomyPolicyDto);
+    push_decl!(AutonomyActionRecordDto);
+    push_decl!(AutonomyRuntimeDto);
+    push_decl!(CoordinationMessageKindDto);
+    push_decl!(CoordinationDeliveryStatusDto);
+    push_decl!(CoordinationMessagePartyDto);
+    push_decl!(CoordinationMessageRecipientDto);
+    push_decl!(CoordinationArtifactRefDto);
+    push_decl!(CoordinationAcknowledgementDto);
+    push_decl!(CoordinationMessageDto);
     push_decl!(AttemptDto);
     push_decl!(FlightDto);
     push_decl!(PersistedStateDto);
@@ -1712,6 +2833,13 @@ mod tests {
                 total_tokens: 0,
                 prompt: None,
                 attempts: vec![],
+                review_gate_policy: None,
+                execution_mode: None,
+                integration_branch: None,
+                coordination_inbox: Vec::new(),
+                autonomy_mode: None,
+                autonomy_policy: None,
+                autonomy_runtime: None,
                 planning_conversation_id: None,
                 planner_session_id: None,
                 planner_status: None,
@@ -1730,6 +2858,8 @@ mod tests {
                 auto_commit_trailer_enabled: true,
                 auto_commit_trailer_format: core_orchestrator::DEFAULT_AUTO_COMMIT_TRAILER_FORMAT
                     .into(),
+                autonomy_default_mode: Some(AutonomyDefaultModeDto::Assisted),
+                autonomy_default_policy: Some(AutonomyPolicyDto::default()),
             },
             ui: PersistedUiStateDto {
                 selected_flight_id: None,

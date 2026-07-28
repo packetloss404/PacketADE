@@ -10,6 +10,7 @@ import { useMemoryStore } from "@/stores/memoryStore";
 import { useServerStore } from "@/stores/serverStore";
 import { useIssueStore } from "@/stores/issueStore";
 import { migrateSshTargetsToServers } from "@/lib/sshTargetMigration";
+import { startBoundedAutonomyRuntime } from "@/stores/boundedAutonomyRuntime";
 
 const PROJECT_PATH_KEY = "packetade:project-path";
 
@@ -116,7 +117,7 @@ export async function initializeApp(): Promise<void> {
     // Heavy stores hydrate in the background — welcome doesn't need them,
     // and they don't make additional backend calls when given pre-loaded
     // state, so this is really just a clarity/intent signal.
-    void useFlightStore
+    await useFlightStore
       .getState()
       .hydrateFromBackend(state)
       .catch(() => undefined);
@@ -143,6 +144,8 @@ export async function initializeApp(): Promise<void> {
     }
     useAppStore.getState().setInitialized(true);
   }
+
+  startBoundedAutonomyRuntime();
 
   // Kick CLI detection in the background — surfaces installed status to the
   // onboarding flow and the workspace creation modal. Must not block startup.

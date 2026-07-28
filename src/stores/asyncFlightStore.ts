@@ -7,6 +7,9 @@ import {
   setAttemptDraftPr,
   summarizeFlight,
   gitPushRemote,
+  integrateFlightAttempt,
+  landFlightIntegration,
+  prepareFlightIntegrationBranch,
   toGitServerConfigInput,
   type AttemptTargetSpec,
 } from "@/lib/tauri";
@@ -23,6 +26,7 @@ import {
   type CreateApiConversationOptions,
 } from "@/stores/agentTaskStore";
 import { useServerStore } from "@/stores/serverStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useGitHubStore } from "@/stores/githubStore";
 import { assertCostGuardrailsAllowLaunch } from "@/stores/costGuardrailStore";
 import { useMemoryStore } from "@/stores/memoryStore";
@@ -37,6 +41,19 @@ import {
 import { maybeEscalate, recordAttemptFailure } from "@/lib/flightCoordination";
 import { getDefaultModel, getProviderForAgent } from "@/lib/api-models";
 import type { ServerConfig } from "@/types/server";
+import { reviewerGateAllowsAcceptance } from "@/lib/reviewerGate";
+import {
+  overrideReviewGate,
+  retryReviewGate,
+  sendReviewFindingsToBuilder,
+} from "@/stores/reviewerGateRuntime";
+import {
+  buildCooperativeTaskPrompt,
+  selectReadyCooperativeTasks,
+  validateCooperativeAssignments,
+  validateCooperativeGraph,
+} from "@/lib/cooperativeFlight";
+import type { Task } from "@/types/flight";
 
 export interface AsyncLaunchOptions {
   allowPathCollisions?: boolean;
@@ -89,11 +106,14 @@ interface AsyncFlightStore {
    * model), records a `handoff` coordination event, and appends a fresh attempt
    * via `launchAsync`. The failed record is kept for history.
    */
-  reassignAttempt: (
-    flightId: string,
-    attemptId: string,
-    newAgentConfigId: string,
-  ) => Promise<void>;
+  reassignAttempt: (flightId: string, attemptId: string, newAgentConfigId: string) => Promise<void>;
+
+  retryReviewGate: (flightId: string, attemptId: string) => Promise<void>;
+  overrideReviewGate: (flightId: string, attemptId: string, reason: string) => Promise<void>;
+  sendReviewFindingsToBuilder: (flightId: string, attemptId: string) => Promise<void>;
+  prepareCooperativeFlight: (flightId: string) => Promise<void>;
+  launchReadyTasks: (flightId: string, taskIds?: string[]) => Promise<void>;
+  landCooperativeFlight: (flightId: string) => Promise<void>;
 }
 
 /**
@@ -164,6 +184,164 @@ function patchAttempt(flightId: string, attemptId: string, patch: Partial<Attemp
   useFlightStore.getState().updateFlight(flightId, { attempts: next });
 }
 
+function patchTask(flightId: string, taskId: string, patch: Partial<Task>) {
+  const flight = useFlightStore.getState().flights.find((candidate) => candidate.id === flightId);
+  if (!flight) return;
+  useFlightStore.getState().updateFlight(flightId, {
+    milestones: flight.milestones.map((milestone) => ({
+      ...milestone,
+      tasks: milestone.tasks.map((task) => (task.id === taskId ? { ...task, ...patch } : task)),
+    })),
+  });
+}
+
+function cooperativeTarget(flight: Flight): {
+  projectPath: string;
+  server?: ServerConfig;
+} {
+  const workspace = flight.workspaceId
+    ? useWorkspaceStore
+        .getState()
+        .workspaces.find((candidate) => candidate.id === flight.workspaceId)
+    : undefined;
+  if (!workspace?.serverId) return { projectPath: flight.projectPath };
+  const server = useServerStore.getState().getServer(workspace.serverId);
+  if (!server) throw new Error("The cooperative Flight's SSH server is no longer configured.");
+  if (!server.hostFingerprint) {
+    throw new Error("Verify and pin the cooperative Flight's SSH host key before launching.");
+  }
+  return {
+    projectPath: workspace.remoteProjectPath || flight.projectPath,
+    server,
+  };
+}
+
+async function ensureCooperativeIntegration(flightId: string): Promise<Flight> {
+  const flight = useFlightStore.getState().flights.find((candidate) => candidate.id === flightId);
+  if (!flight) throw new Error(`Flight '${flightId}' was not found.`);
+  if (flight.integrationBranch?.status === "ready") return flight;
+  const target = cooperativeTarget(flight);
+  const baseBranch = flight.gitBranch || "main";
+  const prepared = await prepareFlightIntegrationBranch(
+    target.projectPath,
+    flight.id,
+    baseBranch,
+    target.server ? toGitServerConfigInput(target.server) : null,
+  );
+  useFlightStore.getState().updateFlight(flight.id, {
+    executionMode: "cooperative",
+    integrationBranch: {
+      ...prepared,
+      targetKind: target.server ? "ssh" : "local",
+      targetId: target.server?.id,
+      status: "ready",
+      conflictFiles: [],
+    },
+  });
+  await useFlightStore.getState().flushPersistence();
+  return useFlightStore.getState().flights.find((candidate) => candidate.id === flightId) ?? flight;
+}
+
+async function integrateCooperativeAttempt(flight: Flight, attempt: Attempt): Promise<void> {
+  if (!attempt.taskId) return;
+  const integration = flight.integrationBranch;
+  if (!integration) throw new Error("Prepare the Flight integration branch before acceptance.");
+  const gate = reviewerGateAllowsAcceptance(flight, attempt);
+  if (!gate.allowed) throw new Error(gate.reason);
+  const server =
+    integration.targetKind === "ssh" && integration.targetId
+      ? useServerStore.getState().getServer(integration.targetId)
+      : undefined;
+  if (integration.targetKind === "ssh" && !server) {
+    throw new Error("The integration SSH server is no longer configured.");
+  }
+  useFlightStore.getState().updateFlight(flight.id, {
+    integrationBranch: {
+      ...integration,
+      status: "integrating",
+      errorMessage: undefined,
+      conflictFiles: [],
+    },
+  });
+  try {
+    const result = await integrateFlightAttempt({
+      integrationPath: integration.worktreePath,
+      integrationBranch: integration.branch,
+      attemptPath: attempt.target.worktreePath,
+      attemptBranch: attempt.branch,
+      serverConfig: server ? toGitServerConfigInput(server) : null,
+    });
+    if (result.conflictFiles.length > 0) {
+      patchTask(flight.id, attempt.taskId, {
+        status: "blocked",
+        blockedReason: `Integration conflict: ${result.conflictFiles.join(", ")}`,
+      });
+      useFlightStore.getState().updateFlight(flight.id, {
+        status: "paused",
+        integrationBranch: {
+          ...integration,
+          headSha: result.headSha,
+          status: "needs_attention",
+          errorMessage: "Task integration conflicted and was aborted.",
+          conflictFiles: result.conflictFiles,
+        },
+      });
+      useFlightStore.getState().appendCoordinationEvent(flight.id, {
+        type: "collision_warning",
+        taskId: attempt.taskId,
+        agentId: attempt.agentConfigId,
+        summary: `Integration conflict stopped the cooperative path: ${result.conflictFiles.join(", ")}.`,
+        metadata: {
+          attemptId: attempt.id,
+          conflictFiles: result.conflictFiles.join(","),
+        },
+      });
+      await useFlightStore.getState().flushPersistence();
+      throw new Error("Integration conflict requires attention before this task can be accepted.");
+    }
+    patchTask(flight.id, attempt.taskId, {
+      status: "done",
+      completedAt: Date.now(),
+      blockedReason: undefined,
+    });
+    const latest = useFlightStore
+      .getState()
+      .flights.find((candidate) => candidate.id === flight.id);
+    useFlightStore.getState().updateFlight(flight.id, {
+      status: "active",
+      integrationBranch: {
+        ...(latest?.integrationBranch ?? integration),
+        headSha: result.headSha,
+        status: "ready",
+        errorMessage: undefined,
+        conflictFiles: [],
+      },
+    });
+    useFlightStore.getState().appendCoordinationEvent(flight.id, {
+      type: "task_completed",
+      taskId: attempt.taskId,
+      agentId: attempt.agentConfigId,
+      summary: "Accepted and integrated the cooperative task branch.",
+      metadata: { attemptId: attempt.id, integrationHead: result.headSha },
+    });
+    await useFlightStore.getState().flushPersistence();
+  } catch (error) {
+    const current = useFlightStore
+      .getState()
+      .flights.find((candidate) => candidate.id === flight.id)?.integrationBranch;
+    if (current?.status !== "needs_attention") {
+      useFlightStore.getState().updateFlight(flight.id, {
+        integrationBranch: {
+          ...(current ?? integration),
+          status: "needs_attention",
+          errorMessage: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+    throw error;
+  }
+}
+
 /**
  * v0.8-G: post-attempt publish pipeline. Called only for attempts on
  * Flights with `publishAttemptsAsPrs == true` that finish in a clean
@@ -206,8 +384,7 @@ async function publishAttemptAsDraftPr(flight: Flight, attempt: Attempt): Promis
     const server = useServerStore.getState().getServer(attempt.target.targetId);
     if (!server) {
       patchAttempt(flight.id, attempt.id, {
-        errorMessage:
-          "Draft-PR publish skipped: the SSH server for this attempt no longer exists.",
+        errorMessage: "Draft-PR publish skipped: the SSH server for this attempt no longer exists.",
       });
       return;
     }
@@ -803,6 +980,19 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     const flightBefore = useFlightStore.getState().flights.find((f) => f.id === flightId);
     const attemptBefore = flightBefore?.attempts?.find((a) => a.id === attemptId);
 
+    if (status === "completed" && flightBefore && attemptBefore) {
+      const gate = reviewerGateAllowsAcceptance(flightBefore, attemptBefore);
+      if (!gate.allowed) throw new Error(gate.reason);
+      // The Rust command enforces the same persisted policy. Flush a freshly
+      // parsed pass/override before asking it to complete the attempt.
+      if (flightBefore.reviewGatePolicy?.enabled) {
+        await useFlightStore.getState().flushPersistence();
+      }
+      if (flightBefore.executionMode === "cooperative" && attemptBefore.taskId) {
+        await integrateCooperativeAttempt(flightBefore, attemptBefore);
+      }
+    }
+
     // Publish while the local worktree still exists. `markAttemptStatus(...,
     // "completed")` removes it, so the old fire-and-forget ordering made every
     // enabled local draft-PR publish fail at `git push` with a missing cwd.
@@ -883,5 +1073,120 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     // a new attempt to this flight, leaving the failed record in place.
     const prompt = flight.prompt ?? flight.objective ?? "";
     await useAsyncFlightStore.getState().launchAsync(flightId, prompt, [spec]);
+  },
+
+  retryReviewGate,
+  overrideReviewGate,
+  sendReviewFindingsToBuilder,
+
+  prepareCooperativeFlight: async (flightId) => {
+    await ensureCooperativeIntegration(flightId);
+  },
+
+  launchReadyTasks: async (flightId, taskIds) => {
+    let flight = useFlightStore.getState().flights.find((candidate) => candidate.id === flightId);
+    if (!flight) throw new Error(`Flight '${flightId}' was not found.`);
+    const graphIssues = validateCooperativeGraph(flight);
+    const assignmentIssues = validateCooperativeAssignments(flight);
+    if (graphIssues.length > 0 || assignmentIssues.length > 0) {
+      throw new Error([...graphIssues, ...assignmentIssues][0].message);
+    }
+    flight = await ensureCooperativeIntegration(flightId);
+    const selected = new Set(taskIds ?? []);
+    const ready = selectReadyCooperativeTasks(flight).filter(
+      (task) => selected.size === 0 || selected.has(task.id),
+    );
+    if (ready.length === 0) throw new Error("No cooperative tasks are ready to launch.");
+    const integration = flight.integrationBranch;
+    if (!integration) throw new Error("The Flight integration branch is unavailable.");
+    const target = cooperativeTarget(flight);
+    for (const task of ready) {
+      patchTask(flight.id, task.id, { status: "queued", blockedReason: undefined });
+      const provider = task.agentConfigId.replace(/^api-/, "");
+      const spec: AttemptTargetSpec = target.server
+        ? {
+            kind: "ssh",
+            targetId: target.server.id,
+            host: target.server.host,
+            port: target.server.port,
+            user: target.server.username,
+            keyPath: target.server.keyPath ?? null,
+            authMethod: target.server.authMethod,
+            hostFingerprint: target.server.hostFingerprint ?? null,
+            basePath: target.projectPath,
+            baseBranch: integration.branch,
+            agentConfigId: task.agentConfigId,
+            provider,
+            model: task.model!,
+            taskId: task.id,
+          }
+        : {
+            kind: "local",
+            basePath: target.projectPath,
+            baseBranch: integration.branch,
+            agentConfigId: task.agentConfigId,
+            provider,
+            model: task.model!,
+            taskId: task.id,
+          };
+      try {
+        await useAsyncFlightStore
+          .getState()
+          .launchAsync(flight.id, buildCooperativeTaskPrompt(flight, task), [spec], {
+            allowPathCollisions: true,
+          });
+        patchTask(flight.id, task.id, { status: "running", startedAt: Date.now() });
+        useFlightStore.getState().appendCoordinationEvent(flight.id, {
+          type: "task_started",
+          taskId: task.id,
+          taskTitle: task.title,
+          agentId: task.agentConfigId,
+          summary: `Launched cooperative task '${task.title}' from ${integration.branch}.`,
+          metadata: { integrationHead: integration.headSha },
+        });
+      } catch (error) {
+        patchTask(flight.id, task.id, {
+          status: "failed",
+          blockedReason: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    }
+  },
+
+  landCooperativeFlight: async (flightId) => {
+    const flight = useFlightStore.getState().flights.find((candidate) => candidate.id === flightId);
+    if (!flight?.integrationBranch) {
+      throw new Error("The Flight integration branch is unavailable.");
+    }
+    const tasks = flight.milestones.flatMap((milestone) => milestone.tasks);
+    if (tasks.length === 0 || tasks.some((task) => task.status !== "done")) {
+      throw new Error("Every cooperative task must be integrated before final landing.");
+    }
+    if (flight.integrationBranch.status !== "ready") {
+      throw new Error("Resolve the integration branch before final landing.");
+    }
+    const target = cooperativeTarget(flight);
+    const headSha = await landFlightIntegration({
+      projectPath: target.projectPath,
+      baseBranch: flight.integrationBranch.baseBranch,
+      integrationBranch: flight.integrationBranch.branch,
+      serverConfig: target.server ? toGitServerConfigInput(target.server) : null,
+    });
+    useFlightStore.getState().updateFlight(flight.id, {
+      status: "done",
+      completedAt: Date.now(),
+      integrationBranch: {
+        ...flight.integrationBranch,
+        headSha,
+        status: "landed",
+      },
+    });
+    useFlightStore.getState().appendCoordinationEvent(flight.id, {
+      type: "task_completed",
+      summary: `Explicitly landed ${flight.integrationBranch.branch} into ${flight.integrationBranch.baseBranch}.`,
+      metadata: { integrationHead: headSha, landedBy: "user" },
+    });
+    await useFlightStore.getState().flushPersistence();
   },
 }));

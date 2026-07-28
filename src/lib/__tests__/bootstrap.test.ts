@@ -18,6 +18,7 @@ const mockOrchestrationSettingsHydrate = vi.hoisted(() => vi.fn().mockResolvedVa
 const mockSetInitialized = vi.hoisted(() => vi.fn());
 const mockSetTheme = vi.hoisted(() => vi.fn());
 const mockSetActiveView = vi.hoisted(() => vi.fn());
+const mockStartBoundedAutonomyRuntime = vi.hoisted(() => vi.fn());
 const mockAppState = vi.hoisted(() => ({
   activeView: "flights",
   theme: "dark" as const,
@@ -79,6 +80,9 @@ vi.mock("@/stores/serverStore", () => ({
 }));
 vi.mock("@/stores/issueStore", () => ({
   useIssueStore: { getState: () => ({ hydrateFromBackend: mockIssueHydrate }) },
+}));
+vi.mock("@/stores/boundedAutonomyRuntime", () => ({
+  startBoundedAutonomyRuntime: mockStartBoundedAutonomyRuntime,
 }));
 
 import { initializeApp, persistUiState } from "@/lib/bootstrap";

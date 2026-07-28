@@ -1,6 +1,6 @@
 # PacketADE — Competitor Landscape
 
-Last updated: 2026-07-24
+Last updated: 2026-07-27
 Scope: desktop/local agentic development environments and multi-agent coding-CLI orchestrators —
 the category PacketADE competes in. Compiled from read-only web research (fan-out subagent team).
 Figures are vendor/third-party-reported unless noted; treat funding/valuation/ARR as approximate.
@@ -24,7 +24,7 @@ whatever CLI you installed.
 | Product | Status | Platform | Agent model | Provider breadth | **Auth model** | Isolation | Orchestration |
 |---|---|---|---|---|---|---|---|
 | **PacketADE** (us) | Active | Tauri2/Rust; macOS/Win/Linux | Wraps PTY CLIs **+ in-process API agents** | **8 provider rows** (Anthropic sub, Claude API, Codex sub, OpenAI API, OpenAI Agents SDK, MiniMax, OpenRouter, Ollama) | **OAuth-sub vs API-key, live auth badges, refresh-aware, dual in-process/sidecar transport** | Git worktrees (Flight attempts) | Flights + roles/ownership/collision/feed |
-| **BridgeSpace** (BridgeMind) | GA v3.2.2 | Tauri2/Rust; mac/Win/Linux | Wraps external CLIs | Delegated (BridgeCode alpha has multi-provider) | "Connect Accounts" = Claude/Codex OAuth session mgmt; **no catalog/badges/API-key** | Git worktrees | **BridgeSwarm** roles + ownership + quality gates |
+| **BridgeSpace** (BridgeMind) | GA v3.4.15 | Tauri2/Rust; mac/Win/Linux | Wraps external CLIs | Delegated to installed CLIs; discontinued BridgeCode remains a historical benchmark | Claude/Codex account connection plus Settings API Keys; no verified unified ADE provider/auth contract comparable to PacketADE's rows/badges/transports | Git worktrees | **BridgeSwarm** roles + ownership + quality gates |
 | **Warp** | Active, ~$73M (Sequoia) | Rust native (non-Electron); mac/Linux/Win + cloud | Own harness **+** wraps CLIs | ~5 providers / 40+ models, picker + auto-route | Warp account + credits; **BYOK API-key-only**, no OAuth-sub, no badges | Git worktrees (Tab Configs) | Parallel independent tabs |
 | **Cursor Cloud** (Anysphere) | Dominant, ~$4B ARR | Electron desktop/web/iOS/Slack | **Own proprietary stack** | Multi-model, single-vendor-controlled, auto-route | **Single-vendor account**; BYO keys IDE-only (not cloud agents); no badges | Cloud VMs | Parallel + `/multitask` sub-agents |
 | **AgentsRoom** | Active v1.120 | Electron+xterm; mac/Win/Linux + iOS/Android | Wraps 8 CLIs | **8** (Claude Code, Codex, Antigravity, OpenCode, Aider, Grok Build, Mistral Vibe, Kimi); per-agent + mid-conv switch | **Never touches creds** — no login/API-key/badges by design | Worktree optional (weak) | **Richest**: 14 roles, React-Flow editor, MCP `team_*` handoff, role morphing |
@@ -41,8 +41,9 @@ whatever CLI you installed.
 
 **BridgeMind / BridgeSpace** — The closest overall analog: same Tauri2/Rust ADE shape with a 16-pane
 grid, worktrees, Kanban dispatch, role-based orchestration (BridgeSwarm), shared memory, MCP spine,
-and Whisper voice. Solo-founder, build-in-public, ~$201K ARR, targets *non-coders/vibe-coders*. No
-provider/auth abstraction in the shell (only Claude/Codex OAuth session linking). Full brief:
+and Whisper voice. Solo-founder, build-in-public, ~$201K ARR, targets *non-coders/vibe-coders*.
+BridgeSpace now exposes custom Agent prompts and Settings API Keys, but current public material still
+does not establish one unified provider/auth/transport contract comparable to PacketADE's. Full brief:
 [`bridgemind/bridgespace-competitive-brief.md`](./bridgemind/bridgespace-competitive-brief.md).
 
 **Warp** — Biggest and best-funded (~$73M, Sequoia). Native Rust terminal repositioned as an "ADE";

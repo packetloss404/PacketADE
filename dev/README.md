@@ -1,6 +1,6 @@
 # Dev Planning Docs
 
-Last updated: 2026-07-19
+Last updated: 2026-07-27
 
 This directory holds **active** planning docs with outstanding work items plus the engineering reference docs that used to live in `docs/`. Completed docs have been moved to `dev/archive/`.
 
@@ -16,7 +16,13 @@ Use these as the trust anchors before reading older plan files:
 | Remote/mobile agent access | [`remoteagents/README.md`](./remoteagents/README.md)                                                                                                                                                                                 | Supersedes the older `mobile/` investigation for phone/PWA work.                                       |
 | Multi-monitor operations   | [`send-to-monitor-plan.md`](./send-to-monitor-plan.md)                                                                                                                                                                               | Paused planning doc for detached Monitor windows; no implementation until current feature/bug checks.  |
 | Competitor landscape       | [`competitors.md`](./competitors.md)                                                                                                                                                                                                 | Master competitor index (12 peers). Deep dives: [`bridgemind/bridgespace-competitive-brief.md`](./bridgemind/bridgespace-competitive-brief.md), [`bridgemind/bridgeswarm-teardown.md`](./bridgemind/bridgeswarm-teardown.md). Provider/auth abstraction is the moat the field lacks. |
-| Flight escalation loop      | [`bridgemind/flight-escalation-loop.md`](./bridgemind/flight-escalation-loop.md)                                                                                                                                                      | Scoped, loop-ready plan for structured escalation + auto-reassignment (BridgeSwarm supervision parity). Supersedes Phase 4 of the stale `swarm-orchestration-plan.md`. |
+| Flight escalation loop      | [`bridgemind/flight-escalation-loop.md`](./bridgemind/flight-escalation-loop.md)                                                                                                                                                      | SHIPPED E1–E9 — assisted escalation (Option B): automatic detection/recommendation with user-approved retry or reassignment. |
+| Reviewer Gate loop          | [`bridgemind/reviewer-gate-loop.md`](./bridgemind/reviewer-gate-loop.md)                                                                                                                                                              | IMPLEMENTED — RG1–RG7 closed; RG8 retains release-like local/SSH/manual smoke. |
+| Cooperative Flight graph    | [`bridgemind/cooperative-flight-graph-loop.md`](./bridgemind/cooperative-flight-graph-loop.md)                                                                                                                                        | IMPLEMENTED — CG1–CG8 closed; CG9 retains final landing and release-like local/SSH/manual smoke. |
+| YOLO autonomy overlay       | [`bridgemind/autonomy-policy-loop.md`](./bridgemind/autonomy-policy-loop.md)                                                                                                                                                          | IMPLEMENTED — AP1–AP8 closed; AP9 retains adversarial and release-like smoke. |
+| Coordination inbox loop     | [`bridgemind/coordination-inbox-loop.md`](./bridgemind/coordination-inbox-loop.md)                                                                                                                                                    | IMPLEMENTED — CI1–CI8 closed; CI9 retains release-like API/PTY/MCP/local/SSH smoke. |
+| PacketAgent handoff loop     | [`bridgemind/packetagent-handoff-loop.md`](./bridgemind/packetagent-handoff-loop.md)                                                                                                                                                  | CONTRACT-ONLY HERE, BLOCKED ON PACKETAGENT W1–W9 — PacketAgent source work is owned by its separate Codex project. |
+| PacketCode integration loop  | [`bridgemind/packetcode-bridgecode-loop.md`](./bridgemind/packetcode-bridgecode-loop.md)                                                                                                                                              | SOURCE INTEGRATION IMPLEMENTED — PC1–PC4/PC6–PC8 closed; published release, remaining hardening, clean-machine, and PacketAgent compatibility gates remain. |
 | Memory v0.9+ loop           | [`memory-v9-loop.md`](./memory-v9-loop.md)                                                                                                                                                                                            | SHIPPED (M1–M10, merged 2026-07-24) — fleshed out the Memory pane: fixed half-wired gaps (search/task_completed/confidence/retrospective) + shipped the deferred enhancements. Embeddings deferred. |
 | Gitea/Forgejo support loop  | [`gitea-support-loop.md`](./gitea-support-loop.md)                                                                                                                                                                                    | SHIPPED (G1–G14, merged 2026-07-25) — self-hosted Gitea/Forgejo alongside GitHub, both configurable at once, resolved per-workspace from the origin remote. Peer-reviewed. |
 | GitHub pane v0.9+ loop       | [`github-pane-v9-loop.md`](./github-pane-v9-loop.md)                                                                                                                                                                                   | SHIPPED (GP1–GP7, merged 2026-07-25) — inline review comments, notifications polling, device-flow auth, Windows hook shim, SSH draft-PR publish, releases view; GP7 is a design doc ([`issue-flight-mirror-design.md`](./issue-flight-mirror-design.md), code design-gated). Peer-reviewed. |
@@ -25,6 +31,19 @@ Use these as the trust anchors before reading older plan files:
 | MCP provider transport     | [`mcp-provider-transport.md`](./mcp-provider-transport.md)                                                                                                                                                                           | SHIPPED (N3) — PacketADE-as-MCP-server: reads + opt-in append-only writes. Doc records the cut/deferred tools. |
 | Build and release ops      | [`multi-platform-build.md`](./multi-platform-build.md), [`updater-setup.md`](./updater-setup.md), [`local-quality-gates.md`](./local-quality-gates.md), [`beta-distribution-trust-runbook.md`](./beta-distribution-trust-runbook.md) | Operational runbooks, not feature backlogs.                                                            |
 | Historical plans           | [`archive/`](./archive/)                                                                                                                                                                                                             | Cold storage; do not treat as current unless an active doc links to a specific artifact as background. |
+
+### Verification checkpoint — 2026-07-27
+
+The current combined loop source passes `pnpm lint` (zero errors), all 1,171
+Vitest tests, `pnpm build`, `cargo check`, and `cargo test --no-run`. The native
+schema-export test executable still cannot start on this Windows runtime
+(`0xc0000139`, `STATUS_ENTRYPOINT_NOT_FOUND`), so the generated TypeScript
+contract is validated by TypeScript and persistence/contract fixtures here but
+schema regeneration remains environment-gated. The sibling PacketCode source
+passes `go test ./...`, `install.ps1` parser/checksum-line checks, a clean
+rebuild, and an isolated `PACKETCODE_HOME` doctor probe. Packaged local/SSH,
+clean-machine release, and separate PacketAgent compatibility gates remain
+open exactly where the loop ledgers say they do.
 
 ## Reference
 

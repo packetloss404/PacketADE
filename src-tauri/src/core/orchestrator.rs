@@ -27,6 +27,10 @@ pub struct OrchestratorSettings {
     /// `{flightId}`, `{attemptId}`, and `{flightTitle}` placeholders.
     #[serde(default = "default_auto_commit_trailer_format")]
     pub auto_commit_trailer_format: String,
+    #[serde(default = "default_autonomy_mode")]
+    pub autonomy_default_mode: AutonomyDefaultMode,
+    #[serde(default)]
+    pub autonomy_default_policy: AutonomyPolicy,
 }
 
 fn default_auto_commit_trailer_enabled() -> bool {
@@ -35,6 +39,10 @@ fn default_auto_commit_trailer_enabled() -> bool {
 
 fn default_auto_commit_trailer_format() -> String {
     DEFAULT_AUTO_COMMIT_TRAILER_FORMAT.to_string()
+}
+
+fn default_autonomy_mode() -> AutonomyDefaultMode {
+    AutonomyDefaultMode::Assisted
 }
 
 impl Default for OrchestratorSettings {
@@ -48,6 +56,8 @@ impl Default for OrchestratorSettings {
                 .unwrap_or_else(|| ".".to_string()),
             auto_commit_trailer_enabled: true,
             auto_commit_trailer_format: DEFAULT_AUTO_COMMIT_TRAILER_FORMAT.to_string(),
+            autonomy_default_mode: AutonomyDefaultMode::Assisted,
+            autonomy_default_policy: AutonomyPolicy::default(),
         }
     }
 }
@@ -64,6 +74,20 @@ impl Default for OrchestratorSettings {
 pub fn recover_flights_on_startup(flights: &mut [Flight]) {
     for flight in flights {
         flight.linked_session_ids.clear();
+
+        if let Some(runtime) = &mut flight.autonomy_runtime {
+            if runtime.status == AutonomyRunStatus::Running {
+                runtime.status = AutonomyRunStatus::Paused;
+                runtime.paused_at = Some(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64,
+                );
+                runtime.hard_stop_reason =
+                    Some("Paused after PacketADE restarted. Resume explicitly.".to_string());
+            }
+        }
 
         let mut interrupted = false;
 
@@ -156,6 +180,13 @@ mod tests {
             total_tokens: 0,
             prompt: None,
             attempts: Vec::new(),
+            review_gate_policy: None,
+            execution_mode: None,
+            integration_branch: None,
+            coordination_inbox: Vec::new(),
+            autonomy_mode: None,
+            autonomy_policy: None,
+            autonomy_runtime: None,
             planning_conversation_id: None,
             planner_session_id: None,
             planner_status: None,
@@ -199,5 +230,30 @@ mod tests {
         assert_eq!(flight.status, FlightStatus::Done);
         assert_eq!(flight.milestones[0].status, MilestoneStatus::Done);
         assert_eq!(flight.milestones[0].tasks[0].status, TaskStatus::Done);
+    }
+
+    #[test]
+    fn recover_never_resumes_bounded_autonomy_after_restart() {
+        let mut flight = interrupted_flight();
+        flight.autonomy_mode = Some(AutonomyFlightMode::Yolo);
+        flight.autonomy_policy = Some(AutonomyPolicy::default());
+        flight.autonomy_runtime = Some(AutonomyRuntime {
+            status: AutonomyRunStatus::Running,
+            started_at: Some(1),
+            paused_at: None,
+            stopped_at: None,
+            hard_stop_reason: None,
+            action_history: Vec::new(),
+        });
+
+        recover_flights_on_startup(std::slice::from_mut(&mut flight));
+
+        let runtime = flight.autonomy_runtime.expect("runtime");
+        assert_eq!(runtime.status, AutonomyRunStatus::Paused);
+        assert!(runtime.paused_at.is_some());
+        assert!(runtime
+            .hard_stop_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("Resume explicitly")));
     }
 }

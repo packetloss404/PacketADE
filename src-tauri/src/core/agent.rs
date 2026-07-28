@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -80,6 +81,52 @@ pub async fn resolve_path(command: &str) -> Option<String> {
     }
 }
 
+/// Resolve a catalog entry through PATH first, then through documented
+/// product-specific install locations. PacketCode's Windows installer does
+/// not mutate PATH, so its stable `%LOCALAPPDATA%\Programs\PacketCode\bin`
+/// destination must be part of normal discovery rather than treated as a
+/// manual override.
+pub async fn resolve_catalog_path(id: &str, command: &str) -> Option<String> {
+    if let Some(path) = resolve_path(command).await {
+        return Some(path);
+    }
+    if id != "packetcode" {
+        return None;
+    }
+    packetcode_fallback_candidates()
+        .into_iter()
+        .find(|path| is_executable_file(&path.to_string_lossy()))
+        .map(|path| path.to_string_lossy().to_string())
+}
+
+pub fn packetcode_fallback_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+            candidates.push(
+                PathBuf::from(local_app_data)
+                    .join("Programs")
+                    .join("PacketCode")
+                    .join("bin")
+                    .join("packetcode.exe"),
+            );
+        }
+        if let Some(home) = dirs::home_dir() {
+            candidates.push(home.join(".local").join("bin").join("packetcode.exe"));
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Some(home) = dirs::home_dir() {
+            candidates.push(home.join(".local").join("bin").join("packetcode"));
+        }
+        candidates.push(PathBuf::from("/usr/local/bin/packetcode"));
+        candidates.push(PathBuf::from("/opt/homebrew/bin/packetcode"));
+    }
+    candidates
+}
+
 #[cfg(target_os = "windows")]
 async fn where_lookup_async(name: &str) -> Option<String> {
     let mut cmd = TokioCommand::new("where");
@@ -131,6 +178,16 @@ pub async fn probe_version_at(path: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// PacketCode's stable version contract is deliberately stricter than the
+/// generic CLI detector. A binary is not considered PacketCode merely because
+/// it prints any line for `--version`.
+pub fn is_packetcode_version(version: &str) -> bool {
+    version
+        .trim()
+        .to_ascii_lowercase()
+        .starts_with("packetcode ")
 }
 
 async fn run_version_probe(binary: &str, arg: &str) -> Option<String> {
@@ -200,4 +257,28 @@ fn clamp_version(s: &str) -> String {
         return trimmed.to_string();
     }
     trimmed.chars().take(VERSION_MAX_LEN).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn packetcode_version_contract_rejects_unrelated_output() {
+        assert!(is_packetcode_version("packetcode v0.3.0 (abc123)"));
+        assert!(is_packetcode_version("PacketCode dev (none)"));
+        assert!(!is_packetcode_version("node v24.0.0"));
+        assert!(!is_packetcode_version("packetcode"));
+    }
+
+    #[test]
+    fn packetcode_fallbacks_are_specific_binary_paths() {
+        for candidate in packetcode_fallback_candidates() {
+            let name = candidate
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default();
+            assert_eq!(name, "packetcode");
+        }
+    }
 }

@@ -326,10 +326,7 @@ pub async fn git_stage_files(project_path: String, paths: Vec<String>) -> Result
 /// P1-15: explicit `git restore --staged -- <paths>` — the unstage
 /// counterpart of `git_stage_files`.
 #[tauri::command]
-pub async fn git_unstage_files(
-    project_path: String,
-    paths: Vec<String>,
-) -> Result<String, String> {
+pub async fn git_unstage_files(project_path: String, paths: Vec<String>) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         super::validate_project_path(&project_path)?;
         for p in &paths {
@@ -566,6 +563,344 @@ pub async fn get_git_status_remote(
     }
     let cfg = server_config.into_ssh_config(remote_path.clone());
     worktree::ssh_get_status(&cfg, &remote_path).await
+}
+
+const REVIEW_PATCH_DEFAULT_BYTES: usize = 65_536;
+const REVIEW_PATCH_MIN_BYTES: usize = 4_096;
+const REVIEW_PATCH_MAX_BYTES: usize = 131_072;
+
+/// Bounded, transport-neutral git evidence for an independent Flight reviewer.
+/// The full list of changed paths is retained even when the patch body is
+/// truncated, so a reviewer can inspect omitted files with read-only tools.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitReviewEvidenceDto {
+    pub base_ref: String,
+    pub head_ref: String,
+    pub diff_summary: String,
+    pub changed_paths: Vec<String>,
+    pub patch: String,
+    pub patch_truncated: bool,
+}
+
+fn truncate_utf8(value: String, limit: usize) -> (String, bool) {
+    if value.len() <= limit {
+        return (value, false);
+    }
+    let mut end = limit;
+    while end > 0 && !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    (value[..end].to_string(), true)
+}
+
+fn parse_changed_paths(diff_names: &str, untracked: &str) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    diff_names
+        .lines()
+        .chain(untracked.lines())
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .filter(|path| seen.insert((*path).to_string()))
+        .map(str::to_string)
+        .take(2_000)
+        .collect()
+}
+
+fn local_git_read(path: &str, args: &[&str]) -> Result<String, String> {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "git {} failed (exit {}): {}",
+            args.first().copied().unwrap_or("command"),
+            output.status.code().unwrap_or(-1),
+            stderr.trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn build_local_review_evidence(
+    project_path: &str,
+    base_ref: &str,
+    patch_limit: usize,
+) -> Result<GitReviewEvidenceDto, String> {
+    super::validate_project_path(project_path)?;
+    let head_ref = local_git_read(project_path, &["rev-parse", "HEAD"])?
+        .trim()
+        .to_string();
+    // Verify the requested base explicitly. Falling back to HEAD would turn a
+    // missing/typoed base into an incomplete review.
+    local_git_read(
+        project_path,
+        &["rev-parse", "--verify", &format!("{}^{{commit}}", base_ref)],
+    )?;
+    let summary = local_git_read(project_path, &["diff", "--stat", base_ref, "--"])?;
+    let names = local_git_read(
+        project_path,
+        &[
+            "diff",
+            "--name-only",
+            "--diff-filter=ACDMRTUXB",
+            base_ref,
+            "--",
+        ],
+    )?;
+    let untracked = local_git_read(
+        project_path,
+        &["ls-files", "--others", "--exclude-standard"],
+    )?;
+    let patch = local_git_read(
+        project_path,
+        &["diff", "--no-ext-diff", "--unified=3", base_ref, "--"],
+    )?;
+    let (patch, patch_truncated) = truncate_utf8(patch, patch_limit);
+    Ok(GitReviewEvidenceDto {
+        base_ref: base_ref.to_string(),
+        head_ref,
+        diff_summary: summary,
+        changed_paths: parse_changed_paths(&names, &untracked),
+        patch,
+        patch_truncated,
+    })
+}
+
+#[tauri::command]
+pub async fn get_git_review_evidence(
+    project_path: String,
+    base_ref: String,
+    server_config: Option<GitServerConfigDto>,
+    max_patch_bytes: Option<usize>,
+) -> Result<GitReviewEvidenceDto, String> {
+    if base_ref.trim().is_empty() {
+        return Err("Review base ref cannot be empty".to_string());
+    }
+    super::validate_input_size(&base_ref, 512, "Review base ref")?;
+    let patch_limit = max_patch_bytes
+        .unwrap_or(REVIEW_PATCH_DEFAULT_BYTES)
+        .clamp(REVIEW_PATCH_MIN_BYTES, REVIEW_PATCH_MAX_BYTES);
+
+    if let Some(server_config) = server_config {
+        if project_path.trim().is_empty() {
+            return Err("Remote review path cannot be empty".to_string());
+        }
+        let cfg = server_config.into_ssh_config(project_path.clone());
+        let verify = format!("{}^{{commit}}", base_ref);
+        let run = |args: Vec<String>| {
+            let cfg = cfg.clone();
+            let path = project_path.clone();
+            async move {
+                let refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+                let (output, code) = worktree::ssh_git_read(&cfg, &path, &refs).await?;
+                if code != 0 {
+                    return Err(format!(
+                        "remote git {} failed (exit {}): {}",
+                        refs.first().copied().unwrap_or("command"),
+                        code,
+                        output.trim()
+                    ));
+                }
+                Ok(output)
+            }
+        };
+        let head_ref = run(vec!["rev-parse".into(), "HEAD".into()])
+            .await?
+            .trim()
+            .to_string();
+        run(vec!["rev-parse".into(), "--verify".into(), verify]).await?;
+        let summary = run(vec![
+            "diff".into(),
+            "--stat".into(),
+            base_ref.clone(),
+            "--".into(),
+        ])
+        .await?;
+        let names = run(vec![
+            "diff".into(),
+            "--name-only".into(),
+            "--diff-filter=ACDMRTUXB".into(),
+            base_ref.clone(),
+            "--".into(),
+        ])
+        .await?;
+        let untracked = run(vec![
+            "ls-files".into(),
+            "--others".into(),
+            "--exclude-standard".into(),
+        ])
+        .await?;
+        let patch = run(vec![
+            "diff".into(),
+            "--no-ext-diff".into(),
+            "--unified=3".into(),
+            base_ref.clone(),
+            "--".into(),
+        ])
+        .await?;
+        let (patch, patch_truncated) = truncate_utf8(patch, patch_limit);
+        return Ok(GitReviewEvidenceDto {
+            base_ref,
+            head_ref,
+            diff_summary: summary,
+            changed_paths: parse_changed_paths(&names, &untracked),
+            patch,
+            patch_truncated,
+        });
+    }
+
+    tokio::task::spawn_blocking(move || {
+        build_local_review_evidence(&project_path, &base_ref, patch_limit)
+    })
+    .await
+    .map_err(|e| format!("Review evidence task failed: {}", e))?
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlightIntegrationBranchResult {
+    pub branch: String,
+    pub base_branch: String,
+    pub base_sha: String,
+    pub head_sha: String,
+    pub worktree_path: String,
+}
+
+impl From<worktree::IntegrationBranchState> for FlightIntegrationBranchResult {
+    fn from(value: worktree::IntegrationBranchState) -> Self {
+        Self {
+            branch: value.branch,
+            base_branch: value.base_branch,
+            base_sha: value.base_sha,
+            head_sha: value.head_sha,
+            worktree_path: value.worktree_path,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlightIntegrationMergeResult {
+    pub head_sha: String,
+    pub conflict_files: Vec<String>,
+}
+
+fn integration_lock() -> &'static tokio::sync::Mutex<()> {
+    static LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+
+/// Create or resume the isolated integration worktree for a cooperative Flight.
+/// This never checks a branch out over the user's working tree.
+#[tauri::command]
+pub async fn prepare_flight_integration_branch(
+    project_path: String,
+    flight_id: String,
+    base_branch: String,
+    server_config: Option<GitServerConfigDto>,
+) -> Result<FlightIntegrationBranchResult, String> {
+    if base_branch.trim().is_empty() {
+        return Err("Integration base branch cannot be empty".to_string());
+    }
+    super::validate_input_size(&flight_id, 256, "Flight id")?;
+    super::validate_input_size(&base_branch, 512, "Integration base branch")?;
+    let _guard = integration_lock().lock().await;
+    if let Some(server_config) = server_config {
+        let cfg = server_config.into_ssh_config(project_path.clone());
+        return worktree::prepare_remote_integration_branch(
+            &cfg,
+            &project_path,
+            &flight_id,
+            &base_branch,
+        )
+        .await
+        .map(Into::into);
+    }
+    tokio::task::spawn_blocking(move || {
+        super::validate_project_path(&project_path)?;
+        worktree::prepare_local_integration_branch(&project_path, &flight_id, &base_branch)
+            .map(Into::into)
+    })
+    .await
+    .map_err(|e| format!("Integration branch task failed: {}", e))?
+}
+
+/// Serially merge one accepted task branch into the Flight integration branch.
+/// Conflicts are reported as data after an automatic merge abort, preserving
+/// both worktrees and requiring an explicit recovery choice.
+#[tauri::command]
+pub async fn integrate_flight_attempt(
+    integration_path: String,
+    integration_branch: String,
+    attempt_path: String,
+    attempt_branch: String,
+    server_config: Option<GitServerConfigDto>,
+) -> Result<FlightIntegrationMergeResult, String> {
+    let _guard = integration_lock().lock().await;
+    let result = if let Some(server_config) = server_config {
+        let cfg = server_config.into_ssh_config(integration_path.clone());
+        worktree::integrate_remote_attempt(
+            &cfg,
+            &integration_path,
+            &integration_branch,
+            &attempt_path,
+            &attempt_branch,
+        )
+        .await?
+    } else {
+        let integration_path_for_task = integration_path.clone();
+        let integration_branch_for_task = integration_branch.clone();
+        let attempt_path_for_task = attempt_path.clone();
+        let attempt_branch_for_task = attempt_branch.clone();
+        tokio::task::spawn_blocking(move || {
+            super::validate_project_path(&integration_path_for_task)?;
+            super::validate_project_path(&attempt_path_for_task)?;
+            worktree::integrate_local_attempt(
+                &integration_path_for_task,
+                &integration_branch_for_task,
+                &attempt_path_for_task,
+                &attempt_branch_for_task,
+            )
+        })
+        .await
+        .map_err(|e| format!("Attempt integration task failed: {}", e))??
+    };
+    Ok(FlightIntegrationMergeResult {
+        head_sha: result.head_sha,
+        conflict_files: result.conflict_files,
+    })
+}
+
+/// Explicitly land the reviewed Flight integration branch into its base
+/// checkout. Clean-tree and exact-base-branch checks fail closed.
+#[tauri::command]
+pub async fn land_flight_integration(
+    project_path: String,
+    base_branch: String,
+    integration_branch: String,
+    server_config: Option<GitServerConfigDto>,
+) -> Result<String, String> {
+    let _guard = integration_lock().lock().await;
+    if let Some(server_config) = server_config {
+        let cfg = server_config.into_ssh_config(project_path.clone());
+        return worktree::land_remote_integration_branch(
+            &cfg,
+            &project_path,
+            &base_branch,
+            &integration_branch,
+        )
+        .await;
+    }
+    tokio::task::spawn_blocking(move || {
+        super::validate_project_path(&project_path)?;
+        worktree::land_local_integration_branch(&project_path, &base_branch, &integration_branch)
+    })
+    .await
+    .map_err(|e| format!("Flight landing task failed: {}", e))?
 }
 
 /// Result returned to the frontend after a successful remote clone.

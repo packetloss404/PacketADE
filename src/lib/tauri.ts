@@ -480,6 +480,88 @@ export async function getGitStatusRemote(
   return invoke<string>("get_git_status_remote", { serverConfig, remotePath });
 }
 
+export interface GitReviewEvidence {
+  baseRef: string;
+  headRef: string;
+  diffSummary: string;
+  changedPaths: string[];
+  patch: string;
+  patchTruncated: boolean;
+}
+
+/** Collect a bounded git evidence packet for the Flight Reviewer Gate.
+ * `serverConfig` selects SSH execution; null runs against the local worktree. */
+export async function getGitReviewEvidence(
+  projectPath: string,
+  baseRef: string,
+  serverConfig: GitServerConfigInput | null,
+  maxPatchBytes = 65_536,
+): Promise<GitReviewEvidence> {
+  return invoke<GitReviewEvidence>("get_git_review_evidence", {
+    projectPath,
+    baseRef,
+    serverConfig,
+    maxPatchBytes,
+  });
+}
+
+export interface PreparedFlightIntegrationBranch {
+  branch: string;
+  baseBranch: string;
+  baseSha: string;
+  headSha: string;
+  worktreePath: string;
+}
+
+export async function prepareFlightIntegrationBranch(
+  projectPath: string,
+  flightId: string,
+  baseBranch: string,
+  serverConfig: GitServerConfigInput | null,
+): Promise<PreparedFlightIntegrationBranch> {
+  return invoke<PreparedFlightIntegrationBranch>("prepare_flight_integration_branch", {
+    projectPath,
+    flightId,
+    baseBranch,
+    serverConfig,
+  });
+}
+
+export interface FlightIntegrationMergeResult {
+  headSha: string;
+  conflictFiles: string[];
+}
+
+export async function integrateFlightAttempt(args: {
+  integrationPath: string;
+  integrationBranch: string;
+  attemptPath: string;
+  attemptBranch: string;
+  serverConfig: GitServerConfigInput | null;
+}): Promise<FlightIntegrationMergeResult> {
+  return invoke<FlightIntegrationMergeResult>("integrate_flight_attempt", {
+    integrationPath: args.integrationPath,
+    integrationBranch: args.integrationBranch,
+    attemptPath: args.attemptPath,
+    attemptBranch: args.attemptBranch,
+    serverConfig: args.serverConfig,
+  });
+}
+
+export async function landFlightIntegration(args: {
+  projectPath: string;
+  baseBranch: string;
+  integrationBranch: string;
+  serverConfig: GitServerConfigInput | null;
+}): Promise<string> {
+  return invoke<string>("land_flight_integration", {
+    projectPath: args.projectPath,
+    baseBranch: args.baseBranch,
+    integrationBranch: args.integrationBranch,
+    serverConfig: args.serverConfig,
+  });
+}
+
 /** Remote write variants of the git dashboard commands (over SSH). */
 export async function gitStageFilesRemote(
   serverConfig: GitServerConfigInput,
@@ -894,6 +976,7 @@ export type AttemptTargetSpec =
       agentConfigId: string;
       provider: string;
       model: string;
+      taskId?: string;
     }
   | {
       kind: "ssh";
@@ -913,6 +996,7 @@ export type AttemptTargetSpec =
       agentConfigId: string;
       provider: string;
       model: string;
+      taskId?: string;
     };
 
 export async function launchFlightAsync(
@@ -930,6 +1014,7 @@ export async function launchFlightAsync(
         agent_config_id: t.agentConfigId,
         provider: t.provider,
         model: t.model,
+        task_id: t.taskId ?? null,
       };
     }
     return {
@@ -946,6 +1031,7 @@ export async function launchFlightAsync(
       agent_config_id: t.agentConfigId,
       provider: t.provider,
       model: t.model,
+      task_id: t.taskId ?? null,
     };
   });
   const dtoAttempts = await invoke<PersistedStateDto["flights"][number]["attempts"]>(
@@ -1057,6 +1143,36 @@ export async function detectCliCatalog(
   return invoke<DetectCatalogResult[]>("detect_cli_catalog", { items });
 }
 
+export interface PacketCodeProviderSummary {
+  configured: number;
+  ready: number;
+  warning: number;
+  failed: number;
+}
+
+export interface PacketCodeIntegrationProbe {
+  healthy: boolean;
+  executablePath: string;
+  version: string;
+  exitCode: number | null;
+  schemaVersion: number;
+  doctorStatus: "ok" | "warn" | "fail";
+  effectiveHome: string | null;
+  homeSource: "default" | "environment" | null;
+  providerSummary: PacketCodeProviderSummary;
+  doctor: Record<string, unknown>;
+}
+
+export async function probePacketCodeIntegration(
+  manualPath?: string | null,
+  dataHome?: string | null,
+): Promise<PacketCodeIntegrationProbe> {
+  return invoke<PacketCodeIntegrationProbe>("probe_packetcode_integration", {
+    manualPath: manualPath?.trim() || null,
+    dataHome: dataHome?.trim() || null,
+  });
+}
+
 type PersistedSettings = {
   maxParallelSessions: number;
   milestoneGating: boolean;
@@ -1068,6 +1184,8 @@ type PersistedSettings = {
   /** v0.8: format string for the auto-trailer (placeholders:
    * `{flightId}`, `{attemptId}`, `{flightTitle}`). */
   autoCommitTrailerFormat?: string;
+  autonomyDefaultMode?: "assisted" | "yolo";
+  autonomyDefaultPolicy?: import("@/types/flight").AutonomyPolicy;
 };
 
 type PersistedUi = {
@@ -1340,6 +1458,9 @@ function fromDtoAttempt(a: PersistedStateDto["flights"][number]["attempts"][numb
     cost: a.cost,
     tokens: a.tokens,
     errorMessage: a.errorMessage,
+    failureCategory: a.failureCategory as Attempt["failureCategory"],
+    reviewGate: a.reviewGate,
+    taskId: a.taskId,
     draftPrNumber: a.draftPrNumber,
   };
 }
@@ -1361,6 +1482,9 @@ function toDtoAttempt(a: Attempt): PersistedStateDto["flights"][number]["attempt
     cost: a.cost,
     tokens: a.tokens,
     errorMessage: a.errorMessage,
+    failureCategory: a.failureCategory,
+    reviewGate: a.reviewGate,
+    taskId: a.taskId,
     draftPrNumber: a.draftPrNumber,
   };
 }
@@ -1463,6 +1587,36 @@ function fromDtoFlight(flight: PersistedStateDto["flights"][number]): Flight {
     totalTokens: flight.totalTokens,
     prompt: flight.prompt,
     attempts: (flight.attempts ?? []).map(fromDtoAttempt),
+    reviewGatePolicy: flight.reviewGatePolicy,
+    executionMode: flight.executionMode,
+    integrationBranch: flight.integrationBranch
+      ? {
+          ...flight.integrationBranch,
+          targetKind: flight.integrationBranch.targetKind === "ssh" ? "ssh" : "local",
+          conflictFiles: flight.integrationBranch.conflictFiles ?? [],
+        }
+      : undefined,
+    coordinationInbox: flight.coordinationInbox?.map((message) => ({
+      ...message,
+      sender: {
+        ...message.sender,
+        kind: message.sender.kind as "user" | "agent" | "system",
+      },
+      recipient: {
+        ...message.recipient,
+        kind: message.recipient.kind as "flight" | "role" | "task" | "attempt" | "session",
+      },
+      acknowledgements: message.acknowledgements.map((acknowledgement) => ({
+        ...acknowledgement,
+        by: {
+          ...acknowledgement.by,
+          kind: acknowledgement.by.kind as "user" | "agent" | "system",
+        },
+      })),
+    })),
+    autonomyMode: flight.autonomyMode,
+    autonomyPolicy: flight.autonomyPolicy,
+    autonomyRuntime: flight.autonomyRuntime,
     planningConversationId: flight.planningConversationId,
     plannerSessionId: flight.plannerSessionId,
     plannerStatus: flight.plannerStatus,
@@ -1503,6 +1657,18 @@ function toDtoFlight(flight: Flight): PersistedStateDto["flights"][number] {
     totalTokens: flight.totalTokens,
     prompt: flight.prompt,
     attempts: (flight.attempts ?? []).map(toDtoAttempt),
+    reviewGatePolicy: flight.reviewGatePolicy,
+    executionMode: flight.executionMode,
+    integrationBranch: flight.integrationBranch
+      ? {
+          ...flight.integrationBranch,
+          conflictFiles: flight.integrationBranch.conflictFiles ?? [],
+        }
+      : undefined,
+    coordinationInbox: flight.coordinationInbox ?? [],
+    autonomyMode: flight.autonomyMode,
+    autonomyPolicy: flight.autonomyPolicy,
+    autonomyRuntime: flight.autonomyRuntime,
     planningConversationId: flight.planningConversationId,
     plannerSessionId: flight.plannerSessionId,
     plannerStatus: flight.plannerStatus,
@@ -1601,6 +1767,8 @@ function fromDtoPersistedState(state: PersistedStateDto): PersistedState {
       projectPath: state.settings.projectPath,
       autoCommitTrailerEnabled: state.settings.autoCommitTrailerEnabled,
       autoCommitTrailerFormat: state.settings.autoCommitTrailerFormat,
+      autonomyDefaultMode: state.settings.autonomyDefaultMode,
+      autonomyDefaultPolicy: state.settings.autonomyDefaultPolicy,
     },
     ui: {
       selectedFlightId: state.ui.selectedFlightId ?? null,
@@ -1660,6 +1828,22 @@ function toDtoPersistedState(state: PersistedState): PersistedStateDto {
       autoCommitTrailerFormat:
         state.settings.autoCommitTrailerFormat ??
         "Run-By: PacketADE flight F-{flightId} attempt A-{attemptId}",
+      autonomyDefaultMode: state.settings.autonomyDefaultMode ?? "assisted",
+      autonomyDefaultPolicy: state.settings.autonomyDefaultPolicy ?? {
+        schemaVersion: 1,
+        autoRecovery: true,
+        autoReviewRemediation: true,
+        autoRunTaskGraph: true,
+        toolPosture: "approval_gated",
+        maxTotalCost: 25,
+        maxDurationMinutes: 120,
+        maxRetriesPerTask: 2,
+        maxReviewRounds: 2,
+        maxConcurrentAgents: 3,
+        allowedRoots: [],
+        allowedTargets: ["local"],
+        allowDraftPrPublishing: false,
+      },
     },
     ui: {
       selectedFlightId: toOptional(state.ui.selectedFlightId),

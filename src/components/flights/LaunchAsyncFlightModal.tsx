@@ -1,5 +1,13 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, GitPullRequest, Route, Rocket, Sparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  GitPullRequest,
+  Route,
+  Rocket,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useAppStore } from "@/stores/appStore";
 import { useFlightStore } from "@/stores/flightStore";
@@ -11,7 +19,7 @@ import {
 import { useGitHubStore } from "@/stores/githubStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
 import { requestConversationSave } from "@/stores/agentConversationPersistence";
 import { focusConversationDeepLink } from "@/stores/sessionGlue";
 import {
@@ -19,10 +27,21 @@ import {
   FLIGHT_PLANNING_ALLOWED_TOOLS,
 } from "@/lib/flightPlanning";
 import { useMemoryStore } from "@/stores/memoryStore";
+import { useOrchestrationSettingsStore } from "@/stores/orchestrationSettingsStore";
 import { selectRecurringErrorHint } from "@/lib/recurringErrorHint";
 import { MultiTargetPicker, type PickedTarget } from "./MultiTargetPicker";
 import { type AttemptTargetSpec } from "@/lib/tauri";
-import type { FlightPriority } from "@/types/flight";
+import type {
+  AutonomyFlightMode,
+  AutonomyPolicy,
+  AutonomyRuntime,
+  FlightPriority,
+} from "@/types/flight";
+import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
+import {
+  pathWithinAllowedRoots,
+  validateAutonomyPolicy,
+} from "@/lib/autonomyPolicy";
 
 interface LaunchAsyncFlightModalProps {
   onClose: () => void;
@@ -83,6 +102,8 @@ export function LaunchAsyncFlightModal({
   // v0.8: pre-check the publish toggle if the user opted into that default
   // via Settings → GitHub.
   const defaultPublishAttemptsAsPrs = useGitHubStore((s) => s.defaultPublishAttemptsAsPrs);
+  const autonomyDefaultMode = useOrchestrationSettingsStore((s) => s.autonomyDefaultMode);
+  const autonomyDefaultPolicy = useOrchestrationSettingsStore((s) => s.autonomyDefaultPolicy);
 
   const existingFlight = useMemo(
     () => (flightId ? (flights.find((f) => f.id === flightId) ?? null) : null),
@@ -107,6 +128,22 @@ export function LaunchAsyncFlightModal({
   // asyncFlightStore pipeline pushes each attempt's branch and opens a
   // draft GitHub PR once it reaches a terminal state.
   const [publishAsPrs, setPublishAsPrs] = useState(defaultPublishAttemptsAsPrs);
+  const [reviewerEnabled, setReviewerEnabled] = useState(
+    existingFlight?.reviewGatePolicy?.enabled ?? false,
+  );
+  const [reviewerAgent, setReviewerAgent] = useState<AgentCli>(
+    (existingFlight?.reviewGatePolicy?.reviewerAgentConfigId as AgentCli | undefined) ??
+      "api-openai-codex",
+  );
+  const [reviewerModel, setReviewerModel] = useState(
+    existingFlight?.reviewGatePolicy?.reviewerModel ?? getDefaultModel("api-openai-codex"),
+  );
+  const [acceptanceCriteria, setAcceptanceCriteria] = useState(
+    existingFlight?.reviewGatePolicy?.acceptanceCriteria.join("\n") ?? "",
+  );
+  const [autonomyMode, setAutonomyMode] = useState<AutonomyFlightMode>(
+    existingFlight?.autonomyMode ?? "assisted",
+  );
 
   const promptShort = useMemo(
     () => (prompt.length > 60 ? prompt.slice(0, 57) + "…" : prompt),
@@ -152,6 +189,92 @@ export function LaunchAsyncFlightModal({
     return `Host key not verified for: ${names}. Verify on the Servers page before launching.`;
   }, [unpinnedTargets]);
 
+  const reviewerProvider = API_PROVIDERS.find((provider) => provider.agentCli === reviewerAgent);
+  const parsedAcceptanceCriteria = useMemo(
+    () =>
+      acceptanceCriteria
+        .split("\n")
+        .map((criterion) => criterion.trim())
+        .filter(Boolean),
+    [acceptanceCriteria],
+  );
+  const reviewerConfigurationError = useMemo(() => {
+    if (!reviewerEnabled) return null;
+    if (!reviewerProvider) return "Choose a supported API reviewer.";
+    if (!reviewerProvider.models.some((model) => model.value === reviewerModel)) {
+      return "Choose a model supported by the selected reviewer.";
+    }
+    if (parsedAcceptanceCriteria.length === 0) {
+      return "Add at least one acceptance criterion for the independent reviewer.";
+    }
+    if (parsedAcceptanceCriteria.length > 40) {
+      return "Reviewer Gate supports at most 40 acceptance criteria.";
+    }
+    return null;
+  }, [parsedAcceptanceCriteria, reviewerEnabled, reviewerModel, reviewerProvider]);
+
+  const explicitYoloPolicy = useMemo<AutonomyPolicy>(
+    () => ({
+      ...autonomyDefaultPolicy,
+      autoReviewRemediation:
+        autonomyDefaultPolicy.autoReviewRemediation && reviewerEnabled,
+      autoRunTaskGraph:
+        autonomyDefaultPolicy.autoRunTaskGraph &&
+        existingFlight?.executionMode === "cooperative" &&
+        reviewerEnabled,
+      allowedRoots: Array.from(
+        new Set([
+          ...autonomyDefaultPolicy.allowedRoots,
+          ...picked.map((target) => target.basePath),
+          ...(existingFlight?.projectPath ? [existingFlight.projectPath] : []),
+        ]),
+      ),
+      allowedTargets: Array.from(
+        new Set([
+          ...autonomyDefaultPolicy.allowedTargets,
+          ...picked.map((target) => (target.kind === "ssh" ? target.server.id : "local")),
+        ]),
+      ),
+      allowDraftPrPublishing: publishAsPrs,
+    }),
+    [
+      autonomyDefaultPolicy,
+      existingFlight?.executionMode,
+      existingFlight?.projectPath,
+      picked,
+      publishAsPrs,
+      reviewerEnabled,
+    ],
+  );
+  const settingsPolicy = autonomyDefaultMode === "yolo" ? autonomyDefaultPolicy : undefined;
+  const effectiveAutonomyPolicy =
+    autonomyMode === "yolo"
+      ? explicitYoloPolicy
+      : autonomyMode === "settings_default"
+        ? settingsPolicy
+        : undefined;
+  const autonomyConfigurationError = useMemo(() => {
+    if (!effectiveAutonomyPolicy) return null;
+    const baseError = validateAutonomyPolicy(effectiveAutonomyPolicy)[0];
+    if (baseError) return baseError;
+    for (const target of picked) {
+      if (!pathWithinAllowedRoots(target.basePath, effectiveAutonomyPolicy.allowedRoots)) {
+        return `${target.label} is outside the autonomy root allowlist.`;
+      }
+      const targetId = target.kind === "ssh" ? target.server.id : "local";
+      if (!effectiveAutonomyPolicy.allowedTargets.includes(targetId)) {
+        return `${target.label} is outside the autonomy target allowlist.`;
+      }
+    }
+    if (effectiveAutonomyPolicy.autoRunTaskGraph && existingFlight?.executionMode !== "cooperative") {
+      return "Auto-run task graph requires a Cooperative Flight.";
+    }
+    if (effectiveAutonomyPolicy.autoRunTaskGraph && !reviewerEnabled) {
+      return "Auto-run task graph requires the independent Reviewer Gate.";
+    }
+    return null;
+  }, [effectiveAutonomyPolicy, existingFlight?.executionMode, picked, reviewerEnabled]);
+
   function handleOpenServersView() {
     setActiveView("tools");
     onClose();
@@ -162,6 +285,8 @@ export function LaunchAsyncFlightModal({
     picked.length > 0 &&
     launchCollisions.length === 0 &&
     unpinnedTargets.length === 0 &&
+    reviewerConfigurationError === null &&
+    autonomyConfigurationError === null &&
     !launching &&
     !planning;
 
@@ -174,13 +299,47 @@ export function LaunchAsyncFlightModal({
     (canOpenExistingPlan ||
       (prompt.trim().length > 0 && picked.length > 0 && unpinnedTargets.length === 0));
 
-  function createOrUpdateFlight() {
+  function autonomyFields(starting: boolean): {
+    autonomyMode: AutonomyFlightMode;
+    autonomyPolicy?: AutonomyPolicy;
+    autonomyRuntime?: AutonomyRuntime;
+  } {
+    if (!effectiveAutonomyPolicy) return { autonomyMode };
+    const previous = existingFlight?.autonomyRuntime;
+    const reusePrevious = previous && previous.status !== "stopped";
+    return {
+      autonomyMode,
+      autonomyPolicy: {
+        ...effectiveAutonomyPolicy,
+        allowedRoots: [...effectiveAutonomyPolicy.allowedRoots],
+        allowedTargets: [...effectiveAutonomyPolicy.allowedTargets],
+      },
+      autonomyRuntime: reusePrevious
+        ? previous
+        : {
+            status: starting ? "running" : "idle",
+            startedAt: starting ? Date.now() : undefined,
+            actionHistory: [],
+          },
+    };
+  }
+
+  function createOrUpdateFlight(startingAutonomy = false) {
     if (existingFlight) {
       const updates = {
         title: title.trim() || existingFlight.title,
         objective: prompt.trim(),
         prompt: prompt.trim(),
         publishAttemptsAsPrs: publishAsPrs,
+        reviewGatePolicy: reviewerEnabled
+          ? {
+              enabled: true,
+              reviewerAgentConfigId: reviewerAgent,
+              reviewerModel,
+              acceptanceCriteria: parsedAcceptanceCriteria,
+            }
+          : undefined,
+        ...autonomyFields(startingAutonomy),
       };
       updateFlight(existingFlight.id, updates);
       return { ...existingFlight, ...updates };
@@ -200,6 +359,15 @@ export function LaunchAsyncFlightModal({
       workspaceId: targetWorkspaceId,
       issueIds: [],
       publishAttemptsAsPrs: publishAsPrs,
+      reviewGatePolicy: reviewerEnabled
+        ? {
+            enabled: true,
+            reviewerAgentConfigId: reviewerAgent,
+            reviewerModel,
+            acceptanceCriteria: parsedAcceptanceCriteria,
+          }
+        : undefined,
+      ...autonomyFields(startingAutonomy),
     });
   }
 
@@ -222,7 +390,7 @@ export function LaunchAsyncFlightModal({
         return;
       }
 
-      const flight = createOrUpdateFlight();
+      const flight = createOrUpdateFlight(false);
       await flushFlightPersistence();
       const target = picked[0];
       const sshTarget =
@@ -291,7 +459,7 @@ export function LaunchAsyncFlightModal({
       // When launching into an already-staged flight (e.g. from GitHub's
       // "Plan flight" hand-off or the Flights detail pane's empty-attempts
       // state), reuse it instead of minting a disconnected duplicate.
-      const flight = createOrUpdateFlight();
+      const flight = createOrUpdateFlight(true);
 
       // The backend appends Attempts to the persisted Flight. Ensure the
       // create/update above has landed first; otherwise a fast launch can see
@@ -375,7 +543,7 @@ export function LaunchAsyncFlightModal({
             className="focus:border-accent-green/50 w-full resize-none rounded border border-bg-border bg-bg-primary px-3 py-2 text-xs text-text-primary outline-none placeholder:text-text-muted"
           />
           {recurringHint && (
-            <div className="flex items-start gap-1.5 rounded border border-accent-amber/40 bg-accent-amber/10 px-2.5 py-1.5 text-[11px] leading-snug text-accent-amber">
+            <div className="border-accent-amber/40 bg-accent-amber/10 flex items-start gap-1.5 rounded border px-2.5 py-1.5 text-[11px] leading-snug text-accent-amber">
               <AlertTriangle size={12} className="mt-px shrink-0" />
               <span>
                 <span className="font-medium">This looks familiar</span>
@@ -411,6 +579,72 @@ export function LaunchAsyncFlightModal({
           Flight, then configure and launch attempts when you are ready.
         </div>
 
+        <div className="border-accent-amber/25 bg-accent-amber/5 rounded border px-3 py-2.5">
+          <div className="flex items-start gap-2">
+            <ShieldAlert size={12} className="mt-0.5 shrink-0 text-accent-amber" />
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] font-medium text-text-secondary">
+                Execution supervision
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-1">
+                {(
+                  [
+                    ["assisted", "Assisted"],
+                    ["settings_default", "Settings default"],
+                    ["yolo", "YOLO"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setAutonomyMode(value)}
+                    className={`rounded border px-2 py-1 text-[10px] ${
+                      autonomyMode === value
+                        ? value === "yolo"
+                          ? "border-accent-amber/50 bg-accent-amber/15 text-accent-amber"
+                          : "border-accent-green/40 bg-accent-green/10 text-accent-green"
+                        : "border-bg-border text-text-muted"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {effectiveAutonomyPolicy ? (
+                <div className="mt-2 text-[10px] leading-relaxed text-text-muted">
+                  <span className="font-medium text-text-secondary">Effective bounds:</span>{" "}
+                  ${effectiveAutonomyPolicy.maxTotalCost.toFixed(2)} ·{" "}
+                  {effectiveAutonomyPolicy.maxDurationMinutes} min ·{" "}
+                  {effectiveAutonomyPolicy.maxRetriesPerTask} retries/task ·{" "}
+                  {effectiveAutonomyPolicy.maxReviewRounds} review rounds ·{" "}
+                  {effectiveAutonomyPolicy.maxConcurrentAgents} agents. Enabled:{" "}
+                  {[
+                    effectiveAutonomyPolicy.autoRecovery && "recovery",
+                    effectiveAutonomyPolicy.autoReviewRemediation && "review remediation",
+                    effectiveAutonomyPolicy.autoRunTaskGraph && "task graph",
+                    effectiveAutonomyPolicy.toolPosture === "allow_in_project" &&
+                      "unattended in-project tools",
+                  ]
+                    .filter(Boolean)
+                    .join(", ") || "limits only"}
+                  .
+                </div>
+              ) : (
+                <p className="mt-2 text-[10px] leading-relaxed text-text-muted">
+                  {autonomyMode === "settings_default"
+                    ? "Settings currently resolves this Flight to Assisted mode."
+                    : "PacketADE detects and recommends; you launch, retry, accept, and integrate."}
+                </p>
+              )}
+              {autonomyConfigurationError && (
+                <p className="mt-1 text-[10px] text-accent-amber">
+                  {autonomyConfigurationError}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* v0.8-G: publish attempts as draft PRs */}
         <label className="group flex cursor-pointer items-start gap-2">
           <input
@@ -430,6 +664,73 @@ export function LaunchAsyncFlightModal({
             </span>
           </div>
         </label>
+
+        <div className="bg-bg-secondary/40 rounded border border-bg-border px-3 py-2.5">
+          <label className="group flex cursor-pointer items-start gap-2">
+            <input
+              type="checkbox"
+              checked={reviewerEnabled}
+              onChange={(event) => setReviewerEnabled(event.target.checked)}
+              className="mt-0.5 accent-accent-green"
+            />
+            <div className="flex flex-col gap-0.5">
+              <span className="flex items-center gap-1.5 text-[11px] font-medium text-text-secondary group-hover:text-text-primary">
+                <ShieldCheck size={11} className="text-accent-green" />
+                Require an independent Reviewer Gate
+              </span>
+              <span className="text-[10px] leading-snug text-text-muted">
+                When an attempt finishes, automatically run one read-only reviewer. This incurs
+                model usage. Acceptance stays blocked until it passes or you record an override.
+              </span>
+            </div>
+          </label>
+
+          {reviewerEnabled && (
+            <div className="mt-2.5 grid grid-cols-[180px_1fr] gap-2 border-t border-bg-border pt-2.5">
+              <select
+                aria-label="Reviewer agent"
+                value={reviewerAgent}
+                onChange={(event) => {
+                  const agent = event.target.value as AgentCli;
+                  setReviewerAgent(agent);
+                  setReviewerModel(getDefaultModel(agent));
+                }}
+                className="focus:border-accent-green/40 rounded border border-bg-border bg-bg-primary px-2 py-1 text-[10px] text-text-secondary outline-none"
+              >
+                {API_PROVIDERS.map((provider) => (
+                  <option key={provider.agentCli} value={provider.agentCli}>
+                    {provider.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Reviewer model"
+                value={reviewerModel}
+                onChange={(event) => setReviewerModel(event.target.value)}
+                className="focus:border-accent-green/40 rounded border border-bg-border bg-bg-primary px-2 py-1 text-[10px] text-text-secondary outline-none"
+              >
+                {reviewerProvider?.models.map((model) => (
+                  <option key={model.value} value={model.value}>
+                    {model.label}
+                  </option>
+                ))}
+              </select>
+              <textarea
+                aria-label="Reviewer acceptance criteria"
+                value={acceptanceCriteria}
+                onChange={(event) => setAcceptanceCriteria(event.target.value)}
+                rows={3}
+                placeholder={"Acceptance criteria — one per line\nExample: pnpm test passes"}
+                className="focus:border-accent-green/40 col-span-2 resize-none rounded border border-bg-border bg-bg-primary px-2 py-1.5 text-[10px] text-text-primary outline-none placeholder:text-text-muted"
+              />
+              {reviewerConfigurationError && (
+                <span className="col-span-2 text-[10px] text-accent-amber">
+                  {reviewerConfigurationError}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
 
         {unpinnedMessage && (
           <div className="bg-accent-amber/10 border-accent-amber/30 flex items-start gap-2 rounded border px-3 py-2 text-[11px] text-accent-amber">

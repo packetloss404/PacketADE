@@ -143,9 +143,9 @@ pub fn run() {
     // abnormal exit (stale Active/Running milestone-task status, dead session
     // ids). Runs after migrate_data_dir so the data dir is resolved. Formerly
     // done inside the (now-removed) shared-orchestrator constructor.
-    if let Err(e) =
-        core::storage::update_state(|state| core::orchestrator::recover_flights_on_startup(&mut state.flights))
-    {
+    if let Err(e) = core::storage::update_state(|state| {
+        core::orchestrator::recover_flights_on_startup(&mut state.flights)
+    }) {
         tracing::warn!("Failed to persist flight recovery on startup: {}", e);
     }
 
@@ -220,6 +220,10 @@ pub fn run() {
             commands::git::get_file_head_content,
             commands::git::get_git_branch_remote,
             commands::git::get_git_status_remote,
+            commands::git::get_git_review_evidence,
+            commands::git::prepare_flight_integration_branch,
+            commands::git::integrate_flight_attempt,
+            commands::git::land_flight_integration,
             commands::git::git_stage_files_remote,
             commands::git::git_unstage_files_remote,
             commands::git::git_commit_remote,
@@ -298,6 +302,7 @@ pub fn run() {
             commands::agent::detect_agent,
             // v0.8.3 cli detection
             commands::agent::detect_cli_catalog,
+            commands::agent::probe_packetcode_integration,
             // Status line
             commands::statusline::claude::read_statusline_states,
             commands::statusline::codex::read_codex_statusline_states,

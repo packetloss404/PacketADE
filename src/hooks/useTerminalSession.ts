@@ -38,6 +38,7 @@ interface UseTerminalSessionOptions {
   paneId: string;
   cliCommand: string;
   cliArgs?: string[];
+  env?: Record<string, string>;
   projectPath?: string;
   initialPrompt?: string;
   issueId?: string;
@@ -68,6 +69,7 @@ export function useTerminalSession({
   paneId,
   cliCommand,
   cliArgs,
+  env,
   projectPath: paneProjectPath,
   initialPrompt,
   issueId,
@@ -233,6 +235,7 @@ export function useTerminalSession({
         rows,
         cliCommand,
         cliArgs || null,
+        env ?? null,
       );
 
       sessionIdRef.current = sessionId;
@@ -366,6 +369,7 @@ export function useTerminalSession({
     projectPath,
     cliCommand,
     cliArgs,
+    env,
     startDurationTimer,
     stopDurationTimer,
     paneId,

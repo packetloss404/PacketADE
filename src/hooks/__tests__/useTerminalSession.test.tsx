@@ -86,7 +86,10 @@ function createFitAddonRef() {
   };
 }
 
-async function startHook(onSessionEnded?: () => void) {
+async function startHook(
+  onSessionEnded?: () => void,
+  env?: Record<string, string>,
+) {
   const { term, ref: xtermRef } = createTerminalRef();
   const { fitAddon, ref: fitAddonRef } = createFitAddonRef();
   const sessionIdRef = { current: null } as RefObject<string | null>;
@@ -95,6 +98,7 @@ async function startHook(onSessionEnded?: () => void) {
     useTerminalSession({
       paneId: "pane-1",
       cliCommand: "claude",
+      env,
       projectPath: "/project-a",
       initialPrompt: "hello world",
       issueId: "issue-1",
@@ -111,7 +115,14 @@ async function startHook(onSessionEnded?: () => void) {
     await Promise.resolve();
   });
 
-  expect(mockCreatePtySession).toHaveBeenCalledWith("/project-a", 120, 40, "claude", null);
+  expect(mockCreatePtySession).toHaveBeenCalledWith(
+    "/project-a",
+    120,
+    40,
+    "claude",
+    null,
+    env ?? null,
+  );
 
   return { ...hook, term, fitAddon };
 }
@@ -151,6 +162,22 @@ describe("useTerminalSession", () => {
     expect(term.reset).toHaveBeenCalledTimes(1);
     expect(term.clear).not.toHaveBeenCalled();
 
+    unmount();
+  });
+
+  it("passes an isolated CLI environment to the PTY backend", async () => {
+    const { unmount } = await startHook(undefined, {
+      PACKETCODE_HOME: "D:\\PacketCodeData",
+    });
+
+    expect(mockCreatePtySession).toHaveBeenCalledWith(
+      "/project-a",
+      120,
+      40,
+      "claude",
+      null,
+      { PACKETCODE_HOME: "D:\\PacketCodeData" },
+    );
     unmount();
   });
 

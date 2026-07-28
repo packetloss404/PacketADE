@@ -34,7 +34,7 @@ export type ServerConfigDto = { id: string, name: string, host: string, port: nu
 
 export type PersistedUiStateDto = { selectedFlightId?: string, selectedView?: string, theme?: ThemeDto, };
 
-export type OrchestratorSettingsDto = { maxParallelSessions: number, milestoneGating: boolean, projectPath: string, autoCommitTrailerEnabled: boolean, autoCommitTrailerFormat: string, };
+export type OrchestratorSettingsDto = { maxParallelSessions: number, milestoneGating: boolean, projectPath: string, autoCommitTrailerEnabled: boolean, autoCommitTrailerFormat: string, autonomyDefaultMode?: AutonomyDefaultModeDto, autonomyDefaultPolicy?: AutonomyPolicyDto, };
 
 export type AgentCapabilityDto = "code_edit" | "code_review" | "testing" | "research" | "shell" | "refactor";
 
@@ -86,7 +86,59 @@ export type AttemptStatusDto = "queued" | "provisioning" | "running" | "reviewin
 
 export type AttemptTargetDto = { "kind": "local", basePath: string, worktreePath: string, } | { "kind": "ssh", targetId: string, basePath: string, worktreePath: string, };
 
-export type AttemptDto = { id: string, flightId: string, target: AttemptTargetDto, agentConfigId: string, model: string, provider: string, branch: string, baseBranch: string, sessionId: string, status: AttemptStatusDto, startedAt?: number, completedAt?: number, cost: number, tokens: number, errorMessage?: string, failureCategory?: string,
+export type ReviewGateVerdictDto = "pass" | "changes_requested" | "blocked";
+
+export type ReviewGateStatusDto = "pending" | "running" | "passed" | "changes_requested" | "blocked" | "error" | "overridden";
+
+export type ReviewGateFindingSeverityDto = "info" | "warning" | "error";
+
+export type ReviewGateFindingDto = { severity: ReviewGateFindingSeverityDto, title: string, details: string, filePath?: string, line?: number, };
+
+export type ReviewGateReportDto = { schemaVersion: 1, verdict: ReviewGateVerdictDto, summary: string, findings: Array<ReviewGateFindingDto>, evidence: Array<string>, };
+
+export type ReviewGatePolicyDto = { enabled: boolean, reviewerAgentConfigId: string, reviewerModel?: string, acceptanceCriteria: Array<string>, };
+
+export type AttemptReviewGateDto = { status: ReviewGateStatusDto, reviewerConversationId?: string, reviewerAgentConfigId?: string, reviewerModel?: string, report?: ReviewGateReportDto, errorMessage?: string, startedAt?: number, completedAt?: number, overriddenAt?: number, overrideReason?: string, };
+
+export type FlightExecutionModeDto = "independent" | "cooperative";
+
+export type IntegrationBranchStatusDto = "uninitialized" | "ready" | "integrating" | "needs_attention" | "landed";
+
+export type FlightIntegrationBranchDto = { branch: string, baseBranch: string, baseSha: string, headSha: string, worktreePath: string, targetKind: string, targetId?: string, status: IntegrationBranchStatusDto, errorMessage?: string, conflictFiles: Array<string>, };
+
+export type AutonomyFlightModeDto = "assisted" | "settings_default" | "yolo";
+
+export type AutonomyDefaultModeDto = "assisted" | "yolo";
+
+export type AutonomyToolPostureDto = "approval_gated" | "allow_in_project";
+
+export type AutonomyRunStatusDto = "idle" | "running" | "paused" | "stopped" | "needs_attention" | "completed";
+
+export type AutonomyActionStatusDto = "started" | "completed" | "failed" | "denied";
+
+export type AutonomyActionKindDto = "continue" | "recover_attempt" | "review_remediation" | "retry_review" | "accept_review_pass" | "launch_ready_task" | "integrate_attempt" | "set_tool_posture";
+
+export type AutonomyPolicyDto = { schemaVersion: 1, autoRecovery: boolean, autoReviewRemediation: boolean, autoRunTaskGraph: boolean, toolPosture: AutonomyToolPostureDto, maxTotalCost: number, maxDurationMinutes: number, maxRetriesPerTask: number, maxReviewRounds: number, maxConcurrentAgents: number, allowedRoots: Array<string>, allowedTargets: Array<string>, allowDraftPrPublishing: boolean, };
+
+export type AutonomyActionRecordDto = { id: string, kind: AutonomyActionKindDto, subjectId?: string, status: AutonomyActionStatusDto, reason: string, timestamp: number, cost: number, metadata?: Record<string, string | number | boolean | null>, };
+
+export type AutonomyRuntimeDto = { status: AutonomyRunStatusDto, startedAt?: number, pausedAt?: number, stoppedAt?: number, hardStopReason?: string, actionHistory: Array<AutonomyActionRecordDto>, };
+
+export type CoordinationMessageKindDto = "instruction" | "question" | "answer" | "blocker" | "finding" | "handoff" | "artifact";
+
+export type CoordinationDeliveryStatusDto = "queued" | "delivered" | "acknowledged" | "failed" | "archived";
+
+export type CoordinationMessagePartyDto = { kind: string, id?: string, displayName: string, };
+
+export type CoordinationMessageRecipientDto = { kind: string, id?: string, label?: string, };
+
+export type CoordinationArtifactRefDto = { id: string, label: string, uri?: string, mimeType?: string, };
+
+export type CoordinationAcknowledgementDto = { by: CoordinationMessagePartyDto, at: number, note?: string, };
+
+export type CoordinationMessageDto = { schemaVersion: 1, id: string, flightId: string, kind: CoordinationMessageKindDto, sender: CoordinationMessagePartyDto, recipient: CoordinationMessageRecipientDto, body: string, artifacts: Array<CoordinationArtifactRefDto>, status: CoordinationDeliveryStatusDto, createdAt: number, deliveredAt?: number, acknowledgements: Array<CoordinationAcknowledgementDto>, replyToId?: string, dedupeKey: string, hopCount: number, errorMessage?: string, };
+
+export type AttemptDto = { id: string, flightId: string, target: AttemptTargetDto, agentConfigId: string, model: string, provider: string, branch: string, baseBranch: string, sessionId: string, status: AttemptStatusDto, startedAt?: number, completedAt?: number, cost: number, tokens: number, errorMessage?: string, failureCategory?: string, reviewGate?: AttemptReviewGateDto, taskId?: string,
 /**
  * v0.8-G: when the parent Flight publishes attempts as draft PRs, the
  * resulting PR number is round-tripped here. Optional everywhere
@@ -94,7 +146,7 @@ export type AttemptDto = { id: string, flightId: string, target: AttemptTargetDt
  */
 draftPrNumber?: number, };
 
-export type FlightDto = { id: string, title: string, objective: string, status: FlightStatusDto, priority: FlightPriorityDto, projectPath: string, workspaceId?: string, gitBranch?: string, milestones: Array<MilestoneDto>, linkedSessionIds: Array<string>, issueIds: Array<string>, createdAt: number, updatedAt: number, completedAt?: number, totalCost: number, totalTokens: number, prompt?: string, attempts: Array<AttemptDto>, 
+export type FlightDto = { id: string, title: string, objective: string, status: FlightStatusDto, priority: FlightPriorityDto, projectPath: string, workspaceId?: string, gitBranch?: string, milestones: Array<MilestoneDto>, linkedSessionIds: Array<string>, issueIds: Array<string>, createdAt: number, updatedAt: number, completedAt?: number, totalCost: number, totalTokens: number, prompt?: string, attempts: Array<AttemptDto>, reviewGatePolicy?: ReviewGatePolicyDto, executionMode?: FlightExecutionModeDto, integrationBranch?: FlightIntegrationBranchDto, coordinationInbox: Array<CoordinationMessageDto>, autonomyMode?: AutonomyFlightModeDto, autonomyPolicy?: AutonomyPolicyDto, autonomyRuntime?: AutonomyRuntimeDto,
 /**
  * Normal API-agent conversation used to refine the current upfront plan.
  */

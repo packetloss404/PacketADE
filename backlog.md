@@ -119,14 +119,73 @@ Deferred items called out in `dev/multi-platform-build.md` and
 
 ### Escalation & supervision (BridgeSwarm parity)
 
-- **Feature loop — structured escalation + auto-reassignment.** Scoped,
-  loop-ready plan at [`dev/bridgemind/flight-escalation-loop.md`](./dev/bridgemind/flight-escalation-loop.md)
-  (items E1–E9): structured failure reasons, stuck-threshold detection, targeted
+- **✅ Shipped — assisted Flight escalation (Option B confirmed 2026-07-27).**
+  The completed E1–E9 loop at
+  [`dev/bridgemind/flight-escalation-loop.md`](./dev/bridgemind/flight-escalation-loop.md)
+  delivers structured failure reasons, stuck-threshold detection, targeted
   reassignment suggestions, a one-click relaunch/reassign action, actionable
-  coordination-feed rows, a flight attention queue, and an issue-Kanban
-  Blocked/Needs-Attention column. Supersedes the stale Phase 4 of
-  `dev/bridgemind/swarm-orchestration-plan.md`. Deferred behind working through
-  the competitive research; not started.
+  coordination-feed rows, a Flight attention queue, and an issue-Kanban
+  Blocked/Needs-Attention column. Detection and recommendations are automatic;
+  retry/reassignment remains user-approved. Do not add silent relaunching to
+  PacketADE or revive the retired autonomous scheduler.
+
+### Reviewer quality gate
+
+- **✅ Implemented — Option B: enforced review with explicit human override.**
+  RG1–RG7 are closed in
+  [`dev/bridgemind/reviewer-gate-loop.md`](./dev/bridgemind/reviewer-gate-loop.md).
+  The gate is opt-in per Flight; reaching `reviewing` starts one selected,
+  read-only reviewer. A non-pass verdict blocks normal acceptance, while an
+  explicit override remains available and is recorded. Draft PRs may still be
+  created for visibility. No silent merge or unbounded builder↔reviewer loop.
+  RG8 remains a release-like local/SSH/manual smoke gate.
+
+### Cooperative Flight task graph
+
+- **✅ Implemented — Option B: assisted execution.** CG1–CG8 are closed in
+  [`dev/bridgemind/cooperative-flight-graph-loop.md`](./dev/bridgemind/cooperative-flight-graph-loop.md).
+  An applied plan becomes a validated role/dependency graph; the user launches
+  ready batches, accepted work converges on an isolated Flight integration
+  branch, and dependents unlock from accepted upstream state. No autonomous
+  decomposition or background launch is part of the default mode. CG9 retains
+  the release-like local/SSH/manual landing gate.
+
+### YOLO / bounded autonomy overlay
+
+- **✅ Implemented — preserve Option B as the default and make autonomy
+  explicit.** AP1–AP8 are closed in
+  [`dev/bridgemind/autonomy-policy-loop.md`](./dev/bridgemind/autonomy-policy-loop.md)
+  after the assisted actions stabilized. Settings owns the default, each Flight
+  displays and snapshots its effective policy, and auto-recovery,
+  reviewer-remediation, graph execution, and tool permissions are independently
+  controlled. Cost/time/retry/concurrency/root/target limits and a kill switch
+  are required. YOLO never auto-overrides a reviewer failure, silently resolves
+  conflicts, or lands onto a protected/base branch. AP9 remains the adversarial
+  release-like smoke gate.
+
+### Coordination inbox and steering
+
+- **✅ Implemented — Option B: structured steering inbox.** CI1–CI8 are closed in
+  [`dev/bridgemind/coordination-inbox-loop.md`](./dev/bridgemind/coordination-inbox-loop.md).
+  Persist typed messages and acknowledgements; let users target an attempt,
+  task, role, or whole Flight; deliver API-agent messages at safe turn
+  boundaries; expose a scoped inbox through the PacketADE MCP provider for PTY
+  agents. Do not silently type into terminals. Direct agent↔agent forwarding is
+  available only through the bounded YOLO policy. CI9 retains the release-like
+  local/SSH/manual delivery matrix.
+
+### PacketAgent deployment handoff
+
+- **Approved — Option B: deploy and supervise.** Implement the PacketADE PH1–PH10
+  loop in
+  [`dev/bridgemind/packetagent-handoff-loop.md`](./dev/bridgemind/packetagent-handoff-loop.md)
+  against PacketAgent W9 and its versioned `WorkerPackage` contract. PacketADE
+  validates, deploys, activates, reconnects, displays events/evidence, and
+  exposes Pause/Resume/Stop/approval controls. PacketAgent owns durable
+  execution after PacketADE closes. PH1–PH10 remain blocked until their named
+  PacketAgent W1–W9 dependencies exist; do not fake durability in the desktop
+  process. PacketAgent implementation is owned by its separate Codex project;
+  this repository owns only the PacketADE handoff contract and consumer work.
 
 ### Runtime audit (2026-07-19)
 
@@ -181,6 +240,26 @@ the migration** so it has run on users' machines. Earliest realistic target is
 the 1.0.0 cut (per SemVer, removals belong at a major bump). Until that release
 has shipped, keep the aliases/shim so a machine that hasn't yet run the migration
 still loads legacy data losslessly.
+
+## Packet suite cross-product
+
+### PacketCode / BridgeCode response
+
+- **✅ Source integration implemented — Option B: independent PacketCode
+  install/update channel with separate executable and data-home overrides.**
+  PC1–PC4 and PC6–PC8 are closed in
+  [`dev/bridgemind/packetcode-bridgecode-loop.md`](./dev/bridgemind/packetcode-bridgecode-loop.md).
+  PacketADE now models the executable, local/remote `PACKETCODE_HOME`,
+  developer checkout, release channel, strict version detection, bounded
+  `doctor --json` probe, platform-aware install/update, and correct local/SSH
+  launch environments. The sibling PacketCode source now supplies the home and
+  doctor contracts, checksum-verifying Windows installer, structured bounded
+  loop decisions, per-server MCP restart, feature-truth audit, and hardening
+  ledger. PC5 still requires published signed artifacts and clean-machine
+  install/upgrade/rollback proof; PC9 continues the lower-priority PacketCode
+  hardening queue; PC10 awaits the separate PacketAgent compatibility contract
+  and a packaged cross-repo smoke. BridgeCode was discontinued and remains only
+  a historical workflow benchmark.
 
 ## GitHub pane v0.9+ (from v0.8 deferrals)
 

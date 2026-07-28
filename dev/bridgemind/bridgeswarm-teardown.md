@@ -1,15 +1,13 @@
 # BridgeSwarm — Orchestration Teardown
 
-Last updated: 2026-07-24
+Last updated: 2026-07-27
 Companion to [`bridgespace-competitive-brief.md`](./bridgespace-competitive-brief.md) and
 [`swarm-orchestration-plan.md`](./swarm-orchestration-plan.md) (PacketADE's own response, mostly
 shipped). Indexed from [`../competitors.md`](../competitors.md).
 
-> ⚠️ **Sourcing.** `bridgemind.ai` / `docs.bridgemind.ai` hard-403 to automated fetching
-> (Cloudflare). Every quote below is a verbatim string surfaced by WebSearch snippets from the
-> official pages (`/bridgeswarm`, `/products/bridgespace`, `/changelog`) plus the two official X
-> launch posts. **No independent third-party technical review of BridgeSwarm exists yet** — all
-> mechanics are *vendor-asserted, not verified.*
+> **Sourcing update.** Official BridgeMind product, documentation, roadmap, and changelog pages were
+> directly accessible during the 2026-07-27 currentness pass. The architecture below still describes
+> vendor-published behavior rather than an independent black-box verification.
 
 ## What it is
 

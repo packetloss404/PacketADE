@@ -24,6 +24,7 @@ interface TerminalPaneProps {
   showCloseButton?: boolean;
   cliCommand?: string;
   cliArgs?: string[];
+  env?: Record<string, string>;
   initialPrompt?: string;
   projectPath?: string;
   issueId?: string;
@@ -39,6 +40,7 @@ export function TerminalPane({
   showCloseButton = false,
   cliCommand = "claude",
   cliArgs,
+  env,
   initialPrompt,
   projectPath: paneProjectPath,
   issueId,
@@ -73,6 +75,7 @@ export function TerminalPane({
     paneId,
     cliCommand,
     cliArgs,
+    env,
     projectPath: paneProjectPath,
     initialPrompt,
     issueId,

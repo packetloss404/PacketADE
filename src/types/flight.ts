@@ -182,6 +182,195 @@ export type AttemptFailureCategory =
   | "not_installed"
   | "unknown";
 
+export type ReviewGateVerdict = "pass" | "changes_requested" | "blocked";
+
+export type ReviewGateStatus =
+  | "pending"
+  | "running"
+  | "passed"
+  | "changes_requested"
+  | "blocked"
+  | "error"
+  | "overridden";
+
+export type ReviewGateFindingSeverity = "info" | "warning" | "error";
+
+export interface ReviewGateFinding {
+  severity: ReviewGateFindingSeverity;
+  title: string;
+  details: string;
+  filePath?: string;
+  line?: number;
+}
+
+export interface ReviewGateReport {
+  schemaVersion: 1;
+  verdict: ReviewGateVerdict;
+  summary: string;
+  findings: ReviewGateFinding[];
+  evidence: string[];
+}
+
+export interface ReviewGatePolicy {
+  enabled: boolean;
+  reviewerAgentConfigId: string;
+  reviewerModel?: string;
+  acceptanceCriteria: string[];
+}
+
+export interface AttemptReviewGate {
+  status: ReviewGateStatus;
+  reviewerConversationId?: string;
+  reviewerAgentConfigId?: string;
+  reviewerModel?: string;
+  report?: ReviewGateReport;
+  errorMessage?: string;
+  startedAt?: number;
+  completedAt?: number;
+  overriddenAt?: number;
+  overrideReason?: string;
+}
+
+export type FlightExecutionMode = "independent" | "cooperative";
+export type IntegrationBranchStatus =
+  | "uninitialized"
+  | "ready"
+  | "integrating"
+  | "needs_attention"
+  | "landed";
+
+export interface FlightIntegrationBranch {
+  branch: string;
+  baseBranch: string;
+  baseSha: string;
+  headSha: string;
+  worktreePath: string;
+  targetKind: "local" | "ssh";
+  targetId?: string;
+  status: IntegrationBranchStatus;
+  errorMessage?: string;
+  conflictFiles?: string[];
+}
+
+export type CoordinationMessageKind =
+  | "instruction"
+  | "question"
+  | "answer"
+  | "blocker"
+  | "finding"
+  | "handoff"
+  | "artifact";
+export type CoordinationDeliveryStatus =
+  | "queued"
+  | "delivered"
+  | "acknowledged"
+  | "failed"
+  | "archived";
+export type CoordinationRecipientKind = "flight" | "role" | "task" | "attempt" | "session";
+
+export interface CoordinationMessageParty {
+  kind: "user" | "agent" | "system";
+  id?: string;
+  displayName: string;
+}
+
+export interface CoordinationMessageRecipient {
+  kind: CoordinationRecipientKind;
+  id?: string;
+  label?: string;
+}
+
+export interface CoordinationArtifactRef {
+  id: string;
+  label: string;
+  uri?: string;
+  mimeType?: string;
+}
+
+export interface CoordinationAcknowledgement {
+  by: CoordinationMessageParty;
+  at: number;
+  note?: string;
+}
+
+export interface CoordinationMessage {
+  schemaVersion: 1;
+  id: string;
+  flightId: string;
+  kind: CoordinationMessageKind;
+  sender: CoordinationMessageParty;
+  recipient: CoordinationMessageRecipient;
+  body: string;
+  artifacts: CoordinationArtifactRef[];
+  status: CoordinationDeliveryStatus;
+  createdAt: number;
+  deliveredAt?: number;
+  acknowledgements: CoordinationAcknowledgement[];
+  replyToId?: string;
+  dedupeKey: string;
+  hopCount: number;
+  errorMessage?: string;
+}
+
+export type AutonomyFlightMode = "assisted" | "settings_default" | "yolo";
+export type AutonomyToolPosture = "approval_gated" | "allow_in_project";
+export type AutonomyRunStatus =
+  | "idle"
+  | "running"
+  | "paused"
+  | "stopped"
+  | "needs_attention"
+  | "completed";
+export type AutonomyActionStatus = "started" | "completed" | "failed" | "denied";
+export type AutonomyActionKind =
+  | "continue"
+  | "recover_attempt"
+  | "review_remediation"
+  | "retry_review"
+  | "accept_review_pass"
+  | "launch_ready_task"
+  | "integrate_attempt"
+  | "set_tool_posture";
+
+/** Versioned, bounded authority snapshot. A Flight never follows later Settings
+ * edits silently: settings_default copies the effective policy at opt-in time. */
+export interface AutonomyPolicy {
+  schemaVersion: 1;
+  autoRecovery: boolean;
+  autoReviewRemediation: boolean;
+  autoRunTaskGraph: boolean;
+  toolPosture: AutonomyToolPosture;
+  maxTotalCost: number;
+  maxDurationMinutes: number;
+  maxRetriesPerTask: number;
+  maxReviewRounds: number;
+  maxConcurrentAgents: number;
+  allowedRoots: string[];
+  /** "local" or a canonical ServerConfig id. */
+  allowedTargets: string[];
+  allowDraftPrPublishing: boolean;
+}
+
+export interface AutonomyActionRecord {
+  id: string;
+  kind: AutonomyActionKind;
+  subjectId?: string;
+  status: AutonomyActionStatus;
+  reason: string;
+  timestamp: number;
+  cost: number;
+  metadata?: Record<string, string | number | boolean | null>;
+}
+
+export interface AutonomyRuntime {
+  status: AutonomyRunStatus;
+  startedAt?: number;
+  pausedAt?: number;
+  stoppedAt?: number;
+  hardStopReason?: string;
+  actionHistory: AutonomyActionRecord[];
+}
+
 export type AttemptTarget =
   | { kind: "local"; basePath: string; worktreePath: string }
   | { kind: "ssh"; targetId: string; basePath: string; worktreePath: string };
@@ -204,6 +393,10 @@ export interface Attempt {
   errorMessage?: string;
   /** E1: structured failure category, set when the attempt fails. */
   failureCategory?: AttemptFailureCategory;
+  /** RG1: independent reviewer state for this attempt. */
+  reviewGate?: AttemptReviewGate;
+  /** Cooperative graph task that owns this isolated attempt. */
+  taskId?: string;
   /**
    * v0.8-G: PR number of the draft PR opened for this attempt's branch
    * when the parent Flight has `publishAttemptsAsPrs == true`. Undefined
@@ -238,6 +431,20 @@ export interface Flight {
   prompt?: string;
   /** Parallel agent attempts. Non-empty = async-mode Flight. */
   attempts?: Attempt[];
+  /** RG1: opt-in independent reviewer policy. Absent means disabled. */
+  reviewGatePolicy?: ReviewGatePolicy;
+  /** Undefined is the backward-compatible independent-attempt mode. */
+  executionMode?: FlightExecutionMode;
+  /** Isolated branch/worktree where accepted cooperative tasks converge. */
+  integrationBranch?: FlightIntegrationBranch;
+  /** Versioned, append-only coordination mailbox. */
+  coordinationInbox?: CoordinationMessage[];
+  /** Assisted is the backward-compatible default when absent. */
+  autonomyMode?: AutonomyFlightMode;
+  /** Exact bounded policy snapshot used by this Flight. */
+  autonomyPolicy?: AutonomyPolicy;
+  /** Persisted supervision state and append-only action history. */
+  autonomyRuntime?: AutonomyRuntime;
   /** Normal API-agent conversation used to refine the current upfront plan. */
   planningConversationId?: string;
   // Legacy autonomous-Planner fields — retained only for lossless hydration.

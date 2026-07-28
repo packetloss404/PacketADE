@@ -40,12 +40,13 @@ pub fn validate_remote_rel_path(path: &str) -> Result<(), String> {
         return Err("Path cannot be empty".to_string());
     }
     if std::path::Path::new(path).is_absolute() || path.starts_with('/') || path.starts_with('\\') {
-        return Err(format!("Path must be repo-relative, not absolute: {}", path));
+        return Err(format!(
+            "Path must be repo-relative, not absolute: {}",
+            path
+        ));
     }
     // Split on both separators so a Windows-style `..\` is caught too.
-    let has_traversal = path
-        .split(['/', '\\'])
-        .any(|seg| seg == "..");
+    let has_traversal = path.split(['/', '\\']).any(|seg| seg == "..");
     if has_traversal {
         return Err(format!("Path cannot contain '..' traversal: {}", path));
     }
@@ -320,14 +321,11 @@ fn sanitize_trailer_value(s: &str) -> String {
 #[cfg(any(windows, test))]
 fn posix_shell_on_path_with<F: Fn(&std::path::Path) -> bool>(path_var: &str, exists: F) -> bool {
     let sep = if cfg!(windows) { ';' } else { ':' };
-    path_var
-        .split(sep)
-        .filter(|d| !d.is_empty())
-        .any(|dir| {
-            ["sh.exe", "bash.exe", "sh", "bash"]
-                .iter()
-                .any(|exe| exists(&std::path::Path::new(dir).join(exe)))
-        })
+    path_var.split(sep).filter(|d| !d.is_empty()).any(|dir| {
+        ["sh.exe", "bash.exe", "sh", "bash"]
+            .iter()
+            .any(|exe| exists(&std::path::Path::new(dir).join(exe)))
+    })
 }
 
 async fn write_prepare_commit_msg_hook(
@@ -416,7 +414,10 @@ mod gp4_tests {
         let sep = if cfg!(windows) { ";" } else { ":" };
         let path = ["/usr/local/bin", "/opt/git/bin"].join(sep);
         // sh present only in the second dir.
-        let exists = |p: &Path| p == Path::new("/opt/git/bin").join("sh") || p == Path::new("/opt/git/bin").join("sh.exe");
+        let exists = |p: &Path| {
+            p == Path::new("/opt/git/bin").join("sh")
+                || p == Path::new("/opt/git/bin").join("sh.exe")
+        };
         assert!(posix_shell_on_path_with(&path, exists));
     }
 
@@ -640,6 +641,366 @@ async fn ssh_git(cfg: &SshConfig, base: &str, args: &[&str]) -> Result<(String, 
         format!("{}\n{}", stdout, stderr)
     };
     Ok((combined, output.status.code().unwrap_or(-1)))
+}
+
+/// Run a read-only git command for command-layer evidence collection. Arguments
+/// are individually shell-quoted by `ssh_git`; callers still receive the exit
+/// code so a missing base ref can be surfaced instead of silently weakening a
+/// review.
+pub(crate) async fn ssh_git_read(
+    cfg: &SshConfig,
+    base: &str,
+    args: &[&str],
+) -> Result<(String, i32), String> {
+    ssh_git(cfg, base, args).await
+}
+
+#[derive(Debug, Clone)]
+pub struct IntegrationBranchState {
+    pub branch: String,
+    pub base_branch: String,
+    pub base_sha: String,
+    pub head_sha: String,
+    pub worktree_path: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct IntegrationMergeState {
+    pub head_sha: String,
+    pub conflict_files: Vec<String>,
+}
+
+fn integration_branch_name(flight_id: &str) -> Result<String, String> {
+    validate_worktree_component(flight_id)?;
+    Ok(format!("packetade/flight/{}", flight_id))
+}
+
+fn git_stdout(cwd: &str, args: &[&str]) -> Result<String, String> {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if !output.status.success() {
+        return Err(format!(
+            "git {} failed (exit {}): {}",
+            args.first().copied().unwrap_or("command"),
+            output.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+pub fn prepare_local_integration_branch(
+    base: &str,
+    flight_id: &str,
+    base_branch: &str,
+) -> Result<IntegrationBranchState, String> {
+    let branch = integration_branch_name(flight_id)?;
+    let base_sha = git_stdout(base, &["rev-parse", &format!("{}^{{commit}}", base_branch)])?;
+    let path = std::path::Path::new(base)
+        .join(".pkt-flight-integrations")
+        .join(flight_id);
+    if path.exists() {
+        let path_str = path.to_string_lossy().to_string();
+        let actual = git_stdout(&path_str, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+        if actual != branch {
+            return Err(format!(
+                "Integration worktree ref mismatch: expected '{}', found '{}'.",
+                branch, actual
+            ));
+        }
+        let head_sha = git_stdout(&path_str, &["rev-parse", "HEAD"])?;
+        return Ok(IntegrationBranchState {
+            branch,
+            base_branch: base_branch.to_string(),
+            base_sha,
+            head_sha,
+            worktree_path: path_str,
+        });
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create integration directory: {}", e))?;
+    }
+    let path_str = path.to_string_lossy().to_string();
+    let branch_exists = std::process::Command::new("git")
+        .args([
+            "show-ref",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{}", branch),
+        ])
+        .current_dir(base)
+        .status()
+        .map_err(|e| format!("Failed to inspect integration branch: {}", e))?
+        .success();
+    if branch_exists {
+        git_stdout(base, &["worktree", "add", &path_str, &branch])?;
+    } else {
+        git_stdout(
+            base,
+            &["worktree", "add", "-b", &branch, &path_str, base_branch],
+        )?;
+    }
+    let head_sha = git_stdout(&path_str, &["rev-parse", "HEAD"])?;
+    Ok(IntegrationBranchState {
+        branch,
+        base_branch: base_branch.to_string(),
+        base_sha,
+        head_sha,
+        worktree_path: path_str,
+    })
+}
+
+pub async fn prepare_remote_integration_branch(
+    cfg: &SshConfig,
+    base: &str,
+    flight_id: &str,
+    base_branch: &str,
+) -> Result<IntegrationBranchState, String> {
+    let branch = integration_branch_name(flight_id)?;
+    let verify = format!("{}^{{commit}}", base_branch);
+    let (base_sha, base_code) = ssh_git(cfg, base, &["rev-parse", &verify]).await?;
+    if base_code != 0 {
+        return Err(format!(
+            "Remote integration base ref '{}' is invalid: {}",
+            base_branch,
+            base_sha.trim()
+        ));
+    }
+    let path = format!(
+        "{}/.pkt-flight-integrations/{}",
+        base.trim_end_matches('/'),
+        flight_id
+    );
+    let parent = format!("{}/.pkt-flight-integrations", base.trim_end_matches('/'));
+    let mkdir = format!("mkdir -p -- {}", sh_quote(&parent));
+    let mkdir_output = crate::core::tool_runtime_ssh::ssh_run_for_worktree(cfg, &mkdir).await?;
+    if !mkdir_output.status.success() {
+        return Err(format!(
+            "Failed to create remote integration directory: {}",
+            String::from_utf8_lossy(&mkdir_output.stderr).trim()
+        ));
+    }
+
+    let (actual, actual_code) = ssh_git(cfg, &path, &["rev-parse", "--abbrev-ref", "HEAD"]).await?;
+    if actual_code == 0 {
+        if actual.trim() != branch {
+            return Err(format!(
+                "Remote integration worktree ref mismatch: expected '{}', found '{}'.",
+                branch,
+                actual.trim()
+            ));
+        }
+    } else {
+        let ref_name = format!("refs/heads/{}", branch);
+        let (_, branch_code) =
+            ssh_git(cfg, base, &["show-ref", "--verify", "--quiet", &ref_name]).await?;
+        let (out, code) = if branch_code == 0 {
+            ssh_git(cfg, base, &["worktree", "add", &path, &branch]).await?
+        } else {
+            ssh_git(
+                cfg,
+                base,
+                &["worktree", "add", "-b", &branch, &path, base_branch],
+            )
+            .await?
+        };
+        if code != 0 {
+            return Err(format!(
+                "Remote integration worktree creation failed: {}",
+                out.trim()
+            ));
+        }
+    }
+    let (head_sha, head_code) = ssh_git(cfg, &path, &["rev-parse", "HEAD"]).await?;
+    if head_code != 0 {
+        return Err(format!(
+            "Remote integration HEAD lookup failed: {}",
+            head_sha.trim()
+        ));
+    }
+    Ok(IntegrationBranchState {
+        branch,
+        base_branch: base_branch.to_string(),
+        base_sha: base_sha.trim().to_string(),
+        head_sha: head_sha.trim().to_string(),
+        worktree_path: path,
+    })
+}
+
+pub fn integrate_local_attempt(
+    integration_path: &str,
+    integration_branch: &str,
+    attempt_path: &str,
+    attempt_branch: &str,
+) -> Result<IntegrationMergeState, String> {
+    let actual = git_stdout(integration_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    if actual != integration_branch {
+        return Err(format!(
+            "Integration ref mismatch: expected '{}', found '{}'.",
+            integration_branch, actual
+        ));
+    }
+    if !git_stdout(attempt_path, &["status", "--porcelain"])?.is_empty() {
+        return Err("Attempt worktree has uncommitted changes. Ask the builder to commit before integration.".to_string());
+    }
+    let output = std::process::Command::new("git")
+        .args(["merge", "--no-ff", "--no-edit", attempt_branch])
+        .current_dir(integration_path)
+        .output()
+        .map_err(|e| format!("Failed to merge attempt: {}", e))?;
+    if !output.status.success() {
+        let conflicts = git_stdout(
+            integration_path,
+            &["diff", "--name-only", "--diff-filter=U"],
+        )
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+        let _ = std::process::Command::new("git")
+            .args(["merge", "--abort"])
+            .current_dir(integration_path)
+            .output();
+        return Ok(IntegrationMergeState {
+            head_sha: git_stdout(integration_path, &["rev-parse", "HEAD"])?,
+            conflict_files: conflicts,
+        });
+    }
+    Ok(IntegrationMergeState {
+        head_sha: git_stdout(integration_path, &["rev-parse", "HEAD"])?,
+        conflict_files: Vec::new(),
+    })
+}
+
+pub async fn integrate_remote_attempt(
+    cfg: &SshConfig,
+    integration_path: &str,
+    integration_branch: &str,
+    attempt_path: &str,
+    attempt_branch: &str,
+) -> Result<IntegrationMergeState, String> {
+    let (actual, code) = ssh_git(
+        cfg,
+        integration_path,
+        &["rev-parse", "--abbrev-ref", "HEAD"],
+    )
+    .await?;
+    if code != 0 || actual.trim() != integration_branch {
+        return Err(format!(
+            "Remote integration ref mismatch: expected '{}', found '{}'.",
+            integration_branch,
+            actual.trim()
+        ));
+    }
+    let (dirty, dirty_code) = ssh_git(cfg, attempt_path, &["status", "--porcelain"]).await?;
+    if dirty_code != 0 || !dirty.trim().is_empty() {
+        return Err("Remote attempt worktree has uncommitted changes. Ask the builder to commit before integration.".to_string());
+    }
+    let (merge, merge_code) = ssh_git(
+        cfg,
+        integration_path,
+        &["merge", "--no-ff", "--no-edit", attempt_branch],
+    )
+    .await?;
+    if merge_code != 0 {
+        let (conflicts, _) = ssh_git(
+            cfg,
+            integration_path,
+            &["diff", "--name-only", "--diff-filter=U"],
+        )
+        .await?;
+        let _ = ssh_git(cfg, integration_path, &["merge", "--abort"]).await;
+        let (head, _) = ssh_git(cfg, integration_path, &["rev-parse", "HEAD"]).await?;
+        return Ok(IntegrationMergeState {
+            head_sha: head.trim().to_string(),
+            conflict_files: conflicts
+                .lines()
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+                .map(str::to_string)
+                .collect(),
+        });
+    }
+    let (head, head_code) = ssh_git(cfg, integration_path, &["rev-parse", "HEAD"]).await?;
+    if head_code != 0 {
+        return Err(format!(
+            "Remote integration HEAD lookup failed: {}",
+            merge.trim()
+        ));
+    }
+    Ok(IntegrationMergeState {
+        head_sha: head.trim().to_string(),
+        conflict_files: Vec::new(),
+    })
+}
+
+fn root_is_clean_for_integration(status: &str) -> bool {
+    status.lines().all(|line| {
+        let path = line.get(3..).unwrap_or("").replace('\\', "/");
+        path.starts_with(".pkt-worktrees/") || path.starts_with(".pkt-flight-integrations/")
+    })
+}
+
+pub fn land_local_integration_branch(
+    base: &str,
+    base_branch: &str,
+    integration_branch: &str,
+) -> Result<String, String> {
+    let actual = git_stdout(base, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    if actual != base_branch {
+        return Err(format!(
+            "Landing requires the base checkout on '{}'; it is currently on '{}'.",
+            base_branch, actual
+        ));
+    }
+    let status = git_stdout(base, &["status", "--porcelain"])?;
+    if !root_is_clean_for_integration(&status) {
+        return Err("Landing requires a clean base working tree.".to_string());
+    }
+    git_stdout(base, &["merge", "--no-ff", "--no-edit", integration_branch])?;
+    git_stdout(base, &["rev-parse", "HEAD"])
+}
+
+pub async fn land_remote_integration_branch(
+    cfg: &SshConfig,
+    base: &str,
+    base_branch: &str,
+    integration_branch: &str,
+) -> Result<String, String> {
+    let (actual, actual_code) = ssh_git(cfg, base, &["rev-parse", "--abbrev-ref", "HEAD"]).await?;
+    if actual_code != 0 || actual.trim() != base_branch {
+        return Err(format!(
+            "Remote landing requires the base checkout on '{}'; it is currently on '{}'.",
+            base_branch,
+            actual.trim()
+        ));
+    }
+    let (status, status_code) = ssh_git(cfg, base, &["status", "--porcelain"]).await?;
+    if status_code != 0 || !root_is_clean_for_integration(&status) {
+        return Err("Remote landing requires a clean base working tree.".to_string());
+    }
+    let (merge, merge_code) = ssh_git(
+        cfg,
+        base,
+        &["merge", "--no-ff", "--no-edit", integration_branch],
+    )
+    .await?;
+    if merge_code != 0 {
+        let _ = ssh_git(cfg, base, &["merge", "--abort"]).await;
+        return Err(format!("Remote Flight landing failed: {}", merge.trim()));
+    }
+    let (head, head_code) = ssh_git(cfg, base, &["rev-parse", "HEAD"]).await?;
+    if head_code != 0 {
+        return Err(format!(
+            "Remote landing HEAD lookup failed: {}",
+            head.trim()
+        ));
+    }
+    Ok(head.trim().to_string())
 }
 
 /// Create a remote git worktree. Idempotent.
@@ -1128,7 +1489,11 @@ pub async fn ssh_show_head(
         45 => Err("File is too large to diff (over 2 MB)".to_string()),
         code => {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            Err(format!("git show HEAD failed (exit {}): {}", code, stderr.trim()))
+            Err(format!(
+                "git show HEAD failed (exit {}): {}",
+                code,
+                stderr.trim()
+            ))
         }
     }
 }
@@ -1177,7 +1542,11 @@ pub async fn ssh_read_working_file(
                 return Err(msg);
             }
             let stderr = String::from_utf8_lossy(&output.stderr);
-            Err(format!("read working file failed (exit {}): {}", code, stderr.trim()))
+            Err(format!(
+                "read working file failed (exit {}): {}",
+                code,
+                stderr.trim()
+            ))
         }
     }
 }
@@ -1299,8 +1668,16 @@ mod tests {
     #[test]
     fn validate_remote_rel_path_rejects_escape_and_absolute() {
         for bad in [
-            "", "  ", "..", "../x", "a/../b", "a/..", "/etc/passwd", "\\\\server\\share",
-            "..\\win", "a\\..\\b",
+            "",
+            "  ",
+            "..",
+            "../x",
+            "a/../b",
+            "a/..",
+            "/etc/passwd",
+            "\\\\server\\share",
+            "..\\win",
+            "a\\..\\b",
         ] {
             assert!(
                 validate_remote_rel_path(bad).is_err(),
@@ -1589,6 +1966,90 @@ mod tests {
         remove_local_worktree(&base, conv, true)
             .await
             .expect("idempotent second removal");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn cooperative_integration_prepares_merges_and_lands_without_switching_root() {
+        let root = fixture_repo_with_worktree("coop-land", "unrelated");
+        let base = root.to_string_lossy().to_string();
+        let root_branch_before = git_stdout(&base, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap();
+        let integration =
+            prepare_local_integration_branch(&base, "flight-coop-land", "main").unwrap();
+        assert_eq!(root_branch_before, "main");
+        assert_eq!(
+            git_stdout(&base, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap(),
+            "main",
+            "preparing integration must not switch the user's checkout"
+        );
+
+        let attempt_path = create_local_worktree(&base, "coop-task", &integration.branch)
+            .await
+            .unwrap();
+        std::fs::write(
+            std::path::Path::new(&attempt_path).join("task.txt"),
+            "cooperative\n",
+        )
+        .unwrap();
+        git_stdout(&attempt_path, &["add", "task.txt"]).unwrap();
+        git_stdout(&attempt_path, &["commit", "-m", "task"]).unwrap();
+
+        let merged = integrate_local_attempt(
+            &integration.worktree_path,
+            &integration.branch,
+            &attempt_path,
+            &branch_name("coop-task"),
+        )
+        .unwrap();
+        assert!(merged.conflict_files.is_empty());
+        assert!(std::path::Path::new(&integration.worktree_path)
+            .join("task.txt")
+            .exists());
+
+        let landed = land_local_integration_branch(&base, "main", &integration.branch).unwrap();
+        assert!(!landed.is_empty());
+        assert!(root.join("task.txt").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn cooperative_integration_reports_conflicts_and_preserves_attempts() {
+        let root = fixture_repo_with_worktree("coop-conflict", "unrelated");
+        let base = root.to_string_lossy().to_string();
+        let integration =
+            prepare_local_integration_branch(&base, "flight-coop-conflict", "main").unwrap();
+        let first = create_local_worktree(&base, "coop-first", &integration.branch)
+            .await
+            .unwrap();
+        let second = create_local_worktree(&base, "coop-second", &integration.branch)
+            .await
+            .unwrap();
+        for (path, value, message) in [
+            (&first, "first\n", "first task"),
+            (&second, "second\n", "second task"),
+        ] {
+            std::fs::write(std::path::Path::new(path).join("f.txt"), value).unwrap();
+            git_stdout(path, &["add", "f.txt"]).unwrap();
+            git_stdout(path, &["commit", "-m", message]).unwrap();
+        }
+        let first_merge = integrate_local_attempt(
+            &integration.worktree_path,
+            &integration.branch,
+            &first,
+            &branch_name("coop-first"),
+        )
+        .unwrap();
+        assert!(first_merge.conflict_files.is_empty());
+        let conflict = integrate_local_attempt(
+            &integration.worktree_path,
+            &integration.branch,
+            &second,
+            &branch_name("coop-second"),
+        )
+        .unwrap();
+        assert_eq!(conflict.conflict_files, vec!["f.txt"]);
+        assert!(std::path::Path::new(&first).exists());
+        assert!(std::path::Path::new(&second).exists());
         let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -74,4 +74,29 @@ describe("SSH argument construction", () => {
     expect(args).toContain("PreferredAuthentications=keyboard-interactive,password");
     expect(args).toContain("PubkeyAuthentication=no");
   });
+
+  it("exports an isolated PacketCode home without allowing shell injection", () => {
+    const args = buildSshArgs(
+      server({ hostFingerprint: "SHA256:abc" }),
+      "/repo with spaces",
+      "packetcode",
+      [],
+      "C:/PacketADE/known_hosts",
+      { PACKETCODE_HOME: "/srv/packet code/'isolated'" },
+    );
+    const remote = args[args.length - 1] ?? "";
+
+    expect(remote).toContain(
+      "export PACKETCODE_HOME='/srv/packet code/'\\''isolated'\\''';",
+    );
+    expect(remote).toContain("cd '/repo with spaces' && 'packetcode'");
+  });
+
+  it("rejects invalid remote environment variable names", () => {
+    expect(() =>
+      buildSshArgs(server(), "/repo", "packetcode", [], undefined, {
+        "PACKETCODE_HOME; touch /tmp/pwned": "/safe",
+      }),
+    ).toThrow("Invalid remote environment variable name");
+  });
 });

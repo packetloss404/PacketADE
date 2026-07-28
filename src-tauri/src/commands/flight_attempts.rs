@@ -8,7 +8,7 @@
 use crate::commands::agent_sidecar::SidecarManager;
 use crate::commands::api_agent::{close_api_agent_session, start_api_agent_session, ApiAgentState};
 use crate::core::execution::SshConfig;
-use crate::core::flight::{Attempt, AttemptStatus, AttemptTarget};
+use crate::core::flight::{Attempt, AttemptStatus, AttemptTarget, ReviewGateStatus};
 use crate::core::storage;
 use crate::core::worktree;
 use serde::{Deserialize, Serialize};
@@ -25,6 +25,8 @@ pub enum AttemptTargetSpec {
         agent_config_id: String,
         provider: String,
         model: String,
+        #[serde(default)]
+        task_id: Option<String>,
     },
     Ssh {
         target_id: String,
@@ -47,6 +49,8 @@ pub enum AttemptTargetSpec {
         agent_config_id: String,
         provider: String,
         model: String,
+        #[serde(default)]
+        task_id: Option<String>,
     },
 }
 
@@ -437,6 +441,39 @@ async fn update_attempt_status(
                 .iter_mut()
                 .find(|f| f.id == flight_id)
                 .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
+            if status == AttemptStatus::Completed
+                && flight
+                    .review_gate_policy
+                    .as_ref()
+                    .is_some_and(|policy| policy.enabled)
+            {
+                let gate = flight
+                    .attempts
+                    .iter()
+                    .find(|a| a.id == attempt_id)
+                    .and_then(|attempt| attempt.review_gate.as_ref())
+                    .ok_or_else(|| {
+                        "Reviewer Gate has not produced a verdict; acceptance is blocked."
+                            .to_string()
+                    })?;
+                let allowed = match gate.status {
+                    ReviewGateStatus::Passed => true,
+                    ReviewGateStatus::Overridden => {
+                        gate.overridden_at.is_some()
+                            && gate
+                                .override_reason
+                                .as_deref()
+                                .is_some_and(|reason| !reason.trim().is_empty())
+                    }
+                    _ => false,
+                };
+                if !allowed {
+                    return Err(
+                        "Reviewer Gate must pass or have a recorded override before acceptance."
+                            .to_string(),
+                    );
+                }
+            }
             let attempt = flight
                 .attempts
                 .iter_mut()
@@ -631,6 +668,11 @@ pub async fn launch_flight_async(
         let attempt_id = format!("att_{}", Uuid::new_v4().simple());
         let session_id = attempt_id.clone();
         let branch = worktree::branch_name(&attempt_id);
+        let task_id = match &spec {
+            AttemptTargetSpec::Local { task_id, .. } | AttemptTargetSpec::Ssh { task_id, .. } => {
+                task_id.clone()
+            }
+        };
 
         let flight = worktree::WorktreeFlight {
             flight_id: Some(flight_id.clone()),
@@ -645,6 +687,7 @@ pub async fn launch_flight_async(
                     agent_config_id,
                     provider,
                     model,
+                    ..
                 } => {
                     let path = worktree::create_local_worktree_with_flight(
                         base_path,
@@ -733,6 +776,8 @@ pub async fn launch_flight_async(
             tokens: 0,
             error_message: None,
             failure_category: None,
+            review_gate: None,
+            task_id,
             draft_pr_number: None,
         };
 
@@ -1076,6 +1121,7 @@ mod tests {
             agent_config_id: "api-claude".to_string(),
             provider: "claude".to_string(),
             model: "claude-sonnet-4-6".to_string(),
+            task_id: None,
         }
     }
 
@@ -1093,6 +1139,7 @@ mod tests {
             agent_config_id: "api-claude".to_string(),
             provider: "claude".to_string(),
             model: "claude-sonnet-4-6".to_string(),
+            task_id: None,
         }
     }
 
@@ -1117,6 +1164,8 @@ mod tests {
             tokens: 0,
             error_message: None,
             failure_category: None,
+            review_gate: None,
+            task_id: None,
             draft_pr_number: None,
         }
     }
@@ -1212,6 +1261,13 @@ mod tests {
             total_tokens: 0,
             prompt: None,
             attempts: vec![attempt],
+            review_gate_policy: None,
+            execution_mode: None,
+            integration_branch: None,
+            coordination_inbox: Vec::new(),
+            autonomy_mode: None,
+            autonomy_policy: None,
+            autonomy_runtime: None,
             planning_conversation_id: None,
             planner_session_id: None,
             planner_status: None,
