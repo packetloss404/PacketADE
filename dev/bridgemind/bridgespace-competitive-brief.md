@@ -1,11 +1,11 @@
 # BridgeMind / BridgeSpace — Competitive Brief
 
-Last updated: 2026-07-24
-Research method: read-only web research. The entire `bridgemind.ai` + `docs.bridgemind.ai`
-domain returns HTTP 403 to automated fetchers (Cloudflare), so all BridgeMind quotes below are
-verbatim from WebSearch snippets (which quote the pages directly) plus third-party mirrors
-(moge.ai, hunted.space/Product Hunt, starsearn, vibecademy, npm, GitHub). "Absence" findings mean
-"not found in available material," not proof of impossibility.
+Last updated: 2026-07-27
+Research method: a fresh read-only fan-out across official BridgeMind product,
+documentation, roadmap, changelog, and public package/repository material, checked
+against PacketADE's current source. Official pages were directly accessible during
+this pass. "Absence" findings mean "not established in current public material,"
+not proof of impossibility.
 
 Related PacketADE response plans (already in flight): [`swarm-orchestration-plan.md`](./swarm-orchestration-plan.md),
 [`packetade-mcp-server-plan.md`](./packetade-mcp-server-plan.md). Deep BridgeSwarm teardown:
@@ -14,13 +14,13 @@ Related PacketADE response plans (already in flight): [`swarm-orchestration-plan
 
 ## Bottom line
 
-BridgeMind's **BridgeSpace is the closest product on the market to PacketADE** — a Tauri-2/Rust
-desktop ADE with multi-pane terminals (up to 16), a Kanban that dispatches agents, git-worktree
-isolation, role-based multi-agent orchestration, shared memory, an MCP spine, and on-device Whisper
-voice. **But it is an orchestration shell over external CLIs.** It has **no first-class "agent
-type" / provider-and-auth abstraction** — that, plus PacketADE's dual transport (in-process API
-providers *and* a versioned Node sidecar behind one event contract), is the one thing neither
-BridgeSpace nor ~11 other competitors actually have.
+BridgeMind's **BridgeSpace remains the closest product to PacketADE** — a Tauri-2/Rust desktop ADE
+with multi-pane terminals (up to 16), Kanban dispatch, git-worktree isolation, role-based
+multi-agent orchestration, shared memory, an MCP spine, and on-device Whisper voice. Its current
+material also shows custom Agent system prompts and Settings API Keys, so the old blanket claim
+that it has "no profiles or API-key surface" is retired. What remains unverified is one unified
+ADE-level provider/auth/transport contract comparable to PacketADE's eight badged rows and dual
+in-process/sidecar runtime.
 
 ## Company & maturity
 
@@ -28,9 +28,9 @@ BridgeSpace nor ~11 other competitors actually have.
 |---|---|
 | Company | Solo founder **Matthew Miller** (build-in-public, 3rd startup), US, **no external funding**, effectively 1 person |
 | Traction | ~$201K self-reported ARR ("day 185" of a public $1M challenge); ~86K YouTube, ~40K X, ~13K Discord. BridgeSpace 3's Product Hunt launch: **17 upvotes / #47 of day** |
-| Model | One credit-metered subscription bundling *all* modules — Basic $16 / Pro $40 / Ultra $80 (annual). Free tier exists |
+| Model | One credit-metered subscription bundling the suite — Basic $16 / Pro $40 / Ultra $80 (annual in the researched material). A durable free tier could not be confirmed consistently. |
 | Positioning | "Home of the vibe coding movement." Explicitly targets **non-coders & solo founders**, *not* professional engineers |
-| Stack | **Tauri 2 + Rust**, macOS/Win/Linux, signed auto-updating desktop apps, rapid cadence (BridgeSpace v3.2.2, June 2026) |
+| Stack | **Tauri 2 + Rust**, macOS/Win/Linux, signed auto-updating desktop apps, rapid cadence (BridgeSpace v3.4.15, July 17, 2026) |
 
 **Read:** real and shipping, fast-moving, but early-stage, founder-dependent, hobbyist-audience.
 Category is churning (Terragon died Jan '26, Crystal Feb, Bloop's Vibe Kanban Apr).
@@ -42,51 +42,48 @@ Category is churning (Terragon died Jan '26, Crystal Feb, Bloop's Vibe Kanban Ap
   ownership and review."* BridgeSpace is *"the workroom around them"* and shells out to whatever
   terminal agent is installed.
 - **Panes:** 1–16 terminal grid (templates for 1/2/4/…/16), Warp-style collapsible **command
-  blocks** with success/fail indicators, 12+ themes, per-project workspaces.
+  blocks** with success/fail indicators, 25+ themes, per-project workspaces.
 - **Dispatch:** *"drag a card to dispatch a coding agent"*; selecting a Kanban task auto-determines
   the project folder and spawns workspace tabs/panes. Git **worktree flows** in the sidebar.
 - **Tech:** Tauri 2 + Rust PTY engine, Tauri Channels IPC with a 256 KB renderer-payload cap and
   UTF-8-boundary-safe coalescing of oversized PTY bursts. **No evidence of a Node sidecar or a
   versioned JSON stdio protocol** — a near-sibling of PacketADE's `core/pty.rs`, but single-transport.
 
-## The "agent type flow" gap — confirmed (with one nuance)
+## The "agent type flow" gap — narrowed
 
-BridgeSpace has **no provider/agent-type abstraction**. What it *does* have is a **"Connect
-Accounts"** layer that manages the *external CLIs'* own OAuth/subscription logins:
+BridgeSpace has more ADE-level configuration than the earlier audit captured. It exposes custom
+Agent system prompts and Settings API Keys alongside a **"Connect Accounts"** layer for external
+CLI OAuth/subscription logins:
 
 **Present:** linking **Claude and Codex accounts** with per-profile sign-in progress; onboarding
 state *"seeded from the CLI's real state file at connect"*; multi-account, **profile-aware resume**
 (sessions record which Claude/Codex profile + transcript path they ran under). *"First launch opens
 a browser sign-in, not an API key prompt."*
 
-**Absent (searched for, not found):**
-- No provider-row **picker/catalog** (PacketADE's 8 rows) — the only "providers" are the two
-  subscription CLIs it can link
-- No **API-key vs subscription/OAuth** distinction managed in-app; no keyring API-key surface
-- No **in-app API agents** vs external PTY CLIs split — everything is an external CLI in a pane; no
-  in-process LLM runtime (no MiniMax/OpenRouter/Ollama equivalent)
-- No **per-provider auth badges**, no BridgeSpace-level **model selector** (delegated to the CLI's `/model`)
-- No **agent-profile** abstraction (systemPrompt/allowedTools/defaultModel) — closest is BridgeSwarm
-  **roles** + draggable **Skills**, i.e. role/skill assignment, not provider/model identity
+**Still not established in current public material:**
+- one provider-row **catalog** equivalent to PacketADE's eight transport/auth identities;
+- a refresh-aware distinction between subscription/OAuth and API-key identities with live badges;
+- one event contract spanning both in-app raw-API agents and subscription-backed agents;
+- a BridgeSpace-level model/transport contract comparable to PacketADE profiles.
 
-**Nuance:** their **BridgeCode** engine (separate, **npm 0.2.0-alpha**) *does* have multi-provider
-+ mid-session model switching + personas (vibe/build/plan/architect/ship). So the provider
-abstraction exists one layer down in an alpha CLI — **not in the ADE shell**.
+**Historical nuance:** BridgeCode exposed multi-provider switching and personas in an alpha CLI,
+but BridgeMind discontinued the BridgeCode integration on May 30, 2026. Treat it as a workflow
+benchmark, not a current part of the BridgeSpace suite or an active competitor to integrate with.
 
 ## The ecosystem
 
 | Module | Status | What it is | PacketADE analog |
 |---|---|---|---|
-| BridgeSpace | GA (v3.2.2) | Flagship Tauri desktop ADE, 16-pane grid, hub for the rest | The whole app |
+| BridgeSpace | GA (v3.4.15) | Flagship Tauri desktop ADE, 16-pane grid, hub for the rest; recent work emphasizes cold-start restore, deferred panes, durable identity, and recovery | The whole app |
 | BridgeSwarm | GA (in BridgeSpace) | Role-based multi-agent (Coordinator/Builder/Scout/Reviewer), file ownership, quality gates. Unit of work = **"mission"** | Flights + orchestration (PacketADE *retired* "Mission" naming) |
 | BridgeBoard | GA (in BridgeSpace) | "Vibe Kanban" that dispatches agents; state shared via MCP | Issue board / Flight dispatch |
 | BridgeMemory | GA (Pro+) | Persistent shared cross-session/cross-tool memory, delivered via MCP | Memory layer |
-| BridgeMCP | GA | Hosted+local MCP server; shared tasks + memory to any client | MCP client/provider mgmt |
+| BridgeMCP | GA | Managed endpoint plus local client; shared tasks + memory to connected clients | MCP client/provider mgmt |
 | BridgeVoice | GA (most mature) | Tauri 2 + Rust, on-device Whisper (Tiny→Large-v3) + Parakeet, optional Groq cloud, 99+ langs | Dictation module (near-identical) |
-| BridgeCode | Alpha (npm 0.2.0) | Own CLI engine: multi-provider, model switching, personas, sub-agents, MCP | Closest to PacketADE's provider abstraction — but a separate alpha CLI |
-| BridgeAgent | **Beta** (v0.1.9) | Autonomous server-side "recursive engineer": mission→PR, Sentry/PostHog watch, self-rewriting skills, 15+ chat platforms, ~25 integrations | Remote Agents plan (`../remoteagents/`) |
-| BridgeShot | GA (macOS) | Native Swift screenshot + on-device OCR | — |
-| BridgeBench | GA, OSS | Vibe-coding benchmark, Elo leaderboards (bridgebench.ai) | — |
+| BridgeCode | Discontinued integration (May 30, 2026) | Historical alpha CLI with multi-provider switching, personas, sub-agents, and MCP | Historical benchmark for the sibling PacketCode TUI |
+| BridgeAgent | **Beta** (v0.1.9) | Always-on worker with bounded loops, goals/templates, cron Responsibilities, production-signal-to-PR flows, integrations, skills, sub-agents, MCP, and local/container/SSH/cloud execution targets | PacketAgent plus PacketADE handoff contract |
+| BridgeShot | Public beta (macOS) | Native Swift screenshot + on-device OCR | — |
+| BridgeBench | Live alpha, OSS | Vibe-coding benchmark and Elo leaderboards (bridgebench.ai) | — |
 
 **Spine:** BridgeMCP carries shared **tasks** (todo→in-progress→in-review→complete) + **memory** to
 every agent/tool. BridgeSpace embeds Board/Swarm/Memory and drives external CLIs. One subscription,
@@ -123,15 +120,61 @@ several separate apps.
   entire field lacks, and it maps to the *professional-engineer* audience BridgeMind isn't serving.
 - **Close the orchestration escalation gap** (auto-reassignment / structured supervision) to reach
   BridgeSwarm parity end-to-end.
-- **Two-product positioning:** PacketADE (pro ADE) + the sibling PacketCode TUI as the depth
-  alternative to BridgeMind's vibe-coder suite. Weigh their "one subscription, many modules" GTM.
+- **Packet suite positioning:** PacketADE is the professional desktop cockpit, PacketAgent is the
+  durable always-on worker, and the sibling PacketCode TUI is the terminal-native coding agent.
+  PacketCode has now been audited and hardened against BridgeCode's historical workflows; remaining
+  work is release proof and the clean PacketAgent compatibility boundary, not BridgeCode parity.
 - **The category is unstable** — auth abstraction, memory, and MCP breadth are the durable moats;
   UI parity is not.
 
+## Competitive response decision queue
+
+Work through these one at a time; presence here is not blanket approval to implement every item.
+
+1. **✅ Decided and shipped baseline — Flight attention and assisted escalation (Option B).**
+   Detect blocked/stuck/failed attempts, explain the cause, recommend a recovery, and keep
+   retry/reassignment user-approved in PacketADE. No silent relaunching.
+2. **✅ Implemented; release-like smoke remains — Reviewer quality gates (Option B).** An opted-in Flight
+   automatically starts one selected read-only reviewer when an attempt reaches review. A non-pass
+   verdict blocks normal acceptance, with an explicit recorded human override. See
+   [`reviewer-gate-loop.md`](./reviewer-gate-loop.md).
+3. **✅ Implemented; release-like smoke remains — role-based Flight task graphs (Option B).** Turn an
+   explicitly applied plan into dependent, role-assigned work; launch ready batches by user action;
+   converge accepted results on an isolated Flight integration branch; retain per-task worktrees.
+   See [`cooperative-flight-graph-loop.md`](./cooperative-flight-graph-loop.md).
+4. **✅ Implemented; release-like smoke remains — coordination inbox and steering (Option B).** Persist
+   structured blockers, questions, findings, handoffs, artifacts, delivery, and acknowledgement;
+   steer one agent, role, or whole Flight. Direct agent↔agent routing requires bounded YOLO. See
+   [`coordination-inbox-loop.md`](./coordination-inbox-loop.md).
+5. **✅ Decided; PacketADE consumer blocked on the separate PacketAgent project — Keep running
+   in PacketAgent (Option B).**
+   Validate, deploy, activate, reconnect, supervise, and receive durable evidence while PacketAgent
+   owns execution after the ADE closes. See
+   [`packetagent-handoff-loop.md`](./packetagent-handoff-loop.md); PacketADE slices depend on
+   PacketAgent W1–W9.
+6. **✅ Source implementation complete; release proof remains — PacketCode as the terminal
+   agent, but better (Option B).** PacketCode remains independently installable. PacketADE now
+   models PATH/manual/fallback executable resolution, developer checkout, release channel, and
+   distinct local/remote `PACKETCODE_HOME`, then performs strict version and bounded doctor probes.
+   The PacketCode source has the matching home/doctor contracts, checksum-verifying Windows
+   installer, structured bounded loops, per-server MCP restart, and a feature-truth/hardening
+   ledger. Published signed multi-platform artifacts, clean-machine proof, remaining lower-priority
+   hardening, and the PacketAgent compatibility smoke are still gated. See
+   [`packetcode-bridgecode-loop.md`](./packetcode-bridgecode-loop.md).
+
+### Cross-cutting autonomy overlay
+
+The chosen assisted behaviors remain the default. An explicitly enabled **YOLO Mode** may automate
+recovery, reviewer remediation, and ready-task execution through one bounded `AutonomyPolicy`.
+Settings defines defaults and each Flight exposes its effective policy. Cost, time, retry,
+concurrency, root, and target limits plus a kill switch are mandatory; reviewer overrides,
+conflict resolution, and final protected/base-branch landing never become implicit. See
+[`autonomy-policy-loop.md`](./autonomy-policy-loop.md).
+
 ## Sources
 
-bridgemind.ai (`/products/bridgespace`, `/bridgeswarm`, `/bridgemcp`, `/products/bridgevoice`,
-`/products/bridgeagent`, `/bridgebench`, `/pricing`, `/roadmap`, `/changelog`), docs.bridgemind.ai
-(`/bridgespace`, `/getting-started`, `/mcp`), moge.ai/product/bridgemind,
-hunted.space/product/bridgespace-3, starsearn.com/guides/bridgemind-review-2026, vibecademy.ai,
-libraries.io/npm/bridgecode, github.com/bridge-mind/bridgebench.
+Official BridgeMind product pages (`/products/bridgespace`, `/bridgeswarm`, `/bridgemcp`,
+`/products/bridgevoice`, `/products/bridgeagent`, `/bridgebench`, `/pricing`, `/roadmap`,
+`/changelog`) and docs (`/bridgespace`, `/getting-started`, `/mcp`), plus public npm/GitHub
+material for historical BridgeCode and BridgeBench. Third-party material was used only as a
+cross-check for vendor-stated maturity and positioning.

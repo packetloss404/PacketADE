@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { loadPersistedState, saveSettingsSlice } from "@/lib/tauri";
+import { DEFAULT_AUTONOMY_POLICY, validateAutonomyPolicy } from "@/lib/autonomyPolicy";
+import type { AutonomyPolicy } from "@/types/flight";
 
 /**
  * v0.8: must match `core/orchestrator.rs::DEFAULT_AUTO_COMMIT_TRAILER_FORMAT`.
@@ -22,9 +24,12 @@ interface OrchestrationSettingsState {
    * `{flightId}`, `{attemptId}`, `{flightTitle}`.
    */
   autoCommitTrailerFormat: string;
+  autonomyDefaultMode: "assisted" | "yolo";
+  autonomyDefaultPolicy: AutonomyPolicy;
 
   setAutoCommitTrailerEnabled: (enabled: boolean) => void;
   setAutoCommitTrailerFormat: (format: string) => void;
+  setAutonomyDefault: (mode: "assisted" | "yolo", policy: AutonomyPolicy) => void;
 
   hydrateFromBackend: (
     persisted?: Awaited<ReturnType<typeof loadPersistedState>>,
@@ -47,6 +52,8 @@ export const useOrchestrationSettingsStore = create<OrchestrationSettingsState>(
   (set) => ({
     autoCommitTrailerEnabled: true,
     autoCommitTrailerFormat: DEFAULT_AUTO_COMMIT_TRAILER_FORMAT,
+    autonomyDefaultMode: "assisted",
+    autonomyDefaultPolicy: DEFAULT_AUTONOMY_POLICY,
 
     setAutoCommitTrailerEnabled: (enabled) => {
       set({ autoCommitTrailerEnabled: enabled });
@@ -56,6 +63,22 @@ export const useOrchestrationSettingsStore = create<OrchestrationSettingsState>(
       set({ autoCommitTrailerFormat: format });
       void patchPersistedSettings({ autoCommitTrailerFormat: format });
     },
+    setAutonomyDefault: (mode, policy) => {
+      if (mode === "yolo") {
+        const errors = validateAutonomyPolicy(policy);
+        if (errors.length > 0) throw new Error(errors[0]);
+      }
+      const snapshot = {
+        ...policy,
+        allowedRoots: [...policy.allowedRoots],
+        allowedTargets: [...policy.allowedTargets],
+      };
+      set({ autonomyDefaultMode: mode, autonomyDefaultPolicy: snapshot });
+      void patchPersistedSettings({
+        autonomyDefaultMode: mode,
+        autonomyDefaultPolicy: snapshot,
+      });
+    },
 
     hydrateFromBackend: async (persisted) => {
       try {
@@ -64,6 +87,9 @@ export const useOrchestrationSettingsStore = create<OrchestrationSettingsState>(
           autoCommitTrailerEnabled: state.settings.autoCommitTrailerEnabled ?? true,
           autoCommitTrailerFormat:
             state.settings.autoCommitTrailerFormat ?? DEFAULT_AUTO_COMMIT_TRAILER_FORMAT,
+          autonomyDefaultMode: state.settings.autonomyDefaultMode ?? "assisted",
+          autonomyDefaultPolicy:
+            state.settings.autonomyDefaultPolicy ?? DEFAULT_AUTONOMY_POLICY,
         });
       } catch {
         // Keep defaults when backend is unavailable.

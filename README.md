@@ -98,6 +98,9 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 - Live status bars for supported agent CLIs
 - Per-pane model and effort overrides, bypass-permissions toggles
 - Agent profile system for reusable agent configurations
+- PacketCode integration with strict version detection, bounded `doctor --json`
+  health, separate executable/developer-checkout/data-home settings, explicit
+  stable/preview install actions, and isolated local/SSH `PACKETCODE_HOME`
 - Pane layout presets (1×1, 1×2, 2×1, 2×2, 2×3, 3×2) live in the main toolbar when a workspace is active
 
 ### Flight Deck — Flight Control
@@ -106,6 +109,16 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 - **Plan first** starts a normal read-only agent conversation against the selected target; refine the plan in chat, then apply its latest structured milestones/tasks to the Flight before launching attempts
 - Launch one or more local or SSH agents against isolated worktrees, choosing the provider, model, base path, and branch per target
 - **Attention** grouping automatically surfaces paused, failed, and approval-needed Flights; active path collisions and unpinned SSH targets are blocked before launch
+- Optional **Reviewer Gate** starts one read-only reviewer, enforces its
+  structured verdict, and records any explicit human override
+- Optional **Cooperative Flight graph** validates task dependencies/ownership,
+  launches user-selected ready batches, and serializes accepted work onto an
+  isolated Flight integration branch
+- A persisted **Coordination Inbox** supports scoped steering, acknowledgements,
+  safe API delivery, and opt-in MCP reads/writes for PTY agents
+- **YOLO Mode** is an explicit bounded overlay—not the default—with independent
+  recovery/review/graph/routing switches, cost/time/retry/concurrency/root
+  limits, action history, and Pause/Resume/Stop
 - Each Attempt tile streams the agent conversation, accepts follow-up turns, and exposes review/complete/reject/cancel controls; terminal status, tokens, cost, and coordination events persist on the Flight
 - Optional local draft-PR publishing pushes the Attempt branch before worktree cleanup, while SSH worktree cleanup is resolved through the saved Server configuration
 - Planning is intentionally upfront and user-applied: it does not restore the former autonomous Flight Planner FSM, journal, wake loop, or task scheduler; legacy planner fields remain load-compatible

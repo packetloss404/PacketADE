@@ -334,6 +334,331 @@ pub enum AttemptTarget {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewGateVerdict {
+    Pass,
+    ChangesRequested,
+    Blocked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewGateStatus {
+    Pending,
+    Running,
+    Passed,
+    ChangesRequested,
+    Blocked,
+    Error,
+    Overridden,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewGateFindingSeverity {
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewGateFinding {
+    pub severity: ReviewGateFindingSeverity,
+    pub title: String,
+    pub details: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewGateReport {
+    pub schema_version: u32,
+    pub verdict: ReviewGateVerdict,
+    pub summary: String,
+    #[serde(default)]
+    pub findings: Vec<ReviewGateFinding>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewGatePolicy {
+    #[serde(default)]
+    pub enabled: bool,
+    pub reviewer_agent_config_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewer_model: Option<String>,
+    #[serde(default)]
+    pub acceptance_criteria: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttemptReviewGate {
+    pub status: ReviewGateStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewer_conversation_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewer_agent_config_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewer_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<ReviewGateReport>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overridden_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub override_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FlightExecutionMode {
+    Independent,
+    Cooperative,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IntegrationBranchStatus {
+    Uninitialized,
+    Ready,
+    Integrating,
+    NeedsAttention,
+    Landed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlightIntegrationBranch {
+    pub branch: String,
+    pub base_branch: String,
+    pub base_sha: String,
+    pub head_sha: String,
+    pub worktree_path: String,
+    pub target_kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<String>,
+    pub status: IntegrationBranchStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+    #[serde(default)]
+    pub conflict_files: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomyFlightMode {
+    Assisted,
+    SettingsDefault,
+    Yolo,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomyDefaultMode {
+    Assisted,
+    Yolo,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomyToolPosture {
+    ApprovalGated,
+    AllowInProject,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomyRunStatus {
+    Idle,
+    Running,
+    Paused,
+    Stopped,
+    NeedsAttention,
+    Completed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomyActionStatus {
+    Started,
+    Completed,
+    Failed,
+    Denied,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomyActionKind {
+    Continue,
+    RecoverAttempt,
+    ReviewRemediation,
+    RetryReview,
+    AcceptReviewPass,
+    LaunchReadyTask,
+    IntegrateAttempt,
+    SetToolPosture,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutonomyPolicy {
+    pub schema_version: u32,
+    pub auto_recovery: bool,
+    pub auto_review_remediation: bool,
+    pub auto_run_task_graph: bool,
+    pub tool_posture: AutonomyToolPosture,
+    pub max_total_cost: f64,
+    pub max_duration_minutes: u32,
+    pub max_retries_per_task: u32,
+    pub max_review_rounds: u32,
+    pub max_concurrent_agents: u32,
+    #[serde(default)]
+    pub allowed_roots: Vec<String>,
+    #[serde(default)]
+    pub allowed_targets: Vec<String>,
+    #[serde(default)]
+    pub allow_draft_pr_publishing: bool,
+}
+
+impl Default for AutonomyPolicy {
+    fn default() -> Self {
+        Self {
+            schema_version: 1,
+            auto_recovery: true,
+            auto_review_remediation: true,
+            auto_run_task_graph: true,
+            tool_posture: AutonomyToolPosture::ApprovalGated,
+            max_total_cost: 25.0,
+            max_duration_minutes: 120,
+            max_retries_per_task: 2,
+            max_review_rounds: 2,
+            max_concurrent_agents: 3,
+            allowed_roots: Vec::new(),
+            allowed_targets: vec!["local".to_string()],
+            allow_draft_pr_publishing: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutonomyActionRecord {
+    pub id: String,
+    pub kind: AutonomyActionKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject_id: Option<String>,
+    pub status: AutonomyActionStatus,
+    pub reason: String,
+    pub timestamp: u64,
+    pub cost: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutonomyRuntime {
+    pub status: AutonomyRunStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paused_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopped_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hard_stop_reason: Option<String>,
+    #[serde(default)]
+    pub action_history: Vec<AutonomyActionRecord>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoordinationMessageKind {
+    Instruction,
+    Question,
+    Answer,
+    Blocker,
+    Finding,
+    Handoff,
+    Artifact,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoordinationDeliveryStatus {
+    Queued,
+    Delivered,
+    Acknowledged,
+    Failed,
+    Archived,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoordinationMessageParty {
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub display_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoordinationMessageRecipient {
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoordinationArtifactRef {
+    pub id: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoordinationAcknowledgement {
+    pub by: CoordinationMessageParty,
+    pub at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoordinationMessage {
+    pub schema_version: u32,
+    pub id: String,
+    pub flight_id: String,
+    pub kind: CoordinationMessageKind,
+    pub sender: CoordinationMessageParty,
+    pub recipient: CoordinationMessageRecipient,
+    pub body: String,
+    #[serde(default)]
+    pub artifacts: Vec<CoordinationArtifactRef>,
+    pub status: CoordinationDeliveryStatus,
+    pub created_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivered_at: Option<u64>,
+    #[serde(default)]
+    pub acknowledgements: Vec<CoordinationAcknowledgement>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to_id: Option<String>,
+    pub dedupe_key: String,
+    #[serde(default)]
+    pub hop_count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Attempt {
     pub id: String,
@@ -362,6 +687,13 @@ pub struct Attempt {
     /// attempt failed. Lets the UI show more than free-text error output.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure_category: Option<String>,
+    /// RG1: independent reviewer lifecycle and verdict. Absent for legacy
+    /// attempts and Flights with the Reviewer Gate disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_gate: Option<AttemptReviewGate>,
+    /// Cooperative graph task that owns this attempt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
     /// v0.8-G: when the parent Flight has `publish_attempts_as_prs == true`,
     /// the post-attempt pipeline pushes this attempt's branch to `origin`
     /// and opens a GitHub draft PR. The resulting PR number is recorded
@@ -397,6 +729,23 @@ pub struct Flight {
     pub prompt: Option<String>,
     #[serde(default)]
     pub attempts: Vec<Attempt>,
+    /// RG1: opt-in reviewer policy. Absent means the gate is disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_gate_policy: Option<ReviewGatePolicy>,
+    /// Cooperative execution is opt-in; absent legacy values hydrate as the
+    /// independent-attempt mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_mode: Option<FlightExecutionMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integration_branch: Option<FlightIntegrationBranch>,
+    #[serde(default)]
+    pub coordination_inbox: Vec<CoordinationMessage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autonomy_mode: Option<AutonomyFlightMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autonomy_policy: Option<AutonomyPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autonomy_runtime: Option<AutonomyRuntime>,
     /// Normal API-agent conversation used to refine the current upfront plan.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub planning_conversation_id: Option<String>,
@@ -580,6 +929,13 @@ mod tests {
             total_tokens: 0,
             prompt: None,
             attempts: Vec::new(),
+            review_gate_policy: None,
+            execution_mode: None,
+            integration_branch: None,
+            coordination_inbox: Vec::new(),
+            autonomy_mode: None,
+            autonomy_policy: None,
+            autonomy_runtime: None,
             planning_conversation_id: None,
             planner_session_id: None,
             planner_status: None,

@@ -6,7 +6,7 @@ import { buildSshExecArgs, REMOTE_INSTALL_COMMANDS, AGENT_CLI_NAMES } from "@/li
 import type { ServerConfig, ConnectionStep } from "@/types/server";
 
 /** Agents to auto-install on connect. */
-const AUTO_INSTALL_AGENTS = ["claude-code", "opencode"];
+const AUTO_INSTALL_AGENTS = ["claude-code", "opencode", "packetcode"];
 
 /** Prefix for remote commands that ensures common bin dirs are on PATH.
  *  Non-interactive SSH gets a minimal PATH, missing npm/nvm/cargo/local bins. */

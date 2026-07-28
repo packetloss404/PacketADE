@@ -139,7 +139,21 @@ interface FlightStore {
   // Flight CRUD
   addFlight: (
     flight: Pick<Flight, "title" | "objective" | "priority" | "projectPath"> &
-      Partial<Pick<Flight, "gitBranch" | "issueIds" | "workspaceId" | "publishAttemptsAsPrs">>,
+      Partial<
+        Pick<
+          Flight,
+          | "gitBranch"
+          | "issueIds"
+          | "workspaceId"
+          | "publishAttemptsAsPrs"
+          | "reviewGatePolicy"
+          | "executionMode"
+          | "integrationBranch"
+          | "autonomyMode"
+          | "autonomyPolicy"
+          | "autonomyRuntime"
+        >
+      >,
   ) => Flight;
   updateFlight: (id: string, updates: Partial<Flight>) => void;
   /** Wait for every Flight mutation queued before this call to reach Rust. */
@@ -188,6 +202,12 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       totalCost: 0,
       totalTokens: 0,
       publishAttemptsAsPrs: input.publishAttemptsAsPrs ?? false,
+      reviewGatePolicy: input.reviewGatePolicy,
+      executionMode: input.executionMode,
+      integrationBranch: input.integrationBranch,
+      autonomyMode: input.autonomyMode,
+      autonomyPolicy: input.autonomyPolicy,
+      autonomyRuntime: input.autonomyRuntime,
     };
     const newState: FlightState = {
       flights: [...state.flights, newFlight],

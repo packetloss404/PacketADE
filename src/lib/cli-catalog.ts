@@ -35,6 +35,8 @@ export interface CliCatalogEntry {
   /** Stable one-line install command that runs in a workspace PTY pane.
    *  Cross-platform unless noted. Null/undefined = no install button. */
   installCommand?: string;
+  /** Windows-specific install command when the POSIX command is not portable. */
+  installCommandWindows?: string;
   /** External docs URL for install instructions when there's no scriptable command. */
   installDocsUrl?: string;
   /** True for CLIs we're tracking but don't yet support installing — surfaced
@@ -44,6 +46,39 @@ export interface CliCatalogEntry {
    *  highly-custom install path) — the card highlights the Browse-for-binary
    *  affordance instead of "not installed" copy. */
   browseRequired?: boolean;
+}
+
+const PACKETCODE_INSTALL_PS1 =
+  "https://raw.githubusercontent.com/packetloss404/packetcode/main/install.ps1";
+const PACKETCODE_INSTALL_SH =
+  "https://raw.githubusercontent.com/packetloss404/packetcode/main/install.sh";
+
+export function packetCodeInstallCommand(
+  channel: "stable" | "preview",
+  windows: boolean,
+): string {
+  if (windows) {
+    const load =
+      `$s=[scriptblock]::Create((Invoke-WebRequest '${PACKETCODE_INSTALL_PS1}').Content);`;
+    if (channel === "preview") {
+      return (
+        `powershell -NoProfile -ExecutionPolicy Bypass -Command "` +
+        `${load} $v=(Invoke-RestMethod 'https://api.github.com/repos/packetloss404/packetcode/releases?per_page=20' ` +
+        `| Where-Object { $_.prerelease -and -not $_.draft } | Select-Object -First 1).tag_name; ` +
+        `if (-not $v) { throw 'No PacketCode preview release is available' }; & $s -Version $v"`
+      );
+    }
+    return `powershell -NoProfile -ExecutionPolicy Bypass -Command "${load} & $s"`;
+  }
+  if (channel === "preview") {
+    return (
+      `VERSION="$(curl -fsSL 'https://api.github.com/repos/packetloss404/packetcode/releases?per_page=20' ` +
+      `| tr -d '\\n' | sed 's/},{/}\\n{/g' | grep -m1 '"prerelease":true' ` +
+      `| sed -E 's/.*"tag_name":"([^"]+)".*/\\1/')"; ` +
+      `test -n "$VERSION" && curl -fsSL '${PACKETCODE_INSTALL_SH}' | VERSION="$VERSION" bash`
+    );
+  }
+  return `curl -fsSL '${PACKETCODE_INSTALL_SH}' | bash`;
 }
 
 export const CLI_CATALOG: CliCatalogEntry[] = [
@@ -99,7 +134,8 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
     iconName: "Terminal",
     color: "amber",
     description: "PacketADE's sibling terminal coding TUI",
-    browseRequired: true,
+    installCommand: packetCodeInstallCommand("stable", false),
+    installCommandWindows: packetCodeInstallCommand("stable", true),
   },
   {
     id: "copilot",

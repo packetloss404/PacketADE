@@ -857,6 +857,13 @@ mod tests {
             total_tokens: 0,
             prompt: None,
             attempts: Vec::new(),
+            review_gate_policy: None,
+            execution_mode: None,
+            integration_branch: None,
+            coordination_inbox: Vec::new(),
+            autonomy_mode: None,
+            autonomy_policy: None,
+            autonomy_runtime: None,
             planning_conversation_id: None,
             planner_session_id: None,
             planner_status: None,
@@ -889,6 +896,8 @@ mod tests {
             tokens: 0,
             error_message: None,
             failure_category: None,
+            review_gate: None,
+            task_id: None,
             draft_pr_number: None,
         }
     }

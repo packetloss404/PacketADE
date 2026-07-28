@@ -1,6 +1,12 @@
 # Flight Escalation & Supervision — Scoped Loop
 
 Created: 2026-07-24
+Completed: 2026-07-24
+Product decision confirmed: 2026-07-27 — **Option B / assisted escalation**.
+PacketADE detects and recommends automatically; a user action is required to
+retry, reassign, or relaunch. Fully automatic recovery belongs behind an
+explicit PacketAgent worker policy, not in the PacketADE Flight runtime.
+
 Parity target: BridgeSwarm's "reduce supervision load" — see
 [`bridgeswarm-teardown.md`](./bridgeswarm-teardown.md) (§ "Escalation / auto-reassignment"
 is the one BridgeSwarm dimension PacketADE scored *Partial* on). Supersedes the

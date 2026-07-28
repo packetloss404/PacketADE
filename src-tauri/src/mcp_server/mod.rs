@@ -220,10 +220,15 @@ pub async fn mcp_server_start(
     let token = generate_token();
     let cancel = CancellationToken::new();
     let audit = Arc::new(McpAuditLog::new(app));
-    let bound_port =
-        transport::serve(port, token.clone(), cancel.clone(), audit.clone(), allow_writes)
-            .await
-            .map_err(|e| format!("Failed to start MCP server: {e}"))?;
+    let bound_port = transport::serve(
+        port,
+        token.clone(),
+        cancel.clone(),
+        audit.clone(),
+        allow_writes,
+    )
+    .await
+    .map_err(|e| format!("Failed to start MCP server: {e}"))?;
 
     let running = RunningServer {
         cancel,
@@ -305,6 +310,45 @@ struct CoordinationWriteArgs {
     agent_id: Option<String>,
 }
 
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[schemars(rename_all = "camelCase")]
+struct ReadInboxArgs {
+    flight_id: String,
+    #[serde(default)]
+    recipient_id: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[schemars(rename_all = "camelCase")]
+struct PostInboxArgs {
+    flight_id: String,
+    kind: String,
+    recipient_kind: String,
+    #[serde(default)]
+    recipient_id: Option<String>,
+    #[serde(default)]
+    recipient_label: Option<String>,
+    body: String,
+    #[serde(default)]
+    agent_id: Option<String>,
+    #[serde(default)]
+    dedupe_key: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[schemars(rename_all = "camelCase")]
+struct AcknowledgeInboxArgs {
+    flight_id: String,
+    message_id: String,
+    #[serde(default)]
+    agent_id: Option<String>,
+    #[serde(default)]
+    note: Option<String>,
+}
+
 /// The MCP server handler. A fresh instance is created per session by the
 /// transport's service factory; state is read on demand from disk, so the
 /// handler is cheap and shares only the audit sink.
@@ -373,6 +417,20 @@ impl PacketAdeMcp {
     }
 
     #[tool(
+        description = "Read a Flight's structured coordination inbox. Optionally scope results to one recipient id."
+    )]
+    async fn read_coordination_inbox(
+        &self,
+        Parameters(args): Parameters<ReadInboxArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.audit.record("tool", "read_coordination_inbox");
+        match reads::flight_inbox_json(&load(), &args.flight_id, args.recipient_id.as_deref()) {
+            Some(value) => Ok(json_result(&value)),
+            None => Err(McpError::invalid_params("flight not found", None)),
+        }
+    }
+
+    #[tool(
         description = "Post a handoff note to a flight's coordination timeline. \
                        Append-only and human-visible (shown in the Flights view); \
                        does not change any task or flight state. Delivery is \
@@ -396,6 +454,82 @@ impl PacketAdeMcp {
         Parameters(args): Parameters<CoordinationWriteArgs>,
     ) -> Result<CallToolResult, McpError> {
         self.post_coordination_event(args, "escalation", "escalate")
+    }
+
+    #[tool(
+        description = "Post a validated, human-visible message to a Flight coordination inbox. \
+                       Requires allow_writes. In assisted mode this reports to the inbox and does \
+                       not silently forward the message to another agent."
+    )]
+    async fn post_coordination_message(
+        &self,
+        Parameters(args): Parameters<PostInboxArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if !self.allow_writes {
+            return Err(McpError::invalid_params(
+                "writes are disabled; enable them in PacketADE's MCP Provider settings",
+                None,
+            ));
+        }
+        if let Err(message) = reads::validate_inbox_post(
+            &load(),
+            &args.flight_id,
+            &args.kind,
+            &args.recipient_kind,
+            args.recipient_id.as_deref(),
+            &args.body,
+        ) {
+            return Err(McpError::invalid_params(message, None));
+        }
+        self.audit.record("tool", "post_coordination_message");
+        self.audit.emit_write(WriteIntent {
+            op: "post_coordination_message".to_string(),
+            flight_id: args.flight_id,
+            event: serde_json::json!({
+                "kind": args.kind,
+                "recipientKind": args.recipient_kind,
+                "recipientId": args.recipient_id,
+                "recipientLabel": args.recipient_label,
+                "body": args.body,
+                "agentId": args.agent_id,
+                "dedupeKey": args.dedupe_key,
+            }),
+        });
+        Ok(CallToolResult::success(vec![ContentBlock::text(
+            "Posted to the Flight coordination inbox.",
+        )]))
+    }
+
+    #[tool(
+        description = "Acknowledge one Flight coordination inbox message. Requires allow_writes."
+    )]
+    async fn acknowledge_coordination_message(
+        &self,
+        Parameters(args): Parameters<AcknowledgeInboxArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if !self.allow_writes {
+            return Err(McpError::invalid_params(
+                "writes are disabled; enable them in PacketADE's MCP Provider settings",
+                None,
+            ));
+        }
+        if args.message_id.trim().is_empty() {
+            return Err(McpError::invalid_params("messageId is required", None));
+        }
+        self.audit
+            .record("tool", "acknowledge_coordination_message");
+        self.audit.emit_write(WriteIntent {
+            op: "acknowledge_coordination_message".to_string(),
+            flight_id: args.flight_id,
+            event: serde_json::json!({
+                "messageId": args.message_id,
+                "agentId": args.agent_id,
+                "note": args.note,
+            }),
+        });
+        Ok(CallToolResult::success(vec![ContentBlock::text(
+            "Acknowledgement queued.",
+        )]))
     }
 
     /// Shared body for the append-only coordination-note writes. Gates on
@@ -449,7 +583,7 @@ impl ServerHandler for PacketAdeMcp {
         .with_instructions(if self.allow_writes {
             "PacketADE MCP server — read access to flights, tasks, memory, and \
              workspaces, plus append-only coordination notes (append_handoff, \
-             escalate)."
+             escalate) and the structured coordination inbox."
         } else {
             "PacketADE MCP server — read-only access to flights, tasks, memory, \
              and workspaces."
@@ -474,6 +608,10 @@ impl ServerHandler for PacketAdeMcp {
                 format!("packetade://flights/{}", f.id),
                 f.title.clone(),
             ));
+            resources.push(Resource::new(
+                format!("packetade://flights/{}/inbox", f.id),
+                format!("{} coordination inbox", f.title),
+            ));
         }
         Ok(ListResourcesResult::with_all_items(resources))
     }
@@ -491,6 +629,7 @@ impl ServerHandler for PacketAdeMcp {
             ResourceRoute::Flights => Some(reads::all_flights_json(&state)),
             ResourceRoute::Flight(id) => reads::one_flight_json(&state, id),
             ResourceRoute::FlightTasks(id) => reads::flight_tasks_json(&state, id),
+            ResourceRoute::FlightInbox(id) => reads::flight_inbox_json(&state, id, None),
             ResourceRoute::MemoryPatterns => Some(reads::memory_patterns_json(&state)),
             ResourceRoute::Workspaces => Some(reads::workspaces_json(&state)),
             ResourceRoute::Reviews => Some(reads::reviews_json(&state)),

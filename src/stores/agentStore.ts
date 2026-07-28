@@ -7,6 +7,7 @@ import { CODEX_CONFIG } from "@/agents/codex";
 import { GEMINI_CONFIG } from "@/agents/gemini";
 import { PACKETCODE_CONFIG } from "@/agents/packetcode";
 import { TERMINAL_CONFIG } from "@/agents/terminal";
+import { useCliOverrideStore } from "@/stores/cliOverrideStore";
 
 // Built-in agent configs (always present, user can override args/model)
 const BUILTIN_AGENTS: AgentConfig[] = [CLAUDE_CODE_CONFIG, OPENCODE_CONFIG, CODEX_CONFIG, GEMINI_CONFIG, PACKETCODE_CONFIG, TERMINAL_CONFIG];
@@ -105,12 +106,22 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       // `detect_cli_catalog` is async (off the main thread), probes all entries
       // concurrently, and bounds each probe to 2s so a hung PATH lookup can't
       // stall startup.
-      let updates: { id: string; installed: boolean }[] = [];
+      let updates: { id: string; installed: boolean; path?: string | null }[] = [];
       try {
+        const overrides = useCliOverrideStore.getState().overrides;
         const results = await detectCliCatalog(
-          agents.map((a) => ({ id: a.id, binary: a.command })),
+          agents.map((a) => {
+            const manualPath = overrides[a.id]?.manualPath;
+            return manualPath
+              ? { id: a.id, binary: a.command, manualPath }
+              : { id: a.id, binary: a.command };
+          }),
         );
-        updates = results.map((r) => ({ id: r.id, installed: r.installed }));
+        updates = results.map((r) => ({
+          id: r.id,
+          installed: r.installed,
+          path: r.path,
+        }));
       } catch {
         updates = agents.map((a) => ({ id: a.id, installed: false }));
       }
@@ -118,7 +129,16 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       set((s) => {
         const updatedAgents = s.agents.map((a) => {
           const update = updates.find((u) => u.id === a.id);
-          return update ? { ...a, installed: update.installed } : a;
+          return update
+            ? {
+                ...a,
+                installed: update.installed,
+                command:
+                  a.id === "packetcode" && update.installed && update.path
+                    ? update.path
+                    : a.command,
+              }
+            : a;
         });
         saveState(updatedAgents);
         return { agents: updatedAgents, detecting: false };

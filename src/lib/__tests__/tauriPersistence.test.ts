@@ -107,6 +107,206 @@ describe("Tauri persistence DTO mapping", () => {
     });
   });
 
+  it("round-trips Reviewer Gate policy and attempt verdict state", async () => {
+    const reviewGatePolicy = {
+      enabled: true,
+      reviewerAgentConfigId: "api-openai-codex",
+      reviewerModel: "gpt-5.5",
+      acceptanceCriteria: ["Tests pass", "No unsafe path writes"],
+    };
+    const reviewGate = {
+      status: "changes_requested" as const,
+      reviewerConversationId: "review-1",
+      reviewerAgentConfigId: "api-openai-codex",
+      reviewerModel: "gpt-5.5",
+      report: {
+        schemaVersion: 1 as const,
+        verdict: "changes_requested" as const,
+        summary: "One issue remains.",
+        findings: [
+          {
+            severity: "error" as const,
+            title: "Missing regression",
+            details: "Add the reload case.",
+            filePath: "src/reviewer.ts",
+            line: 42,
+          },
+        ],
+        evidence: ["pnpm test"],
+      },
+      startedAt: 10,
+      completedAt: 20,
+    };
+    const attempt = {
+      id: "attempt-1",
+      flightId: "flight-1",
+      target: {
+        kind: "local" as const,
+        basePath: "/repo",
+        worktreePath: "/repo/.pkt-worktrees/attempt-1",
+      },
+      agentConfigId: "api-claude",
+      model: "claude-sonnet-4-6",
+      provider: "claude",
+      branch: "pkt/attempt-1",
+      baseBranch: "main",
+      sessionId: "session-1",
+      status: "reviewing" as const,
+      cost: 0,
+      tokens: 0,
+      reviewGate,
+    };
+
+    await saveFlightsSlice([makeFlight({ reviewGatePolicy, attempts: [attempt] })]);
+    expect(mockInvoke).toHaveBeenCalledWith("save_flights_slice", {
+      flights: [
+        expect.objectContaining({
+          reviewGatePolicy,
+          attempts: [expect.objectContaining({ reviewGate })],
+        }),
+      ],
+    });
+
+    mockInvoke.mockResolvedValue(
+      makePersistedStateDto({
+        flights: [
+          {
+            ...makeFlight({ reviewGatePolicy }),
+            attempts: [attempt],
+            publishAttemptsAsPrs: false,
+          } as unknown as PersistedStateDto["flights"][number],
+        ],
+      }),
+    );
+    const state = await loadPersistedState();
+    expect(state.flights[0].reviewGatePolicy).toEqual(reviewGatePolicy);
+    expect(state.flights[0].attempts?.[0].reviewGate).toEqual(reviewGate);
+  });
+
+  it("hydrates legacy Flights with the Reviewer Gate disabled", async () => {
+    mockInvoke.mockResolvedValue(
+      makePersistedStateDto({
+        flights: [
+          {
+            ...makeFlight(),
+            attempts: [],
+            publishAttemptsAsPrs: false,
+          } as unknown as PersistedStateDto["flights"][number],
+        ],
+      }),
+    );
+    const state = await loadPersistedState();
+    expect(state.flights[0].reviewGatePolicy).toBeUndefined();
+  });
+
+  it("round-trips cooperative execution metadata and task-bound attempts", async () => {
+    const integrationBranch = {
+      branch: "packetade/flight/flight-1",
+      baseBranch: "main",
+      baseSha: "base123",
+      headSha: "head456",
+      worktreePath: "/repo/.pkt-flight-integrations/flight-1",
+      targetKind: "local" as const,
+      status: "ready" as const,
+      conflictFiles: [],
+    };
+    const cooperative = makeFlight({
+      executionMode: "cooperative",
+      integrationBranch,
+      attempts: [
+        {
+          id: "attempt-task",
+          flightId: "flight-1",
+          target: {
+            kind: "local",
+            basePath: "/repo",
+            worktreePath: "/repo/.pkt-worktrees/attempt-task",
+          },
+          agentConfigId: "api-claude",
+          model: "claude-sonnet-4-6",
+          provider: "claude",
+          branch: "pkt/attempt-task",
+          baseBranch: integrationBranch.branch,
+          sessionId: "session-task",
+          status: "running",
+          taskId: "task-1",
+          cost: 0,
+          tokens: 0,
+        },
+      ],
+    });
+    await saveFlightsSlice([cooperative]);
+    expect(mockInvoke).toHaveBeenCalledWith("save_flights_slice", {
+      flights: [
+        expect.objectContaining({
+          executionMode: "cooperative",
+          integrationBranch,
+          attempts: [expect.objectContaining({ taskId: "task-1" })],
+        }),
+      ],
+    });
+
+    mockInvoke.mockResolvedValue(
+      makePersistedStateDto({
+        flights: [
+          {
+            ...cooperative,
+            publishAttemptsAsPrs: false,
+          } as unknown as PersistedStateDto["flights"][number],
+        ],
+      }),
+    );
+    const state = await loadPersistedState();
+    expect(state.flights[0]).toEqual(
+      expect.objectContaining({
+        executionMode: "cooperative",
+        integrationBranch,
+      }),
+    );
+    expect(state.flights[0].attempts?.[0].taskId).toBe("task-1");
+  });
+
+  it("round-trips the structured coordination inbox without changing legacy logs", async () => {
+    const message = {
+      schemaVersion: 1 as const,
+      id: "inbox-1",
+      flightId: "flight-1",
+      kind: "blocker" as const,
+      sender: { kind: "agent" as const, id: "agent-1", displayName: "Agent 1" },
+      recipient: { kind: "flight" as const, id: "flight-1", label: "Flight" },
+      body: "Need an API decision.",
+      artifacts: [],
+      status: "queued" as const,
+      createdAt: 123,
+      acknowledgements: [],
+      dedupeKey: "dedupe-1",
+      hopCount: 0,
+    };
+    await saveFlightsSlice([makeFlight({ coordinationInbox: [message] })]);
+    expect(mockInvoke).toHaveBeenCalledWith("save_flights_slice", {
+      flights: [
+        expect.objectContaining({
+          coordinationInbox: [message],
+        }),
+      ],
+    });
+    mockInvoke.mockResolvedValue(
+      makePersistedStateDto({
+        flights: [
+          {
+            ...makeFlight(),
+            attempts: [],
+            coordinationInbox: [message],
+            publishAttemptsAsPrs: false,
+          } as unknown as PersistedStateDto["flights"][number],
+        ],
+      }),
+    );
+    const state = await loadPersistedState();
+    expect(state.flights[0].coordinationInbox).toEqual([message]);
+    expect(state.flights[0].coordinationLog).toEqual([]);
+  });
+
   it("hydrates flight planner fields and server host fingerprints from DTOs", async () => {
     mockInvoke.mockResolvedValue(
       makePersistedStateDto({

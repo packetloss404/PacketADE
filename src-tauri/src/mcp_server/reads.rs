@@ -114,6 +114,24 @@ pub fn flight_tasks_json(state: &PersistedState, id: &str) -> Option<Value> {
     Some(json!({ "flightId": id, "tasks": tasks }))
 }
 
+pub fn flight_inbox_json(
+    state: &PersistedState,
+    id: &str,
+    recipient_id: Option<&str>,
+) -> Option<Value> {
+    let flight = find_flight(state, id)?;
+    let messages = flight
+        .coordination_inbox
+        .iter()
+        .filter(|message| {
+            recipient_id.is_none()
+                || message.recipient.id.as_deref() == recipient_id
+                || message.recipient.kind == "flight"
+        })
+        .collect::<Vec<_>>();
+    Some(json!({ "flightId": id, "messages": messages }))
+}
+
 pub fn reviews_json(state: &PersistedState) -> Value {
     let reviews: Vec<Value> = state
         .flights
@@ -143,6 +161,7 @@ pub fn project_overview_json(state: &PersistedState) -> Value {
 /// Max handoff-note length. Bounds per-event growth of the persisted flights
 /// slice (each note is appended to `state.v1.json`).
 pub const MAX_HANDOFF_SUMMARY: usize = 4096;
+pub const MAX_INBOX_BODY: usize = 16_384;
 
 /// Validate an `append_handoff` request against current state. Returns the
 /// rejection message on failure. Pure so the tool's guard is unit-testable.
@@ -163,6 +182,41 @@ pub fn validate_handoff(
     Ok(())
 }
 
+pub fn validate_inbox_post(
+    state: &PersistedState,
+    flight_id: &str,
+    kind: &str,
+    recipient_kind: &str,
+    recipient_id: Option<&str>,
+    body: &str,
+) -> Result<(), &'static str> {
+    if body.trim().is_empty() {
+        return Err("body must not be empty");
+    }
+    if body.len() > MAX_INBOX_BODY {
+        return Err("body too long");
+    }
+    if !matches!(
+        kind,
+        "instruction" | "question" | "answer" | "blocker" | "finding" | "handoff" | "artifact"
+    ) {
+        return Err("unsupported message kind");
+    }
+    if !matches!(
+        recipient_kind,
+        "flight" | "role" | "task" | "attempt" | "session"
+    ) {
+        return Err("unsupported recipient kind");
+    }
+    if recipient_kind != "flight" && recipient_id.is_none_or(|id| id.trim().is_empty()) {
+        return Err("recipientId is required");
+    }
+    if !state.flights.iter().any(|flight| flight.id == flight_id) {
+        return Err("unknown flightId");
+    }
+    Ok(())
+}
+
 // === Resource URI routing ===
 
 #[derive(Debug, PartialEq, Eq)]
@@ -171,6 +225,7 @@ pub enum ResourceRoute<'a> {
     Flights,
     Flight(&'a str),
     FlightTasks(&'a str),
+    FlightInbox(&'a str),
     MemoryPatterns,
     Workspaces,
     Reviews,
@@ -189,6 +244,7 @@ pub fn parse_resource_uri(uri: &str) -> ResourceRoute<'_> {
         ["flights"] => ResourceRoute::Flights,
         ["flights", id] if !id.is_empty() => ResourceRoute::Flight(id),
         ["flights", id, "tasks"] if !id.is_empty() => ResourceRoute::FlightTasks(id),
+        ["flights", id, "inbox"] if !id.is_empty() => ResourceRoute::FlightInbox(id),
         ["memory", "patterns"] => ResourceRoute::MemoryPatterns,
         ["workspaces"] => ResourceRoute::Workspaces,
         ["reviews"] => ResourceRoute::Reviews,
@@ -200,7 +256,8 @@ pub fn parse_resource_uri(uri: &str) -> ResourceRoute<'_> {
 mod tests {
     use super::*;
     use crate::core::flight::{
-        Flight, FlightPriority, FlightStatus, Milestone, MilestoneStatus, Task, TaskStatus, TaskType,
+        Flight, FlightPriority, FlightStatus, Milestone, MilestoneStatus, Task, TaskStatus,
+        TaskType,
     };
 
     fn task(id: &str, status: TaskStatus) -> Task {
@@ -258,6 +315,13 @@ mod tests {
             total_tokens: 0,
             prompt: None,
             attempts: Vec::new(),
+            review_gate_policy: None,
+            execution_mode: None,
+            integration_branch: None,
+            coordination_inbox: Vec::new(),
+            autonomy_mode: None,
+            autonomy_policy: None,
+            autonomy_runtime: None,
             planning_conversation_id: None,
             planner_session_id: None,
             planner_status: None,
@@ -342,7 +406,10 @@ mod tests {
 
     #[test]
     fn active_flight_resolves_via_ui_selection() {
-        let state = state_with(vec![flight_with("f1", vec![]), flight_with("f2", vec![])], Some("f2"));
+        let state = state_with(
+            vec![flight_with("f1", vec![]), flight_with("f2", vec![])],
+            Some("f2"),
+        );
         assert_eq!(active_flight_json(&state)["id"].as_str(), Some("f2"));
         // No selection → null.
         let none = state_with(vec![flight_with("f1", vec![])], None);
@@ -351,7 +418,10 @@ mod tests {
 
     #[test]
     fn task_details_found_and_missing() {
-        let state = state_with(vec![flight_with("f1", vec![task("t1", TaskStatus::Pending)])], None);
+        let state = state_with(
+            vec![flight_with("f1", vec![task("t1", TaskStatus::Pending)])],
+            None,
+        );
         assert_eq!(
             task_details_json(&state, "f1", "t1").unwrap()["id"].as_str(),
             Some("t1")
@@ -388,28 +458,87 @@ mod tests {
         );
         // Over-long summaries are rejected (bounds persisted-state growth).
         let long = "x".repeat(MAX_HANDOFF_SUMMARY + 1);
-        assert_eq!(validate_handoff(&state, "f1", &long), Err("summary too long"));
+        assert_eq!(
+            validate_handoff(&state, "f1", &long),
+            Err("summary too long")
+        );
         let exact = "x".repeat(MAX_HANDOFF_SUMMARY);
         assert!(validate_handoff(&state, "f1", &exact).is_ok());
     }
 
     #[test]
+    fn validate_inbox_post_guards_kind_recipient_and_bounds() {
+        let state = state_with(vec![flight_with("f1", vec![])], None);
+        assert!(validate_inbox_post(
+            &state,
+            "f1",
+            "blocker",
+            "task",
+            Some("t1"),
+            "Need a decision"
+        )
+        .is_ok());
+        assert_eq!(
+            validate_inbox_post(&state, "f1", "bogus", "flight", None, "hello"),
+            Err("unsupported message kind")
+        );
+        assert_eq!(
+            validate_inbox_post(&state, "f1", "question", "task", None, "hello"),
+            Err("recipientId is required")
+        );
+        assert_eq!(
+            validate_inbox_post(&state, "missing", "question", "flight", None, "hello"),
+            Err("unknown flightId")
+        );
+        let long = "x".repeat(MAX_INBOX_BODY + 1);
+        assert_eq!(
+            validate_inbox_post(&state, "f1", "question", "flight", None, &long),
+            Err("body too long")
+        );
+    }
+
+    #[test]
     fn resource_uri_routing() {
-        assert_eq!(parse_resource_uri("packetade://project"), ResourceRoute::Project);
-        assert_eq!(parse_resource_uri("packetade://flights"), ResourceRoute::Flights);
-        assert_eq!(parse_resource_uri("packetade://flights/f1"), ResourceRoute::Flight("f1"));
+        assert_eq!(
+            parse_resource_uri("packetade://project"),
+            ResourceRoute::Project
+        );
+        assert_eq!(
+            parse_resource_uri("packetade://flights"),
+            ResourceRoute::Flights
+        );
+        assert_eq!(
+            parse_resource_uri("packetade://flights/f1"),
+            ResourceRoute::Flight("f1")
+        );
         assert_eq!(
             parse_resource_uri("packetade://flights/f1/tasks"),
             ResourceRoute::FlightTasks("f1")
         );
         assert_eq!(
+            parse_resource_uri("packetade://flights/f1/inbox"),
+            ResourceRoute::FlightInbox("f1")
+        );
+        assert_eq!(
             parse_resource_uri("packetade://memory/patterns"),
             ResourceRoute::MemoryPatterns
         );
-        assert_eq!(parse_resource_uri("packetade://workspaces"), ResourceRoute::Workspaces);
-        assert_eq!(parse_resource_uri("packetade://reviews"), ResourceRoute::Reviews);
-        assert_eq!(parse_resource_uri("packetade://flights/"), ResourceRoute::Unknown);
+        assert_eq!(
+            parse_resource_uri("packetade://workspaces"),
+            ResourceRoute::Workspaces
+        );
+        assert_eq!(
+            parse_resource_uri("packetade://reviews"),
+            ResourceRoute::Reviews
+        );
+        assert_eq!(
+            parse_resource_uri("packetade://flights/"),
+            ResourceRoute::Unknown
+        );
         assert_eq!(parse_resource_uri("http://evil"), ResourceRoute::Unknown);
-        assert_eq!(parse_resource_uri("packetade://bogus/path"), ResourceRoute::Unknown);
+        assert_eq!(
+            parse_resource_uri("packetade://bogus/path"),
+            ResourceRoute::Unknown
+        );
     }
 }

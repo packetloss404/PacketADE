@@ -39,11 +39,14 @@ import {
   CLI_CATALOG,
   type CliCatalogEntry,
   getCliBinaries,
+  packetCodeInstallCommand,
 } from "@/lib/cli-catalog";
 import { detectCliCatalog, type DetectCatalogResult } from "@/lib/tauri";
 import type { AgentConfig } from "@/types/agent";
 import { TransientPtyModal } from "@/components/ui/TransientPtyModal";
 import { CliCatalogHeader } from "./CliCatalogHeader";
+import { PacketCodeIntegrationPanel } from "./PacketCodeIntegrationPanel";
+import { usePacketCodeIntegrationStore } from "@/stores/packetCodeIntegrationStore";
 
 // Static map from catalog iconName -> lucide component. Catalog uses string
 // names so backend/test code can stay framework-agnostic; resolve here.
@@ -82,7 +85,7 @@ function resolveVariant(
 ): CardVariant {
   if (result?.installed) return "installed";
   if (entry.browseRequired) return "browse-only";
-  if (entry.installCommand) return "installable";
+  if (entry.installCommand || entry.installCommandWindows) return "installable";
   if (entry.comingSoon) return "coming-soon";
   return "browse-fallback";
 }
@@ -421,6 +424,9 @@ export function CliAgentsCard() {
   const overrides = useCliOverrideStore((s) => s.overrides);
   const setManualPath = useCliOverrideStore((s) => s.setManualPath);
   const clearManualPath = useCliOverrideStore((s) => s.clearManualPath);
+  const packetCodeReleaseChannel = usePacketCodeIntegrationStore(
+    (s) => s.releaseChannel,
+  );
 
   const [results, setResults] = useState<Record<string, DetectCatalogResult>>({});
   const [scanning, setScanning] = useState(false);
@@ -472,7 +478,11 @@ export function CliAgentsCard() {
     ) => {
       const store = useAgentStore.getState();
       if (!store.getAgent(entry.id)) return;
-      const command = manualPath || entry.binary;
+      const command =
+        manualPath ||
+        (entry.id === "packetcode" && result?.installed && result.path
+          ? result.path
+          : entry.binary);
       store.updateAgent(entry.id, {
         command,
         installed: !!result?.installed,
@@ -650,7 +660,12 @@ export function CliAgentsCard() {
    *  for the user to review, then auto-cleans the PTY on close. */
   const handleInstall = useCallback(
     (entry: CliCatalogEntry) => {
-      const cmd = entry.installCommand?.trim();
+      const cmd =
+        entry.id === "packetcode"
+          ? packetCodeInstallCommand(packetCodeReleaseChannel, isWindowsHost())
+          : isWindowsHost()
+            ? (entry.installCommandWindows ?? entry.installCommand)?.trim()
+            : entry.installCommand?.trim();
       if (!cmd) return;
 
       const projectPath = useLayoutStore.getState().projectPath || undefined;
@@ -666,22 +681,35 @@ export function CliAgentsCard() {
         projectPath,
       });
     },
-    [],
+    [packetCodeReleaseChannel],
+  );
+
+  const pinExecutable = useCallback(
+    async (path: string) => {
+      const entry = CLI_CATALOG.find((candidate) => candidate.id === "packetcode");
+      if (!entry) return;
+      setManualPath(entry.id, path);
+      await redetectOne(entry, path);
+    },
+    [redetectOne, setManualPath],
   );
 
   const clearInstallTarget = useCallback(() => {
-    setInstallTarget((current) => {
-      if (current) {
-        setInstallingIds((cur) => {
-          if (!cur.has(current.entryId)) return cur;
-          const next = new Set(cur);
-          next.delete(current.entryId);
-          return next;
-        });
+    const current = installTarget;
+    if (current) {
+      setInstallingIds((cur) => {
+        if (!cur.has(current.entryId)) return cur;
+        const next = new Set(cur);
+        next.delete(current.entryId);
+        return next;
+      });
+      const entry = CLI_CATALOG.find((candidate) => candidate.id === current.entryId);
+      if (entry) {
+        void redetectOne(entry, overrides[entry.id]?.manualPath ?? null);
       }
-      return null;
-    });
-  }, []);
+    }
+    setInstallTarget(null);
+  }, [installTarget, overrides, redetectOne]);
 
   // === Custom CLI drawer handlers (preserved) ===
 
@@ -775,6 +803,16 @@ export function CliAgentsCard() {
           />
         ))}
       </div>
+
+      {selectedEntry?.id === "packetcode" && (
+        <PacketCodeIntegrationPanel
+          detection={results.packetcode}
+          manualPath={overrides.packetcode?.manualPath ?? null}
+          installing={installingIds.has("packetcode")}
+          onPinExecutable={pinExecutable}
+          onInstall={() => handleInstall(selectedEntry)}
+        />
+      )}
 
       {/* Advanced: custom CLI management + reset built-ins */}
       <div className="mt-4 border-t border-bg-border pt-3">

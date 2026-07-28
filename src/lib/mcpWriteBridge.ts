@@ -1,6 +1,14 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useFlightStore } from "@/stores/flightStore";
-import type { CoordinationEventType } from "@/types/flight";
+import {
+  acknowledgeCoordinationMessage,
+  postCoordinationMessage,
+} from "@/stores/coordinationInboxStore";
+import type {
+  CoordinationEventType,
+  CoordinationMessageKind,
+  CoordinationRecipientKind,
+} from "@/types/flight";
 
 /**
  * N3 Slice 2 — applies event-routed writes from the (read-mostly) MCP server.
@@ -23,6 +31,14 @@ export interface McpWriteIntent {
     type?: string;
     summary?: string;
     agentId?: string | null;
+    kind?: string;
+    recipientKind?: string;
+    recipientId?: string | null;
+    recipientLabel?: string | null;
+    body?: string;
+    dedupeKey?: string | null;
+    messageId?: string;
+    note?: string | null;
   };
 }
 
@@ -36,12 +52,65 @@ const COORDINATION_EVENT_TYPES = new Set<CoordinationEventType>([
   "collision_warning",
   "escalation",
 ]);
+const MESSAGE_KINDS = new Set<CoordinationMessageKind>([
+  "instruction",
+  "question",
+  "answer",
+  "blocker",
+  "finding",
+  "handoff",
+  "artifact",
+]);
+const RECIPIENT_KINDS = new Set<CoordinationRecipientKind>([
+  "flight",
+  "role",
+  "task",
+  "attempt",
+  "session",
+]);
 
 /** Apply a single write intent. Exported for testing; guards against unknown
  *  ops and malformed payloads. Idempotency isn't needed — each MCP call is one
  *  distinct append. */
 export function applyMcpWrite(intent: McpWriteIntent): void {
   const { op, flightId, event: payload } = intent;
+  if (op === "post_coordination_message") {
+    if (
+      !flightId ||
+      !payload?.body ||
+      !MESSAGE_KINDS.has(payload.kind as CoordinationMessageKind) ||
+      !RECIPIENT_KINDS.has(payload.recipientKind as CoordinationRecipientKind)
+    ) {
+      return;
+    }
+    const actor = payload.agentId ? `mcp:${payload.agentId}` : "mcp";
+    void postCoordinationMessage({
+      flightId,
+      kind: payload.kind as CoordinationMessageKind,
+      sender: { kind: "agent", id: actor, displayName: actor },
+      recipients: [
+        {
+          kind: payload.recipientKind as CoordinationRecipientKind,
+          id: payload.recipientId ?? undefined,
+          label: payload.recipientLabel ?? undefined,
+        },
+      ],
+      body: payload.body,
+      dedupeKey: payload.dedupeKey ?? undefined,
+    }).catch((error) => console.warn("MCP inbox write was not applied:", error));
+    return;
+  }
+  if (op === "acknowledge_coordination_message") {
+    if (!flightId || !payload?.messageId) return;
+    const actor = payload.agentId ? `mcp:${payload.agentId}` : "mcp";
+    acknowledgeCoordinationMessage(
+      flightId,
+      payload.messageId,
+      { kind: "agent", id: actor, displayName: actor },
+      payload.note ?? undefined,
+    );
+    return;
+  }
   if (op !== "append_coordination_event") return;
   if (!flightId || !payload?.summary) return;
 

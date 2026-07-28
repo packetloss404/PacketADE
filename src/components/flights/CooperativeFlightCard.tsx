@@ -1,0 +1,288 @@
+import { useMemo, useState } from "react";
+import { AlertTriangle, Check, GitMerge, Network, Play, RotateCcw, X } from "lucide-react";
+import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
+import {
+  selectCooperativeTaskViews,
+  validateCooperativeAssignments,
+  validateCooperativeGraph,
+} from "@/lib/cooperativeFlight";
+import { useAsyncFlightStore } from "@/stores/asyncFlightStore";
+import { useFlightStore } from "@/stores/flightStore";
+import type { AgentCli } from "@/stores/agentTaskStore";
+import type { Flight, Task } from "@/types/flight";
+
+function taskStateColor(state: ReturnType<typeof selectCooperativeTaskViews>[number]["state"]) {
+  if (state === "integrated") return "text-accent-green";
+  if (state === "running") return "text-accent-blue";
+  if (state === "review") return "text-accent-amber";
+  if (state === "failed") return "text-accent-red";
+  if (state === "ready") return "text-accent-purple";
+  return "text-text-muted";
+}
+
+export function CooperativeFlightCard({ flight }: { flight: Flight }) {
+  const updateFlight = useFlightStore((state) => state.updateFlight);
+  const appendCoordinationEvent = useFlightStore((state) => state.appendCoordinationEvent);
+  const launchReadyTasks = useAsyncFlightStore((state) => state.launchReadyTasks);
+  const prepareCooperativeFlight = useAsyncFlightStore((state) => state.prepareCooperativeFlight);
+  const landCooperativeFlight = useAsyncFlightStore((state) => state.landCooperativeFlight);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [confirmLanding, setConfirmLanding] = useState(false);
+  const views = useMemo(() => selectCooperativeTaskViews(flight), [flight]);
+  const issues = useMemo(
+    () => [...validateCooperativeGraph(flight), ...validateCooperativeAssignments(flight)],
+    [flight],
+  );
+  const ready = views.filter((view) => view.state === "ready");
+  const allIntegrated = views.length > 0 && views.every((view) => view.state === "integrated");
+
+  if (flight.milestones.length === 0) return null;
+
+  function patchTask(taskId: string, patch: Partial<Task>) {
+    updateFlight(flight.id, {
+      milestones: flight.milestones.map((milestone) => ({
+        ...milestone,
+        tasks: milestone.tasks.map((task) => (task.id === taskId ? { ...task, ...patch } : task)),
+      })),
+    });
+  }
+
+  function enableCooperativeMode() {
+    updateFlight(flight.id, {
+      executionMode: "cooperative",
+      milestones: flight.milestones.map((milestone) => ({
+        ...milestone,
+        tasks: milestone.tasks.map((task) => {
+          if (task.agentConfigId !== "unassigned" && task.model) return task;
+          const agent: AgentCli =
+            task.role === "reviewer" || task.role === "scout" ? "api-openai-codex" : "api-claude";
+          return {
+            ...task,
+            agentConfigId: task.agentConfigId === "unassigned" ? agent : task.agentConfigId,
+            model: task.model || getDefaultModel(agent),
+          };
+        }),
+      })),
+    });
+    appendCoordinationEvent(flight.id, {
+      type: "handoff",
+      summary:
+        "Enabled assisted cooperative execution. Ready tasks remain user-launched and integrate only after acceptance.",
+      metadata: { source: "cooperative_execution" },
+    });
+  }
+
+  async function run(action: () => Promise<void>, success: string) {
+    setFeedback(null);
+    try {
+      await action();
+      setFeedback(success);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  if (flight.executionMode !== "cooperative") {
+    return (
+      <div className="flex items-center gap-2 rounded border border-bg-border bg-bg-secondary px-3 py-2">
+        <Network size={12} className="text-accent-purple" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] font-semibold text-text-primary">Cooperative task graph</div>
+          <div className="text-[10px] text-text-muted">
+            Validate assignments and dependencies, then launch each ready batch from an isolated
+            Flight integration branch.
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={enableCooperativeMode}
+          className="border-accent-purple/30 bg-accent-purple/10 hover:bg-accent-purple/20 rounded border px-2 py-1 text-[10px] font-medium text-accent-purple"
+        >
+          Enable assisted graph
+        </button>
+      </div>
+    );
+  }
+
+  const byId = new Map(views.map((view) => [view.task.id, view.task]));
+  return (
+    <div className="border-accent-purple/25 rounded border bg-bg-secondary">
+      <div className="flex items-center gap-2 border-b border-bg-border px-3 py-2">
+        <Network size={12} className="text-accent-purple" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] font-semibold text-text-primary">Cooperative task graph</div>
+          <div className="text-[10px] text-text-muted">
+            {ready.length} ready · integration {flight.integrationBranch?.status ?? "not prepared"}
+            {flight.integrationBranch?.headSha
+              ? ` · ${flight.integrationBranch.headSha.slice(0, 8)}`
+              : ""}
+          </div>
+        </div>
+        {flight.integrationBranch?.status === "needs_attention" && (
+          <button
+            type="button"
+            onClick={() =>
+              void run(
+                () => prepareCooperativeFlight(flight.id),
+                "Integration branch verified and ready.",
+              )
+            }
+            className="border-accent-amber/30 flex items-center gap-1 rounded border px-2 py-1 text-[10px] text-accent-amber"
+          >
+            <RotateCcw size={9} /> Retry after resolution
+          </button>
+        )}
+        {allIntegrated &&
+          flight.integrationBranch?.status === "ready" &&
+          (confirmLanding ? (
+            <span className="flex items-center gap-1 text-[10px] text-accent-amber">
+              Land into {flight.integrationBranch.baseBranch}?
+              <button
+                type="button"
+                aria-label="Confirm final Flight landing"
+                onClick={() =>
+                  void run(
+                    () => landCooperativeFlight(flight.id),
+                    "Flight integration branch landed.",
+                  ).finally(() => setConfirmLanding(false))
+                }
+                className="hover:bg-accent-green/10 rounded p-0.5 hover:text-accent-green"
+              >
+                <Check size={10} />
+              </button>
+              <button
+                type="button"
+                aria-label="Cancel final Flight landing"
+                onClick={() => setConfirmLanding(false)}
+                className="hover:bg-accent-red/10 rounded p-0.5 hover:text-accent-red"
+              >
+                <X size={10} />
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmLanding(true)}
+              className="border-accent-green/30 flex items-center gap-1 rounded border px-2 py-1 text-[10px] text-accent-green"
+            >
+              <GitMerge size={9} /> Land Flight
+            </button>
+          ))}
+        <button
+          type="button"
+          disabled={issues.length > 0 || ready.length === 0}
+          onClick={() =>
+            void run(
+              () => launchReadyTasks(flight.id),
+              `Launched ${ready.length} ready task${ready.length === 1 ? "" : "s"}.`,
+            )
+          }
+          className="border-accent-purple/30 bg-accent-purple/10 flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-medium text-accent-purple disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Play size={9} /> Launch ready tasks
+        </button>
+      </div>
+
+      {flight.integrationBranch?.status === "needs_attention" && (
+        <div className="border-accent-amber/20 bg-accent-amber/5 flex items-start gap-1.5 border-b px-3 py-2 text-[10px] text-accent-amber">
+          <AlertTriangle size={10} className="mt-px" />
+          <span>
+            {flight.integrationBranch.errorMessage}
+            {(flight.integrationBranch.conflictFiles?.length ?? 0) > 0
+              ? ` Conflicts: ${flight.integrationBranch.conflictFiles!.join(", ")}.`
+              : ""}
+          </span>
+        </div>
+      )}
+
+      <div className="divide-y divide-bg-border">
+        {views.map(({ task, state, blockedBy }) => {
+          const provider = API_PROVIDERS.find(
+            (candidate) => candidate.agentCli === task.agentConfigId,
+          );
+          return (
+            <div
+              key={task.id}
+              className="grid grid-cols-[minmax(160px,1.3fr)_130px_minmax(130px,1fr)_minmax(150px,1fr)] items-center gap-2 px-3 py-2 text-[10px]"
+            >
+              <div className="min-w-0">
+                <div className="truncate font-medium text-text-primary">{task.title}</div>
+                <div className="truncate text-text-muted">
+                  {task.role ?? "builder"} · <span className={taskStateColor(state)}>{state}</span>
+                  {blockedBy.length > 0
+                    ? ` · waits for ${blockedBy.map((id) => byId.get(id)?.title ?? id).join(", ")}`
+                    : ""}
+                </div>
+              </div>
+              <select
+                aria-label={`Agent for ${task.title}`}
+                value={task.agentConfigId}
+                disabled={state !== "ready" && state !== "blocked"}
+                onChange={(event) => {
+                  const agent = event.target.value as AgentCli;
+                  patchTask(task.id, {
+                    agentConfigId: agent,
+                    model: getDefaultModel(agent),
+                  });
+                }}
+                className="rounded border border-bg-border bg-bg-primary px-1.5 py-1 text-text-secondary outline-none"
+              >
+                <option value="unassigned">Unassigned</option>
+                {API_PROVIDERS.map((candidate) => (
+                  <option key={candidate.agentCli} value={candidate.agentCli}>
+                    {candidate.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label={`Model for ${task.title}`}
+                value={task.model ?? ""}
+                disabled={state !== "ready" && state !== "blocked"}
+                onChange={(event) => patchTask(task.id, { model: event.target.value })}
+                className="rounded border border-bg-border bg-bg-primary px-1.5 py-1 text-text-secondary outline-none"
+              >
+                <option value="">Choose model</option>
+                {provider?.models.map((model) => (
+                  <option key={model.value} value={model.value}>
+                    {model.label}
+                  </option>
+                ))}
+              </select>
+              <input
+                aria-label={`Owned paths for ${task.title}`}
+                value={(task.ownedPaths ?? []).join(", ")}
+                disabled={state !== "ready" && state !== "blocked"}
+                onChange={(event) =>
+                  patchTask(task.id, {
+                    ownedPaths: event.target.value
+                      .split(",")
+                      .map((path) => path.trim())
+                      .filter(Boolean),
+                  })
+                }
+                placeholder="owned/path, other/path"
+                className="rounded border border-bg-border bg-bg-primary px-1.5 py-1 text-text-secondary outline-none"
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {issues.length > 0 && (
+        <div className="border-accent-amber/20 bg-accent-amber/5 border-t px-3 py-2 text-[10px] text-accent-amber">
+          {issues.slice(0, 5).map((issue) => (
+            <div key={`${issue.kind}:${issue.taskId}:${issue.relatedTaskId ?? ""}`}>
+              {issue.message}
+            </div>
+          ))}
+          {issues.length > 5 && <div>…and {issues.length - 5} more assignment issues.</div>}
+        </div>
+      )}
+      {feedback && (
+        <div className="flex items-center gap-1 border-t border-bg-border px-3 py-2 text-[10px] text-text-secondary">
+          <GitMerge size={9} /> {feedback}
+        </div>
+      )}
+    </div>
+  );
+}

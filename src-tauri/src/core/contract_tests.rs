@@ -79,6 +79,13 @@ mod tests {
                 total_tokens: 1000,
                 prompt: None,
                 attempts: vec![],
+                review_gate_policy: None,
+                execution_mode: None,
+                integration_branch: None,
+                coordination_inbox: Vec::new(),
+                autonomy_mode: None,
+                autonomy_policy: None,
+                autonomy_runtime: None,
                 planning_conversation_id: None,
                 planner_session_id: None,
                 planner_status: None,
@@ -417,8 +424,7 @@ mod tests {
 
         // 2. Round-trips through the DTO (parse -> struct -> serialize -> parse).
         let reserialized = serde_json::to_string(&state).expect("re-serialize state");
-        let reparsed: PersistedState =
-            serde_json::from_str(&reserialized).expect("re-parse state");
+        let reparsed: PersistedState = serde_json::from_str(&reserialized).expect("re-parse state");
         let rf = &reparsed.flights[0];
 
         // 3. Re-serializes WITHOUT losing any planner field.

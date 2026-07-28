@@ -12,6 +12,8 @@ import {
   Send,
   ChevronDown,
   ChevronRight,
+  RotateCcw,
+  ShieldCheck,
 } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
@@ -21,6 +23,7 @@ import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { notifyAttemptFailed } from "@/lib/notifications";
 import type { Attempt, AttemptStatus, Flight } from "@/types/flight";
 import type { AgentMessage } from "@/types/agent-conversation";
+import { reviewerGateAllowsAcceptance } from "@/lib/reviewerGate";
 
 interface AttemptTileProps {
   flight: Flight;
@@ -49,10 +52,16 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
   const sendMessage = useAgentTaskStore((s) => s.sendMessage);
   const cancelAttempt = useAsyncFlightStore((s) => s.cancelAttempt);
   const setAttemptStatus = useAsyncFlightStore((s) => s.setAttemptStatus);
+  const retryReviewGate = useAsyncFlightStore((s) => s.retryReviewGate);
+  const overrideReviewGate = useAsyncFlightStore((s) => s.overrideReviewGate);
+  const sendReviewFindingsToBuilder = useAsyncFlightStore((s) => s.sendReviewFindingsToBuilder);
   const updateFlight = useFlightStore((s) => s.updateFlight);
 
   const [followUp, setFollowUp] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
   const messages = conversation?.messages ?? EMPTY_MESSAGES;
 
   const attemptLabel = attempt.target.kind === "ssh" ? attempt.target.targetId : "local";
@@ -98,6 +107,17 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
     attempt.target.kind === "ssh"
       ? attempt.target.targetId
       : (attempt.target.basePath.split(/[/\\]/).filter(Boolean).pop() ?? "local");
+  const acceptance = reviewerGateAllowsAcceptance(flight, attempt);
+  const gate = attempt.reviewGate;
+
+  async function runAction(action: () => Promise<void>) {
+    setActionError(null);
+    try {
+      await action();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    }
+  }
 
   function handleSend() {
     const text = followUp.trim();
@@ -170,11 +190,109 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
         {attempt.errorMessage && (
           <div className="bg-accent-red/10 border-accent-red/30 rounded border px-2 py-1 text-[10px] text-accent-red">
             {attempt.failureCategory && (
-              <span className="mr-1 rounded bg-accent-red/20 px-1 font-mono uppercase tracking-wide">
+              <span className="bg-accent-red/20 mr-1 rounded px-1 font-mono uppercase tracking-wide">
                 {attempt.failureCategory.replace(/_/g, " ")}
               </span>
             )}
             {attempt.errorMessage}
+          </div>
+        )}
+
+        {flight.reviewGatePolicy?.enabled && (
+          <div className="border-accent-purple/30 bg-accent-purple/5 rounded border px-2.5 py-2 text-[10px]">
+            <div className="flex items-center gap-1.5 text-text-secondary">
+              <ShieldCheck size={11} className="text-accent-purple" />
+              <span className="font-medium">Independent Reviewer Gate</span>
+              <span className="ml-auto uppercase tracking-wide text-text-muted">
+                {gate?.status.replace(/_/g, " ") ?? "pending"}
+              </span>
+            </div>
+            {gate?.report && (
+              <div className="mt-1.5 space-y-1.5">
+                <p className="text-text-secondary">{gate.report.summary}</p>
+                {gate.report.findings.map((finding, index) => (
+                  <div
+                    key={`${finding.title}-${index}`}
+                    className={`rounded border px-2 py-1 ${
+                      finding.severity === "error"
+                        ? "border-accent-red/30 bg-accent-red/5 text-accent-red"
+                        : finding.severity === "warning"
+                          ? "border-accent-amber/30 bg-accent-amber/5 text-accent-amber"
+                          : "border-bg-border text-text-secondary"
+                    }`}
+                  >
+                    <span className="font-medium">{finding.title}</span>
+                    {finding.filePath && (
+                      <span className="ml-1 font-mono text-text-muted">
+                        {finding.filePath}
+                        {finding.line ? `:${finding.line}` : ""}
+                      </span>
+                    )}
+                    <div className="mt-0.5 text-text-secondary">{finding.details}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {gate?.errorMessage && <p className="mt-1.5 text-accent-red">{gate.errorMessage}</p>}
+            {gate?.status === "overridden" && gate.overrideReason && (
+              <p className="mt-1.5 text-accent-amber">Override recorded: {gate.overrideReason}</p>
+            )}
+            {gate && ["changes_requested", "blocked", "error"].includes(gate.status) && (
+              <div className="mt-2 flex flex-wrap items-center gap-1">
+                <button
+                  onClick={() => void runAction(() => retryReviewGate(flight.id, attempt.id))}
+                  className="flex items-center gap-1 rounded border border-bg-border px-2 py-0.5 text-text-secondary hover:text-text-primary"
+                >
+                  <RotateCcw size={9} /> Retry reviewer
+                </button>
+                {gate.report && (
+                  <button
+                    onClick={() =>
+                      void runAction(() => sendReviewFindingsToBuilder(flight.id, attempt.id))
+                    }
+                    className="flex items-center gap-1 rounded border border-bg-border px-2 py-0.5 text-text-secondary hover:text-text-primary"
+                  >
+                    <Send size={9} /> Send findings to builder
+                  </button>
+                )}
+                <button
+                  onClick={() => setOverrideOpen((value) => !value)}
+                  className="border-accent-amber/30 hover:bg-accent-amber/10 rounded border px-2 py-0.5 text-accent-amber"
+                >
+                  Override…
+                </button>
+              </div>
+            )}
+            {overrideOpen && gate?.status !== "overridden" && (
+              <div className="mt-2 flex items-start gap-1">
+                <textarea
+                  value={overrideReason}
+                  onChange={(event) => setOverrideReason(event.target.value)}
+                  rows={2}
+                  placeholder="Required reason for accepting despite the reviewer"
+                  className="border-accent-amber/30 flex-1 resize-none rounded border bg-bg-primary px-2 py-1 text-[10px] text-text-primary outline-none"
+                />
+                <button
+                  disabled={overrideReason.trim().length < 3}
+                  onClick={() =>
+                    void runAction(async () => {
+                      await overrideReviewGate(flight.id, attempt.id, overrideReason);
+                      setOverrideOpen(false);
+                      setOverrideReason("");
+                    })
+                  }
+                  className="border-accent-amber/30 bg-accent-amber/10 rounded border px-2 py-1 text-accent-amber disabled:opacity-40"
+                >
+                  Record
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {actionError && (
+          <div className="border-accent-red/30 bg-accent-red/10 rounded border px-2 py-1 text-[10px] text-accent-red">
+            {actionError}
           </div>
         )}
       </div>
@@ -208,13 +326,19 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
           {attempt.status === "reviewing" && (
             <>
               <button
-                onClick={() => void setAttemptStatus(flight.id, attempt.id, "completed")}
-                className="bg-accent-green/10 border-accent-green/30 hover:bg-accent-green/20 flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] text-accent-green"
+                onClick={() =>
+                  void runAction(() => setAttemptStatus(flight.id, attempt.id, "completed"))
+                }
+                disabled={!acceptance.allowed}
+                title={acceptance.reason}
+                className="bg-accent-green/10 border-accent-green/30 hover:bg-accent-green/20 flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] text-accent-green disabled:cursor-not-allowed disabled:opacity-35"
               >
                 <Check size={10} /> Accept
               </button>
               <button
-                onClick={() => void setAttemptStatus(flight.id, attempt.id, "failed")}
+                onClick={() =>
+                  void runAction(() => setAttemptStatus(flight.id, attempt.id, "failed"))
+                }
                 className="hover:bg-accent-red/10 flex items-center gap-1 rounded border border-bg-border px-2 py-0.5 text-[10px] text-accent-red"
               >
                 <XIcon size={10} /> Reject

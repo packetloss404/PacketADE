@@ -15,6 +15,10 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useServerStore } from "@/stores/serverStore";
 import { usePromptStore } from "@/stores/promptStore";
+import {
+  isAbsolutePacketCodePath,
+  usePacketCodeIntegrationStore,
+} from "@/stores/packetCodeIntegrationStore";
 import { buildSshArgs } from "@/lib/ssh";
 import { writePty } from "@/lib/tauri";
 import { getModelsForAgent } from "@/lib/models";
@@ -60,6 +64,12 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   const [newPinCmd, setNewPinCmd] = useState("");
   const overflowRef = useRef<HTMLDivElement>(null);
   const promptTemplates = usePromptStore((s) => s.templates);
+  const packetCodeLocalDataHome = usePacketCodeIntegrationStore(
+    (s) => s.localDataHome,
+  );
+  const packetCodeRemoteDataHomes = usePacketCodeIntegrationStore(
+    (s) => s.remoteDataHomes,
+  );
 
   // Close the overflow menu on outside click; reset to the root view so it
   // doesn't reopen mid-drill-down next time.
@@ -159,17 +169,47 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
     : undefined;
   const knownHostsPath = useServerStore((s) => s.knownHostsPath);
   const isRemote = !!server;
+  const localPlatform =
+    typeof navigator !== "undefined" && /windows|win32|win64/i.test(
+      navigator.userAgent || navigator.platform || "",
+    )
+      ? "windows"
+      : "posix";
+  const packetCodeHome =
+    pane.agentId === "packetcode"
+      ? isRemote && server
+        ? packetCodeRemoteDataHomes[server.id]?.trim()
+        : packetCodeLocalDataHome.trim()
+      : "";
+  const packetCodeEnv = useMemo<Record<string, string> | undefined>(() => {
+    if (!packetCodeHome) return undefined;
+    const platform = isRemote ? "posix" : localPlatform;
+    return isAbsolutePacketCodePath(packetCodeHome, platform)
+      ? { PACKETCODE_HOME: packetCodeHome }
+      : undefined;
+  }, [isRemote, localPlatform, packetCodeHome]);
   const effectiveCommand = isRemote ? "ssh" : command;
+  const remoteCommand =
+    isRemote && pane.agentId === "packetcode" ? "packetcode" : command;
   const effectiveArgs = useMemo(() => {
     if (!isRemote || !server) return cliArgs;
     return buildSshArgs(
       server,
       workspace?.remoteProjectPath ?? server.remotePath ?? "",
-      command,
+      remoteCommand,
       cliArgs,
       knownHostsPath ?? undefined,
+      packetCodeEnv,
     );
-  }, [isRemote, server, command, cliArgs, workspace?.remoteProjectPath, knownHostsPath]);
+  }, [
+    isRemote,
+    server,
+    remoteCommand,
+    cliArgs,
+    workspace?.remoteProjectPath,
+    knownHostsPath,
+    packetCodeEnv,
+  ]);
 
   // Render the unified header bar — combines drag handle, agent identity,
   // CLI status, and lifecycle controls into a single row.
@@ -546,6 +586,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
         paneId={pane.id}
         cliCommand={effectiveCommand}
         cliArgs={effectiveArgs}
+        env={isRemote ? undefined : packetCodeEnv}
         projectPath={workspace?.projectPath}
         initialPrompt={initialPrompt}
         renderHeader={renderHeader}
