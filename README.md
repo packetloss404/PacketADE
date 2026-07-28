@@ -4,6 +4,8 @@
 
 PacketADE is a Tauri v2 desktop app that brings AI coding agents, planning, issue tracking, memory, and workspace management into a single native environment. It is built for running real development workflows across multiple agent CLIs without leaving the app.
 
+Current source release: **v0.10.2** (2026-07-28).
+
 ## Documentation Map
 
 - [`ROADMAP.md`](./ROADMAP.md) — current product direction and release path.
@@ -148,15 +150,15 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 
 ### Dictation — Voice-to-Text
 
-- Local Whisper transcription (no audio leaves the machine); model size, audio device, and custom dictionary configurable from `Tools → Dictation`
+- Local Whisper transcription (no audio leaves the machine); verified model, audio device, language, and custom dictionary configurable from `Tools → Dictation`
 - OS-level global shortcuts via `tauri-plugin-global-shortcut` so the hotkeys work even when PacketADE is not the focused application:
   - `Ctrl+Shift+V` (hold) — push-to-talk; records while held, transcribes on release (rebindable)
   - `Ctrl+Shift+R` — toggle recording on/off (rebindable)
   - `Ctrl+Shift+D` — open the Dictation view
   - `Escape` — cancel an active recording
 - **Focus-aware insertion**: tracks the most recently focused text input across the app and inserts the transcript at its cursor on completion — works in agent chats, flight title/objective, issue forms, prompt library, anywhere you type. Terminals are excluded.
-- **Clipboard fallback** when dictation was triggered from another app and no PacketADE input was tracked
-- Live `REC` indicator in the status strip, 32-bar waveform, history search, and an analytics dashboard (WPM, sentiment trend, top words, daily streak, time saved estimate)
+- **External delivery** copies to the native Windows clipboard when no PacketADE input is tracked, with an opt-in foreground-app paste mode. The transcript remains visible and on the clipboard if OS injection is blocked.
+- Live `REC` indicator in the status strip, 32-bar waveform, automatic history capture/search, and an analytics dashboard (WPM, sentiment trend, top words, daily streak, time saved estimate)
 
 ### Code Quality
 
@@ -242,7 +244,7 @@ PacketADE ships with a Node.js sidecar that powers the Anthropic (Subscription),
 
 - To point the app at a custom sidecar entry point (e.g. when running from a different working copy), set `PACKETADE_SIDECAR_PATH` to the absolute path of the compiled entry file before launching PacketADE. `PACKETADE_NODE_PATH` similarly overrides the Node binary used to launch it.
 
-`pnpm build:all` still works for a full local build. For **production bundling**, `pnpm tauri build` now auto-runs the `prebundle` chain (`fetch-node` → `sidecar:install` → `sidecar:build` → `sidecar:prune`) via Tauri's `beforeBuildCommand`, so no manual sidecar or Node setup is needed. A pinned Node 24.15.0 runtime is fetched as a Tauri `externalBin`, and the sidecar ships with a pruned production `node_modules`. Reference sizes from a Windows build: NSIS installer ~74 MB, MSI installer ~114 MB (both are produced because `bundle.targets` is `"all"`), standalone `packetade.exe` ~30 MB. The prune step removes the sidecar's devDependencies; run `pnpm sidecar:install` afterward to restore them for further sidecar development.
+`pnpm build:all` still works for a full local build. For **production bundling**, `pnpm tauri build` now auto-runs the `prebundle` chain (`fetch-node` → `sidecar:install` → `sidecar:build` → `sidecar:prune`) via Tauri's `beforeBuildCommand`, so no manual sidecar or Node setup is needed. A pinned Node 24.15.0 runtime is fetched as a Tauri `externalBin`, and the sidecar ships with a pruned production `node_modules`. Reference sizes from the v0.10.2 Windows build: NSIS installer 84.16 MiB, MSI installer 131.47 MiB (both are produced because `bundle.targets` is `"all"`), standalone `packetade.exe` 41.31 MiB. The prune step removes the sidecar's devDependencies; run `pnpm sidecar:install` afterward to restore them for further sidecar development.
 
 #### Sidecar status
 
@@ -274,7 +276,11 @@ PacketADE is developed on Windows but is designed to ship on macOS and Linux as 
 
 Current beta builds are distributed through GitHub Releases and installed manually. Windows Authenticode signing, macOS Developer ID signing/notarization, and the Tauri v2 auto-updater are planned release-trust gates but are not enabled in the repo today. Until those credentials and updater manifests exist, beta users may see SmartScreen or Gatekeeper warnings on fresh downloads.
 
-Local release gates are still explicit: run `pnpm lint`, `pnpm build`, `cargo check --manifest-path src-tauri/Cargo.toml`, and `pnpm tauri build` before publishing an installer. The updater setup runbook lives in [`dev/updater-setup.md`](./dev/updater-setup.md).
+The source tag and application version move together. Local release gates are
+explicit: run `pnpm lint`, `pnpm test`, `pnpm build`,
+`cargo check --manifest-path src-tauri/Cargo.toml`, and `pnpm tauri build`
+before publishing an installer. The updater setup runbook lives in
+[`dev/updater-setup.md`](./dev/updater-setup.md).
 
 ### Run The Desktop App
 
@@ -288,7 +294,9 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
-Build artifacts are written under `src-tauri/target/release/bundle/`.
+Build artifacts are written under the active Cargo target directory in
+`release/` and `release/bundle/` (normally `src-tauri/target`; this repository's
+Windows release workstation redirects it to `packetade-build`).
 
 ### Quality Checks
 

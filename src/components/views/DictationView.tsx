@@ -4,11 +4,13 @@ import { useDictationStore } from "@/stores/dictationStore";
 import type { DictationAnalytics, DictationEntry } from "@/types/dictation";
 
 export function DictationView() {
+  const isStarting = useDictationStore((s) => s.isStarting);
   const isRecording = useDictationStore((s) => s.isRecording);
   const isTranscribing = useDictationStore((s) => s.isTranscribing);
   const lastResult = useDictationStore((s) => s.lastResult);
   const status = useDictationStore((s) => s.status);
   const error = useDictationStore((s) => s.error);
+  const deliveryNotice = useDictationStore((s) => s.deliveryNotice);
   const waveform = useDictationStore((s) => s.waveform);
   const analytics = useDictationStore((s) => s.analytics);
   const history = useDictationStore((s) => s.history);
@@ -16,6 +18,8 @@ export function DictationView() {
   const stopRecording = useDictationStore((s) => s.stopRecording);
   const loadAnalytics = useDictationStore((s) => s.loadAnalytics);
   const loadHistory = useDictationStore((s) => s.loadHistory);
+  const loadSettings = useDictationStore((s) => s.loadSettings);
+  const loadModels = useDictationStore((s) => s.loadModels);
   const searchHistory = useDictationStore((s) => s.searchHistory);
   const clearResult = useDictationStore((s) => s.clearResult);
 
@@ -25,15 +29,13 @@ export function DictationView() {
   useEffect(() => {
     loadAnalytics();
     loadHistory(100, 0);
-  }, [loadAnalytics, loadHistory]);
+    loadSettings();
+    loadModels();
+  }, [loadAnalytics, loadHistory, loadModels, loadSettings]);
 
   async function handleToggleRecording() {
     if (isRecording) {
       await stopRecording();
-      setTimeout(() => {
-        loadAnalytics();
-        loadHistory(100, 0);
-      }, 500);
     } else {
       clearResult();
       await startRecording();
@@ -57,24 +59,24 @@ export function DictationView() {
         <div className="w-full max-w-[280px] space-y-6">
           <div className="flex items-center gap-2">
             <Mic size={16} className="text-accent-green" />
-            <h1 className="text-sm font-semibold text-text-primary">VibeToText</h1>
+            <h1 className="text-sm font-semibold text-text-primary">Dictation</h1>
           </div>
 
           {/* Record button */}
           <div className="flex flex-col items-center gap-4">
             <button
               onClick={handleToggleRecording}
-              disabled={isTranscribing}
+              disabled={isStarting || isTranscribing}
               className={[
                 "w-20 h-20 rounded-full flex items-center justify-center transition-all",
                 isRecording
                   ? "bg-accent-red/20 border-2 border-accent-red text-accent-red animate-pulse shadow-lg shadow-accent-red/20"
-                  : isTranscribing
+                  : isStarting || isTranscribing
                   ? "bg-accent-amber/20 border-2 border-accent-amber text-accent-amber cursor-wait"
                   : "bg-accent-green/15 border-2 border-accent-green/40 text-accent-green hover:bg-accent-green/25 hover:border-accent-green/60",
               ].join(" ")}
             >
-              {isTranscribing ? (
+              {isStarting || isTranscribing ? (
                 <Loader2 size={28} className="animate-spin" />
               ) : isRecording ? (
                 <MicOff size={28} />
@@ -85,6 +87,8 @@ export function DictationView() {
             <span className="text-[11px] text-text-muted">
               {isRecording
                 ? "Recording... click to stop"
+                : isStarting
+                ? "Opening microphone..."
                 : isTranscribing
                 ? "Transcribing..."
                 : "Click or Ctrl+Shift+V"}
@@ -120,6 +124,12 @@ export function DictationView() {
           {error && (
             <div className="px-4 py-3 bg-accent-red/5 border border-accent-red/20 rounded-lg">
               <p className="text-[11px] text-accent-red">{error}</p>
+            </div>
+          )}
+
+          {deliveryNotice && (
+            <div className="px-4 py-3 bg-accent-blue/5 border border-accent-blue/20 rounded-lg">
+              <p className="text-[11px] text-accent-blue">{deliveryNotice}</p>
             </div>
           )}
 

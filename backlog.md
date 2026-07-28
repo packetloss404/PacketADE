@@ -18,6 +18,41 @@ Priority: **P1** = real bug or major user-facing gap · **P2** = correctness/UX
   deltas; a *corrected* terminal text would be mis-emitted. Matches the existing
   0.135 item-path assumption; only manifests if Codex diverges.
 
+## Dictation reliability and BridgeVoice response
+
+Canonical repair record:
+[`dev/bridgemind/dictation-repair-hardening-loop.md`](./dev/bridgemind/dictation-repair-hardening-loop.md).
+Option B keeps Dictation inside PacketADE and local-first. The broken baseline
+path has been repaired: verified model selection/fallback, native microphone
+formats, downmix/resampling, saved-device use, lifecycle/cancel, event shape,
+language/dictionary, Windows clipboard/opt-in foreground paste, history, and
+Composer/store convergence.
+
+- **P1 — live microphone acceptance matrix.** This Windows host currently has
+  no active capture endpoint, so run the packaged default/USB/Bluetooth,
+  44.1/48 kHz, fast-PTT, cancel, disconnect, repeated phrase, first-model-load,
+  history, in-app, clipboard, and external-app matrix when a microphone is
+  connected or enabled.
+- **P2 — microphone doctor and recovery.** Add a three-second test that reports
+  device/rate/channels/sample format/level; then add stable device IDs,
+  bounded capture/max duration, dead-stream rebuild, physical-default fallback,
+  and structured actionable diagnostics.
+- **P2 — global shortcut trust.** Add an explicit enable switch, readiness and
+  conflict test, serialized rebinding, and a safer default than claiming the
+  common `Ctrl+Shift+V` paste-without-formatting chord unconditionally.
+- **P2 — native insertion coverage.** Extend delivery to contenteditable,
+  editor, and PTY-native insertion; add original-target/secure-field checks;
+  verify macOS accessibility and Linux X11/Wayland fallback behavior.
+- **P2 — packaged macOS/Linux audio prerequisites.** Add the macOS microphone
+  usage metadata/accessibility verification and confirm Linux ALSA/PipeWire
+  runtime dependencies in packaged DEB/AppImage builds.
+- **P3 — structured transcription telemetry.** Return detected language,
+  capture format, duration, model-load/inference time, and warnings without
+  logging transcript or dictionary contents.
+- **P3 — alternate engine benchmark.** Benchmark Parakeet and optional Whisper
+  acceleration only after the repaired CPU path has packaged latency/quality
+  measurements; do not add a cloud dependency by default.
+
 ## Remote Agents (current flagship)
 
 Canonical plan: [`dev/remoteagents/README.md`](./dev/remoteagents/README.md).
@@ -184,8 +219,9 @@ Deferred items called out in `dev/multi-platform-build.md` and
   exposes Pause/Resume/Stop/approval controls. PacketAgent owns durable
   execution after PacketADE closes. PH1–PH10 remain blocked until their named
   PacketAgent W1–W9 dependencies exist; do not fake durability in the desktop
-  process. PacketAgent implementation is owned by its separate Codex project;
-  this repository owns only the PacketADE handoff contract and consumer work.
+  process. PacketAgent is actively being implemented in its own repository and
+  Codex project. This repository owns only the PacketADE handoff consumer and
+  begins PH1 when that active project publishes the frozen W9 schema/fixtures.
 
 ### Runtime audit (2026-07-19)
 
@@ -261,6 +297,28 @@ still loads legacy data losslessly.
   and a packaged cross-repo smoke. BridgeCode was discontinued and remains only
   a historical workflow benchmark.
 
+### PacketCode remaining hardening
+
+These PacketCode-owned items are duplicated here intentionally so PacketADE's
+master ledger does not hide them behind the broad PC9 status. The implementation
+source of truth is
+`D:\projects\packetcode\docs\bridgecode-plus-hardening-loop-2026-07-27.md`.
+
+- **P2 — versioned workflow verifier/retry (PCH3).** Let a workflow declare a
+  verifier prompt/provider/model, versioned pass contract, and retry cap.
+  Missing or malformed verdicts never pass, and retries count against token and
+  agent budgets.
+- **P2 — abandoned-job reconcile/resubmit (PCH4).** After restart, show the old
+  job as recovered/cancelled with its evidence intact and offer an explicit
+  bounded resubmit from saved input. Never claim that the dead process resumed.
+- **P3 — Streamable HTTP MCP trust contract (PCH5).** Design explicit network
+  targets, credentials, redirect/origin rules, output provenance, and approval
+  scopes before enabling remote MCP transport in PacketCode.
+- **External release gates (PCH6–PCH8).** Publish signed stable/preview builds,
+  run clean-machine install/update/rollback and packaged PacketADE smoke, then
+  consume PacketAgent's versioned contract when its active separate project
+  publishes it.
+
 ## GitHub pane v0.9+ (from v0.8 deferrals)
 
 > **Loop shipped (GP1–GP7, merged 2026-07-25):**
@@ -281,7 +339,7 @@ still loads legacy data losslessly.
 
 ## Git host providers — GitHub + Gitea/Forgejo (dual-config)
 
-> **Shipped (G1–G14), peer-reviewed on `feat/gitea-support` — pending merge.**
+> **Shipped (G1–G14), peer-reviewed and merged to `main`.**
 > Ledger: [`dev/gitea-support-loop.md`](./dev/gitea-support-loop.md). Self-hosted
 > **Gitea/Forgejo** alongside cloud GitHub, **both configurable at once** — a
 > workspace uses whichever host its `origin` remote belongs to, and the pane's
@@ -313,6 +371,49 @@ still loads legacy data losslessly.
   corpus; a vector database is not justified at its current size. M1's IDF scorer
   and M8's Ask tab now make keyword quality measurable — revisit only if it falls
   short.
+
+### Project-local Memory Hub (BridgeMemory response)
+
+- **Approved — Option B: add project-native memory inside PacketADE, not a
+  separate PacketMemory product.** Implement the bounded MH1–MH9 loop in
+  [`dev/bridgemind/project-local-memory-hub-loop.md`](./dev/bridgemind/project-local-memory-hub-loop.md).
+  Human-readable Markdown notes, versioned metadata, links/backlinks,
+  graph/orphan views, provenance, current IDF retrieval, and scoped MCP access
+  form one Memory Hub inside the existing Memory surface. Preserve the current
+  global/persisted memory store; project-local memory is an additional
+  inspectable source class, not a destructive migration. External edits and
+  conflicts must be visible, writes stay atomic and permission-gated, and no
+  vector database or cloud memory service is part of this decision.
+
+## Local-First MCP Hub (BridgeMCP response)
+
+- **Approved, later — Option B: consolidate PacketADE's existing MCP client and
+  provider features into a local-first Hub.** This is a worthwhile PacketADE
+  expansion, but it is explicitly **not the first product focus**. Implement
+  MCPH1–MCPH8 only when promoted from Later in
+  [`dev/bridgemind/local-first-mcp-hub-loop.md`](./dev/bridgemind/local-first-mcp-hub-loop.md).
+  Build on the shipped Streamable HTTP provider, MCP client configuration,
+  MCP-over-SSH, audit ring, and opt-in append-only writes. Add a curated starter
+  catalog, capability/health/restart views, workspace/server/tool trust
+  profiles, provenance, and suite resources for Flights, Issues, Memory Hub,
+  PacketCode, and eventually PacketAgent. Default to local/SSH ownership,
+  read-only access, explicit reviewed installs, and permission-gated writes.
+  Do not create a hosted PacketMCP product, expose a public endpoint, or silently
+  broaden a running agent session.
+
+## Trust and provenance
+
+- **P2 — approved, queued: cross-cutting Trust and Provenance layer.** Run
+  TP1–TP8 in
+  [`dev/bridgemind/trust-provenance-loop.md`](./dev/bridgemind/trust-provenance-loop.md).
+  Give web, MCP, repository/file, imported, memory, and agent-derived evidence
+  one versioned origin/authority/integrity/lineage contract; surface it quietly
+  in agent, review, Flight, and Memory records; and connect tainted-turn
+  follow-on actions to the existing permission and bounded-autonomy gates.
+  Preserve the current nonce-delimited untrusted-web envelope, never let
+  evidence expand its own authority, and keep secret-bearing data out of
+  persistence and exports. This is a PacketADE capability, not a standalone
+  product or a claim of perfect prompt-injection detection.
 
 ## Product tracks (from `dev/README.md`)
 

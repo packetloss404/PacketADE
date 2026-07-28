@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { listWhisperModels, startRecordingCmd, stopRecordingCmd } from "@/lib/tauri";
+import { listAudioDevices, listWhisperModels } from "@/lib/tauri";
+import { useDictationStore } from "@/stores/dictationStore";
 
 type VoiceMode = "web" | "native";
 
@@ -28,27 +29,19 @@ interface SpeechRecognitionInstance {
   stop: () => void;
 }
 
-// Cache native availability check across all hook instances
-let nativeAvailableCache: boolean | null = null;
-let nativeCheckPromise: Promise<boolean> | null = null;
-
 async function checkNativeAvailable(): Promise<boolean> {
-  if (nativeAvailableCache !== null) return nativeAvailableCache;
-  if (nativeCheckPromise) return nativeCheckPromise;
-
-  nativeCheckPromise = (async () => {
-    try {
-      const raw = await listWhisperModels();
-      const models = (typeof raw === "string" ? JSON.parse(raw) : raw) as { size: string; downloaded: boolean }[];
-      nativeAvailableCache = models.some((m) => m.downloaded);
-      return nativeAvailableCache;
-    } catch {
-      nativeAvailableCache = false;
-      return false;
-    }
-  })();
-
-  return nativeCheckPromise;
+  try {
+    const [modelRaw, deviceRaw] = await Promise.all([listWhisperModels(), listAudioDevices()]);
+    const models = (typeof modelRaw === "string" ? JSON.parse(modelRaw) : modelRaw) as {
+      downloaded: boolean;
+    }[];
+    const devices = (
+      typeof deviceRaw === "string" ? JSON.parse(deviceRaw) : deviceRaw
+    ) as unknown[];
+    return models.some((model) => model.downloaded) && devices.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 const webSpeechSupported =
@@ -61,23 +54,32 @@ const webSpeechSupported =
  * Pass an explicit mode to override auto-detection.
  */
 export function useVoiceInput(explicitMode?: VoiceMode): UseVoiceInputReturn {
+  const modelReadinessKey = useDictationStore((state) =>
+    state.models.map((model) => `${model.size}:${model.downloaded}`).join("|"),
+  );
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [detectedMode, setDetectedMode] = useState<VoiceMode>(webSpeechSupported ? "web" : "web");
+  const [nativeReady, setNativeReady] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
-  // Auto-detect native Whisper on mount (only if no explicit mode given)
+  // Re-check native readiness after model installs as well as on mount.
   useEffect(() => {
-    if (explicitMode) return;
-    checkNativeAvailable().then((available) => {
-      if (available) setDetectedMode("native");
+    let cancelled = false;
+    void checkNativeAvailable().then((available) => {
+      if (cancelled) return;
+      setNativeReady(available);
+      if (!explicitMode) setDetectedMode(available ? "native" : "web");
     });
-  }, [explicitMode]);
+    return () => {
+      cancelled = true;
+    };
+  }, [explicitMode, modelReadinessKey]);
 
   const mode = explicitMode ?? detectedMode;
 
-  // Native mode is always considered supported; web mode depends on browser API
-  const isSupported = mode === "native" ? true : webSpeechSupported;
+  // Native mode requires both a verified model and an active capture device.
+  const isSupported = mode === "native" ? nativeReady : webSpeechSupported;
 
   // Mirror the latest mode/listening into refs so the unmount cleanup can stop
   // the right backend without re-subscribing on every state change.
@@ -104,8 +106,8 @@ export function useVoiceInput(explicitMode?: VoiceMode): UseVoiceInputReturn {
         recognitionRef.current = null;
       }
       if (modeRef.current === "native" && isListeningRef.current) {
-        // Fire-and-forget: release the native capture; ignore failures on teardown.
-        void stopRecordingCmd().catch(() => {});
+        // Discard an abandoned composer recording instead of transcribing it.
+        void useDictationStore.getState().cancelRecording();
       }
     };
   }, []);
@@ -114,9 +116,10 @@ export function useVoiceInput(explicitMode?: VoiceMode): UseVoiceInputReturn {
     if (mode === "native") {
       setIsListening(true);
       setTranscript("");
-      startRecordingCmd().catch(() => {
-        setIsListening(false);
-      });
+      void useDictationStore
+        .getState()
+        .startRecording()
+        .then(() => setIsListening(useDictationStore.getState().isRecording));
       return;
     }
 
@@ -155,13 +158,13 @@ export function useVoiceInput(explicitMode?: VoiceMode): UseVoiceInputReturn {
   const stopListening = useCallback(() => {
     if (mode === "native") {
       setIsListening(false);
-      stopRecordingCmd()
+      void useDictationStore
+        .getState()
+        .stopRecording()
         .then((result) => {
           setTranscript(result);
         })
-        .catch(() => {
-          // error handled silently
-        });
+        .catch((error) => console.warn("[useVoiceInput.stopListening] failed:", error));
       return;
     }
 

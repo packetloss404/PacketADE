@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useDictationStore } from "@/stores/dictationStore";
+import { deliverDictationText } from "@/lib/tauri";
 
 type TextEditable = HTMLInputElement | HTMLTextAreaElement;
 
@@ -13,7 +14,9 @@ function isTextEditable(el: Element | null): el is TextEditable {
     const inp = el as HTMLInputElement;
     if (inp.readOnly || inp.disabled) return false;
     const t = inp.type;
-    return t === "" || t === "text" || t === "search" || t === "url" || t === "email" || t === "tel";
+    return (
+      t === "" || t === "text" || t === "search" || t === "url" || t === "email" || t === "tel"
+    );
   }
   return false;
 }
@@ -32,7 +35,8 @@ function insertAtCursor(el: TextEditable, text: string) {
   const end = el.selectionEnd ?? el.value.length;
   const next = el.value.slice(0, start) + text + el.value.slice(end);
   // Use the native setter so React's controlled-input handlers see the change
-  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const proto =
+    el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
   const desc = Object.getOwnPropertyDescriptor(proto, "value");
   desc?.set?.call(el, next);
   el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -47,12 +51,11 @@ function insertAtCursor(el: TextEditable, text: string) {
 /**
  * Tracks the most recently focused text input across the app and inserts
  * the transcribed dictation result at its cursor when transcription finishes.
- * Respects the `autoPaste` setting (defaults to true if settings unloaded).
+ * Respects the `autoPaste` setting (defaults to off if settings are unloaded).
  * Mount once at the App root.
  */
 export function useDictationTarget() {
   const targetRef = useRef<TextEditable | null>(null);
-  const lastInsertedRef = useRef<string | null>(null);
 
   // Track most-recently-focused valid text input
   useEffect(() => {
@@ -64,7 +67,16 @@ export function useDictationTarget() {
       targetRef.current = t;
     };
     document.addEventListener("focusin", handleFocusIn, true);
-    return () => document.removeEventListener("focusin", handleFocusIn, true);
+    const handleWindowBlur = () => {
+      // An OS-global recording started in another app must not deliver to a
+      // stale PacketADE field that happened to be focused previously.
+      targetRef.current = null;
+    };
+    window.addEventListener("blur", handleWindowBlur);
+    return () => {
+      document.removeEventListener("focusin", handleFocusIn, true);
+      window.removeEventListener("blur", handleWindowBlur);
+    };
   }, []);
 
   // Ensure settings are loaded so autoPaste can be honoured
@@ -82,29 +94,42 @@ export function useDictationTarget() {
       if (result === prev) return;
       prev = result;
       if (!result) return;
-      if (result === lastInsertedRef.current) return;
-      const autoPaste = state.settings?.autoPaste ?? true;
+      const autoPaste = state.settings?.autoPaste ?? false;
       if (!autoPaste) return;
-      lastInsertedRef.current = result;
       const el = targetRef.current;
       if (el && document.body.contains(el)) {
         el.focus();
         insertAtCursor(el, result);
+        state.setDeliveryNotice(null);
         return;
       }
-      // No tracked PacketADE input (e.g., recorded via OS-global hotkey while another
-      // app was focused). Fall back to clipboard so the user can paste anywhere.
+      // No tracked PacketADE input (for example, an OS-global shortcut in
+      // another app). Native delivery is opt-in; clipboard-only is the default.
       targetRef.current = null;
-      if (navigator.clipboard?.writeText) {
-        void navigator.clipboard
-          .writeText(result)
-          .catch((err) =>
-            console.warn(
-              "[useDictationTarget.clipboardFallback] write failed:",
-              err,
-            ),
-          );
-      }
+      const paste = state.settings?.systemWidePaste ?? false;
+      void deliverDictationText(result, paste)
+        .then(() => {
+          useDictationStore
+            .getState()
+            .setDeliveryNotice(
+              paste
+                ? "Inserted into the foreground app. The transcript remains on the clipboard."
+                : "Copied to the clipboard.",
+            );
+        })
+        .catch(async (nativeError) => {
+          try {
+            if (!navigator.clipboard?.writeText) throw nativeError;
+            await navigator.clipboard.writeText(result);
+            useDictationStore.getState().setDeliveryNotice("Copied to the clipboard.");
+          } catch (clipboardError) {
+            useDictationStore
+              .getState()
+              .setDeliveryNotice(
+                `Transcription is ready, but delivery failed: ${String(clipboardError)}`,
+              );
+          }
+        });
     });
     return unsub;
   }, []);

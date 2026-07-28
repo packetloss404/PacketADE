@@ -1,7 +1,8 @@
 # PacketAgent Deploy & Supervise Handoff — PacketADE Loop
 
 Created: 2026-07-27
-Status: approved, blocked on PacketAgent W1–W7/W9 runtime slices
+Status: approved; PacketAgent project active independently, PacketADE consumer
+blocked only until W1–W7/W9 contracts are published
 Product decision: **Option B — deploy and supervise**
 
 ## Objective
@@ -16,10 +17,10 @@ The receiving contract is designed in
 PacketAgent backlog loop W9. This document owns only the PacketADE side and the
 cross-repository compatibility gates.
 
-PacketAgent implementation is currently owned by a separate Codex project.
+PacketAgent implementation is active in its own repository and Codex project.
 This PacketADE loop therefore remains contract-only: no PacketAgent source is
-modified here, and PH1 does not begin until that project publishes the frozen
-W9 schema/fixtures.
+modified here, and PH1 begins when that project publishes the frozen W9
+schema/fixtures.
 
 ## Product boundary
 

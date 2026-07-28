@@ -2631,7 +2631,7 @@ export async function readUsageAnalytics(): Promise<string> {
   return invoke<string>("read_usage_analytics");
 }
 
-// Dictation (VibeToText)
+// Dictation
 export function listAudioDevices(): Promise<unknown> {
   return invoke("list_audio_devices");
 }
@@ -2642,6 +2642,14 @@ export function startRecordingCmd(deviceIndex?: number): Promise<void> {
 
 export function stopRecordingCmd(): Promise<string> {
   return invoke<string>("stop_recording");
+}
+
+export function cancelRecordingCmd(): Promise<void> {
+  return invoke("cancel_recording");
+}
+
+export function deliverDictationText(text: string, paste: boolean): Promise<void> {
+  return invoke("deliver_dictation_text", { text, paste });
 }
 
 export function getDictationHistory(limit: number, offset: number): Promise<string> {

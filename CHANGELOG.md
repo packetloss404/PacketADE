@@ -9,6 +9,26 @@ task list.
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-07-28
+
+### Fixed — Dictation
+
+- Capture now opens each microphone's native CPAL configuration, converts
+  common PCM formats, downmixes channels, and resamples 44.1/48 kHz input to
+  Whisper's required 16 kHz mono instead of requesting a frequently unsupported
+  format.
+- Recording start/cancel/push-to-talk races are serialized across the
+  Dictation view, global shortcuts, and conversation Composer. `Escape` now
+  discards audio rather than transcribing it.
+- Verified local models can be selected, legacy model files can be verified,
+  and a stale selection falls back to an already verified model.
+- Saved microphone selection, waveform/error event shapes, language selection,
+  custom dictionary prompting, history, analytics, and no-device diagnostics
+  are wired end to end.
+- Successful transcription inserts into the tracked PacketADE input or copies
+  through the native Windows clipboard path, with foreground-app paste kept
+  explicit and opt-in.
+
 ### Added — Flight supervision and bounded autonomy
 
 - **Reviewer Gate (RG1–RG7).** Flights may opt into one selected read-only

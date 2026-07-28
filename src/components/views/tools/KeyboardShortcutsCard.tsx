@@ -41,7 +41,7 @@ export function KeyboardShortcutsCard() {
           }}
         />
         <ShortcutRow label="Cancel Recording" shortcut="Escape" />
-        <ShortcutRow label="Open VibeToText" shortcut="Ctrl+Shift+D" />
+        <ShortcutRow label="Open Dictation" shortcut="Ctrl+Shift+D" />
       </div>
       <p className="text-[9px] text-text-muted mt-3">
         Push-to-talk: hold the key to record, release to transcribe and auto-paste.

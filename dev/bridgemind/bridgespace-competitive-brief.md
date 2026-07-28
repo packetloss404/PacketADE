@@ -161,6 +161,36 @@ Work through these one at a time; presence here is not blanket approval to imple
    ledger. Published signed multi-platform artifacts, clean-machine proof, remaining lower-priority
    hardening, and the PacketAgent compatibility smoke are still gated. See
    [`packetcode-bridgecode-loop.md`](./packetcode-bridgecode-loop.md).
+7. **✅ Decided, implementation queued — project-local Memory Hub (Option B).**
+   Extend PacketADE's existing Memory surface with human-readable project-local
+   Markdown, versioned metadata, links/backlinks, graph/orphan views,
+   provenance, current IDF retrieval, and scoped MCP access. Keep the current
+   global memory store as a separate source class; do not create a standalone
+   PacketMemory product or add a cloud/vector-database dependency. See
+   [`project-local-memory-hub-loop.md`](./project-local-memory-hub-loop.md).
+8. **✅ Decided, later — local-first MCP Hub (Option B).** Consolidate the
+   shipped PacketADE MCP client/provider substrate with a curated starter
+   catalog, capability health/restart, scoped trust profiles, provenance, and
+   suite resources. This is approved but explicitly not the first PacketADE
+   focus. Keep credentials and execution local/SSH; do not create a hosted
+   PacketMCP service or public endpoint. See
+   [`local-first-mcp-hub-loop.md`](./local-first-mcp-hub-loop.md).
+9. **❌ Decided — no BridgeBench / Flight Bakeoff track.** Do not add an
+   internal leaderboard or multi-model acceptance-pack product. Existing
+   provider choice, reviewer gates, and normal test evidence remain sufficient;
+   remove the generic multi-model A/B item from the roadmap.
+10. **❌ Decided — no BridgeShot response.** Do not add screenshot/OCR capture
+    to PacketADE or create a standalone PacketShot product.
+11. **⏸ Decided — production-signal monitoring is not now.** Do not add a
+    Sentry/PostHog/CI-to-Flight product loop to the active backlog. PacketAgent
+    remains the eventual always-on execution owner if this is reconsidered.
+12. **✅ Decided, implementation queued — Trust and Provenance.** Add one
+    cross-cutting PacketADE layer that marks external/derived evidence, carries
+    source lineage through agent, MCP, web, review, Flight, and Memory records,
+    and gates risky follow-on actions through existing permissions and bounded
+    autonomy. It is not a standalone app and does not claim perfect
+    prompt-injection detection. See
+    [`trust-provenance-loop.md`](./trust-provenance-loop.md).
 
 ### Cross-cutting autonomy overlay
 

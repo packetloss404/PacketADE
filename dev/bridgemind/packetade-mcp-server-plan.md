@@ -6,6 +6,12 @@ Status: **strategy/reference**. The implementation owner for deferred transport
 work is [`../mcp-provider-transport.md`](../mcp-provider-transport.md); keep
 this file for product context and BridgeMind positioning.
 
+> **2026-07-28 product update:** the transport described here shipped under N3.
+> The approved, non-primary BridgeMCP response is now the local-first Hub
+> expansion in
+> [`local-first-mcp-hub-loop.md`](./local-first-mcp-hub-loop.md). Do not use
+> this historical plan to recreate shipped transport work.
+
 ## Implementation Status — 2026-06-15
 
 The Phase-1 **frontend store is live**: tool/resource definitions ship today in
