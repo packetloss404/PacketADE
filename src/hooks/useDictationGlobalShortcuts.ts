@@ -7,10 +7,7 @@ import {
 } from "@tauri-apps/plugin-global-shortcut";
 import { useDictationStore } from "@/stores/dictationStore";
 import { useAppStore } from "@/stores/appStore";
-import {
-  DEFAULT_PUSH_TO_TALK_SHORTCUT,
-  DEFAULT_TOGGLE_SHORTCUT,
-} from "@/types/dictation";
+import { DEFAULT_PUSH_TO_TALK_SHORTCUT, DEFAULT_TOGGLE_SHORTCUT } from "@/types/dictation";
 
 const SHORTCUT_OPEN = "CommandOrControl+Shift+D"; // open Dictation view (not user-rebindable)
 
@@ -67,17 +64,19 @@ export function useDictationGlobalShortcuts() {
     const pttHandler: Handler = (event) => {
       const ds = useDictationStore.getState();
       if (event.state === "Pressed") {
-        if (!ds.isRecording && !ds.isTranscribing) void ds.startRecording();
+        if (!ds.isStarting && !ds.isRecording && !ds.isTranscribing) {
+          void ds.startRecording();
+        }
       } else if (event.state === "Released") {
-        if (ds.isRecording) void ds.stopRecording();
+        if (ds.isStarting || ds.isRecording) void ds.stopRecording();
       }
     };
 
     const toggleHandler: Handler = (event) => {
       if (event.state !== "Pressed") return;
       const ds = useDictationStore.getState();
-      if (ds.isRecording) void ds.stopRecording();
-      else void ds.startRecording();
+      if (ds.isStarting || ds.isRecording) void ds.stopRecording();
+      else if (!ds.isStarting && !ds.isTranscribing) void ds.startRecording();
     };
 
     const openHandler: Handler = (event) => {
@@ -92,9 +91,7 @@ export function useDictationGlobalShortcuts() {
       if (cancelled) return;
       const ok3 = await safeRegister(SHORTCUT_OPEN, openHandler);
       if (cancelled) return;
-      console.info(
-        `[dictation] global shortcuts: PTT=${ok1} toggle=${ok2} open=${ok3}`,
-      );
+      console.info(`[dictation] global shortcuts: PTT=${ok1} toggle=${ok2} open=${ok3}`);
     })();
 
     return () => {

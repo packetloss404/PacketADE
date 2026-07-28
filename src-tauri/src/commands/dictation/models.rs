@@ -28,8 +28,10 @@ pub struct AudioDevice {
 pub struct WhisperModelInfo {
     /// Model size identifier: "tiny", "base", "small", "medium", "large-v3"
     pub size: String,
-    /// Whether the model file exists on disk
+    /// Whether the model file is verified and ready for transcription.
     pub downloaded: bool,
+    /// Whether a model file exists but may still need checksum verification.
+    pub installed: bool,
     /// Approximate file size in megabytes
     #[serde(rename = "fileSizeMb")]
     pub file_size_mb: u32,
@@ -124,6 +126,31 @@ pub fn verified_model_path(size: &str) -> Result<PathBuf, String> {
     }
 }
 
+/// Resolve the preferred model, falling back to any verified local model.
+///
+/// Older configurations can point at a model that was removed or predates the
+/// checksum-marker migration. Dictation should still work when another trusted
+/// model is already installed instead of failing only after recording finishes.
+pub fn resolve_verified_model(size: &str) -> Result<(String, PathBuf), String> {
+    if let Ok(path) = verified_model_path(size) {
+        return Ok((size.to_string(), path));
+    }
+
+    MODEL_SPECS
+        .iter()
+        .find_map(|spec| {
+            verified_model_path(spec.size)
+                .ok()
+                .map(|path| (spec.size.to_string(), path))
+        })
+        .ok_or_else(|| {
+            format!(
+                "No verified Whisper model is ready. Download or verify '{}' in Dictation settings before recording",
+                size
+            )
+        })
+}
+
 /// List all known Whisper models and their download status.
 #[tauri::command]
 pub fn list_whisper_models() -> Result<Vec<WhisperModelInfo>, String> {
@@ -131,10 +158,12 @@ pub fn list_whisper_models() -> Result<Vec<WhisperModelInfo>, String> {
 
     for spec in MODEL_SPECS {
         let path = model_path(spec.size)?;
-        let downloaded = path.is_file() && has_verified_marker(spec.size, spec.sha256);
+        let installed = path.is_file();
+        let downloaded = installed && has_verified_marker(spec.size, spec.sha256);
         models.push(WhisperModelInfo {
             size: spec.size.to_string(),
             downloaded,
+            installed,
             file_size_mb: spec.file_size_mb,
             path: if downloaded {
                 Some(path.to_string_lossy().to_string())

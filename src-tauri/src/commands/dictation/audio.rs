@@ -1,14 +1,15 @@
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
     Arc, Mutex,
 };
+use std::time::Instant;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{FromSample, Sample, SampleFormat, SizedSample};
 use rustfft::{num_complex::Complex, FftPlanner};
-use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-use super::{config::DictationConfig, models, models::AudioDevice, whisper};
+use super::{history, models, models::AudioDevice, whisper};
 
 // ---------------------------------------------------------------------------
 // Managed state
@@ -23,6 +24,12 @@ pub struct DictationState {
     stream: Arc<Mutex<Option<cpal::Stream>>>,
     /// Flag used to tell the waveform emitter thread to exit.
     emitter_running: Arc<AtomicBool>,
+    /// Native mono sample rate captured from the selected device.
+    sample_rate: Arc<AtomicU32>,
+    /// Used to calculate history duration and words-per-minute.
+    started_at: Arc<Mutex<Option<Instant>>>,
+    /// Invalidates detached waveform workers when a new recording begins.
+    recording_generation: Arc<AtomicU64>,
 }
 
 /// Create the managed `DictationState` — call this once at app startup.
@@ -32,16 +39,29 @@ pub fn create_dictation_state() -> DictationState {
         is_recording: Arc::new(AtomicBool::new(false)),
         stream: Arc::new(Mutex::new(None)),
         emitter_running: Arc::new(AtomicBool::new(false)),
+        sample_rate: Arc::new(AtomicU32::new(16_000)),
+        started_at: Arc::new(Mutex::new(None)),
+        recording_generation: Arc::new(AtomicU64::new(0)),
     }
 }
 
-// ---------------------------------------------------------------------------
-// Event payloads
-// ---------------------------------------------------------------------------
+struct StartGuard {
+    is_recording: Arc<AtomicBool>,
+    committed: bool,
+}
 
-#[derive(Clone, Serialize)]
-struct WaveformPayload {
-    bars: Vec<f32>,
+impl StartGuard {
+    fn commit(&mut self) {
+        self.committed = true;
+    }
+}
+
+impl Drop for StartGuard {
+    fn drop(&mut self) {
+        if !self.committed {
+            self.is_recording.store(false, Ordering::SeqCst);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -83,8 +103,8 @@ pub fn list_audio_devices() -> Result<Vec<AudioDevice>, String> {
 
 /// Start recording from the specified (or default) audio input device.
 ///
-/// Opens a 16 kHz mono f32 input stream, appends samples to the shared
-/// buffer, and spawns a thread that computes a 512-point FFT every ~33 ms
+/// Opens the device's supported default input stream, converts it to mono f32,
+/// and spawns a thread that computes a 512-point FFT every ~33 ms
 /// to emit 25 exponential frequency bars via the `dictation:waveform` event.
 #[tauri::command]
 pub fn start_recording(
@@ -92,14 +112,23 @@ pub fn start_recording(
     state: tauri::State<'_, DictationState>,
     device_index: Option<u32>,
 ) -> Result<(), String> {
-    if state.is_recording.load(Ordering::SeqCst) {
-        return Err("Already recording".to_string());
-    }
+    state
+        .is_recording
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .map_err(|_| "Already recording".to_string())?;
+    let mut start_guard = StartGuard {
+        is_recording: Arc::clone(&state.is_recording),
+        committed: false,
+    };
 
     let host = cpal::default_host();
+    let settings = super::config::read_dictation_config()?;
+    // Fail before opening the microphone instead of after the user has spoken.
+    models::resolve_verified_model(&settings.model_size)?;
 
     // Pick the device ---------------------------------------------------
-    let device = if let Some(idx) = device_index {
+    let selected_device_index = device_index.or(settings.device_index);
+    let device = if let Some(idx) = selected_device_index {
         host.input_devices()
             .map_err(|e| format!("Failed to enumerate devices: {}", e))?
             .nth(idx as usize)
@@ -109,12 +138,27 @@ pub fn start_recording(
             .ok_or_else(|| "No default input device available".to_string())?
     };
 
-    // Configure stream --------------------------------------------------
-    let config = cpal::StreamConfig {
-        channels: 1,
-        sample_rate: 16_000,
-        buffer_size: cpal::BufferSize::Default,
-    };
+    // Use the device's actual supported format. Requiring exact 16 kHz mono
+    // f32 fails on common Windows microphones (usually 44.1/48 kHz stereo).
+    let supported_config = device
+        .default_input_config()
+        .map_err(|e| format!("Failed to read the microphone's default format: {e}"))?;
+    let sample_format = supported_config.sample_format();
+    let config: cpal::StreamConfig = supported_config.into();
+    let channels = usize::from(config.channels);
+    let sample_rate = config.sample_rate;
+    let device_name = device
+        .description()
+        .map(|description| description.name().to_string())
+        .unwrap_or_else(|_| "Unknown microphone".to_string());
+    tracing::info!(
+        device = %device_name,
+        sample_rate,
+        channels,
+        sample_format = ?sample_format,
+        "Starting dictation capture"
+    );
+    state.sample_rate.store(sample_rate, Ordering::SeqCst);
 
     // Shared buffer for cpal callback → FFT thread
     let buf = Arc::clone(&state.buffer);
@@ -123,21 +167,107 @@ pub fn start_recording(
         b.clear();
     }
 
-    let buf_writer = Arc::clone(&buf);
-    let stream = device
-        .build_input_stream(
+    let stream = match sample_format {
+        SampleFormat::I8 => build_input_stream::<i8>(
+            &device,
             &config,
-            move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                if let Ok(mut b) = buf_writer.lock() {
-                    b.extend_from_slice(data);
-                }
-            },
-            |err| {
-                tracing::error!("cpal input stream error: {}", err);
-            },
-            None,
-        )
-        .map_err(|e| format!("Failed to build input stream: {}", e))?;
+            channels,
+            Arc::clone(&buf),
+            &state,
+            &app_handle,
+        ),
+        SampleFormat::I16 => build_input_stream::<i16>(
+            &device,
+            &config,
+            channels,
+            Arc::clone(&buf),
+            &state,
+            &app_handle,
+        ),
+        SampleFormat::I24 => build_input_stream::<cpal::I24>(
+            &device,
+            &config,
+            channels,
+            Arc::clone(&buf),
+            &state,
+            &app_handle,
+        ),
+        SampleFormat::I32 => build_input_stream::<i32>(
+            &device,
+            &config,
+            channels,
+            Arc::clone(&buf),
+            &state,
+            &app_handle,
+        ),
+        SampleFormat::I64 => build_input_stream::<i64>(
+            &device,
+            &config,
+            channels,
+            Arc::clone(&buf),
+            &state,
+            &app_handle,
+        ),
+        SampleFormat::U8 => build_input_stream::<u8>(
+            &device,
+            &config,
+            channels,
+            Arc::clone(&buf),
+            &state,
+            &app_handle,
+        ),
+        SampleFormat::U16 => build_input_stream::<u16>(
+            &device,
+            &config,
+            channels,
+            Arc::clone(&buf),
+            &state,
+            &app_handle,
+        ),
+        SampleFormat::U24 => build_input_stream::<cpal::U24>(
+            &device,
+            &config,
+            channels,
+            Arc::clone(&buf),
+            &state,
+            &app_handle,
+        ),
+        SampleFormat::U32 => build_input_stream::<u32>(
+            &device,
+            &config,
+            channels,
+            Arc::clone(&buf),
+            &state,
+            &app_handle,
+        ),
+        SampleFormat::U64 => build_input_stream::<u64>(
+            &device,
+            &config,
+            channels,
+            Arc::clone(&buf),
+            &state,
+            &app_handle,
+        ),
+        SampleFormat::F32 => build_input_stream::<f32>(
+            &device,
+            &config,
+            channels,
+            Arc::clone(&buf),
+            &state,
+            &app_handle,
+        ),
+        SampleFormat::F64 => build_input_stream::<f64>(
+            &device,
+            &config,
+            channels,
+            Arc::clone(&buf),
+            &state,
+            &app_handle,
+        ),
+        unsupported => Err(format!(
+            "Microphone sample format '{unsupported}' is not supported for dictation"
+        )),
+    }?;
 
     stream
         .play()
@@ -149,18 +279,21 @@ pub fn start_recording(
         *s = Some(stream);
     }
 
-    state.is_recording.store(true, Ordering::SeqCst);
     state.emitter_running.store(true, Ordering::SeqCst);
+    *state.started_at.lock().map_err(|e| e.to_string())? = Some(Instant::now());
+    let generation = state.recording_generation.fetch_add(1, Ordering::SeqCst) + 1;
+    start_guard.commit();
 
     // Spawn waveform emitter thread -------------------------------------
     let emitter_buf = Arc::clone(&buf);
     let emitter_running = Arc::clone(&state.emitter_running);
+    let active_generation = Arc::clone(&state.recording_generation);
     let handle = app_handle.clone();
 
     std::thread::spawn(move || {
         const FFT_SIZE: usize = 512;
         const NUM_BARS: usize = 25;
-        const RMS_THRESHOLD: f32 = 0.08;
+        const RMS_THRESHOLD: f32 = 0.005;
         const FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_millis(33);
 
         let mut planner = FftPlanner::<f32>::new();
@@ -184,7 +317,9 @@ pub fn start_recording(
             })
             .collect();
 
-        while emitter_running.load(Ordering::SeqCst) {
+        while emitter_running.load(Ordering::SeqCst)
+            && active_generation.load(Ordering::SeqCst) == generation
+        {
             std::thread::sleep(FRAME_INTERVAL);
 
             // Grab the most recent FFT_SIZE samples
@@ -203,7 +338,7 @@ pub fn start_recording(
             let rms = (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt();
             if rms < RMS_THRESHOLD {
                 let bars = vec![0.0f32; NUM_BARS];
-                let _ = handle.emit("dictation:waveform", WaveformPayload { bars });
+                let _ = handle.emit("dictation:waveform", bars);
                 continue;
             }
 
@@ -234,10 +369,35 @@ pub fn start_recording(
                 })
                 .collect();
 
-            let _ = handle.emit("dictation:waveform", WaveformPayload { bars });
+            let _ = handle.emit("dictation:waveform", bars);
         }
     });
 
+    Ok(())
+}
+
+/// Cancel a recording without transcribing or retaining its audio.
+#[tauri::command]
+pub fn cancel_recording(
+    app_handle: AppHandle,
+    state: tauri::State<'_, DictationState>,
+) -> Result<(), String> {
+    let was_recording = state.is_recording.swap(false, Ordering::SeqCst);
+    state.emitter_running.store(false, Ordering::SeqCst);
+    state.recording_generation.fetch_add(1, Ordering::SeqCst);
+
+    {
+        let mut stream = state.stream.lock().map_err(|e| e.to_string())?;
+        *stream = None;
+    }
+    {
+        let mut buffer = state.buffer.lock().map_err(|e| e.to_string())?;
+        buffer.clear();
+    }
+    *state.started_at.lock().map_err(|e| e.to_string())? = None;
+    if was_recording {
+        let _ = app_handle.emit("dictation:status", "idle");
+    }
     Ok(())
 }
 
@@ -257,6 +417,7 @@ pub async fn stop_recording(
 
     // Signal the emitter thread to stop
     state.emitter_running.store(false, Ordering::SeqCst);
+    state.recording_generation.fetch_add(1, Ordering::SeqCst);
 
     // Drop the cpal stream (stops recording)
     {
@@ -271,20 +432,145 @@ pub async fn stop_recording(
         let mut b = state.buffer.lock().map_err(|e| e.to_string())?;
         std::mem::take(&mut *b)
     };
+    let input_sample_rate = state.sample_rate.load(Ordering::SeqCst);
+    let audio = resample_linear(&audio, input_sample_rate, 16_000);
+    let duration_seconds = state
+        .started_at
+        .lock()
+        .map_err(|e| e.to_string())?
+        .take()
+        .map(|started| started.elapsed().as_secs_f64());
 
     // Notify the frontend
     let _ = app_handle.emit("dictation:status", "transcribing");
 
-    let settings = super::config::get_dictation_settings()
-        .and_then(|raw| serde_json::from_str::<DictationConfig>(&raw).map_err(|e| e.to_string()))?;
-    let model_path = models::verified_model_path(&settings.model_size)?
-        .to_string_lossy()
-        .to_string();
+    let settings = super::config::read_dictation_config()?;
+    let (_, model_path) = models::resolve_verified_model(&settings.model_size)?;
+    let model_path = model_path.to_string_lossy().to_string();
     let whisper_state = (*whisper_state).clone();
 
-    tokio::task::spawn_blocking(move || {
-        whisper::transcribe_audio(&whisper_state, audio, &model_path)
+    let text = tokio::task::spawn_blocking(move || {
+        whisper::transcribe_audio(
+            &whisper_state,
+            audio,
+            &model_path,
+            &settings.language,
+            &settings.custom_dictionary,
+        )
     })
     .await
-    .map_err(|e| format!("Transcription task failed: {e}"))?
+    .map_err(|e| format!("Transcription task failed: {e}"))??;
+
+    if !text.trim().is_empty() {
+        let word_count = text.split_whitespace().count() as i64;
+        let wpm = duration_seconds
+            .filter(|duration| *duration > 0.0)
+            .map(|duration| ((word_count as f64 / duration) * 60.0).round() as i64);
+        if let Err(err) =
+            history::insert_entry(&text, "transcribe", duration_seconds, Some(word_count), wpm)
+        {
+            // History is secondary to delivery. A locked/corrupt analytics DB
+            // must not discard a successful local transcription.
+            tracing::warn!("Failed to save dictation history entry: {err}");
+        }
+    }
+
+    Ok(text)
+}
+
+fn build_input_stream<T>(
+    device: &cpal::Device,
+    config: &cpal::StreamConfig,
+    channels: usize,
+    buffer: Arc<Mutex<Vec<f32>>>,
+    state: &tauri::State<'_, DictationState>,
+    app_handle: &AppHandle,
+) -> Result<cpal::Stream, String>
+where
+    T: SizedSample + Copy,
+    f32: FromSample<T>,
+{
+    let is_recording = Arc::clone(&state.is_recording);
+    let emitter_running = Arc::clone(&state.emitter_running);
+    let error_handle = app_handle.clone();
+
+    device
+        .build_input_stream(
+            config,
+            move |data: &[T], _: &cpal::InputCallbackInfo| {
+                if let Ok(mut target) = buffer.lock() {
+                    append_mono_samples(data, channels, &mut target);
+                }
+            },
+            move |err| {
+                tracing::error!("cpal input stream error: {err}");
+                is_recording.store(false, Ordering::SeqCst);
+                emitter_running.store(false, Ordering::SeqCst);
+                let _ = error_handle.emit(
+                    "dictation:error",
+                    format!("Microphone stream stopped unexpectedly: {err}"),
+                );
+            },
+            None,
+        )
+        .map_err(|e| format!("Failed to build input stream: {e}"))
+}
+
+fn append_mono_samples<T>(input: &[T], channels: usize, output: &mut Vec<f32>)
+where
+    T: Copy,
+    f32: FromSample<T>,
+{
+    let channels = channels.max(1);
+    output.reserve(input.len() / channels);
+    for frame in input.chunks_exact(channels) {
+        let sum = frame.iter().copied().map(f32::from_sample).sum::<f32>();
+        output.push((sum / channels as f32).clamp(-1.0, 1.0));
+    }
+}
+
+fn resample_linear(input: &[f32], input_rate: u32, output_rate: u32) -> Vec<f32> {
+    if input.is_empty() || input_rate == 0 || output_rate == 0 {
+        return Vec::new();
+    }
+    if input_rate == output_rate || input.len() == 1 {
+        return input.to_vec();
+    }
+
+    let output_len =
+        ((input.len() as f64 * output_rate as f64 / input_rate as f64).round() as usize).max(1);
+    let step = input_rate as f64 / output_rate as f64;
+    let mut output = Vec::with_capacity(output_len);
+
+    for index in 0..output_len {
+        let position = index as f64 * step;
+        let left = (position.floor() as usize).min(input.len() - 1);
+        let right = (left + 1).min(input.len() - 1);
+        let fraction = (position - left as f64) as f32;
+        output.push(input[left] + (input[right] - input[left]) * fraction);
+    }
+
+    output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn downmixes_interleaved_stereo_audio() {
+        let mut output = Vec::new();
+        append_mono_samples(&[1.0_f32, -1.0, 0.5, 0.5], 2, &mut output);
+        assert_eq!(output, vec![0.0, 0.5]);
+    }
+
+    #[test]
+    fn resamples_common_windows_rate_to_whisper_rate() {
+        let input = vec![0.25_f32; 48_000];
+        let output = resample_linear(&input, 48_000, 16_000);
+        assert_eq!(output.len(), 16_000);
+        assert!(output
+            .iter()
+            .all(|sample| (*sample - 0.25).abs() < f32::EPSILON));
+    }
 }

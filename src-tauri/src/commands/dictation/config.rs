@@ -5,12 +5,17 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 pub struct DictationConfig {
     pub model_size: String,
     pub device_index: Option<u32>,
     pub custom_dictionary: Vec<String>,
     pub auto_paste: bool,
+    /// Whisper language code, or "auto" to let Whisper detect the language.
+    pub language: String,
+    /// Opt-in native paste into the foreground application when no PacketADE
+    /// text field is active. Clipboard-only fallback remains the safe default.
+    pub system_wide_paste: bool,
     /// OS-global accelerator string for push-to-talk (hold). See
     /// `useDictationGlobalShortcuts.ts` for accelerator syntax. `None` =
     /// fall back to the hardcoded default in the hook.
@@ -28,6 +33,8 @@ impl Default for DictationConfig {
             device_index: None,
             custom_dictionary: Vec::new(),
             auto_paste: false,
+            language: "auto".to_string(),
+            system_wide_paste: false,
             push_to_talk_shortcut: None,
             toggle_shortcut: None,
         }
@@ -47,9 +54,13 @@ fn config_path() -> Result<PathBuf, String> {
 
 #[tauri::command]
 pub fn get_dictation_settings() -> Result<String, String> {
-    let path = config_path()?;
+    let config = read_dictation_config()?;
+    serde_json::to_string(&config).map_err(|e| format!("JSON serialization error: {e}"))
+}
 
-    let config = if path.exists() {
+pub(crate) fn read_dictation_config() -> Result<DictationConfig, String> {
+    let path = config_path()?;
+    let mut config = if path.exists() {
         let contents =
             fs::read_to_string(&path).map_err(|e| format!("Failed to read config: {e}"))?;
         match serde_json::from_str::<DictationConfig>(&contents) {
@@ -66,7 +77,25 @@ pub fn get_dictation_settings() -> Result<String, String> {
         DictationConfig::default()
     };
 
-    serde_json::to_string(&config).map_err(|e| format!("JSON serialization error: {e}"))
+    // Repair stale model selections when a different verified model is already
+    // available. This covers upgrades from the pre-checksum model installer.
+    if let Ok((resolved_size, _)) = super::models::resolve_verified_model(&config.model_size) {
+        if resolved_size != config.model_size {
+            tracing::warn!(
+                configured = %config.model_size,
+                resolved = %resolved_size,
+                "Selected dictation model is unavailable; using a verified local model"
+            );
+            config.model_size = resolved_size;
+            if let Ok(json) = serde_json::to_string_pretty(&config) {
+                if let Err(err) = fs::write(&path, json) {
+                    tracing::warn!("Failed to persist repaired dictation model selection: {err}");
+                }
+            }
+        }
+    }
+
+    Ok(config)
 }
 
 #[tauri::command]
@@ -80,4 +109,26 @@ pub fn set_dictation_settings(settings: String) -> Result<(), String> {
     fs::write(&path, &settings).map_err(|e| format!("Failed to write config: {e}"))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_settings_receive_safe_language_and_delivery_defaults() {
+        let config: DictationConfig = serde_json::from_str(
+            r#"{
+                "modelSize": "base",
+                "deviceIndex": null,
+                "customDictionary": ["PacketADE"],
+                "autoPaste": true
+            }"#,
+        )
+        .expect("legacy settings should remain readable");
+
+        assert_eq!(config.language, "auto");
+        assert!(!config.system_wide_paste);
+        assert_eq!(config.custom_dictionary, vec!["PacketADE"]);
+    }
 }

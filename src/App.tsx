@@ -185,10 +185,10 @@ export default function App() {
       // Escape to cancel an active dictation recording (when palette is closed)
       if (e.key === "Escape") {
         const ds = useDictationStore.getState();
-        if (ds.isRecording) {
+        if (ds.isStarting || ds.isRecording) {
           e.preventDefault();
           pushToTalkActiveRef.current = false;
-          void ds.stopRecording().then(() => useDictationStore.getState().clearResult());
+          void ds.cancelRecording();
           return;
         }
       }
@@ -210,7 +210,7 @@ export default function App() {
         if (e.key === "R") {
           e.preventDefault();
           const ds = useDictationStore.getState();
-          if (ds.isRecording) {
+          if (ds.isStarting || ds.isRecording) {
             void ds.stopRecording();
           } else {
             void ds.startRecording();
@@ -222,7 +222,7 @@ export default function App() {
           e.preventDefault();
           if (e.repeat) return;
           const ds = useDictationStore.getState();
-          if (!ds.isRecording && !pushToTalkActiveRef.current) {
+          if (!ds.isStarting && !ds.isRecording && !pushToTalkActiveRef.current) {
             pushToTalkActiveRef.current = true;
             void ds.startRecording();
           }
@@ -254,7 +254,7 @@ export default function App() {
       if (k === "V" || k === "v" || k === "Control" || k === "Shift") {
         pushToTalkActiveRef.current = false;
         const ds = useDictationStore.getState();
-        if (ds.isRecording) {
+        if (ds.isStarting || ds.isRecording) {
           void ds.stopRecording();
         }
       }

@@ -3,10 +3,10 @@ export interface DictationEntry {
   text: string;
   mode: string;
   timestamp: string;
-  wordCount: number;
-  durationSeconds: number;
-  wpm: number;
-  sentiment: number;
+  wordCount: number | null;
+  durationSeconds: number | null;
+  wpm: number | null;
+  sentiment: number | null;
 }
 
 export interface DictationAnalytics {
@@ -30,6 +30,10 @@ export interface DictationSettings {
   deviceIndex: number | null;
   customDictionary: string[];
   autoPaste: boolean;
+  /** Whisper language code, or "auto" for language detection. */
+  language: string;
+  /** Paste into the foreground OS application when no PacketADE field is active. */
+  systemWidePaste: boolean;
   /** OS-global accelerator for push-to-talk (hold). Optional — falls back to
    *  the hardcoded default in `useDictationGlobalShortcuts` when omitted. */
   pushToTalkShortcut?: string;
@@ -46,6 +50,7 @@ export const DEFAULT_TOGGLE_SHORTCUT = "CommandOrControl+Shift+R";
 export interface WhisperModel {
   size: string;
   downloaded: boolean;
+  installed: boolean;
   fileSizeMb: number;
   path: string | null;
 }

@@ -399,7 +399,9 @@ pub fn run() {
             // Dictation / audio capture
             commands::dictation::list_audio_devices,
             commands::dictation::start_recording,
+            commands::dictation::cancel_recording,
             commands::dictation::stop_recording,
+            commands::dictation::deliver_dictation_text,
             commands::dictation::get_dictation_history,
             commands::dictation::search_dictation_history,
             commands::dictation::insert_dictation_entry,

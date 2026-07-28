@@ -119,6 +119,8 @@ pub fn transcribe_audio(
     whisper_state: &WhisperState,
     audio: Vec<f32>,
     model_path: &str,
+    language: &str,
+    custom_dictionary: &[String],
 ) -> Result<String, String> {
     if audio.is_empty() {
         return Err("No audio data to transcribe".into());
@@ -172,8 +174,15 @@ pub fn transcribe_audio(
     // Configure transcription parameters
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 5 });
 
-    // Use English language
-    params.set_language(Some("en"));
+    // Detect language unless the user selected a specific Whisper language code.
+    let language = language.trim();
+    params.set_language(
+        if language.is_empty() || language.eq_ignore_ascii_case("auto") {
+            None
+        } else {
+            Some(language)
+        },
+    );
     params.set_translate(false);
 
     // Suppress console output
@@ -194,8 +203,9 @@ pub fn transcribe_audio(
         .min(8);
     params.set_n_threads(n_threads);
 
-    // Set programming vocabulary as initial prompt to bias recognition
-    params.set_initial_prompt(PROGRAMMING_VOCAB_PROMPT);
+    // Bias recognition toward programming terms plus the user's project words.
+    let initial_prompt = build_initial_prompt(custom_dictionary);
+    params.set_initial_prompt(&initial_prompt);
 
     // Run the transcription
     state
@@ -241,6 +251,43 @@ pub fn transcribe_audio(
     }
 
     Ok(trimmed)
+}
+
+fn build_initial_prompt(custom_dictionary: &[String]) -> String {
+    const MAX_CUSTOM_TERMS: usize = 100;
+    const MAX_CUSTOM_CHARS: usize = 1_024;
+
+    let mut seen = std::collections::HashSet::new();
+    let mut custom = String::new();
+
+    for raw in custom_dictionary.iter().take(MAX_CUSTOM_TERMS) {
+        let sanitized = raw.replace('\0', "");
+        let normalized = sanitized.split_whitespace().collect::<Vec<_>>().join(" ");
+        if normalized.is_empty() {
+            continue;
+        }
+        let key = normalized.to_lowercase();
+        if !seen.insert(key) {
+            continue;
+        }
+
+        let separator_len = usize::from(!custom.is_empty());
+        if custom.len() + separator_len + normalized.len() > MAX_CUSTOM_CHARS {
+            break;
+        }
+        if !custom.is_empty() {
+            custom.push(' ');
+        }
+        custom.push_str(&normalized);
+    }
+
+    if custom.is_empty() {
+        PROGRAMMING_VOCAB_PROMPT.to_string()
+    } else {
+        // User terms go first so Whisper's prompt-token cap cannot discard
+        // them behind the larger built-in developer vocabulary.
+        format!("{custom} {PROGRAMMING_VOCAB_PROMPT}")
+    }
 }
 
 /// Remove known Whisper hallucination artifacts from transcription output.
@@ -301,5 +348,19 @@ mod tests {
     fn test_filter_artifacts_empty() {
         let input = "[BLANK_AUDIO]";
         assert_eq!(filter_artifacts(input), "");
+    }
+
+    #[test]
+    fn custom_dictionary_is_normalized_deduplicated_and_bounded() {
+        let prompt = build_initial_prompt(&[
+            " PacketADE ".to_string(),
+            "packetade".to_string(),
+            "Flight   Deck".to_string(),
+            "\0".to_string(),
+            "x".repeat(2_000),
+        ]);
+        assert!(prompt.starts_with("PacketADE Flight Deck "));
+        assert_eq!(prompt.matches("PacketADE").count(), 1);
+        assert!(prompt.len() <= PROGRAMMING_VOCAB_PROMPT.len() + 1 + 1_024);
     }
 }
