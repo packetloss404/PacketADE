@@ -40,7 +40,7 @@ point is the confirmation gate below.
 
 | Order | Lane | Work to run | Why it is here | Start state |
 |---:|---|---|---|---|
-| **0** | Release baseline | Version, validate, package, commit, tag, and push v0.10.2. | Gives every later loop a clean, recoverable baseline. | executing before confirmation |
+| **0** | Release baseline | Version, validate, package, commit, tag, and push v0.10.2. | Gives every later loop a clean, recoverable baseline. | complete — `v0.10.2` |
 | **1** | Implemented Flight supervision proof | Close the remaining RG8, CG9, CI9, and AP9 release-like local/SSH/manual matrices in the Reviewer Gate, cooperative graph, Coordination Inbox, and bounded YOLO ledgers. | Proves the already-implemented supervision foundation before adding more cross-cutting state. | source complete; smoke remains |
 | **2** | Dictation follow-on hardening | Run DV11–DV17 in [`dictation-repair-hardening-loop.md`](./dictation-repair-hardening-loop.md), separating source-completable work from physical-device/platform gates. | Finishes the approved BridgeVoice response without reopening the repaired baseline. | baseline fixed; follow-ons queued/gated |
 | **3** | Trust and Provenance | Run TP1–TP8 in [`trust-provenance-loop.md`](./trust-provenance-loop.md). | Establishes the shared origin/authority/lineage contract before Memory and MCP build on it. | queued |
