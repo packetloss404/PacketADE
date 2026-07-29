@@ -97,11 +97,29 @@ pub fn workspaces_json(state: &PersistedState) -> Value {
     json!({ "workspaces": workspaces })
 }
 
+pub fn workspace_project_path<'a>(
+    state: &'a PersistedState,
+    workspace_id: &str,
+) -> Option<&'a str> {
+    state
+        .workspaces
+        .iter()
+        .find(|workspace| workspace.id == workspace_id && workspace.server_id.is_none())
+        .map(|workspace| workspace.project_path.as_str())
+}
+
 // === Resource projections ===
 
 pub fn all_flights_json(state: &PersistedState) -> Value {
     let flights: Vec<Value> = state.flights.iter().map(flight_dto).collect();
     json!({ "flights": flights })
+}
+
+pub fn all_issues_json(state: &PersistedState) -> Value {
+    json!({
+        "issues": state.issues,
+        "count": state.issues.len(),
+    })
 }
 
 pub fn one_flight_json(state: &PersistedState, id: &str) -> Option<Value> {
@@ -223,12 +241,15 @@ pub fn validate_inbox_post(
 pub enum ResourceRoute<'a> {
     Project,
     Flights,
+    Issues,
     Flight(&'a str),
     FlightTasks(&'a str),
     FlightInbox(&'a str),
     MemoryPatterns,
+    ProjectMemory(&'a str),
     Workspaces,
     Reviews,
+    PacketCodeHealth,
     Unknown,
 }
 
@@ -242,12 +263,17 @@ pub fn parse_resource_uri(uri: &str) -> ResourceRoute<'_> {
     match parts.as_slice() {
         ["project"] => ResourceRoute::Project,
         ["flights"] => ResourceRoute::Flights,
+        ["issues"] => ResourceRoute::Issues,
         ["flights", id] if !id.is_empty() => ResourceRoute::Flight(id),
         ["flights", id, "tasks"] if !id.is_empty() => ResourceRoute::FlightTasks(id),
         ["flights", id, "inbox"] if !id.is_empty() => ResourceRoute::FlightInbox(id),
         ["memory", "patterns"] => ResourceRoute::MemoryPatterns,
+        ["memory", "project", workspace_id] if !workspace_id.is_empty() => {
+            ResourceRoute::ProjectMemory(workspace_id)
+        }
         ["workspaces"] => ResourceRoute::Workspaces,
         ["reviews"] => ResourceRoute::Reviews,
+        ["packetcode", "health"] => ResourceRoute::PacketCodeHealth,
         _ => ResourceRoute::Unknown,
     }
 }
@@ -508,6 +534,10 @@ mod tests {
             ResourceRoute::Flights
         );
         assert_eq!(
+            parse_resource_uri("packetade://issues"),
+            ResourceRoute::Issues
+        );
+        assert_eq!(
             parse_resource_uri("packetade://flights/f1"),
             ResourceRoute::Flight("f1")
         );
@@ -530,6 +560,10 @@ mod tests {
         assert_eq!(
             parse_resource_uri("packetade://reviews"),
             ResourceRoute::Reviews
+        );
+        assert_eq!(
+            parse_resource_uri("packetade://packetcode/health"),
+            ResourceRoute::PacketCodeHealth
         );
         assert_eq!(
             parse_resource_uri("packetade://flights/"),

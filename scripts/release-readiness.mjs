@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,15 +27,9 @@ const requiredQualityScripts = [
 ];
 
 const artifactGlobsByTarget = {
-  windows: [
-    "src-tauri/target/release/bundle/nsis/*setup.exe",
-    "src-tauri/target/release/bundle/msi/*.msi",
-  ],
-  macos: ["src-tauri/target/release/bundle/dmg/*.dmg"],
-  linux: [
-    "src-tauri/target/release/bundle/deb/*.deb",
-    "src-tauri/target/release/bundle/appimage/*.AppImage",
-  ],
+  windows: ["release/bundle/nsis/*setup.exe", "release/bundle/msi/*.msi"],
+  macos: ["release/bundle/dmg/*.dmg"],
+  linux: ["release/bundle/deb/*.deb", "release/bundle/appimage/*.AppImage"],
 };
 
 function readJson(relativePath) {
@@ -63,30 +58,72 @@ function hostTarget() {
   }
 }
 
+function cargoTargetDirectory() {
+  if (process.env.CARGO_TARGET_DIR) {
+    return path.resolve(root, process.env.CARGO_TARGET_DIR);
+  }
+  try {
+    const output = execFileSync(
+      "cargo",
+      [
+        "metadata",
+        "--format-version",
+        "1",
+        "--no-deps",
+        "--manifest-path",
+        path.join(root, "src-tauri", "Cargo.toml"),
+      ],
+      {
+        // Cargo discovers `.cargo/config.toml` from its working directory,
+        // not from `--manifest-path`, so run where Tauri invokes Cargo.
+        cwd: path.join(root, "src-tauri"),
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    );
+    const metadata = JSON.parse(output);
+    if (typeof metadata.target_directory === "string") {
+      return path.resolve(metadata.target_directory);
+    }
+  } catch {
+    // Keep readiness usable on machines where Cargo is not installed yet.
+  }
+  return path.join(root, "src-tauri", "target");
+}
+
+function displayPath(absolutePath) {
+  const relative = path.relative(root, absolutePath);
+  return relative && !relative.startsWith("..") && !path.isAbsolute(relative)
+    ? relative.replaceAll("\\", "/")
+    : absolutePath;
+}
+
+const cargoTarget = cargoTargetDirectory();
+
 function findFiles(globPattern) {
   const normalized = globPattern.replaceAll("\\", "/");
   const wildcardIndex = normalized.indexOf("*");
   if (wildcardIndex === -1) {
-    const absolutePath = path.join(root, normalized);
-    return existsSync(absolutePath) ? [normalized] : [];
+    const absolutePath = path.join(cargoTarget, normalized);
+    return existsSync(absolutePath) ? [absolutePath] : [];
   }
 
   const directory = normalized.slice(0, wildcardIndex);
   const filePattern = normalized.slice(wildcardIndex);
-  const directoryPath = path.join(root, directory);
+  const directoryPath = path.join(cargoTarget, directory);
   if (!existsSync(directoryPath)) return [];
 
   const suffix = filePattern.slice(1);
   return readdirSync(directoryPath)
     .filter((entry) => entry.endsWith(suffix))
-    .map((entry) => path.posix.join(directory, entry));
+    .map((entry) => path.join(directoryPath, entry));
 }
 
 function latestByMtime(files) {
   return files
     .map((file) => ({
       file,
-      mtimeMs: statSync(path.join(root, file)).mtimeMs,
+      mtimeMs: statSync(file).mtimeMs,
     }))
     .sort((a, b) => b.mtimeMs - a.mtimeMs)
     .map(({ file }) => file);
@@ -201,31 +238,31 @@ const signing = [
 
 const manifestCandidates = [
   process.env.PACKETADE_UPDATER_MANIFEST,
-  "src-tauri/target/release/bundle/latest.json",
-  "src-tauri/target/release/bundle/nsis/latest.json",
-  "src-tauri/target/release/bundle/dmg/latest.json",
-].filter(Boolean);
+  path.join(cargoTarget, "release", "bundle", "latest.json"),
+  path.join(cargoTarget, "release", "bundle", "nsis", "latest.json"),
+  path.join(cargoTarget, "release", "bundle", "dmg", "latest.json"),
+]
+  .filter(Boolean)
+  .map((candidate) => (path.isAbsolute(candidate) ? candidate : path.resolve(root, candidate)));
 
-const existingManifest = manifestCandidates.find((candidate) =>
-  existsSync(path.join(root, candidate)),
-);
+const existingManifest = manifestCandidates.find((candidate) => existsSync(candidate));
 
 let manifestDetail = "no latest.json found in known bundle locations";
 let manifestStatus = "WARN";
 if (existingManifest) {
   try {
-    const manifest = readJson(existingManifest);
+    const manifest = JSON.parse(readFileSync(existingManifest, "utf8"));
     const hasRequiredFields =
       Boolean(manifest.version) &&
       Boolean(manifest.pub_date) &&
       typeof manifest.platforms === "object";
     manifestStatus = hasRequiredFields ? "PASS" : "FAIL";
     manifestDetail = hasRequiredFields
-      ? existingManifest
-      : `${existingManifest} is missing version, pub_date, or platforms`;
+      ? displayPath(existingManifest)
+      : `${displayPath(existingManifest)} is missing version, pub_date, or platforms`;
   } catch (error) {
     manifestStatus = "FAIL";
-    manifestDetail = `${existingManifest} is not valid JSON: ${error.message}`;
+    manifestDetail = `${displayPath(existingManifest)} is not valid JSON: ${error.message}`;
   }
 }
 
@@ -260,9 +297,9 @@ const artifactSection = [
     status: artifacts.length > 0 ? "PASS" : "FAIL",
     label: `Bundle artifacts for ${target}`,
     detail: artifacts.length
-      ? artifacts.slice(0, 4).join(", ")
+      ? artifacts.slice(0, 4).map(displayPath).join(", ")
       : allArtifacts.length
-        ? `found artifacts, but none match version ${releaseVersion}: ${allArtifacts.slice(0, 4).join(", ")}`
+        ? `found artifacts, but none match version ${releaseVersion}: ${allArtifacts.slice(0, 4).map(displayPath).join(", ")}`
         : `expected version ${releaseVersion} artifact from one of ${artifactPatterns.join(", ")}`,
   },
 ];

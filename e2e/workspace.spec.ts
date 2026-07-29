@@ -6,7 +6,11 @@ test.describe("Workspace view", () => {
 
     await page.getByRole("button", { name: "Workspace", exact: true }).click();
 
-    await expect(page.getByRole("heading", { name: "Welcome to PacketADE" })).toBeVisible();
+    // Parallel web-mode workers can leave the initial CLI-detection/onboarding
+    // render just beyond Playwright's five-second assertion default.
+    await expect(page.getByRole("heading", { name: "Welcome to PacketADE" })).toBeVisible({
+      timeout: 10_000,
+    });
     await expect(page.getByText("Open a project folder")).toBeVisible();
   });
 });

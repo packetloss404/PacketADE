@@ -11,15 +11,221 @@
 
 use crate::core::llm_types::ToolDefinition;
 use crate::core::mcp_client::McpConnectionPool;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use tracing::warn;
 
 const MAX_PROVIDER_TOOL_NAME_LEN: usize = 64;
 const MCP_TOOL_PREFIX: &str = "mcp__";
 const HASH_SUFFIX_LEN: usize = 12;
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpTrustSnapshot {
+    pub schema_version: u8,
+    pub server_id: String,
+    pub server_name: String,
+    pub workspace_path: Option<String>,
+    pub allow_reads: bool,
+    pub allow_writes: bool,
+    pub allow_network: bool,
+    #[serde(default)]
+    pub allowed_roots: Vec<String>,
+    #[serde(default)]
+    pub allowed_tool_names: Vec<String>,
+    #[serde(default)]
+    pub denial_floors: Vec<String>,
+    pub revision: u64,
+    pub updated_at: u64,
+    pub capability_checked_at: Option<u64>,
+}
+
+fn suspected_mutation(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    [
+        "write", "create", "update", "delete", "remove", "move", "rename", "post", "send", "merge",
+        "push", "publish", "archive", "close", "reopen", "assign", "set", "execute", "run",
+    ]
+    .iter()
+    .any(|needle| name.contains(needle))
+}
+
+fn credential_tool(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    [
+        "credential",
+        "secret",
+        "token",
+        "password",
+        "keyring",
+        "private_key",
+        "auth",
+    ]
+    .iter()
+    .any(|needle| name.contains(needle))
+}
+
+fn protected_publish_tool(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    [
+        "push",
+        "publish",
+        "merge",
+        "release",
+        "deploy",
+        "tag",
+        "pull_request",
+    ]
+    .iter()
+    .any(|needle| name.contains(needle))
+}
+
+fn trust_for_server<'a>(
+    snapshots: Option<&'a [McpTrustSnapshot]>,
+    server: &str,
+) -> Option<&'a McpTrustSnapshot> {
+    snapshots?
+        .iter()
+        .find(|snapshot| snapshot.server_name == server)
+}
+
+fn trust_allows_advertisement(
+    snapshots: Option<&[McpTrustSnapshot]>,
+    server: &str,
+    tool: &str,
+) -> bool {
+    let Some(snapshot) = trust_for_server(snapshots, server) else {
+        // No trust field is a legacy session. Preserve access but migrate it
+        // to read-only behavior by suppressing likely mutations.
+        return !suspected_mutation(tool)
+            && !credential_tool(tool)
+            && !protected_publish_tool(tool);
+    };
+    if !snapshot.allow_reads {
+        return false;
+    }
+    if snapshot.capability_checked_at.is_some()
+        && !snapshot
+            .allowed_tool_names
+            .iter()
+            .any(|allowed| allowed == tool)
+    {
+        return false;
+    }
+    if snapshot
+        .denial_floors
+        .iter()
+        .any(|floor| floor == "credentials")
+        && credential_tool(tool)
+    {
+        return false;
+    }
+    if snapshot
+        .denial_floors
+        .iter()
+        .any(|floor| floor == "protected_publish")
+        && protected_publish_tool(tool)
+    {
+        return false;
+    }
+    snapshot.allow_writes || !suspected_mutation(tool)
+}
+
+fn normalize_lexical(path: &Path) -> PathBuf {
+    let mut output = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                output.pop();
+            }
+            other => output.push(other.as_os_str()),
+        }
+    }
+    output
+}
+
+fn path_inside_root(candidate: &str, root: &str) -> bool {
+    let root = normalize_lexical(Path::new(root));
+    let candidate_path = Path::new(candidate);
+    let candidate = if candidate_path.is_absolute() {
+        normalize_lexical(candidate_path)
+    } else {
+        normalize_lexical(&root.join(candidate_path))
+    };
+    candidate.starts_with(root)
+}
+
+fn path_arguments(value: &Value, key: &str, output: &mut Vec<String>) {
+    match value {
+        Value::String(value)
+            if [
+                "path",
+                "file",
+                "folder",
+                "directory",
+                "dir",
+                "root",
+                "cwd",
+                "workspace",
+            ]
+            .iter()
+            .any(|needle| key.to_ascii_lowercase().contains(needle)) =>
+        {
+            output.push(value.clone());
+        }
+        Value::Array(values) => {
+            for value in values {
+                path_arguments(value, key, output);
+            }
+        }
+        Value::Object(values) => {
+            for (child_key, value) in values {
+                path_arguments(value, child_key, output);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn enforce_tool_trust(
+    snapshots: Option<&[McpTrustSnapshot]>,
+    server: &str,
+    tool: &str,
+    args: &Value,
+) -> Result<(), String> {
+    if !trust_allows_advertisement(snapshots, server, tool) {
+        return Err(format!(
+            "MCP tool '{server}/{tool}' is outside this session's frozen read-only authority"
+        ));
+    }
+    let Some(snapshot) = trust_for_server(snapshots, server) else {
+        return Ok(());
+    };
+    if snapshot
+        .denial_floors
+        .iter()
+        .any(|floor| floor == "outside_workspace")
+    {
+        let mut paths = Vec::new();
+        path_arguments(args, "", &mut paths);
+        if paths.iter().any(|candidate| {
+            snapshot.allowed_roots.is_empty()
+                || !snapshot
+                    .allowed_roots
+                    .iter()
+                    .any(|root| path_inside_root(candidate, root))
+        }) {
+            return Err(
+                "MCP path access outside the frozen workspace roots is blocked".to_string(),
+            );
+        }
+    }
+    Ok(())
+}
 
 /// Resolve the user's home directory in a cross-platform way.
 fn home_dir() -> Option<PathBuf> {
@@ -160,6 +366,13 @@ fn make_tool_name(server: &str, tool: &str) -> String {
 pub async fn load_mcp_tool_definitions(
     enabled_server_ids: Option<&[String]>,
 ) -> Vec<ToolDefinition> {
+    load_mcp_tool_definitions_with_trust(enabled_server_ids, None).await
+}
+
+pub async fn load_mcp_tool_definitions_with_trust(
+    enabled_server_ids: Option<&[String]>,
+    trust_snapshots: Option<&[McpTrustSnapshot]>,
+) -> Vec<ToolDefinition> {
     let server_names = discover_enabled_servers(enabled_server_ids);
     let mut defs: Vec<ToolDefinition> = Vec::new();
     let mut advertised_names: HashMap<String, (String, String)> = HashMap::new();
@@ -168,6 +381,9 @@ pub async fn load_mcp_tool_definitions(
         match McpConnectionPool::list_tools_for_server(&server).await {
             Ok(tools) => {
                 for t in tools {
+                    if !trust_allows_advertisement(trust_snapshots, &server, &t.name) {
+                        continue;
+                    }
                     let advertised_name = make_tool_name(&server, &t.name);
                     if let Some((other_server, other_tool)) = advertised_names.get(&advertised_name)
                     {
@@ -253,7 +469,17 @@ pub async fn execute_mcp_tool(
     args: &serde_json::Value,
     enabled_server_ids: Option<&[String]>,
 ) -> Result<String, String> {
+    execute_mcp_tool_with_trust(name, args, enabled_server_ids, None).await
+}
+
+pub async fn execute_mcp_tool_with_trust(
+    name: &str,
+    args: &serde_json::Value,
+    enabled_server_ids: Option<&[String]>,
+    trust_snapshots: Option<&[McpTrustSnapshot]>,
+) -> Result<String, String> {
     let (server, tool) = resolve_mcp_name(name, enabled_server_ids).await?;
+    enforce_tool_trust(trust_snapshots, &server, &tool, args)?;
     McpConnectionPool::call_tool_on_server(&server, &tool, args).await
 }
 
@@ -283,5 +509,67 @@ mod tests {
     #[test]
     fn simple_names_stay_readable() {
         assert_eq!(make_tool_name("github", "search"), "mcp__github__search");
+    }
+
+    fn snapshot() -> McpTrustSnapshot {
+        McpTrustSnapshot {
+            schema_version: 1,
+            server_id: "global:test".to_string(),
+            server_name: "test".to_string(),
+            workspace_path: Some("/workspace".to_string()),
+            allow_reads: true,
+            allow_writes: false,
+            allow_network: true,
+            allowed_roots: vec!["/workspace".to_string()],
+            allowed_tool_names: vec!["read_file".to_string(), "write_file".to_string()],
+            denial_floors: vec![
+                "credentials".to_string(),
+                "outside_workspace".to_string(),
+                "protected_publish".to_string(),
+            ],
+            revision: 1,
+            updated_at: 1,
+            capability_checked_at: Some(1),
+        }
+    }
+
+    #[test]
+    fn trust_snapshot_filters_mutations_and_denial_floors() {
+        let snapshot = snapshot();
+        assert!(trust_allows_advertisement(
+            Some(std::slice::from_ref(&snapshot)),
+            "test",
+            "read_file"
+        ));
+        assert!(!trust_allows_advertisement(
+            Some(std::slice::from_ref(&snapshot)),
+            "test",
+            "write_file"
+        ));
+        assert!(!trust_allows_advertisement(
+            Some(std::slice::from_ref(&snapshot)),
+            "test",
+            "read_credentials"
+        ));
+    }
+
+    #[test]
+    fn trust_snapshot_rejects_paths_outside_workspace() {
+        let snapshot = snapshot();
+        let snapshots = [snapshot];
+        assert!(enforce_tool_trust(
+            Some(&snapshots),
+            "test",
+            "read_file",
+            &serde_json::json!({ "path": "src/main.rs" }),
+        )
+        .is_ok());
+        assert!(enforce_tool_trust(
+            Some(&snapshots),
+            "test",
+            "read_file",
+            &serde_json::json!({ "path": "../secret.txt" }),
+        )
+        .is_err());
     }
 }

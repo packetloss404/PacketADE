@@ -53,6 +53,11 @@ export interface AgentSshConfigInput {
   hostFingerprint?: string | null;
 }
 import { generateId } from "@/lib/storage";
+import {
+  attachmentProvenance,
+  assistantDerivativeProvenance,
+  userIntentProvenance,
+} from "@/lib/provenance";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
@@ -62,6 +67,8 @@ import { useEditBaselineStore } from "@/stores/editBaselineStore";
 import { useReviewStore } from "@/stores/reviewStore";
 import { useAgentDraftStore } from "@/stores/agentDraftStore";
 import { useCliOverrideStore } from "@/stores/cliOverrideStore";
+import { useMcpStore } from "@/stores/mcpStore";
+import { useMcpTrustStore } from "@/stores/mcpTrustStore";
 import { assertCostGuardrailsAllowLaunch } from "@/stores/costGuardrailStore";
 import { loadAgentsMd } from "@/lib/agentsMd";
 import type { GitHubRepo } from "@/types/github";
@@ -80,6 +87,7 @@ import {
   hydrateConversations,
   deriveLegacyWorktree,
 } from "@/stores/agentConversationPersistence";
+import type { McpTrustSnapshot } from "@/types/mcp";
 
 // `requestConversationSave` was historically defined here; re-export it so
 // external importers (apiAgentListeners, agentPlanStore, slashCommandHandlers,
@@ -407,6 +415,10 @@ interface AgentTaskStore {
     content: string,
     attachments?: ImageAttachment[] | null,
   ) => Promise<void>;
+  /** MCPH4: close the selected live API backend and discard only its frozen
+   * MCP authority. The next user turn follows the normal resume path, captures
+   * current trust, and re-establishes listeners. Refuses while a turn streams. */
+  prepareMcpReconnect: (conversationId: string) => Promise<void>;
 }
 
 /**
@@ -421,6 +433,21 @@ async function ensureApiAgentListeners(id: string): Promise<void> {
   if (apiConversationCleanup.has(id)) return;
   const cleanup = await installApiAgentListeners(id);
   apiConversationCleanup.set(id, cleanup);
+}
+
+async function captureMcpTrustSnapshot(
+  projectPath: string,
+  enabledNames: string[] | null,
+  remote: boolean,
+): Promise<McpTrustSnapshot[] | undefined> {
+  if (remote) return undefined;
+  const mcpStore = useMcpStore.getState();
+  if (mcpStore.servers.length === 0) {
+    await mcpStore.fetchServers();
+  }
+  const refreshed = useMcpStore.getState();
+  if (refreshed.error || !Array.isArray(refreshed.servers)) return undefined;
+  return useMcpTrustStore.getState().snapshot(refreshed.servers, enabledNames, projectPath);
 }
 
 export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
@@ -459,9 +486,14 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     // fall back to the Settings-configured default MCP set (null = all
     // non-disabled servers, resolved sidecar-side).
     const resolvedMcpIds =
-      enabledMcpServerIds ??
-      useAgentSettingsStore.getState().defaultEnabledMcpServerIds ??
-      null;
+      enabledMcpServerIds ?? useAgentSettingsStore.getState().defaultEnabledMcpServerIds ?? null;
+    // Codex CLI owns a separate `codex mcp` configuration and currently
+    // ignores PacketADE's forwarded MCP servers. Do not persist a snapshot
+    // that PacketADE cannot enforce; the Hub exposes this boundary explicitly.
+    const frozenMcpTrust =
+      agent === "api-openai-codex"
+        ? undefined
+        : await captureMcpTrustSnapshot(projectPath, resolvedMcpIds, isRemoteConversation);
 
     if (!skipBackendStart) {
       await assertCostGuardrailsAllowLaunch(provider);
@@ -520,6 +552,10 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       content: initialMessage,
       timestamp: now,
     };
+    userMsg.provenance = userIntentProvenance(userMsg.id, now);
+    userMsg.evidence = attachments?.length
+      ? attachmentProvenance(userMsg.id, attachments, now)
+      : undefined;
 
     const conversation: AgentConversation = {
       id,
@@ -556,6 +592,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       allowedTools: allowedTools ?? undefined,
       memoryContextEnabled: memoryContextEnabled ?? false,
       enabledMcpServerIds: resolvedMcpIds ?? undefined,
+      mcpTrustSnapshot: frozenMcpTrust,
     };
 
     set((s) => ({
@@ -625,6 +662,8 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           permissionMode ?? "auto",
           approveWrites ?? false,
           apiAgentCommandPath(agent),
+          undefined,
+          frozenMcpTrust,
         );
       }
     } catch (e) {
@@ -681,6 +720,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         timestamp: Date.now(),
         queued: true,
       };
+      queuedMsg.provenance = userIntentProvenance(queuedMsg.id, queuedMsg.timestamp);
       let updated: AgentConversation | undefined;
       set((s) => ({
         conversations: s.conversations.map((c) => {
@@ -705,6 +745,10 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       content,
       timestamp: Date.now(),
     };
+    msg.provenance = userIntentProvenance(msg.id, msg.timestamp);
+    msg.evidence = attachments?.length
+      ? attachmentProvenance(msg.id, attachments, msg.timestamp)
+      : undefined;
 
     let updatedAfterUser: AgentConversation | undefined;
     set((s) => ({
@@ -767,6 +811,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       timestamp: Date.now(),
       toolCalls,
     };
+    msg.provenance = assistantDerivativeProvenance(msg);
 
     set((s) => ({
       conversations: s.conversations.map((c) =>
@@ -930,9 +975,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       dirty = true;
     }
     if (dirty && !opts?.confirmed) {
-      throw new Error(
-        "Worktree has uncommitted changes. Confirm to discard and lose them.",
-      );
+      throw new Error("Worktree has uncommitted changes. Confirm to discard and lose them.");
     }
 
     // Remove the worktree dir AND force-delete the pkt/<id> branch.
@@ -1308,6 +1351,10 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       content,
       timestamp: Date.now(),
     };
+    userMsg.provenance = userIntentProvenance(userMsg.id, userMsg.timestamp);
+    userMsg.evidence = attachments?.length
+      ? attachmentProvenance(userMsg.id, attachments, userMsg.timestamp)
+      : undefined;
     const assistantMsgId = generateId("msg");
     let updated: AgentConversation | undefined;
     set((s) => ({
@@ -1351,6 +1398,27 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         const server = useServerStore.getState().getServer(conv.sshTarget.id);
         sshConfig = buildResumeSshConfig(conv.sshTarget, server);
       }
+      let frozenMcpTrust = conv.mcpTrustSnapshot;
+      if (frozenMcpTrust === undefined && conv.agent !== "api-openai-codex") {
+        frozenMcpTrust = await captureMcpTrustSnapshot(
+          conv.projectPath,
+          conv.enabledMcpServerIds ?? null,
+          Boolean(conv.sshTarget),
+        );
+        if (frozenMcpTrust !== undefined) {
+          set((state) => ({
+            conversations: state.conversations.map((candidate) =>
+              candidate.id === conversationId
+                ? { ...candidate, mcpTrustSnapshot: frozenMcpTrust }
+                : candidate,
+            ),
+          }));
+          const persisted = get().conversations.find(
+            (candidate) => candidate.id === conversationId,
+          );
+          if (persisted) scheduleSave(persisted);
+        }
+      }
 
       await startApiAgentSession(
         conversationId,
@@ -1377,6 +1445,8 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         conv.permissionMode ?? "auto",
         conv.approveWrites ?? false,
         apiAgentCommandPath(conv.agent),
+        undefined,
+        frozenMcpTrust,
       );
     } catch (e) {
       console.warn("resumeApiConversation failed:", e);
@@ -1384,6 +1454,41 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       // event will arrive, so without this the assistant bubble spins forever.
       failTurn(conversationId, assistantMsgId, e);
     }
+  },
+
+  prepareMcpReconnect: async (conversationId) => {
+    const conversation = get().conversations.find((candidate) => candidate.id === conversationId);
+    if (!conversation || conversation.mode !== "api") {
+      throw new Error("Select an API conversation to reconnect MCP authority.");
+    }
+    if (conversation.agent === "api-openai-codex") {
+      throw new Error(
+        "Codex CLI manages MCP through `codex mcp`; PacketADE cannot reconnect or enforce Hub trust for this provider yet.",
+      );
+    }
+    if (conversation.messages.some((message) => message.isStreaming)) {
+      throw new Error("Wait for or cancel the active turn before reconnecting MCP.");
+    }
+    await closeApiAgentSession(conversationId);
+    const cleanup = apiConversationCleanup.get(conversationId);
+    cleanup?.();
+    apiConversationCleanup.delete(conversationId);
+
+    let updated: AgentConversation | undefined;
+    set((state) => ({
+      conversations: state.conversations.map((candidate) => {
+        if (candidate.id !== conversationId) return candidate;
+        const next: AgentConversation = {
+          ...candidate,
+          status: "idle",
+          mcpTrustSnapshot: undefined,
+          updatedAt: Date.now(),
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
   },
 }));
 

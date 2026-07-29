@@ -3,9 +3,9 @@ use crate::core::brand::{
     USER_AGENT as BRAND_USER_AGENT,
 };
 use crate::core::git_host::{GitHost, GitHostKind};
-use std::collections::HashMap;
 use reqwest::header::{ACCEPT, AUTHORIZATION, LINK, USER_AGENT};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::RwLock;
 use tracing::{info, warn};
@@ -346,9 +346,7 @@ async fn git_host_session(
 /// per-workspace by the frontend). The Gitea-aware command groups (G4+) route
 /// through this instead of `github_client_from_state`.
 #[allow(dead_code)] // consumed as each command group is routed (G4+)
-async fn active_host_session(
-    auth: &GitHubAuthState,
-) -> Result<(reqwest::Client, GitHost), String> {
+async fn active_host_session(auth: &GitHubAuthState) -> Result<(reqwest::Client, GitHost), String> {
     let id = auth.active_connection_id.read().await.clone();
     git_host_session(auth, &id).await
 }
@@ -453,11 +451,7 @@ pub async fn github_clear_token(auth: State<'_, GitHubAuthState>) -> Result<(), 
 
 #[tauri::command]
 pub async fn github_has_token(auth: State<'_, GitHubAuthState>) -> Result<bool, String> {
-    Ok(auth
-        .tokens
-        .read()
-        .await
-        .contains_key(GITHUB_CONNECTION_ID))
+    Ok(auth.tokens.read().await.contains_key(GITHUB_CONNECTION_ID))
 }
 
 // ---- GP3: GitHub OAuth device-flow auth (GitHub only) ----
@@ -508,8 +502,8 @@ pub async fn github_device_flow_start() -> Result<DeviceFlowStart, String> {
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
     let body = github_response_text(resp).await?;
-    let v: serde_json::Value =
-        serde_json::from_str(&body).map_err(|e| format!("Failed to parse device response: {}", e))?;
+    let v: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| format!("Failed to parse device response: {}", e))?;
     // GitHub can return HTTP 200 with an `{"error": ...}` body (e.g. a suspended
     // or misconfigured OAuth app). Without device_code the poll loop would spin
     // to expiry showing a blank code — surface the error instead of empty codes.
@@ -556,8 +550,8 @@ pub async fn github_device_flow_poll(
     auth: State<'_, GitHubAuthState>,
     device_code: String,
 ) -> Result<DeviceFlowPoll, String> {
-    let client_id = github_oauth_client_id()
-        .ok_or_else(|| "GitHub OAuth app not configured.".to_string())?;
+    let client_id =
+        github_oauth_client_id().ok_or_else(|| "GitHub OAuth app not configured.".to_string())?;
     let client = reqwest::Client::new();
     let resp = client
         .post(GITHUB_DEVICE_TOKEN_URL)
@@ -575,8 +569,8 @@ pub async fn github_device_flow_poll(
         .text()
         .await
         .map_err(|e| format!("Failed to read response: {}", e))?;
-    let v: serde_json::Value =
-        serde_json::from_str(&body).map_err(|e| format!("Failed to parse token response: {}", e))?;
+    let v: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| format!("Failed to parse token response: {}", e))?;
 
     if let Some(token) = v["access_token"].as_str() {
         save_host_token(GITHUB_CONNECTION_ID, token)?;
@@ -709,7 +703,10 @@ pub async fn git_host_add_gitea(
     drop(conns);
 
     save_host_token(&id, token)?;
-    auth.tokens.write().await.insert(id.clone(), token.to_string());
+    auth.tokens
+        .write()
+        .await
+        .insert(id.clone(), token.to_string());
     info!("Added Gitea connection '{}'", id);
     Ok(id)
 }
@@ -790,7 +787,10 @@ async fn github_get_issue_with_client(
     issue_number: u32,
 ) -> Result<String, String> {
     let resp = client
-        .get(host.url(&format!("/repos/{}/{}/issues/{}", owner, repo, issue_number)))
+        .get(host.url(&format!(
+            "/repos/{}/{}/issues/{}",
+            owner, repo, issue_number
+        )))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -1116,7 +1116,10 @@ pub async fn github_post_issue_comment(
         return Err("Comment body cannot be empty".to_string());
     }
     let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!("/repos/{}/{}/issues/{}/comments", owner, repo, number));
+    let url = host.url(&format!(
+        "/repos/{}/{}/issues/{}/comments",
+        owner, repo, number
+    ));
     let resp = client
         .post(url)
         .json(&serde_json::json!({ "body": trimmed }))
@@ -1216,7 +1219,10 @@ pub async fn github_set_issue_labels(
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
     let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!("/repos/{}/{}/issues/{}/labels", owner, repo, number));
+    let url = host.url(&format!(
+        "/repos/{}/{}/issues/{}/labels",
+        owner, repo, number
+    ));
     // GitHub's PUT accepts label *names*; Gitea expects label *ids*, so resolve
     // names → ids against the repo's label set first.
     let payload = match host.kind {
@@ -2035,7 +2041,10 @@ pub async fn github_set_pr_labels(
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
     let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!("/repos/{}/{}/issues/{}/labels", owner, repo, number));
+    let url = host.url(&format!(
+        "/repos/{}/{}/issues/{}/labels",
+        owner, repo, number
+    ));
     // Gitea expects label ids; GitHub accepts names.
     let payload = match host.kind {
         GitHostKind::GitHub => serde_json::json!({ "labels": labels }),
@@ -2606,7 +2615,8 @@ pub async fn github_ai_triage(
 
     let mut issue_payloads: Vec<serde_json::Value> = Vec::with_capacity(issue_numbers.len());
     for n in &issue_numbers {
-        let body = github_get_issue_with_client(&client, &GitHost::github(), &owner, &repo, *n).await?;
+        let body =
+            github_get_issue_with_client(&client, &GitHost::github(), &owner, &repo, *n).await?;
         let parsed: serde_json::Value = serde_json::from_str(&body)
             .map_err(|e| format!("Failed to parse issue #{}: {}", n, e))?;
         let title = parsed
@@ -2790,7 +2800,9 @@ pub async fn github_merge_pr(
     // GitHub: PUT with `merge_method`, returns {sha, merged, message}.
     // Gitea:  POST with `Do`, returns an empty 2xx body on success.
     let req = match host.kind {
-        GitHostKind::GitHub => client.put(url).json(&serde_json::json!({ "merge_method": method })),
+        GitHostKind::GitHub => client
+            .put(url)
+            .json(&serde_json::json!({ "merge_method": method })),
         GitHostKind::Gitea => client.post(url).json(&serde_json::json!({ "Do": method })),
     };
     let resp = req
@@ -3338,7 +3350,11 @@ fn parse_pr_review(v: &serde_json::Value) -> PullRequestReview {
             .to_string(),
         // G11: normalize the review-state enum. Gitea emits REQUEST_CHANGES /
         // COMMENT; the frontend keys on GitHub's CHANGES_REQUESTED / COMMENTED.
-        state: match v.get("state").and_then(|x| x.as_str()).unwrap_or("COMMENTED") {
+        state: match v
+            .get("state")
+            .and_then(|x| x.as_str())
+            .unwrap_or("COMMENTED")
+        {
             "REQUEST_CHANGES" => "CHANGES_REQUESTED",
             "COMMENT" => "COMMENTED",
             other => other,
@@ -3644,9 +3660,7 @@ fn parse_notification(v: &serde_json::Value) -> GithubNotification {
         .unwrap_or("")
         .to_string();
     let subject = v.get("subject");
-    let subject_url = subject
-        .and_then(|s| s.get("url"))
-        .and_then(|x| x.as_str());
+    let subject_url = subject.and_then(|s| s.get("url")).and_then(|x| x.as_str());
     let subject_type = subject
         .and_then(|s| s.get("type"))
         .and_then(|x| x.as_str())
@@ -3661,7 +3675,11 @@ fn parse_notification(v: &serde_json::Value) -> GithubNotification {
         // GitHub ids are strings; Gitea's are numbers.
         id: v
             .get("id")
-            .and_then(|x| x.as_str().map(str::to_string).or_else(|| x.as_u64().map(|n| n.to_string())))
+            .and_then(|x| {
+                x.as_str()
+                    .map(str::to_string)
+                    .or_else(|| x.as_u64().map(|n| n.to_string()))
+            })
             .unwrap_or_default(),
         unread: v.get("unread").and_then(|x| x.as_bool()).unwrap_or(false),
         reason: v
@@ -3680,9 +3698,9 @@ fn parse_notification(v: &serde_json::Value) -> GithubNotification {
             .unwrap_or("")
             .to_string(),
         subject_type: subject_type.to_string(),
-        html_url: subject_html_url
-            .map(str::to_string)
-            .unwrap_or_else(|| notification_subject_html_url(subject_type, subject_url, &repository)),
+        html_url: subject_html_url.map(str::to_string).unwrap_or_else(|| {
+            notification_subject_html_url(subject_type, subject_url, &repository)
+        }),
         repository,
     }
 }

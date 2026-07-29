@@ -7,6 +7,10 @@ import {
   togglePinnedPattern as togglePinnedPatternBackend,
 } from "@/lib/tauri";
 import { parseJsonFromResponse, generateId } from "@/lib/storage";
+import {
+  memoryRecordProvenance,
+  unknownProvenance,
+} from "@/lib/provenance";
 import { getMemorySettings } from "@/stores/memorySettingsStore";
 import type {
   MemoryEvent,
@@ -18,6 +22,7 @@ import type {
   ManualNotePayload,
 } from "@/types/memory";
 import type { loadPersistedState } from "@/lib/tauri";
+import type { ProvenanceEnvelope } from "@/types/provenance";
 
 function normalizePath(path: string): string {
   return path.replace(/\\/g, "/").toLowerCase();
@@ -114,6 +119,7 @@ interface MemoryStore {
     summary: string;
     body: string;
     tags?: string[];
+    provenance?: ProvenanceEnvelope[];
   }) => MemoryEvent;
 
   // Auto-learning: summarize a session transcript and store the result
@@ -182,13 +188,22 @@ function createEvent<T extends MemoryEventType>(
       : T extends "flight_completed"
         ? FlightCompletedPayload
         : ManualNotePayload,
+  parents: ProvenanceEnvelope[] = [],
 ): MemoryEvent {
+  const id = generateId("mem");
+  const timestamp = Date.now();
   return {
-    id: generateId("mem"),
+    id,
     type,
-    timestamp: Date.now(),
+    timestamp,
     projectPath,
     payload,
+    provenance: memoryRecordProvenance(
+      id,
+      `Memory ${type.replaceAll("_", " ")}`,
+      parents,
+      timestamp,
+    ),
   } as MemoryEvent;
 }
 
@@ -327,7 +342,7 @@ function relevanceTokens(text: string): string[] {
  * (they don't discriminate). Empty/degenerate query → all zeros, so the caller
  * falls back to the prior confidence-based ordering.
  */
-function relevanceScores(query: string, candidates: string[]): number[] {
+export function relevanceScores(query: string, candidates: string[]): number[] {
   const zeros = candidates.map(() => 0);
   const qTokens = [...new Set(relevanceTokens(query))];
   if (qTokens.length === 0 || candidates.length === 0) return zeros;
@@ -446,8 +461,28 @@ export function parseMemoryImport(
     return {
       // Structurally validate events (untrusted import data); patterns only need
       // a string id to be a dedup candidate.
-      events: events.filter(isValidMemoryEvent),
-      patterns: patterns.filter((p) => p && typeof p.id === "string"),
+      events: events.filter(isValidMemoryEvent).map((event) => ({
+        ...event,
+        provenance:
+          event.provenance ??
+          unknownProvenance(
+            event.id,
+            "Imported legacy memory event",
+            event.timestamp,
+          ),
+      })),
+      patterns: patterns
+        .filter((p) => p && typeof p.id === "string")
+        .map((pattern) => ({
+          ...pattern,
+          provenance:
+            pattern.provenance ??
+            unknownProvenance(
+              pattern.id,
+              "Imported legacy learned pattern",
+              pattern.extractedAt,
+            ),
+        })),
     };
   } catch {
     return null;
@@ -751,8 +786,26 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
   learningStatus: null,
 
   hydrateFromBackend: (persisted) => {
-    const rawEvents = (persisted.memoryEvents ?? []) as MemoryEvent[];
-    const rawPatterns = (persisted.memoryPatterns ?? []) as LearnedPattern[];
+    const rawEvents = ((persisted.memoryEvents ?? []) as MemoryEvent[]).map(
+      (event) => ({
+        ...event,
+        provenance:
+          event.provenance ??
+          unknownProvenance(event.id, "Legacy memory event", event.timestamp),
+      }),
+    );
+    const rawPatterns = (
+      (persisted.memoryPatterns ?? []) as LearnedPattern[]
+    ).map((pattern) => ({
+      ...pattern,
+      provenance:
+        pattern.provenance ??
+        unknownProvenance(
+          pattern.id,
+          "Legacy learned pattern",
+          pattern.extractedAt,
+        ),
+    }));
     const events = capEvents(rawEvents);
     const patterns = capPatterns(rawPatterns);
     set({ events, patterns });
@@ -804,7 +857,14 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     void persistState(get().events, patterns);
   },
 
-  captureManually: ({ projectPath, source, summary, body, tags }) => {
+  captureManually: ({
+    projectPath,
+    source,
+    summary,
+    body,
+    tags,
+    provenance,
+  }) => {
     // v0.8-D — bypass the per-type capture toggles: this is an explicit
     // human action ("Save as memory"), not a passive auto-capture.
     const payload: ManualNotePayload = {
@@ -813,7 +873,12 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
       body,
       tags: tags && tags.length > 0 ? tags : [source],
     };
-    const event = createEvent("manual_note", projectPath, payload);
+    const event = createEvent(
+      "manual_note",
+      projectPath,
+      payload,
+      provenance,
+    );
     const events = capEvents([...get().events, event]);
     set({ events });
     void persistState(events, get().patterns);
@@ -912,18 +977,36 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
       const newPatterns: LearnedPattern[] = parsed
         .filter((p) => p.pattern && p.confidence >= 0.5)
         .slice(0, getMemorySettings().maxPatterns)
-        .map((p) => ({
-          id: generateId("pat"),
+        .map((p) => {
+          const id = generateId("pat");
+          const extractedAt = Date.now();
+          const parents = events
+            .filter(
+              (event) =>
+                event.type === "session_completed" &&
+                normalizePath(event.projectPath) === normalizedPath,
+            )
+            .slice(-10)
+            .flatMap((event) => (event.provenance ? [event.provenance] : []));
+          return {
+          id,
           pattern: p.pattern,
           category: (p.category as LearnedPattern["category"]) ?? "convention",
           confidence: p.confidence,
-          extractedAt: Date.now(),
+          extractedAt,
           // v0.8-H — stamp the project so patterns no longer leak across
           // workspaces. Source events were already filtered by
           // `normalizedPath` above so this is the right project to attribute.
           projectPath,
           pinned: false,
-        }));
+          provenance: memoryRecordProvenance(
+            id,
+            "Learned memory pattern",
+            parents,
+            extractedAt,
+          ),
+        };
+        });
 
       // v0.8-H — preserve pinned patterns from the previous extraction
       // (they're authoritative and shouldn't disappear when we re-extract).

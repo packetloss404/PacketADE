@@ -111,6 +111,13 @@ pub async fn tool_definitions() -> Vec<ToolDefinition> {
 pub async fn tool_definitions_with_mcp_allowlist(
     enabled_mcp_server_ids: Option<&[String]>,
 ) -> Vec<ToolDefinition> {
+    tool_definitions_with_mcp_trust(enabled_mcp_server_ids, None).await
+}
+
+pub async fn tool_definitions_with_mcp_trust(
+    enabled_mcp_server_ids: Option<&[String]>,
+    mcp_trust_snapshot: Option<&[crate::core::mcp_bridge::McpTrustSnapshot]>,
+) -> Vec<ToolDefinition> {
     let base = vec![
         ToolDefinition {
             name: "read_file".to_string(),
@@ -205,7 +212,13 @@ pub async fn tool_definitions_with_mcp_allowlist(
     // Append MCP tool defs discovered from user-configured servers.
     let mut all = base;
     all.extend(crate::core::tool_tasks::task_tool_definitions());
-    all.extend(crate::core::mcp_bridge::load_mcp_tool_definitions(enabled_mcp_server_ids).await);
+    all.extend(
+        crate::core::mcp_bridge::load_mcp_tool_definitions_with_trust(
+            enabled_mcp_server_ids,
+            mcp_trust_snapshot,
+        )
+        .await,
+    );
     // Append custom-agent tool defs (~/.claude/agents/<name>.md).
     all.extend(crate::core::tool_custom_agent::load_custom_agent_definitions());
     // Append GitHub tools (gh_list_issues, gh_get_issue, gh_list_prs).
@@ -222,6 +235,15 @@ pub async fn execute_tool_with_mcp_allowlist(
     call: &ToolCall,
     target: &ExecutionTarget,
     enabled_mcp_server_ids: Option<&[String]>,
+) -> ToolResult {
+    execute_tool_with_mcp_trust(call, target, enabled_mcp_server_ids, None).await
+}
+
+pub async fn execute_tool_with_mcp_trust(
+    call: &ToolCall,
+    target: &ExecutionTarget,
+    enabled_mcp_server_ids: Option<&[String]>,
+    mcp_trust_snapshot: Option<&[crate::core::mcp_bridge::McpTrustSnapshot]>,
 ) -> ToolResult {
     let result = match call.name.as_str() {
         "read_file" => match target {
@@ -296,8 +318,13 @@ pub async fn execute_tool_with_mcp_allowlist(
             crate::core::tool_tasks::execute_task_list(&call.arguments)
         }
         name if name.starts_with("mcp__") => {
-            crate::core::mcp_bridge::execute_mcp_tool(name, &call.arguments, enabled_mcp_server_ids)
-                .await
+            crate::core::mcp_bridge::execute_mcp_tool_with_trust(
+                name,
+                &call.arguments,
+                enabled_mcp_server_ids,
+                mcp_trust_snapshot,
+            )
+            .await
         }
         name if name.starts_with("gh_") => {
             // Host-agnostic: GitHub API calls go from the PacketADE process.
@@ -543,27 +570,23 @@ async fn execute_bash(args: &serde_json::Value, project_path: &str) -> Result<St
     };
 
     let run = async { tokio::join!(child.wait(), read_stdout, read_stderr) };
-    let (status, out_bytes, err_bytes) = match tokio::time::timeout(
-        std::time::Duration::from_secs(timeout_secs),
-        run,
-    )
-    .await
-    {
-        Ok((status_res, out, err)) => (
-            status_res.map_err(|e| format!("Command failed: {}", e))?,
-            out,
-            err,
-        ),
-        Err(_) => {
-            // S1: kill the whole tree before the `Child` is dropped, so
-            // grandchildren don't outlive the deadline.
-            if let Some(pid) = child_pid {
-                kill_process_tree(pid);
+    let (status, out_bytes, err_bytes) =
+        match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), run).await {
+            Ok((status_res, out, err)) => (
+                status_res.map_err(|e| format!("Command failed: {}", e))?,
+                out,
+                err,
+            ),
+            Err(_) => {
+                // S1: kill the whole tree before the `Child` is dropped, so
+                // grandchildren don't outlive the deadline.
+                if let Some(pid) = child_pid {
+                    kill_process_tree(pid);
+                }
+                let _ = child.start_kill();
+                return Err(format!("Command timed out after {} seconds", timeout_secs));
             }
-            let _ = child.start_kill();
-            return Err(format!("Command timed out after {} seconds", timeout_secs));
-        }
-    };
+        };
 
     let stdout = String::from_utf8_lossy(&out_bytes);
     let stderr = String::from_utf8_lossy(&err_bytes);

@@ -1,7 +1,7 @@
 # Local-First MCP Hub — Scoped Loop
 
 Created: 2026-07-28
-Status: approved, later; not the first PacketADE focus
+Status: MCPH1–MCPH2/MCPH5–MCPH7 source-complete; MCPH3/MCPH4/MCPH8 gated
 Product decision: **Option B — consolidate MCP inside PacketADE**
 
 ## Objective
@@ -48,16 +48,53 @@ above that substrate.
 
 Status values: `queued` → `in-progress` → `gated` → `closed`.
 
-| ID | Item | Acceptance condition | Gate | Depends on | Status |
-|---|---|---|---|---|---|
-| **MCPH1** | Hub inventory and contracts | Freeze server identity, execution owner, transport, capability snapshot, trust profile, provenance, catalog manifest, and compatibility versions while migrating current config losslessly. | DTO/schema/migration fixtures and old-state hydration | — | queued |
-| **MCPH2** | Curated starter catalog | Ship a reviewable catalog with official source, supported platforms/transports, install/config steps, required secrets, capabilities, and removal instructions. Catalog entries cannot embed secrets or silently execute. | Manifest validation, platform, tamper, and unsafe-command tests | MCPH1 | queued |
-| **MCPH3** | Unified lifecycle and diagnostics | Show configured/connected/degraded/failed state, capability diffs, bounded logs, latency, restart/reconnect, and exact recovery guidance for local and SSH-owned servers. | Local/SSH/crash/reload/version-skew tests | MCPH1 | queued |
-| **MCPH4** | Scoped trust profiles | Configure read/write/network/root/tool grants per workspace and server, preview effective authority, enforce denial floors, and snapshot it into each agent session. | Policy matrix, downgrade, reload, and privilege-escalation tests | MCPH1, MCPH3 | queued |
-| **MCPH5** | Provenance and audit | Attribute resources, prompt injections, tool results, mutations, host, server version, and trust decision through transcripts and downstream Flight/Memory/review records. | Correlation, redaction, retention, and export fixtures | MCPH1, MCPH3 | queued |
-| **MCPH6** | Suite resources | Organize scoped resources/tools for Flights, Issues, coordination, current Memory Hub, PacketCode health/context, and later PacketAgent contracts without duplicating their source of truth. | Resource-schema, unavailable-product, scope, and compatibility tests | MCPH3–MCPH5; Memory MH7; PacketAgent W9 later | queued |
-| **MCPH7** | MCP Hub UI | Merge the current client/provider management into one searchable Hub for catalog, servers, capabilities, trust, health, provenance, activity, and explicit session reconnect. | Component, accessibility, destructive-action, and visual QA | MCPH2–MCPH6 | queued |
-| **MCPH8** | Regression, packaging, and docs | Exercise existing configs, provider reads/writes, local/SSH servers, install/removal, trust downgrade, reconnect, offline operation, and backward compatibility. | Full Vitest/Rust/build gates plus packaged local/SSH smoke | MCPH1–MCPH7 | queued |
+| ID        | Item                              | Acceptance condition                                                                                                                                                                                                      | Gate                                                                 | Depends on                                    | Status |
+| --------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------- | ------ |
+| **MCPH1** | Hub inventory and contracts       | Freeze server identity, execution owner, transport, capability snapshot, trust profile, provenance, catalog manifest, and compatibility versions while migrating current config losslessly.                               | DTO/schema/migration fixtures and old-state hydration                | —                                             | closed |
+| **MCPH2** | Curated starter catalog           | Ship a reviewable catalog with official source, supported platforms/transports, install/config steps, required secrets, capabilities, and removal instructions. Catalog entries cannot embed secrets or silently execute. | Manifest validation, platform, tamper, and unsafe-command tests      | MCPH1                                         | closed |
+| **MCPH3** | Unified lifecycle and diagnostics | Show configured/connected/degraded/failed state, capability diffs, bounded logs, latency, restart/reconnect, and exact recovery guidance for local and SSH-owned servers.                                                 | Local/SSH/crash/reload/version-skew tests                            | MCPH1                                         | gated  |
+| **MCPH4** | Scoped trust profiles             | Configure read/write/network/root/tool grants per workspace and server, preview effective authority, enforce denial floors, and snapshot it into each agent session.                                                      | Policy matrix, downgrade, reload, and privilege-escalation tests     | MCPH1, MCPH3                                  | gated  |
+| **MCPH5** | Provenance and audit              | Attribute resources, prompt injections, tool results, mutations, host, server version, and trust decision through transcripts and downstream Flight/Memory/review records.                                                | Correlation, redaction, retention, and export fixtures               | MCPH1, MCPH3                                  | closed |
+| **MCPH6** | Suite resources                   | Organize scoped resources/tools for Flights, Issues, coordination, current Memory Hub, PacketCode health/context, and later PacketAgent contracts without duplicating their source of truth.                              | Resource-schema, unavailable-product, scope, and compatibility tests | MCPH3–MCPH5; Memory MH7; PacketAgent W9 later | closed |
+| **MCPH7** | MCP Hub UI                        | Merge the current client/provider management into one searchable Hub for catalog, servers, capabilities, trust, health, provenance, activity, and explicit session reconnect.                                             | Component, accessibility, destructive-action, and visual QA          | MCPH2–MCPH6                                   | closed |
+| **MCPH8** | Regression, packaging, and docs   | Exercise existing configs, provider reads/writes, local/SSH servers, install/removal, trust downgrade, reconnect, offline operation, and backward compatibility.                                                          | Full Vitest/Rust/build gates plus packaged local/SSH smoke           | MCPH1–MCPH7                                   | gated  |
+
+## 2026-07-28 implementation record
+
+- Existing raw config is still round-tripped. The Hub contract adds stable
+  scope/name identity, stdio/HTTP/SSE transport, capability diagnostics,
+  versioned trust profiles, catalog manifests, and immutable session snapshots.
+- The starter catalog contains only official Filesystem and GitHub entries.
+  Review shows source, exact command/arguments, target config file, capabilities,
+  required secret names, network need, and removal instructions. Adding config
+  never runs the command or stores a secret placeholder.
+- The local doctor performs initialize + `tools/list` for stdio and records
+  latency/state/tool/version. HTTP/SSE config stays lossless but reports the
+  exact stdio-only doctor limitation.
+- Sidecar protocol v11 and the in-process Rust MCP bridge enforce the same
+  frozen read/write/root/tool posture on PacketADE-managed MCP paths.
+  Old/absent snapshots migrate to conservative read-only behavior; explicit
+  empty snapshots grant no servers. Credential, outside-workspace, and
+  protected publish/merge/deploy floors cannot be disabled.
+- Anthropic Subscription, OpenAI Agents SDK, and in-process providers enforce
+  that snapshot. Codex subscription remains outside MCPH4 completion because
+  Codex CLI ignores the forwarded server set and owns a separate `codex mcp`
+  configuration. The Hub labels this exception and disables its reconnect
+  action for Codex rather than implying a false boundary.
+- The searchable Settings Hub includes catalog, configured server health,
+  trust/tool controls, bounded redacted activity, and an explicit selected
+  conversation reconnect. Trust changes apply only after that reconnect/new
+  session.
+- PacketADE's loopback provider now groups Flights, Issues, coordination,
+  review, global/project Memory, workspaces, and PacketCode health. PacketAgent
+  remains absent until its separate repository publishes W9.
+- Contract/component tests, sidecar v11/trust smokes, TypeScript/lint, Rust
+  compile, E2E, and unsigned Windows bundle gates pass. MCPH3/MCPH8 remain
+  gated on real local/SSH process crash, reload/version-skew, offline
+  install/removal, and packaged interaction smoke. MCPH4 also remains gated on
+  enforceable Codex CLI integration and live remote-profile parity. A stdio
+  child may still use network according to its own runtime; this is not an OS
+  sandbox.
 
 ## Sequencing
 

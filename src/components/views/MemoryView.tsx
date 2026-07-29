@@ -33,11 +33,17 @@ import { computeMemoryDigest, type MemoryDigest } from "@/lib/memoryDigest";
 import { useMemorySettingsStore } from "@/stores/memorySettingsStore";
 import { useAppStore } from "@/stores/appStore";
 import { MemoryEventCard } from "./memory/MemoryEventCard";
+import { ProjectNotesTab } from "./memory/ProjectNotesTab";
+import { useProjectMemoryStore } from "@/stores/projectMemoryStore";
+import {
+  unifiedMemoryResults,
+  type MemorySourceFilter,
+} from "@/lib/projectMemoryRetrieval";
 import { TIMELINE_FILTERS, type FilterType } from "./memory/timelineFilters";
 import type { MemoryEvent, MemoryEventType, PatternCategory, LearnedPattern } from "@/types/memory";
 import { relativeTime } from "@/lib/time";
 
-type Tab = "patterns" | "timeline" | "ask";
+type Tab = "patterns" | "timeline" | "project" | "ask";
 
 // M2: rolling date-window chips for the Timeline.
 const DATE_RANGES: { key: MemoryDateRange; label: string }[] = [
@@ -136,6 +142,9 @@ export function MemoryView() {
   const composeMemoryBrief = useMemoryStore((s) => s.composeMemoryBrief);
   const captureSessions = useMemorySettingsStore((s) => s.captureSessions);
   const captureFlights = useMemorySettingsStore((s) => s.captureFlights);
+  const projectMemoryNotes = useProjectMemoryStore(
+    (state) => state.snapshot.notes,
+  );
 
   // v0.8-H — deep-link filter (e.g. from FlightsView's "N patterns
   // extracted" chip). Snapshot it on mount so subsequent re-renders
@@ -384,6 +393,13 @@ export function MemoryView() {
           badge={events.length}
         />
         <MemTab
+          active={activeTab === "project"}
+          onClick={() => setActiveTab("project")}
+          icon={<FileText size={10} />}
+          label="Project notes"
+          badge={projectMemoryNotes.filter((note) => !note.metadata.archived).length}
+        />
+        <MemTab
           active={activeTab === "ask"}
           onClick={() => setActiveTab("ask")}
           icon={<MessageSquare size={10} />}
@@ -465,8 +481,17 @@ export function MemoryView() {
         />
       )}
 
+      {activeTab === "project" && (
+        <ProjectNotesTab projectPath={projectPath} globalEvents={events} />
+      )}
+
       {activeTab === "ask" && (
-        <AskTab events={events} patterns={patterns} projectPath={projectPath} />
+        <AskTab
+          events={events}
+          patterns={patterns}
+          projectPath={projectPath}
+          projectNotes={projectMemoryNotes}
+        />
       )}
     </div>
   );
@@ -1019,19 +1044,32 @@ function AskTab({
   events,
   patterns,
   projectPath,
+  projectNotes,
 }: {
   events: MemoryEvent[];
   patterns: LearnedPattern[];
   projectPath: string | null;
+  projectNotes: ReturnType<typeof useProjectMemoryStore.getState>["snapshot"]["notes"];
 }) {
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
+  const [source, setSource] = useState<MemorySourceFilter>("all");
 
   const results = useMemo(() => {
     const q = submitted.trim();
     if (!q || !projectPath) return [];
-    return computeContextItems(events, patterns, { kind: "local", projectPath }, q);
-  }, [events, patterns, projectPath, submitted]);
+    return unifiedMemoryResults(
+      q,
+      computeContextItems(
+        events,
+        patterns,
+        { kind: "local", projectPath },
+        q,
+      ),
+      projectNotes,
+      { source },
+    );
+  }, [events, patterns, projectNotes, projectPath, source, submitted]);
 
   const submit = () => setSubmitted(query);
 
@@ -1055,6 +1093,25 @@ function AskTab({
         >
           Ask
         </button>
+      </div>
+      <div className="flex items-center gap-1 border-b border-bg-border bg-bg-secondary px-3.5 py-1.5">
+        <span className="mr-1 text-[9px] uppercase tracking-wide text-text-faint">
+          Source
+        </span>
+        {(["all", "global", "project"] as MemorySourceFilter[]).map((value) => (
+          <ScopeChip
+            key={value}
+            active={source === value}
+            label={
+              value === "all"
+                ? "All"
+                : value === "global"
+                  ? "PacketADE"
+                  : "Project Markdown"
+            }
+            onClick={() => setSource(value)}
+          />
+        ))}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3.5 py-3">
@@ -1087,10 +1144,20 @@ function AskTab({
                 key={item.id}
                 className="flex items-start gap-2 rounded border border-bg-border bg-bg-primary px-2.5 py-2"
               >
-                <span className="mt-px shrink-0">{ASK_ICON[item.kind]}</span>
+                <span className="mt-px shrink-0">
+                  {item.kind === "project_note" ? (
+                    <FileText size={11} className="text-accent-blue" />
+                  ) : (
+                    ASK_ICON[item.kind]
+                  )}
+                </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-[11px] leading-snug text-text-primary">{item.title}</div>
-                  <div className="mt-0.5 text-[9.5px] text-text-faint">{item.reason}</div>
+                  <div className="mt-0.5 text-[9.5px] text-text-faint">
+                    {item.source} · {item.reason}
+                    {item.provenanceIds.length > 0 &&
+                      ` · ${item.provenanceIds.length} source ref`}
+                  </div>
                 </div>
               </div>
             ))}

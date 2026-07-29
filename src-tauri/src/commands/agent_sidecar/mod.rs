@@ -78,7 +78,7 @@ pub const SIDECAR_PROVIDERS: &[&str] = &["claude-oauth", "openai-codex", "openai
 ///
 /// v10 (G06/G36): `done` can carry `cancelled`, making user cancellation an
 /// explicit terminal outcome without ending the reusable conversation.
-pub(super) const EXPECTED_PROTOCOL_VERSION: u32 = 10;
+pub(super) const EXPECTED_PROTOCOL_VERSION: u32 = 11;
 
 /// Convenience predicate used by slice C to decide whether to call
 /// `forward_*` vs. the existing Rust path.

@@ -32,6 +32,7 @@ pub mod mcp_bridge;
 pub mod mcp_client;
 pub mod migration;
 pub mod orchestrator;
+pub mod provenance;
 pub mod pty;
 pub mod shared;
 pub mod shell_path;

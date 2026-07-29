@@ -3,7 +3,9 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   DictationEntry,
   DictationAnalytics,
+  DictationResult,
   DictationSettings,
+  DictationShortcutStatus,
   WhisperModel,
 } from "@/types/dictation";
 import {
@@ -25,9 +27,11 @@ interface DictationStore {
   isTranscribing: boolean;
   waveform: number[];
   lastResult: string | null;
+  lastTelemetry: DictationResult | null;
   status: "idle" | "starting" | "recording" | "transcribing" | "done" | "error";
   error: string | null;
   deliveryNotice: string | null;
+  shortcutStatus: DictationShortcutStatus;
 
   history: DictationEntry[];
   analytics: DictationAnalytics | null;
@@ -47,6 +51,7 @@ interface DictationStore {
   downloadModel: (size: string) => Promise<void>;
   clearResult: () => void;
   setDeliveryNotice: (notice: string | null) => void;
+  setShortcutStatus: (status: DictationShortcutStatus) => void;
 }
 
 // Set up global event listeners once
@@ -59,6 +64,8 @@ function initListeners(
   setStatus: (status: DictationStore["status"]) => void,
   setError: (error: string) => void,
   setModelProgress: (size: string, percent: number) => void,
+  setWarning: (warning: string) => void,
+  onLimitReached: () => void,
 ) {
   const tauriAvailable =
     typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -86,6 +93,14 @@ function initListeners(
     setStatus(s);
   }).then((unlisten) => eventListeners.push(unlisten));
 
+  listen<string>("dictation:warning", (event) => {
+    setWarning(event.payload);
+  }).then((unlisten) => eventListeners.push(unlisten));
+
+  listen("dictation:limit-reached", () => {
+    onLimitReached();
+  }).then((unlisten) => eventListeners.push(unlisten));
+
   // Model download progress events — stored in case UI needs it later
   listen<{ size: string; percent: number }>("dictation:model-progress", (event) => {
     setModelProgress(event.payload.size, event.payload.percent);
@@ -109,6 +124,14 @@ export const useDictationStore = create<DictationStore>((set, get) => {
       set((state) => ({
         modelProgress: { ...state.modelProgress, [size]: percent },
       })),
+    (warning) => set({ deliveryNotice: warning }),
+    () => {
+      const state = get();
+      if (state.isStarting || state.isRecording) {
+        set({ deliveryNotice: "Maximum recording duration reached; transcribing now." });
+        void state.stopRecording();
+      }
+    },
   );
 
   return {
@@ -117,9 +140,14 @@ export const useDictationStore = create<DictationStore>((set, get) => {
     isTranscribing: false,
     waveform: [],
     lastResult: null,
+    lastTelemetry: null,
     status: "idle",
     error: null,
     deliveryNotice: null,
+    shortcutStatus: {
+      state: "disabled",
+      message: "Global dictation shortcuts are off.",
+    },
 
     history: [],
     analytics: null,
@@ -137,6 +165,7 @@ export const useDictationStore = create<DictationStore>((set, get) => {
           error: null,
           status: "starting",
           lastResult: null,
+          lastTelemetry: null,
           deliveryNotice: null,
           waveform: [],
         });
@@ -154,7 +183,10 @@ export const useDictationStore = create<DictationStore>((set, get) => {
           );
         }
 
-        await startRecordingCmd(deviceIndex ?? current.settings?.deviceIndex ?? undefined);
+        await startRecordingCmd(
+          current.settings?.deviceId,
+          deviceIndex ?? current.settings?.deviceIndex,
+        );
         set({ isStarting: false, isRecording: true, status: "recording" });
         const pending = pendingStartAction;
         pendingStartAction = null;
@@ -183,8 +215,18 @@ export const useDictationStore = create<DictationStore>((set, get) => {
       if (!get().isRecording) return get().lastResult ?? "";
       try {
         set({ isRecording: false, isTranscribing: true, status: "transcribing" });
-        const result = await stopRecordingCmd();
-        set({ lastResult: result, isTranscribing: false, status: "done", waveform: [] });
+        const payload = await stopRecordingCmd();
+        // Accept a plain string from a pre-upgrade backend during dev hot reload.
+        const telemetry = typeof payload === "string" ? null : payload;
+        const result = typeof payload === "string" ? payload : payload.text;
+        set({
+          lastResult: result,
+          lastTelemetry: telemetry,
+          isTranscribing: false,
+          status: "done",
+          waveform: [],
+          deliveryNotice: telemetry?.warnings[0] ?? null,
+        });
         await Promise.all([get().loadHistory(100, 0), get().loadAnalytics()]);
         return result;
       } catch (err) {
@@ -208,6 +250,7 @@ export const useDictationStore = create<DictationStore>((set, get) => {
           status: "idle",
           waveform: [],
           lastResult: null,
+          lastTelemetry: null,
           error: null,
         });
       } catch (err) {
@@ -256,6 +299,7 @@ export const useDictationStore = create<DictationStore>((set, get) => {
         const parsed = JSON.parse(raw) as Partial<DictationSettings>;
         const settings: DictationSettings = {
           modelSize: parsed.modelSize ?? "small",
+          deviceId: parsed.deviceId ?? null,
           deviceIndex: parsed.deviceIndex ?? null,
           customDictionary: parsed.customDictionary ?? [],
           autoPaste: parsed.autoPaste ?? false,
@@ -263,6 +307,11 @@ export const useDictationStore = create<DictationStore>((set, get) => {
           systemWidePaste: parsed.systemWidePaste ?? false,
           pushToTalkShortcut: parsed.pushToTalkShortcut,
           toggleShortcut: parsed.toggleShortcut,
+          globalShortcutsEnabled: parsed.globalShortcutsEnabled ?? false,
+          maxDurationSeconds: Math.min(
+            1_800,
+            Math.max(10, parsed.maxDurationSeconds ?? 300),
+          ),
         };
         set({ settings });
       } catch (err) {
@@ -311,6 +360,7 @@ export const useDictationStore = create<DictationStore>((set, get) => {
     clearResult() {
       set({
         lastResult: null,
+        lastTelemetry: null,
         status: "idle",
         error: null,
         deliveryNotice: null,
@@ -320,6 +370,10 @@ export const useDictationStore = create<DictationStore>((set, get) => {
 
     setDeliveryNotice(notice) {
       set({ deliveryNotice: notice });
+    },
+
+    setShortcutStatus(shortcutStatus) {
+      set({ shortcutStatus });
     },
   };
 });

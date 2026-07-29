@@ -15,7 +15,7 @@ Priority: **P1** = real bug or major user-facing gap · **P2** = correctness/UX
   closes mid-burst (teardown-only, inconsequential).
 - **P3 — Codex flat-path suffix assumption.** G10's `text.slice(flatTextEmitted)`
   assumes the terminal `agent_message` is a length-extension of the concatenated
-  deltas; a *corrected* terminal text would be mis-emitted. Matches the existing
+  deltas; a _corrected_ terminal text would be mis-emitted. Matches the existing
   0.135 item-path assumption; only manifests if Codex diverges.
 
 ## Dictation reliability and BridgeVoice response
@@ -33,22 +33,11 @@ Composer/store convergence.
   44.1/48 kHz, fast-PTT, cancel, disconnect, repeated phrase, first-model-load,
   history, in-app, clipboard, and external-app matrix when a microphone is
   connected or enabled.
-- **P2 — microphone doctor and recovery.** Add a three-second test that reports
-  device/rate/channels/sample format/level; then add stable device IDs,
-  bounded capture/max duration, dead-stream rebuild, physical-default fallback,
-  and structured actionable diagnostics.
-- **P2 — global shortcut trust.** Add an explicit enable switch, readiness and
-  conflict test, serialized rebinding, and a safer default than claiming the
-  common `Ctrl+Shift+V` paste-without-formatting chord unconditionally.
-- **P2 — native insertion coverage.** Extend delivery to contenteditable,
-  editor, and PTY-native insertion; add original-target/secure-field checks;
-  verify macOS accessibility and Linux X11/Wayland fallback behavior.
-- **P2 — packaged macOS/Linux audio prerequisites.** Add the macOS microphone
-  usage metadata/accessibility verification and confirm Linux ALSA/PipeWire
-  runtime dependencies in packaged DEB/AppImage builds.
-- **P3 — structured transcription telemetry.** Return detected language,
-  capture format, duration, model-load/inference time, and warnings without
-  logging transcript or dictionary contents.
+- **P2 — packaged cross-platform dictation matrix.** Source prerequisites are
+  present (`NSMicrophoneUsageDescription`, Debian `libasound2`, stable device
+  IDs, bounded doctor/recovery, safe native targets). Verify macOS microphone
+  and accessibility prompts plus Linux ALSA/PipeWire and X11/Wayland fallback
+  behavior in real packaged builds.
 - **P3 — alternate engine benchmark.** Benchmark Parakeet and optional Whisper
   acceleration only after the repaired CPU path has packaged latency/quality
   measurements; do not add a cloud dependency by default.
@@ -125,8 +114,8 @@ them up before that gate clears.
 - **P3 — SFTP / port-forward / raised file-size cap (S10, Phase 4.3).** Remote
   files cap at 2 MB (`MAX_FILE_SIZE`, `src-tauri/src/core/tool_runtime_ssh.rs`).
   Deferred: streamed-transfer correctness (chunk boundaries, reassembly of a
-  >2 MB file) needs a live remote to verify. Ship the streamed cap before
-  port-forward.
+  > 2 MB file) needs a live remote to verify. Ship the streamed cap before
+  > port-forward.
 
 ## Platform & distribution (from `dev/`)
 
@@ -145,7 +134,7 @@ Deferred items called out in `dev/multi-platform-build.md` and
 - **P2 — Windows Authenticode signing.** Same shape as macOS — unsigned
   installers throw SmartScreen warnings on first run.
 - **P3 — Snap and Flatpak packaging for Linux.** Today Linux ships AppImage
-  + DEB only. Snap/Flatpak would broaden distro reach.
+  - DEB only. Snap/Flatpak would broaden distro reach.
 - **P3 — Cross-compile Windows from macOS / Linux** (or macOS from non-Mac).
   Not supported by the current setup — use native runners. Track as a
   "won't-fix until release matrix demands it" item.
@@ -255,7 +244,7 @@ stale-symbol misses — leave them in place until the removal criteria below
 are met.
 
 **Lazy read-side fallbacks (3 items).** All are deserialize-/read-time
-only: they re-emit the canonical `flightId` key the *next* time that record is
+only: they re-emit the canonical `flightId` key the _next_ time that record is
 persisted.
 
 - **2 Rust `#[serde(alias = "missionId")]`** aliases on the legacy persisted
@@ -270,7 +259,7 @@ records), and `migrateIssuesMissionToFlight` in `lib/storage-migration.ts`
 rewrites the `missionId` link on `packetade:issues`. Both are guarded/idempotent
 and run at startup.
 
-*Removal criteria:* the eager-migration prerequisite (a) is now **met**. The
+_Removal criteria:_ the eager-migration prerequisite (a) is now **met**. The
 three fallbacks are removable once **(b) at least one release cycle ships with
 the migration** so it has run on users' machines. Earliest realistic target is
 the 1.0.0 cut (per SemVer, removals belong at a major bump). Until that release
@@ -374,46 +363,42 @@ source of truth is
 
 ### Project-local Memory Hub (BridgeMemory response)
 
-- **Approved — Option B: add project-native memory inside PacketADE, not a
-  separate PacketMemory product.** Implement the bounded MH1–MH9 loop in
-  [`dev/bridgemind/project-local-memory-hub-loop.md`](./dev/bridgemind/project-local-memory-hub-loop.md).
-  Human-readable Markdown notes, versioned metadata, links/backlinks,
-  graph/orphan views, provenance, current IDF retrieval, and scoped MCP access
-  form one Memory Hub inside the existing Memory surface. Preserve the current
-  global/persisted memory store; project-local memory is an additional
-  inspectable source class, not a destructive migration. External edits and
-  conflicts must be visible, writes stay atomic and permission-gated, and no
-  vector database or cloud memory service is part of this decision.
+- **P2 — packaged project-memory interoperability proof.** MH1–MH7 source work
+  is complete: `.agents/memory` Markdown/frontmatter, safe CRUD/revisions,
+  graph/backlinks/health, unified IDF retrieval, provenance capture, Memory UI,
+  and permission-gated MCP access are implemented. Complete MH8/MH9 by running
+  the real editor/watch-storm/partial-write/rename/restart matrix plus
+  empty/large/dirty/gitignored packaged-project smoke on available platforms.
+  PacketADE deliberately does not edit `.gitignore`.
 
 ## Local-First MCP Hub (BridgeMCP response)
 
-- **Approved, later — Option B: consolidate PacketADE's existing MCP client and
-  provider features into a local-first Hub.** This is a worthwhile PacketADE
-  expansion, but it is explicitly **not the first product focus**. Implement
-  MCPH1–MCPH8 only when promoted from Later in
-  [`dev/bridgemind/local-first-mcp-hub-loop.md`](./dev/bridgemind/local-first-mcp-hub-loop.md).
-  Build on the shipped Streamable HTTP provider, MCP client configuration,
-  MCP-over-SSH, audit ring, and opt-in append-only writes. Add a curated starter
-  catalog, capability/health/restart views, workspace/server/tool trust
-  profiles, provenance, and suite resources for Flights, Issues, Memory Hub,
-  PacketCode, and eventually PacketAgent. Default to local/SSH ownership,
-  read-only access, explicit reviewed installs, and permission-gated writes.
-  Do not create a hosted PacketMCP product, expose a public endpoint, or silently
-  broaden a running agent session.
+- **P2 — live/packaged MCP Hub proof.** MCPH1–MCPH2/MCPH5–MCPH7 source work is complete:
+  lossless config inventory, official review-before-add catalog, stdio doctor,
+  frozen per-session trust in sidecar protocol v11 and in-process providers,
+  redacted Hub audit, explicit reconnect, and suite resources for Flights,
+  Issues, coordination, reviews, Memory, workspaces, and PacketCode health.
+  Complete MCPH3/MCPH8 with real local + SSH server crash/reload/version-skew,
+  offline install/removal, trust downgrade/reconnect, and packaged provider
+  smoke. Streamable HTTP/SSE config is preserved but the local doctor probes
+  stdio only; stdio child-process network access is not an OS sandbox.
+- **P2 — Codex CLI MCP trust boundary (MCPH4).** Anthropic Subscription,
+  OpenAI Agents SDK, and in-process providers enforce the protocol-v11
+  snapshot. Codex CLI ignores PacketADE's forwarded server set and manages a
+  separate `codex mcp` configuration, so the Hub now discloses that boundary
+  and refuses its reconnect action. Close MCPH4 only after a supported Codex
+  transport/config mechanism can apply and verify the same frozen authority;
+  live remote-profile parity remains part of the gate.
 
 ## Trust and provenance
 
-- **P2 — approved, queued: cross-cutting Trust and Provenance layer.** Run
-  TP1–TP8 in
-  [`dev/bridgemind/trust-provenance-loop.md`](./dev/bridgemind/trust-provenance-loop.md).
-  Give web, MCP, repository/file, imported, memory, and agent-derived evidence
-  one versioned origin/authority/integrity/lineage contract; surface it quietly
-  in agent, review, Flight, and Memory records; and connect tainted-turn
-  follow-on actions to the existing permission and bounded-autonomy gates.
-  Preserve the current nonce-delimited untrusted-web envelope, never let
-  evidence expand its own authority, and keep secret-bearing data out of
-  persistence and exports. This is a PacketADE capability, not a standalone
-  product or a claim of perfect prompt-injection detection.
+- **P2 — packaged provenance parity proof.** TP1–TP7 source work is complete:
+  the schema-v1 origin/authority/integrity/lineage envelope, ingestion
+  normalization, legacy-unknown hydration, compact chips, tainted-turn gates,
+  downstream Flight/Memory/reviewer/coordination lineage, and bounded redacted
+  audit are implemented. Complete TP8 with live local/SSH and all-provider
+  transport parity, MCP remote, restart, YOLO, and packaged visual/manual
+  smoke. Do not weaken denial floors to make a provider pass.
 
 ## Product tracks (from `dev/README.md`)
 
@@ -433,7 +418,6 @@ Only unresolved follow-ups remain here; shipped audit work is in `CHANGELOG.md`.
   before enabling it so local token/cost reporting is not permanently zero.
 
 ### Tool runtime
-
 
 ### MCP / workspace / runtime
 

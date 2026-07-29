@@ -2,104 +2,142 @@ import { useEffect } from "react";
 import {
   register,
   unregister,
-  isRegistered,
   type ShortcutEvent,
 } from "@tauri-apps/plugin-global-shortcut";
 import { useDictationStore } from "@/stores/dictationStore";
 import { useAppStore } from "@/stores/appStore";
-import { DEFAULT_PUSH_TO_TALK_SHORTCUT, DEFAULT_TOGGLE_SHORTCUT } from "@/types/dictation";
-
-const SHORTCUT_OPEN = "CommandOrControl+Shift+D"; // open Dictation view (not user-rebindable)
+import {
+  DEFAULT_PUSH_TO_TALK_SHORTCUT,
+  DEFAULT_TOGGLE_SHORTCUT,
+  DICTATION_OPEN_SHORTCUT,
+  validateDictationShortcuts,
+} from "@/types/dictation";
 
 type Handler = (event: ShortcutEvent) => void;
 
-async function safeRegister(shortcut: string, handler: Handler) {
-  try {
-    if (await isRegistered(shortcut)) {
-      await unregister(shortcut);
-    }
-    await register(shortcut, handler);
-    return true;
-  } catch (err) {
-    // OS-level registration can fail (already taken, no accessibility permission, etc.) —
-    // the in-window listeners in App.tsx remain as a fallback.
-    console.warn(`[dictation] global shortcut ${shortcut} not registered:`, err);
-    return false;
-  }
+// Effect teardown and settings updates can overlap. A single queue guarantees
+// that an older cleanup cannot unregister a freshly rebound shortcut.
+let registrationQueue = Promise.resolve();
+let generation = 0;
+const ownedShortcuts = new Set<string>();
+
+function enqueue(task: () => Promise<void>) {
+  registrationQueue = registrationQueue.then(task, task);
 }
 
-async function safeUnregister(shortcut: string) {
-  try {
-    if (await isRegistered(shortcut)) await unregister(shortcut);
-  } catch (err) {
-    console.warn(`[dictation] global shortcut ${shortcut} not unregistered:`, err);
+async function unregisterOwned() {
+  for (const shortcut of [...ownedShortcuts]) {
+    try {
+      await unregister(shortcut);
+    } catch (error) {
+      console.warn(`[dictation] global shortcut ${shortcut} was not released:`, error);
+    } finally {
+      ownedShortcuts.delete(shortcut);
+    }
   }
 }
 
 /**
- * Registers OS-level global shortcuts for dictation so the hotkeys fire even
- * when PacketADE is not the focused application. Mount once at the App root.
- *
- * The push-to-talk and toggle accelerators are user-rebindable via the
- * Dictation settings card; they are read from the persisted DictationSettings
- * (falling back to the hardcoded defaults) and re-registered whenever those
- * values change. The "open Dictation" accelerator stays fixed.
- *
- * Double-fire safety: the in-window keyboard handler in App.tsx may also fire
- * for these same key combinations when PacketADE is focused. The dictation
- * store guards `start`/`stopRecording` against re-entry, so simultaneous
- * triggers collapse to a single action.
+ * Registers opt-in OS-global dictation shortcuts. PacketADE only unregisters
+ * accelerators it successfully registered itself; an existing OS/app binding
+ * is reported as a conflict and is never taken over.
  */
 export function useDictationGlobalShortcuts() {
+  const enabled = useDictationStore(
+    (state) => state.settings?.globalShortcutsEnabled ?? false,
+  );
   const pttShortcut = useDictationStore(
-    (s) => s.settings?.pushToTalkShortcut ?? DEFAULT_PUSH_TO_TALK_SHORTCUT,
+    (state) => state.settings?.pushToTalkShortcut ?? DEFAULT_PUSH_TO_TALK_SHORTCUT,
   );
   const toggleShortcut = useDictationStore(
-    (s) => s.settings?.toggleShortcut ?? DEFAULT_TOGGLE_SHORTCUT,
+    (state) => state.settings?.toggleShortcut ?? DEFAULT_TOGGLE_SHORTCUT,
   );
 
   useEffect(() => {
-    let cancelled = false;
+    let disposed = false;
+    const activeGeneration = ++generation;
 
     const pttHandler: Handler = (event) => {
-      const ds = useDictationStore.getState();
+      const state = useDictationStore.getState();
       if (event.state === "Pressed") {
-        if (!ds.isStarting && !ds.isRecording && !ds.isTranscribing) {
-          void ds.startRecording();
+        if (!state.isStarting && !state.isRecording && !state.isTranscribing) {
+          void state.startRecording();
         }
-      } else if (event.state === "Released") {
-        if (ds.isStarting || ds.isRecording) void ds.stopRecording();
+      } else if (event.state === "Released" && (state.isStarting || state.isRecording)) {
+        void state.stopRecording();
       }
     };
 
     const toggleHandler: Handler = (event) => {
       if (event.state !== "Pressed") return;
-      const ds = useDictationStore.getState();
-      if (ds.isStarting || ds.isRecording) void ds.stopRecording();
-      else if (!ds.isStarting && !ds.isTranscribing) void ds.startRecording();
+      const state = useDictationStore.getState();
+      if (state.isStarting || state.isRecording) void state.stopRecording();
+      else if (!state.isTranscribing) void state.startRecording();
     };
 
     const openHandler: Handler = (event) => {
-      if (event.state !== "Pressed") return;
-      useAppStore.getState().setActiveView("dictation");
+      if (event.state === "Pressed") {
+        useAppStore.getState().setActiveView("dictation");
+      }
     };
 
-    void (async () => {
-      const ok1 = await safeRegister(pttShortcut, pttHandler);
-      if (cancelled) return;
-      const ok2 = await safeRegister(toggleShortcut, toggleHandler);
-      if (cancelled) return;
-      const ok3 = await safeRegister(SHORTCUT_OPEN, openHandler);
-      if (cancelled) return;
-      console.info(`[dictation] global shortcuts: PTT=${ok1} toggle=${ok2} open=${ok3}`);
-    })();
+    enqueue(async () => {
+      await unregisterOwned();
+      if (disposed || activeGeneration !== generation) return;
+
+      if (!enabled) {
+        useDictationStore.getState().setShortcutStatus({
+          state: "disabled",
+          message: "Global dictation shortcuts are off. In-app controls still work.",
+        });
+        return;
+      }
+
+      const validationError = validateDictationShortcuts(pttShortcut, toggleShortcut);
+      if (validationError) {
+        useDictationStore.getState().setShortcutStatus({
+          state: "error",
+          message: validationError,
+        });
+        return;
+      }
+
+      useDictationStore.getState().setShortcutStatus({
+        state: "registering",
+        message: "Registering global dictation shortcuts…",
+      });
+
+      try {
+        const bindings: Array<[string, Handler]> = [
+          [pttShortcut, pttHandler],
+          [toggleShortcut, toggleHandler],
+          [DICTATION_OPEN_SHORTCUT, openHandler],
+        ];
+        for (const [shortcut, handler] of bindings) {
+          await register(shortcut, handler);
+          ownedShortcuts.add(shortcut);
+        }
+        if (disposed || activeGeneration !== generation) {
+          await unregisterOwned();
+          return;
+        }
+        useDictationStore.getState().setShortcutStatus({
+          state: "ready",
+          message: "Global dictation shortcuts are active.",
+        });
+      } catch (error) {
+        await unregisterOwned();
+        useDictationStore.getState().setShortcutStatus({
+          state: "error",
+          message: `Shortcut registration failed or conflicts with another app: ${String(error)}`,
+        });
+      }
+    });
 
     return () => {
-      cancelled = true;
-      // Best-effort cleanup; failures are non-fatal
-      void safeUnregister(pttShortcut);
-      void safeUnregister(toggleShortcut);
-      void safeUnregister(SHORTCUT_OPEN);
+      disposed = true;
+      if (generation === activeGeneration) generation += 1;
+      enqueue(unregisterOwned);
     };
-  }, [pttShortcut, toggleShortcut]);
+  }, [enabled, pttShortcut, toggleShortcut]);
 }

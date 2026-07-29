@@ -28,6 +28,20 @@ const readyModel = {
   fileSizeMb: 142,
   path: "C:\\models\\ggml-base.bin",
 };
+const dictationResult = {
+  text: "hello",
+  durationSeconds: 1.2,
+  inputSampleRate: 48_000,
+  channels: 2,
+  sampleFormat: "f32",
+  deviceName: "Test microphone",
+  deviceId: "wasapi:test",
+  modelSize: "base",
+  detectedLanguage: "en",
+  modelLoadMs: 20,
+  inferenceMs: 80,
+  warnings: [],
+};
 
 describe("dictationStore", () => {
   beforeEach(() => {
@@ -35,6 +49,7 @@ describe("dictationStore", () => {
     tauriMocks.getDictationSettings.mockResolvedValue(
       JSON.stringify({
         modelSize: "base",
+        deviceId: null,
         deviceIndex: 2,
         customDictionary: [],
         autoPaste: true,
@@ -42,7 +57,7 @@ describe("dictationStore", () => {
     );
     tauriMocks.listWhisperModels.mockResolvedValue([readyModel]);
     tauriMocks.startRecordingCmd.mockResolvedValue(undefined);
-    tauriMocks.stopRecordingCmd.mockResolvedValue("hello");
+    tauriMocks.stopRecordingCmd.mockResolvedValue(dictationResult);
     tauriMocks.cancelRecordingCmd.mockResolvedValue(undefined);
     tauriMocks.getDictationHistory.mockResolvedValue("[]");
     tauriMocks.getDictationAnalytics.mockResolvedValue(
@@ -68,9 +83,14 @@ describe("dictationStore", () => {
       isTranscribing: false,
       waveform: [],
       lastResult: null,
+      lastTelemetry: null,
       status: "idle",
       error: null,
       deliveryNotice: null,
+      shortcutStatus: {
+        state: "disabled",
+        message: "Global dictation shortcuts are off.",
+      },
       settings: null,
       models: [],
       modelProgress: {},
@@ -85,8 +105,10 @@ describe("dictationStore", () => {
     expect(useDictationStore.getState().settings).toMatchObject({
       language: "auto",
       systemWidePaste: false,
+      globalShortcutsEnabled: false,
+      maxDurationSeconds: 300,
     });
-    expect(tauriMocks.startRecordingCmd).toHaveBeenCalledWith(2);
+    expect(tauriMocks.startRecordingCmd).toHaveBeenCalledWith(null, 2);
     expect(useDictationStore.getState().status).toBe("recording");
   });
 
@@ -111,6 +133,7 @@ describe("dictationStore", () => {
       isRecording: false,
       isTranscribing: false,
       lastResult: "hello",
+      lastTelemetry: dictationResult,
       status: "done",
     });
   });

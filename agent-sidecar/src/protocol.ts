@@ -60,7 +60,11 @@
 //
 // v10 (G06/G36): adds `cancelled` to terminal `done` events. Cancellation is
 // now an explicit terminal outcome rather than an indistinguishable success.
-export const PROTOCOL_VERSION = 10;
+//
+// v11 (MCPH4): freezes per-server MCP trust/capability authority into the
+// session start request. The sidecar filters transports and tools against the
+// snapshot; later Settings edits cannot silently broaden a running session.
+export const PROTOCOL_VERSION = 11;
 
 /** Image content a model can interpret natively. base64-encoded bytes. */
 export type ImageAttachment = {
@@ -92,6 +96,22 @@ export type WorkspaceRef =
       hostFingerprint?: string | null;
     };
 
+export type McpTrustSnapshot = {
+  schemaVersion: 1;
+  serverId: string;
+  serverName: string;
+  workspacePath: string | null;
+  allowReads: boolean;
+  allowWrites: boolean;
+  allowNetwork: boolean;
+  allowedRoots: string[];
+  allowedToolNames: string[];
+  denialFloors: Array<"credentials" | "outside_workspace" | "protected_publish">;
+  revision: number;
+  updatedAt: number;
+  capabilityCheckedAt?: number;
+};
+
 export type StartSessionRequest = {
   type: "start_session";
   sessionId: string;
@@ -100,6 +120,10 @@ export type StartSessionRequest = {
   systemPrompt: string;
   allowedTools: string[];
   mcpServers: Record<string, unknown>;
+  /** v11: immutable authority captured by PacketADE at session start. An
+   * omitted field is migrated by the sidecar to conservative read-only
+   * defaults; an explicit empty array grants no MCP servers. */
+  mcpTrustSnapshot?: McpTrustSnapshot[];
   projectPath: string;
   initialMessage: string;
   /** v4: API-key sidecar providers may receive a transient key from Rust.

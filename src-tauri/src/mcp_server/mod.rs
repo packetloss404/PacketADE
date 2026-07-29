@@ -349,6 +349,70 @@ struct AcknowledgeInboxArgs {
     note: Option<String>,
 }
 
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[schemars(rename_all = "camelCase")]
+struct ProjectMemorySearchArgs {
+    workspace_id: String,
+    query: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[schemars(rename_all = "camelCase")]
+struct ProjectMemoryReadArgs {
+    workspace_id: String,
+    note_id: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[schemars(rename_all = "camelCase")]
+struct ProjectMemoryCreateArgs {
+    workspace_id: String,
+    title: String,
+    body: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    provenance_ids: Vec<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[schemars(rename_all = "camelCase")]
+struct ProjectMemoryUpdateArgs {
+    workspace_id: String,
+    note_id: String,
+    expected_revision: String,
+    title: String,
+    body: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    provenance_ids: Vec<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[schemars(rename_all = "camelCase")]
+struct ProjectMemoryArchiveArgs {
+    workspace_id: String,
+    note_id: String,
+    expected_revision: String,
+}
+
+fn local_workspace_path(workspace_id: &str) -> Result<String, McpError> {
+    reads::workspace_project_path(&load(), workspace_id)
+        .map(str::to_string)
+        .ok_or_else(|| {
+            McpError::invalid_params(
+                "workspaceId must identify a persisted local workspace",
+                None,
+            )
+        })
+}
+
 /// The MCP server handler. A fresh instance is created per session by the
 /// transport's service factory; state is read on demand from disk, so the
 /// handler is cheap and shares only the audit sink.
@@ -408,6 +472,129 @@ impl PacketAdeMcp {
     async fn read_memory_context(&self) -> Result<CallToolResult, McpError> {
         self.audit.record("tool", "read_memory_context");
         Ok(json_result(&reads::memory_patterns_json(&load())))
+    }
+
+    #[tool(
+        description = "Search bounded project-local Markdown memory for a persisted local workspace."
+    )]
+    async fn search_project_memory(
+        &self,
+        Parameters(args): Parameters<ProjectMemorySearchArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let project_path = local_workspace_path(&args.workspace_id)?;
+        self.audit.record("tool", "search_project_memory");
+        crate::commands::project_memory::search_project_memory_inner(&project_path, &args.query)
+            .map(|results| json_result(&serde_json::to_value(results).unwrap_or(Value::Null)))
+            .map_err(|message| McpError::invalid_params(message, None))
+    }
+
+    #[tool(
+        description = "Read one project-local Markdown memory note by workspace and stable note id."
+    )]
+    async fn read_project_memory(
+        &self,
+        Parameters(args): Parameters<ProjectMemoryReadArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let project_path = local_workspace_path(&args.workspace_id)?;
+        self.audit.record("tool", "read_project_memory");
+        let snapshot = crate::commands::project_memory::list_project_memory_inner(&project_path)
+            .map_err(|message| McpError::invalid_params(message, None))?;
+        let note = snapshot
+            .notes
+            .into_iter()
+            .find(|note| note.metadata.id == args.note_id)
+            .ok_or_else(|| McpError::invalid_params("project-memory note not found", None))?;
+        Ok(json_result(
+            &serde_json::to_value(note).unwrap_or(Value::Null),
+        ))
+    }
+
+    #[tool(
+        description = "Create a confined project-local Markdown memory note. Requires allow_writes."
+    )]
+    async fn create_project_memory(
+        &self,
+        Parameters(args): Parameters<ProjectMemoryCreateArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if !self.allow_writes {
+            return Err(McpError::invalid_params(
+                "writes are disabled; enable them in PacketADE's MCP Provider settings",
+                None,
+            ));
+        }
+        let project_path = local_workspace_path(&args.workspace_id)?;
+        self.audit.record("tool", "create_project_memory");
+        let note = crate::commands::project_memory::create_project_memory_inner(
+            &project_path,
+            crate::commands::project_memory::CreateProjectMemoryInput {
+                title: args.title,
+                body: args.body,
+                tags: args.tags,
+                provenance_ids: args.provenance_ids,
+            },
+        )
+        .map_err(|message| McpError::invalid_params(message, None))?;
+        Ok(json_result(
+            &serde_json::to_value(note).unwrap_or(Value::Null),
+        ))
+    }
+
+    #[tool(
+        description = "Update a project-local Markdown memory note with an optimistic revision check. Requires allow_writes."
+    )]
+    async fn update_project_memory(
+        &self,
+        Parameters(args): Parameters<ProjectMemoryUpdateArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if !self.allow_writes {
+            return Err(McpError::invalid_params(
+                "writes are disabled; enable them in PacketADE's MCP Provider settings",
+                None,
+            ));
+        }
+        let project_path = local_workspace_path(&args.workspace_id)?;
+        self.audit.record("tool", "update_project_memory");
+        let note = crate::commands::project_memory::update_project_memory_inner(
+            &project_path,
+            crate::commands::project_memory::UpdateProjectMemoryInput {
+                id: args.note_id,
+                expected_revision: args.expected_revision,
+                title: args.title,
+                body: args.body,
+                tags: args.tags,
+                provenance_ids: args.provenance_ids,
+            },
+        )
+        .map_err(|message| McpError::invalid_params(message, None))?;
+        Ok(json_result(
+            &serde_json::to_value(note).unwrap_or(Value::Null),
+        ))
+    }
+
+    #[tool(
+        description = "Archive a project-local Markdown memory note with an optimistic revision check. Requires allow_writes."
+    )]
+    async fn archive_project_memory(
+        &self,
+        Parameters(args): Parameters<ProjectMemoryArchiveArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if !self.allow_writes {
+            return Err(McpError::invalid_params(
+                "writes are disabled; enable them in PacketADE's MCP Provider settings",
+                None,
+            ));
+        }
+        let project_path = local_workspace_path(&args.workspace_id)?;
+        self.audit.record("tool", "archive_project_memory");
+        let note = crate::commands::project_memory::archive_project_memory_inner(
+            &project_path,
+            &args.note_id,
+            &args.expected_revision,
+        )
+        .map_err(|message| McpError::invalid_params(message, None))?;
+        Ok(json_result(
+            &serde_json::to_value(note).unwrap_or(Value::Null),
+        ))
     }
 
     #[tool(description = "List all workspaces.")]
@@ -599,9 +786,14 @@ impl ServerHandler for PacketAdeMcp {
         let mut resources = vec![
             Resource::new("packetade://project", "Project overview"),
             Resource::new("packetade://flights", "All flights"),
+            Resource::new("packetade://issues", "Issue board"),
             Resource::new("packetade://memory/patterns", "Memory patterns"),
             Resource::new("packetade://workspaces", "Workspaces"),
             Resource::new("packetade://reviews", "Review packets"),
+            Resource::new(
+                "packetade://packetcode/health",
+                "PacketCode integration health",
+            ),
         ];
         for f in &state.flights {
             resources.push(Resource::new(
@@ -612,6 +804,14 @@ impl ServerHandler for PacketAdeMcp {
                 format!("packetade://flights/{}/inbox", f.id),
                 format!("{} coordination inbox", f.title),
             ));
+        }
+        for workspace in &state.workspaces {
+            if workspace.server_id.is_none() {
+                resources.push(Resource::new(
+                    format!("packetade://memory/project/{}", workspace.id),
+                    format!("{} project memory", workspace.name),
+                ));
+            }
         }
         Ok(ListResourcesResult::with_all_items(resources))
     }
@@ -627,12 +827,42 @@ impl ServerHandler for PacketAdeMcp {
         let value: Option<Value> = match reads::parse_resource_uri(&request.uri) {
             ResourceRoute::Project => Some(reads::project_overview_json(&state)),
             ResourceRoute::Flights => Some(reads::all_flights_json(&state)),
+            ResourceRoute::Issues => Some(reads::all_issues_json(&state)),
             ResourceRoute::Flight(id) => reads::one_flight_json(&state, id),
             ResourceRoute::FlightTasks(id) => reads::flight_tasks_json(&state, id),
             ResourceRoute::FlightInbox(id) => reads::flight_inbox_json(&state, id, None),
             ResourceRoute::MemoryPatterns => Some(reads::memory_patterns_json(&state)),
+            ResourceRoute::ProjectMemory(workspace_id) => {
+                reads::workspace_project_path(&state, workspace_id).and_then(|project_path| {
+                    crate::commands::project_memory::list_project_memory_inner(project_path)
+                        .ok()
+                        .and_then(|snapshot| serde_json::to_value(snapshot).ok())
+                })
+            }
             ResourceRoute::Workspaces => Some(reads::workspaces_json(&state)),
             ResourceRoute::Reviews => Some(reads::reviews_json(&state)),
+            ResourceRoute::PacketCodeHealth => Some(
+                match crate::commands::agent::probe_packetcode_integration(None, None).await {
+                    Ok(probe) => serde_json::json!({
+                        "available": true,
+                        "healthy": probe.healthy,
+                        "executablePath": probe.executable_path,
+                        "version": probe.version,
+                        "exitCode": probe.exit_code,
+                        "schemaVersion": probe.schema_version,
+                        "doctorStatus": probe.doctor_status,
+                        "effectiveHome": probe.effective_home,
+                        "homeSource": probe.home_source,
+                        "providerSummary": probe.provider_summary,
+                    }),
+                    Err(error) => serde_json::json!({
+                        "available": false,
+                        "healthy": false,
+                        "error": error,
+                        "recovery": "Open Settings > Agents > PacketCode integration to detect, install, or set the executable and home path.",
+                    }),
+                },
+            ),
             ResourceRoute::Unknown => None,
         };
         match value {

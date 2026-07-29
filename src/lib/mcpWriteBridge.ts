@@ -9,6 +9,7 @@ import type {
   CoordinationMessageKind,
   CoordinationRecipientKind,
 } from "@/types/flight";
+import { toolResultProvenance } from "@/lib/provenance";
 
 /**
  * N3 Slice 2 — applies event-routed writes from the (read-mostly) MCP server.
@@ -74,6 +75,11 @@ const RECIPIENT_KINDS = new Set<CoordinationRecipientKind>([
  *  distinct append. */
 export function applyMcpWrite(intent: McpWriteIntent): void {
   const { op, flightId, event: payload } = intent;
+  const mcpSource = toolResultProvenance({
+    toolId: `mcp-write-${flightId}-${payload?.messageId ?? payload?.dedupeKey ?? op}`,
+    name: `mcp__packetade__${op}`,
+    content: payload?.body ?? payload?.summary ?? payload?.note ?? undefined,
+  });
   if (op === "post_coordination_message") {
     if (
       !flightId ||
@@ -97,6 +103,7 @@ export function applyMcpWrite(intent: McpWriteIntent): void {
       ],
       body: payload.body,
       dedupeKey: payload.dedupeKey ?? undefined,
+      provenance: [mcpSource],
     }).catch((error) => console.warn("MCP inbox write was not applied:", error));
     return;
   }
@@ -132,6 +139,7 @@ export function applyMcpWrite(intent: McpWriteIntent): void {
     summary: payload.summary,
     agentId,
     metadata: { source: "mcp" },
+    provenance: mcpSource,
   });
 }
 

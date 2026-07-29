@@ -1,4 +1,5 @@
 // === Flight Status & Priority ===
+import type { ProvenanceEnvelope } from "@/types/provenance";
 
 export type FlightStatus =
   | "spec"
@@ -97,6 +98,7 @@ export interface ReviewPacket {
   filePaths: string[];
   agentId?: string;
   sessionId?: string;
+  provenance?: ProvenanceEnvelope;
 }
 
 export interface Task {
@@ -150,6 +152,7 @@ export interface CoordinationEvent {
   summary: string;
   timestamp: number;
   metadata?: Record<string, string>;
+  provenance?: ProvenanceEnvelope;
 }
 
 // === Async Flight Attempts ===
@@ -209,6 +212,7 @@ export interface ReviewGateReport {
   summary: string;
   findings: ReviewGateFinding[];
   evidence: string[];
+  provenance?: ProvenanceEnvelope;
 }
 
 export interface ReviewGatePolicy {
@@ -285,6 +289,7 @@ export interface CoordinationArtifactRef {
   label: string;
   uri?: string;
   mimeType?: string;
+  provenance?: ProvenanceEnvelope;
 }
 
 export interface CoordinationAcknowledgement {
@@ -310,6 +315,7 @@ export interface CoordinationMessage {
   dedupeKey: string;
   hopCount: number;
   errorMessage?: string;
+  provenance?: ProvenanceEnvelope;
 }
 
 export type AutonomyFlightMode = "assisted" | "settings_default" | "yolo";

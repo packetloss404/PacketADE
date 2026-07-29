@@ -3,12 +3,13 @@
  * bucket. P1-17: uniform one-line verb rows (icon · verb · target · status)
  * driven by the global transcriptViewMode store instead of a per-call prop.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { AgentToolCall } from "@/types/agent-conversation";
 
 import { ToolCallCard } from "@/components/agents/chat/ToolCallCard";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
+import { toolResultProvenance } from "@/lib/provenance";
 
 function webFetchCall(overrides: Partial<AgentToolCall> = {}): AgentToolCall {
   return {
@@ -88,5 +89,28 @@ describe("ToolCallCard — generic verb row", () => {
         node?.textContent === 'input: {"url":"https://example.com/docs"}',
       ),
     ).toBeInTheDocument();
+  });
+
+  it("shows an inspectable source chip for external evidence", () => {
+    render(
+      <ToolCallCard
+        toolCall={webFetchCall({
+          provenance: toolResultProvenance({
+            toolId: "tc-1",
+            name: "web_fetch",
+            input: JSON.stringify({ url: "https://example.com/docs?token=x" }),
+            content: "page",
+          }),
+        })}
+        conversationId="conv-1"
+        projectPath="/repo"
+      />,
+    );
+
+    const chip = screen.getByRole("button", { name: "Source: Web evidence" });
+    fireEvent.click(chip);
+    const detail = screen.getByRole("status");
+    expect(within(detail).getByText("https://example.com/docs")).toBeInTheDocument();
+    expect(within(detail).getByText(/Authority: evidence only/)).toBeInTheDocument();
   });
 });

@@ -1,6 +1,7 @@
 # Approved Loop Queue Before Remote Agents
 
-Status: **prepared; waiting at the one-time execution confirmation gate**
+Status: **locally converged; environment/external-runtime gates isolated;
+Remote Agents boundary remains closed**
 
 Prepared: 2026-07-28
 
@@ -38,15 +39,15 @@ point is the confirmation gate below.
 
 ## Ordered queue
 
-| Order | Lane | Work to run | Why it is here | Start state |
-|---:|---|---|---|---|
-| **0** | Release baseline | Version, validate, package, commit, tag, and push v0.10.2. | Gives every later loop a clean, recoverable baseline. | complete — `v0.10.2` |
-| **1** | Implemented Flight supervision proof | Close the remaining RG8, CG9, CI9, and AP9 release-like local/SSH/manual matrices in the Reviewer Gate, cooperative graph, Coordination Inbox, and bounded YOLO ledgers. | Proves the already-implemented supervision foundation before adding more cross-cutting state. | source complete; smoke remains |
-| **2** | Dictation follow-on hardening | Run DV11–DV17 in [`dictation-repair-hardening-loop.md`](./dictation-repair-hardening-loop.md), separating source-completable work from physical-device/platform gates. | Finishes the approved BridgeVoice response without reopening the repaired baseline. | baseline fixed; follow-ons queued/gated |
-| **3** | Trust and Provenance | Run TP1–TP8 in [`trust-provenance-loop.md`](./trust-provenance-loop.md). | Establishes the shared origin/authority/lineage contract before Memory and MCP build on it. | queued |
-| **4** | Project-local Memory Hub | Run MH1–MH9 in [`project-local-memory-hub-loop.md`](./project-local-memory-hub-loop.md). | Uses the trust contract for durable project notes, capture lineage, and scoped retrieval. | queued |
-| **5** | Local-first MCP Hub | Run MCPH1–MCPH8 in [`local-first-mcp-hub-loop.md`](./local-first-mcp-hub-loop.md). | Runs after Trust and Memory because MCPH5/MCPH6 consume their provenance and Memory Hub contracts. This preserves the decision that MCP Hub is not the first focus. | approved later; queued last |
-| **6** | Convergence | Run the combined migration, local/SSH, provider-parity, permission/YOLO, review, Memory, MCP, packaging, and documentation matrix. Remove shipped work from the backlog and archive completed ledgers only after evidence is recorded. | Proves the additions behave as one PacketADE system instead of overlapping features. | waits on lanes 1–5 |
+| Order | Lane                                 | Work to run                                                                                                                                                                                                                            | Why it is here                                                                                                                                                      | Start state                                                                                                                                         |
+| ----: | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **0** | Release baseline                     | Version, validate, package, commit, tag, and push v0.10.2.                                                                                                                                                                             | Gives every later loop a clean, recoverable baseline.                                                                                                               | complete — `v0.10.2`                                                                                                                                |
+| **1** | Implemented Flight supervision proof | Close the remaining RG8, CG9, CI9, and AP9 release-like local/SSH/manual matrices in the Reviewer Gate, cooperative graph, Coordination Inbox, and bounded YOLO ledgers.                                                               | Proves the already-implemented supervision foundation before adding more cross-cutting state.                                                                       | automated proof complete; isolated packaged/SSH smoke gated                                                                                         |
+| **2** | Dictation follow-on hardening        | Run DV11–DV17 in [`dictation-repair-hardening-loop.md`](./dictation-repair-hardening-loop.md), separating source-completable work from physical-device/platform gates.                                                                 | Finishes the approved BridgeVoice response without reopening the repaired baseline.                                                                                 | DV11–DV16 source work complete; physical/package matrix and DV17 gated                                                                              |
+| **3** | Trust and Provenance                 | Run TP1–TP8 in [`trust-provenance-loop.md`](./trust-provenance-loop.md).                                                                                                                                                               | Establishes the shared origin/authority/lineage contract before Memory and MCP build on it.                                                                         | TP1–TP7 source complete; TP8 packaged/SSH proof gated                                                                                               |
+| **4** | Project-local Memory Hub             | Run MH1–MH9 in [`project-local-memory-hub-loop.md`](./project-local-memory-hub-loop.md).                                                                                                                                               | Uses the trust contract for durable project notes, capture lineage, and scoped retrieval.                                                                           | MH1–MH7 source complete; MH8/MH9 packaged interoperability gated                                                                                    |
+| **5** | Local-first MCP Hub                  | Run MCPH1–MCPH8 in [`local-first-mcp-hub-loop.md`](./local-first-mcp-hub-loop.md).                                                                                                                                                     | Runs after Trust and Memory because MCPH5/MCPH6 consume their provenance and Memory Hub contracts. This preserves the decision that MCP Hub is not the first focus. | MCPH1–MCPH2/MCPH5–MCPH7 source complete; MCPH3/MCPH4/MCPH8 environment/external-runtime proof gated                                                 |
+| **6** | Convergence                          | Run the combined migration, local/SSH, provider-parity, permission/YOLO, review, Memory, MCP, packaging, and documentation matrix. Remove shipped work from the backlog and archive completed ledgers only after evidence is recorded. | Proves the additions behave as one PacketADE system instead of overlapping features.                                                                                | locally complete — full evidence in [`pre-remote-convergence-2026-07-28.md`](./pre-remote-convergence-2026-07-28.md); exact external gates isolated |
 
 ## Dictation follow-on slices
 
@@ -54,15 +55,15 @@ The initial DV1–DV10 repair is complete. These IDs make the remaining backlog
 executable without pretending that this machine currently has an active
 microphone or that unavailable platforms were tested.
 
-| ID | Item | Acceptance condition | Status |
-|---|---|---|---|
-| **DV11** | Microphone doctor and stable identity | A bounded three-second test reports device identity, native rate/channels/format, live level, and actionable failure; saved devices survive enumeration reordering with a documented fallback. | queued |
-| **DV12** | Capture bounds and recovery | Enforce a configured maximum duration/bounded buffer, rebuild dead streams, handle disconnect, and use a safe physical-default fallback without orphaning state. | queued |
-| **DV13** | Global-shortcut trust | Add an explicit enable switch, conflict/readiness test, serialized rebinding, and a safer default that does not claim `Ctrl+Shift+V` unconditionally. | queued |
-| **DV14** | Native insertion coverage | Support contenteditable, editor, and PTY targets with original-target and secure-field checks; clipboard remains a visible fallback. | queued |
-| **DV15** | Packaged platform prerequisites | Verify Windows microphone/paste behavior, macOS microphone/accessibility metadata, and Linux ALSA/PipeWire plus X11/Wayland fallback packaging. | environment-gated |
-| **DV16** | Structured private telemetry | Return capture format, detected language, duration, model-load/inference timing, and warnings without logging transcript or dictionary contents. | queued |
-| **DV17** | Engine/acceleration evidence | Benchmark Parakeet or Whisper acceleration only after packaged CPU Whisper latency/quality measurements exist; keep cloud transcription off by default. | evidence-gated |
+| ID       | Item                                  | Acceptance condition                                                                                                                                                                           | Status                                                        |
+| -------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| **DV11** | Microphone doctor and stable identity | A bounded three-second test reports device identity, native rate/channels/format, live level, and actionable failure; saved devices survive enumeration reordering with a documented fallback. | source complete; physical doctor gated (no capture endpoint)  |
+| **DV12** | Capture bounds and recovery           | Enforce a configured maximum duration/bounded buffer, rebuild dead streams, handle disconnect, and use a safe physical-default fallback without orphaning state.                               | source complete; disconnect smoke gated                       |
+| **DV13** | Global-shortcut trust                 | Add an explicit enable switch, conflict/readiness test, serialized rebinding, and a safer default that does not claim `Ctrl+Shift+V` unconditionally.                                          | complete                                                      |
+| **DV14** | Native insertion coverage             | Support contenteditable, editor, and PTY targets with original-target and secure-field checks; clipboard remains a visible fallback.                                                           | source complete; packaged OS matrix gated                     |
+| **DV15** | Packaged platform prerequisites       | Verify Windows microphone/paste behavior, macOS microphone/accessibility metadata, and Linux ALSA/PipeWire plus X11/Wayland fallback packaging.                                                | metadata/dependency source complete; packaged platforms gated |
+| **DV16** | Structured private telemetry          | Return capture format, detected language, duration, model-load/inference timing, and warnings without logging transcript or dictionary contents.                                               | complete                                                      |
+| **DV17** | Engine/acceleration evidence          | Benchmark Parakeet or Whisper acceleration only after packaged CPU Whisper latency/quality measurements exist; keep cloud transcription off by default.                                        | evidence-gated                                                |
 
 ## Cross-repository and external lanes
 
@@ -86,10 +87,9 @@ microphone or that unavailable platforms were tested.
 
 ## Confirmation boundary
 
-**STOP HERE. Do not run lanes 1–6 until the user gives the one-time
-confirmation.**
+**Confirmed by the user on 2026-07-28. Lanes 1–6 are active.**
 
-That confirmation authorizes the ordered, in-repository implementation and
+The confirmation authorizes the ordered, in-repository implementation and
 verification work above without another product-choice prompt between slices.
 It does not authorize external releases, secret changes, destructive cleanup,
 protected-branch bypass, or work inside the PacketCode/PacketAgent repositories.

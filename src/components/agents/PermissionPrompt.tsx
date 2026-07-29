@@ -15,9 +15,11 @@ import {
   parseBashCommand,
   isDestructiveBash,
 } from "./permissionPatternHint";
+import { ProvenanceChip } from "@/components/common/ProvenanceChip";
+import type { PendingPermission } from "@/types/agent-conversation";
 
 interface PermissionPromptProps {
-  item: { id: string; name: string; arguments: string };
+  item: PendingPermission;
   onAllowOnce: (toolId: string) => void;
   onAllowAlways: (toolId: string) => void;
   /** P1-9 deny-and-continue: `reason`, when present, is steering text the
@@ -158,6 +160,24 @@ export function PermissionPrompt({
         <pre className="text-meta font-mono bg-bg-primary rounded p-2 max-h-32 overflow-auto text-text-secondary whitespace-pre-wrap">
           {prettyJson(item.arguments)}
         </pre>
+      )}
+      {item.sourceChain && item.sourceChain.length > 0 && (
+        <div className="rounded border border-accent-amber/30 bg-accent-amber/5 p-2">
+          <div className="mb-1 flex items-center justify-between gap-2 text-meta text-accent-amber">
+            <span>
+              Evidence boundary · {item.effectivePolicy ?? "explicit approval"}
+            </span>
+            <span>
+              {item.sourceChain.length} source
+              {item.sourceChain.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {item.sourceChain.map((source) => (
+              <ProvenanceChip key={source.id} envelope={source} force />
+            ))}
+          </div>
+        </div>
       )}
       <div className="flex gap-1.5 flex-wrap items-center">
         {/* Allow split-button: primary click = allow once (the Y target);

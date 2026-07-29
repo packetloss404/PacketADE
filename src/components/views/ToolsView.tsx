@@ -41,8 +41,7 @@ import { ModulesCard } from "./tools/ModulesCard";
 import { NotificationSettingsCard } from "./tools/NotificationSettingsCard";
 import { ThemeSettingsCard } from "./tools/ThemeSettingsCard";
 import { CrashViewerCard } from "./tools/CrashViewerCard";
-import { McpServersCard } from "./tools/McpServersCard";
-import { McpProviderCard } from "./tools/McpProviderCard";
+import { McpHubCard } from "./tools/McpHubCard";
 import { CostCard } from "./tools/CostCard";
 import { DictationSettingsCard } from "./tools/DictationSettingsCard";
 import { KeyboardShortcutsCard } from "./tools/KeyboardShortcutsCard";
@@ -59,6 +58,7 @@ import { WorkspaceSettingsCard } from "./tools/WorkspaceSettingsCard";
 import { MemorySettingsCard } from "./tools/MemorySettingsCard";
 import { GitHubSettingsCard } from "./tools/GitHubSettingsCard";
 import { SubscriptionsCard } from "./tools/SubscriptionsCard";
+import { TrustProvenanceCard } from "./tools/TrustProvenanceCard";
 import type { PromptTemplate } from "@/types/prompt";
 import { PromptLibrary } from "@/components/workspace/PromptLibrary";
 
@@ -254,9 +254,8 @@ export function ToolsView() {
         )}
 
         {activeSection === "mcp" && (
-          <div className="grid max-w-2xl grid-cols-1 gap-4">
-            <McpServersCard />
-            <McpProviderCard />
+          <div className="max-w-3xl">
+            <McpHubCard />
           </div>
         )}
 
@@ -313,6 +312,7 @@ function AdvancedSection({
   return (
     <div className="max-w-3xl space-y-4">
       <ReleaseTrustCard />
+      <TrustProvenanceCard />
       <CrashViewerCard />
 
       <div className="rounded-lg border border-bg-border bg-bg-secondary p-4">

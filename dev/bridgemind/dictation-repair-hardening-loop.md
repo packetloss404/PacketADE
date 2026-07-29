@@ -1,7 +1,7 @@
 # PacketADE Dictation Repair and Hardening Loop
 
-Status: **Option B approved; repair implementation complete; physical microphone
-smoke environment-gated**
+Status: **DV1–DV16 source work complete; packaged microphone/platform matrix
+and DV17 benchmark evidence-gated**
 
 Last updated: 2026-07-28
 
@@ -82,23 +82,55 @@ connected or enabled; the repaired UI now reports the condition.
 ## Verification record
 
 - `pnpm exec vitest run src/stores/__tests__/dictationStore.test.ts`
+- `pnpm exec vitest run src/stores/__tests__/dictationStore.test.ts src/lib/__tests__/dictationTarget.test.ts`
+- targeted ESLint for all changed dictation surfaces
 - `pnpm build`
 - `cargo check --manifest-path src-tauri/Cargo.toml`
 - `cargo test --manifest-path src-tauri/Cargo.toml commands::dictation --no-run`
+- `cargo test --manifest-path src-tauri/Cargo.toml --lib --no-run`
 
 Rust test binaries compile, but executing native Rust tests on this Windows
 runtime remains blocked by the repository-wide `0xc0000139` entrypoint defect.
 
-## Remaining hardening backlog
+## Follow-on hardening result
 
-These are useful reliability improvements, but they do not reopen the repaired
-record/transcribe/deliver path:
+- [x] **DV11 — Microphone doctor and stable identity.** CPAL's host-qualified
+  device ID is now persisted ahead of the legacy index. The Tools test opens
+  the selected/default device for a bounded 0.5–3 seconds and returns format,
+  frame count, peak, RMS, and actionable warnings without retaining samples.
+  A stale ID falls back to the physical default and surfaces a warning.
+- [x] **DV12 — Capture bounds and recovery.** Settings expose a backend-clamped
+  10–1,800 second maximum (five minutes by default). The callback stops
+  retaining samples at the exact native-rate ceiling and emits one automatic
+  stop/transcribe event. Cancel releases the buffer allocation; stream errors
+  still force native cleanup and the next start builds a new stream.
+- [x] **DV13 — Global-shortcut trust.** Global shortcuts default off, use the
+  safer `Ctrl/Cmd+Alt+Space` and `Ctrl/Cmd+Alt+R` defaults, reject duplicate
+  bindings, serialize rebind/cleanup, report readiness/conflicts, and only
+  unregister bindings PacketADE successfully acquired.
+- [x] **DV14 — Native insertion coverage.** React inputs/textareas,
+  contenteditable surfaces, and live PTYs are supported. PTYs use `write_pty`;
+  password, OTP, `data-sensitive`, disconnected, and changed-session targets
+  are denied. Visible clipboard/native delivery remains the fallback.
+- [x] **DV15 — Source packaging prerequisites.** `src-tauri/Info.plist` contains
+  `NSMicrophoneUsageDescription`, and the Debian package declares the CPAL ALSA
+  runtime (`libasound2`). Physical Windows paste/microphone, packaged macOS
+  permission/accessibility, and packaged Linux ALSA/PipeWire plus X11/Wayland
+  behavior remain environment-gated.
+- [x] **DV16 — Structured private telemetry.** A successful stop returns
+  capture format/device identity, duration, resolved model, detected language,
+  model-load time, inference time, and warnings. Transcript and dictionary
+  contents are not added to telemetry logs.
+- [ ] **DV17 — Engine/acceleration evidence.** Intentionally gated until a
+  packaged CPU Whisper baseline can be measured with an active microphone.
+  Parakeet, acceleration, and cloud transcription were not added speculatively.
 
-The executable DV11–DV17 acceptance ledger and run order live in
-[`pre-remote-agents-loop-queue.md`](./pre-remote-agents-loop-queue.md). The
-remaining work covers microphone doctor/stable identity, bounded recovery,
-shortcut trust, native insertion, packaged platform prerequisites, structured
-private telemetry, and an evidence-gated engine/acceleration benchmark.
+On 2026-07-28, `Get-PnpDevice -Class AudioEndpoint` reported
+`NO_CAPTURE_ENDPOINTS` for capture-role endpoints (`{0.0.1.*}`), so the
+microphone-dependent acceptance matrix cannot be truthfully closed on this
+host. Pickup: connect/enable one default microphone and one USB/Bluetooth
+microphone, run the Settings doctor for each, then exercise the matrix in
+`backlog.md`.
 
 ## Research basis
 
@@ -106,5 +138,7 @@ private telemetry, and an evidence-gated engine/acceleration benchmark.
 - [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
 - [whisper-rs transcription parameters](https://docs.rs/whisper-rs/latest/whisper_rs/struct.FullParams.html)
 - [Tauri global shortcut plugin](https://v2.tauri.app/plugin/global-shortcut/)
+- [Tauri macOS native configuration](https://v2.tauri.app/distribute/macos-application-bundle/)
+- [Tauri Debian packaging](https://v2.tauri.app/distribute/debian/)
 - [Windows `SendInput` limitations](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput)
 - [BridgeVoice product benchmark](https://www.bridgemind.ai/products/bridgevoice)

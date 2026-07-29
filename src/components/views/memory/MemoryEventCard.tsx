@@ -14,6 +14,7 @@ import type { Flight } from "@/types/flight";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAppStore } from "@/stores/appStore";
 import { focusConversationDeepLink } from "@/stores/sessionGlue";
+import { ProvenanceChip } from "@/components/common/ProvenanceChip";
 
 interface MemoryEventCardProps {
   event: MemoryEvent;
@@ -89,6 +90,7 @@ export function MemoryEventCard({ event, onDelete }: MemoryEventCardProps) {
           {relativeTime(event.timestamp)}
         </span>
         <span className="inline-flex items-center gap-2">
+          <ProvenanceChip envelope={event.provenance} force />
           <span className="font-mono text-text-faint">{event.id}</span>
           <button
             onClick={(e) => {

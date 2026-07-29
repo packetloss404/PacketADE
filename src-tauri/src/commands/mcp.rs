@@ -4,6 +4,7 @@ use serde_json::Value;
 use std::fs;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tracing::warn;
 
 #[derive(Clone, Serialize)]
@@ -21,6 +22,25 @@ pub struct McpServerEntry {
     pub raw_config: Value,
     pub scope: String, // "global" or "project"
     pub disabled: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpDiagnosticTool {
+    pub name: String,
+    pub description: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerDiagnostic {
+    pub state: String,
+    pub transport: String,
+    pub latency_ms: Option<u64>,
+    pub tools: Vec<McpDiagnosticTool>,
+    pub message: String,
+    pub compatibility_version: String,
+    pub checked_at: u64,
 }
 
 fn global_settings_path() -> PathBuf {
@@ -190,6 +210,126 @@ fn extract_servers(json: &Value, scope: &str) -> Vec<McpServerEntry> {
             }
         })
         .collect()
+}
+
+fn config_for_scope(project_path: &str, scope: &str) -> Value {
+    if scope == "global" {
+        read_json_file(&global_settings_path())
+    } else {
+        read_json_file(&project_mcp_path(project_path))
+    }
+}
+
+#[tauri::command]
+pub async fn diagnose_mcp_server(
+    project_path: String,
+    name: String,
+    scope: String,
+) -> Result<McpServerDiagnostic, String> {
+    if scope != "global" && scope != "project" {
+        return Err("MCP scope must be global or project".to_string());
+    }
+    if scope == "project" {
+        super::validate_project_path(&project_path)?;
+    }
+    let config = config_for_scope(&project_path, &scope);
+    let entry = config
+        .get("mcpServers")
+        .and_then(Value::as_object)
+        .and_then(|servers| servers.get(&name))
+        .ok_or_else(|| "MCP server is not configured in the selected scope".to_string())?;
+    let transport = entry
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("stdio")
+        .to_string();
+    let checked_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    if transport != "stdio" {
+        return Ok(McpServerDiagnostic {
+            state: "degraded".to_string(),
+            transport,
+            latency_ms: None,
+            tools: Vec::new(),
+            message:
+                "This build preserves remote MCP config but the local doctor probes stdio only."
+                    .to_string(),
+            compatibility_version: "2024-11-05".to_string(),
+            checked_at,
+        });
+    }
+    let command = entry
+        .get("command")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "MCP stdio server is missing a command".to_string())?;
+    let args = entry
+        .get("args")
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let env = entry
+        .get("env")
+        .and_then(Value::as_object)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|(key, value)| {
+                    value.as_str().map(|value| (key.clone(), value.to_string()))
+                })
+                .collect::<std::collections::HashMap<_, _>>()
+        })
+        .unwrap_or_default();
+    let started = Instant::now();
+    match crate::core::mcp_client::McpClient::spawn(&name, command, &args, &env).await {
+        Ok(mut client) => {
+            let result = client.list_tools().await;
+            client.shutdown().await;
+            match result {
+                Ok(tools) => Ok(McpServerDiagnostic {
+                    state: "connected".to_string(),
+                    transport,
+                    latency_ms: Some(started.elapsed().as_millis() as u64),
+                    tools: tools
+                        .into_iter()
+                        .map(|tool| McpDiagnosticTool {
+                            name: tool.name,
+                            description: tool.description,
+                        })
+                        .collect(),
+                    message: "Handshake and tools/list succeeded.".to_string(),
+                    compatibility_version: "2024-11-05".to_string(),
+                    checked_at,
+                }),
+                Err(error) => Ok(McpServerDiagnostic {
+                    state: "degraded".to_string(),
+                    transport,
+                    latency_ms: Some(started.elapsed().as_millis() as u64),
+                    tools: Vec::new(),
+                    message: error.to_string(),
+                    compatibility_version: "2024-11-05".to_string(),
+                    checked_at,
+                }),
+            }
+        }
+        Err(error) => Ok(McpServerDiagnostic {
+            state: "failed".to_string(),
+            transport,
+            latency_ms: Some(started.elapsed().as_millis() as u64),
+            tools: Vec::new(),
+            message: error.to_string(),
+            compatibility_version: "2024-11-05".to_string(),
+            checked_at,
+        }),
+    }
 }
 
 #[tauri::command]

@@ -1,7 +1,7 @@
 # Project-Local Memory Hub — Scoped Loop
 
 Created: 2026-07-28
-Status: approved, queued
+Status: source-complete through MH7; MH8/MH9 packaged interoperability gated
 Product decision: **Option B — project-native memory inside PacketADE**
 
 ## Objective
@@ -38,17 +38,38 @@ This is a PacketADE capability, not a separate PacketMemory product.
 
 Status values: `queued` → `in-progress` → `gated` → `closed`.
 
-| ID | Item | Acceptance condition | Gate | Depends on | Status |
-|---|---|---|---|---|---|
-| **MH1** | File and metadata contract | Freeze a branding-neutral configurable project-memory directory, schema version, Markdown/frontmatter fields, stable IDs, link syntax, provenance references, size/count bounds, and Git-ignore behavior. | Golden fixtures and backward/forward compatibility tests | — | queued |
-| **MH2** | Safe project-memory repository | List/read/create/update/archive notes with atomic writes, optimistic revision checks, confinement, symlink defence, malformed-file reporting, and no silent overwrite of external edits. | Filesystem, race, path, encoding, and recovery tests | MH1 | queued |
-| **MH3** | Link graph and health | Resolve Markdown/wiki-style links deterministically and compute backlinks, broken links, and orphans without a second database. Duplicate IDs and ambiguous titles remain visible errors. | Graph fixtures, cycles, rename, duplicate, and broken-link tests | MH1, MH2 | queued |
-| **MH4** | Unified retrieval | Extend current IDF-ranked search and “Ask your project” context selection across eligible global and project-local memory with source/scope filters and bounded excerpts. | Ranking, dedupe, scope, provenance, and context-budget tests | MH2 | queued |
-| **MH5** | Provenance and capture flows | Promote a transcript, Flight event, review finding, artifact, or global memory entry into a project note with source references; preserve origin and never copy secrets automatically. | Capture fixtures, redaction, idempotency, and missing-source tests | MH1, MH2 | queued |
-| **MH6** | Memory Hub UI | Add project/global source controls, Markdown note detail/editor, backlinks, graph/list toggle, orphan/broken-link health, external-change warnings, and clear conflict recovery inside the existing Memory view. | Component tests, keyboard/accessibility pass, and visual QA | MH2–MH5 | queued |
-| **MH7** | Scoped MCP surface | Expose bounded project-memory search/read/graph resources and permission-gated create/update/archive tools through the existing PacketADE MCP provider and audit controls. | MCP schema, auth, `allow_writes`, confinement, and audit tests | MH2–MH5 | queued |
-| **MH8** | Watch, reload, and interoperability | Coalesce filesystem events, ignore PacketADE's own completed writes, reload external changes, surface conflicts, and keep CLI/editor-authored Markdown interoperable. | Watch-storm, partial-write, rename, reload, and restart tests | MH2, MH3, MH6 | queued |
-| **MH9** | Migration, regression, and docs | Offer opt-in copy/export from existing memory without deleting originals; cover empty/large/dirty/gitignored projects and update public/backlog/schema docs. | Full Vitest/Rust/build gates plus packaged manual smoke | MH1–MH8 | queued |
+| ID      | Item                                | Acceptance condition                                                                                                                                                                                             | Gate                                                               | Depends on    | Status |
+| ------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------- | ------ |
+| **MH1** | File and metadata contract          | Freeze a branding-neutral configurable project-memory directory, schema version, Markdown/frontmatter fields, stable IDs, link syntax, provenance references, size/count bounds, and Git-ignore behavior.        | Golden fixtures and backward/forward compatibility tests           | —             | closed |
+| **MH2** | Safe project-memory repository      | List/read/create/update/archive notes with atomic writes, optimistic revision checks, confinement, symlink defence, malformed-file reporting, and no silent overwrite of external edits.                         | Filesystem, race, path, encoding, and recovery tests               | MH1           | closed |
+| **MH3** | Link graph and health               | Resolve Markdown/wiki-style links deterministically and compute backlinks, broken links, and orphans without a second database. Duplicate IDs and ambiguous titles remain visible errors.                        | Graph fixtures, cycles, rename, duplicate, and broken-link tests   | MH1, MH2      | closed |
+| **MH4** | Unified retrieval                   | Extend current IDF-ranked search and “Ask your project” context selection across eligible global and project-local memory with source/scope filters and bounded excerpts.                                        | Ranking, dedupe, scope, provenance, and context-budget tests       | MH2           | closed |
+| **MH5** | Provenance and capture flows        | Promote a transcript, Flight event, review finding, artifact, or global memory entry into a project note with source references; preserve origin and never copy secrets automatically.                           | Capture fixtures, redaction, idempotency, and missing-source tests | MH1, MH2      | closed |
+| **MH6** | Memory Hub UI                       | Add project/global source controls, Markdown note detail/editor, backlinks, graph/list toggle, orphan/broken-link health, external-change warnings, and clear conflict recovery inside the existing Memory view. | Component tests, keyboard/accessibility pass, and visual QA        | MH2–MH5       | closed |
+| **MH7** | Scoped MCP surface                  | Expose bounded project-memory search/read/graph resources and permission-gated create/update/archive tools through the existing PacketADE MCP provider and audit controls.                                       | MCP schema, auth, `allow_writes`, confinement, and audit tests     | MH2–MH5       | closed |
+| **MH8** | Watch, reload, and interoperability | Coalesce filesystem events, ignore PacketADE's own completed writes, reload external changes, surface conflicts, and keep CLI/editor-authored Markdown interoperable.                                            | Watch-storm, partial-write, rename, reload, and restart tests      | MH2, MH3, MH6 | gated  |
+| **MH9** | Migration, regression, and docs     | Offer opt-in copy/export from existing memory without deleting originals; cover empty/large/dirty/gitignored projects and update public/backlog/schema docs.                                                     | Full Vitest/Rust/build gates plus packaged manual smoke            | MH1–MH8       | gated  |
+
+## Frozen contract and implementation record
+
+- Directory: `.agents/memory`; schema: `1`; bounds: 2,000 notes and 256 KiB
+  per note. Each Markdown file has YAML frontmatter for stable UUID, title,
+  timestamps, archive flag, tags, and provenance IDs.
+- `[[Title]]` and Markdown note links resolve deterministically. Duplicate IDs,
+  ambiguous titles, broken links, cycles, and orphans are surfaced from the
+  files; no graph database is introduced.
+- Writes use revision hashes plus temp/backup recovery and refuse stale edits.
+  Confinement, symlink, binary, UTF-8, size/count, malformed-metadata, and
+  suspected-secret checks fail closed or surface bounded warnings.
+- `.agents/memory` is version-control-capable by default. PacketADE never
+  changes `.gitignore`; the repository owner chooses whether notes are tracked.
+- The existing global memory store remains unchanged. Promotion copies a
+  redacted note with provenance references and is idempotent; originals are not
+  deleted.
+- Focused Rust repository tests compile, frontend capture/retrieval/store/UI
+  tests pass, and the unsigned Windows bundle is produced. MH8/MH9 remain
+  gated on a real external editor/watch storm, packaged restart/rename
+  recovery, dirty/gitignored project smoke, and available macOS/Linux hosts.
 
 ## Sequencing
 

@@ -8,6 +8,10 @@ import type {
   PendingPermission,
   PendingEdit,
 } from "@/types/agent-conversation";
+import {
+  auditSourceChain,
+  useProvenanceAuditStore,
+} from "@/stores/provenanceAuditStore";
 
 export const EMPTY_PENDING_PERMISSIONS: PendingPermission[] = [];
 export const EMPTY_PENDING_EDITS: PendingEdit[] = [];
@@ -95,7 +99,25 @@ export const useAgentApprovalStore = create<AgentApprovalState>((set, get) => ({
   },
 
   respondPermission: async (conversationId, toolId, decision, reason) => {
+    const pending = get().permissions.get(conversationId) ?? [];
+    const match = pending.find((permission) => permission.id === toolId);
     await tauriRespondPermission(conversationId, toolId, decision, reason);
+    if (match) {
+      useProvenanceAuditStore.getState().record({
+        conversationId,
+        toolId,
+        action: match.name,
+        target: match.safeTarget,
+        decision:
+          decision === "allow_once"
+            ? "user_allowed_once"
+            : decision === "allow_always"
+              ? "user_allowed_session"
+              : "user_denied",
+        effectivePolicy: match.effectivePolicy ?? "explicit approval",
+        sourceChain: auditSourceChain(match.sourceChain ?? []),
+      });
+    }
     set((s) => {
       const next = new Map(s.permissions);
       const existing = next.get(conversationId) ?? [];
@@ -139,6 +161,18 @@ export const useAgentApprovalStore = create<AgentApprovalState>((set, get) => ({
   },
 
   cancelPendingTools: async (conversationId) => {
+    const pending = get().permissions.get(conversationId) ?? [];
+    for (const permission of pending) {
+      useProvenanceAuditStore.getState().record({
+        conversationId,
+        toolId: permission.id,
+        action: permission.name,
+        target: permission.safeTarget,
+        decision: "cancelled",
+        effectivePolicy: permission.effectivePolicy ?? "explicit approval",
+        sourceChain: auditSourceChain(permission.sourceChain ?? []),
+      });
+    }
     // Optimistic clear — backend has no echo event.
     set((s) => {
       const nextPerms = new Map(s.permissions);

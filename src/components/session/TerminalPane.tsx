@@ -60,6 +60,7 @@ export function TerminalPane({
   });
 
   const {
+    sessionId,
     alive,
     error,
     showApproval,
@@ -99,7 +100,11 @@ export function TerminalPane({
   const showActivityStrip = alive && activityInfo.state !== "idle" && activityInfo.tool !== null;
 
   return (
-    <div className="flex h-full flex-col bg-bg-primary" onClick={() => setActivePaneId(paneId)}>
+    <div
+      className="flex h-full flex-col bg-bg-primary"
+      data-dictation-pty-session={sessionId ?? undefined}
+      onClick={() => setActivePaneId(paneId)}
+    >
       {renderHeader ? (
         renderHeader({ alive, error, showApproval, cliCommand, onRestart: handleRestart, onKill: handleKill })
       ) : (

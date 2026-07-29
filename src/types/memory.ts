@@ -65,6 +65,7 @@ interface MemoryEventBase {
   id: string;
   timestamp: number;
   projectPath: string;
+  provenance?: ProvenanceEnvelope;
 }
 
 export type MemoryEvent =
@@ -90,6 +91,7 @@ export interface LearnedPattern {
   /** v0.8-H: pinned patterns sort first in the injected context and
    * are exempt from the `capPatterns` confidence-based eviction. */
   pinned?: boolean;
+  provenance?: ProvenanceEnvelope;
 }
 
 // --- Top-level Memory State ---
@@ -100,3 +102,4 @@ export interface MemoryState {
   lastPatternRefreshAt: number | null;
   summariesSinceLastRefresh: number;
 }
+import type { ProvenanceEnvelope } from "@/types/provenance";

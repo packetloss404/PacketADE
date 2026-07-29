@@ -25,6 +25,15 @@ import { deriveMode } from "@/components/agents/agentModeChipUtils";
 import { createStreamCoalescer } from "@/lib/streamCoalescer";
 import { sendApiAgentMessage } from "@/lib/tauri";
 import { estimateTurnCostUsd } from "@/lib/conversationCost";
+import {
+  assistantDerivativeProvenance,
+  activeTurnEvidence,
+  derivedArtifactProvenance,
+  provenanceNeedsRiskGate,
+  safeToolLocator,
+  taintingEvidence,
+  toolResultProvenance,
+} from "@/lib/provenance";
 import { looksLikeRateLimit, pickFailoverModel } from "@/lib/autoFailover";
 import {
   notifySessionComplete,
@@ -36,6 +45,10 @@ import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useEditBaselineStore } from "@/stores/editBaselineStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useAgentStreamingStore } from "@/stores/agentStreamingStore";
+import {
+  auditSourceChain,
+  useProvenanceAuditStore,
+} from "@/stores/provenanceAuditStore";
 import {
   useAgentTaskStore,
   requestConversationSave,
@@ -68,6 +81,8 @@ type ToolResultEventPayload = {
 function applyToolResult(
   messages: AgentMessage[],
   payload: ToolResultEventPayload,
+  projectPath?: string,
+  remote = false,
 ): AgentMessage[] {
   let targetIndex = -1;
   for (let index = messages.length - 1; index >= 0; index--) {
@@ -96,6 +111,14 @@ function applyToolResult(
       summary: payload.content.slice(0, 200),
       fullContent: payload.content,
       input: payload.input || undefined,
+      provenance: toolResultProvenance({
+        toolId: payload.id,
+        name: payload.name,
+        input: payload.input,
+        content: payload.content,
+        projectPath,
+        remote,
+      }),
     };
     const matching = existing.findIndex((tool) => tool.id === payload.id);
     const toolCalls =
@@ -245,6 +268,13 @@ export async function installApiAgentListeners(conversationId: string): Promise<
                 name: event.payload.name,
                 status: "running" as const,
                 input: event.payload.input ?? undefined,
+                provenance: toolResultProvenance({
+                  toolId: event.payload.id,
+                  name: event.payload.name,
+                  input: event.payload.input ?? undefined,
+                  projectPath: c.projectPath,
+                  remote: Boolean(c.sshTarget),
+                }),
               },
             ];
             return { ...m, toolCalls };
@@ -265,7 +295,12 @@ export async function installApiAgentListeners(conversationId: string): Promise<
       setState((s) => ({
         conversations: s.conversations.map((c) => {
           if (c.id !== id) return c;
-          const messages = applyToolResult(c.messages, event.payload);
+          const messages = applyToolResult(
+            c.messages,
+            event.payload,
+            c.projectPath,
+            Boolean(c.sshTarget),
+          );
           touched = true;
           return { ...c, messages, updatedAt: Date.now() };
         }),
@@ -292,9 +327,9 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     setState((s) => ({
       conversations: s.conversations.map((c) => {
         if (c.id !== id) return c;
-        const messages = c.messages.map((m) =>
-          m.isStreaming
-            ? {
+        const messages = c.messages.map((m) => {
+          if (!m.isStreaming) return m;
+          const settled: AgentMessage = {
                 ...m,
                 isStreaming: false,
                 inputTokens: event.payload.input_tokens,
@@ -312,9 +347,13 @@ export async function installApiAgentListeners(conversationId: string): Promise<
                     cacheReadTokens: event.payload.cache_read_input_tokens,
                     reasoningTokens: m.reasoningTokens,
                   }) ?? undefined,
-              }
-            : m,
-        );
+              };
+          settled.provenance = assistantDerivativeProvenance(
+            settled,
+            activeTurnEvidence(c),
+          );
+          return settled;
+        });
         const queued = c.queuedMessages ?? [];
         let remainingQueued = queued;
         const shouldDrainQueued = !event.payload.cancelled && queued.length > 0;
@@ -468,11 +507,54 @@ export async function installApiAgentListeners(conversationId: string): Promise<
       // tiering applies under Default/yolo, reads-only under manual, and
       // plan / deny-risky postures keep every prompt.
       const tier = classifyToolTier(event.payload.name, event.payload.arguments, conv.projectPath);
-      if (decideApprovalGate(deriveMode(conv), tier) === "auto_allow") {
+      const sourceChain = taintingEvidence(conv);
+      const provenanceGate = provenanceNeedsRiskGate(conv, tier);
+      if (
+        decideApprovalGate(deriveMode(conv), tier) === "auto_allow" &&
+        !provenanceGate
+      ) {
+        useProvenanceAuditStore.getState().record({
+          conversationId: id,
+          toolId: event.payload.id,
+          action: event.payload.name,
+          target: safeToolLocator(
+            event.payload.name,
+            event.payload.arguments,
+            conv.projectPath,
+          ),
+          decision: "auto_allowed",
+          effectivePolicy: deriveMode(conv),
+          sourceChain: auditSourceChain(sourceChain),
+        });
         void useAgentApprovalStore.getState().autoAllowPermission(id, event.payload.id);
         return;
       }
-      useAgentApprovalStore.getState().addPendingPermission(id, event.payload);
+      const pendingPermission: PendingPermission = {
+        ...event.payload,
+        sourceChain,
+        safeTarget: safeToolLocator(
+          event.payload.name,
+          event.payload.arguments,
+          conv.projectPath,
+        ),
+        effectivePolicy: provenanceGate
+          ? `${deriveMode(conv)} + evidence boundary`
+          : deriveMode(conv),
+      };
+      useAgentApprovalStore.getState().addPendingPermission(id, pendingPermission);
+      useProvenanceAuditStore.getState().record({
+        conversationId: id,
+        toolId: event.payload.id,
+        action: event.payload.name,
+        target: safeToolLocator(
+          event.payload.name,
+          event.payload.arguments,
+          conv.projectPath,
+        ),
+        decision: "prompted",
+        effectivePolicy: pendingPermission.effectivePolicy ?? deriveMode(conv),
+        sourceChain: auditSourceChain(sourceChain),
+      });
       // Long autonomous runs pause here for approval — ping the user (pref-gated
       // + per-session debounced) so they know an unattended run needs them.
       void notifyApprovalNeeded(id, conv.title);
@@ -494,7 +576,16 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     useEditBaselineStore
       .getState()
       .recordBaseline(id, relativePath, event.payload.before ?? null, event.payload.id);
-    useAgentApprovalStore.getState().addPendingEdit(id, { ...event.payload, path: relativePath });
+    const parents = taintingEvidence(conv);
+    useAgentApprovalStore.getState().addPendingEdit(id, {
+      ...event.payload,
+      path: relativePath,
+      provenance: derivedArtifactProvenance(
+        event.payload.id,
+        `Proposed edit · ${relativePath}`,
+        parents,
+      ),
+    });
     void notifyApprovalNeeded(id, conv.title);
   });
 
@@ -647,6 +738,12 @@ export async function installApiAgentListeners(conversationId: string): Promise<
               readErrors.length === 1 ? "" : "s"
             } could not be read — ${readErrors.map((e) => e.path).join(", ")})`,
             timestamp: Date.now(),
+            provenance: toolResultProvenance({
+              toolId: `mcp-sources-${id}`,
+              name: "mcp__remote_config__sources",
+              content: JSON.stringify({ sources, readErrors: readErrors.length }),
+              remote: true,
+            }),
           }
         : null;
     setState((s) => ({

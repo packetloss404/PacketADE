@@ -1,7 +1,8 @@
 # PacketADE Roadmap
 
-Last updated: 2026-07-28 (Trust and Provenance approved and queued; Dictation
-physical microphone smoke environment-gated)
+Last updated: 2026-07-28 (pre-Remote local convergence and unsigned Windows
+bundles complete; hardware, live-SSH/provider, Codex MCP, packaged-manual,
+signing, and alternate-engine proof remain gated)
 
 `ROADMAP.md` is the short product-direction document. It says what matters now
 and why. The task ledger lives in [`backlog.md`](./backlog.md); implementation
@@ -19,17 +20,18 @@ without turning PacketADE into a cloud-only coding agent.
 
 ## Now
 
-| ID  | Track                                     | Priority | Status                                      | Canonical Plan                                                                                                   |
-| --- | ----------------------------------------- | -------: | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| R0  | Remote Agents: PWA + Packet Cloud relay   |       P0 | Blocked on three Sprint-0 product decisions | [`dev/remoteagents/README.md`](./dev/remoteagents/README.md)                                                     |
-| R1  | Docs and planning consolidation           |       P1 | Refreshed; ongoing maintenance              | [`dev/README.md`](./dev/README.md)                                                                               |
-| R2  | Distribution readiness: signing + updater |       P1 | Still blocked on signing certificates       | [`dev/updater-setup.md`](./dev/updater-setup.md), [`dev/multi-platform-build.md`](./dev/multi-platform-build.md) |
-| R3  | Flight Deck supervision                   |       P1 | Core loops implemented; manual/SSH smoke remains | [`dev/bridgemind/reviewer-gate-loop.md`](./dev/bridgemind/reviewer-gate-loop.md), [`dev/bridgemind/cooperative-flight-graph-loop.md`](./dev/bridgemind/cooperative-flight-graph-loop.md), [`dev/bridgemind/coordination-inbox-loop.md`](./dev/bridgemind/coordination-inbox-loop.md), [`dev/bridgemind/autonomy-policy-loop.md`](./dev/bridgemind/autonomy-policy-loop.md) |
-| R4  | PacketCode integration                   |       P1 | Source integration complete; release proof gated | [`dev/bridgemind/packetcode-bridgecode-loop.md`](./dev/bridgemind/packetcode-bridgecode-loop.md)                   |
-| R5  | PacketAgent deploy/supervise handoff     |       P1 | Separate project active; PacketADE awaits W9 contract | [`dev/bridgemind/packetagent-handoff-loop.md`](./dev/bridgemind/packetagent-handoff-loop.md)                       |
-| R6  | Project-local Memory Hub                 |       P2 | Option B approved; implementation queued      | [`dev/bridgemind/project-local-memory-hub-loop.md`](./dev/bridgemind/project-local-memory-hub-loop.md)             |
-| R7  | Dictation reliability                   |       P1 | Repair implemented; live mic smoke gated      | [`dev/bridgemind/dictation-repair-hardening-loop.md`](./dev/bridgemind/dictation-repair-hardening-loop.md)         |
-| R8  | Trust and provenance                    |       P2 | Approved; implementation queued               | [`dev/bridgemind/trust-provenance-loop.md`](./dev/bridgemind/trust-provenance-loop.md)                             |
+| ID  | Track                                     | Priority | Status                                                                        | Canonical Plan                                                                                                                                                                                                                                                                                                                                                             |
+| --- | ----------------------------------------- | -------: | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R0  | Remote Agents: PWA + Packet Cloud relay   |       P0 | Blocked on three Sprint-0 product decisions                                   | [`dev/remoteagents/README.md`](./dev/remoteagents/README.md)                                                                                                                                                                                                                                                                                                               |
+| R1  | Docs and planning consolidation           |       P1 | Refreshed; ongoing maintenance                                                | [`dev/README.md`](./dev/README.md)                                                                                                                                                                                                                                                                                                                                         |
+| R2  | Distribution readiness: signing + updater |       P1 | Still blocked on signing certificates                                         | [`dev/updater-setup.md`](./dev/updater-setup.md), [`dev/multi-platform-build.md`](./dev/multi-platform-build.md)                                                                                                                                                                                                                                                           |
+| R3  | Flight Deck supervision                   |       P1 | Core loops implemented; manual/SSH smoke remains                              | [`dev/bridgemind/reviewer-gate-loop.md`](./dev/bridgemind/reviewer-gate-loop.md), [`dev/bridgemind/cooperative-flight-graph-loop.md`](./dev/bridgemind/cooperative-flight-graph-loop.md), [`dev/bridgemind/coordination-inbox-loop.md`](./dev/bridgemind/coordination-inbox-loop.md), [`dev/bridgemind/autonomy-policy-loop.md`](./dev/bridgemind/autonomy-policy-loop.md) |
+| R4  | PacketCode integration                    |       P1 | Source integration complete; release proof gated                              | [`dev/bridgemind/packetcode-bridgecode-loop.md`](./dev/bridgemind/packetcode-bridgecode-loop.md)                                                                                                                                                                                                                                                                           |
+| R5  | PacketAgent deploy/supervise handoff      |       P1 | Separate project active; PacketADE awaits W9 contract                         | [`dev/bridgemind/packetagent-handoff-loop.md`](./dev/bridgemind/packetagent-handoff-loop.md)                                                                                                                                                                                                                                                                               |
+| R6  | Project-local Memory Hub                  |       P2 | MH1–MH7 source complete; live external-edit/packaged proof gated              | [`dev/bridgemind/project-local-memory-hub-loop.md`](./dev/bridgemind/project-local-memory-hub-loop.md)                                                                                                                                                                                                                                                                     |
+| R7  | Dictation reliability                     |       P1 | DV1–DV16 source complete; packaged mic/platform matrix and DV17 gated         | [`dev/bridgemind/dictation-repair-hardening-loop.md`](./dev/bridgemind/dictation-repair-hardening-loop.md)                                                                                                                                                                                                                                                                 |
+| R8  | Trust and provenance                      |       P2 | TP1–TP7 source complete; packaged provider/SSH proof gated                    | [`dev/bridgemind/trust-provenance-loop.md`](./dev/bridgemind/trust-provenance-loop.md)                                                                                                                                                                                                                                                                                     |
+| R9  | Local-first MCP Hub                       |       P2 | Core source complete; Codex MCP enforcement and live SSH/packaged proof gated | [`dev/bridgemind/local-first-mcp-hub-loop.md`](./dev/bridgemind/local-first-mcp-hub-loop.md)                                                                                                                                                                                                                                                                               |
 
 ### Remote Agents Acceptance Shape
 
@@ -42,7 +44,7 @@ files, shells, and execution remain on the desktop. End-to-end encryption is a
 gate before any external beta.
 
 The v0.9.4 trust wave (SSH host-key pinning on async launch, remote SSH
-file-tool confinement) hardened the *runtime* connection path, but it does not
+file-tool confinement) hardened the _runtime_ connection path, but it does not
 touch binary distribution. R2 stays blocked on the same external dependency:
 acquiring Windows + macOS code-signing certificates. Once certificates land,
 the remaining R2 work is wiring the signing config and Tauri updater per the
@@ -60,29 +62,28 @@ does not restore the deleted autonomous Planner v1.
 
 The approved BridgeMind-response work is ordered in
 [`dev/bridgemind/pre-remote-agents-loop-queue.md`](./dev/bridgemind/pre-remote-agents-loop-queue.md).
-That queue is prepared but intentionally paused at its one-time user
-confirmation gate; preparing or releasing v0.10.2 does not start it.
+The user confirmed and ran that queue on 2026-07-28. Source-completable work is
+implemented through the MCP Hub boundary; convergence records the remaining
+environment-dependent proof without entering Remote Agents. The combined local
+gate and unsigned-package evidence is in
+[`dev/bridgemind/pre-remote-convergence-2026-07-28.md`](./dev/bridgemind/pre-remote-convergence-2026-07-28.md).
 
-| ID  | Track                   | Priority | Status                                 | Next action                                                                                                         |
-| --- | ----------------------- | -------: | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| D1  | Remote Agents Sprint 0  |       P0 | Blocked                                | Decide auth provider, E2EE timing, and code location; then split the six-agent implementation runbook.              |
-| D2  | Flight Deck scope       |       P1 | Complete                               | Option B shipped: upfront conversation-backed planning with explicit apply; attempts remain user-launched.          |
-| D3  | API-agent concurrency   |       P2 | Complete                               | Turns now have compare-and-remove ownership; sidecar protocol v9 targets edit responses by `toolUseId`.             |
-| D4  | SSH parity verification |       P2 | Partially complete / environment-gated | Saved-password path probing is fixed; run the live Codex-over-SSH smoke when a configured remote host is available. |
-| D5  | Signing and updater     |       P1 | Externally blocked                     | Acquire Windows/macOS credentials, then follow the existing release runbooks.                                       |
-| D6  | Flight supervision gates |       P1 | Core implementation complete          | Run packaged local/SSH/manual matrices for Reviewer Gate, cooperative integration, inbox delivery, and bounded YOLO. |
-| D7  | PacketCode release proof |       P1 | Source integration complete           | Publish signed multi-platform artifacts; run clean-machine install/upgrade/rollback and cross-product smoke.          |
-| D8  | Project-local Memory Hub |       P2 | Approved, queued                       | Run MH1–MH9: Markdown contract, graph/backlinks, provenance, current retrieval, scoped MCP, UI, and migration gates.   |
-| D9  | Dictation packaged smoke |       P1 | Environment-gated                     | Connect/enable an active microphone, then run the Windows 48 kHz, fast-PTT, cancel, history, in-app, clipboard, and external-paste matrix. |
-| D10 | Trust and provenance     |       P2 | Approved, queued                       | Run TP1–TP8: shared source/authority contract, transport, quiet UI, tainted-turn gates, lineage, audit, and packaged proof. |
+| ID  | Track                    | Priority | Status                                 | Next action                                                                                                                                          |
+| --- | ------------------------ | -------: | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Remote Agents Sprint 0   |       P0 | Blocked                                | Decide auth provider, E2EE timing, and code location; then split the six-agent implementation runbook.                                               |
+| D2  | Flight Deck scope        |       P1 | Complete                               | Option B shipped: upfront conversation-backed planning with explicit apply; attempts remain user-launched.                                           |
+| D3  | API-agent concurrency    |       P2 | Complete                               | Turns now have compare-and-remove ownership; sidecar protocol v9 targets edit responses by `toolUseId`.                                              |
+| D4  | SSH parity verification  |       P2 | Partially complete / environment-gated | Saved-password path probing is fixed; run the live Codex-over-SSH smoke when a configured remote host is available.                                  |
+| D5  | Signing and updater      |       P1 | Externally blocked                     | Acquire Windows/macOS credentials, then follow the existing release runbooks.                                                                        |
+| D6  | Flight supervision gates |       P1 | Core implementation complete           | Run packaged local/SSH/manual matrices for Reviewer Gate, cooperative integration, inbox delivery, and bounded YOLO.                                 |
+| D7  | PacketCode release proof |       P1 | Source integration complete            | Publish signed multi-platform artifacts; run clean-machine install/upgrade/rollback and cross-product smoke.                                         |
+| D8  | Project-local Memory Hub |       P2 | Source complete / environment-gated    | Run packaged external-editor/watch, dirty/gitignored project, and platform proof; no source feature gap remains.                                     |
+| D9  | Dictation packaged smoke |       P1 | Environment-gated                      | Connect/enable an active microphone, then run the Windows 48 kHz, fast-PTT, cancel, history, in-app, clipboard, and external-paste matrix.           |
+| D10 | Trust and provenance     |       P2 | Source complete / environment-gated    | Run packaged local/SSH/provider-parity evidence and visual inspection; keep current denial floors unchanged.                                         |
+| D11 | Local-first MCP Hub      |       P2 | Core source complete / gated           | Add supported Codex CLI MCP trust enforcement; run live stdio/SSH crash/reload/version-skew, packaged catalog/removal, offline, and reconnect smoke. |
 
 ## Later
 
-- Local-first MCP Hub: approved BridgeMCP response, intentionally not a current
-  primary focus. Consolidate the shipped MCP client/provider substrate with a
-  curated catalog, health/restart, trust profiles, provenance, and suite
-  resources when promoted. See
-  [`dev/bridgemind/local-first-mcp-hub-loop.md`](./dev/bridgemind/local-first-mcp-hub-loop.md).
 - Codex CLI app-server transport (A6): revisit when PacketADE needs long-lived
   app-server capabilities that `codex exec` cannot provide.
 - Send to Monitor / multi-monitor operations: paused after planning while the
@@ -99,8 +100,10 @@ Sprints 0-4, the Flight Deck worktree-attempt runtime, Reviewer Gate,
 cooperative Flight graphs, Coordination Inbox, bounded YOLO policy, PacketCode
 source integration, workspace panes, Issues, GitHub + Memory,
 dictation, cost analytics, cost guardrails / budget thresholds, API-agent
-conversations, sidecar protocol v10 (v6→v7 planner-amputation, v7→v8 S8-Phase-B
-MCP-over-SSH, v8→v9 targeted edit responses, v9→v10 explicit `cancelled` terminal marker), PacketADE-as-MCP-server (N3), MCP servers over SSH (S8 A+B),
+conversations, sidecar protocol v11 (v6→v7 planner-amputation, v7→v8 S8-Phase-B
+MCP-over-SSH, v8→v9 targeted edit responses, v9→v10 explicit `cancelled`
+terminal marker, v10→v11 frozen MCP trust authority), PacketADE-as-MCP-server
+(N3), MCP servers over SSH (S8 A+B),
 remote git commands (S7), Codex-over-SSH (S9), local quality gates, and the
 conversation-as-tile single-surface consolidation (the "match Claude Code &
 Codex" initiative, now folded into the Workspace tile surface) are shipped. The

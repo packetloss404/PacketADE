@@ -84,4 +84,3 @@ pub fn save_memory_slice(
 pub fn save_servers_slice(servers: Vec<ServerConfigDto>) -> Result<(), String> {
     storage::save_servers(servers.into_iter().map(Into::into).collect())
 }
-

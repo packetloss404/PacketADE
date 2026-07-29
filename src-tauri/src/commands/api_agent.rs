@@ -139,6 +139,9 @@ struct SessionConfig {
     /// Optional per-conversation MCP server allowlist. None = all enabled MCP
     /// servers; Some(empty) = no MCP servers.
     enabled_mcp_server_ids: Option<Vec<String>>,
+    /// Frozen MCP authority captured when the conversation session starts.
+    /// Settings edits cannot broaden this vector until an explicit reconnect.
+    mcp_trust_snapshot: Option<Vec<crate::core::mcp_bridge::McpTrustSnapshot>>,
 }
 
 impl ApiAgentState {
@@ -867,6 +870,7 @@ pub async fn start_api_agent_session(
     allowed_tools: Option<Vec<String>>,
     resume_token: Option<String>,
     enabled_mcp_server_ids: Option<Vec<String>>,
+    mcp_trust_snapshot: Option<Vec<crate::core::mcp_bridge::McpTrustSnapshot>>,
     resume_messages: Option<Vec<ResumeMessage>>,
     permission_mode: Option<String>,
     approve_writes: Option<bool>,
@@ -943,9 +947,13 @@ pub async fn start_api_agent_session(
             Some(messages) => serde_json::to_value(messages).unwrap_or(serde_json::Value::Null),
             None => serde_json::Value::Null,
         };
+        let mcp_trust_snapshot_json = match &mcp_trust_snapshot {
+            Some(snapshot) => serde_json::to_value(snapshot).unwrap_or(serde_json::Value::Null),
+            None => serde_json::Value::Null,
+        };
         let result = if let Some(ssh_config) = ssh_config.clone() {
             sidecar
-                .forward_start_ssh(
+                .forward_start_ssh_with_mcp_trust(
                     session_id.clone(),
                     provider.clone(),
                     model.clone(),
@@ -965,12 +973,13 @@ pub async fn start_api_agent_session(
                     approve_writes,
                     sidecar_command_path,
                     Some(sidecar_workspace),
+                    mcp_trust_snapshot_json,
                     ssh_config,
                 )
                 .await
         } else {
             sidecar
-                .forward_start(
+                .forward_start_with_mcp_trust(
                     session_id.clone(),
                     provider.clone(),
                     model.clone(),
@@ -990,6 +999,7 @@ pub async fn start_api_agent_session(
                     approve_writes,
                     sidecar_command_path,
                     Some(sidecar_workspace),
+                    mcp_trust_snapshot_json,
                 )
                 .await
         };
@@ -1054,6 +1064,7 @@ pub async fn start_api_agent_session(
                 approve_writes: approve_writes.unwrap_or(false),
                 allowed_tools,
                 enabled_mcp_server_ids,
+                mcp_trust_snapshot,
             },
         );
 
@@ -1665,6 +1676,7 @@ async fn run_agent_loop(
         thinking_enabled,
         allowed_tools,
         enabled_mcp_server_ids,
+        mcp_trust_snapshot,
     ) = {
         let configs = state.configs.lock().await;
         let config = configs
@@ -1678,15 +1690,18 @@ async fn run_agent_loop(
             config.thinking_enabled,
             config.allowed_tools.clone(),
             config.enabled_mcp_server_ids.clone(),
+            config.mcp_trust_snapshot.clone(),
         )
     };
 
     let _ = get_provider(&provider_name)?;
     let api_key = api_keys::load_api_key(&provider_name)?;
     let tools = {
-        let all =
-            tool_runtime::tool_definitions_with_mcp_allowlist(enabled_mcp_server_ids.as_deref())
-                .await;
+        let all = tool_runtime::tool_definitions_with_mcp_trust(
+            enabled_mcp_server_ids.as_deref(),
+            mcp_trust_snapshot.as_deref(),
+        )
+        .await;
         match allowed_tools.as_ref() {
             Some(allow) => all
                 .into_iter()
@@ -1967,6 +1982,7 @@ async fn run_agent_loop(
                 let state = Arc::clone(state);
                 let hooks_for_tool = all_hooks.clone();
                 let enabled_mcp_server_ids = enabled_mcp_server_ids.clone();
+                let mcp_trust_snapshot = mcp_trust_snapshot.clone();
                 async move {
                     // Plan mode gate
                     if plan_mode_active && !PLAN_MODE_ALLOWED.contains(&tc.name.as_str()) {
@@ -2368,10 +2384,11 @@ async fn run_agent_loop(
                     }
 
                     // Execute tool
-                    let result = tool_runtime::execute_tool_with_mcp_allowlist(
+                    let result = tool_runtime::execute_tool_with_mcp_trust(
                         &tc,
                         &execution,
                         enabled_mcp_server_ids.as_deref(),
+                        mcp_trust_snapshot.as_deref(),
                     )
                     .await;
                     let _ = app_handle.emit(

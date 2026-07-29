@@ -32,7 +32,7 @@ impl SidecarManager {
         command_path: Option<String>,
         workspace: Option<Value>,
     ) -> Result<(), String> {
-        self.forward_start_inner(
+        self.forward_start_with_mcp_trust(
             session_id,
             provider,
             model,
@@ -52,15 +52,14 @@ impl SidecarManager {
             approve_writes,
             command_path,
             workspace,
-            None,
+            Value::Null,
         )
         .await
     }
 
-    /// Forward a start_session request through a dedicated SSH-backed
-    /// sidecar. Used when a sidecar provider targets a remote workspace.
+    /// Forward a start request with MCPH4's frozen per-session MCP authority.
     #[allow(clippy::too_many_arguments)]
-    pub async fn forward_start_ssh(
+    pub async fn forward_start_with_mcp_trust(
         &self,
         session_id: String,
         provider: String,
@@ -81,6 +80,58 @@ impl SidecarManager {
         approve_writes: Option<bool>,
         command_path: Option<String>,
         workspace: Option<Value>,
+        mcp_trust_snapshot: Value,
+    ) -> Result<(), String> {
+        self.forward_start_inner(
+            session_id,
+            provider,
+            model,
+            system_prompt,
+            allowed_tools,
+            mcp_servers,
+            source_mcp_from_fs,
+            project_path,
+            initial_message,
+            api_key,
+            resume,
+            thinking_enabled,
+            plan_mode,
+            attachments,
+            resume_messages,
+            permission_mode,
+            approve_writes,
+            command_path,
+            workspace,
+            mcp_trust_snapshot,
+            None,
+        )
+        .await
+    }
+
+    /// SSH equivalent of `forward_start_with_mcp_trust`.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn forward_start_ssh_with_mcp_trust(
+        &self,
+        session_id: String,
+        provider: String,
+        model: String,
+        system_prompt: String,
+        allowed_tools: Vec<String>,
+        mcp_servers: Value,
+        source_mcp_from_fs: bool,
+        project_path: String,
+        initial_message: String,
+        api_key: Option<String>,
+        resume: Option<String>,
+        thinking_enabled: Option<bool>,
+        plan_mode: Option<bool>,
+        attachments: Value,
+        resume_messages: Value,
+        permission_mode: Option<String>,
+        approve_writes: Option<bool>,
+        command_path: Option<String>,
+        workspace: Option<Value>,
+        mcp_trust_snapshot: Value,
         ssh_config: SshConfig,
     ) -> Result<(), String> {
         self.forward_start_inner(
@@ -103,6 +154,7 @@ impl SidecarManager {
             approve_writes,
             command_path,
             workspace,
+            mcp_trust_snapshot,
             Some(ssh_config),
         )
         .await
@@ -130,6 +182,7 @@ impl SidecarManager {
         approve_writes: Option<bool>,
         command_path: Option<String>,
         workspace: Option<Value>,
+        mcp_trust_snapshot: Value,
         ssh_config: Option<SshConfig>,
     ) -> Result<(), String> {
         if let Some(config) = ssh_config.as_ref() {
@@ -160,6 +213,7 @@ impl SidecarManager {
             approve_writes,
             command_path,
             workspace,
+            mcp_trust_snapshot,
         );
         let result = self.send_json_for_session(&session_id, req).await;
         if result.is_err() {
@@ -329,6 +383,7 @@ fn encode_start_session(
     approve_writes: Option<bool>,
     command_path: Option<String>,
     workspace: Option<Value>,
+    mcp_trust_snapshot: Value,
 ) -> Value {
     json!({
         "type": "start_session",
@@ -338,6 +393,7 @@ fn encode_start_session(
         "systemPrompt": system_prompt,
         "allowedTools": allowed_tools,
         "mcpServers": mcp_servers,
+        "mcpTrustSnapshot": mcp_trust_snapshot,
         "sourceMcpFromFs": source_mcp_from_fs,
         "projectPath": project_path,
         "initialMessage": initial_message,
@@ -388,6 +444,7 @@ mod tests {
             None,
             None,
             None,
+            Value::Null,
         );
         assert_eq!(req["type"], "start_session");
         assert_eq!(req["mcpServers"], json!({}));
@@ -416,6 +473,7 @@ mod tests {
             None,
             None,
             None,
+            Value::Null,
         );
         assert_eq!(req["sourceMcpFromFs"], json!(false));
         assert_eq!(req["mcpServers"]["srv"]["command"], "node");

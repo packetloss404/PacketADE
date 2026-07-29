@@ -8,6 +8,10 @@ use std::path::PathBuf;
 #[serde(default, rename_all = "camelCase")]
 pub struct DictationConfig {
     pub model_size: String,
+    /// Stable CPAL device identity. Preferred over the legacy enumeration
+    /// index so settings survive restarts and device-list reordering.
+    pub device_id: Option<String>,
+    /// Legacy migration fallback only.
     pub device_index: Option<u32>,
     pub custom_dictionary: Vec<String>,
     pub auto_paste: bool,
@@ -24,12 +28,19 @@ pub struct DictationConfig {
     /// OS-global accelerator for toggle-recording.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub toggle_shortcut: Option<String>,
+    /// Global shortcuts are an explicit trust choice. In-app controls and the
+    /// Escape cancellation shortcut remain available when this is disabled.
+    pub global_shortcuts_enabled: bool,
+    /// Hard capture ceiling. This bounds retained PCM even if a release event
+    /// is missed or the frontend is temporarily unavailable.
+    pub max_duration_seconds: u32,
 }
 
 impl Default for DictationConfig {
     fn default() -> Self {
         Self {
             model_size: "small".to_string(),
+            device_id: None,
             device_index: None,
             custom_dictionary: Vec::new(),
             auto_paste: false,
@@ -37,8 +48,18 @@ impl Default for DictationConfig {
             system_wide_paste: false,
             push_to_talk_shortcut: None,
             toggle_shortcut: None,
+            global_shortcuts_enabled: false,
+            max_duration_seconds: 300,
         }
     }
+}
+
+fn normalize_config(mut config: DictationConfig) -> DictationConfig {
+    config.max_duration_seconds = config.max_duration_seconds.clamp(10, 1_800);
+    if config.language.trim().is_empty() {
+        config.language = "auto".to_string();
+    }
+    config
 }
 
 /// Return the path to ~/.packetade/dictation.json.
@@ -60,7 +81,7 @@ pub fn get_dictation_settings() -> Result<String, String> {
 
 pub(crate) fn read_dictation_config() -> Result<DictationConfig, String> {
     let path = config_path()?;
-    let mut config = if path.exists() {
+    let mut config = normalize_config(if path.exists() {
         let contents =
             fs::read_to_string(&path).map_err(|e| format!("Failed to read config: {e}"))?;
         match serde_json::from_str::<DictationConfig>(&contents) {
@@ -75,7 +96,7 @@ pub(crate) fn read_dictation_config() -> Result<DictationConfig, String> {
         }
     } else {
         DictationConfig::default()
-    };
+    });
 
     // Repair stale model selections when a different verified model is already
     // available. This covers upgrades from the pre-checksum model installer.
@@ -103,8 +124,11 @@ pub fn set_dictation_settings(settings: String) -> Result<(), String> {
     let path = config_path()?;
 
     // Validate that the input is valid DictationConfig JSON
-    let _: DictationConfig =
+    let config: DictationConfig =
         serde_json::from_str(&settings).map_err(|e| format!("Invalid settings JSON: {e}"))?;
+    let config = normalize_config(config);
+    let settings = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("JSON serialization error: {e}"))?;
 
     fs::write(&path, &settings).map_err(|e| format!("Failed to write config: {e}"))?;
 
@@ -129,6 +153,20 @@ mod tests {
 
         assert_eq!(config.language, "auto");
         assert!(!config.system_wide_paste);
+        assert!(!config.global_shortcuts_enabled);
+        assert_eq!(config.max_duration_seconds, 300);
+        assert_eq!(config.device_id, None);
         assert_eq!(config.custom_dictionary, vec!["PacketADE"]);
+    }
+
+    #[test]
+    fn unsafe_capture_limits_are_clamped() {
+        let mut config = DictationConfig::default();
+        config.max_duration_seconds = 0;
+        assert_eq!(normalize_config(config).max_duration_seconds, 10);
+
+        let mut config = DictationConfig::default();
+        config.max_duration_seconds = 99_999;
+        assert_eq!(normalize_config(config).max_duration_seconds, 1_800);
     }
 }

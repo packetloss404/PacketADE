@@ -165,6 +165,7 @@ pub fn run() {
         .manage(std::sync::Arc::new(QualityRunnerState::new()))
         .manage(std::sync::Arc::new(CodeQualityAutoFixState::new()))
         .manage(mcp_server::create_mcp_server_state())
+        .manage(commands::project_memory::ProjectMemoryWatchState::default())
         .setup(|app| {
             // Spawn the Node agent sidecar and stash the supervisor in
             // managed state so slice C's routing layer can reach it via
@@ -386,6 +387,12 @@ pub fn run() {
             commands::memory::summarize_session,
             commands::memory::extract_patterns,
             commands::memory::summarize_flight,
+            commands::project_memory::list_project_memory,
+            commands::project_memory::create_project_memory,
+            commands::project_memory::update_project_memory,
+            commands::project_memory::archive_project_memory,
+            commands::project_memory::search_project_memory,
+            commands::project_memory::watch_project_memory,
             // Prompt history
             commands::history::read_prompt_history,
             // Usage analytics
@@ -394,10 +401,12 @@ pub fn run() {
             commands::mcp::read_mcp_servers,
             commands::mcp::write_mcp_server,
             commands::mcp::delete_mcp_server,
+            commands::mcp::diagnose_mcp_server,
             // Remote SSH repo clone (used by workspace creation)
             commands::git::clone_repo_remote,
             // Dictation / audio capture
             commands::dictation::list_audio_devices,
+            commands::dictation::test_audio_device,
             commands::dictation::start_recording,
             commands::dictation::cancel_recording,
             commands::dictation::stop_recording,

@@ -1,6 +1,6 @@
 # Trust and Provenance Loop
 
-Status: **approved, queued**
+Status: **TP1–TP7 source-complete; TP8 environment-gated**
 
 Decision date: 2026-07-28
 
@@ -73,16 +73,34 @@ not silently label old evidence as trusted.
 
 ## Implementation loop
 
-| ID | Slice | Acceptance condition | Gate | Status |
-|---|---|---|---|---|
-| **TP1** | Inventory and typed contract | Map every ingestion, tool-result, persistence, and approval path; freeze a versioned Rust/TypeScript/sidecar envelope with backward-compatible `unknown` migration. | Schema fixtures cover every origin, authority, transform, and legacy record. | queued |
-| **TP2** | Ingestion normalization | Stamp web, MCP, local/remote file, repository, memory, attachment/import, and agent-derived content at entry without duplicating raw payloads or secrets. Keep the current nonce web envelope. | Unit fixtures prove correct classification, safe locators, hashes, truncation/redaction, and no accidental authority promotion. | queued |
-| **TP3** | Transport and persistence | Carry envelope IDs through both in-process and sidecar `api-agent:*` paths, tool calls/results, resume/retry, and conversation persistence. Bump the sidecar protocol only if the wire shape changes. | Provider-parity, reload, retry, late-event, and protocol-skew tests pass. | queued |
-| **TP4** | Quiet, inspectable UI | Add compact source/trust chips and a lineage detail view to tool cards and relevant message evidence; extend the same component to review packets, Flight evidence, and Memory records. Avoid badge noise on ordinary conversation text. | Component/accessibility tests plus visual checks cover trusted, evidence-only, unknown, truncated, and broken-source states. | queued |
-| **TP5** | Tainted-turn policy gate | Track when the active turn consumed external/unknown evidence and evaluate subsequent risky calls at the existing permission/autonomy boundary. The prompt explains the action, target, source chain, and effective policy. | Matrix tests cover read-only continuation, write/shell/network/credential/publish gates, denial, bounded YOLO, retry/resume, and hard-stop actions. | queued |
-| **TP6** | Downstream lineage | Preserve source links through summaries, “Add to memory,” Flight planning/evidence, coordination artifacts, reviewer findings, and Issue/PR handoffs without treating derivatives as new authority. | Round-trip and lineage tests prove parent chains survive export/import and broken parents degrade to `unknown`. | queued |
-| **TP7** | Audit, redaction, and controls | Record trust-policy decisions and source-chain metadata in a bounded audit view/export; add scoped settings and clear recovery guidance for unavailable/tampered sources. | Secret canaries never appear in UI logs/exports; retention, tamper, and settings-migration tests pass. | queued |
-| **TP8** | Regression and packaged proof | Exercise local/SSH, all API-agent transports, MCP local/remote, web, Memory, Flight review/coordination, YOLO, restart, and old-state migration. | Full frontend/Rust/sidecar gates plus packaged Windows and available macOS/Linux smoke. | queued |
+| ID      | Slice                          | Acceptance condition                                                                                                                                                                                                                     | Gate                                                                                                                                                | Status |
+| ------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| **TP1** | Inventory and typed contract   | Map every ingestion, tool-result, persistence, and approval path; freeze a versioned Rust/TypeScript/sidecar envelope with backward-compatible `unknown` migration.                                                                      | Schema fixtures cover every origin, authority, transform, and legacy record.                                                                        | closed |
+| **TP2** | Ingestion normalization        | Stamp web, MCP, local/remote file, repository, memory, attachment/import, and agent-derived content at entry without duplicating raw payloads or secrets. Keep the current nonce web envelope.                                           | Unit fixtures prove correct classification, safe locators, hashes, truncation/redaction, and no accidental authority promotion.                     | closed |
+| **TP3** | Transport and persistence      | Carry envelope IDs through both in-process and sidecar `api-agent:*` paths, tool calls/results, resume/retry, and conversation persistence. Bump the sidecar protocol only if the wire shape changes.                                    | Provider-parity, reload, retry, late-event, and protocol-skew tests pass.                                                                           | closed |
+| **TP4** | Quiet, inspectable UI          | Add compact source/trust chips and a lineage detail view to tool cards and relevant message evidence; extend the same component to review packets, Flight evidence, and Memory records. Avoid badge noise on ordinary conversation text. | Component/accessibility tests plus visual checks cover trusted, evidence-only, unknown, truncated, and broken-source states.                        | closed |
+| **TP5** | Tainted-turn policy gate       | Track when the active turn consumed external/unknown evidence and evaluate subsequent risky calls at the existing permission/autonomy boundary. The prompt explains the action, target, source chain, and effective policy.              | Matrix tests cover read-only continuation, write/shell/network/credential/publish gates, denial, bounded YOLO, retry/resume, and hard-stop actions. | closed |
+| **TP6** | Downstream lineage             | Preserve source links through summaries, “Add to memory,” Flight planning/evidence, coordination artifacts, reviewer findings, and Issue/PR handoffs without treating derivatives as new authority.                                      | Round-trip and lineage tests prove parent chains survive export/import and broken parents degrade to `unknown`.                                     | closed |
+| **TP7** | Audit, redaction, and controls | Record trust-policy decisions and source-chain metadata in a bounded audit view/export; add scoped settings and clear recovery guidance for unavailable/tampered sources.                                                                | Secret canaries never appear in UI logs/exports; retention, tamper, and settings-migration tests pass.                                              | closed |
+| **TP8** | Regression and packaged proof  | Exercise local/SSH, all API-agent transports, MCP local/remote, web, Memory, Flight review/coordination, YOLO, restart, and old-state migration.                                                                                         | Full frontend/Rust/sidecar gates plus packaged Windows and available macOS/Linux smoke.                                                             | gated  |
+
+## 2026-07-28 implementation record
+
+- The schema-v1 envelope is shared by TypeScript, Rust, and the sidecar. Tool
+  results classify web/MCP/memory/agent/local/remote/unknown evidence; imported
+  attachments retain hashes and type only, never the payload.
+- Legacy conversations, memory records, and tools hydrate as `unknown`.
+  Assistant text, memory, review packets, Flight coordination, and reviewer
+  reports preserve parent IDs as evidence-only derivatives.
+- Permission prompts display the effective source chain. External/unknown
+  evidence forces the existing risky-action gate even when the selected
+  permission/autonomy posture is otherwise broad.
+- `Settings → Advanced → Trust & provenance` provides quiet source-chip
+  controls plus a redacted, bounded 7/30-day audit and JSON export.
+- Focused provenance/listener/tool-card suites and the combined frontend,
+  sidecar, Rust compile, and unsigned Windows bundle gates pass. TP8 remains
+  gated on a packaged Windows visual pass, a configured SSH host, and live
+  provider credentials; macOS/Linux proof requires those hosts.
 
 Run TP1 through TP8 in order. Each slice closes only with its named tests and
 with `backlog.md`, `ROADMAP.md`, and this ledger reconciled.

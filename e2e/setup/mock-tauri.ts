@@ -21,7 +21,7 @@ export const mockTauriInitScript = `
 
   const ignoredEventPatterns = [
     /^api-agent:(chunk|thinking|thinking-stop|tool-start|tool-result|permission-request|pending-edit|edit-baseline|plan-block|tool-output-extended|turn-summary|done|error):/,
-    /^dictation:(waveform|status|model-progress)$/,
+    /^dictation:(waveform|status|model-progress|error|warning|limit-reached)$/,
     /^flight-chat:(chunk|done|error):/,
     /^pty:(output|exit|state):/,
     /^side-chat:(chunk|done|error)$/,

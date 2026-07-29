@@ -12,6 +12,7 @@ import type {
   StartSessionRequest,
 } from "./protocol.js";
 import { loadMcpFromFs } from "./mcp-config.js";
+import { applyMcpTrustSnapshot } from "./mcp-trust.js";
 import type { ProviderHandler } from "./providers/base.js";
 import { EchoProvider } from "./providers/echo.js";
 import { AnthropicProvider } from "./providers/anthropic.js";
@@ -107,6 +108,15 @@ export class SessionRegistry {
       req.mcpServers = servers;
       emit({ type: "mcp_sources", sessionId: req.sessionId, ...summary });
     }
+    // MCPH4: omitted legacy authority migrates to conservative read-only
+    // defaults. An explicit empty snapshot grants no MCP servers.
+    const trustedMcp = applyMcpTrustSnapshot(
+      req.mcpServers ?? {},
+      req.mcpTrustSnapshot ?? undefined,
+      req.projectPath,
+    );
+    req.mcpServers = trustedMcp.servers;
+    req.mcpTrustSnapshot = trustedMcp.snapshots;
     const handler = factory();
     const entry: SessionEntry = {
       handler,

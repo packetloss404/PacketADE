@@ -38,16 +38,16 @@ PacketADE runs two kinds of agents side-by-side.
 
 **API agents as conversation tiles** — structured conversations with streaming, tool calls, and permission gating, added from the Workspace's grouped Add-agent picker:
 
-| Row | Internal id | Auth |
-|---|---|---|
-| Anthropic (Subscription) | `api-claude-oauth` | Claude Code OAuth (`claude login`) — uses your Pro/Max subscription |
-| Claude (API) | `api-claude` | Anthropic API key in OS keyring |
-| OpenAI (ChatGPT Plus/Pro) | `api-openai-codex` | Codex CLI OAuth (`codex login`) — uses your ChatGPT subscription |
-| OpenAI (API) | `api-openai` | `OPENAI_API_KEY` in OS keyring |
-| OpenAI Agents SDK (API) | `api-openai-agents` | `OPENAI_API_KEY` in OS keyring |
-| MiniMax | `api-minimax` | API key in OS keyring |
-| OpenRouter | `api-openrouter` | API key in OS keyring |
-| Ollama | `api-ollama` | none — local daemon at `localhost:11434` |
+| Row                       | Internal id         | Auth                                                                |
+| ------------------------- | ------------------- | ------------------------------------------------------------------- |
+| Anthropic (Subscription)  | `api-claude-oauth`  | Claude Code OAuth (`claude login`) — uses your Pro/Max subscription |
+| Claude (API)              | `api-claude`        | Anthropic API key in OS keyring                                     |
+| OpenAI (ChatGPT Plus/Pro) | `api-openai-codex`  | Codex CLI OAuth (`codex login`) — uses your ChatGPT subscription    |
+| OpenAI (API)              | `api-openai`        | `OPENAI_API_KEY` in OS keyring                                      |
+| OpenAI Agents SDK (API)   | `api-openai-agents` | `OPENAI_API_KEY` in OS keyring                                      |
+| MiniMax                   | `api-minimax`       | API key in OS keyring                                               |
+| OpenRouter                | `api-openrouter`    | API key in OS keyring                                               |
+| Ollama                    | `api-ollama`        | none — local daemon at `localhost:11434`                            |
 
 Auth status is probed live and shown as a badge next to each row (`ready` / `login_required` / `missing_key` / `service_down`). An fs watcher flips the badge automatically after a `claude login` / `codex login` completes, and expired-but-refreshable tokens stay `ready` (the SDK / CLI refreshes them transparently). Most API-key providers run in-process in Rust; subscription providers and the OpenAI Agents SDK provider run in the Node sidecar. Each session can be launched with agent-specific arguments and model selections exposed through the UI.
 
@@ -55,7 +55,7 @@ Auth status is probed live and shown as a badge next to each row (`ready` / `log
 
 ### Conversation Tiles — Unified Chat for Every Provider
 
-The **Workspace is the single surface**: every agent — chat or terminal — is a tile in a draggable mosaic, and the **FleetSidebar** on the left is the one session list (running and idle rows, with a *needs-you* group pinned to the top for conversations waiting on an approval or answer). Add a session from the **AddAgentPicker** (`+`), which splits into a **Chat agents** section (the eight API providers) and a **Terminals** section (the PTY CLIs); a chat provider opens as a **ConversationTile** sitting beside the terminal tiles. Every tile shares one composer, two backends (in-process Rust + Node sidecar), and one event contract, so the chat UI is identical across all eight providers. When a conversation stacks up pending writes, the tile's **ReviewBar** opens the canonical **ReviewSurface** (one hunk engine, one apply pipeline); when the work is done, the **GitDashboard** is the single git home and its **WorktreeLifecycleBar** carries the conversation's branch to merge, PR, or discard.
+The **Workspace is the single surface**: every agent — chat or terminal — is a tile in a draggable mosaic, and the **FleetSidebar** on the left is the one session list (running and idle rows, with a _needs-you_ group pinned to the top for conversations waiting on an approval or answer). Add a session from the **AddAgentPicker** (`+`), which splits into a **Chat agents** section (the eight API providers) and a **Terminals** section (the PTY CLIs); a chat provider opens as a **ConversationTile** sitting beside the terminal tiles. Every tile shares one composer, two backends (in-process Rust + Node sidecar), and one event contract, so the chat UI is identical across all eight providers. When a conversation stacks up pending writes, the tile's **ReviewBar** opens the canonical **ReviewSurface** (one hunk engine, one apply pipeline); when the work is done, the **GitDashboard** is the single git home and its **WorktreeLifecycleBar** carries the conversation's branch to merge, PR, or discard.
 
 - **Live status in the tile header**: model · context % gauge · cumulative tokens · session $ · git branch
 - **Drag-drop and clipboard-paste images** into the launcher (5 MB cap, removable thumbnail chips); image blocks land in the SDK content array on send
@@ -89,10 +89,10 @@ The **Workspace is the single surface**: every agent — chat or terminal — is
 
 ### Sidecar Protocol
 
-The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK providers run in a Node sidecar that emits a normalized `api-agent:*` event vocabulary the frontend listens to (the same shape the in-process Rust providers emit). PROTOCOL_VERSION is currently **10**:
+The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK providers run in a Node sidecar that emits a normalized `api-agent:*` event vocabulary the frontend listens to (the same shape the in-process Rust providers emit). PROTOCOL_VERSION is currently **11**:
 
 - Events: `ready` (handshake), `chunk`, `thinking`, `thinking_stop`, `tool_start`, `tool_result`, `permission_request` (with optional `batchId`/`batchSize`), `pending_edit`, `done` (with optional `resumeToken` and v10 `cancelled` marker), `error`, `plan_block`, `tool_output_extended` (Bash exit code + stdout/stderr; Write/Edit modified paths), `turn_summary` (running tokens between turns), and `rate_limited` (v6, typed provider quota-pause)
-- Requests: `start_session` (with image attachments + resume), `send_message`, `permission_response`, `edit_response` (v9-correlated by required `toolUseId`, with optional `mergedContent` for per-hunk acceptance), `cancel`, `close_session`, `set_permission_mode`, `set_model`, `retry`, `cancel_pending_tools`, `inject_user_turn` (v5)
+- Requests: `start_session` (with image attachments, resume, and v11 frozen MCP trust snapshots), `send_message`, `permission_response`, `edit_response` (v9-correlated by required `toolUseId`, with optional `mergedContent` for per-hunk acceptance), `cancel`, `close_session`, `set_permission_mode`, `set_model`, `retry`, `cancel_pending_tools`, `inject_user_turn` (v5)
 
 ### Workspaces — Terminal CLI Command Center
 
@@ -147,18 +147,48 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 - Learned patterns with confidence scores and categories (architecture, convention, preference, pitfall)
 - Live context injection into workspace sessions (patterns + lessons + recent summaries)
 - Per-project scoping with bounded context to avoid token overflow
+- A **Project notes** source stores ordinary Markdown plus schema-v1 YAML
+  frontmatter under `.agents/memory`. Notes have stable IDs, optimistic
+  revisions, links/backlinks, broken-link/orphan health, provenance references,
+  search, and safe external-editor reload/conflict handling.
+- Unified “Ask your project” retrieval ranks eligible global and project-note
+  excerpts together with source filters and a bounded context budget.
+- Project notes are normal project files and are version-control-capable by
+  default. PacketADE never edits `.gitignore`; teams decide whether to track
+  `.agents/memory`.
+- PacketADE's loopback MCP provider exposes bounded project-note
+  search/read/create/update/archive operations. Mutations require the provider's
+  explicit `allow writes` setting and the same project confinement/revision
+  checks as the UI.
 
 ### Dictation — Voice-to-Text
 
-- Local Whisper transcription (no audio leaves the machine); verified model, audio device, language, and custom dictionary configurable from `Tools → Dictation`
-- OS-level global shortcuts via `tauri-plugin-global-shortcut` so the hotkeys work even when PacketADE is not the focused application:
-  - `Ctrl+Shift+V` (hold) — push-to-talk; records while held, transcribes on release (rebindable)
-  - `Ctrl+Shift+R` — toggle recording on/off (rebindable)
+- Local Whisper transcription (no audio leaves the machine); verified model, stable audio device, microphone doctor, recording limit, language, and custom dictionary configurable from `Tools → Dictation`
+- Explicitly opt-in OS-level global shortcuts via `tauri-plugin-global-shortcut` so the hotkeys work even when PacketADE is not the focused application:
+  - `Ctrl+Alt+Space` (hold) — push-to-talk; records while held, transcribes on release (rebindable; `Cmd+Alt+Space` on macOS)
+  - `Ctrl+Alt+R` — toggle recording on/off (rebindable; `Cmd+Alt+R` on macOS)
   - `Ctrl+Shift+D` — open the Dictation view
   - `Escape` — cancel an active recording
-- **Focus-aware insertion**: tracks the most recently focused text input across the app and inserts the transcript at its cursor on completion — works in agent chats, flight title/objective, issue forms, prompt library, anywhere you type. Terminals are excluded.
+- **Focus-aware insertion**: inserts into safe React inputs, textareas, contenteditable editors, and live PacketADE terminals (through the PTY API). Password, one-time-code, explicitly sensitive, stale, and disconnected targets are excluded.
 - **External delivery** copies to the native Windows clipboard when no PacketADE input is tracked, with an opt-in foreground-app paste mode. The transcript remains visible and on the clipboard if OS injection is blocked.
 - Live `REC` indicator in the status strip, 32-bar waveform, automatic history capture/search, and an analytics dashboard (WPM, sentiment trend, top words, daily streak, time saved estimate)
+
+### Trust and Provenance
+
+- Web, MCP, local/remote workspace, imported attachment, memory, agent, and
+  generated evidence use one schema-v1 origin/authority/integrity/lineage
+  envelope. Legacy records load as `unknown`; they are never silently promoted
+  to trusted intent.
+- Tool cards, permission prompts, Memory records, reviewer reports, Flight
+  coordination records, and derived artifacts retain compact source chips or
+  parent links without persisting raw attachment payloads or secret-bearing
+  locators.
+- A risky action after external or unknown evidence reuses the existing
+  permission boundary even under broad autonomy settings. Credential,
+  protected-publish, conflict, reviewer, and workspace-root floors remain
+  explicit.
+- Trust decisions are kept in a redacted, bounded local audit (200 entries,
+  configurable 7/30-day retention) with JSON export and clear controls.
 
 ### Code Quality
 
@@ -181,7 +211,23 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 
 ### Project Operations
 
-- MCP client config management plus the local MCP-provider settings surface in Tools
+- A unified **Local-first MCP Hub** in `Settings → MCP` combines the existing
+  client/server editor and PacketADE provider with search, a review-before-add
+  official starter catalog, stdio capability diagnostics, per-workspace
+  read/write/network/root/tool trust, bounded activity, and an explicit selected
+  conversation reconnect.
+- MCP trust is frozen into each PacketADE-managed MCP session. Later settings
+  edits cannot silently broaden it; old sessions migrate to conservative
+  read-only authority. Non-overridable floors block credentials,
+  outside-workspace paths, and protected publish/merge/deploy tools. A local
+  stdio child is not an OS network sandbox, so its own package/runtime
+  configuration still matters. Codex subscription conversations remain an
+  explicit exception: Codex CLI owns its separate `codex mcp` configuration,
+  which PacketADE cannot enforce or reconnect yet.
+- PacketADE's loopback provider organizes scoped resources for Flights, Issues,
+  coordination, review, global/project Memory, workspaces, and PacketCode
+  integration health. It remains loopback-only with bearer/origin controls;
+  there is no hosted PacketMCP service.
 - Local crash report browsing and cleanup
 - Agent profile management and AI routing configuration
 - Prompt template library
@@ -248,7 +294,7 @@ PacketADE ships with a Node.js sidecar that powers the Anthropic (Subscription),
 
 #### Sidecar status
 
-The sidecar work is complete across the original four v2 tiers and the v3–v10 protocol additions that power the unified conversation tiles:
+The sidecar work is complete across the original four v2 tiers and the v3–v11 protocol additions that power the unified conversation tiles:
 
 - **v2 Tier 1 — Bundling:** pinned Node 24.15.0 runtime fetched as a Tauri `externalBin`, sidecar resources bundled with pruned production `node_modules`, `prebundle` chain wired into `tauri build`.
 - **v2 Tier 2 — Lifecycle & auth:** sidecar version handshake on startup, toolbar status chip reflecting live sidecar state, credential expiry parsing for Anthropic Subscription / OpenAI ChatGPT tokens, and a filesystem watcher that re-reads auth when cred files change on disk.
@@ -263,6 +309,12 @@ The sidecar work is complete across the original four v2 tiers and the v3–v10 
 - **v8 — remote-owned MCP over SSH:** a remote sidecar loads its own `~/.claude/settings.json` and project `.mcp.json`, runs both stdio and network MCP servers on the remote host, and reports a secrets-free `mcp_sources` summary to the conversation.
 - **v9 — targeted edit responses:** `edit_response` carries a required `toolUseId`; Anthropic and OpenAI Agents resolve only that pending edit, preserving unrelated approvals in the same session.
 - **v10 — explicit `cancelled` terminal marker:** the `done` event carries a `cancelled` flag so a user-cancelled turn is distinguished from a natural completion, giving the frontend exactly-once cancelled-terminal semantics across idle / active / post-completion cancels.
+- **v11 — frozen MCP trust authority:** PacketADE-managed MCP servers receive a
+  per-session read/write/network/root/tool snapshot with conservative legacy
+  migration and non-overridable denial floors. Anthropic Subscription, OpenAI
+  Agents SDK, and in-process providers enforce it. Codex CLI still manages MCP
+  separately through `codex mcp`, so the Hub labels that provider boundary
+  rather than claiming enforcement it does not have.
 - **Codex absorption:** Codex `todo_list` items map to the existing `plan_block` event; `reasoning_tokens` + `cached_input_tokens` flow into `turn_summary` so CostDashboard reports GPT-5.5 spend correctly; `turn_summary.address` carries the MultiAgentV2 sub-agent path (`/root/agent_a` etc.) so child token totals attribute to a per-address bucket on the conversation instead of the root.
 - **OpenAI Agents SDK provider:** `api-openai-agents` runs in the sidecar with the same OpenAI API key as `api-openai`, preserving the existing Agents pane event contract while leaving the stable Rust OpenAI API provider and Codex subscription provider untouched. The default `auto` mode requires approval before `bash` / `write_file`.
 - **Standalone exe sidecar fix:** the Tauri shell plugin on Windows resolves `app.shell().sidecar("node")` to `<exe_dir>/node-<target-triple>.exe`, and the call is gated by an explicit `shell:allow-execute` capability entry. `build.rs` now copies `binaries/node-<triple>.<ext>` into the cargo output directory at compile time, and `capabilities/default.json` grants the `node` sidecar entry — so running `target/<profile>/packetade.exe` directly (without installing the MSI/NSIS) no longer reports the sidecar as down.

@@ -94,6 +94,84 @@ const PROVIDER_TOOLS: McpTool[] = [
     inputSchema: { type: "object", properties: {}, required: [] },
   },
   {
+    name: "search_project_memory",
+    description: "Searches project-local Markdown memory for a local workspace",
+    inputSchema: {
+      type: "object",
+      properties: {
+        workspaceId: { type: "string" },
+        query: { type: "string" },
+      },
+      required: ["workspaceId", "query"],
+    },
+  },
+  {
+    name: "read_project_memory",
+    description: "Reads one project-local Markdown memory note",
+    inputSchema: {
+      type: "object",
+      properties: {
+        workspaceId: { type: "string" },
+        noteId: { type: "string" },
+      },
+      required: ["workspaceId", "noteId"],
+    },
+  },
+  {
+    name: "create_project_memory",
+    description:
+      "Creates a confined project-local Markdown memory note (requires writes)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        workspaceId: { type: "string" },
+        title: { type: "string" },
+        body: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
+        provenanceIds: { type: "array", items: { type: "string" } },
+      },
+      required: ["workspaceId", "title", "body"],
+    },
+  },
+  {
+    name: "update_project_memory",
+    description:
+      "Updates a project-local note with an expected revision (requires writes)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        workspaceId: { type: "string" },
+        noteId: { type: "string" },
+        expectedRevision: { type: "string" },
+        title: { type: "string" },
+        body: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
+        provenanceIds: { type: "array", items: { type: "string" } },
+      },
+      required: [
+        "workspaceId",
+        "noteId",
+        "expectedRevision",
+        "title",
+        "body",
+      ],
+    },
+  },
+  {
+    name: "archive_project_memory",
+    description:
+      "Archives a project-local note with an expected revision (requires writes)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        workspaceId: { type: "string" },
+        noteId: { type: "string" },
+        expectedRevision: { type: "string" },
+      },
+      required: ["workspaceId", "noteId", "expectedRevision"],
+    },
+  },
+  {
     name: "list_workspaces",
     description: "Lists active workspaces",
     inputSchema: { type: "object", properties: {}, required: [] },
@@ -261,6 +339,19 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
   refreshResources: () => {
     const resources: McpResource[] = [];
 
+    resources.push({
+      uri: "packetade://issues",
+      name: "Issue board",
+      description: "Current PacketADE issues and workflow state",
+      mimeType: "application/json",
+    });
+    resources.push({
+      uri: "packetade://packetcode/health",
+      name: "PacketCode integration health",
+      description: "Availability, doctor status, home, version, and provider summary",
+      mimeType: "application/json",
+    });
+
     // Flights
     const flights = useFlightStore.getState().flights;
     for (const flight of flights) {
@@ -291,6 +382,16 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
         uri: "packetade://memory/patterns",
         name: "Memory Patterns",
         description: `${patterns.length} learned pattern(s)`,
+        mimeType: "application/json",
+      });
+    }
+
+    for (const workspace of useWorkspaceStore.getState().workspaces) {
+      if (workspace.serverId) continue;
+      resources.push({
+        uri: `packetade://memory/project/${workspace.id}`,
+        name: `${workspace.name} Project Memory`,
+        description: "Version-controlled-capable Markdown notes",
         mimeType: "application/json",
       });
     }

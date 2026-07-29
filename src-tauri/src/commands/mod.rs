@@ -21,12 +21,13 @@ pub mod github;
 pub mod history;
 pub mod insights;
 // v0.8.5 — issues spec import.
+pub mod flight_cost;
 pub mod issues;
 pub mod mcp;
 pub mod memory;
-pub mod flight_cost;
 pub mod ollama;
 pub mod pricing;
+pub mod project_memory;
 pub mod provider_auth;
 pub mod provider_stats;
 pub mod pty;

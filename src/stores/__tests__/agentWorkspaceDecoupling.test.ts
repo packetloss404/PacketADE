@@ -155,6 +155,8 @@ describe("agent/workspace store decoupling", () => {
       "auto",
       false,
       null,
+      undefined,
+      undefined,
     );
   });
 
@@ -220,6 +222,8 @@ describe("agent/workspace store decoupling", () => {
       "auto",
       false,
       null,
+      undefined,
+      undefined,
     );
   });
 
@@ -357,6 +361,8 @@ describe("agent/workspace store decoupling", () => {
       "auto",
       false,
       null,
+      undefined,
+      undefined,
     );
   });
 

@@ -776,6 +776,62 @@ describe("apiAgentListeners tiered approval gating (P1-9)", () => {
     expect(useAgentApprovalStore.getState().permissions.has("conv-edit")).toBe(false);
   });
 
+  it("forces a risky follow-on through the existing gate after web evidence, including YOLO", async () => {
+    const { toolResultProvenance } = await import("@/lib/provenance");
+    const webSource = toolResultProvenance({
+      toolId: "web-source",
+      name: "web_fetch",
+      input: JSON.stringify({ url: "https://example.com/instructions?token=secret" }),
+      content: "untrusted page",
+    });
+    const conv = makeConversation("conv-tainted", {
+      permissionMode: "allow_all",
+      messages: [
+        makeMessage({ id: "msg-user", content: "research this" }),
+        makeMessage({
+          id: "msg-assistant",
+          role: "assistant",
+          content: "found evidence",
+          toolCalls: [
+            {
+              id: "web-source",
+              name: "web_fetch",
+              status: "done",
+              provenance: webSource,
+            },
+          ],
+        }),
+      ],
+    });
+    const { useAgentApprovalStore } = await setup(conv);
+
+    listeners.get("api-agent:permission-request:conv-tainted")?.({
+      payload: {
+        id: "tool-write",
+        name: "Write",
+        arguments: JSON.stringify({ file_path: "/proj/src/a.ts", content: "x" }),
+      },
+    });
+
+    expect(respondPermissionTauriMock).not.toHaveBeenCalled();
+    expect(
+      useAgentApprovalStore
+        .getState()
+        .permissions.get("conv-tainted")
+        ?.[0],
+    ).toMatchObject({
+      id: "tool-write",
+      effectivePolicy: "yolo + evidence boundary",
+      sourceChain: [
+        {
+          id: webSource.id,
+          origin: "web",
+          authority: "evidence_only",
+        },
+      ],
+    });
+  });
+
   it("blocks shell tools with a prompt and pings the user", async () => {
     const { useAgentApprovalStore } = await setup(makeConversation("conv-shell"));
 

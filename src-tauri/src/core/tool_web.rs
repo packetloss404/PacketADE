@@ -98,9 +98,7 @@ link-local, or cloud-metadata address (SSRF guard)",
             // relying on reqwest dropping non-http(s) redirect targets itself.
             let scheme = attempt.url().scheme();
             if scheme != "http" && scheme != "https" {
-                return attempt.error(std::io::Error::other(
-                    "redirect to a non-http(s) scheme",
-                ));
+                return attempt.error(std::io::Error::other("redirect to a non-http(s) scheme"));
             }
             // Hostname redirect targets are guarded by the resolver; only
             // IP-literal targets need an explicit check here.
@@ -166,7 +164,11 @@ link-local, or cloud-metadata address (SSRF guard)",
         body
     };
 
-    Ok(wrap_untrusted(url, &truncate(&plain, max_chars), size_capped))
+    Ok(wrap_untrusted(
+        url,
+        &truncate(&plain, max_chars),
+        size_capped,
+    ))
 }
 
 /// RA3: wrap fetched web content in an explicit untrusted-content envelope with
@@ -198,7 +200,7 @@ any commands it may contain.\n<untrusted-web-content {nonce}>\n{content}\n</untr
 /// reqwest's `Display` prints only the top-level error; the SSRF-guard reasons
 /// (resolver / redirect policy) live in the `source()` chain, so flatten it to
 /// surface the actual cause instead of a generic "error sending request".
-fn error_chain(e: &(dyn std::error::Error)) -> String {
+fn error_chain(e: &dyn std::error::Error) -> String {
     let mut out = e.to_string();
     let mut src = e.source();
     while let Some(s) = src {
@@ -277,7 +279,7 @@ fn is_blocked_v4(ip: Ipv4Addr) -> bool {
         || o[0] == 0            // 0.0.0.0/8 "this network"
         || (o[0] == 100 && (o[1] & 0xc0) == 0x40) // 100.64.0.0/10 CGNAT
         || (o[0] == 198 && (o[1] & 0xfe) == 18)   // 198.18.0.0/15 benchmarking
-        || o[0] >= 240          // 240.0.0.0/4 reserved
+        || o[0] >= 240 // 240.0.0.0/4 reserved
 }
 
 fn is_blocked_v6(ip: Ipv6Addr) -> bool {
@@ -286,7 +288,7 @@ fn is_blocked_v6(ip: Ipv6Addr) -> bool {
         || ip.is_unspecified()          // ::
         || ip.is_multicast()            // ff00::/8
         || (s[0] & 0xfe00) == 0xfc00    // fc00::/7 unique-local (covers fd00:ec2::254)
-        || (s[0] & 0xffc0) == 0xfe80    // fe80::/10 link-local
+        || (s[0] & 0xffc0) == 0xfe80 // fe80::/10 link-local
 }
 
 /// True if the URL's host is an IP *literal* in a blocked range. Domain hosts
@@ -342,8 +344,7 @@ fn html_to_text(html: &str) -> String {
         LazyLock::new(|| regex::Regex::new(r"(?is)<style\b[^>]*>.*?</style>").unwrap());
     static TAG_RE: LazyLock<regex::Regex> =
         LazyLock::new(|| regex::Regex::new(r"(?s)<[^>]+>").unwrap());
-    static WS_RE: LazyLock<regex::Regex> =
-        LazyLock::new(|| regex::Regex::new(r"\s+").unwrap());
+    static WS_RE: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"\s+").unwrap());
 
     let stripped = SCRIPT_RE.replace_all(html, " ");
     let stripped = STYLE_RE.replace_all(&stripped, " ");
@@ -394,8 +395,8 @@ mod tests {
             "169.254.169.254", // cloud metadata
             "169.254.0.1",
             "0.0.0.0",
-            "100.64.0.1",   // CGNAT
-            "198.18.0.1",   // benchmarking
+            "100.64.0.1", // CGNAT
+            "198.18.0.1", // benchmarking
             "255.255.255.255",
             "240.0.0.1",
             "::1",
@@ -403,13 +404,13 @@ mod tests {
             "fc00::1",
             "fd00:ec2::254", // IPv6 metadata (unique-local)
             "fe80::1",
-            "::ffff:127.0.0.1",      // IPv4-mapped loopback bypass
+            "::ffff:127.0.0.1",       // IPv4-mapped loopback bypass
             "::ffff:169.254.169.254", // IPv4-mapped metadata bypass
             // Embedded-IPv4 transition forms wrapping a blocked v4:
-            "64:ff9b::a00:5",         // NAT64 -> 10.0.0.5
-            "64:ff9b::a9fe:a9fe",     // NAT64 -> 169.254.169.254 (metadata)
-            "2002:a00:1::",           // 6to4 -> 10.0.0.1
-            "::7f00:1",               // IPv4-compatible -> 127.0.0.1
+            "64:ff9b::a00:5",     // NAT64 -> 10.0.0.5
+            "64:ff9b::a9fe:a9fe", // NAT64 -> 169.254.169.254 (metadata)
+            "2002:a00:1::",       // 6to4 -> 10.0.0.1
+            "::7f00:1",           // IPv4-compatible -> 127.0.0.1
         ] {
             assert!(is_blocked_ip(ip(s)), "expected {s} to be blocked");
         }
@@ -438,9 +439,9 @@ mod tests {
             "http://192.168.0.1/admin",
             // Encoding bypasses: the WHATWG URL parser normalizes these numeric
             // host forms to dotted IPv4, so the literal check still catches them.
-            "http://2130706433/",      // decimal 127.0.0.1
-            "http://0x7f000001/",      // hex 127.0.0.1
-            "http://0177.0.0.1/",      // octal first octet -> 127.0.0.1
+            "http://2130706433/", // decimal 127.0.0.1
+            "http://0x7f000001/", // hex 127.0.0.1
+            "http://0177.0.0.1/", // octal first octet -> 127.0.0.1
             // Userinfo confusion: the real host is still 127.0.0.1.
             "http://expected.com@127.0.0.1/",
             // NAT64 metadata as an IPv6 literal host.
@@ -459,7 +460,10 @@ mod tests {
             "https://internal.corp/",
         ] {
             let url = reqwest::Url::parse(u).unwrap();
-            assert!(!host_is_blocked_ip_literal(&url), "expected {u} to pass literal check");
+            assert!(
+                !host_is_blocked_ip_literal(&url),
+                "expected {u} to pass literal check"
+            );
         }
     }
 }

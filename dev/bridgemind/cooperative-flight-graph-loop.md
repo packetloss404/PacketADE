@@ -1,7 +1,8 @@
 # Cooperative Flight Task Graph — Scoped Loop
 
 Created: 2026-07-27
-Status: implementation complete; release-like manual/SSH smoke remains gated
+Status: implementation and automated release proof complete; isolated
+packaged/SSH smoke remains environment-gated
 Product decision: **Option B — assisted execution**
 
 ## Objective
@@ -57,7 +58,7 @@ Status values: `queued` → `in-progress` → `gated` → `closed`.
 | **CG6** | Review-aware integration | Accepting a task—after Reviewer Gate pass or recorded override when enabled—integrates its branch into the Flight integration branch and unlocks dependents. Concurrent accepted tasks integrate serially under a lock. | Integration tests for pass/override/order/reload | CG5, Reviewer Gate RG6 | closed |
 | **CG7** | Conflict and recovery workflow | Conflicts preserve both worktrees, mark the task/Flight Needs Attention, explain the files involved, and offer retry-after-rebase or manual resolution. No automatic conflict resolution. | Conflict fixtures and persistence tests | CG6 | closed |
 | **CG8** | Cooperative Flight surface | Render the dependency graph/list, role and ownership badges, ready batch, integration-head status, and one clear Launch Ready Tasks action. Existing independent-attempt UX remains unchanged. | Component tests and visual QA | CG2–CG7 | closed |
-| **CG9** | Final landing and gates | Land the reviewed integration branch through the existing Git workflow, then run full regression, local/SSH, reload, cancellation, and backward-compatibility gates. Update docs/changelog. | Vitest, lint/build, cargo check/test-no-run, manual smoke | CG1–CG8 | gated |
+| **CG9** | Final landing and gates | Land the reviewed integration branch through the existing Git workflow, then run full regression, local/SSH, reload, cancellation, and backward-compatibility gates. Update docs/changelog. | Vitest, lint/build, cargo check/test-no-run, manual smoke | CG1–CG8 | gated — automated proof green; isolated packaged/SSH smoke pending |
 
 ## Sequencing
 
@@ -78,3 +79,9 @@ cooperative graphs with the gate disabled can be developed and tested earlier.
 - Downstream tasks always start from accepted upstream state.
 - Review failures and merge conflicts stop visibly and recoverably.
 - No background scheduler or autonomous Planner is required.
+
+## Release-proof checkpoint
+
+The 2026-07-28 focused and full automated matrices pass. Exact evidence and the
+remaining isolated packaged/SSH pickup contract are recorded in
+[`flight-supervision-proof-2026-07-28.md`](./flight-supervision-proof-2026-07-28.md).

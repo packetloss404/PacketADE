@@ -3,6 +3,7 @@ import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { getAgentAutoArchiveIdleMs } from "@/stores/agentSettingsStore";
 import type { AgentConversation, AgentPlanItem } from "@/types/agent-conversation";
 import { canonicalizeAgentCli, useAgentTaskStore } from "@/stores/agentTaskStore";
+import { normalizeMessageProvenance } from "@/lib/provenance";
 
 /**
  * On-disk shape of a persisted conversation. Wider than the runtime
@@ -202,7 +203,9 @@ export function hydrateConversations(): void {
           /* eslint-enable @typescript-eslint/no-unused-vars */
           conv.agent = canonicalizeAgentCli(conv.agent);
           conv.status = "idle";
-          conv.messages = (conv.messages ?? []).map((m) => ({ ...m, isStreaming: false }));
+          conv.messages = (conv.messages ?? []).map((message) =>
+            normalizeMessageProvenance({ ...message, isStreaming: false }),
+          );
           conv.queuedMessages = [];
           parsed.push(conv);
         } catch (e) {

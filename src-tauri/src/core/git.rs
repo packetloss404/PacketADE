@@ -983,7 +983,10 @@ mod tests {
         // Provision the conversation worktree the way the app does.
         let wt = format!(".pkt-worktrees/{}", conv_id);
         let branch = format!("pkt/{}", conv_id);
-        git_ok(&root, &["worktree", "add", "-q", "-b", &branch, &wt, "main"]);
+        git_ok(
+            &root,
+            &["worktree", "add", "-q", "-b", &branch, &wt, "main"],
+        );
         root
     }
 
@@ -1004,17 +1007,32 @@ mod tests {
 
         // Squash commit landed on the base branch.
         let log = git_command_result(&["log", "--oneline", "-1"], &base).unwrap();
-        assert!(log.contains("squash"), "expected squash commit, got: {}", log);
-        assert_eq!(out.commit_sha, git_command_result(&["rev-parse", "HEAD"], &base).unwrap());
+        assert!(
+            log.contains("squash"),
+            "expected squash commit, got: {}",
+            log
+        );
+        assert_eq!(
+            out.commit_sha,
+            git_command_result(&["rev-parse", "HEAD"], &base).unwrap()
+        );
         // Changes are present in the root checkout.
-        assert_eq!(std::fs::read_to_string(root.join("f.txt")).unwrap(), "base\nfrom-conv\n");
+        assert_eq!(
+            std::fs::read_to_string(root.join("f.txt")).unwrap(),
+            "base\nfrom-conv\n"
+        );
         assert!(root.join("added.txt").exists());
         // Branch deleted, worktree dir removed.
         assert!(out.branch_deleted);
         assert!(out.worktree_removed);
         assert!(!wt.exists(), "worktree dir should be gone");
-        let branches = git_command_result(&["branch", "--list", &format!("pkt/{}", conv)], &base).unwrap();
-        assert!(branches.trim().is_empty(), "branch should be deleted, got: {}", branches);
+        let branches =
+            git_command_result(&["branch", "--list", &format!("pkt/{}", conv)], &base).unwrap();
+        assert!(
+            branches.trim().is_empty(),
+            "branch should be deleted, got: {}",
+            branches
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1040,8 +1058,12 @@ mod tests {
             std::fs::read_to_string(root.join("f.txt")).unwrap(),
             "base\nlocal-uncommitted\n"
         );
-        let branches = git_command_result(&["branch", "--list", &format!("pkt/{}", conv)], &base).unwrap();
-        assert!(!branches.trim().is_empty(), "branch must survive a refused merge");
+        let branches =
+            git_command_result(&["branch", "--list", &format!("pkt/{}", conv)], &base).unwrap();
+        assert!(
+            !branches.trim().is_empty(),
+            "branch must survive a refused merge"
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1073,7 +1095,10 @@ mod tests {
         assert!(err.contains("conflict"), "unexpected error: {}", err);
 
         // Root checkout is byte-identical (HEAD + working file) and clean.
-        assert_eq!(git_command_result(&["rev-parse", "HEAD"], &base).unwrap(), root_head_before);
+        assert_eq!(
+            git_command_result(&["rev-parse", "HEAD"], &base).unwrap(),
+            root_head_before
+        );
         assert_eq!(std::fs::read(root.join("f.txt")).unwrap(), root_f_before);
         assert!(
             root_dirt_ignoring_worktrees(&base).unwrap().is_empty(),
@@ -1082,9 +1107,16 @@ mod tests {
         // Worktree untouched (branch + files intact, byte-identical).
         assert!(wt.exists());
         assert_eq!(std::fs::read(wt.join("f.txt")).unwrap(), wt_f_before);
-        assert_eq!(std::fs::read(wt.join("wt-only.txt")).unwrap(), wt_only_before);
-        let branches = git_command_result(&["branch", "--list", &format!("pkt/{}", conv)], &base).unwrap();
-        assert!(!branches.trim().is_empty(), "branch must survive a conflict");
+        assert_eq!(
+            std::fs::read(wt.join("wt-only.txt")).unwrap(),
+            wt_only_before
+        );
+        let branches =
+            git_command_result(&["branch", "--list", &format!("pkt/{}", conv)], &base).unwrap();
+        assert!(
+            !branches.trim().is_empty(),
+            "branch must survive a conflict"
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1128,10 +1160,20 @@ mod tests {
             std::fs::read_to_string(wt.join("f.txt")).unwrap(),
             "base\nfrom-conv\nuncommitted-tail\n"
         );
-        assert!(wt.join("agent-output.txt").exists(), "untracked work must survive");
-        assert_eq!(git_command_result(&["rev-parse", "HEAD"], &base).unwrap(), root_head_before);
-        let branches = git_command_result(&["branch", "--list", &format!("pkt/{}", conv)], &base).unwrap();
-        assert!(!branches.trim().is_empty(), "branch must survive a refused merge");
+        assert!(
+            wt.join("agent-output.txt").exists(),
+            "untracked work must survive"
+        );
+        assert_eq!(
+            git_command_result(&["rev-parse", "HEAD"], &base).unwrap(),
+            root_head_before
+        );
+        let branches =
+            git_command_result(&["branch", "--list", &format!("pkt/{}", conv)], &base).unwrap();
+        assert!(
+            !branches.trim().is_empty(),
+            "branch must survive a refused merge"
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1151,15 +1193,25 @@ mod tests {
         let out = merge_conversation_branch(&base, &format!("pkt/{}", conv), true)
             .expect("empty branch is a no-op success, not an error");
 
-        assert!(out.nothing_to_land, "empty branch must flag nothing_to_land");
+        assert!(
+            out.nothing_to_land,
+            "empty branch must flag nothing_to_land"
+        );
         assert!(!out.branch_deleted);
         assert!(!out.worktree_removed);
         // HEAD unchanged (no squash commit), worktree + branch preserved.
         assert_eq!(out.commit_sha, head_before);
-        assert_eq!(git_command_result(&["rev-parse", "HEAD"], &base).unwrap(), head_before);
+        assert_eq!(
+            git_command_result(&["rev-parse", "HEAD"], &base).unwrap(),
+            head_before
+        );
         assert!(wt.exists(), "clean-but-empty worktree must be kept");
-        let branches = git_command_result(&["branch", "--list", &format!("pkt/{}", conv)], &base).unwrap();
-        assert!(!branches.trim().is_empty(), "branch must survive when nothing landed");
+        let branches =
+            git_command_result(&["branch", "--list", &format!("pkt/{}", conv)], &base).unwrap();
+        assert!(
+            !branches.trim().is_empty(),
+            "branch must survive when nothing landed"
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }

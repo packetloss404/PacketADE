@@ -1,8 +1,18 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use tracing::{info, warn};
-use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+use whisper_rs::{
+    get_lang_str, FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters,
+};
+
+pub struct TranscriptionOutcome {
+    pub text: String,
+    pub detected_language: Option<String>,
+    pub model_load_ms: u64,
+    pub inference_ms: u64,
+}
 
 /// Shared state holding a lazily-loaded Whisper model context.
 /// Managed via `tauri::State<WhisperState>` and registered in lib.rs.
@@ -121,7 +131,7 @@ pub fn transcribe_audio(
     model_path: &str,
     language: &str,
     custom_dictionary: &[String],
-) -> Result<String, String> {
+) -> Result<TranscriptionOutcome, String> {
     if audio.is_empty() {
         return Err("No audio data to transcribe".into());
     }
@@ -130,6 +140,7 @@ pub fn transcribe_audio(
     let inner = whisper_state.inner.clone();
 
     // Ensure the model is loaded (lazy-load or reload if path changed)
+    let mut model_load_ms = 0;
     {
         let mut guard = inner.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
 
@@ -139,6 +150,7 @@ pub fn transcribe_audio(
         };
 
         if needs_load {
+            let load_started = Instant::now();
             let path = Path::new(&model_path_str);
             if !path.exists() {
                 return Err(format!(
@@ -156,6 +168,7 @@ pub fn transcribe_audio(
                 ctx,
                 model_path: model_path_str.clone(),
             });
+            model_load_ms = elapsed_millis(load_started);
             info!("Whisper model loaded successfully");
         }
     }
@@ -208,9 +221,12 @@ pub fn transcribe_audio(
     params.set_initial_prompt(&initial_prompt);
 
     // Run the transcription
+    let inference_started = Instant::now();
     state
         .full(params, &audio)
         .map_err(|e| format!("Transcription failed: {e}"))?;
+    let inference_ms = elapsed_millis(inference_started);
+    let detected_language = get_lang_str(state.full_lang_id_from_state()).map(ToString::to_string);
 
     // Collect all segment text
     let n_segments = state.full_n_segments();
@@ -237,7 +253,12 @@ pub fn transcribe_audio(
     // Detect numeric garbage hallucination (common on silence/low audio)
     if is_numeric_hallucination(&trimmed) {
         warn!("Whisper produced numeric hallucination (likely silence), discarding");
-        return Ok(String::new());
+        return Ok(TranscriptionOutcome {
+            text: String::new(),
+            detected_language,
+            model_load_ms,
+            inference_ms,
+        });
     }
 
     if trimmed.is_empty() {
@@ -250,7 +271,16 @@ pub fn transcribe_audio(
         );
     }
 
-    Ok(trimmed)
+    Ok(TranscriptionOutcome {
+        text: trimmed,
+        detected_language,
+        model_load_ms,
+        inference_ms,
+    })
+}
+
+fn elapsed_millis(started: Instant) -> u64 {
+    started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
 }
 
 fn build_initial_prompt(custom_dictionary: &[String]) -> String {

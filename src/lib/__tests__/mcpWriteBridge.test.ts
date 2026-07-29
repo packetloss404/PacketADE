@@ -36,12 +36,19 @@ describe("applyMcpWrite", () => {
 
   it("appends a coordination event with a namespaced actor", () => {
     applyMcpWrite(intent());
-    expect(mocks.appendCoordinationEvent).toHaveBeenCalledWith("f1", {
-      type: "handoff",
-      summary: "did the thing",
-      agentId: "mcp:claude", // namespaced — can't impersonate "you"/"system"
-      metadata: { source: "mcp" },
-    });
+    expect(mocks.appendCoordinationEvent).toHaveBeenCalledWith(
+      "f1",
+      expect.objectContaining({
+        type: "handoff",
+        summary: "did the thing",
+        agentId: "mcp:claude", // namespaced — can't impersonate "you"/"system"
+        metadata: { source: "mcp" },
+        provenance: expect.objectContaining({
+          origin: "mcp",
+          authority: "evidence_only",
+        }),
+      }),
+    );
   });
 
   it("uses 'mcp' as the actor when no agentId is given", () => {
@@ -93,14 +100,22 @@ describe("applyMcpWrite", () => {
         },
       }),
     );
-    expect(mocks.postCoordinationMessage).toHaveBeenCalledWith({
-      flightId: "f1",
-      kind: "blocker",
-      sender: { kind: "agent", id: "mcp:claude", displayName: "mcp:claude" },
-      recipients: [{ kind: "flight", id: "f1", label: undefined }],
-      body: "Need a decision",
-      dedupeKey: "turn-1",
-    });
+    expect(mocks.postCoordinationMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        flightId: "f1",
+        kind: "blocker",
+        sender: { kind: "agent", id: "mcp:claude", displayName: "mcp:claude" },
+        recipients: [{ kind: "flight", id: "f1", label: undefined }],
+        body: "Need a decision",
+        dedupeKey: "turn-1",
+        provenance: [
+          expect.objectContaining({
+            origin: "mcp",
+            authority: "evidence_only",
+          }),
+        ],
+      }),
+    );
   });
 
   it("routes MCP inbox acknowledgements with namespaced provenance", () => {

@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState, lazy, Suspense } from "react";
+import { useEffect, useCallback, useState, lazy, Suspense } from "react";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { Toolbar } from "@/components/layout/Toolbar";
 import { LeftRail } from "@/components/layout/LeftRail";
@@ -161,10 +161,6 @@ export default function App() {
 
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
 
-  // Tracks whether Ctrl+Shift+V is currently held for push-to-talk recording.
-  // Set on keydown of V, cleared on keyup of V/Ctrl/Shift.
-  const pushToTalkActiveRef = useRef(false);
-
   // Global keyboard shortcuts
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -187,7 +183,6 @@ export default function App() {
         const ds = useDictationStore.getState();
         if (ds.isStarting || ds.isRecording) {
           e.preventDefault();
-          pushToTalkActiveRef.current = false;
           void ds.cancelRecording();
           return;
         }
@@ -206,28 +201,6 @@ export default function App() {
           setActiveView("dictation");
           return;
         }
-        // Ctrl+Shift+R → Toggle recording (start/stop)
-        if (e.key === "R") {
-          e.preventDefault();
-          const ds = useDictationStore.getState();
-          if (ds.isStarting || ds.isRecording) {
-            void ds.stopRecording();
-          } else {
-            void ds.startRecording();
-          }
-          return;
-        }
-        // Ctrl+Shift+V → Push-to-talk: start on first keydown, stop on keyup (see keyup handler)
-        if (e.key === "V") {
-          e.preventDefault();
-          if (e.repeat) return;
-          const ds = useDictationStore.getState();
-          if (!ds.isStarting && !ds.isRecording && !pushToTalkActiveRef.current) {
-            pushToTalkActiveRef.current = true;
-            void ds.startRecording();
-          }
-          return;
-        }
         // Tile program (P5-S1): Shift+1 ("!") remapped from "agents" to
         // "workspace"; the map now lives in @/lib/viewHotkeys so the retirement
         // remap is unit-testable.
@@ -244,24 +217,6 @@ export default function App() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
-
-  // Push-to-talk release: stop recording when V (or any modifier) is released
-  // while pushToTalkActiveRef is set. Uses store snapshot to avoid stale closures.
-  useEffect(() => {
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (!pushToTalkActiveRef.current) return;
-      const k = e.key;
-      if (k === "V" || k === "v" || k === "Control" || k === "Shift") {
-        pushToTalkActiveRef.current = false;
-        const ds = useDictationStore.getState();
-        if (ds.isStarting || ds.isRecording) {
-          void ds.stopRecording();
-        }
-      }
-    };
-    window.addEventListener("keyup", handleKeyUp);
-    return () => window.removeEventListener("keyup", handleKeyUp);
-  }, []);
 
   // Global listeners for agent-login requests dispatched from the Agents pane.
   // AgentInputArea dispatches `packetade:open-claude-login` /

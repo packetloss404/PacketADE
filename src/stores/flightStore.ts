@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { generateId as genId } from "@/lib/storage";
 import { loadPersistedState, saveFlightsSlice, saveUiSlice } from "@/lib/tauri";
 import type { CoordinationEvent, Flight, FlightStatus, Task } from "@/types/flight";
+import { derivedArtifactProvenance } from "@/lib/provenance";
 import { useIssueStore } from "@/stores/issueStore";
 
 type FlightState = {
@@ -242,6 +243,14 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
           flightId,
           timestamp: Date.now(),
         };
+        full.provenance =
+          event.provenance ??
+          derivedArtifactProvenance(
+            full.id,
+            `Flight coordination · ${full.type}`,
+            [],
+            full.timestamp,
+          );
         return { ...f, coordinationLog: [...(f.coordinationLog ?? []), full] };
       });
       if (!changed) return {};

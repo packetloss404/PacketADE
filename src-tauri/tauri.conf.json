@@ -50,7 +50,7 @@
     },
     "linux": {
       "deb": {
-        "depends": ["libgtk-3-0", "libwebkit2gtk-4.1-0"]
+        "depends": ["libgtk-3-0", "libwebkit2gtk-4.1-0", "libasound2"]
       }
     }
   }

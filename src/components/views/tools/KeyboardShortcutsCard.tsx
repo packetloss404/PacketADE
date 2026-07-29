@@ -4,16 +4,41 @@ import { useDictationStore } from "@/stores/dictationStore";
 import {
   DEFAULT_PUSH_TO_TALK_SHORTCUT,
   DEFAULT_TOGGLE_SHORTCUT,
+  DICTATION_OPEN_SHORTCUT,
+  validateDictationShortcuts,
 } from "@/types/dictation";
 
 export function KeyboardShortcutsCard() {
   const settings = useDictationStore((s) => s.settings);
   const loadSettings = useDictationStore((s) => s.loadSettings);
   const updateSettings = useDictationStore((s) => s.updateSettings);
+  const shortcutStatus = useDictationStore((s) => s.shortcutStatus);
+  const setShortcutStatus = useDictationStore((s) => s.setShortcutStatus);
 
   useEffect(() => {
     loadSettings();
   }, [loadSettings]);
+
+  const commitShortcut = (
+    field: "pushToTalkShortcut" | "toggleShortcut",
+    next: string,
+  ) => {
+    if (!settings) return;
+    const pushToTalk =
+      field === "pushToTalkShortcut"
+        ? next
+        : settings.pushToTalkShortcut ?? DEFAULT_PUSH_TO_TALK_SHORTCUT;
+    const toggle =
+      field === "toggleShortcut"
+        ? next
+        : settings.toggleShortcut ?? DEFAULT_TOGGLE_SHORTCUT;
+    const error = validateDictationShortcuts(pushToTalk, toggle);
+    if (error) {
+      setShortcutStatus({ state: "error", message: error });
+      return;
+    }
+    void updateSettings({ ...settings, [field]: next });
+  };
 
   return (
     <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
@@ -21,28 +46,61 @@ export function KeyboardShortcutsCard() {
         <Keyboard size={12} className="text-accent-blue" />
         Keyboard Shortcuts
       </h3>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[11px] text-text-secondary">Global dictation shortcuts</div>
+          <div className="text-[9px] text-text-muted">
+            Explicit opt-in; in-app controls and Escape remain available.
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() =>
+            settings &&
+            void updateSettings({
+              ...settings,
+              globalShortcutsEnabled: !settings.globalShortcutsEnabled,
+            })
+          }
+          className={`relative h-4 w-8 rounded-full transition-colors ${
+            settings?.globalShortcutsEnabled ? "bg-accent-green" : "bg-bg-border"
+          }`}
+          aria-pressed={settings?.globalShortcutsEnabled ?? false}
+        >
+          <span
+            className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-transform ${
+              settings?.globalShortcutsEnabled ? "translate-x-4" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+      </div>
       <div className="space-y-2">
         <EditableShortcutRow
           label="Push to Talk (hold)"
           value={settings?.pushToTalkShortcut ?? DEFAULT_PUSH_TO_TALK_SHORTCUT}
           defaultValue={DEFAULT_PUSH_TO_TALK_SHORTCUT}
-          onChange={(next) => {
-            if (!settings) return;
-            void updateSettings({ ...settings, pushToTalkShortcut: next });
-          }}
+          onChange={(next) => commitShortcut("pushToTalkShortcut", next)}
         />
         <EditableShortcutRow
           label="Toggle Recording"
           value={settings?.toggleShortcut ?? DEFAULT_TOGGLE_SHORTCUT}
           defaultValue={DEFAULT_TOGGLE_SHORTCUT}
-          onChange={(next) => {
-            if (!settings) return;
-            void updateSettings({ ...settings, toggleShortcut: next });
-          }}
+          onChange={(next) => commitShortcut("toggleShortcut", next)}
         />
         <ShortcutRow label="Cancel Recording" shortcut="Escape" />
-        <ShortcutRow label="Open Dictation" shortcut="Ctrl+Shift+D" />
+        <ShortcutRow label="Open Dictation" shortcut={formatAccelerator(DICTATION_OPEN_SHORTCUT)} />
       </div>
+      <p
+        className={`mt-3 text-[9px] ${
+          shortcutStatus.state === "error"
+            ? "text-accent-red"
+            : shortcutStatus.state === "ready"
+              ? "text-accent-green"
+              : "text-text-muted"
+        }`}
+      >
+        {shortcutStatus.message}
+      </p>
       <p className="text-[9px] text-text-muted mt-3">
         Push-to-talk: hold the key to record, release to transcribe and auto-paste.
         Edit a shortcut and press the new combo (must include a modifier).

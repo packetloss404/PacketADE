@@ -26,6 +26,10 @@ import type {
   SetPermissionModeRequest,
   StartSessionRequest,
 } from "../protocol.js";
+import {
+  mcpToolDenial,
+  parseAnthropicMcpToolName,
+} from "../mcp-trust.js";
 import type { ProviderHandler } from "./base.js";
 import {
   query,
@@ -479,6 +483,18 @@ export class AnthropicProvider implements ProviderHandler {
     // still go through `canUseTool` above for the regular permission prompt.
     const preToolUse: HookCallback = async (rawInput, toolUseID, { signal }) => {
       const input = rawInput as PreToolUseHookInput;
+      const mcpTool = parseAnthropicMcpToolName(input.tool_name);
+      if (mcpTool) {
+        const denial = mcpToolDenial(
+          mcpTool.serverName,
+          mcpTool.toolName,
+          input.tool_input,
+          req.mcpTrustSnapshot,
+        );
+        if (denial) {
+          return { continue: false, stopReason: denial };
+        }
+      }
       if (!WRITE_TOOLS.has(input.tool_name)) {
         return { continue: true };
       }

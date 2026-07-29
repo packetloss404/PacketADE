@@ -8,6 +8,7 @@ export function DictationView() {
   const isRecording = useDictationStore((s) => s.isRecording);
   const isTranscribing = useDictationStore((s) => s.isTranscribing);
   const lastResult = useDictationStore((s) => s.lastResult);
+  const lastTelemetry = useDictationStore((s) => s.lastTelemetry);
   const status = useDictationStore((s) => s.status);
   const error = useDictationStore((s) => s.error);
   const deliveryNotice = useDictationStore((s) => s.deliveryNotice);
@@ -118,6 +119,21 @@ export function DictationView() {
               <p className="text-xs text-text-primary leading-relaxed whitespace-pre-wrap">
                 {lastResult}
               </p>
+              {lastTelemetry && (
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-bg-border pt-2 text-[9px] text-text-muted">
+                  <span>{lastTelemetry.modelSize} model</span>
+                  <span>
+                    {lastTelemetry.inputSampleRate / 1000} kHz / {lastTelemetry.channels} ch
+                  </span>
+                  {lastTelemetry.detectedLanguage && (
+                    <span>language {lastTelemetry.detectedLanguage}</span>
+                  )}
+                  <span>inference {lastTelemetry.inferenceMs} ms</span>
+                  {lastTelemetry.modelLoadMs > 0 && (
+                    <span>model load {lastTelemetry.modelLoadMs} ms</span>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

@@ -254,7 +254,6 @@ impl PtyManager {
             sessions: HashMap::new(),
         }
     }
-
 }
 
 fn signal_pty_kill(

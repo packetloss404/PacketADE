@@ -13,6 +13,7 @@ import { useEditBaselineStore } from "@/stores/editBaselineStore";
 import { useReviewStore } from "@/stores/reviewStore";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import type { AgentToolCall } from "@/types/agent-conversation";
+import { ProvenanceChip } from "@/components/common/ProvenanceChip";
 
 function ToolCallCardImpl({
   toolCall,
@@ -145,6 +146,7 @@ function ToolCallCardImpl({
         </span>
       }
       titleAttr={meta.target}
+      headerActions={<ProvenanceChip envelope={toolCall.provenance} />}
       statusPill={statusPill}
       canToggle={canToggle}
       expanded={expanded}

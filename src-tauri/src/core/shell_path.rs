@@ -172,8 +172,7 @@ fn dirs_from_rc_files(home: &str) -> Vec<String> {
 #[cfg(not(target_os = "windows"))]
 fn is_identifier(s: &str) -> bool {
     !s.is_empty()
-        && s.chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         && !s.chars().next().unwrap().is_ascii_digit()
 }
 

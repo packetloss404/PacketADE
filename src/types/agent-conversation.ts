@@ -1,4 +1,6 @@
 import type { AgentCli } from "@/stores/agentTaskStore";
+import type { ProvenanceEnvelope } from "@/types/provenance";
+import type { McpTrustSnapshot } from "@/types/mcp";
 
 export interface AgentToolCall {
   id: string;
@@ -16,6 +18,7 @@ export interface AgentToolCall {
   modifiedPaths?: string[];
   stdout?: string;
   stderr?: string;
+  provenance?: ProvenanceEnvelope;
 }
 
 export interface AgentMessage {
@@ -45,6 +48,12 @@ export interface AgentMessage {
   costUsd?: number;
   /** Extended thinking text produced by this turn (Anthropic). */
   thinking?: string;
+  /** Evidence supplied alongside this message (for example imported image
+   * attachments). The message's own provenance can remain user intent while
+   * these sources stay evidence-only. Raw attachment payloads are never
+   * persisted here. */
+  evidence?: ProvenanceEnvelope[];
+  provenance?: ProvenanceEnvelope;
 }
 
 export type PermissionMode = "auto" | "ask_for_risky" | "allow_all" | "deny_all";
@@ -53,6 +62,10 @@ export interface PendingPermission {
   id: string;
   name: string;
   arguments: string;
+  /** Evidence consumed earlier in this turn when it affects this gate. */
+  sourceChain?: ProvenanceEnvelope[];
+  effectivePolicy?: string;
+  safeTarget?: string;
 }
 
 export interface PendingEdit {
@@ -61,6 +74,7 @@ export interface PendingEdit {
   content: string;
   /** Prior file content (undefined for new files). Drives red/green diff render. */
   before?: string;
+  provenance?: ProvenanceEnvelope;
 }
 
 export type AgentMode = "pty" | "api";
@@ -145,6 +159,10 @@ export interface AgentConversation {
    * `McpServerEntry.name` from `useMcpStore`. Sidecar protocol has no
    * mid-session MCP swap, so flips here apply on the NEXT session start. */
   enabledMcpServerIds?: string[];
+  /** MCPH4: immutable server/tool/root authority captured when the live
+   * backend session starts. Settings edits require a new/reconnected session
+   * and cannot broaden this record in place. */
+  mcpTrustSnapshot?: McpTrustSnapshot[];
   /** S8-Phase-B: MCP servers the sidecar sourced from its OWN remote FS for
    * this session (name/transport/scope only — never commands or secrets),
    * plus any read/parse errors. Populated from the `mcp_sources` event for

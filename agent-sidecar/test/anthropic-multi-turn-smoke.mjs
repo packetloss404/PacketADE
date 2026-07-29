@@ -25,8 +25,9 @@
 //      AGAIN"` yields at least one new `chunk` and exactly one new `done`.
 //   4. Both turns terminate within their per-turn timeout.
 //
-// CI without creds should skip — the test will surface a clean auth error
-// on the first turn and exit 1.
+// Deterministic/offline checks skip unless PACKETADE_LIVE_ANTHROPIC_SMOKE=1.
+// A credentials file can exist while its session/network is unavailable, and
+// that external state must not make `sidecar:check` nondeterministic.
 
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -38,11 +39,15 @@ import { homedir } from "node:os";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Live test: requires Anthropic auth (OAuth creds file or ANTHROPIC_API_KEY).
-// In an environment with neither (e.g. CI), SKIP cleanly (exit 0) instead of
-// failing — this is what makes the smoke safe to wire into the offline
-// `sidecar:check` gate while still exercising the real path on an
-// authenticated dev machine.
+// Live test: explicit opt-in plus Anthropic auth (OAuth creds file or
+// ANTHROPIC_API_KEY). A stale credential file is not proof that the provider
+// can answer, so file presence alone no longer turns the offline gate live.
+if (process.env.PACKETADE_LIVE_ANTHROPIC_SMOKE !== "1") {
+  console.log(
+    "[multi-turn-smoke] [skip] set PACKETADE_LIVE_ANTHROPIC_SMOKE=1 to run the live provider round-trip",
+  );
+  process.exit(0);
+}
 const hasAnthropicAuth =
   existsSync(join(homedir(), ".claude", ".credentials.json")) ||
   Boolean(process.env.ANTHROPIC_API_KEY);

@@ -38,6 +38,7 @@ import type {
   SetPermissionModeRequest,
   StartSessionRequest,
 } from "../protocol.js";
+import { mcpToolDenial } from "../mcp-trust.js";
 import type { ProviderHandler } from "./base.js";
 
 const MAX_FILE_SIZE = 2_000_000;
@@ -268,7 +269,10 @@ export class OpenAIAgentsProvider implements ProviderHandler {
     setDefaultOpenAIKey(req.apiKey);
     setTracingDisabled(true);
 
-    this.mcpServers = this.buildMcpServers(req.mcpServers ?? {});
+    this.mcpServers = this.buildMcpServers(
+      req.mcpServers ?? {},
+      req.mcpTrustSnapshot,
+    );
     this.session = new MemorySession({
       sessionId: req.sessionId,
       initialItems: resumeMessagesToAgentItems(req.resumeMessages),
@@ -523,7 +527,10 @@ export class OpenAIAgentsProvider implements ProviderHandler {
       .map(([, value]) => value);
   }
 
-  private buildMcpServers(raw: Record<string, unknown>): MCPServer[] {
+  private buildMcpServers(
+    raw: Record<string, unknown>,
+    snapshots: StartSessionRequest["mcpTrustSnapshot"],
+  ): MCPServer[] {
     const servers: MCPServer[] = [];
     for (const [name, value] of Object.entries(raw)) {
       if (!isRecord(value)) continue;
@@ -547,6 +554,8 @@ export class OpenAIAgentsProvider implements ProviderHandler {
           env,
           cwd: this.projectPath,
           cacheToolsList: true,
+          toolFilter: async (_context, tool) =>
+            mcpToolDenial(name, tool.name, {}, snapshots) === null,
         }),
       );
     }

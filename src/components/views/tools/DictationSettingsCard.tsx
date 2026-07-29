@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import { Mic, Download, Check, X, Plus, ExternalLink } from "lucide-react";
+import { Mic, Download, Check, X, Plus, ExternalLink, Stethoscope } from "lucide-react";
 import { useDictationStore } from "@/stores/dictationStore";
 import { useAppStore } from "@/stores/appStore";
-import { listAudioDevices } from "@/lib/tauri";
-import type { AudioDevice } from "@/types/dictation";
+import { listAudioDevices, testAudioDevice } from "@/lib/tauri";
+import type { AudioDevice, AudioDeviceTestResult } from "@/types/dictation";
 
 export function DictationSettingsCard() {
   const models = useDictationStore((s) => s.models);
@@ -18,6 +18,8 @@ export function DictationSettingsCard() {
 
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [deviceError, setDeviceError] = useState<string | null>(null);
+  const [deviceTest, setDeviceTest] = useState<AudioDeviceTestResult | null>(null);
+  const [testingDevice, setTestingDevice] = useState(false);
   const [newWord, setNewWord] = useState("");
 
   useEffect(() => {
@@ -36,9 +38,38 @@ export function DictationSettingsCard() {
       .catch((err) => setDeviceError(String(err)));
   }, [loadModels, loadSettings]);
 
-  const handleDeviceChange = (idx: number | null) => {
+  const handleDeviceChange = (value: string) => {
     if (!settings) return;
-    updateSettings({ ...settings, deviceIndex: idx });
+    setDeviceTest(null);
+    setDeviceError(null);
+    if (!value) {
+      void updateSettings({ ...settings, deviceId: null, deviceIndex: null });
+      return;
+    }
+    if (value.startsWith("index:")) {
+      void updateSettings({
+        ...settings,
+        deviceId: null,
+        deviceIndex: Number(value.slice("index:".length)),
+      });
+      return;
+    }
+    void updateSettings({ ...settings, deviceId: value, deviceIndex: null });
+  };
+
+  const handleDeviceTest = async () => {
+    setTestingDevice(true);
+    setDeviceError(null);
+    setDeviceTest(null);
+    try {
+      setDeviceTest(
+        await testAudioDevice(settings?.deviceId, settings?.deviceIndex, 1_500),
+      );
+    } catch (err) {
+      setDeviceError(String(err));
+    } finally {
+      setTestingDevice(false);
+    }
   };
 
   const handleAutoPasteToggle = () => {
@@ -132,22 +163,75 @@ export function DictationSettingsCard() {
         <div className="mb-1.5 text-[10px] uppercase tracking-wider text-text-muted">
           Microphone
         </div>
+        <div className="flex gap-2">
+          <select
+            value={
+              settings?.deviceId ??
+              (settings?.deviceIndex != null ? `index:${settings.deviceIndex}` : "")
+            }
+            onChange={(event) => handleDeviceChange(event.target.value)}
+            className="min-w-0 flex-1 rounded-lg border border-bg-border bg-bg-primary px-3 py-1.5 text-[11px] text-text-primary focus:border-accent-green focus:outline-none"
+          >
+            <option value="">Default</option>
+            {devices.map((device) => (
+              <option
+                key={device.id ?? `index:${device.index}`}
+                value={device.id ?? `index:${device.index}`}
+              >
+                {device.name}
+                {device.isDefault ? " (default)" : ""}
+                {device.sampleRate ? ` — ${device.sampleRate / 1000} kHz` : ""}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => void handleDeviceTest()}
+            disabled={testingDevice || devices.length === 0}
+            className="flex items-center gap-1 rounded-lg border border-bg-border px-2.5 text-[10px] text-accent-purple transition-colors hover:bg-accent-purple/10 disabled:opacity-40"
+          >
+            <Stethoscope size={11} />
+            {testingDevice ? "Listening…" : "Test"}
+          </button>
+        </div>
+        {deviceError && <p className="mt-1.5 text-[10px] text-accent-red">{deviceError}</p>}
+        {deviceTest && (
+          <p
+            className={`mt-1.5 text-[10px] ${
+              deviceTest.warning ? "text-accent-amber" : "text-accent-green"
+            }`}
+          >
+            {deviceTest.name}: {deviceTest.sampleRate / 1000} kHz,{" "}
+            {deviceTest.channels} ch, peak {Math.round(deviceTest.peakLevel * 100)}%
+            {deviceTest.warning ? ` — ${deviceTest.warning}` : " — microphone is responding."}
+          </p>
+        )}
+      </div>
+
+      <div className="mb-4">
+        <div className="mb-1.5 text-[10px] uppercase tracking-wider text-text-muted">
+          Maximum recording
+        </div>
         <select
-          value={settings?.deviceIndex ?? ""}
-          onChange={(e) =>
-            handleDeviceChange(e.target.value === "" ? null : Number(e.target.value))
+          value={settings?.maxDurationSeconds ?? 300}
+          onChange={(event) =>
+            settings &&
+            updateSettings({
+              ...settings,
+              maxDurationSeconds: Number(event.target.value),
+            })
           }
           className="w-full rounded-lg border border-bg-border bg-bg-primary px-3 py-1.5 text-[11px] text-text-primary focus:border-accent-green focus:outline-none"
         >
-          <option value="">Default</option>
-          {devices.map((d) => (
-            <option key={d.index} value={d.index}>
-              {d.name}
-              {d.isDefault ? " (default)" : ""}
-            </option>
-          ))}
+          <option value={30}>30 seconds</option>
+          <option value={60}>1 minute</option>
+          <option value={300}>5 minutes</option>
+          <option value={600}>10 minutes</option>
+          <option value={1800}>30 minutes</option>
         </select>
-        {deviceError && <p className="mt-1.5 text-[10px] text-accent-red">{deviceError}</p>}
+        <p className="mt-1 text-[9px] text-text-muted">
+          Recording stops and transcribes automatically at this limit.
+        </p>
       </div>
 
       {/* Language */}

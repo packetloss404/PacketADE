@@ -1,7 +1,8 @@
 # Flight Coordination Inbox & Steering — Scoped Loop
 
 Created: 2026-07-27
-Status: implementation complete; release-like manual/SSH smoke remains gated
+Status: implementation and automated release proof complete; isolated
+packaged/SSH smoke remains environment-gated
 Product decision: **Option B — structured steering inbox**
 
 ## Objective
@@ -19,7 +20,7 @@ the Flight's bounded YOLO policy explicitly authorizes it.
 - `Flight.coordinationLog` already persists visible events.
 - The PacketADE MCP provider already exposes Flight/task state and opt-in
   append-only `append_handoff` / `escalate` writes.
-- API conversations already support follow-up turns; sidecar protocol v10
+- API conversations already support follow-up turns; sidecar protocol v11
   retains `inject_user_turn`.
 - Flight tasks and Attempts already identify roles, agent configurations,
   sessions, targets, and worktrees.
@@ -59,7 +60,7 @@ Status values: `queued` → `in-progress` → `gated` → `closed`.
 | **CI6** | PTY-safe workflow | Connected PTY agents can read the MCP inbox. Otherwise PacketADE offers a visible Copy or Send to Terminal action; there is no background keystroke injection. | PTY/manual-path and UI tests | CI3, CI5 | closed |
 | **CI7** | Role/all steering | The command bar can target one attempt/task, a role, all running agents, or all ready tasks. Fan-out shows exact recipients before send and records per-recipient outcomes. | Fan-out/dedupe/partial-failure tests | CI3, CI4 | closed |
 | **CI8** | YOLO routing adapter | The central autonomy evaluator may forward agent-origin messages without user action only when policy allows it. Enforce hop/rate/loop limits and never broaden tool authority. | Loop, self-send, flood, policy-downgrade tests | CI4, CI5; Autonomy AP4 | closed |
-| **CI9** | End-to-end gates and docs | Exercise user→agent, agent→user, role broadcast, API, PTY/MCP, reload, SSH, partial failure, and YOLO-stop paths. Update docs/changelog. | Vitest, lint/build, cargo check/test-no-run, manual smoke | CI1–CI8 | gated |
+| **CI9** | End-to-end gates and docs | Exercise user→agent, agent→user, role broadcast, API, PTY/MCP, reload, SSH, partial failure, and YOLO-stop paths. Update docs/changelog. | Vitest, lint/build, cargo check/test-no-run, manual smoke | CI1–CI8 | gated — automated proof green; isolated packaged/SSH smoke pending |
 
 ## Sequencing
 
@@ -77,3 +78,9 @@ CI1 -> CI2 -> CI3 -> CI7 -> CI9
 - Delivery is persisted, acknowledged, deduped, and transport-aware.
 - Assisted mode keeps forwarding under user control.
 - YOLO routing is bounded, auditable, and unable to create message loops.
+
+## Release-proof checkpoint
+
+The 2026-07-28 focused and full automated matrices pass. Exact evidence and the
+remaining isolated packaged/SSH pickup contract are recorded in
+[`flight-supervision-proof-2026-07-28.md`](./flight-supervision-proof-2026-07-28.md).

@@ -16,6 +16,13 @@ import type {
 } from "@/types/statusline";
 import type { Workspace } from "@/types/workspace";
 import type { MemoryEvent, LearnedPattern } from "@/types/memory";
+import type {
+  CreateProjectMemoryInput,
+  ProjectMemoryNote,
+  ProjectMemorySearchResult,
+  ProjectMemorySnapshot,
+  UpdateProjectMemoryInput,
+} from "@/types/project-memory";
 import type { ServerConfig } from "@/types/server";
 
 type WorkspacePaneDtoWithFrontendMetadata = WorkspaceDto["panes"][number] &
@@ -423,6 +430,52 @@ export async function summarizeFlight(
   sessionLogs: string,
 ): Promise<string> {
   return invoke<string>("summarize_flight", { projectPath, flightSummary, sessionLogs });
+}
+
+export async function listProjectMemory(
+  projectPath: string,
+): Promise<ProjectMemorySnapshot> {
+  return invoke<ProjectMemorySnapshot>("list_project_memory", { projectPath });
+}
+
+export async function createProjectMemory(
+  projectPath: string,
+  input: CreateProjectMemoryInput,
+): Promise<ProjectMemoryNote> {
+  return invoke<ProjectMemoryNote>("create_project_memory", { projectPath, input });
+}
+
+export async function updateProjectMemory(
+  projectPath: string,
+  input: UpdateProjectMemoryInput,
+): Promise<ProjectMemoryNote> {
+  return invoke<ProjectMemoryNote>("update_project_memory", { projectPath, input });
+}
+
+export async function archiveProjectMemory(
+  projectPath: string,
+  id: string,
+  expectedRevision: string,
+): Promise<ProjectMemoryNote> {
+  return invoke<ProjectMemoryNote>("archive_project_memory", {
+    projectPath,
+    id,
+    expectedRevision,
+  });
+}
+
+export async function searchProjectMemory(
+  projectPath: string,
+  query: string,
+): Promise<ProjectMemorySearchResult[]> {
+  return invoke<ProjectMemorySearchResult[]>("search_project_memory", {
+    projectPath,
+    query,
+  });
+}
+
+export async function watchProjectMemory(projectPath: string): Promise<void> {
+  return invoke("watch_project_memory", { projectPath });
 }
 
 // Git
@@ -2561,7 +2614,11 @@ export async function readPromptHistory(): Promise<string> {
 }
 
 // MCP server management
-import type { McpServerEntry } from "@/types/mcp";
+import type {
+  McpServerDiagnostic,
+  McpServerEntry,
+  McpTrustSnapshot,
+} from "@/types/mcp";
 
 export async function readMcpServers(projectPath: string): Promise<McpServerEntry[]> {
   return invoke<McpServerEntry[]>("read_mcp_servers", { projectPath });
@@ -2584,6 +2641,18 @@ export async function deleteMcpServer(
   scope: string,
 ): Promise<void> {
   return invoke("delete_mcp_server", { projectPath, name, scope });
+}
+
+export async function diagnoseMcpServer(
+  projectPath: string,
+  name: string,
+  scope: "global" | "project",
+): Promise<McpServerDiagnostic> {
+  return invoke<McpServerDiagnostic>("diagnose_mcp_server", {
+    projectPath,
+    name,
+    scope,
+  });
 }
 
 // N3 — PacketADE-as-MCP-server lifecycle (the Rust-hosted Streamable HTTP server)
@@ -2636,12 +2705,18 @@ export function listAudioDevices(): Promise<unknown> {
   return invoke("list_audio_devices");
 }
 
-export function startRecordingCmd(deviceIndex?: number): Promise<void> {
-  return invoke("start_recording", { deviceIndex: deviceIndex ?? null });
+export function startRecordingCmd(
+  deviceId?: string | null,
+  deviceIndex?: number | null,
+): Promise<void> {
+  return invoke("start_recording", {
+    deviceId: deviceId ?? null,
+    deviceIndex: deviceIndex ?? null,
+  });
 }
 
-export function stopRecordingCmd(): Promise<string> {
-  return invoke<string>("stop_recording");
+export function stopRecordingCmd(): Promise<import("@/types/dictation").DictationResult> {
+  return invoke("stop_recording");
 }
 
 export function cancelRecordingCmd(): Promise<void> {
@@ -2678,6 +2753,18 @@ export function downloadWhisperModel(size: string): Promise<void> {
 
 export function listWhisperModels(): Promise<unknown> {
   return invoke("list_whisper_models");
+}
+
+export function testAudioDevice(
+  deviceId?: string | null,
+  deviceIndex?: number | null,
+  durationMs = 1_500,
+): Promise<import("@/types/dictation").AudioDeviceTestResult> {
+  return invoke("test_audio_device", {
+    deviceId: deviceId ?? null,
+    deviceIndex: deviceIndex ?? null,
+    durationMs,
+  });
 }
 
 // API Keys
@@ -2829,6 +2916,8 @@ export async function startApiAgentSession(
   approveWrites?: boolean | null,
   commandPath?: string | null,
   workspace?: ApiAgentWorkspaceInput | null,
+  /** MCPH4: immutable per-server authority captured for this session. */
+  mcpTrustSnapshot?: McpTrustSnapshot[] | null,
 ): Promise<void> {
   return invoke("start_api_agent_session", {
     sessionId,
@@ -2849,6 +2938,7 @@ export async function startApiAgentSession(
     approveWrites: approveWrites ?? null,
     commandPath: commandPath ?? null,
     workspace: workspace ?? apiAgentWorkspaceFrom(projectPath, sshConfig),
+    mcpTrustSnapshot: mcpTrustSnapshot ?? null,
   });
 }
 

@@ -1,7 +1,8 @@
 # Flight Reviewer Gate — Scoped Loop
 
 Created: 2026-07-27
-Status: implementation complete; release-like manual/SSH smoke remains gated
+Status: implementation and automated release proof complete; isolated
+packaged/SSH smoke remains environment-gated
 Product decision: **Option B — enforced gate with explicit human override**
 
 ## Objective
@@ -57,7 +58,7 @@ Status values: `queued` → `in-progress` → `gated` → `closed`.
 | **RG5** | Structured verdict | Parse a versioned `packetade-review-gate` block into `pass`, `changes_requested`, or `blocked`, with summary, findings, and evidence. Missing/malformed output becomes a visible gate error, never an implicit pass. | Parser fixtures and terminal-event tests | RG4 | closed |
 | **RG6** | Enforce and override | Normal Accept is enabled only after `pass`. Non-pass states show findings plus Retry Reviewer, Send Findings to Builder, and Override. Override requires a reason and records actor/time/reason in the Attempt and coordination feed. | Store/component tests; direct status mutation cannot bypass policy | RG5 | closed |
 | **RG7** | Bounded remediation handoff | “Send Findings to Builder” creates one explicit follow-up containing structured findings. It does not auto-run repeatedly; a subsequent reviewer retry is another user-visible bounded action. | Prompt/handoff and no-auto-loop tests | RG6 | closed |
-| **RG8** | End-to-end gates and docs | Exercise disabled, pass, fail, reviewer-error, override, reload, local, and SSH paths. Update README/backlog/changelog and generated schema. | Targeted Vitest, `pnpm lint`, `pnpm build`, `cargo check`, `cargo test --no-run` | RG1–RG7 | gated |
+| **RG8** | End-to-end gates and docs | Exercise disabled, pass, fail, reviewer-error, override, reload, local, and SSH paths. Update README/backlog/changelog and generated schema. | Targeted Vitest, `pnpm lint`, `pnpm build`, `cargo check`, `cargo test --no-run` | RG1–RG7 | gated — automated proof green; isolated packaged/SSH smoke pending |
 
 ## Sequencing
 
@@ -81,3 +82,9 @@ actual product gate. RG7 remains deliberately user-triggered.
   visible and persisted.
 - The feature is off by default and introduces no surprise model spend.
 - No autonomous Planner or unbounded repair loop is reintroduced.
+
+## Release-proof checkpoint
+
+The 2026-07-28 focused and full automated matrices pass. Exact evidence and the
+remaining isolated packaged/SSH pickup contract are recorded in
+[`flight-supervision-proof-2026-07-28.md`](./flight-supervision-proof-2026-07-28.md).

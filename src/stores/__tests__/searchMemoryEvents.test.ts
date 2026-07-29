@@ -96,12 +96,29 @@ describe("memory export / import (M3)", () => {
     pinned,
   });
 
-  it("round-trips export → import as identity", () => {
+  it("round-trips export → import while migrating legacy records to unknown provenance", () => {
     const events = [note("a", "one"), note("b", "two")];
     const patterns = [pat("p1", "always X", 0.8)];
     const json = serializeMemoryExport(events, patterns);
     const parsed = parseMemoryImport(json);
-    expect(parsed).toEqual({ events, patterns });
+    expect(
+      parsed?.events.map((event) => {
+        const copy = { ...event };
+        delete copy.provenance;
+        return copy;
+      }),
+    ).toEqual(events);
+    expect(
+      parsed?.patterns.map((pattern) => {
+        const copy = { ...pattern };
+        delete copy.provenance;
+        return copy;
+      }),
+    ).toEqual(patterns);
+    expect(parsed?.events.every((event) => event.provenance?.origin === "unknown")).toBe(true);
+    expect(
+      parsed?.patterns.every((pattern) => pattern.provenance?.origin === "unknown"),
+    ).toBe(true);
   });
 
   it("returns null for invalid JSON", () => {

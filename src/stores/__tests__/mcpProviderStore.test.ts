@@ -117,6 +117,16 @@ describe("mcpProviderStore server lifecycle", () => {
     expect(useMcpProviderStore.getState().config.enabled).toBe(false);
     expect(persistedEnabled()).toBe(false); // reconciled value survives reload
   });
+
+  it("publishes stable suite resources for Issues and PacketCode health", () => {
+    useMcpProviderStore.getState().refreshResources();
+    expect(useMcpProviderStore.getState().resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ uri: "packetade://issues" }),
+        expect.objectContaining({ uri: "packetade://packetcode/health" }),
+      ]),
+    );
+  });
 });
 
 describe("mergeActivity", () => {

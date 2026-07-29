@@ -12,11 +12,53 @@ use tracing::{info, warn};
 
 /// An audio input device descriptor (used by `audio.rs`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AudioDevice {
     pub index: u32,
+    /// CPAL's host-qualified stable identifier. Device indexes are retained
+    /// only to migrate configurations written before v0.10.3.
+    pub id: Option<String>,
     pub name: String,
-    #[serde(rename = "isDefault")]
     pub is_default: bool,
+    pub sample_rate: Option<u32>,
+    pub channels: Option<u16>,
+    pub sample_format: Option<String>,
+}
+
+/// Result returned by the microphone doctor. It contains signal statistics
+/// only; no captured samples or transcript leave the command.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioDeviceTestResult {
+    pub device_id: Option<String>,
+    pub name: String,
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub sample_format: String,
+    pub captured_frames: u64,
+    pub duration_ms: u64,
+    pub peak_level: f32,
+    pub rms_level: f32,
+    pub warning: Option<String>,
+}
+
+/// Private, transcript-free performance and capture metadata returned with a
+/// successful transcription.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationResult {
+    pub text: String,
+    pub duration_seconds: Option<f64>,
+    pub input_sample_rate: u32,
+    pub channels: u16,
+    pub sample_format: String,
+    pub device_name: String,
+    pub device_id: Option<String>,
+    pub model_size: String,
+    pub detected_language: Option<String>,
+    pub model_load_ms: u64,
+    pub inference_ms: u64,
+    pub warnings: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------

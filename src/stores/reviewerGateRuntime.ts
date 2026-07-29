@@ -9,6 +9,7 @@ import {
   REVIEWER_ALLOWED_TOOLS,
 } from "@/lib/reviewerGate";
 import { getDefaultModel } from "@/lib/api-models";
+import { derivedArtifactProvenance } from "@/lib/provenance";
 import { requestConversationSave } from "@/stores/agentConversationPersistence";
 import { useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
@@ -67,7 +68,18 @@ function finishReviewer(flightId: string, attemptId: string, conversationId: str
     .getState()
     .conversations.find((item) => item.id === conversationId);
   try {
-    const report = parseLatestReviewGateReport(conversation?.messages ?? []);
+    const parsedReport = parseLatestReviewGateReport(conversation?.messages ?? []);
+    const reviewerSource = [...(conversation?.messages ?? [])]
+      .reverse()
+      .find((message) => message.role === "assistant")?.provenance;
+    const report: ReviewGateReport = {
+      ...parsedReport,
+      provenance: derivedArtifactProvenance(
+        `${attemptId}-review-report`,
+        "Independent reviewer report",
+        reviewerSource ? [reviewerSource] : [],
+      ),
+    };
     const status = reportStatus(report);
     patchReviewGate(flightId, attemptId, {
       ...attempt.reviewGate,
@@ -89,6 +101,7 @@ function finishReviewer(flightId: string, attemptId: string, conversationId: str
         reviewerConversationId: conversationId,
         verdict: report.verdict,
       },
+      provenance: report.provenance,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

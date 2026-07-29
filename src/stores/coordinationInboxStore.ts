@@ -1,6 +1,7 @@
 import { generateId } from "@/lib/storage";
 import { writePty } from "@/lib/tauri";
 import { selectCooperativeTaskViews } from "@/lib/cooperativeFlight";
+import { derivedArtifactProvenance } from "@/lib/provenance";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
 import type {
@@ -11,6 +12,7 @@ import type {
   CoordinationMessageRecipient,
   Flight,
 } from "@/types/flight";
+import type { ProvenanceEnvelope } from "@/types/provenance";
 
 export const INBOX_MAX_BODY = 16_384;
 export const INBOX_MAX_ARTIFACTS = 8;
@@ -27,6 +29,7 @@ export interface PostCoordinationMessageInput {
   replyToId?: string;
   dedupeKey?: string;
   hopCount?: number;
+  provenance?: ProvenanceEnvelope[];
 }
 
 function fingerprint(value: string): string {
@@ -190,9 +193,10 @@ export async function postCoordinationMessage(
       created.push(existing);
       continue;
     }
+    const id = generateId("inbox");
     created.push({
       schemaVersion: 1,
-      id: generateId("inbox"),
+      id,
       flightId: flight.id,
       kind: input.kind,
       sender: input.sender,
@@ -205,6 +209,12 @@ export async function postCoordinationMessage(
       replyToId: input.replyToId,
       dedupeKey,
       hopCount: input.hopCount ?? 0,
+      provenance: derivedArtifactProvenance(
+        id,
+        `Flight coordination message · ${input.kind}`,
+        input.provenance ?? [],
+        now,
+      ),
     });
   }
   const newMessages = created.filter(
@@ -221,6 +231,7 @@ export async function postCoordinationMessage(
         agentId: message.sender.id,
         summary: `${message.sender.displayName} posted a ${message.kind} to ${message.recipient.label ?? recipientKey(message.recipient)}.`,
         metadata: { inboxMessageId: message.id, inboxStatus: message.status },
+        provenance: message.provenance,
       });
     }
   }

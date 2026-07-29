@@ -494,6 +494,7 @@ export function useTerminalSession({
   const clearApproval = detectorResult.clearApproval;
 
   return {
+    sessionId: currentSessionId,
     alive,
     error,
     showApproval,

@@ -1,7 +1,8 @@
 # YOLO / Bounded Autonomy Policy — Cross-Cutting Loop
 
 Created: 2026-07-27
-Status: implementation complete; release-like manual/SSH smoke remains gated
+Status: implementation and automated release proof complete; isolated
+packaged/SSH smoke remains environment-gated
 
 ## Product decision
 
@@ -69,7 +70,7 @@ policy outcome, not permission to silently relax the limit.
 | **AP6** | Auto-review adapter | Reviewer findings may trigger bounded builder follow-up and reviewer retry; pass is required and override is never automatic. | AP3, AP4; Reviewer Gate RG7 | closed |
 | **AP7** | Auto-graph adapter | Newly ready tasks may launch and reviewer-passed branches may integrate through the same cooperative-graph actions used by assisted mode. | AP3, AP4; Cooperative Graph CG9 | closed |
 | **AP8** | Supervision and kill switch | Flight Deck shows remaining limits, autonomous-action history, Pause/Resume/Stop, and the exact hard-stop reason. Reload never resumes a paused/stopped policy accidentally. | AP5–AP7 | closed |
-| **AP9** | Adversarial and regression gates | Test cost/time/retry races, reload, duplicate events, policy downgrade, SSH, reviewer failure, conflicts, and stop behavior. | AP1–AP8 | gated |
+| **AP9** | Adversarial and regression gates | Test cost/time/retry races, reload, duplicate events, policy downgrade, SSH, reviewer failure, conflicts, and stop behavior. | AP1–AP8 | gated — automated proof green; isolated packaged/SSH smoke pending |
 
 ## Architecture rule
 
@@ -77,3 +78,9 @@ Assisted and YOLO modes must call the same tested domain actions. YOLO adds a
 policy-controlled caller; it must not create a second hidden scheduler,
 reintroduce Planner v1, or bypass the normal retry, review, integration, and
 persistence paths.
+
+## Release-proof checkpoint
+
+The 2026-07-28 focused and full automated matrices pass. Exact evidence and the
+remaining isolated packaged/SSH pickup contract are recorded in
+[`flight-supervision-proof-2026-07-28.md`](./flight-supervision-proof-2026-07-28.md).
