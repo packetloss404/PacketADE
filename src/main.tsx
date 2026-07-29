@@ -9,6 +9,8 @@ migrateLegacyStorage();
 migrateIssuesMissionToFlight();
 
 import App from "./App";
+import { MonitorApp } from "@/components/monitor/MonitorApp";
+import { isMonitorBoot } from "@/lib/monitorWindows";
 import "./index.css";
 
 // Global error handlers — catch unhandled errors and promise rejections
@@ -23,12 +25,10 @@ window.addEventListener("error", (event) => {
     "at",
     event.filename,
     ":",
-    event.lineno
+    event.lineno,
   );
 });
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
+  <React.StrictMode>{isMonitorBoot() ? <MonitorApp /> : <App />}</React.StrictMode>,
 );

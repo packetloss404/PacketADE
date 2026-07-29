@@ -1,6 +1,7 @@
 # Pre-Remote Loop Convergence — 2026-07-28
 
-Status: **locally converged; environment/external-runtime gates isolated**
+Status: **locally converged; post-convergence source gaps closed; external
+runtime gates isolated**
 
 Baseline: **v0.10.2**
 
@@ -38,11 +39,12 @@ publication, secret change, or protected-branch bypass was performed.
 - The MCP Hub now unifies catalog review, config, diagnostics, trust,
   provenance, suite resources, and explicit reconnect. Protocol v11 freezes
   authority for PacketADE-managed MCP runtimes.
-- Codex subscription MCP is deliberately not claimed as protected:
-  `openai-codex` still uses Codex CLI's separate `codex mcp` configuration.
-  The Hub labels that boundary, disables its reconnect action for Codex, and
-  MCPH4 remains gated until a supported Codex mechanism can apply and verify
-  the same policy.
+- Codex subscription MCP now receives a generated MCP configuration that
+  exposes PacketADE's frozen session snapshot through a local trust proxy.
+  The proxy advertises only allowlisted servers/tools and re-checks write,
+  credential, protected-publish, and workspace-root denial floors before
+  forwarding calls. The deterministic target/proxy smoke is green; a real
+  Codex CLI and packaged remote-profile matrix remains environment-gated.
 
 ## Convergence findings fixed
 
@@ -70,7 +72,7 @@ publication, secret change, or protected-branch bypass was performed.
 | `cargo fmt --check`                 | pass                                                                                                                          |
 | `cargo check`                       | pass; existing ts-rs `missionId` alias warning only                                                                           |
 | `cargo test --no-run`               | pass; both Rust test executables compiled                                                                                     |
-| `pnpm check:tauri-schema`           | environment-gated: native test executable exits `0xc0000139` / `STATUS_ENTRYPOINT_NOT_FOUND` on this Windows runtime          |
+| `pnpm check:tauri-schema`           | pass after adding a linker-level Common Controls v6 manifest dependency; the native schema and Rust unit-test executables launch |
 | `pnpm tauri build`                  | pass; unsigned Windows standalone EXE, MSI, and NSIS installer                                                                |
 | `pnpm run release:readiness:report` | 0 failures, 6 expected signing/updater warnings                                                                               |
 | `git diff --check`                  | pass; CRLF future-normalization warnings only                                                                                 |
@@ -96,11 +98,47 @@ and were not installed, published, or represented as release candidates.
   inspection.
 - Project Memory: real external-editor watch storms, partial writes,
   rename/restart recovery, and packaged dirty/gitignored project behavior.
-- MCP Hub: real stdio/SSH crash/reload/version-skew, offline install/removal,
-  HTTP/SSE diagnostics beyond the current stdio doctor, remote-profile parity,
-  and enforceable Codex CLI MCP trust.
+- MCP Hub: real Codex/stdio/SSH crash/reload/version-skew, offline
+  install/removal, HTTP/SSE diagnostics beyond the current stdio doctor, and
+  remote-profile parity.
 - Distribution: Windows/macOS signing credentials, notarization, updater
   configuration, and a signed updater manifest.
 
 The authoritative open items remain in `backlog.md`. Remote Agents remains the
 next product decision boundary, not an automatically started implementation.
+
+## Post-convergence follow-up — 2026-07-29
+
+The cleanup tranche after the baseline above also landed the PacketAgent W9
+consumer, Issue⇄Flight P1–P3 I/O/UI, read-only Agent/Flight Monitor windows,
+the SSH attempt `serverId` wire rename with legacy aliases, auth-watcher hard
+max/flush behavior, corrected Codex flat-output handling, bounded PacketAgent
+responses, Ollama usage capability negotiation, worktree ID validation,
+fail-closed hook payload serialization, PTY error-kind logging, prompt-template
+command-palette launch, review-packet diff routing, and the carried test gaps.
+
+PacketAgent's live close/restart/reconnect gate, packaged GitHub/Gitea mirror
+proof, packaged multi-display Monitor proof, and the existing hardware/SSH/
+provider/signing gates remain in `backlog.md`. Remote Agents was still not
+started.
+
+The final post-convergence `pnpm check` passed on 2026-07-29:
+
+- Prettier and ESLint: pass, zero errors and the same nine Fast Refresh
+  warnings.
+- Vitest: 158 files / 1,217 tests passed.
+- Production frontend build: pass.
+- Playwright: 7/7 Chromium web-mode flows passed.
+- Sidecar: build plus all deterministic provider, protocol-v11, permission,
+  MCP, and Codex trust-proxy smokes passed; the live Anthropic round trip
+  remained explicitly opt-in.
+- Generated Tauri schema: native exporter passed and matched the checked-in
+  bindings.
+- Rust: format/check plus 423 unit tests, the application harness, schema
+  integration test, and doc tests passed; two real-user-state tests remain
+  intentionally ignored.
+- `git diff --check`: pass after generated-schema whitespace normalization.
+
+The same final pass also made the Git fixtures independent of a developer's
+global `core.autocrlf` setting and changed the Mission-to-Flight migration test
+from whitespace-sensitive string matching to structural JSON assertions.

@@ -975,6 +975,10 @@ mod tests {
         git_ok(&root, &["init", "-q"]);
         git_ok(&root, &["config", "user.email", "test@packetade.test"]);
         git_ok(&root, &["config", "user.name", "PacketADE Test"]);
+        // Keep fixture bytes deterministic on Windows hosts where the user's
+        // global core.autocrlf setting would otherwise rewrite LF on checkout.
+        git_ok(&root, &["config", "core.autocrlf", "false"]);
+        git_ok(&root, &["config", "core.eol", "lf"]);
         // Deterministic base-branch name across git versions/hosts.
         git_ok(&root, &["checkout", "-q", "-b", "main"]);
         std::fs::write(root.join("f.txt"), "base\n").expect("write f.txt");

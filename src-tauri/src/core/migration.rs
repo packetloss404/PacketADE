@@ -149,12 +149,14 @@ mod tests {
         migrate_mission_to_flight();
 
         let after = std::fs::read_to_string(&path).unwrap();
+        let after_json: serde_json::Value = serde_json::from_str(&after).unwrap();
+        let approval = &after_json["flight_approvals"][0];
         assert!(
-            after.contains("\"flightId\":\"F-1\""),
+            approval.get("flightId") == Some(&serde_json::Value::String("F-1".to_string())),
             "missionId should be rewritten to flightId: {after}"
         );
         assert!(
-            !after.contains("missionId"),
+            approval.get("missionId").is_none(),
             "legacy missionId key should be gone: {after}"
         );
 

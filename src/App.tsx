@@ -10,6 +10,8 @@ import { PinnedApprovalBanner } from "@/components/agents/PinnedApprovalBanner";
 import { useSideChatHotkey } from "@/hooks/useSideChatHotkey";
 import { useDictationTarget } from "@/hooks/useDictationTarget";
 import { useDictationGlobalShortcuts } from "@/hooks/useDictationGlobalShortcuts";
+import { useIssueFlightMirrorPoller } from "@/hooks/useIssueFlightMirrorPoller";
+import { useMonitorMainRouter } from "@/hooks/useMonitorMainRouter";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { ToastProvider } from "@/components/ui/Toast";
 import { FleetSidebar } from "@/components/workspace/FleetSidebar";
@@ -27,25 +29,50 @@ import { useModuleStore } from "@/stores/moduleStore";
 import { useDictationStore } from "@/stores/dictationStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { getModule } from "@/modules/registry";
-import { useStatusLinePoller, useCodexStatusLinePoller, useGeminiStatusLinePoller, useOpenCodeStatusLinePoller } from "@/hooks/useStatusLine";
+import {
+  useStatusLinePoller,
+  useCodexStatusLinePoller,
+  useGeminiStatusLinePoller,
+  useOpenCodeStatusLinePoller,
+} from "@/hooks/useStatusLine";
 import { initializeApp, persistUiState } from "@/lib/bootstrap";
 import { requestNotificationPermission } from "@/lib/notifications";
 import type { AppView } from "@/stores/appStore";
 
 // Lazy-loaded views — split into separate chunks to reduce initial bundle size
-const IssueBoard = lazy(() => import("@/components/issues/IssueBoard").then((m) => ({ default: m.IssueBoard })));
-const HistoryView = lazy(() => import("@/components/views/HistoryView").then((m) => ({ default: m.HistoryView })));
-const ToolsView = lazy(() => import("@/components/views/ToolsView").then((m) => ({ default: m.ToolsView })));
-const GitHubView = lazy(() => import("@/components/views/GitHubView").then((m) => ({ default: m.GitHubView })));
-const MemoryView = lazy(() => import("@/components/views/MemoryView").then((m) => ({ default: m.MemoryView })));
-const WorkspaceView = lazy(() => import("@/components/views/WorkspaceView").then((m) => ({ default: m.WorkspaceView })));
-const FlightsView = lazy(() => import("@/components/views/FlightsView").then((m) => ({ default: m.FlightsView })));
+const IssueBoard = lazy(() =>
+  import("@/components/issues/IssueBoard").then((m) => ({ default: m.IssueBoard })),
+);
+const HistoryView = lazy(() =>
+  import("@/components/views/HistoryView").then((m) => ({ default: m.HistoryView })),
+);
+const ToolsView = lazy(() =>
+  import("@/components/views/ToolsView").then((m) => ({ default: m.ToolsView })),
+);
+const GitHubView = lazy(() =>
+  import("@/components/views/GitHubView").then((m) => ({ default: m.GitHubView })),
+);
+const MemoryView = lazy(() =>
+  import("@/components/views/MemoryView").then((m) => ({ default: m.MemoryView })),
+);
+const WorkspaceView = lazy(() =>
+  import("@/components/views/WorkspaceView").then((m) => ({ default: m.WorkspaceView })),
+);
+const FlightsView = lazy(() =>
+  import("@/components/views/FlightsView").then((m) => ({ default: m.FlightsView })),
+);
 
-const CostDashboardView = lazy(() => import("@/components/views/CostDashboardView").then((m) => ({ default: m.CostDashboardView })));
-const DictationView = lazy(() => import("@/components/views/DictationView").then((m) => ({ default: m.DictationView })));
+const CostDashboardView = lazy(() =>
+  import("@/components/views/CostDashboardView").then((m) => ({ default: m.CostDashboardView })),
+);
+const DictationView = lazy(() =>
+  import("@/components/views/DictationView").then((m) => ({ default: m.DictationView })),
+);
 
 // Lazy-loaded so vendor-xterm (@xterm/*) stays out of the entry chunk; only loads when a login PTY opens
-const LoginPtyModal = lazy(() => import("@/components/auth/LoginPtyModal").then((m) => ({ default: m.LoginPtyModal })));
+const LoginPtyModal = lazy(() =>
+  import("@/components/auth/LoginPtyModal").then((m) => ({ default: m.LoginPtyModal })),
+);
 
 function ViewLoader() {
   return (
@@ -67,6 +94,8 @@ export default function App() {
   useDictationTarget();
   // OS-level global hotkeys so dictation works even when PacketADE is not focused
   useDictationGlobalShortcuts();
+  useIssueFlightMirrorPoller();
+  useMonitorMainRouter();
   useCodexStatusLinePoller();
   useGeminiStatusLinePoller();
   useOpenCodeStatusLinePoller();
@@ -158,7 +187,6 @@ export default function App() {
     }
   }, [activeView, setActiveView]);
 
-
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
 
   // Global keyboard shortcuts
@@ -167,9 +195,7 @@ export default function App() {
       // Ctrl+K to open command palette
       if (e.ctrlKey && e.key === "k") {
         e.preventDefault();
-        useAppStore.getState().setCommandPaletteOpen(
-          !useAppStore.getState().commandPaletteOpen
-        );
+        useAppStore.getState().setCommandPaletteOpen(!useAppStore.getState().commandPaletteOpen);
         return;
       }
       // Escape to close command palette
@@ -210,7 +236,7 @@ export default function App() {
         }
       }
     },
-    [setActiveView]
+    [setActiveView],
   );
 
   useEffect(() => {
@@ -253,69 +279,69 @@ export default function App() {
           "worktree pending — Review worktree" toast). Wraps the whole shell so
           any surface can raise a non-blocking toast. */}
       <ToastProvider>
-      <div className="flex flex-col h-screen bg-bg-primary text-text-primary font-sans">
-        <TitleBar />
-        <Toolbar />
-        <div className="flex flex-1 overflow-hidden">
-          {/* Primary view nav */}
-          <LeftRail />
-          {/* Fleet sidebar — on the LEFT of the main content (workspace view
+        <div className="flex h-screen flex-col bg-bg-primary font-sans text-text-primary">
+          <TitleBar />
+          <Toolbar />
+          <div className="flex flex-1 overflow-hidden">
+            {/* Primary view nav */}
+            <LeftRail />
+            {/* Fleet sidebar — on the LEFT of the main content (workspace view
               only). Tile program (P4-S2): the unified fleet list (workspaces +
               virtual rows for unplaced legacy conversations). */}
-          {showWorkspaceSidebar && <FleetSidebar />}
-          {/* Main content area */}
-          <div className="flex flex-col flex-1 overflow-hidden">
-            <ErrorBoundary fallbackMessage="View error">
-              {/* Welcome screen */}
-              {activeView === "welcome" && (
-                <div className="flex flex-col flex-1 overflow-hidden">
-                  <WelcomeScreen />
-                </div>
-              )}
-              {/* Workspace view — always mounted so PTY sessions stay
+            {showWorkspaceSidebar && <FleetSidebar />}
+            {/* Main content area */}
+            <div className="flex flex-1 flex-col overflow-hidden">
+              <ErrorBoundary fallbackMessage="View error">
+                {/* Welcome screen */}
+                {activeView === "welcome" && (
+                  <div className="flex flex-1 flex-col overflow-hidden">
+                    <WelcomeScreen />
+                  </div>
+                )}
+                {/* Workspace view — always mounted so PTY sessions stay
                   alive when the user navigates to other tabs. */}
-              <div
-                className="flex flex-col flex-1 overflow-hidden"
-                style={{ display: activeView === "workspace" ? "flex" : "none" }}
-              >
+                <div
+                  className="flex flex-1 flex-col overflow-hidden"
+                  style={{ display: activeView === "workspace" ? "flex" : "none" }}
+                >
+                  <Suspense fallback={<ViewLoader />}>
+                    <WorkspaceView />
+                  </Suspense>
+                </div>
+                {/* Other views render conditionally */}
                 <Suspense fallback={<ViewLoader />}>
-                  <WorkspaceView />
+                  <OtherViewContent activeView={activeView} />
                 </Suspense>
-              </div>
-              {/* Other views render conditionally */}
-              <Suspense fallback={<ViewLoader />}>
-                <OtherViewContent activeView={activeView} />
-              </Suspense>
-            </ErrorBoundary>
-          </div>
+              </ErrorBoundary>
+            </div>
 
-          {/* Right-side inspector/preview pane — Inspector / Plan / Preview
+            {/* Right-side inspector/preview pane — Inspector / Plan / Preview
               (markdown) / Diff / Files for the selected conversation. Mounts as
               a thin rail and expands "when in use" (a plan arrives, a .md opens,
               or a tab icon is clicked). Wrapped so a render error can't take
               down the shell. */}
-          {showWorkspaceSidebar && selectedConversationId && (
-            <ErrorBoundary fallbackMessage="Inspector pane error">
-              <AgentInspectorPane conversationId={selectedConversationId} defaultOpen={false} />
-            </ErrorBoundary>
+            {showWorkspaceSidebar && selectedConversationId && (
+              <ErrorBoundary fallbackMessage="Inspector pane error">
+                <AgentInspectorPane conversationId={selectedConversationId} defaultOpen={false} />
+              </ErrorBoundary>
+            )}
+          </div>
+          <StatusStrip />
+          {commandPaletteOpen && <CommandPalette />}
+          <SideChatOverlay />
+          {/* P1-9: blocking approvals in conversations that aren't on screen
+            stay pinned at the viewport edge until answered. */}
+          <PinnedApprovalBanner />
+          {loginCli && (
+            <Suspense fallback={null}>
+              <LoginPtyModal
+                cli={loginCli}
+                projectPath={loginProjectPath}
+                onClose={() => setLoginCli(null)}
+              />
+            </Suspense>
           )}
         </div>
-        <StatusStrip />
-        {commandPaletteOpen && <CommandPalette />}
-        <SideChatOverlay />
-        {/* P1-9: blocking approvals in conversations that aren't on screen
-            stay pinned at the viewport edge until answered. */}
-        <PinnedApprovalBanner />
-        {loginCli && (
-          <Suspense fallback={null}>
-            <LoginPtyModal
-              cli={loginCli}
-              projectPath={loginProjectPath}
-              onClose={() => setLoginCli(null)}
-            />
-          </Suspense>
-        )}
-      </div>
       </ToastProvider>
     </ErrorBoundary>
   );

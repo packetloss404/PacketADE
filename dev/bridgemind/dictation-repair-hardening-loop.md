@@ -89,8 +89,9 @@ connected or enabled; the repaired UI now reports the condition.
 - `cargo test --manifest-path src-tauri/Cargo.toml commands::dictation --no-run`
 - `cargo test --manifest-path src-tauri/Cargo.toml --lib --no-run`
 
-Rust test binaries compile, but executing native Rust tests on this Windows
-runtime remains blocked by the repository-wide `0xc0000139` entrypoint defect.
+Rust test binaries compiled at this checkpoint. The repository-wide Windows
+`0xc0000139` loader defect was fixed on 2026-07-29; native Rust unit and schema
+test executables now launch.
 
 ## Follow-on hardening result
 

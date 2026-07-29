@@ -85,6 +85,8 @@ export interface ReviewPacketPanelProps {
   pendingApprovalSessionIds?: Set<string>;
   /** Deep-link to the conversation tile owning a live approval prompt. */
   onOpenApproval?: (conversationId: string) => void;
+  /** Open the authoritative working-tree diff for a packet-linked file. */
+  onOpenDiff?: (filePath: string) => void;
 }
 
 export function ReviewPacketPanel({
@@ -94,6 +96,7 @@ export function ReviewPacketPanel({
   onClose,
   pendingApprovalSessionIds,
   onOpenApproval,
+  onOpenDiff,
 }: ReviewPacketPanelProps) {
   const resolved = useMemo(() => resolveTasks(flights, refs), [flights, refs]);
   const paths = useMemo(() => [...new Set(refs.map((r) => r.filePath))], [refs]);
@@ -198,9 +201,7 @@ export function ReviewPacketPanel({
 
               {(() => {
                 const sessionId = packet?.sessionId ?? task.sessionId ?? undefined;
-                const liveApproval = !!(
-                  sessionId && pendingApprovalSessionIds?.has(sessionId)
-                );
+                const liveApproval = !!(sessionId && pendingApprovalSessionIds?.has(sessionId));
                 return (
                   <div className="mt-2 flex items-center justify-end gap-3">
                     {pending && !liveApproval && (
@@ -212,16 +213,26 @@ export function ReviewPacketPanel({
                       <button
                         type="button"
                         onClick={() => onOpenApproval(sessionId)}
-                        className="hover:bg-accent-amber/25 inline-flex items-center gap-1 rounded bg-accent-amber/15 px-2 py-0.5 text-ui font-medium text-accent-amber transition-colors"
+                        className="hover:bg-accent-amber/25 bg-accent-amber/15 inline-flex items-center gap-1 rounded px-2 py-0.5 text-ui font-medium text-accent-amber transition-colors"
                       >
                         <ShieldAlert size={10} className="shrink-0" />
                         Go to approval
                       </button>
                     )}
+                    {onOpenDiff && (packet?.filePaths[0] ?? refs[0]?.filePath) && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenDiff(packet?.filePaths[0] ?? refs[0].filePath)}
+                        className="inline-flex items-center gap-1 text-ui text-text-secondary transition-colors hover:text-text-primary"
+                      >
+                        <FileDiff size={10} className="shrink-0" />
+                        Open diff
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => onOpenFlight(flight.id)}
-                      className="hover:text-text-primary inline-flex items-center gap-1 text-ui text-text-secondary transition-colors"
+                      className="inline-flex items-center gap-1 text-ui text-text-secondary transition-colors hover:text-text-primary"
                     >
                       <ExternalLink size={10} className="shrink-0" />
                       Open flight

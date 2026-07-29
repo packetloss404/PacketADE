@@ -9,6 +9,53 @@ task list.
 
 ## [Unreleased]
 
+### Added — cross-product supervision and operations
+
+- Added the PacketAgent W9 Flight handoff consumer: frozen canonical fixture
+  compatibility, keyring-only bearer storage, HTTPS/loopback transport policy,
+  validate/deploy/activate, durable deployment/cursor references, ordered event
+  acknowledgement, pause/resume/revoke, and evidence inspection.
+- Added opt-in Issue↔Flight mirroring for GitHub and Gitea/Forgejo. Task issues
+  group under a Flight milestone, hidden markers prevent duplicates, a
+  visibility-aware poller performs two-way reconciliation, and LWW conflicts
+  retain both values until acknowledged.
+- Added read-only Agent and Flight Monitor windows with a backend-issued route
+  lease, separate frontend boot shell, narrow Tauri capability, source-surface
+  actions, stale states, and focus-back-to-main routing.
+
+### Fixed — trust, schema, and reliability
+
+- Codex CLI subscription sessions now receive PacketADE's frozen MCP authority
+  through a local trust proxy. Only allowlisted servers/tools are advertised,
+  and path/write/credential/protected-publish denial floors are rechecked on
+  each forwarded call.
+- Windows Rust test/schema executables now declare Common Controls v6 through
+  the linker, fixing `0xc0000139` while merging cleanly with Tauri's app
+  manifest. The generated Tauri schema runs natively again.
+- SSH attempt targets now emit `serverId` end to end while retaining read
+  aliases for legacy `targetId`/`target_id` persisted data.
+- Auth watching has a hard debounce wait and flushes pending changes at
+  shutdown; corrected Codex terminal text no longer assumes the final response
+  is a strict delta-prefix extension.
+- Worktree IDs are restricted to ASCII alphanumeric/`-_`, hook payload
+  serialization fails closed before child spawn, PTY reader errors are logged
+  once per error kind, and PacketAgent responses are bounded while streaming.
+- Ollama usage reporting now negotiates `stream_options.include_usage`, retries
+  safely on an explicit unsupported-parameter response, and caches the result
+  per endpoint for the app session.
+
+### Changed — smaller UX and test debt
+
+- Saved prompt templates can launch directly from the command palette, and
+  review packets can open the authoritative git diff surface.
+- Closed the carried draft-patch, approval-keyboard/focused-input,
+  fork-and-resend plan cleanup, shared-time-helper, worktree, hook, PTY, and
+  PacketAgent canonical contract test gaps.
+- Added a decision-ready Workspace/Agents and Settings audit with current
+  first-party competitor evidence, a compatibility-first surface split, and an
+  authoritative Settings cleanup backlog. No surface migration was implied by
+  the documentation change.
+
 ## [0.10.2] - 2026-07-28
 
 ### Fixed — Dictation

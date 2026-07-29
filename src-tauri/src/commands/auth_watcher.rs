@@ -43,6 +43,8 @@ const PROVIDER_CODEX: &str = "openai-codex";
 /// emission. Tuned for the login flow, which typically settles within a
 /// few hundred ms.
 const DEBOUNCE_MS: u64 = 500;
+/// A credential writer that never becomes quiet must still update the badge.
+const DEBOUNCE_MAX_WAIT_MS: u64 = 5_000;
 
 /// Managed state handle. Holding the watcher in `State<...>` keeps it alive
 /// for the process lifetime and lets Tauri drop it on shutdown. The actual
@@ -160,11 +162,17 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         // providers changed and emit a fresh probe only once the burst has been
         // quiet for the debounce window, so the emitted status is the settled one.
         let settle = Duration::from_millis(DEBOUNCE_MS);
+        let max_wait = Duration::from_millis(DEBOUNCE_MAX_WAIT_MS);
         let mut dirty_claude = false;
         let mut dirty_codex = false;
+        let mut dirty_since: Option<tokio::time::Instant> = None;
         loop {
             let next = if dirty_claude || dirty_codex {
-                match tokio::time::timeout(settle, rx.recv()).await {
+                let elapsed = dirty_since
+                    .map(|started| started.elapsed())
+                    .unwrap_or_default();
+                let wait = settle.min(max_wait.saturating_sub(elapsed));
+                match tokio::time::timeout(wait, rx.recv()).await {
                     Ok(v) => v,
                     Err(_) => {
                         // Quiescent for the debounce window — flush the trailing,
@@ -191,6 +199,7 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                             );
                             dirty_codex = false;
                         }
+                        dirty_since = None;
                         continue;
                     }
                 }
@@ -199,7 +208,27 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let Some(res) = next else {
-                break; // channel closed
+                // Teardown normally has no consumer, but flushing here keeps
+                // the contract correct for an explicitly closed registration.
+                if dirty_claude {
+                    let _ = app_for_task.emit(
+                        "provider-auth:changed",
+                        AuthChangedPayload {
+                            provider: PROVIDER_CLAUDE.to_string(),
+                            status: probe_claude_oauth(),
+                        },
+                    );
+                }
+                if dirty_codex {
+                    let _ = app_for_task.emit(
+                        "provider-auth:changed",
+                        AuthChangedPayload {
+                            provider: PROVIDER_CODEX.to_string(),
+                            status: probe_codex_oauth(),
+                        },
+                    );
+                }
+                break;
             };
             let event = match res {
                 Ok(ev) => ev,
@@ -217,6 +246,7 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
             // Mark which provider(s) this event affects; the actual probe + emit
             // happens on the trailing edge above.
+            let was_clean = !dirty_claude && !dirty_codex;
             for p in &event.paths {
                 if path_is_in(&p, &claude_dir_for_task) {
                     dirty_claude = true;
@@ -224,6 +254,9 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 if path_is_in(&p, &codex_dir_for_task) {
                     dirty_codex = true;
                 }
+            }
+            if was_clean && (dirty_claude || dirty_codex) {
+                dirty_since = Some(tokio::time::Instant::now());
             }
         }
     });

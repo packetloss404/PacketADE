@@ -28,6 +28,7 @@ import {
   ChevronRight,
   Settings,
 } from "lucide-react";
+import { PacketAgentSettingsCard } from "./tools/PacketAgentSettingsCard";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore } from "@/stores/appStore";
 import { useGitInfo } from "@/hooks/useGitInfo";
@@ -86,6 +87,7 @@ type SettingsSection =
   | "general"
   | "workspace"
   | "agents"
+  | "packet-agent"
   | "providers"
   | "routing"
   | "memory"
@@ -103,6 +105,7 @@ const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] =
   { key: "general", label: "General", icon: Palette },
   { key: "workspace", label: "Workspace", icon: FolderOpen },
   { key: "agents", label: "Agents", icon: Bot },
+  { key: "packet-agent", label: "PacketAgent", icon: Bot },
   { key: "providers", label: "AI Providers", icon: Key },
   { key: "routing", label: "AI Routing", icon: Route },
   { key: "memory", label: "Memory", icon: Brain },
@@ -176,6 +179,12 @@ export function ToolsView() {
             <CliAgentsCard />
             <AgentSettingsCard />
             <AgentProfilesCard />
+          </div>
+        )}
+
+        {activeSection === "packet-agent" && (
+          <div className="max-w-2xl">
+            <PacketAgentSettingsCard />
           </div>
         )}
 

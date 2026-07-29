@@ -106,3 +106,8 @@ Completed: 2026-07-19
 All 30 backlog entries are closed. The two host-blocked commands remain an
 environment repair item, not an unresolved audit finding; their code and test
 targets compile successfully.
+
+> Follow-up 2026-07-29: the Windows loader defect was fixed with a linker-level
+> Common Controls v6 dependency. Rust unit tests and the Tauri schema integration
+> executable now launch; the two historical gate rows above describe only the
+> original 2026-07-19 checkpoint.

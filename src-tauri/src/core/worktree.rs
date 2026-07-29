@@ -66,6 +66,12 @@ fn validate_worktree_component(component: &str) -> Result<(), String> {
     if component.contains('/') || component.contains('\\') {
         return Err("Worktree id cannot contain path separators".to_string());
     }
+    if !component
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return Err("Worktree id may contain only ASCII letters, digits, '-' and '_'".to_string());
+    }
     Ok(())
 }
 
@@ -1654,6 +1660,17 @@ mod tests {
                 "{invalid:?} should be rejected"
             );
         }
+    }
+
+    #[test]
+    fn worktree_component_rejects_non_ascii_or_shell_punctuation() {
+        for invalid in ["attempt id", "attempt.dot", "attempt💥", "attempt;echo"] {
+            assert!(
+                worktree_path("/repo", invalid).is_err(),
+                "{invalid:?} should be rejected"
+            );
+        }
+        assert!(worktree_path("/repo", "att_UUID-123").is_ok());
     }
 
     // --- S3: remote git polish ---

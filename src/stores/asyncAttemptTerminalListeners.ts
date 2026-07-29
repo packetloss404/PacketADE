@@ -15,7 +15,7 @@ function patchAttempt(flightId: string, attemptId: string, patch: Partial<Attemp
 }
 
 function attemptLabel(attempt: Attempt): string {
-  return attempt.target.kind === "ssh" ? attempt.target.targetId : "local";
+  return attempt.target.kind === "ssh" ? attempt.target.serverId : "local";
 }
 
 function currentAttempt(flightId: string, attemptId: string): Attempt | undefined {

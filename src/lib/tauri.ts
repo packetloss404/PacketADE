@@ -24,6 +24,7 @@ import type {
   UpdateProjectMemoryInput,
 } from "@/types/project-memory";
 import type { ServerConfig } from "@/types/server";
+import type { PacketAgentRequest, PacketAgentResponse } from "@/types/packet-agent";
 
 type WorkspacePaneDtoWithFrontendMetadata = WorkspaceDto["panes"][number] &
   Pick<Workspace["panes"][number], "pinnedCommands">;
@@ -36,6 +37,25 @@ type WorkspaceDtoWithFrontendMetadata = Omit<WorkspaceDto, "panes"> & {
 // Filesystem
 export async function getCwd(): Promise<string> {
   return invoke<string>("get_cwd");
+}
+
+// PacketAgent W9 handoff
+export async function setPacketAgentToken(token: string): Promise<void> {
+  return invoke("set_packet_agent_token", { token });
+}
+
+export async function getPacketAgentTokenExists(): Promise<boolean> {
+  return invoke<boolean>("get_packet_agent_token_exists");
+}
+
+export async function deletePacketAgentToken(): Promise<void> {
+  return invoke("delete_packet_agent_token");
+}
+
+export async function packetAgentRequest(
+  request: PacketAgentRequest,
+): Promise<PacketAgentResponse> {
+  return invoke<PacketAgentResponse>("packet_agent_request", { request });
 }
 
 /** True only when `path` exists and is a directory. Used by bootstrap to
@@ -432,9 +452,7 @@ export async function summarizeFlight(
   return invoke<string>("summarize_flight", { projectPath, flightSummary, sessionLogs });
 }
 
-export async function listProjectMemory(
-  projectPath: string,
-): Promise<ProjectMemorySnapshot> {
+export async function listProjectMemory(projectPath: string): Promise<ProjectMemorySnapshot> {
   return invoke<ProjectMemorySnapshot>("list_project_memory", { projectPath });
 }
 
@@ -2125,6 +2143,33 @@ export async function githubListIssues(owner: string, repo: string): Promise<str
   return invoke<string>("github_list_issues", { owner, repo });
 }
 
+export async function githubGetIssue(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+): Promise<string> {
+  return invoke<string>("github_get_issue", { owner, repo, issueNumber });
+}
+
+export async function githubCreateIssue(
+  owner: string,
+  repo: string,
+  title: string,
+  body: string,
+): Promise<string> {
+  return invoke<string>("github_create_issue", { owner, repo, title, body });
+}
+
+export async function githubUpdateIssue(
+  owner: string,
+  repo: string,
+  number: number,
+  title: string,
+  body: string,
+): Promise<string> {
+  return invoke<string>("github_update_issue", { owner, repo, number, title, body });
+}
+
 /**
  * v0.8-G: extended with optional `draft` flag. When omitted, GitHub
  * defaults to a normal (ready-for-review) PR. When `true`, GitHub opens
@@ -2477,6 +2522,20 @@ export async function githubListRepoMilestones(owner: string, repo: string): Pro
   return invoke<string>("github_list_repo_milestones", { owner, repo });
 }
 
+export async function githubCreateRepoMilestone(
+  owner: string,
+  repo: string,
+  title: string,
+  description: string,
+): Promise<string> {
+  return invoke<string>("github_create_repo_milestone", {
+    owner,
+    repo,
+    title,
+    description,
+  });
+}
+
 export async function githubListRepoAssignableUsers(owner: string, repo: string): Promise<string> {
   return invoke<string>("github_list_repo_assignable_users", { owner, repo });
 }
@@ -2614,11 +2673,7 @@ export async function readPromptHistory(): Promise<string> {
 }
 
 // MCP server management
-import type {
-  McpServerDiagnostic,
-  McpServerEntry,
-  McpTrustSnapshot,
-} from "@/types/mcp";
+import type { McpServerDiagnostic, McpServerEntry, McpTrustSnapshot } from "@/types/mcp";
 
 export async function readMcpServers(projectPath: string): Promise<McpServerEntry[]> {
   return invoke<McpServerEntry[]>("read_mcp_servers", { projectPath });

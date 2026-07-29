@@ -71,7 +71,9 @@ The **Workspace is the single surface**: every agent — chat or terminal — is
 - **Inline Restore**: rewind the thread to an earlier point directly from the transcript (Claude-Code-style rewind), with no separate checkpoint panel
 - **Side Chat overlay**: a floating ask-a-side-question panel that streams an answer without disturbing the main thread
 - **Continue-in menu**: hand a conversation off to an external editor or terminal
-- **Durable agent profiles** (Default, Scout, Reviewer built-ins, plus user-created): bundle system prompt + allowed tools + memory + permission posture; pick from the launcher dropdown or edit in `Settings → Agent Profiles`
+- **Send to Monitor**: route a conversation to a separate read-only operations
+  window without duplicating its session or exposing composer/approval controls
+- **Durable agent profiles** (Default, Scout, Reviewer built-ins, plus user-created): bundle system prompt + allowed tools + memory + permission posture; pick from the launcher dropdown or edit in `Settings → Agents`
 - **AGENTS.md / CLAUDE.md auto-injection** from project root into the system prompt at session start
 - **Auto-failover on rate-limit**: 429 / quota / overload errors trigger a same-provider fallback (Opus → Sonnet → Haiku, o3 → gpt-5.5 → o4-mini, MiniMax → highspeed) before surfacing the failure
 - **Worktree-per-conversation** (opt-in toggle, local projects): provisions `.pkt-worktrees/<convId>` on a fresh `pkt/<convId>` branch so the conversation's tool calls don't touch the main checkout
@@ -123,6 +125,15 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
   limits, action history, and Pause/Resume/Stop
 - Each Attempt tile streams the agent conversation, accepts follow-up turns, and exposes review/complete/reject/cancel controls; terminal status, tokens, cost, and coordination events persist on the Flight
 - Optional local draft-PR publishing pushes the Attempt branch before worktree cleanup, while SSH worktree cleanup is resolved through the saved Server configuration
+- Optional **Issue ↔ Flight mirroring** publishes one host issue per task under
+  a Flight-named GitHub/Gitea milestone, then reconciles title/state/milestone
+  changes with hidden identity markers, revision fences, and visible conflicts
+- **Send to Monitor** opens or reroutes one read-only Agent/Flight Monitor
+  window; all mutations stay in the main cockpit
+- **Deploy & keep running in PacketAgent** validates a frozen W9 WorkerPackage,
+  activates a durable external worker, persists its event cursor, and exposes
+  inspect/pause/resume/revoke/evidence controls. PacketAgent remains a separate
+  runtime and owns execution after PacketADE closes
 - Planning is intentionally upfront and user-applied: it does not restore the former autonomous Flight Planner FSM, journal, wake loop, or task scheduler; legacy planner fields remain load-compatible
 - Kanban issue tracking with priorities, labels, acceptance criteria, and flight linkage
 
@@ -163,7 +174,7 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 
 ### Dictation — Voice-to-Text
 
-- Local Whisper transcription (no audio leaves the machine); verified model, stable audio device, microphone doctor, recording limit, language, and custom dictionary configurable from `Tools → Dictation`
+- Local Whisper transcription (no audio leaves the machine); verified model, stable audio device, microphone doctor, recording limit, language, and custom dictionary configurable from `Settings → Dictation`
 - Explicitly opt-in OS-level global shortcuts via `tauri-plugin-global-shortcut` so the hotkeys work even when PacketADE is not the focused application:
   - `Ctrl+Alt+Space` (hold) — push-to-talk; records while held, transcribes on release (rebindable; `Cmd+Alt+Space` on macOS)
   - `Ctrl+Alt+R` — toggle recording on/off (rebindable; `Cmd+Alt+R` on macOS)
@@ -221,9 +232,10 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
   read-only authority. Non-overridable floors block credentials,
   outside-workspace paths, and protected publish/merge/deploy tools. A local
   stdio child is not an OS network sandbox, so its own package/runtime
-  configuration still matters. Codex subscription conversations remain an
-  explicit exception: Codex CLI owns its separate `codex mcp` configuration,
-  which PacketADE cannot enforce or reconnect yet.
+  configuration still matters. Codex subscription conversations receive a
+  generated local trust proxy through Codex CLI's MCP config; only the frozen
+  allowlisted servers/tools are advertised, and write/path denial floors are
+  re-checked on every forwarded call.
 - PacketADE's loopback provider organizes scoped resources for Flights, Issues,
   coordination, review, global/project Memory, workspaces, and PacketCode
   integration health. It remains loopback-only with bearer/origin controls;
@@ -298,7 +310,7 @@ The sidecar work is complete across the original four v2 tiers and the v3–v11 
 
 - **v2 Tier 1 — Bundling:** pinned Node 24.15.0 runtime fetched as a Tauri `externalBin`, sidecar resources bundled with pruned production `node_modules`, `prebundle` chain wired into `tauri build`.
 - **v2 Tier 2 — Lifecycle & auth:** sidecar version handshake on startup, toolbar status chip reflecting live sidecar state, credential expiry parsing for Anthropic Subscription / OpenAI ChatGPT tokens, and a filesystem watcher that re-reads auth when cred files change on disk.
-- **v2 Tier 3 — Protocol & UX:** `pending_edit` diff preview for Anthropic Subscription turns, command forwarding (`set_permission_mode`, `set_model`, `retry`) through a versioned protocol. Codex MCP remains intentionally deferred — the upstream Codex SDK does not yet expose MCP hooks.
+- **v2 Tier 3 — Protocol & UX:** `pending_edit` diff preview for Anthropic Subscription turns and command forwarding (`set_permission_mode`, `set_model`, `retry`) through a versioned protocol.
 - **v2 Tier 4 — Observability & updates:** sidecar lifetime stats (uptime, restart count, last-exit reason), per-provider launch counters surfaced to the UI, and a documented Tauri auto-updater setup.
 - **Refresh-token aware expiry:** `provider_auth` now treats expired access tokens as `ready` when a refresh token is present, avoiding spurious "please log in" prompts for subscription users whose SDK / CLI would have refreshed on next use anyway.
 - **v3 — Protocol additions for the Agents pane:** typed image attachments on `start_session` / `send_message`; `mergedContent` on `edit_response` (per-hunk acceptance); `batchId`/`batchSize` on `permission_request`; `resumeToken` on `done`; new `plan_block` event mirroring `TodoWrite`; `tool_output_extended` event with Bash exit code + stdout/stderr + Write/Edit modified paths; `turn_summary` event for live mid-stream token totals.
@@ -312,9 +324,8 @@ The sidecar work is complete across the original four v2 tiers and the v3–v11 
 - **v11 — frozen MCP trust authority:** PacketADE-managed MCP servers receive a
   per-session read/write/network/root/tool snapshot with conservative legacy
   migration and non-overridable denial floors. Anthropic Subscription, OpenAI
-  Agents SDK, and in-process providers enforce it. Codex CLI still manages MCP
-  separately through `codex mcp`, so the Hub labels that provider boundary
-  rather than claiming enforcement it does not have.
+  Agents SDK, and in-process providers enforce it directly. Codex CLI receives
+  the same authority through a generated local MCP trust proxy.
 - **Codex absorption:** Codex `todo_list` items map to the existing `plan_block` event; `reasoning_tokens` + `cached_input_tokens` flow into `turn_summary` so CostDashboard reports GPT-5.5 spend correctly; `turn_summary.address` carries the MultiAgentV2 sub-agent path (`/root/agent_a` etc.) so child token totals attribute to a per-address bucket on the conversation instead of the root.
 - **OpenAI Agents SDK provider:** `api-openai-agents` runs in the sidecar with the same OpenAI API key as `api-openai`, preserving the existing Agents pane event contract while leaving the stable Rust OpenAI API provider and Codex subscription provider untouched. The default `auto` mode requires approval before `bash` / `write_file`.
 - **Standalone exe sidecar fix:** the Tauri shell plugin on Windows resolves `app.shell().sidecar("node")` to `<exe_dir>/node-<target-triple>.exe`, and the call is gated by an explicit `shell:allow-execute` capability entry. `build.rs` now copies `binaries/node-<triple>.<ext>` into the cargo output directory at compile time, and `capabilities/default.json` grants the `node` sidecar entry — so running `target/<profile>/packetade.exe` directly (without installing the MSI/NSIS) no longer reports the sidecar as down.

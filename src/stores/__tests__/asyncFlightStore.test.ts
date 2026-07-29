@@ -582,7 +582,7 @@ describe("asyncFlightStore terminal cleanup and publishing", () => {
       status: "reviewing",
       target: {
         kind: "ssh",
-        targetId: "server-1",
+        serverId: "server-1",
         basePath: "/srv/repo",
         worktreePath: "/srv/repo/.packetade-worktrees/att-running",
       },
@@ -803,7 +803,7 @@ describe("buildReassignSpec (E4)", () => {
   it("returns null for an SSH attempt whose server is no longer configured", () => {
     const failedSsh: Attempt = {
       ...failedLocal,
-      target: { kind: "ssh", targetId: "srv-x", basePath: "/repo", worktreePath: "/repo/wt" },
+      target: { kind: "ssh", serverId: "srv-x", basePath: "/repo", worktreePath: "/repo/wt" },
     };
     expect(buildReassignSpec(failedSsh, "api-openai", noServer)).toBeNull();
   });
@@ -811,7 +811,7 @@ describe("buildReassignSpec (E4)", () => {
   it("rebuilds an SSH target from the saved server config", () => {
     const failedSsh: Attempt = {
       ...failedLocal,
-      target: { kind: "ssh", targetId: "srv-1", basePath: "/repo", worktreePath: "/repo/wt" },
+      target: { kind: "ssh", serverId: "srv-1", basePath: "/repo", worktreePath: "/repo/wt" },
     };
     const server = {
       id: "srv-1",

@@ -1,15 +1,9 @@
 # Send to Monitor - Multi-Monitor Operations Plan
 
-Last updated: 2026-05-29
+Last updated: 2026-07-29
 
-Status: **Paused after planning. Do not implement until the current feature and
-bug-check pass is complete.**
-
-> **Stale surfaces (noted 2026-07-24):** this pre-refactor plan names UI that has
-> since been retired — `AgentsView`/the "Agents pane" (folded into the workspace
-> `ConversationTile`/`AgentChatPane`) and `ReviewQueueView`/the "Review queue"
-> (no longer exists). Retarget those integration points to the current workspace
-> surfaces before any implementation.
+Status: **V1 Agent + Flight Monitor source implemented; packaged multi-display
+proof and later expansion remain.**
 
 ## Summary
 
@@ -24,6 +18,19 @@ Product rule:
 
 > PacketADE does not pop out side panels. It sends operational views to monitors.
 
+Implemented v1 footprint:
+
+- `commands/monitor_windows.rs` owns one `monitor-main` lease/route registry.
+- `capabilities/monitor.json` grants window chrome/events only; it grants no
+  shell, filesystem, process, PTY, agent, approval, deploy, settings, or keyring
+  plugin permission.
+- `main.tsx` selects `MonitorApp` through the branded monitor query key without
+  mounting the full main shell.
+- `MonitorApp` renders persisted AgentConversation or Flight projections,
+  refreshes them read-only, and routes `Focus in Main Window` through a backend
+  event.
+- Agent header and Flight header actions open or reroute the Monitor.
+
 The feature is useful for multi-display setups while reinforcing PacketADE's
 identity as an agent operations desk rather than an editor with a detachable
 chat panel.
@@ -33,10 +40,10 @@ chat panel.
 | Decision                                    | Current answer                                           |
 | ------------------------------------------- | -------------------------------------------------------- |
 | Should the Agents pane pop out?             | No. Keep the left rail anchored as the dispatch surface. |
-| Should PacketADE support multiple monitors? | Yes, through Monitor windows.                            |
+| Should PacketADE support multiple monitors? | Later; v1 reuses one `monitor-main` window.               |
 | Should Monitor windows be writable?         | Not in v1. Start read-only / control-lite.               |
 | Should v1 support arbitrary pane detach?    | No. Only approved monitor surfaces.                      |
-| Should this be implemented now?             | No. Feature is documented and paused.                    |
+| Should this be implemented now?             | V1 is implemented; later surfaces remain gated.           |
 
 ## Product Positioning
 
@@ -467,9 +474,11 @@ tools and follow-on agent surfaces, not PacketADE Monitor windows.
 
 ## Implementation Sprints
 
-Implementation is paused. When resumed, use this order.
+V1 used this order. Later work should continue from Sprint 4.
 
 ### Sprint 1 - Window Foundation
+
+Status: **complete in source**
 
 Owner slice:
 
@@ -487,6 +496,8 @@ Acceptance:
 
 ### Sprint 2 - Agent Monitor
 
+Status: **complete in source**
+
 Owner slice:
 
 - `agent_conversation` route
@@ -503,6 +514,8 @@ Acceptance:
 
 ### Sprint 3 - Flight Monitor
 
+Status: **complete in source**
+
 Owner slice:
 
 - reusable flight detail components
@@ -518,6 +531,8 @@ Acceptance:
 
 ### Sprint 4 - Approval and Cost Monitors
 
+Status: **later**
+
 Owner slice:
 
 - read-only approval monitor
@@ -531,6 +546,8 @@ Acceptance:
 - cost warnings and guardrails render read-only
 
 ### Sprint 5 - Multi-Window Expansion
+
+Status: **later**
 
 Owner slice:
 
@@ -546,6 +563,8 @@ Acceptance:
 - unplugged/missing display falls back safely
 
 ### Sprint 6 - Workspace / Terminal Monitor Spike
+
+Status: **later; blocked on a safe PTY attachment model**
 
 Owner slice:
 
@@ -597,22 +616,24 @@ Manual:
    changes route.
 8. Delete or complete the source entity and confirm stale-state behavior.
 
-## Open Decisions
+## Decision Closure
 
-- Should v1 use only `monitor-main`, or immediately support multiple Monitor
-  windows?
-- Should Monitor windows close automatically when main closes?
-- Should Approval Monitor ever support approving from the monitor, or always
-  route back to main?
-- What is the first shipped pair: Agent + Flight, or Agent + Cost?
-- Should `Send to Monitor` appear in command palette?
-- Should Monitor routes be deep-linkable later through an OS protocol?
+- V1 uses only `monitor-main`; sending another entity focuses and reroutes it.
+- Monitor is a child app window and is expected to close with the main process;
+  packaged platform proof remains.
+- Approval Monitor, when added, stays read-only and routes action back to main.
+- The first pair is Agent + Flight.
+- `Send to Monitor` is on Agent and Flight source surfaces, not the command
+  palette.
+- URL query parameters select the boot shell only; backend leases remain the
+  authority. OS deep links are later.
 
 ## Recommendation When Resumed
 
-Ship **Agent Monitor + Flight Monitor** first. They prove the multi-monitor
-identity and the Tauri multi-window foundation without touching the risky PTY
-ownership path.
+Agent Monitor + Flight Monitor are implemented with one backend-leased window,
+a separate frontend boot shell, and a narrow Tauri capability. The app polls
+persisted read projections without mounting the full App or PTY-owning
+components, and routes actions back to the main window.
 
-Do not start with terminal/workspace monitors. They need a separate
-session-attachment design before they are safe.
+Next proof is the packaged manual matrix above. Do not start terminal/workspace
+monitors until a separate session-attachment design makes them safe.

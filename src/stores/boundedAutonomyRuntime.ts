@@ -28,7 +28,10 @@ function currentFlight(flightId: string): Flight | undefined {
   return useFlightStore.getState().flights.find((flight) => flight.id === flightId);
 }
 
-function updateRuntime(flightId: string, update: (runtime: AutonomyRuntime) => AutonomyRuntime): void {
+function updateRuntime(
+  flightId: string,
+  update: (runtime: AutonomyRuntime) => AutonomyRuntime,
+): void {
   const flight = currentFlight(flightId);
   if (!flight?.autonomyRuntime) return;
   useFlightStore.getState().updateFlight(flightId, {
@@ -77,7 +80,7 @@ function stopForAttention(flightId: string, reason: string): void {
 }
 
 function targetForAttempt(attempt: Attempt): string {
-  return attempt.target.kind === "ssh" ? attempt.target.targetId : "local";
+  return attempt.target.kind === "ssh" ? attempt.target.serverId : "local";
 }
 
 function rootForAttempt(attempt: Attempt): string {
@@ -258,7 +261,15 @@ async function syncReview(flight: Flight): Promise<void> {
       continue;
     }
     if (gate.status === "error") {
-      if (completedAction(flight, "retry_review", attempt.id, "reviewerConversationId", reviewerConversationId)) {
+      if (
+        completedAction(
+          flight,
+          "retry_review",
+          attempt.id,
+          "reviewerConversationId",
+          reviewerConversationId,
+        )
+      ) {
         continue;
       }
       await performAutonomyAction(
@@ -380,9 +391,7 @@ async function syncOneFlight(flight: Flight): Promise<void> {
     action: "continue",
     root: flight.projectPath,
     targetId:
-      flight.integrationBranch?.targetKind === "ssh"
-        ? flight.integrationBranch.targetId
-        : "local",
+      flight.integrationBranch?.targetKind === "ssh" ? flight.integrationBranch.targetId : "local",
   });
   if (!continuation.allowed) {
     if (continuation.hardStop) stopForAttention(flight.id, continuation.reason);

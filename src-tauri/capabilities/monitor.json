@@ -1,0 +1,15 @@
+{
+  "identifier": "monitor",
+  "description": "Read-only chrome and event permissions for Monitor windows",
+  "windows": ["monitor-*"],
+  "permissions": [
+    "core:event:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-close",
+    "core:window:allow-is-maximized",
+    "core:window:allow-toggle-maximize"
+  ]
+}

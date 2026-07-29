@@ -165,6 +165,7 @@ pub fn run() {
         .manage(std::sync::Arc::new(QualityRunnerState::new()))
         .manage(std::sync::Arc::new(CodeQualityAutoFixState::new()))
         .manage(mcp_server::create_mcp_server_state())
+        .manage(commands::monitor_windows::MonitorWindowRegistry::default())
         .manage(commands::project_memory::ProjectMemoryWatchState::default())
         .setup(|app| {
             // Spawn the Node agent sidecar and stash the supervisor in
@@ -338,6 +339,8 @@ pub fn run() {
             commands::github::github_get_authenticated_user,
             commands::github::github_list_issues,
             commands::github::github_get_issue,
+            commands::github::github_create_issue,
+            commands::github::github_update_issue,
             commands::github::github_create_pr,
             commands::github::github_list_prs,
             commands::github::github_get_pr_diff,
@@ -352,6 +355,7 @@ pub fn run() {
             commands::github::github_set_issue_milestone,
             commands::github::github_list_repo_labels,
             commands::github::github_list_repo_milestones,
+            commands::github::github_create_repo_milestone,
             commands::github::github_list_repo_assignable_users,
             commands::github::github_list_issues_page,
             commands::github::github_list_prs_page,
@@ -424,6 +428,14 @@ pub fn run() {
             commands::api_keys::set_api_key,
             commands::api_keys::get_api_key_exists,
             commands::api_keys::delete_api_key,
+            commands::packet_agent::set_packet_agent_token,
+            commands::packet_agent::get_packet_agent_token_exists,
+            commands::packet_agent::delete_packet_agent_token,
+            commands::packet_agent::packet_agent_request,
+            commands::monitor_windows::open_monitor_window,
+            commands::monitor_windows::get_monitor_window_route,
+            commands::monitor_windows::close_monitor_window,
+            commands::monitor_windows::focus_monitor_route_in_main,
             // Provider auth status probe
             commands::provider_auth::get_provider_auth_status,
             commands::provider_auth::sign_out_provider,

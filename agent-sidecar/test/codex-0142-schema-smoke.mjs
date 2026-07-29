@@ -74,6 +74,18 @@ p.handleEvent({ type: "exec_command_end", stdout: "/tmp\n", exit_code: 0 }, (eve
 const flatStart = flatEmitted.find((event) => event.type === "tool_start");
 const flatResult = flatEmitted.find((event) => event.type === "tool_result");
 
+const corrected = [];
+p.handleEvent({ type: "agent_message_delta", delta: "The answer is 41." }, (event) =>
+  corrected.push(event),
+);
+p.handleEvent({ type: "agent_message", message: "The answer is 42." }, (event) =>
+  corrected.push(event),
+);
+const correctedText = corrected
+  .filter((event) => event.type === "chunk")
+  .map((event) => event.text)
+  .join("");
+
 const failures = [];
 if (!text.includes("sample.txt"))
   failures.push(`agent_message text not mapped to chunk (got: ${JSON.stringify(text)})`);
@@ -86,6 +98,9 @@ if (!flatStart?.toolUseId || flatResult?.toolUseId !== flatStart.toolUseId) {
   failures.push(
     `missing-id flat tool result was not correlated: ${JSON.stringify({ flatStart, flatResult })}`,
   );
+}
+if (!correctedText.includes("corrected its streamed draft") || !correctedText.endsWith("42.")) {
+  failures.push(`corrected terminal text was not reconciled: ${JSON.stringify(correctedText)}`);
 }
 
 if (failures.length > 0) {

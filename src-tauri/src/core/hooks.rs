@@ -182,6 +182,11 @@ pub fn matches_tool_call(matcher: Option<&str>, tool_name: &str, args: &Value) -
 /// Spawn the hook command, pipe `payload` to its stdin as JSON, and capture
 /// stdout / exit code. Bounded to a 5-second timeout.
 pub async fn run_hook(hook: &HookConfig, payload: Value) -> Result<HookResult, String> {
+    // `serde_json::Value` should always serialize. If it does not, sending an
+    // empty object would let the hook make a decision against false evidence,
+    // so fail the hook before a child process is started.
+    let body = serde_json::to_vec(&payload)
+        .map_err(|e| format!("Failed to serialize hook payload to JSON: {e}"))?;
     let mut cmd = if cfg!(windows) {
         let mut c = Command::new("cmd");
         c.arg("/C").arg(&hook.command);
@@ -206,16 +211,6 @@ pub async fn run_hook(hook: &HookConfig, payload: Value) -> Result<HookResult, S
 
     // Pipe the payload to stdin and drop the handle so the child sees EOF.
     if let Some(mut stdin) = child.stdin.take() {
-        let body = match serde_json::to_vec(&payload) {
-            Ok(b) => b,
-            Err(e) => {
-                warn!(
-                    error = %e,
-                    "Hooks: failed to serialize hook payload to JSON; falling back to empty object"
-                );
-                b"{}".to_vec()
-            }
-        };
         if let Err(e) = stdin.write_all(&body).await {
             warn!(error = %e, "Hooks: failed to write payload to hook stdin");
         }

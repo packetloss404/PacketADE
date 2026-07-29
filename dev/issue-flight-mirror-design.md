@@ -1,9 +1,9 @@
 # Issue ⇄ Flight Two-Way Mirroring — Design (GP7 gate)
 
 Created: 2026-07-25
-Gates: [`github-pane-v9-loop.md`](./github-pane-v9-loop.md) → **GP7**. Code is
-blocked on this design being reviewed — two-way sync is the one item in the loop
-with real conflict/collision risk, so we land the model first.
+Last updated: 2026-07-29
+Status: P0–P3 source implemented; packaged GitHub/Gitea proof remains
+Gates: [`github-pane-v9-loop.md`](./github-pane-v9-loop.md) → **GP7**
 
 ## Goal
 
@@ -143,6 +143,20 @@ Design + decisions are **locked**. Implementation is the phased P0→P3 plan.
   trichotomy, so P1/P2 don't re-decide it.
 - `hasPendingChange` — advisory coarse fence gate (not authoritative).
 
-**Next: P1 (push-only I/O)** builds on `diffMirrorState.toPush` + the marker;
-then P2 (pull), then P3 (conflict-resolution UI). Do not enable P2 until P1 is
-green. Mapping-B milestone-name derivation is P1 mapping work (not in P0).
+**P1–P3 — LANDED (2026-07-29).**
+
+- `issueFlightMirrorStore.ts` implements opt-in host-routed creation/adoption,
+  mapping-B milestones, task issues, the no-task Flight fallback, explicit
+  sync, and persisted records.
+- The visibility-aware poller runs every 60 seconds, pauses while hidden, and
+  uses `diffMirrorState` plus post-write host/local fences for pull/push.
+- Structured conflicts resolve LWW, preserve both values, render in the Flight
+  card, and remain visible until acknowledged.
+- GitHub/Gitea issue title/body/state/label/milestone writes use the existing
+  active-host seam; hidden body markers recover lost local links without
+  duplication.
+- Flight tasks do not currently own labels. V1 therefore preserves the host's
+  last-agreed label set rather than inventing a parallel task-label model.
+
+Remaining gate: packaged GitHub + Gitea create/adopt/update/pull/conflict,
+hidden-window, restart, and revoked-auth recovery proof.

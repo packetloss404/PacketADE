@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 fn main() {
     tauri_build::build();
+    enable_windows_common_controls();
 
     // Copy the per-triple Node externalBin binary into the cargo output
     // directory alongside `packetade.exe` so the Tauri shell plugin can
@@ -18,6 +19,19 @@ fn main() {
             e
         );
     }
+}
+
+fn enable_windows_common_controls() {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
+    // Tauri's application binary already carries a manifest resource, while
+    // Cargo's library and integration-test harnesses do not. A second resource
+    // collides with Tauri's manifest; the linker dependency is merged into the
+    // existing app manifest and creates one for test executables.
+    println!(
+        "cargo:rustc-link-arg=/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"
+    );
 }
 
 fn copy_per_triple_node() -> Result<(), String> {

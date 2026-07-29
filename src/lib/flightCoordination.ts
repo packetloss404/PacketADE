@@ -17,7 +17,7 @@ const ESCALATION_SUMMARY =
   "No attempt has succeeded — consider reassigning to a different agent, revising the prompt, or reviewing the failures manually.";
 
 function attemptLabel(a: Attempt): string {
-  const where = a.target.kind === "ssh" ? a.target.targetId : "local";
+  const where = a.target.kind === "ssh" ? a.target.serverId : "local";
   return `${a.provider} (${where})`;
 }
 
@@ -210,9 +210,7 @@ export function shouldEscalateStalled(
   thresholdMs = DEFAULT_STALL_THRESHOLD_MS,
 ): boolean {
   if (!isAttemptStalled(attempt, nowMs, thresholdMs)) return false;
-  return !log.some(
-    (e) => e.type === "escalation" && e.metadata?.stalledAttemptId === attempt.id,
-  );
+  return !log.some((e) => e.type === "escalation" && e.metadata?.stalledAttemptId === attempt.id);
 }
 
 /** Append one escalation per newly-stalled running attempt on the flight. */

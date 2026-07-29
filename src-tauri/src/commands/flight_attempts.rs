@@ -182,10 +182,10 @@ fn attempt_claim(attempt: &Attempt) -> Option<PathClaim> {
     let (scope, base_path, case_sensitive) = match &attempt.target {
         AttemptTarget::Local { base_path, .. } => ("local".to_string(), base_path.clone(), false),
         AttemptTarget::Ssh {
-            target_id,
+            server_id,
             base_path,
             ..
-        } => (format!("ssh:{}", target_id), base_path.clone(), true),
+        } => (format!("ssh:{}", server_id), base_path.clone(), true),
     };
     let path = normalize_claimed_path(&base_path, case_sensitive);
     if path.is_empty() {
@@ -739,7 +739,7 @@ pub async fn launch_flight_async(
                     };
                     (
                         AttemptTarget::Ssh {
-                            target_id: cfg.target_id.clone().unwrap_or_default(),
+                            server_id: cfg.target_id.clone().unwrap_or_default(),
                             base_path: base_path.clone(),
                             worktree_path: path,
                         },
@@ -930,14 +930,14 @@ pub async fn cancel_flight_attempt(
         }
         AttemptTarget::Ssh {
             base_path,
-            target_id,
+            server_id,
             ..
         } => {
-            // S4: re-resolve the saved `ServerConfig` by target_id so we can
+            // S4: re-resolve the saved `ServerConfig` by server_id so we can
             // clean up the remote worktree here, pinning the host key via the
             // saved fingerprint — symmetric with the spec-driven cleanup path.
             // Only if the server is gone do we defer to the frontend.
-            match resolve_server_ssh_config(target_id, base_path) {
+            match resolve_server_ssh_config(server_id, base_path) {
                 Some(cfg) => {
                     if let Err(e) =
                         worktree::remove_remote_worktree(&cfg, base_path, &attempt_id).await
@@ -1094,10 +1094,10 @@ pub async fn mark_attempt_status(
             }
             AttemptTarget::Ssh {
                 base_path,
-                target_id,
+                server_id,
                 ..
             } => {
-                let _ = (base_path, target_id);
+                let _ = (base_path, server_id);
                 warn!(
                     attempt = %attempt_id,
                     "SSH worktree cleanup deferred for attempt {} — frontend should invoke cleanup_attempt_worktree_ssh",

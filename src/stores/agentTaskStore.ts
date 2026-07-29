@@ -487,13 +487,11 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     // non-disabled servers, resolved sidecar-side).
     const resolvedMcpIds =
       enabledMcpServerIds ?? useAgentSettingsStore.getState().defaultEnabledMcpServerIds ?? null;
-    // Codex CLI owns a separate `codex mcp` configuration and currently
-    // ignores PacketADE's forwarded MCP servers. Do not persist a snapshot
-    // that PacketADE cannot enforce; the Hub exposes this boundary explicitly.
-    const frozenMcpTrust =
-      agent === "api-openai-codex"
-        ? undefined
-        : await captureMcpTrustSnapshot(projectPath, resolvedMcpIds, isRemoteConversation);
+    const frozenMcpTrust = await captureMcpTrustSnapshot(
+      projectPath,
+      resolvedMcpIds,
+      isRemoteConversation,
+    );
 
     if (!skipBackendStart) {
       await assertCostGuardrailsAllowLaunch(provider);
@@ -1399,7 +1397,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         sshConfig = buildResumeSshConfig(conv.sshTarget, server);
       }
       let frozenMcpTrust = conv.mcpTrustSnapshot;
-      if (frozenMcpTrust === undefined && conv.agent !== "api-openai-codex") {
+      if (frozenMcpTrust === undefined) {
         frozenMcpTrust = await captureMcpTrustSnapshot(
           conv.projectPath,
           conv.enabledMcpServerIds ?? null,
@@ -1460,11 +1458,6 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     const conversation = get().conversations.find((candidate) => candidate.id === conversationId);
     if (!conversation || conversation.mode !== "api") {
       throw new Error("Select an API conversation to reconnect MCP authority.");
-    }
-    if (conversation.agent === "api-openai-codex") {
-      throw new Error(
-        "Codex CLI manages MCP through `codex mcp`; PacketADE cannot reconnect or enforce Hub trust for this provider yet.",
-      );
     }
     if (conversation.messages.some((message) => message.isStreaming)) {
       throw new Error("Wait for or cancel the active turn before reconnecting MCP.");

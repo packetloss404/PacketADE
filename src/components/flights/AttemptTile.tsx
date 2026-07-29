@@ -64,7 +64,7 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
   const [actionError, setActionError] = useState<string | null>(null);
   const messages = conversation?.messages ?? EMPTY_MESSAGES;
 
-  const attemptLabel = attempt.target.kind === "ssh" ? attempt.target.targetId : "local";
+  const attemptLabel = attempt.target.kind === "ssh" ? attempt.target.serverId : "local";
 
   // Notify on transition into "failed" (whether from backend or UI rejection).
   useEffect(() => {
@@ -105,7 +105,7 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
   const targetIcon = attempt.target.kind === "ssh" ? Server : Folder;
   const targetLabel =
     attempt.target.kind === "ssh"
-      ? attempt.target.targetId
+      ? attempt.target.serverId
       : (attempt.target.basePath.split(/[/\\]/).filter(Boolean).pop() ?? "local");
   const acceptance = reviewerGateAllowsAcceptance(flight, attempt);
   const gate = attempt.reviewGate;

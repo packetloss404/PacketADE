@@ -8,13 +8,13 @@ export type ThemeDto = "dark" | "light";
 
 export type GridPositionDto = { row: number, col: number, };
 
-export type WorkspacePaneDto = { id: string, agentId: WorkspaceAgentSlotDto, sessionId: string | null, gridPosition: GridPositionDto, accentColor?: string, pinnedCommands?: Array<string>, taskId?: string, flightId?: string, agentConfigId?: string, initialPrompt?: string, overrideCommand?: string, overrideArgs?: Array<string>, 
+export type WorkspacePaneDto = { id: string, agentId: WorkspaceAgentSlotDto, sessionId: string | null, gridPosition: GridPositionDto, accentColor?: string, pinnedCommands?: Array<string>, taskId?: string, flightId?: string, agentConfigId?: string, initialPrompt?: string, overrideCommand?: string, overrideArgs?: Array<string>,
 /**
  * Pane kind discriminant (tile program, P1-S1). Absent ⇒ terminal. `kind`
  * is the SOLE discriminant; `agent_id` is never overloaded — conversation
  * panes carry the inert carrier `agentId: "terminal"`.
  */
-kind?: string, 
+kind?: string,
 /**
  * Set iff `kind == Some("conversation")`.
  */
@@ -22,7 +22,7 @@ conversationId?: string, };
 
 export type GithubRepoDto = { owner: string, repo: string, };
 
-export type WorkspaceDto = { id: string, name: string, agents: Array<WorkspaceAgentSlotDto>, panes: Array<WorkspacePaneDto>, projectPath: string, prompt?: string, createdAt: number, updatedAt: number, status: WorkspaceStatusDto, bypassPermissions?: boolean, modelOverrides?: { [key in string]?: string | null }, effortOverrides?: { [key in string]?: string | null }, serverId?: string, remoteProjectPath?: string, githubRepo?: GithubRepoDto, 
+export type WorkspaceDto = { id: string, name: string, agents: Array<WorkspaceAgentSlotDto>, panes: Array<WorkspacePaneDto>, projectPath: string, prompt?: string, createdAt: number, updatedAt: number, status: WorkspaceStatusDto, bypassPermissions?: boolean, modelOverrides?: { [key in string]?: string | null }, effortOverrides?: { [key in string]?: string | null }, serverId?: string, remoteProjectPath?: string, githubRepo?: GithubRepoDto,
 /**
  * Tile program (P1-S2): `"conversation"` for auto-materialized
  * conversation wrappers, else absent. Inert `#[ts(optional)]` mirror of
@@ -74,7 +74,7 @@ export type TaskResultDto = { exitCode: number | null, summary: string, filesCha
 
 export type ReviewPacketDto = { id: string, taskId: string, flightId: string, milestoneId: string, requestedAt: number, reviewType: ReviewTypeDto, summary: string, diff?: string, command?: string, filePaths: Array<string>, agentId?: string, sessionId?: string, };
 
-export type TaskDto = { id: string, milestoneId: string, flightId: string, title: string, description: string, order: number, status: TaskStatusDto, type: TaskTypeDto, agentConfigId: string, agentArgs?: Array<string>, model?: string, dependsOn: Array<string>, sessionId: string | null, result?: TaskResultDto, reviewPacket?: ReviewPacketDto, createdAt: number, startedAt?: number, completedAt?: number, cost: number, tokens: number, 
+export type TaskDto = { id: string, milestoneId: string, flightId: string, title: string, description: string, order: number, status: TaskStatusDto, type: TaskTypeDto, agentConfigId: string, agentArgs?: Array<string>, model?: string, dependsOn: Array<string>, sessionId: string | null, result?: TaskResultDto, reviewPacket?: ReviewPacketDto, createdAt: number, startedAt?: number, completedAt?: number, cost: number, tokens: number,
 /**
  * Legacy autonomous-Planner replan count; read-compatible only.
  */
@@ -84,7 +84,7 @@ export type MilestoneDto = { id: string, flightId: string, title: string, descri
 
 export type AttemptStatusDto = "queued" | "provisioning" | "running" | "reviewing" | "completed" | "failed" | "cancelled";
 
-export type AttemptTargetDto = { "kind": "local", basePath: string, worktreePath: string, } | { "kind": "ssh", targetId: string, basePath: string, worktreePath: string, };
+export type AttemptTargetDto = { "kind": "local", basePath: string, worktreePath: string, } | { "kind": "ssh", serverId: string, basePath: string, worktreePath: string, };
 
 export type ReviewGateVerdictDto = "pass" | "changes_requested" | "blocked";
 
@@ -138,7 +138,20 @@ export type CoordinationAcknowledgementDto = { by: CoordinationMessagePartyDto, 
 
 export type CoordinationMessageDto = { schemaVersion: 1, id: string, flightId: string, kind: CoordinationMessageKindDto, sender: CoordinationMessagePartyDto, recipient: CoordinationMessageRecipientDto, body: string, artifacts: Array<CoordinationArtifactRefDto>, status: CoordinationDeliveryStatusDto, createdAt: number, deliveredAt?: number, acknowledgements: Array<CoordinationAcknowledgementDto>, replyToId?: string, dedupeKey: string, hopCount: number, errorMessage?: string, };
 
-export type AttemptDto = { id: string, flightId: string, target: AttemptTargetDto, agentConfigId: string, model: string, provider: string, branch: string, baseBranch: string, sessionId: string, status: AttemptStatusDto, startedAt?: number, completedAt?: number, cost: number, tokens: number, errorMessage?: string, failureCategory?: string, reviewGate?: AttemptReviewGateDto, taskId?: string,
+export type AttemptDto = { id: string, flightId: string, target: AttemptTargetDto, agentConfigId: string, model: string, provider: string, branch: string, baseBranch: string, sessionId: string, status: AttemptStatusDto, startedAt?: number, completedAt?: number, cost: number, tokens: number, errorMessage?: string,
+/**
+ * E1: structured failure category (stable snake_case label) derived when
+ * the attempt failed; `None` otherwise.
+ */
+failureCategory?: string,
+/**
+ * RG1: independent reviewer lifecycle and verdict.
+ */
+reviewGate?: AttemptReviewGateDto,
+/**
+ * Cooperative graph task that owns this attempt.
+ */
+taskId?: string,
 /**
  * v0.8-G: when the parent Flight publishes attempts as draft PRs, the
  * resulting PR number is round-tripped here. Optional everywhere
@@ -146,7 +159,15 @@ export type AttemptDto = { id: string, flightId: string, target: AttemptTargetDt
  */
 draftPrNumber?: number, };
 
-export type FlightDto = { id: string, title: string, objective: string, status: FlightStatusDto, priority: FlightPriorityDto, projectPath: string, workspaceId?: string, gitBranch?: string, milestones: Array<MilestoneDto>, linkedSessionIds: Array<string>, issueIds: Array<string>, createdAt: number, updatedAt: number, completedAt?: number, totalCost: number, totalTokens: number, prompt?: string, attempts: Array<AttemptDto>, reviewGatePolicy?: ReviewGatePolicyDto, executionMode?: FlightExecutionModeDto, integrationBranch?: FlightIntegrationBranchDto, coordinationInbox: Array<CoordinationMessageDto>, autonomyMode?: AutonomyFlightModeDto, autonomyPolicy?: AutonomyPolicyDto, autonomyRuntime?: AutonomyRuntimeDto,
+export type FlightDto = { id: string, title: string, objective: string, status: FlightStatusDto, priority: FlightPriorityDto, projectPath: string, workspaceId?: string, gitBranch?: string, milestones: Array<MilestoneDto>, linkedSessionIds: Array<string>, issueIds: Array<string>, createdAt: number, updatedAt: number, completedAt?: number, totalCost: number, totalTokens: number, prompt?: string, attempts: Array<AttemptDto>,
+/**
+ * RG1: opt-in reviewer policy. Absent means disabled.
+ */
+reviewGatePolicy?: ReviewGatePolicyDto,
+/**
+ * Cooperative execution is opt-in; absent means independent.
+ */
+executionMode?: FlightExecutionModeDto, integrationBranch?: FlightIntegrationBranchDto, coordinationInbox: Array<CoordinationMessageDto>, autonomyMode?: AutonomyFlightModeDto, autonomyPolicy?: AutonomyPolicyDto, autonomyRuntime?: AutonomyRuntimeDto,
 /**
  * Normal API-agent conversation used to refine the current upfront plan.
  */
@@ -154,29 +175,29 @@ planningConversationId?: string,
 /**
  * Legacy autonomous-Planner session id; read-compatible only.
  */
-plannerSessionId?: string, 
+plannerSessionId?: string,
 /**
  * Legacy autonomous-Planner status; read-compatible only.
  */
-plannerStatus?: PlannerStatusDto, 
+plannerStatus?: PlannerStatusDto,
 /**
  * Legacy autonomous-Planner cost; read-compatible only.
  */
-plannerCost?: number, 
+plannerCost?: number,
 /**
  * Legacy autonomous-Planner token count; read-compatible only.
  */
-plannerTokens?: number, 
+plannerTokens?: number,
 /**
  * Legacy autonomous-Planner provider id; read-compatible only.
  */
-plannerProvider?: string, 
+plannerProvider?: string,
 /**
  * v0.8-G: when true on an async-mode Flight, the executor pipeline
  * pushes each attempt's branch and opens a draft PR after the attempt
  * reaches a terminal state. Persisted so the toggle round-trips.
  */
-publishAttemptsAsPrs: boolean, 
+publishAttemptsAsPrs: boolean,
 /**
  * N3: append-only coordination timeline. Frontend-owned schema (opaque
  * here) — round-trips so handoff/escalation events survive reload.

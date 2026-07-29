@@ -7,17 +7,6 @@ it from here.
 Priority: **P1** = real bug or major user-facing gap · **P2** = correctness/UX
 · **P3** = cleanup.
 
-## Cross-cutting reliability
-
-- **P3 — auth-watcher edge cases.** The new trailing-edge debounce has no
-  max-wait cap (a cred file rewritten with <500 ms gaps indefinitely never emits —
-  theoretical; real logins settle) and doesn't flush a pending emit if the channel
-  closes mid-burst (teardown-only, inconsequential).
-- **P3 — Codex flat-path suffix assumption.** G10's `text.slice(flatTextEmitted)`
-  assumes the terminal `agent_message` is a length-extension of the concatenated
-  deltas; a _corrected_ terminal text would be mis-emitted. Matches the existing
-  0.135 item-path assumption; only manifests if Codex diverges.
-
 ## Dictation reliability and BridgeVoice response
 
 Canonical repair record:
@@ -99,12 +88,6 @@ them up before that gate clears.
   with remote Codex auth + installed sidecar. Follow
   `dev/sidecar-over-ssh-verification.md` step 12. Environment-gated (no SSH
   server configured in the dev env).
-- **P3 — Rename `target_id` → `server_id` across the wire (S7).** Deferred:
-  the wire type is the ts-rs–generated `AttemptTargetDto`, so the rename needs
-  `pnpm generate:tauri-schema` + `check:tauri-schema`, both of which run a
-  `cargo test` that can't execute under WSL. Do on a native build (rename the
-  Rust field with `#[serde(alias="target_id")]` read shim + a deser test, regen
-  the schema, then sweep the ~14 `attempt.target.targetId` FE sites).
 - **P3 — Windows-OpenSSH remote hosts (S9).** `ssh_check_remote_path` and the
   remote git scaffolding assume a POSIX remote shell (`[ -e ... ]`, `dirname`,
   heredocs); they break where the remote default shell is cmd.exe/PowerShell.
@@ -200,17 +183,20 @@ Deferred items called out in `dev/multi-platform-build.md` and
 
 ### PacketAgent deployment handoff
 
-- **Approved — Option B: deploy and supervise.** Implement the PacketADE PH1–PH10
-  loop in
+- **Source consumer implemented — Option B: deploy and supervise.** PacketAgent
+  published W9 at commit `dd8a5c93779a9ecc8af96bb232adcb5be0bdf16e`.
+  PacketADE now pins that contract, reproduces its canonical fixture digest,
+  stores the bearer token only in the OS keyring, validates/deploys/activates
+  Flight packages, persists deployment/cursor references, polls and
+  acknowledges ordered events, surfaces evidence, and provides
+  inspect/pause/resume/revoke controls. The detailed PH1–PH10 status is in
   [`dev/bridgemind/packetagent-handoff-loop.md`](./dev/bridgemind/packetagent-handoff-loop.md)
-  against PacketAgent W9 and its versioned `WorkerPackage` contract. PacketADE
-  validates, deploys, activates, reconnects, displays events/evidence, and
-  exposes Pause/Resume/Stop/approval controls. PacketAgent owns durable
-  execution after PacketADE closes. PH1–PH10 remain blocked until their named
-  PacketAgent W1–W9 dependencies exist; do not fake durability in the desktop
-  process. PacketAgent is actively being implemented in its own repository and
-  Codex project. This repository owns only the PacketADE handoff consumer and
-  begins PH1 when that active project publishes the frozen W9 schema/fixtures.
+  and remains cross-repository. Still open: a live W9 close/restart/reconnect
+  gate with configured credentials; direct PacketADE approval responses
+  (PacketAgent W9 publishes attention events but no approval-response route);
+  task/conversation source builders; richer attention/cost projection; and a
+  packaged evidence/artifact return-and-land matrix. PacketAgent continues to
+  own durable execution after PacketADE closes.
 
 ### Runtime audit (2026-07-19)
 
@@ -318,13 +304,16 @@ source of truth is
 > [`issue-flight-mirror-design.md`](./dev/issue-flight-mirror-design.md)) all
 > landed. Peer-reviewed. Only the design-gated sync code remains:
 
-- **P3 — Issue ⇄ Flight two-way mirroring (code).** Decisions locked; see
+- **P2 — Issue ⇄ Flight live host proof.** The P0–P3 source implementation is
+  complete: mapping-B task issues grouped under a Flight milestone, fallback
+  Flight issue, hidden-marker adoption, GitHub/Gitea host routing, 60-second
+  visibility-aware pull/push, revision fences, LWW conflict preservation, and
+  an acknowledgement UI. See
   [`dev/issue-flight-mirror-design.md`](./dev/issue-flight-mirror-design.md).
-  **P0 landed** (`src/lib/issueFlightMirror.ts` — pure `diffMirrorState` planner,
-  `MirrorRecord`/`advanceMirrorRecord`, body-marker helpers, `resolveMirrorTarget`;
-  36 tests, peer-reviewed). Remaining: **P1** push-only I/O (build issues from
-  Flight state via `diffMirrorState.toPush` + the marker), then **P2** pull, then
-  **P3** conflict-resolution UI — each gated. Do not enable P2 until P1 is green.
+  Run the packaged GitHub + Gitea matrix (create/adopt/update/pull/conflict,
+  hidden-window pause, restart, and revoked-auth recovery). Flight tasks do not
+  yet own labels, so v1 preserves host labels rather than inventing a second
+  local label model.
 
 ## Git host providers — GitHub + Gitea/Forgejo (dual-config)
 
@@ -373,23 +362,18 @@ source of truth is
 
 ## Local-First MCP Hub (BridgeMCP response)
 
-- **P2 — live/packaged MCP Hub proof.** MCPH1–MCPH2/MCPH5–MCPH7 source work is complete:
+- **P2 — live/packaged MCP Hub proof.** MCPH1–MCPH7 source work is complete:
   lossless config inventory, official review-before-add catalog, stdio doctor,
-  frozen per-session trust in sidecar protocol v11 and in-process providers,
-  redacted Hub audit, explicit reconnect, and suite resources for Flights,
-  Issues, coordination, reviews, Memory, workspaces, and PacketCode health.
-  Complete MCPH3/MCPH8 with real local + SSH server crash/reload/version-skew,
-  offline install/removal, trust downgrade/reconnect, and packaged provider
-  smoke. Streamable HTTP/SSE config is preserved but the local doctor probes
-  stdio only; stdio child-process network access is not an OS sandbox.
-- **P2 — Codex CLI MCP trust boundary (MCPH4).** Anthropic Subscription,
-  OpenAI Agents SDK, and in-process providers enforce the protocol-v11
-  snapshot. Codex CLI ignores PacketADE's forwarded server set and manages a
-  separate `codex mcp` configuration, so the Hub now discloses that boundary
-  and refuses its reconnect action. Close MCPH4 only after a supported Codex
-  transport/config mechanism can apply and verify the same frozen authority;
-  live remote-profile parity remains part of the gate.
-
+  frozen per-session trust in protocol v11 and in-process providers, and the
+  Codex CLI trust proxy that exposes only the frozen allowlisted server/tool
+  surface and re-checks path/write denial floors at call time. The Hub also has
+  redacted audit, explicit reconnect, and suite resources for Flights, Issues,
+  coordination, reviews, Memory, workspaces, and PacketCode health. Complete
+  MCPH3/MCPH8 with a real Codex CLI plus local/SSH crash/reload/version-skew,
+  offline install/removal, trust downgrade/reconnect, remote-profile parity,
+  and packaged provider smoke. Streamable HTTP/SSE config is preserved but the
+  local doctor probes stdio only; stdio child-process network access is not an
+  OS sandbox.
 ## Trust and provenance
 
 - **P2 — packaged provenance parity proof.** TP1–TP7 source work is complete:
@@ -400,53 +384,69 @@ source of truth is
   transport parity, MCP remote, restart, YOLO, and packaged visual/manual
   smoke. Do not weaken denial floors to make a provider pass.
 
-## Product tracks (from `dev/README.md`)
-
-- **P3 — Open the git diff editor from a review packet.** The packet already
-  deep-links to approval; add the direct diff-editor route.
-- **P3 — Prompt-library command-palette integration.** See
-  `dev/zen-workspace/features-prompt-library.md`.
-
 ## Rust audit follow-ups (from v0.9.2 / v0.9.3 Phase C+D waves)
 
 Only unresolved follow-ups remain here; shipped audit work is in `CHANGELOG.md`.
 
-### LLM provider stack
-
-- **P3 — Ollama usage discovery.** MiniMax now requests usage, but older Ollama
-  builds reject the same option. Detect supported Ollama versions/capabilities
-  before enabling it so local token/cost reporting is not permanently zero.
-
-### Tool runtime
-
 ### MCP / workspace / runtime
 
-- **P3 — `worktree.rs` `attempt_id` ASCII sanitization.** Today the
-  callers always pass UUIDs from `commands/flight_attempts.rs` / `commands/git.rs`,
-  but the public function has no defence-in-depth. Tighten to
-  ASCII-alphanumeric + `-_`.
 - **P3 — `core/mcp_bridge.rs::resolve_mcp_name` per-call server
   re-spawn.** Every `mcp__*` tool call re-spawns every enabled MCP
   server and re-runs `tools/list`. Cache the advertised-name →
   (server, tool) map at agent-session start.
-- **P3 — `core/hooks.rs:205` payload-serialize fallback.** It logs
-  before falling back to `b"{}"` (landed in v0.9.3), but consider
-  whether `serde_json::Value` failing to encode is recoverable at
-  all — could promote to error.
-- **P3 — `core/pty.rs:253-263` reader-thread error spin.** Only
-  `BrokenPipe` exits the loop; a persistent OS-level error retries
-  silently. Log once per error kind to make the spin visible.
 
-### Test gaps (carried from earlier in the session)
+## Monitor windows
 
-- **P3 — `InvestigationPanel` Draft-patch error path missing test.**
-- **P3 — `PendingApprovalsSection` Y/N keyboard edge cases missing
-  test** (e.g., focused inside an input — should not consume).
-- **P3 — `forkAndResend` should clear `agentPlanStore`.** 1-line
-  follow-up from the v0.9.0 S1 refactor.
-- **P3 — `IssueCommentList.tsx` duplicate `timeAgo` helper.**
-  Surface caught during the v0.9.1 T2c dedup pass; not addressed
-  because it lives outside the GitHubView surface that owned T2c.
+- **P2 — packaged/manual Monitor proof.** The read-only v1 source is complete:
+  one reusable backend-leased `monitor-main`, narrow Tauri capability, separate
+  boot shell, Agent and Flight projections, source-surface actions, safe stale
+  states, and focus-back-to-main routing. Run the packaged multi-display matrix,
+  verify the Monitor window closes with the main process on each platform, and
+  add frontend capability-denial integration proof. Approval/Cost monitors,
+  saved bounds, multiple simultaneous Monitor windows, and PTY attachment stay
+  later; terminal mirroring must not mount or own the live PTY.
+
+## Workspace, Agents, and Settings decision
+
+Canonical evidence:
+[`dev/workspace-agent-settings-decision-2026-07-29.md`](./dev/workspace-agent-settings-decision-2026-07-29.md).
+The report is advisory until the owner approves the surface and Settings
+decisions. Do not delete the current conversation engine or persisted
+conversation panes as cleanup.
+
+- **P1 — decide the Workspace/Agents split.** Recommended target: CLI-first
+  Workspaces with PacketCode first when installed, plus a first-class Agents
+  surface for API/subscription conversations. Implement the Agents surface in
+  the main window first. Preserve old conversation-pane read compatibility and
+  an explicit attach/open handoff during dogfood.
+- **P2 — detachable interactive Agents window prerequisite.** Move canonical
+  conversation/approval/persistence ownership behind a single-writer broker or
+  versioned Rust state before allowing a second interactive WebView. The
+  current read-only Monitor does not prove multi-writer safety.
+- **P1 — enforce or remove placebo Settings controls.** AI Provider Routing
+  has no production consumer; Agent launch-location and rail-collapse defaults
+  are unused; PacketADE MCP-provider scope/tool checkboxes are not passed to or
+  enforced by Rust. Hide/disable them until their effective runtime policies
+  are observable.
+- **P1 — complete or hide SSH password configuration.** Settings offers
+  Password auth but cannot write/delete the keyring secret. Add secure
+  set/delete plus host-key/auth/base-path Test, or remove the option from new
+  server setup. Never persist the password in frontend state or DTOs.
+- **P1 — make safety-setting persistence authoritative.** Flight/autonomy
+  settings currently report Saved before the unawaited backend write completes.
+  Add awaitable revisioned saves, dirty/saved/error UI, and race-proof draft
+  handling.
+- **P2 — Settings identity and navigation correctness.** Add scoped Settings
+  deep links, use stable scoped MCP server IDs, show the real active local/SSH
+  Workspace in Project settings, and validate provider-aware profile
+  model/tool choices.
+- **P2 — reorganize Settings into six groups.** General; Workspaces & Terminal;
+  Agents & Models; Automation; Integrations & Data; Security & Diagnostics.
+  Add search and App/Project/Workspace/New-conversation/New-Flight scope badges.
+- **P2 — add CLI-first preferences and diagnostics.** Terminal appearance and
+  behavior, shell/environment, Workspace restore/template defaults, default CLI
+  and model, worktree cleanup, external editor, and a consolidated
+  CLI/provider/SSH doctor are the major missing Settings capabilities.
 
 ## Reliability audit follow-ups
 

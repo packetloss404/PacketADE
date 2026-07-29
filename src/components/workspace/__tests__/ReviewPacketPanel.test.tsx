@@ -107,6 +107,37 @@ describe("ReviewPacketPanel", () => {
     expect(screen.getByText("-old")).toBeInTheDocument();
   });
 
+  it("opens the authoritative working-tree diff for the packet file", () => {
+    const onOpenDiff = vi.fn();
+    const flights = [
+      flight([
+        task({
+          reviewPacket: {
+            id: "rp-diff",
+            taskId: "task-1",
+            flightId: "flight-1",
+            milestoneId: "ms-1",
+            requestedAt: 1,
+            reviewType: "file_write",
+            summary: "Review this file.",
+            filePaths: ["src/lib/notifications.ts"],
+          },
+        }),
+      ]),
+    ];
+    render(
+      <ReviewPacketPanel
+        refs={[ref()]}
+        flights={flights}
+        onOpenFlight={vi.fn()}
+        onOpenDiff={onOpenDiff}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Open diff"));
+    expect(onOpenDiff).toHaveBeenCalledWith("src/lib/notifications.ts");
+  });
+
   it("flags a pending approval and deep-links into the flight", () => {
     const onOpenFlight = vi.fn();
     const flights = [flight([task({ status: "approval_needed" })])];
@@ -126,9 +157,7 @@ describe("ReviewPacketPanel", () => {
 
   it("deep-links to the approval when a live prompt exists for the session", () => {
     const onOpenApproval = vi.fn();
-    const flights = [
-      flight([task({ status: "approval_needed", sessionId: "conv-1" })]),
-    ];
+    const flights = [flight([task({ status: "approval_needed", sessionId: "conv-1" })])];
     render(
       <ReviewPacketPanel
         refs={[ref({ taskStatus: "approval_needed", sessionId: "conv-1" })]}
@@ -144,9 +173,7 @@ describe("ReviewPacketPanel", () => {
   });
 
   it("notes when an approval-needed task has no live prompt", () => {
-    const flights = [
-      flight([task({ status: "approval_needed", sessionId: "conv-1" })]),
-    ];
+    const flights = [flight([task({ status: "approval_needed", sessionId: "conv-1" })])];
     render(
       <ReviewPacketPanel
         refs={[ref({ taskStatus: "approval_needed", sessionId: "conv-1" })]}
@@ -158,9 +185,7 @@ describe("ReviewPacketPanel", () => {
       />,
     );
     expect(screen.queryByText("Go to approval")).not.toBeInTheDocument();
-    expect(
-      screen.getByText("Approval prompt not active in this session."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Approval prompt not active in this session.")).toBeInTheDocument();
   });
 
   it("handles a linked task with no review packet", () => {
@@ -173,9 +198,7 @@ describe("ReviewPacketPanel", () => {
         onClose={vi.fn()}
       />,
     );
-    expect(
-      screen.getByText("No review packet recorded for this task yet."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("No review packet recorded for this task yet.")).toBeInTheDocument();
   });
 
   it("shows a fallback when the flight is gone", () => {

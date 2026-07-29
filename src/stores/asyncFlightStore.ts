@@ -140,7 +140,7 @@ export function buildReassignSpec(
       model,
     };
   }
-  const server = lookupServer(failed.target.targetId);
+  const server = lookupServer(failed.target.serverId);
   if (!server) return null;
   return {
     kind: "ssh",
@@ -381,7 +381,7 @@ async function publishAttemptAsDraftPr(flight: Flight, attempt: Attempt): Promis
   const worktreePath = attempt.target.worktreePath;
   let remotePush: (() => Promise<void>) | undefined;
   if (attempt.target.kind === "ssh") {
-    const server = useServerStore.getState().getServer(attempt.target.targetId);
+    const server = useServerStore.getState().getServer(attempt.target.serverId);
     if (!server) {
       patchAttempt(flight.id, attempt.id, {
         errorMessage: "Draft-PR publish skipped: the SSH server for this attempt no longer exists.",
@@ -524,9 +524,9 @@ function attemptClaimRoot(attempt: Attempt): ClaimRoot | null {
     };
   }
   return {
-    scope: `ssh:${attempt.target.targetId}`,
+    scope: `ssh:${attempt.target.serverId}`,
     path,
-    displayPath: `${attempt.target.targetId}:${attempt.target.basePath}`,
+    displayPath: `${attempt.target.serverId}:${attempt.target.basePath}`,
     branch,
     caseSensitive,
   };
@@ -683,7 +683,7 @@ function composeAsyncLaunchPrompt(
 async function attachAttemptConversation(attempt: Attempt, prompt: string): Promise<void> {
   let sshTarget: CreateApiConversationOptions["sshTarget"] = null;
   if (attempt.target.kind === "ssh") {
-    const server = useServerStore.getState().getServer(attempt.target.targetId);
+    const server = useServerStore.getState().getServer(attempt.target.serverId);
     if (server) {
       sshTarget = {
         serverId: server.id,
@@ -833,11 +833,11 @@ async function enrichFlightRetrospective(flight: Flight): Promise<void> {
 
 async function cleanupSshAttemptWorktree(flightId: string, attempt: Attempt): Promise<void> {
   if (attempt.target.kind !== "ssh") return;
-  const server = useServerStore.getState().getServer(attempt.target.targetId);
+  const server = useServerStore.getState().getServer(attempt.target.serverId);
   if (!server) {
     console.warn(
       "SSH worktree cleanup skipped because the saved server no longer exists:",
-      attempt.target.targetId,
+      attempt.target.serverId,
     );
     return;
   }

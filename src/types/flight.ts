@@ -379,7 +379,7 @@ export interface AutonomyRuntime {
 
 export type AttemptTarget =
   | { kind: "local"; basePath: string; worktreePath: string }
-  | { kind: "ssh"; targetId: string; basePath: string; worktreePath: string };
+  | { kind: "ssh"; serverId: string; basePath: string; worktreePath: string };
 
 export interface Attempt {
   id: string;

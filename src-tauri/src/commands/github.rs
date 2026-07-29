@@ -918,6 +918,61 @@ pub async fn github_get_issue(
     github_get_issue_with_client(&client, &host, &owner, &repo, issue_number).await
 }
 
+/// GP7: create a host issue for an Issue↔Flight mirror. Labels and milestone
+/// are applied through the existing host-aware mutators so Gitea's id-based
+/// label contract remains centralized.
+#[tauri::command]
+pub async fn github_create_issue(
+    auth: State<'_, GitHubAuthState>,
+    owner: String,
+    repo: String,
+    title: String,
+    body: String,
+) -> Result<String, String> {
+    validate_github_name(&owner, "owner")?;
+    validate_github_name(&repo, "repo")?;
+    super::validate_input_size(&title, 512, "issue title")?;
+    super::validate_input_size(&body, 250_000, "issue body")?;
+    if title.trim().is_empty() {
+        return Err("Issue title cannot be empty".to_string());
+    }
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let response = client
+        .post(host.url(&format!("/repos/{}/{}/issues", owner, repo)))
+        .json(&serde_json::json!({ "title": title.trim(), "body": body }))
+        .send()
+        .await
+        .map_err(|error| format!("Request failed: {error}"))?;
+    github_response_text(response).await
+}
+
+/// GP7: update mirror-owned prose/title in one revision-fenced write.
+#[tauri::command]
+pub async fn github_update_issue(
+    auth: State<'_, GitHubAuthState>,
+    owner: String,
+    repo: String,
+    number: u32,
+    title: String,
+    body: String,
+) -> Result<String, String> {
+    validate_github_name(&owner, "owner")?;
+    validate_github_name(&repo, "repo")?;
+    super::validate_input_size(&title, 512, "issue title")?;
+    super::validate_input_size(&body, 250_000, "issue body")?;
+    if title.trim().is_empty() {
+        return Err("Issue title cannot be empty".to_string());
+    }
+    patch_issue(
+        auth.inner(),
+        &owner,
+        &repo,
+        number,
+        serde_json::json!({ "title": title.trim(), "body": body }),
+    )
+    .await
+}
+
 /// `POST /repos/{owner}/{repo}/pulls` — create a Pull Request.
 ///
 /// v0.8-G: extended with an optional `draft` flag. When omitted (legacy
@@ -1344,6 +1399,34 @@ pub async fn github_list_repo_milestones(
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
     github_response_text(resp).await
+}
+
+#[tauri::command]
+pub async fn github_create_repo_milestone(
+    auth: State<'_, GitHubAuthState>,
+    owner: String,
+    repo: String,
+    title: String,
+    description: String,
+) -> Result<String, String> {
+    validate_github_name(&owner, "owner")?;
+    validate_github_name(&repo, "repo")?;
+    super::validate_input_size(&title, 512, "milestone title")?;
+    super::validate_input_size(&description, 10_000, "milestone description")?;
+    if title.trim().is_empty() {
+        return Err("Milestone title cannot be empty".to_string());
+    }
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let response = client
+        .post(host.url(&format!("/repos/{}/{}/milestones", owner, repo)))
+        .json(&serde_json::json!({
+            "title": title.trim(),
+            "description": description
+        }))
+        .send()
+        .await
+        .map_err(|error| format!("Request failed: {error}"))?;
+    github_response_text(response).await
 }
 
 #[tauri::command]

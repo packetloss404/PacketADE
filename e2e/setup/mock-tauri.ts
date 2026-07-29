@@ -15,6 +15,7 @@ export const mockTauriInitScript = `
 (() => {
   let nextEventId = 1;
   const ignoredEvents = new Set([
+    "monitor-window:focus-main",
     "provider-auth:changed",
     "sidecar-status:changed",
   ]);

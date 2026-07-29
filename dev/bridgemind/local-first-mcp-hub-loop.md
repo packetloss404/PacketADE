@@ -1,7 +1,8 @@
 # Local-First MCP Hub — Scoped Loop
 
 Created: 2026-07-28
-Status: MCPH1–MCPH2/MCPH5–MCPH7 source-complete; MCPH3/MCPH4/MCPH8 gated
+Last updated: 2026-07-29
+Status: MCPH1–MCPH2/MCPH4–MCPH7 source-complete; MCPH3/MCPH8 live/packaged gated
 Product decision: **Option B — consolidate MCP inside PacketADE**
 
 ## Objective
@@ -53,7 +54,7 @@ Status values: `queued` → `in-progress` → `gated` → `closed`.
 | **MCPH1** | Hub inventory and contracts       | Freeze server identity, execution owner, transport, capability snapshot, trust profile, provenance, catalog manifest, and compatibility versions while migrating current config losslessly.                               | DTO/schema/migration fixtures and old-state hydration                | —                                             | closed |
 | **MCPH2** | Curated starter catalog           | Ship a reviewable catalog with official source, supported platforms/transports, install/config steps, required secrets, capabilities, and removal instructions. Catalog entries cannot embed secrets or silently execute. | Manifest validation, platform, tamper, and unsafe-command tests      | MCPH1                                         | closed |
 | **MCPH3** | Unified lifecycle and diagnostics | Show configured/connected/degraded/failed state, capability diffs, bounded logs, latency, restart/reconnect, and exact recovery guidance for local and SSH-owned servers.                                                 | Local/SSH/crash/reload/version-skew tests                            | MCPH1                                         | gated  |
-| **MCPH4** | Scoped trust profiles             | Configure read/write/network/root/tool grants per workspace and server, preview effective authority, enforce denial floors, and snapshot it into each agent session.                                                      | Policy matrix, downgrade, reload, and privilege-escalation tests     | MCPH1, MCPH3                                  | gated  |
+| **MCPH4** | Scoped trust profiles             | Configure read/write/network/root/tool grants per workspace and server, preview effective authority, enforce denial floors, and snapshot it into each agent session.                                                      | Policy matrix, downgrade, reload, and privilege-escalation tests     | MCPH1, MCPH3                                  | closed in source |
 | **MCPH5** | Provenance and audit              | Attribute resources, prompt injections, tool results, mutations, host, server version, and trust decision through transcripts and downstream Flight/Memory/review records.                                                | Correlation, redaction, retention, and export fixtures               | MCPH1, MCPH3                                  | closed |
 | **MCPH6** | Suite resources                   | Organize scoped resources/tools for Flights, Issues, coordination, current Memory Hub, PacketCode health/context, and later PacketAgent contracts without duplicating their source of truth.                              | Resource-schema, unavailable-product, scope, and compatibility tests | MCPH3–MCPH5; Memory MH7; PacketAgent W9 later | closed |
 | **MCPH7** | MCP Hub UI                        | Merge the current client/provider management into one searchable Hub for catalog, servers, capabilities, trust, health, provenance, activity, and explicit session reconnect.                                             | Component, accessibility, destructive-action, and visual QA          | MCPH2–MCPH6                                   | closed |
@@ -77,10 +78,10 @@ Status values: `queued` → `in-progress` → `gated` → `closed`.
   empty snapshots grant no servers. Credential, outside-workspace, and
   protected publish/merge/deploy floors cannot be disabled.
 - Anthropic Subscription, OpenAI Agents SDK, and in-process providers enforce
-  that snapshot. Codex subscription remains outside MCPH4 completion because
-  Codex CLI ignores the forwarded server set and owns a separate `codex mcp`
-  configuration. The Hub labels this exception and disables its reconnect
-  action for Codex rather than implying a false boundary.
+  that snapshot. Codex subscription sessions now receive a generated MCP config
+  containing a local PacketADE trust proxy; it advertises only the frozen
+  allowlisted server/tool set and re-checks mutation, credential,
+  protected-publish, and workspace-root denial floors before forwarding.
 - The searchable Settings Hub includes catalog, configured server health,
   trust/tool controls, bounded redacted activity, and an explicit selected
   conversation reconnect. Trust changes apply only after that reconnect/new
@@ -89,10 +90,11 @@ Status values: `queued` → `in-progress` → `gated` → `closed`.
   review, global/project Memory, workspaces, and PacketCode health. PacketAgent
   remains absent until its separate repository publishes W9.
 - Contract/component tests, sidecar v11/trust smokes, TypeScript/lint, Rust
-  compile, E2E, and unsigned Windows bundle gates pass. MCPH3/MCPH8 remain
+  compile, E2E, and unsigned Windows bundle gates pass. The Codex target/proxy
+  trust smoke also passes. MCPH3/MCPH8 remain
   gated on real local/SSH process crash, reload/version-skew, offline
-  install/removal, and packaged interaction smoke. MCPH4 also remains gated on
-  enforceable Codex CLI integration and live remote-profile parity. A stdio
+  install/removal, real Codex CLI/remote-profile parity, and packaged
+  interaction smoke. A stdio
   child may still use network according to its own runtime; this is not an OS
   sandbox.
 

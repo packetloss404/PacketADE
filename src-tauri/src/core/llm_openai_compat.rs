@@ -6,6 +6,8 @@ use crate::core::llm_provider::delimit_final_sse_line;
 use crate::core::llm_types::*;
 use futures::StreamExt;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use tokio::sync::mpsc;
 
 /// Configuration for an OpenAI-compatible endpoint.
@@ -13,6 +15,41 @@ pub struct OpenAiCompatConfig {
     pub base_url: String,
     pub headers: HeaderMap,
     pub provider_id: String,
+}
+
+fn ollama_usage_capabilities() -> &'static Mutex<HashMap<String, bool>> {
+    static CAPABILITIES: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
+    CAPABILITIES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn cached_ollama_usage_capability(base_url: &str) -> Option<bool> {
+    ollama_usage_capabilities()
+        .lock()
+        .ok()
+        .and_then(|capabilities| capabilities.get(base_url).copied())
+}
+
+fn remember_ollama_usage_capability(base_url: &str, supported: bool) {
+    if let Ok(mut capabilities) = ollama_usage_capabilities().lock() {
+        capabilities.insert(base_url.to_string(), supported);
+    }
+}
+
+fn rejects_stream_usage(status: reqwest::StatusCode, body: &str) -> bool {
+    if status != reqwest::StatusCode::BAD_REQUEST {
+        return false;
+    }
+    let message = body.to_ascii_lowercase();
+    message.contains("stream_options")
+        && [
+            "unknown",
+            "unrecognized",
+            "unsupported",
+            "not permitted",
+            "extra inputs",
+        ]
+        .iter()
+        .any(|needle| message.contains(needle))
 }
 
 /// Convert our internal messages to the OpenAI chat format.
@@ -281,14 +318,16 @@ pub async fn stream_chat_compat(
         "max_tokens": request.max_tokens,
     });
 
-    // MiniMax is OpenAI-compatible and honors `stream_options.include_usage`, so
-    // include it here to get token/cost counts (was OpenAI/OpenRouter only). Ollama
-    // is deliberately left out: older builds reject unknown params, and a hard
-    // stream failure isn't worth cosmetic usage counts — revisit once verified.
+    // Ollama capability varies by build. Unknown endpoints optimistically
+    // negotiate usage once; an explicit unsupported-parameter response is
+    // retried without the option and cached for this app process.
+    let ollama_usage = config.provider_id == "ollama"
+        && cached_ollama_usage_capability(&config.base_url) != Some(false);
     if matches!(
         config.provider_id.as_str(),
         "openai" | "openrouter" | "minimax"
-    ) {
+    ) || ollama_usage
+    {
         body["stream_options"] = serde_json::json!({ "include_usage": true });
     }
 
@@ -311,11 +350,42 @@ pub async fn stream_chat_compat(
 
     let response = client
         .post(&url)
-        .headers(headers)
+        .headers(headers.clone())
         .json(&body)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
+
+    let response = if response.status().is_success() {
+        if ollama_usage {
+            remember_ollama_usage_capability(&config.base_url, true);
+        }
+        response
+    } else {
+        let status = response.status();
+        let body_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Failed to read response body".to_string());
+        if ollama_usage && rejects_stream_usage(status, &body_text) {
+            remember_ollama_usage_capability(&config.base_url, false);
+            body.as_object_mut()
+                .expect("OpenAI-compatible request body is an object")
+                .remove("stream_options");
+            client
+                .post(&url)
+                .headers(headers)
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| format!("Ollama compatibility retry failed: {}", e))?
+        } else {
+            return Err(format!(
+                "{} API error ({}): {}",
+                config.provider_id, status, body_text
+            ));
+        }
+    };
 
     if !response.status().is_success() {
         let status = response.status();
@@ -592,5 +662,25 @@ mod tests {
         } else {
             panic!("expected ToolUseEnd");
         }
+    }
+
+    #[test]
+    fn ollama_usage_negotiation_only_retries_explicit_parameter_rejections() {
+        assert!(rejects_stream_usage(
+            reqwest::StatusCode::BAD_REQUEST,
+            "stream_options: Extra inputs are not permitted"
+        ));
+        assert!(rejects_stream_usage(
+            reqwest::StatusCode::BAD_REQUEST,
+            "unrecognized request argument supplied: stream_options"
+        ));
+        assert!(!rejects_stream_usage(
+            reqwest::StatusCode::BAD_REQUEST,
+            "model was not found"
+        ));
+        assert!(!rejects_stream_usage(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            "stream_options unsupported"
+        ));
     }
 }

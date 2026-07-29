@@ -328,7 +328,8 @@ pub enum AttemptTarget {
         worktree_path: String,
     },
     Ssh {
-        target_id: String,
+        #[serde(alias = "target_id", alias = "targetId")]
+        server_id: String,
         base_path: String,
         worktree_path: String,
     },

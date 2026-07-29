@@ -53,7 +53,6 @@ export function McpHubCard() {
   const [installScope, setInstallScope] = useState<"global" | "project">("project");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const selectedUsesCodexManagedMcp = selectedConversation?.agent === "api-openai-codex";
 
   useEffect(() => {
     void fetchServers();
@@ -187,12 +186,6 @@ export function McpHubCard() {
               authority into each PacketADE-managed MCP session. Trust edits never broaden a running
               session.
             </p>
-            {selectedUsesCodexManagedMcp && (
-              <p className="text-accent-yellow mt-1 max-w-2xl text-[10px] leading-relaxed">
-                The selected Codex subscription conversation uses Codex CLI&apos;s separate `codex
-                mcp` configuration. PacketADE cannot enforce or reconnect Hub trust for it yet.
-              </p>
-            )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button
@@ -200,14 +193,9 @@ export function McpHubCard() {
               disabled={
                 !selectedConversation ||
                 selectedConversation.mode !== "api" ||
-                selectedUsesCodexManagedMcp ||
                 busyKey === "reconnect"
               }
-              title={
-                selectedUsesCodexManagedMcp
-                  ? "Codex CLI manages MCP separately through `codex mcp`"
-                  : "Close the selected API-agent backend; its next turn reconnects with current MCP trust"
-              }
+              title="Close the selected API-agent backend; its next turn reconnects with current MCP trust"
               className="border-accent-green/30 bg-accent-green/10 rounded border px-2 py-1 text-[9px] text-accent-green disabled:cursor-not-allowed disabled:opacity-40"
             >
               {busyKey === "reconnect" ? "Preparing…" : "Reconnect selected"}

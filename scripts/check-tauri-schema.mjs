@@ -3,6 +3,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 const cargoArgs = [
   "test",
+  "--test",
+  "api_schema",
   "export_api_bindings",
   "--manifest-path",
   "src-tauri/Cargo.toml",

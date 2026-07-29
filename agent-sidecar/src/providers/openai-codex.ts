@@ -6,7 +6,7 @@
 // conversation turn is a fresh `codex exec` invocation, optionally resumed
 // via `codex exec resume <session-id>` to continue a prior context.
 //
-// Discovery performed against codex-cli 0.121.0 (Windows, Apr 2026):
+// Discovery refreshed against codex-cli 0.145.0 (Windows, Jul 2026):
 //   - JSON flag: `--json` (emits JSONL to stdout)
 //   - Prompt delivery: positional arg (stdin also supported if `-` is used)
 //   - Auth file: ~/.codex/auth.json (OAuth token from `codex login`)
@@ -17,10 +17,9 @@
 //   - Resume: `codex exec resume <SESSION_ID> [PROMPT]` with --json
 //
 // Known limitations / design decisions:
-//   * MCP servers in `req.mcpServers` are IGNORED in v1 — Codex manages its
-//     own MCP config via `codex mcp`, and wiring PacketADE's shape through
-//     `-c mcp_servers.*` is out of scope. A one-time stderr warning is logged
-//     if the supervisor passes any.
+//   * Ambient Codex MCP authority is disabled. Session-approved servers are
+//     exposed as required, per-session proxy processes whose tool lists and
+//     calls are checked against the frozen trust snapshot.
 //   * planMode is translated to a read-only sandbox with approval_policy=never as a best-effort
 //     proxy (Codex has no literal "plan mode"). The read-only sandbox is the
 //     boundary — write/exec tools are blocked outright rather than prompted
@@ -52,6 +51,11 @@ import { createInterface, type Interface as ReadlineInterface } from "node:readl
 import { randomUUID } from "node:crypto";
 import { existsSync, promises as fsPromises } from "node:fs";
 import * as nodePath from "node:path";
+import {
+  buildCodexMcpLaunch,
+  codexSessionBoundaryArgs,
+  type CodexMcpLaunch,
+} from "../codex-mcp.js";
 import type {
   EditResponseRequest,
   Emit,
@@ -314,8 +318,15 @@ export function buildExecArgs(
   req: StartSessionRequest,
   model: string,
   sandbox: CodexSandboxFlags,
+  mcpConfigArgs: string[] = [],
 ): string[] {
-  const args: string[] = ["exec", "--json", "--skip-git-repo-check"];
+  const args: string[] = [
+    "exec",
+    ...codexSessionBoundaryArgs(req.projectPath),
+    ...mcpConfigArgs,
+    "--json",
+    "--skip-git-repo-check",
+  ];
   if (model.length > 0) {
     args.push("--model", model);
   }
@@ -328,11 +339,20 @@ export function buildExecArgs(
 
 export function buildResumeArgs(
   sessionId: string,
-  _req: StartSessionRequest,
+  req: StartSessionRequest,
   model: string,
   sandbox: CodexSandboxFlags,
+  mcpConfigArgs: string[] = [],
 ): string[] {
-  const args: string[] = ["exec", "resume", sessionId, "--json", "--skip-git-repo-check"];
+  const args: string[] = [
+    "exec",
+    ...codexSessionBoundaryArgs(req.projectPath),
+    ...mcpConfigArgs,
+    "resume",
+    sessionId,
+    "--json",
+    "--skip-git-repo-check",
+  ];
   if (model.length > 0) {
     args.push("--model", model);
   }
@@ -350,6 +370,7 @@ export class OpenAICodexProvider implements ProviderHandler {
   private sessionId: string | null = null;
   private codexCommand = CODEX_BIN;
   private codexPrefixArgs: string[] = [];
+  private codexMcpLaunch: CodexMcpLaunch = { configArgs: [], environment: {} };
   /** The Codex-assigned session UUID captured from session_start events. */
   private codexSessionId: string | null = null;
   private doneEmitted = false;
@@ -400,10 +421,11 @@ export class OpenAICodexProvider implements ProviderHandler {
 
   /**
    * Legacy 0.121 flat-event analogue of `itemTextEmitted`: those events carry no
-   * item id, so a single running counter of chars emitted via `agent_message_delta`
-   * lets the terminal `agent_message` forward only the unseen suffix (or nothing).
+   * item id, so retain the exact delta text. The terminal message normally
+   * extends it; if Codex corrects earlier text, surface an explicit corrected
+   * final response instead of slicing at a now-invalid character offset.
    */
-  private flatTextEmitted = 0;
+  private flatTextEmitted = "";
   /** FIFO fallback for Codex JSONL variants that omit correlation ids on the
    * completion record. Starts and results are ordered for these variants. */
   private pendingToolUseIds: string[] = [];
@@ -434,10 +456,17 @@ export class OpenAICodexProvider implements ProviderHandler {
         : (req.permissionMode ?? null);
     this.lastUserMessage = req.initialMessage ?? null;
 
-    if (req.mcpServers && Object.keys(req.mcpServers).length > 0) {
-      logStderr(
-        "MCP servers ignored in openai-codex provider (v1 limitation); configure via `codex mcp` instead",
-      );
+    try {
+      this.codexMcpLaunch = buildCodexMcpLaunch(req);
+    } catch (error) {
+      emit({
+        type: "error",
+        sessionId: req.sessionId,
+        message: `Codex MCP trust setup failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      });
+      return;
     }
 
     if (req.allowedTools && req.allowedTools.length > 0) {
@@ -456,8 +485,14 @@ export class OpenAICodexProvider implements ProviderHandler {
 
     const sandbox = this.currentSandbox(req);
     const args = req.resume
-      ? buildResumeArgs(req.resume, req, this.effectiveModel, sandbox)
-      : buildExecArgs(req, this.effectiveModel, sandbox);
+      ? buildResumeArgs(
+          req.resume,
+          req,
+          this.effectiveModel,
+          sandbox,
+          this.codexMcpLaunch.configArgs,
+        )
+      : buildExecArgs(req, this.effectiveModel, sandbox, this.codexMcpLaunch.configArgs);
 
     // Prompt delivery: positional arg for the initial turn. If a systemPrompt
     // was provided, fold it in as a fenced preamble. Resume takes an optional
@@ -551,6 +586,7 @@ export class OpenAICodexProvider implements ProviderHandler {
     try {
       child = spawn(this.codexCommand, [...this.codexPrefixArgs, ...args], {
         cwd,
+        env: { ...process.env, ...this.codexMcpLaunch.environment },
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
         // `shell: true` is needed on Windows for .cmd shims with argv arrays,
@@ -571,7 +607,7 @@ export class OpenAICodexProvider implements ProviderHandler {
     // Each `codex exec` restarts item ids at item_0, so clear the per-item
     // emitted-length tracker or turn 2's item_0 would be seen as "already sent".
     this.itemTextEmitted.clear();
-    this.flatTextEmitted = 0;
+    this.flatTextEmitted = "";
     this.resetIdleWatchdog(child, sessionId, emit);
 
     child.on("error", (err) => {
@@ -913,16 +949,24 @@ export class OpenAICodexProvider implements ProviderHandler {
         // the terminal `agent_message` can print only the newly-added suffix.
         if (text && text.length > 0) {
           emit({ type: "chunk", sessionId, text });
-          this.flatTextEmitted += text.length;
+          this.flatTextEmitted += text;
         }
       } else {
         // Terminal full-text message — deltas may already have covered it, so
         // emit only the unseen suffix (nothing if the deltas ran ahead), then
         // reset the counter for the next turn.
-        if (text && text.length > this.flatTextEmitted) {
-          emit({ type: "chunk", sessionId, text: text.slice(this.flatTextEmitted) });
+        if (text && text.startsWith(this.flatTextEmitted)) {
+          const suffix = text.slice(this.flatTextEmitted.length);
+          if (suffix) emit({ type: "chunk", sessionId, text: suffix });
+        } else if (text && text !== this.flatTextEmitted) {
+          logStderr("codex terminal agent_message corrected previously streamed text");
+          emit({
+            type: "chunk",
+            sessionId,
+            text: `\n\n> Codex corrected its streamed draft. The final response is:\n\n${text}`,
+          });
         }
-        this.flatTextEmitted = 0;
+        this.flatTextEmitted = "";
       }
       return;
     }
@@ -1201,13 +1245,19 @@ export class OpenAICodexProvider implements ProviderHandler {
     const sandbox = this.currentSandbox(nextReq);
     let args: string[];
     if (this.codexSessionId) {
-      args = buildResumeArgs(this.codexSessionId, nextReq, this.effectiveModel, sandbox);
+      args = buildResumeArgs(
+        this.codexSessionId,
+        nextReq,
+        this.effectiveModel,
+        sandbox,
+        this.codexMcpLaunch.configArgs,
+      );
       if (req.content.length > 0) args.push(req.content);
     } else {
       logStderr(
         "no codex session_id captured from prior turn; sending as a fresh exec (context lost)",
       );
-      args = buildExecArgs(nextReq, this.effectiveModel, sandbox);
+      args = buildExecArgs(nextReq, this.effectiveModel, sandbox, this.codexMcpLaunch.configArgs);
       if (req.content.length > 0) args.push(req.content);
     }
 

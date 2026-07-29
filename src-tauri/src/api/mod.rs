@@ -493,8 +493,9 @@ pub enum AttemptTargetDto {
         worktree_path: String,
     },
     Ssh {
-        #[serde(rename = "targetId")]
-        target_id: String,
+        #[serde(rename = "serverId", alias = "targetId", alias = "target_id")]
+        #[ts(rename = "serverId")]
+        server_id: String,
         #[serde(rename = "basePath")]
         base_path: String,
         #[serde(rename = "worktreePath")]
@@ -1796,11 +1797,11 @@ impl From<core_flight::AttemptTarget> for AttemptTargetDto {
                 worktree_path,
             },
             core_flight::AttemptTarget::Ssh {
-                target_id,
+                server_id,
                 base_path,
                 worktree_path,
             } => Self::Ssh {
-                target_id,
+                server_id,
                 base_path,
                 worktree_path,
             },
@@ -1819,11 +1820,11 @@ impl From<AttemptTargetDto> for core_flight::AttemptTarget {
                 worktree_path,
             },
             AttemptTargetDto::Ssh {
-                target_id,
+                server_id,
                 base_path,
                 worktree_path,
             } => Self::Ssh {
-                target_id,
+                server_id,
                 base_path,
                 worktree_path,
             },
@@ -2669,8 +2670,8 @@ impl From<PersistedStateDto> for core_storage::PersistedState {
     }
 }
 
-#[cfg(test)]
-fn generated_typescript_schema() -> String {
+#[doc(hidden)]
+pub fn generated_typescript_schema() -> String {
     let mut lines = vec![
         "// Auto-generated from Rust API DTOs. Run `pnpm generate:tauri-schema` to refresh."
             .to_string(),
@@ -2679,12 +2680,12 @@ fn generated_typescript_schema() -> String {
 
     macro_rules! push_decl {
         ($ty:ty) => {{
-            let decl = <$ty as TS>::decl();
-            lines.push(format!(
-                "export {}{}",
-                decl,
-                if decl.ends_with('\n') { "" } else { "\n" }
-            ));
+            let decl = <$ty as TS>::decl()
+                .lines()
+                .map(str::trim_end)
+                .collect::<Vec<_>>()
+                .join("\n");
+            lines.push(format!("export {decl}\n"));
         }};
     }
 
@@ -2757,18 +2758,6 @@ fn generated_typescript_schema() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    #[ignore = "run manually to refresh checked-in TS bindings"]
-    fn export_api_bindings() {
-        let out_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/generated");
-        std::fs::create_dir_all(&out_dir).unwrap();
-        std::fs::write(
-            out_dir.join("tauri-schema.ts"),
-            generated_typescript_schema(),
-        )
-        .unwrap();
-    }
 
     #[test]
     fn persisted_state_dto_serializes_with_camel_case_transport_keys() {
@@ -3068,5 +3057,35 @@ mod tests {
         }"#;
         let dto: TaskDto = serde_json::from_str(json).expect("legacy task dto should parse");
         assert_eq!(dto.replan_count, 0);
+    }
+
+    #[test]
+    fn ssh_attempt_target_accepts_legacy_ids_and_emits_server_id() {
+        for legacy_key in ["targetId", "target_id"] {
+            let json = format!(
+                r#"{{
+                    "kind": "ssh",
+                    "{legacy_key}": "server-1",
+                    "basePath": "/repo",
+                    "worktreePath": "/repo/worktree"
+                }}"#
+            );
+            let dto: AttemptTargetDto =
+                serde_json::from_str(&json).expect("legacy SSH attempt target should parse");
+            assert!(matches!(
+                dto,
+                AttemptTargetDto::Ssh { ref server_id, .. } if server_id == "server-1"
+            ));
+        }
+
+        let dto = AttemptTargetDto::Ssh {
+            server_id: "server-1".into(),
+            base_path: "/repo".into(),
+            worktree_path: "/repo/worktree".into(),
+        };
+        let value = serde_json::to_value(dto).expect("SSH attempt target should serialize");
+        assert_eq!(value["serverId"], "server-1");
+        assert!(value.get("targetId").is_none());
+        assert!(value.get("target_id").is_none());
     }
 }

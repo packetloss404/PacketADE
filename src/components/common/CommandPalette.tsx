@@ -1,8 +1,18 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Search, MessageSquare, Ticket, Clock, Wrench, Github, Brain } from "lucide-react";
+import {
+  Search,
+  MessageSquare,
+  Ticket,
+  Clock,
+  Wrench,
+  Github,
+  Brain,
+  FileText,
+} from "lucide-react";
 import { useAppStore, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { getModulesSorted } from "@/modules/registry";
+import { usePromptStore } from "@/stores/promptStore";
 
 interface PaletteAction {
   id: string;
@@ -22,6 +32,8 @@ export function CommandPalette() {
   const setActiveView = useAppStore((s) => s.setActiveView);
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
   const moduleStates = useModuleStore((s) => s.states);
+  const promptTemplates = usePromptStore((s) => s.templates);
+  const sendPromptToAgent = usePromptStore((s) => s.sendToAgentChat);
 
   const actions = useMemo<PaletteAction[]>(() => {
     const items: PaletteAction[] = [
@@ -75,6 +87,17 @@ export function CommandPalette() {
       },
     ];
 
+    for (const template of promptTemplates) {
+      items.push({
+        id: `prompt-${template.id}`,
+        label: `Prompt: ${template.name}`,
+        description: `Launch ${template.category} prompt in a conversation tile`,
+        icon: <FileText size={14} className="text-accent-blue" />,
+        action: () => void sendPromptToAgent(template.id),
+        keywords: ["prompt", "template", template.category, template.name.toLowerCase()],
+      });
+    }
+
     // Add enabled modules
     for (const mod of getModulesSorted()) {
       if (moduleStates[mod.id]?.enabled) {
@@ -91,7 +114,7 @@ export function CommandPalette() {
     }
 
     return items;
-  }, [setActiveView, moduleStates]);
+  }, [setActiveView, moduleStates, promptTemplates, sendPromptToAgent]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return actions;
@@ -100,7 +123,7 @@ export function CommandPalette() {
       (a) =>
         a.label.toLowerCase().includes(q) ||
         a.description?.toLowerCase().includes(q) ||
-        a.keywords?.some((k) => k.includes(q))
+        a.keywords?.some((k) => k.includes(q)),
     );
   }, [actions, query]);
 
@@ -161,13 +184,13 @@ export function CommandPalette() {
 
       {/* Palette */}
       <div
-        className="relative w-[480px] bg-bg-secondary border border-bg-border rounded-xl shadow-2xl overflow-hidden"
+        className="relative w-[480px] overflow-hidden rounded-xl border border-bg-border bg-bg-secondary shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
         {/* Search input */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-bg-border">
-          <Search size={14} className="text-text-muted flex-shrink-0" />
+        <div className="flex items-center gap-2 border-b border-bg-border px-4 py-3">
+          <Search size={14} className="flex-shrink-0 text-text-muted" />
           <input
             ref={inputRef}
             type="text"
@@ -176,7 +199,7 @@ export function CommandPalette() {
             placeholder="Type a command..."
             className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none"
           />
-          <kbd className="text-[10px] text-text-muted bg-bg-elevated px-1.5 py-0.5 rounded border border-bg-border">
+          <kbd className="rounded border border-bg-border bg-bg-elevated px-1.5 py-0.5 text-[10px] text-text-muted">
             ESC
           </kbd>
         </div>
@@ -193,21 +216,17 @@ export function CommandPalette() {
                 key={action.id}
                 onClick={() => execute(action)}
                 onMouseEnter={() => setSelectedIndex(i)}
-                className={`flex items-center gap-3 w-full px-4 py-2.5 text-left transition-colors ${
+                className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors ${
                   i === selectedIndex
                     ? "bg-accent-green/10 text-text-primary"
                     : "text-text-secondary hover:bg-bg-hover"
                 }`}
               >
                 {action.icon}
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium truncate">
-                    {action.label}
-                  </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-medium">{action.label}</div>
                   {action.description && (
-                    <div className="text-[10px] text-text-muted truncate">
-                      {action.description}
-                    </div>
+                    <div className="truncate text-[10px] text-text-muted">{action.description}</div>
                   )}
                 </div>
               </button>

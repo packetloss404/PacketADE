@@ -29,6 +29,9 @@ import { FlightPlanningCard } from "@/components/flights/FlightPlanningCard";
 import { CooperativeFlightCard } from "@/components/flights/CooperativeFlightCard";
 import { FlightCoordinationInbox } from "@/components/flights/FlightCoordinationInbox";
 import { FlightAutonomyCard } from "@/components/flights/FlightAutonomyCard";
+import { PacketAgentHandoffCard } from "@/components/flights/PacketAgentHandoffCard";
+import { IssueFlightMirrorCard } from "@/components/flights/IssueFlightMirrorCard";
+import { openMonitorWindow } from "@/lib/monitorWindows";
 import { relativeTime } from "@/lib/time";
 import { summarizeFlightAttention, summarizeFlightReview } from "@/lib/flightReview";
 import {
@@ -686,6 +689,12 @@ function FlightDetailPane({ flight, status, onLaunchAttempt }: DetailProps) {
               </p>
             )}
           </div>
+          <button
+            onClick={() => void openMonitorWindow({ kind: "flight", flightId: flight.id })}
+            className="rounded border border-bg-border px-2.5 py-1.5 text-[10px] text-text-secondary hover:bg-bg-hover"
+          >
+            Send to Monitor
+          </button>
         </div>
 
         <StatGrid flight={flight} tasks={tasks} sessions={sessions} />
@@ -693,6 +702,10 @@ function FlightDetailPane({ flight, status, onLaunchAttempt }: DetailProps) {
         <FlightPlanningCard flight={flight} />
 
         <FlightAutonomyCard flight={flight} />
+
+        <PacketAgentHandoffCard flight={flight} />
+
+        <IssueFlightMirrorCard flight={flight} />
 
         <CooperativeFlightCard flight={flight} />
 

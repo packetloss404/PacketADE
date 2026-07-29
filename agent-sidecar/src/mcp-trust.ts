@@ -1,12 +1,11 @@
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { McpTrustSnapshot } from "./protocol.js";
 
 const MUTATING_TOOL =
   /(?:write|create|update|delete|remove|move|rename|post|send|merge|push|publish|archive|close|reopen|assign|set|execute|run)/i;
-const CREDENTIAL_TOOL =
-  /(?:credential|secret|token|password|keyring|private[_-]?key|auth)/i;
-const PROTECTED_PUBLISH_TOOL =
-  /(?:push|publish|merge|release|deploy|tag|pull[_-]?request)/i;
+const CREDENTIAL_TOOL = /(?:credential|secret|token|password|keyring|private[_-]?key|auth)/i;
+const PROTECTED_PUBLISH_TOOL = /(?:push|publish|merge|release|deploy|tag|pull[_-]?request)/i;
 const PATH_KEY = /(?:path|file|folder|directory|dir|root|cwd|workspace)/i;
 
 type ServerConfig = Record<string, unknown>;
@@ -57,7 +56,8 @@ export function applyMcpTrustSnapshot(
       : supplied;
   const filtered = Object.fromEntries(
     entries.filter(([name, server]) => {
-      const snapshot = byName.get(name) ?? snapshots.find((candidate) => candidate.serverName === name);
+      const snapshot =
+        byName.get(name) ?? snapshots.find((candidate) => candidate.serverName === name);
       if (!snapshot?.allowReads) return false;
       return transportOf(server) === "stdio" || snapshot.allowNetwork;
     }),
@@ -65,11 +65,7 @@ export function applyMcpTrustSnapshot(
   return { servers: filtered, snapshots };
 }
 
-function flattenPathArguments(
-  value: unknown,
-  key = "",
-  output: string[] = [],
-): string[] {
+function flattenPathArguments(value: unknown, key = "", output: string[] = []): string[] {
   if (typeof value === "string" && PATH_KEY.test(key)) {
     output.push(value);
   } else if (Array.isArray(value)) {
@@ -84,9 +80,31 @@ function flattenPathArguments(
 
 function isInsideRoot(candidate: string, root: string): boolean {
   const resolvedRoot = path.resolve(root);
-  const resolvedCandidate = path.resolve(resolvedRoot, candidate);
+  let normalizedCandidate = candidate;
+  if (candidate.startsWith("file:")) {
+    try {
+      normalizedCandidate = fileURLToPath(candidate);
+    } catch {
+      return false;
+    }
+  }
+  const resolvedCandidate = path.resolve(resolvedRoot, normalizedCandidate);
   const relative = path.relative(resolvedRoot, resolvedCandidate);
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+export function mcpPathDenial(snapshot: McpTrustSnapshot, input: unknown): string | null {
+  if (!snapshot.denialFloors.includes("outside_workspace")) return null;
+  const roots = snapshot.allowedRoots.filter(Boolean);
+  const paths = flattenPathArguments(input);
+  if (
+    paths.some(
+      (candidate) => roots.length === 0 || !roots.some((root) => isInsideRoot(candidate, root)),
+    )
+  ) {
+    return "MCP path access outside the frozen workspace roots is blocked.";
+  }
+  return null;
 }
 
 export function mcpToolDenial(
@@ -99,16 +117,10 @@ export function mcpToolDenial(
   if (!snapshot || !snapshot.allowReads) {
     return `MCP server '${serverName}' is not granted to this session.`;
   }
-  if (
-    snapshot.capabilityCheckedAt !== undefined &&
-    !snapshot.allowedToolNames.includes(toolName)
-  ) {
+  if (snapshot.capabilityCheckedAt !== undefined && !snapshot.allowedToolNames.includes(toolName)) {
     return `MCP tool '${serverName}/${toolName}' was not in the session's frozen capability allowlist.`;
   }
-  if (
-    snapshot.denialFloors.includes("credentials") &&
-    CREDENTIAL_TOOL.test(toolName)
-  ) {
+  if (snapshot.denialFloors.includes("credentials") && CREDENTIAL_TOOL.test(toolName)) {
     return "MCP credential access is blocked by a non-overridable denial floor.";
   }
   if (
@@ -120,19 +132,7 @@ export function mcpToolDenial(
   if (!snapshot.allowWrites && MUTATING_TOOL.test(toolName)) {
     return `MCP tool '${serverName}/${toolName}' looks mutating, but this session is read-only.`;
   }
-  if (snapshot.denialFloors.includes("outside_workspace")) {
-    const roots = snapshot.allowedRoots.filter(Boolean);
-    const paths = flattenPathArguments(input);
-    if (
-      paths.some(
-        (candidate) =>
-          roots.length === 0 || !roots.some((root) => isInsideRoot(candidate, root)),
-      )
-    ) {
-      return "MCP path access outside the frozen workspace roots is blocked.";
-    }
-  }
-  return null;
+  return mcpPathDenial(snapshot, input);
 }
 
 export function parseAnthropicMcpToolName(
@@ -152,12 +152,9 @@ export function allowedMcpToolNames(
   discoveredNames?: string[],
 ): string[] | undefined {
   const candidates =
-    snapshot.capabilityCheckedAt !== undefined
-      ? snapshot.allowedToolNames
-      : discoveredNames;
+    snapshot.capabilityCheckedAt !== undefined ? snapshot.allowedToolNames : discoveredNames;
   if (!candidates) return undefined;
   return candidates.filter(
-    (name) =>
-      mcpToolDenial(snapshot.serverName, name, {}, [snapshot]) === null,
+    (name) => mcpToolDenial(snapshot.serverName, name, {}, [snapshot]) === null,
   );
 }

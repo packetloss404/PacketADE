@@ -91,10 +91,9 @@ Each iteration (mirrors the reliability-fix-loop cadence):
    `coordination_log` schema-free.
 4. **Test** — add/strengthen a focused test named in the item's Gate.
 5. **Gate** — narrow test, then the repo gates: `cargo check` (Windows manifest
-   path, capture the *real* exit code — not through `| tail`), `cargo test
-   --no-run`, `pnpm lint`, `pnpm build`, and the targeted `vitest` file(s). (Rust
-   test *execution* is host-blocked here by `0xc0000139`; compile+link + the
-   vitest equivalents are the bar.)
+   path, capture the *real* exit code — not through `| tail`), `cargo test`,
+   `pnpm lint`, `pnpm build`, and the targeted `vitest` file(s). The historical
+   Windows `0xc0000139` test-loader block was fixed on 2026-07-29.
 6. **Record** — flip status to `closed`, add a `CHANGELOG.md` line, commit on a
    branch (`feat/flight-escalation-*`), one item (or a small cohesive group) per
    commit.

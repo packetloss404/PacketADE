@@ -1,8 +1,8 @@
 # PacketADE Roadmap
 
-Last updated: 2026-07-28 (pre-Remote local convergence and unsigned Windows
-bundles complete; hardware, live-SSH/provider, Codex MCP, packaged-manual,
-signing, and alternate-engine proof remain gated)
+Last updated: 2026-07-29 (post-convergence source cleanup complete; hardware,
+live-SSH/provider/PacketAgent, packaged-manual, signing, and alternate-engine
+proof remain gated)
 
 `ROADMAP.md` is the short product-direction document. It says what matters now
 and why. The task ledger lives in [`backlog.md`](./backlog.md); implementation
@@ -27,11 +27,11 @@ without turning PacketADE into a cloud-only coding agent.
 | R2  | Distribution readiness: signing + updater |       P1 | Still blocked on signing certificates                                         | [`dev/updater-setup.md`](./dev/updater-setup.md), [`dev/multi-platform-build.md`](./dev/multi-platform-build.md)                                                                                                                                                                                                                                                           |
 | R3  | Flight Deck supervision                   |       P1 | Core loops implemented; manual/SSH smoke remains                              | [`dev/bridgemind/reviewer-gate-loop.md`](./dev/bridgemind/reviewer-gate-loop.md), [`dev/bridgemind/cooperative-flight-graph-loop.md`](./dev/bridgemind/cooperative-flight-graph-loop.md), [`dev/bridgemind/coordination-inbox-loop.md`](./dev/bridgemind/coordination-inbox-loop.md), [`dev/bridgemind/autonomy-policy-loop.md`](./dev/bridgemind/autonomy-policy-loop.md) |
 | R4  | PacketCode integration                    |       P1 | Source integration complete; release proof gated                              | [`dev/bridgemind/packetcode-bridgecode-loop.md`](./dev/bridgemind/packetcode-bridgecode-loop.md)                                                                                                                                                                                                                                                                           |
-| R5  | PacketAgent deploy/supervise handoff      |       P1 | Separate project active; PacketADE awaits W9 contract                         | [`dev/bridgemind/packetagent-handoff-loop.md`](./dev/bridgemind/packetagent-handoff-loop.md)                                                                                                                                                                                                                                                                               |
+| R5  | PacketAgent deploy/supervise handoff      |       P1 | W9 consumer source implemented; live cross-repo proof gated                    | [`dev/bridgemind/packetagent-handoff-loop.md`](./dev/bridgemind/packetagent-handoff-loop.md)                                                                                                                                                                                                                                                                               |
 | R6  | Project-local Memory Hub                  |       P2 | MH1–MH7 source complete; live external-edit/packaged proof gated              | [`dev/bridgemind/project-local-memory-hub-loop.md`](./dev/bridgemind/project-local-memory-hub-loop.md)                                                                                                                                                                                                                                                                     |
 | R7  | Dictation reliability                     |       P1 | DV1–DV16 source complete; packaged mic/platform matrix and DV17 gated         | [`dev/bridgemind/dictation-repair-hardening-loop.md`](./dev/bridgemind/dictation-repair-hardening-loop.md)                                                                                                                                                                                                                                                                 |
 | R8  | Trust and provenance                      |       P2 | TP1–TP7 source complete; packaged provider/SSH proof gated                    | [`dev/bridgemind/trust-provenance-loop.md`](./dev/bridgemind/trust-provenance-loop.md)                                                                                                                                                                                                                                                                                     |
-| R9  | Local-first MCP Hub                       |       P2 | Core source complete; Codex MCP enforcement and live SSH/packaged proof gated | [`dev/bridgemind/local-first-mcp-hub-loop.md`](./dev/bridgemind/local-first-mcp-hub-loop.md)                                                                                                                                                                                                                                                                               |
+| R9  | Local-first MCP Hub                       |       P2 | Codex enforcement source complete; live SSH/packaged proof gated               | [`dev/bridgemind/local-first-mcp-hub-loop.md`](./dev/bridgemind/local-first-mcp-hub-loop.md)                                                                                                                                                                                                                                                                               |
 
 ### Remote Agents Acceptance Shape
 
@@ -80,14 +80,17 @@ gate and unsigned-package evidence is in
 | D8  | Project-local Memory Hub |       P2 | Source complete / environment-gated    | Run packaged external-editor/watch, dirty/gitignored project, and platform proof; no source feature gap remains.                                     |
 | D9  | Dictation packaged smoke |       P1 | Environment-gated                      | Connect/enable an active microphone, then run the Windows 48 kHz, fast-PTT, cancel, history, in-app, clipboard, and external-paste matrix.           |
 | D10 | Trust and provenance     |       P2 | Source complete / environment-gated    | Run packaged local/SSH/provider-parity evidence and visual inspection; keep current denial floors unchanged.                                         |
-| D11 | Local-first MCP Hub      |       P2 | Core source complete / gated           | Add supported Codex CLI MCP trust enforcement; run live stdio/SSH crash/reload/version-skew, packaged catalog/removal, offline, and reconnect smoke. |
+| D11 | Local-first MCP Hub      |       P2 | Source complete / environment-gated    | Run real Codex/local/SSH crash/reload/version-skew, packaged catalog/removal, offline, trust-downgrade, and reconnect smoke.                          |
+| D12 | Workspace/Agents surface |       P1 | Decision pending                       | Review the CLI-first Workspace + same-window Agents recommendation; preserve tile compatibility and defer interactive native popouts until agent state has one writer. |
+| D13 | Settings authority and IA |       P1 | Audit complete / decision pending      | Approve the six-group IA, then remove or enforce placebo controls before adding terminal/CLI preferences.                                            |
 
 ## Later
 
 - Codex CLI app-server transport (A6): revisit when PacketADE needs long-lived
   app-server capabilities that `codex exec` cannot provide.
-- Send to Monitor / multi-monitor operations: paused after planning while the
-  current feature and bug-check pass runs. See
+- Send to Monitor expansion: read-only Agent + Flight Monitor v1 is
+  implemented. Approval/Cost routes, saved bounds, multi-window expansion, and
+  PTY attachment remain later. See
   [`dev/send-to-monitor-plan.md`](./dev/send-to-monitor-plan.md).
 - Native iOS / TestFlight for Remote Agents: evaluate after the PWA relay,
   auth, push, and mobile UX prove useful.

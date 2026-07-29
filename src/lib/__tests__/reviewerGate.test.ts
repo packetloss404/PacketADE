@@ -132,7 +132,7 @@ describe("Reviewer Gate", () => {
     const remoteAttempt = attempt({
       target: {
         kind: "ssh",
-        targetId: server.id,
+        serverId: server.id,
         basePath: "/srv/repo",
         worktreePath: "/srv/repo/.pkt-worktrees/attempt-1",
       },

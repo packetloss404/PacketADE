@@ -268,6 +268,7 @@ impl PtyManager {
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
             let mut pending: Vec<u8> = Vec::new();
+            let mut reported_error_kinds = std::collections::HashSet::new();
             loop {
                 if output_kill_flag.load(std::sync::atomic::Ordering::Relaxed) {
                     break;
@@ -290,6 +291,14 @@ impl PtyManager {
                             || e.kind() == std::io::ErrorKind::BrokenPipe
                         {
                             break;
+                        }
+                        if reported_error_kinds.insert(e.kind()) {
+                            tracing::warn!(
+                                session_id = %output_sid,
+                                error_kind = ?e.kind(),
+                                error = %e,
+                                "PTY reader will retry after a persistent read error"
+                            );
                         }
                         thread::sleep(std::time::Duration::from_millis(10));
                     }

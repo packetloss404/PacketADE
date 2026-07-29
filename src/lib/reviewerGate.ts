@@ -90,7 +90,7 @@ export async function buildReviewEvidenceBundle(
   options: BuildReviewEvidenceOptions,
 ): Promise<ReviewEvidenceBundle> {
   const server =
-    attempt.target.kind === "ssh" ? options.lookupServer(attempt.target.targetId) : undefined;
+    attempt.target.kind === "ssh" ? options.lookupServer(attempt.target.serverId) : undefined;
   if (attempt.target.kind === "ssh" && !server) {
     throw new Error("The SSH server used by this attempt is no longer configured.");
   }

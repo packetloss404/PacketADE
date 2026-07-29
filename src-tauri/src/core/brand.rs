@@ -30,6 +30,9 @@ pub const LEGACY_KEYRING_SERVICE: &str = "packetcode";
 /// HTTP User-Agent for outbound requests (GitHub API, web fetch, OpenRouter).
 pub const USER_AGENT: &str = "PacketADE/1.0";
 
+/// Query parameter that selects the read-only Monitor boot path.
+pub const MONITOR_WINDOW_QUERY_KEY: &str = "packetadeWindow";
+
 /// GP3: GitHub OAuth App client id for device-flow auth. A device-flow client
 /// id is public (not a secret), but each install must register its own OAuth
 /// App and bake it here (or override at runtime via `PACKETADE_GITHUB_CLIENT_ID`).

@@ -7,21 +7,17 @@ import {
   FileJson,
   MoreVertical,
   PanelRightOpen,
+  MonitorUp,
 } from "lucide-react";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { ContinueInMenu } from "../ContinueInMenu";
-import {
-  exportConversationJson,
-  copyTranscriptToClipboard,
-} from "./handleExport";
+import { exportConversationJson, copyTranscriptToClipboard } from "./handleExport";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import {
-  useAgentSettingsStore,
-  type TranscriptViewMode,
-} from "@/stores/agentSettingsStore";
+import { useAgentSettingsStore, type TranscriptViewMode } from "@/stores/agentSettingsStore";
 import { useMemoryStore, memoryBriefStats } from "@/stores/memoryStore";
 import type { AgentConversation } from "@/types/agent-conversation";
+import { openMonitorWindow } from "@/lib/monitorWindows";
 
 const VIEW_MODE_OPTIONS: { value: TranscriptViewMode; label: string }[] = [
   { value: "summary", label: "Summary" },
@@ -56,9 +52,7 @@ export function HeaderOverflowMenu({
   const memoryEvents = useMemoryStore((s) => s.events);
   const memoryPatterns = useMemoryStore((s) => s.patterns);
   const viewMode = useAgentSettingsStore((s) => s.transcriptViewMode);
-  const setTranscriptViewMode = useAgentSettingsStore(
-    (s) => s.setTranscriptViewMode,
-  );
+  const setTranscriptViewMode = useAgentSettingsStore((s) => s.setTranscriptViewMode);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [memoryPreviewOpen, setMemoryPreviewOpen] = useState(false);
 
@@ -101,26 +95,24 @@ export function HeaderOverflowMenu({
       <Dropdown
         align="right"
         trigger={
-          <span className="p-0.5 text-text-muted hover:text-text-primary inline-flex">
+          <span className="inline-flex p-0.5 text-text-muted hover:text-text-primary">
             <MoreVertical size={12} />
           </span>
         }
       >
         <div className="min-w-[240px]">
-          <div className="px-3 py-1.5 border-b border-bg-border">
+          <div className="border-b border-bg-border px-3 py-1.5">
             <Tooltip content="Cycle with ⌘⇧O / Ctrl+Shift+O. Summary collapses tool detail; Verbose shows raw inputs.">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-ui text-text-secondary">
-                  View mode
-                </span>
-                <div className="flex items-center gap-0.5 bg-bg-secondary border border-bg-border rounded p-0.5">
+                <span className="text-ui text-text-secondary">View mode</span>
+                <div className="flex items-center gap-0.5 rounded border border-bg-border bg-bg-secondary p-0.5">
                   {VIEW_MODE_OPTIONS.map((opt) => (
                     <button
                       key={opt.value}
                       type="button"
                       onClick={() => setTranscriptViewMode(opt.value)}
                       aria-pressed={viewMode === opt.value}
-                      className={`px-1.5 py-0.5 rounded text-ui transition-colors ${
+                      className={`rounded px-1.5 py-0.5 text-ui transition-colors ${
                         viewMode === opt.value
                           ? "bg-bg-elevated text-text-primary"
                           : "text-text-secondary hover:text-text-primary"
@@ -153,7 +145,7 @@ export function HeaderOverflowMenu({
                     }));
                   }}
                   aria-pressed={!!conversation.memoryContextEnabled}
-                  className="flex flex-1 items-center justify-between gap-2 px-3 py-1.5 text-ui text-text-primary hover:bg-bg-hover transition-colors"
+                  className="flex flex-1 items-center justify-between gap-2 px-3 py-1.5 text-ui text-text-primary transition-colors hover:bg-bg-hover"
                 >
                   <span className="flex items-center gap-1.5">
                     <Brain size={11} />
@@ -161,9 +153,7 @@ export function HeaderOverflowMenu({
                   </span>
                   <span
                     className={
-                      conversation.memoryContextEnabled
-                        ? "text-accent-blue"
-                        : "text-text-muted"
+                      conversation.memoryContextEnabled ? "text-accent-blue" : "text-text-muted"
                     }
                   >
                     {conversation.memoryContextEnabled ? "On" : "Off"}
@@ -174,12 +164,8 @@ export function HeaderOverflowMenu({
                     type="button"
                     onClick={() => setMemoryPreviewOpen((v) => !v)}
                     aria-expanded={memoryPreviewOpen}
-                    aria-label={
-                      memoryPreviewOpen
-                        ? "Hide memory preview"
-                        : "Show memory preview"
-                    }
-                    className="px-2 py-1.5 text-text-muted hover:text-text-primary transition-colors"
+                    aria-label={memoryPreviewOpen ? "Hide memory preview" : "Show memory preview"}
+                    className="px-2 py-1.5 text-text-muted transition-colors hover:text-text-primary"
                   >
                     <ChevronDown
                       size={11}
@@ -191,9 +177,8 @@ export function HeaderOverflowMenu({
 
               {conversation.memoryContextEnabled && (
                 <div className="px-3 pb-1.5 text-meta tabular-nums text-text-muted">
-                  {stats.patterns} pattern{stats.patterns === 1 ? "" : "s"} ·{" "}
-                  {stats.lessons} lesson{stats.lessons === 1 ? "" : "s"} · ~
-                  {stats.approxTokens} tok
+                  {stats.patterns} pattern{stats.patterns === 1 ? "" : "s"} · {stats.lessons} lesson
+                  {stats.lessons === 1 ? "" : "s"} · ~{stats.approxTokens} tok
                 </div>
               )}
 
@@ -201,19 +186,13 @@ export function HeaderOverflowMenu({
                 <div className="space-y-1 bg-bg-secondary px-3 pb-2 pt-1">
                   {memoryBrief.items.length === 0 ? (
                     <div className="text-meta text-text-muted">
-                      No memory learned for this project yet — see the
-                      Memory view.
+                      No memory learned for this project yet — see the Memory view.
                     </div>
                   ) : (
                     <>
                       {memoryBrief.items.slice(0, 5).map((item) => (
-                        <div
-                          key={item.id}
-                          className="truncate text-meta text-text-secondary"
-                        >
-                          <span className="mr-1 uppercase text-text-muted">
-                            {item.kind}
-                          </span>
+                        <div key={item.id} className="truncate text-meta text-text-secondary">
+                          <span className="mr-1 uppercase text-text-muted">{item.kind}</span>
                           {item.title}
                         </div>
                       ))}
@@ -224,8 +203,7 @@ export function HeaderOverflowMenu({
                       )}
                       {memoryBrief.truncated && (
                         <div className="text-meta text-text-muted">
-                          (truncated to fit {memoryBrief.charBudget}-char
-                          budget)
+                          (truncated to fit {memoryBrief.charBudget}-char budget)
                         </div>
                       )}
                     </>
@@ -242,13 +220,25 @@ export function HeaderOverflowMenu({
             type="button"
             onClick={togglePreview}
             aria-pressed={previewOpen}
-            className="w-full flex items-center gap-1.5 px-3 py-1.5 text-ui text-text-primary hover:bg-bg-hover transition-colors border-b border-bg-border"
+            className="flex w-full items-center gap-1.5 border-b border-bg-border px-3 py-1.5 text-ui text-text-primary transition-colors hover:bg-bg-hover"
           >
             <PanelRightOpen size={11} />
             {previewOpen ? "Hide preview pane" : "Show preview pane"}
           </button>
 
           <div className="border-b border-bg-border">
+            <DropdownItem
+              onClick={() => {
+                void openMonitorWindow({
+                  kind: "agent_conversation",
+                  conversationId: conversation.id,
+                }).then(() => flashFeedback("Sent to Monitor"));
+              }}
+            >
+              <span className="flex items-center gap-1.5 text-ui">
+                <MonitorUp size={11} /> Send to Monitor
+              </span>
+            </DropdownItem>
             <DropdownItem onClick={onExport}>
               <span className="flex items-center gap-1.5 text-ui">
                 <Download size={11} /> Export as Markdown
@@ -270,7 +260,7 @@ export function HeaderOverflowMenu({
         </div>
       </Dropdown>
       {feedback && (
-        <div className="absolute top-full right-0 mt-1 z-50 px-2 py-1 text-meta bg-bg-elevated border border-bg-border rounded shadow text-text-secondary whitespace-nowrap">
+        <div className="absolute right-0 top-full z-50 mt-1 whitespace-nowrap rounded border border-bg-border bg-bg-elevated px-2 py-1 text-meta text-text-secondary shadow">
           {feedback}
         </div>
       )}

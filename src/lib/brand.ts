@@ -19,6 +19,9 @@ export const LEGACY_STORAGE_PREFIX = "packetcode:";
 /** Custom URI scheme used by MCP resource URIs. */
 export const URI_SCHEME = "packetade";
 
+/** Query parameter that selects the read-only Monitor boot path. */
+export const MONITOR_WINDOW_QUERY_KEY = `${APP_NAME_LOWER}Window`;
+
 /** Convenience: build a namespaced storage key. */
 export function storageKey(suffix: string): string {
   return STORAGE_PREFIX + suffix;

@@ -284,7 +284,10 @@ export function GitDashboard({
   // P1-15: transplanted from CommitModal — auto-seed the commit message
   // with a `Fixes #N` trailer when the active workspace is bound to an
   // open Issue, so the server-side close-loop can flip it to `done`.
-  const linkedIssue = useMemo(() => findLinkedIssue(issues, workspaceId ?? null), [issues, workspaceId]);
+  const linkedIssue = useMemo(
+    () => findLinkedIssue(issues, workspaceId ?? null),
+    [issues, workspaceId],
+  );
   const seededRef = useRef(false);
   // Monotonic token so a stale diff fetch can't clobber a newer selection.
   const diffReqRef = useRef(0);
@@ -551,12 +554,7 @@ export function GitDashboard({
         if (isRemote) {
           // S3: remote workspaces fetch both sides over SSH in one round-trip.
           if (!serverConfig) throw new Error("Remote server config unavailable");
-          const d = await gitDiffFileRemote(
-            serverConfig,
-            projectPath,
-            oldPath,
-            newPath,
-          );
+          const d = await gitDiffFileRemote(serverConfig, projectPath, oldPath, newPath);
           head = d.head;
           work = d.work;
         } else {
@@ -700,9 +698,7 @@ export function GitDashboard({
         <div className="border-accent-amber/30 bg-accent-amber/5 mx-2 mt-2 shrink-0 rounded border px-2 py-1.5">
           <div className="flex items-center gap-1.5">
             <ShieldCheck size={11} className="shrink-0 text-accent-amber" />
-            <span className="text-ui font-semibold text-text-primary">
-              Review before commit
-            </span>
+            <span className="text-ui font-semibold text-text-primary">Review before commit</span>
             <span className="flex-1" />
             <button
               type="button"
@@ -714,8 +710,8 @@ export function GitDashboard({
           </div>
           <div className="mt-0.5 text-meta leading-relaxed text-text-muted">
             {reviewContext.linkedFileCount} of {files.length} changed file
-            {reviewContext.linkedFileCount === 1 ? "" : "s"} map to {reviewContext.taskCount}{" "}
-            flight task
+            {reviewContext.linkedFileCount === 1 ? "" : "s"} map to {reviewContext.taskCount} flight
+            task
             {reviewContext.taskCount === 1 ? "" : "s"}.
             {reviewContext.pendingApprovalCount > 0
               ? ` ${reviewContext.pendingApprovalCount} approval${reviewContext.pendingApprovalCount === 1 ? "" : "s"} still pending.`
@@ -768,17 +764,13 @@ export function GitDashboard({
               {loadError.kind === "connection" && (
                 <>
                   <div className="font-medium text-text-primary">Unable to connect</div>
-                  <div className="mt-1 break-words text-meta text-text-muted">
-                    {loadError.msg}
-                  </div>
+                  <div className="mt-1 break-words text-meta text-text-muted">{loadError.msg}</div>
                 </>
               )}
               {loadError.kind === "other" && (
                 <>
                   <div className="font-medium text-text-primary">Failed to load git info</div>
-                  <div className="mt-1 break-words text-meta text-text-muted">
-                    {loadError.msg}
-                  </div>
+                  <div className="mt-1 break-words text-meta text-text-muted">{loadError.msg}</div>
                 </>
               )}
             </div>
@@ -842,9 +834,7 @@ export function GitDashboard({
                 <span className={`w-5 shrink-0 font-mono text-meta ${statusColor(f.status)}`}>
                   {f.status}
                 </span>
-                <span className="truncate text-ui text-text-secondary">
-                  {f.path}
-                </span>
+                <span className="truncate text-ui text-text-secondary">{f.path}</span>
                 {match && primaryRef && (
                   <button
                     type="button"
@@ -860,7 +850,7 @@ export function GitDashboard({
                     title={reviewTitle(match.refs)}
                     className={`ml-auto inline-flex min-w-0 max-w-[112px] shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-meta transition-colors ${
                       match.refs.some((r) => r.taskStatus === "approval_needed")
-                        ? "border-accent-amber/40 bg-accent-amber/15 text-accent-amber hover:bg-accent-amber/25"
+                        ? "border-accent-amber/40 bg-accent-amber/15 hover:bg-accent-amber/25 text-accent-amber"
                         : "border-bg-border bg-bg-secondary text-text-muted hover:bg-bg-hover hover:text-text-secondary"
                     }`}
                   >
@@ -882,7 +872,7 @@ export function GitDashboard({
       {/* Commit section — local and remote (SSH) workspaces. The Fixes-trailer
           seeding + linked-issue banner are local-only (their effects early-out
           on remote); the commit itself routes through git_commit_remote. */}
-      {(
+      {
         <div className="shrink-0 space-y-1.5 border-t border-bg-border bg-bg-secondary px-3 py-2">
           {linkedIssue && (
             <div
@@ -937,7 +927,7 @@ export function GitDashboard({
             {reviewContext.linkedFileCount > 0 ? "Commit after review" : "Commit staged"}
           </button>
         </div>
-      )}
+      }
 
       {/* P1-S4: diff overlay — HEAD vs working tree for the clicked file,
           rendered through the shared DiffRows engine. */}
@@ -985,11 +975,7 @@ export function GitDashboard({
               ) : (
                 <div className="min-w-max py-1">
                   {diff.rows.map((row) => (
-                    <DiffRowView
-                      key={row.key}
-                      row={row}
-                      language={languageForPath(diff.path)}
-                    />
+                    <DiffRowView key={row.key} row={row} language={languageForPath(diff.path)} />
                   ))}
                 </div>
               ))}
@@ -1010,6 +996,17 @@ export function GitDashboard({
           onOpenApproval={(conversationId) => {
             setPacketRefs(null);
             focusConversationDeepLink(conversationId);
+          }}
+          onOpenDiff={(filePath) => {
+            const file = files.find((candidate) => candidate.path === filePath);
+            setPacketRefs(null);
+            if (file) void openDiff(file);
+            else {
+              setFeedback({
+                type: "err",
+                msg: `The review packet file is no longer in the working-tree diff: ${filePath}`,
+              });
+            }
           }}
           onClose={() => setPacketRefs(null)}
         />

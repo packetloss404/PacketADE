@@ -15,10 +15,7 @@
  */
 import { fireEvent, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  AgentConversation,
-  PendingPermission,
-} from "@/types/agent-conversation";
+import type { AgentConversation, PendingPermission } from "@/types/agent-conversation";
 
 vi.mock("@/stores/appStore", () => ({
   useAppStore: (selector: (s: { commandPaletteOpen: boolean }) => unknown) =>
@@ -106,6 +103,38 @@ describe("PendingApprovalsSection Y/N focus gate (P3-S1)", () => {
     expect(respondPermission).not.toHaveBeenCalled();
   });
 
+  it.each(["input", "textarea", "select"] as const)(
+    "does not consume Y/N while a %s owns keyboard focus",
+    (tag) => {
+      renderSection({ pendingPermissions: [makePermission("perm-1")] });
+      const field = document.createElement(tag);
+      document.body.appendChild(field);
+      field.focus();
+
+      fireEvent.keyDown(field, { key: "y" });
+      fireEvent.keyDown(field, { key: "n" });
+
+      expect(respondPermission).not.toHaveBeenCalled();
+      field.remove();
+    },
+  );
+
+  it("does not consume Y/N inside contenteditable", () => {
+    renderSection({ pendingPermissions: [makePermission("perm-1")] });
+    const editor = document.createElement("div");
+    // JSDOM does not reflect the contentEditable property into the attribute
+    // consistently. Set the attribute directly so this matches rendered DOM.
+    editor.setAttribute("contenteditable", "true");
+    document.body.appendChild(editor);
+    editor.focus();
+
+    fireEvent.keyDown(editor, { key: "y" });
+    fireEvent.keyDown(editor, { key: "n" });
+
+    expect(respondPermission).not.toHaveBeenCalled();
+    editor.remove();
+  });
+
   it("two mounted sections with distinct scope: one keypress reaches ONLY the armed instance", () => {
     render(
       <>
@@ -131,10 +160,6 @@ describe("PendingApprovalsSection Y/N focus gate (P3-S1)", () => {
     );
     fireEvent.keyDown(document.body, { key: "y" });
     expect(respondPermission).toHaveBeenCalledTimes(1);
-    expect(respondPermission).toHaveBeenCalledWith(
-      "conv-armed",
-      "perm-armed",
-      "allow_once",
-    );
+    expect(respondPermission).toHaveBeenCalledWith("conv-armed", "perm-armed", "allow_once");
   });
 });

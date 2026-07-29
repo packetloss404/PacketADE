@@ -18,6 +18,7 @@ export interface GitHubIssue {
   user: { login: string };
   html_url: string;
   created_at: string;
+  updated_at?: string;
   /** v0.8-C: assignees populated by GitHub's /issues endpoint. */
   assignees?: { login: string; avatar_url?: string }[];
   /** v0.8-C: milestone populated by GitHub's /issues endpoint. */

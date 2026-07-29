@@ -209,7 +209,7 @@ export async function startReviewGate(
 
     const server =
       attempt.target.kind === "ssh"
-        ? useServerStore.getState().getServer(attempt.target.targetId)
+        ? useServerStore.getState().getServer(attempt.target.serverId)
         : undefined;
     if (attempt.target.kind === "ssh" && !server) {
       throw new Error("The SSH server used by this attempt is no longer configured.");

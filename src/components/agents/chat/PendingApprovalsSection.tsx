@@ -101,7 +101,12 @@ export function PendingApprovalsSection({
       if (target) {
         const tag = target.tagName;
         if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-        if (target.isContentEditable) return;
+        if (
+          target.isContentEditable ||
+          target.closest("[contenteditable]:not([contenteditable='false'])")
+        ) {
+          return;
+        }
       }
       const key = e.key.toLowerCase();
       if (key !== "y" && key !== "n") return;
