@@ -1,6 +1,10 @@
 import { generateId } from "@/lib/storage";
 import { buildReviewPrompt } from "@/lib/conversationReview";
 import {
+  inheritSshTarget,
+  isRemoteConversation,
+} from "@/lib/remoteConversation";
+import {
   requestConversationSave,
   useAgentTaskStore,
 } from "@/stores/agentTaskStore";
@@ -78,9 +82,23 @@ export const slashCommandHandlers: Record<
     appendMessage(conversationId, sysMessage(HELP_CHEATSHEET));
   },
 
-  new: ({ conversation, createApiConversation, selectConversation }) => {
+  new: ({ conversationId, conversation, createApiConversation, selectConversation }) => {
     if (conversation.mode !== "api" || !conversation.model) return;
     const model = conversation.model;
+    // D3 / P0-4: `projectPath` is the REMOTE path on SSH conversations, so a
+    // derived conversation must inherit the remote identity or not launch at
+    // all — silently going local would point the new session at a path that
+    // does not exist on this machine.
+    const inheritedSsh = inheritSshTarget(conversation);
+    if (isRemoteConversation(conversation) && !inheritedSsh) {
+      appendMessage(
+        conversationId,
+        sysMessage(
+          "(/new skipped — this conversation's SSH server record no longer exists, so the remote target cannot be inherited)",
+        ),
+      );
+      return;
+    }
     void (async () => {
       try {
         const newId = await createApiConversation({
@@ -101,7 +119,7 @@ export const slashCommandHandlers: Record<
           // retained on the conversation, so it isn't re-applied here.
           systemPromptOverride: null,
           planMode: conversation.planMode ?? false,
-          sshTarget: null,
+          sshTarget: inheritedSsh,
           skipBackendStart: false,
           allowedTools: conversation.allowedTools ?? null,
           memoryContextEnabled: conversation.memoryContextEnabled ?? false,
@@ -162,6 +180,18 @@ export const slashCommandHandlers: Record<
   }) => {
     if (conversation.mode !== "api" || !conversation.model) return;
     const model = conversation.model;
+    // Same inheritance rule as /new (D3 / P0-4): the reviewer must read the
+    // files where they actually live.
+    const inheritedSsh = inheritSshTarget(conversation);
+    if (isRemoteConversation(conversation) && !inheritedSsh) {
+      appendMessage(
+        conversationId,
+        sysMessage(
+          "(/review skipped — this conversation's SSH server record no longer exists, so the remote target cannot be inherited)",
+        ),
+      );
+      return;
+    }
     void (async () => {
       try {
         const prompt = await buildReviewPrompt(conversation);
@@ -181,7 +211,7 @@ export const slashCommandHandlers: Record<
           initialMessage: prompt,
           systemPromptOverride: reviewerProfile?.systemPrompt ?? null,
           planMode: true, // reviewer is read-only
-          sshTarget: null,
+          sshTarget: inheritedSsh,
           skipBackendStart: false,
           allowedTools: reviewerProfile?.allowedTools ?? null,
           memoryContextEnabled: false,

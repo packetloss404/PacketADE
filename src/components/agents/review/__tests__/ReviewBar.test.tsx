@@ -54,7 +54,7 @@ function renderBar({
   return render(
     <ReviewBar
       conversationId={conversationId}
-      diffTotals={{ fileCount, totalAdds: 3, totalDels: 1, paths }}
+      diffTotals={{ fileCount, totalAdds: 3, totalDels: 1, paths, unavailableCount: 0, failed: false }}
       pendingEdits={pendingEdits}
       pendingPermissionCount={pendingPermissionCount}
       respondEdit={respondEdit}
@@ -180,7 +180,14 @@ describe("ReviewBar", () => {
         <>
           <ReviewBar
             conversationId="conv-armed"
-            diffTotals={{ fileCount: 0, totalAdds: 3, totalDels: 1, paths: new Set() }}
+            diffTotals={{
+              fileCount: 0,
+              totalAdds: 3,
+              totalDels: 1,
+              paths: new Set(),
+              unavailableCount: 0,
+              failed: false,
+            }}
             pendingEdits={[makeEdit("edit-armed")]}
             pendingPermissionCount={0}
             respondEdit={respondEdit}
@@ -188,7 +195,14 @@ describe("ReviewBar", () => {
           />
           <ReviewBar
             conversationId="conv-inactive"
-            diffTotals={{ fileCount: 0, totalAdds: 3, totalDels: 1, paths: new Set() }}
+            diffTotals={{
+              fileCount: 0,
+              totalAdds: 3,
+              totalDels: 1,
+              paths: new Set(),
+              unavailableCount: 0,
+              failed: false,
+            }}
             pendingEdits={[makeEdit("edit-inactive")]}
             pendingPermissionCount={0}
             respondEdit={respondEdit}

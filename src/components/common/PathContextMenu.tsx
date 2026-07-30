@@ -6,6 +6,7 @@ import {
   AtSign,
   FolderOpen,
 } from "lucide-react";
+import { REMOTE_UNSUPPORTED_TOOLTIP } from "@/lib/remoteConversation";
 
 export interface PathContextMenuProps {
   /** Viewport x coordinate (px) for the menu anchor */
@@ -20,6 +21,10 @@ export interface PathContextMenuProps {
   onClose: () => void;
   /** Inject `@path` into the agent input via the parent */
   onAttach: (path: string) => void;
+  /** D3 / P0-4: the surrounding conversation runs on an SSH host, so this path
+   * exists on the REMOTE filesystem. "Open in editor" / "Show in Explorer"
+   * would act on an unrelated local path — they stay visible but disabled. */
+  remote?: boolean;
 }
 
 /**
@@ -46,6 +51,7 @@ export function PathContextMenu({
   line,
   onClose,
   onAttach,
+  remote = false,
 }: PathContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -115,6 +121,8 @@ export function PathContextMenu({
 
   const itemClass =
     "w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-text-primary hover:bg-bg-hover transition-colors text-left";
+  const disabledItemClass =
+    "w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-text-primary text-left opacity-40 cursor-not-allowed";
 
   return (
     <div
@@ -133,7 +141,14 @@ export function PathContextMenu({
         {line ? `${path}:${line}` : path}
       </div>
 
-      <button type="button" className={itemClass} onClick={handleOpen}>
+      <button
+        type="button"
+        className={remote ? disabledItemClass : itemClass}
+        disabled={remote}
+        aria-disabled={remote}
+        title={remote ? REMOTE_UNSUPPORTED_TOOLTIP : undefined}
+        onClick={handleOpen}
+      >
         <FileText size={12} className="text-accent-green shrink-0" />
         <span>Open in editor</span>
       </button>
@@ -145,7 +160,14 @@ export function PathContextMenu({
         <AtSign size={12} className="text-text-secondary shrink-0" />
         <span>Attach as @mention</span>
       </button>
-      <button type="button" className={itemClass} onClick={handleShowInExplorer}>
+      <button
+        type="button"
+        className={remote ? disabledItemClass : itemClass}
+        disabled={remote}
+        aria-disabled={remote}
+        title={remote ? REMOTE_UNSUPPORTED_TOOLTIP : undefined}
+        onClick={handleShowInExplorer}
+      >
         <FolderOpen size={12} className="text-text-secondary shrink-0" />
         <span>Show in Explorer</span>
       </button>

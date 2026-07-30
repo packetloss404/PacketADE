@@ -196,7 +196,7 @@ describe("aggregateConversationDiffs (P1-7 baselines)", () => {
     expect(readFileForDiffMock).not.toHaveBeenCalled();
   });
 
-  it("skips files whose disk read fails, keeping a zero-count row", async () => {
+  it("marks files whose disk read fails as unavailable instead of a silent zero-count row (D3 / P0-4)", async () => {
     const conv = makeConversation([
       makeCall(
         "tc-1",
@@ -208,8 +208,88 @@ describe("aggregateConversationDiffs (P1-7 baselines)", () => {
 
     const result = await aggregateConversationDiffs(conv);
     expect(result.perFile).toEqual([
-      { path: "src/e.ts", adds: 0, dels: 0, isNew: false },
+      {
+        path: "src/e.ts",
+        adds: 0,
+        dels: 0,
+        isNew: false,
+        unavailable: "read-failed",
+      },
     ]);
     expect(result.totalAdds).toBe(0);
+    expect(result.unavailableCount).toBe(1);
+  });
+});
+
+describe("aggregateConversationDiffs — SSH conversations (D3 / P0-4)", () => {
+  const sshTarget = {
+    id: "srv-1",
+    name: "box",
+    host: "10.0.0.5",
+    user: "ian",
+    remotePath: "/home/ian/proj",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useEditBaselineStore.setState({
+      byConversation: new Map(),
+      byToolCall: new Map(),
+    });
+  });
+
+  it("never reads local disk and reports files without a baseline as unavailable", async () => {
+    const conv: AgentConversation = {
+      ...makeConversation([
+        makeCall(
+          "tc-1",
+          "write_file",
+          JSON.stringify({ path: "src/remote.ts", content: "x\n" }),
+        ),
+      ]),
+      projectPath: "/home/ian/proj",
+      sshTarget,
+    };
+
+    const result = await aggregateConversationDiffs(conv);
+
+    expect(readFileForDiffMock).not.toHaveBeenCalled();
+    expect(result.perFile).toEqual([
+      {
+        path: "src/remote.ts",
+        adds: 0,
+        dels: 0,
+        isNew: false,
+        unavailable: "remote",
+      },
+    ]);
+    expect(result.unavailableCount).toBe(1);
+  });
+
+  it("still counts remote files that HAVE a wire-recorded baseline", async () => {
+    const conv: AgentConversation = {
+      ...makeConversation([
+        makeCall(
+          "tc-1",
+          "write_file",
+          JSON.stringify({ path: "src/remote.ts", content: "a\nB\n" }),
+        ),
+      ]),
+      projectPath: "/home/ian/proj",
+      sshTarget,
+    };
+    useEditBaselineStore
+      .getState()
+      .recordBaseline("conv-1", "src/remote.ts", "a\nb\n", "tc-1");
+
+    const result = await aggregateConversationDiffs(conv);
+
+    expect(readFileForDiffMock).not.toHaveBeenCalled();
+    expect(result.unavailableCount).toBe(0);
+    expect(result.perFile[0]).toMatchObject({
+      path: "src/remote.ts",
+      adds: 1,
+      dels: 1,
+    });
   });
 });

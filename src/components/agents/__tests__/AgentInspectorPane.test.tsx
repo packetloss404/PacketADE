@@ -217,6 +217,41 @@ describe("AgentInspectorPane", () => {
     ).toBeInTheDocument();
   });
 
+  it("disables (does not hide) the Preview tab on SSH conversations and refuses the auto-switch (D3 / P0-4)", () => {
+    agentStore.state.conversations = [
+      makeConversation({
+        id: "conv-ssh",
+        sshTarget: {
+          id: "server-1",
+          name: "Staging",
+          host: "example.com",
+          user: "ian",
+          remotePath: "/srv/app",
+        },
+      }),
+    ];
+    render(<AgentInspectorPane conversationId="conv-ssh" />);
+
+    const previewTab = screen.getByRole("tab", { name: /preview/i });
+    // Discoverable, not hidden: still rendered, disabled, and explains why.
+    expect(previewTab).toBeInTheDocument();
+    expect(previewTab).toBeDisabled();
+    expect(previewTab.getAttribute("title")).toMatch(
+      /not yet available for ssh workspaces/i,
+    );
+
+    fireEvent.click(previewTab);
+    expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
+
+    // A plan landing in the preview store must not force the pane onto a
+    // tab that cannot work for this conversation.
+    act(() => {
+      usePreviewPaneStore.getState().openPlan("# plan body");
+    });
+    expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
+    expect(screen.getByText("Files changed")).toBeInTheDocument();
+  });
+
   it("shows the SSH 'not supported' message on the Files tab for SSH conversations", () => {
     agentStore.state.conversations = [
       makeConversation({

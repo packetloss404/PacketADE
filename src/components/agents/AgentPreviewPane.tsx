@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, BookOpen, ClipboardList, PanelRightClose } from "lucide-react";
+import {
+  AlertCircle,
+  BookOpen,
+  ClipboardList,
+  PanelRightClose,
+  Server,
+} from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { readFileContents } from "@/lib/tauri";
+import { REMOTE_UNSUPPORTED_TOOLTIP } from "@/lib/remoteConversation";
 import {
   usePreviewPaneStore,
   type PreviewPaneTab,
@@ -12,6 +19,10 @@ import { EmptyState } from "@/components/ui/EmptyState";
 
 interface AgentPreviewPaneProps {
   projectPath: string;
+  /** D3 / P0-4: the owning conversation runs on an SSH host, so `projectPath`
+   * is a REMOTE path. Markdown preview reads LOCAL disk, so it is refused
+   * (with an explicit notice) instead of reading an unrelated local path. */
+  remote?: boolean;
   /** When true, the pane is rendered inside the InspectorPane's tab and drops
    *  the standalone aside chrome (fixed width, close button). */
   embedded?: boolean;
@@ -45,6 +56,7 @@ const TAB_META: Record<PreviewPaneTab, { label: string; icon: typeof BookOpen }>
 
 export function AgentPreviewPane({
   projectPath,
+  remote = false,
   embedded = false,
   onRequestClose,
 }: AgentPreviewPaneProps) {
@@ -64,8 +76,11 @@ export function AgentPreviewPane({
   const [markdownError, setMarkdownError] = useState<string | null>(null);
 
   const absoluteMarkdownPath = useMemo(
-    () => (markdownPath ? resolveProjectPath(projectPath, markdownPath) : null),
-    [markdownPath, projectPath],
+    () =>
+      markdownPath && !remote
+        ? resolveProjectPath(projectPath, markdownPath)
+        : null,
+    [markdownPath, projectPath, remote],
   );
 
   useEffect(() => {
@@ -160,7 +175,18 @@ export function AgentPreviewPane({
       </div>
 
       <div className="flex-1 min-h-0 overflow-hidden">
-        {activeTab === "markdown" && (
+        {activeTab === "markdown" && remote && (
+          <div className="h-full overflow-y-auto px-5 py-4">
+            <EmptyState
+              className="h-full"
+              icon={<Server size={24} />}
+              title={`Markdown preview — ${REMOTE_UNSUPPORTED_TOOLTIP}.`}
+              description="This conversation's files live on a remote SSH host; the preview only reads the local filesystem."
+            />
+          </div>
+        )}
+
+        {activeTab === "markdown" && !remote && (
           <div className="h-full overflow-y-auto px-5 py-4">
             {!markdownPath && (
               <EmptyState

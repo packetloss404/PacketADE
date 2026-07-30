@@ -11,6 +11,11 @@ import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { API_PROVIDERS } from "@/lib/api-models";
 import { buildHandoffPrompt } from "@/lib/conversationHandoff";
+import {
+  inheritSshTarget,
+  isRemoteConversation,
+  REMOTE_UNSUPPORTED_TOOLTIP,
+} from "@/lib/remoteConversation";
 import { parseToolInput } from "@/lib/parseToolInput";
 import {
   getProviderAuthStatus,
@@ -226,8 +231,20 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
   const awaitingPlanApproval = (conversation.planMode ?? false) && !planApproved;
   const handoffEligible = isClaudeParent && items.length > 0;
 
+  // D3 / P0-4: the handoff used to hard-code `sshTarget: null`, silently
+  // turning a remote conversation into a LOCAL Codex session pointed at a
+  // path that only exists on the remote host. The Codex sidecar does run over
+  // SSH (the supervisor's remote-sidecar preflight covers `openai-codex`), so
+  // the honest fix is to INHERIT the parent's remote identity. The one case we
+  // cannot honor is a deleted server record — port/key/auth-method/host
+  // fingerprint are gone, and fabricating them would silently downgrade
+  // host-key checking — so the button disables with the standard tooltip.
+  const inheritedSsh = inheritSshTarget(conversation);
+  const remoteParent = isRemoteConversation(conversation);
+  const remoteTargetLost = remoteParent && inheritedSsh === null;
+
   async function handleHandoff(): Promise<void> {
-    if (!conversation.model) return;
+    if (!conversation.model || remoteTargetLost) return;
     setHandingOff(true);
     try {
       const prompt = buildHandoffPrompt(conversation, storedPlan);
@@ -245,7 +262,9 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
           "Follow the plan step by step; do not re-plan unless blocked.",
         thinkingEnabled: false,
         planMode: false, // executing, not planning
-        sshTarget: null,
+        // Inherit the parent's SSH identity so the executor runs where the
+        // plan was made (null for local conversations, as before).
+        sshTarget: inheritedSsh,
         skipBackendStart: false,
         allowedTools: null, // full toolset
         memoryContextEnabled: false,
@@ -321,15 +340,20 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
           {handoffEligible && (
             <Tooltip
               content={
-                !codexReady
-                  ? "Codex login required (run `codex login` or sign in via the provider dropdown)"
-                  : "Hand the plan off to a fresh Codex conversation for execution"
+                remoteTargetLost
+                  ? `Hand off — ${REMOTE_UNSUPPORTED_TOOLTIP} (this conversation's SSH server record no longer exists, so its remote identity cannot be inherited)`
+                  : !codexReady
+                    ? "Codex login required (run `codex login` or sign in via the provider dropdown)"
+                    : remoteParent
+                      ? `Hand the plan off to a fresh Codex conversation on ${conversation.sshTarget?.host}`
+                      : "Hand the plan off to a fresh Codex conversation for execution"
               }
             >
               <button
                 type="button"
                 onClick={() => void handleHandoff()}
-                disabled={!codexReady || handingOff}
+                disabled={!codexReady || handingOff || remoteTargetLost}
+                aria-disabled={!codexReady || handingOff || remoteTargetLost}
                 className="flex items-center gap-1 text-ui px-2 py-0.5 rounded border border-accent-blue/40 text-accent-blue hover:bg-accent-blue/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Send size={11} /> {handingOff ? "Handing off…" : "Hand off to Codex"}

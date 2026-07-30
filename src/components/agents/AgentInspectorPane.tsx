@@ -22,6 +22,10 @@ import { ReviewSurface } from "./review/ReviewSurface";
 import { AgentFilePane } from "./AgentFilePane";
 import { PlanPanel } from "./PlanPanel";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
+import {
+  isRemoteConversation,
+  REMOTE_UNSUPPORTED_TOOLTIP,
+} from "@/lib/remoteConversation";
 import { logSwallowed } from "@/lib/logSwallowed";
 import { useUnviewedCount } from "./review/useUnviewedCount";
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -77,18 +81,21 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
   const [width, setWidth] = useState<number>(() => readPersistedWidth());
   const [isDragging, setIsDragging] = useState(false);
   const unreviewedCount = useUnviewedCount(conversationId);
+  // D3 / P0-4: Preview reads LOCAL disk, so it is disabled (not hidden) for
+  // SSH-backed conversations until a remote file contract exists.
+  const remote = isRemoteConversation(conversation);
 
   // Auto-switch to the Preview tab when the preview store flips to open
   // (e.g. clicking a .md link in chat or detecting a plan response).
   const previewOpen = usePreviewPaneStore((s) => s.open);
   const prevPreviewOpenRef = useRef(previewOpen);
   useEffect(() => {
-    if (previewOpen && !prevPreviewOpenRef.current) {
+    if (previewOpen && !prevPreviewOpenRef.current && !remote) {
       setTab("preview");
       setOpen(true);
     }
     prevPreviewOpenRef.current = previewOpen;
-  }, [previewOpen]);
+  }, [previewOpen, remote]);
 
   // Auto-switch to the Plan tab on the rising edge of "plan arrives".
   // Peer effect to the Preview auto-switch above; uses the same rising-edge
@@ -105,6 +112,12 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
     }
     prevPlanCountRef.current = planCount;
   }, [planCount]);
+
+  // Never leave a disabled tab selected (e.g. a conversation that resolves as
+  // remote after the pane already sat on Preview).
+  useEffect(() => {
+    if (remote && tab === "preview") setTab("inspector");
+  }, [remote, tab]);
 
   // Global pointer-move / up listeners while dragging.
   useEffect(() => {
@@ -154,28 +167,36 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
         {TAB_DEFS.map((t) => {
           const Icon = t.icon;
           const showBadge = t.id === "diff" && unreviewedCount > 0;
+          const disabled = remote && t.id === "preview";
           return (
             <Tooltip
               key={t.id}
               side="left"
               content={
-                showBadge
-                  ? `${t.label} (${unreviewedCount} unreviewed)`
-                  : t.label
+                disabled
+                  ? `${t.label} — ${REMOTE_UNSUPPORTED_TOOLTIP}`
+                  : showBadge
+                    ? `${t.label} (${unreviewedCount} unreviewed)`
+                    : t.label
               }
             >
               <button
                 role="tab"
                 aria-selected={tab === t.id}
                 aria-label={t.label}
+                aria-disabled={disabled}
+                disabled={disabled}
                 onClick={() => {
+                  if (disabled) return;
                   setTab(t.id);
                   setOpen(true);
                 }}
                 className={`relative w-6 h-6 grid place-items-center rounded transition-colors ${
-                  tab === t.id
-                    ? "bg-bg-elevated text-text-primary"
-                    : "text-text-muted hover:text-text-secondary"
+                  disabled
+                    ? "cursor-not-allowed text-text-muted opacity-40"
+                    : tab === t.id
+                      ? "bg-bg-elevated text-text-primary"
+                      : "text-text-muted hover:text-text-secondary"
                 }`}
               >
                 <Icon size={12} />
@@ -241,19 +262,31 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
           const Icon = t.icon;
           const active = tab === t.id;
           const showBadge = t.id === "diff" && unreviewedCount > 0;
+          const disabled = remote && t.id === "preview";
           return (
             <button
               key={t.id}
               role="tab"
               aria-selected={active}
-              onClick={() => setTab(t.id)}
+              aria-disabled={disabled}
+              disabled={disabled}
+              onClick={() => {
+                if (disabled) return;
+                setTab(t.id);
+              }}
               className={`relative flex items-center gap-1.5 px-2.5 text-ui border-b-2 transition-colors ${
-                active
-                  ? "border-accent-green text-text-primary"
-                  : "border-transparent text-text-muted hover:text-text-secondary"
+                disabled
+                  ? "cursor-not-allowed border-transparent text-text-muted opacity-40"
+                  : active
+                    ? "border-accent-green text-text-primary"
+                    : "border-transparent text-text-muted hover:text-text-secondary"
               }`}
               title={
-                showBadge ? `${t.label} (${unreviewedCount} unreviewed)` : undefined
+                disabled
+                  ? `${t.label} — ${REMOTE_UNSUPPORTED_TOOLTIP}`
+                  : showBadge
+                    ? `${t.label} (${unreviewedCount} unreviewed)`
+                    : undefined
               }
             >
               <Icon size={11} />
@@ -285,6 +318,7 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
         {tab === "preview" && (
           <AgentPreviewPane
             projectPath={conversation.projectPath}
+            remote={remote}
             embedded
             onRequestClose={() => setTab("inspector")}
           />
@@ -329,6 +363,7 @@ function InspectorContent({ conversationId }: { conversationId: string }) {
   });
   const [filesLoading, setFilesLoading] = useState(false);
   const [filesError, setFilesError] = useState(false);
+  const [unavailableCount, setUnavailableCount] = useState(0);
 
   const messageCount = conversation?.messages.length ?? 0;
   useEffect(() => {
@@ -337,6 +372,7 @@ function InspectorContent({ conversationId }: { conversationId: string }) {
       setTotals({ adds: 0, dels: 0, count: 0 });
       setFilesLoading(false);
       setFilesError(false);
+      setUnavailableCount(0);
       return;
     }
     let cancelled = false;
@@ -348,10 +384,12 @@ function InspectorContent({ conversationId }: { conversationId: string }) {
         if (cancelled) return;
         setFiles(r.perFile);
         setTotals({ adds: r.totalAdds, dels: r.totalDels, count: r.fileCount });
+        setUnavailableCount(r.unavailableCount);
       } catch {
         if (!cancelled) {
           setFiles([]);
           setTotals({ adds: 0, dels: 0, count: 0 });
+          setUnavailableCount(0);
           setFilesError(true);
         }
       } finally {
@@ -407,7 +445,19 @@ function InspectorContent({ conversationId }: { conversationId: string }) {
               No edits in this conversation yet.
             </span>
           ) : (
-            files.map((f, i) => <FileChangedRow key={i} stat={f} />)
+            <>
+              {unavailableCount > 0 && (
+                <span className="flex items-center gap-1.5 text-ui text-accent-amber px-1 py-1">
+                  <AlertCircle size={10} />
+                  {unavailableCount}{" "}
+                  {unavailableCount === 1 ? "file" : "files"} could not be
+                  diffed — totals are incomplete.
+                </span>
+              )}
+              {files.map((f, i) => (
+                <FileChangedRow key={i} stat={f} />
+              ))}
+            </>
           )}
         </div>
       </div>
@@ -476,6 +526,28 @@ function SectionHeader({ label, right }: { label: string; right?: string }) {
 
 function FileChangedRow({ stat }: { stat: PerFileDiffStat }) {
   const cells = 24;
+  // D3 / P0-4: a failed/remote diff is NOT a zero-line diff. Say so instead of
+  // rendering "+0 −0", which reads as "this file didn't really change".
+  if (stat.unavailable) {
+    return (
+      <div className="px-2 py-1.5 rounded border border-accent-amber/30 bg-bg-tertiary">
+        <div className="flex items-center gap-1.5">
+          <AlertCircle size={10} className="text-accent-amber shrink-0" />
+          <span
+            className="font-mono text-ui text-text-primary truncate flex-1"
+            title={stat.path}
+          >
+            {basename(stat.path)}
+          </span>
+          <span className="text-meta text-accent-amber shrink-0">
+            {stat.unavailable === "remote"
+              ? "diff unavailable (SSH)"
+              : "diff unavailable"}
+          </span>
+        </div>
+      </div>
+    );
+  }
   const pos = stat.adds + stat.dels;
   const addsCells = pos === 0 ? 0 : Math.max(1, Math.round((stat.adds / pos) * cells));
   const delsCells = pos === 0 ? 0 : Math.max(stat.dels > 0 ? 1 : 0, cells - addsCells);

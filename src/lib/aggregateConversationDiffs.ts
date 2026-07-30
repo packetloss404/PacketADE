@@ -3,6 +3,7 @@ import { readFileForDiff } from "@/lib/tauri";
 import { materializeEdits } from "@/lib/parseToolInput";
 import { collectConversationEditGroups } from "@/lib/diffUtils";
 import { useEditBaselineStore } from "@/stores/editBaselineStore";
+import { isRemoteConversation } from "@/lib/remoteConversation";
 import type { AgentConversation } from "@/types/agent-conversation";
 
 /* -------------------------------------------------------------------------- */
@@ -34,6 +35,13 @@ export interface PerFileDiffStat {
   adds: number;
   dels: number;
   isNew: boolean;
+  /**
+   * D3 / P0-4: set when this file's counts could NOT be computed — the disk
+   * read failed, or the conversation is SSH-backed so local disk is not its
+   * filesystem at all. `adds`/`dels` are 0 in this case and MUST NOT be
+   * rendered as "no changes": consumers render an explicit unavailable state.
+   */
+  unavailable?: "read-failed" | "remote";
 }
 
 export interface ConversationDiffAggregate {
@@ -41,6 +49,9 @@ export interface ConversationDiffAggregate {
   totalAdds: number;
   totalDels: number;
   perFile: PerFileDiffStat[];
+  /** How many entries in `perFile` carry an `unavailable` reason. `> 0` means
+   * the totals are a floor, not the truth — surface that in the UI. */
+  unavailableCount: number;
 }
 
 /**
@@ -56,18 +67,26 @@ export interface ConversationDiffAggregate {
  * transcript can't reproduce the final content (Codex apply_patch), in
  * which case the applied on-disk result IS the after.
  *
- * Errors reading individual files are swallowed and that file is skipped
- * from the totals (it still appears in `perFile` with zero counts so the
- * caller can render it sensibly).
+ * Files whose counts cannot be computed (disk read failed, or the transcript
+ * can't reproduce the content on an SSH-backed conversation where local disk
+ * is not the agent's filesystem) are reported with `unavailable` set instead
+ * of silently collapsing to +0/-0 — a zero-line diff and a failed diff are
+ * different facts and the UI must not conflate them (D3 / P0-4).
  */
 export async function aggregateConversationDiffs(
   conversation: AgentConversation,
 ): Promise<ConversationDiffAggregate> {
   const groups = collectConversationEditGroups(conversation);
   const getBaseline = useEditBaselineStore.getState().getBaseline;
+  // SSH conversations: `projectPath` is the REMOTE path, so `read_file_for_diff`
+  // would read an unrelated (usually nonexistent) local path. Recorded
+  // baselines are still truthful — they came over the wire — so remote files
+  // with a baseline still get real counts; only the disk fallbacks are refused.
+  const remote = isRemoteConversation(conversation);
   const perFile: PerFileDiffStat[] = [];
   let totalAdds = 0;
   let totalDels = 0;
+  let unavailableCount = 0;
 
   // Sequential awaits keep things simple; conversations rarely contain more
   // than a handful of distinct edited paths and `read_file_for_diff` is
@@ -75,31 +94,44 @@ export async function aggregateConversationDiffs(
   for (const [path, group] of groups) {
     const baseline = getBaseline(conversation.id, path);
     let orig: string | null = null;
-    let readFailed = false;
+    let unavailable: PerFileDiffStat["unavailable"];
     if (baseline !== undefined) {
       orig = baseline.content;
+    } else if (remote) {
+      unavailable = "remote";
     } else {
       try {
         orig = (await readFileForDiff(conversation.projectPath, path)) ?? null;
       } catch {
-        readFailed = true;
+        unavailable = "read-failed";
       }
     }
 
-    let newContent = materializeEdits(group.edits, orig);
-    if (newContent === null && !readFailed) {
+    let newContent = unavailable ? null : materializeEdits(group.edits, orig);
+    if (newContent === null && !unavailable) {
       // Transcript can't reproduce the content (e.g. Codex apply_patch):
       // the applied on-disk result is the truthful "after".
-      try {
-        newContent =
-          (await readFileForDiff(conversation.projectPath, path)) ?? null;
-      } catch {
-        readFailed = true;
+      if (remote) {
+        unavailable = "remote";
+      } else {
+        try {
+          newContent =
+            (await readFileForDiff(conversation.projectPath, path)) ?? null;
+        } catch {
+          unavailable = "read-failed";
+        }
       }
     }
 
-    if (readFailed || newContent === null) {
-      perFile.push({ path, adds: 0, dels: 0, isNew: false });
+    if (unavailable || newContent === null) {
+      perFile.push({
+        path,
+        adds: 0,
+        dels: 0,
+        isNew: false,
+        unavailable: unavailable ?? "read-failed",
+      });
+      unavailableCount += 1;
       continue;
     }
 
@@ -125,5 +157,6 @@ export async function aggregateConversationDiffs(
     totalAdds,
     totalDels,
     perFile,
+    unavailableCount,
   };
 }

@@ -22,6 +22,10 @@ import {
   joinAbsolutePath,
   type WriteFileEntry,
 } from "@/lib/diffUtils";
+import {
+  isRemoteConversation,
+  REMOTE_UNSUPPORTED_TOOLTIP,
+} from "@/lib/remoteConversation";
 import type { PendingEdit } from "@/types/agent-conversation";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -146,6 +150,12 @@ export function ReviewSurface({
 
   const isEmpty = pendingEdits.length === 0 && appliedEntries.length === 0;
   const projectPath = conversation?.projectPath ?? "";
+  // D3 / P0-4: applied-file sections read local disk and their Undo WRITES
+  // local disk. For an SSH-backed conversation `projectPath` is the remote
+  // path, so both would hit an unrelated local file. Pending sections are
+  // unaffected — they carry their content in the protocol and resolve through
+  // `respondEdit` on the backend that owns the real filesystem.
+  const remote = isRemoteConversation(conversation);
   // Gated files usually already count in `totals` (their tool call is in
   // the transcript pre-approval) — union, never sum, or one file shows as 2.
   const fileCount = countReviewFiles(totals, pendingEdits);
@@ -168,6 +178,28 @@ export function ReviewSurface({
           <span className="text-accent-green">+{totals.totalAdds}</span>
           <span className="text-accent-red">-{totals.totalDels}</span>
         </span>
+        {/* D3 / P0-4: never let a failed aggregate read as "0 lines changed". */}
+        {totals.failed ? (
+          <Tooltip content="The diff aggregate could not be computed for this conversation.">
+            <span className="flex items-center gap-1 text-meta text-accent-red">
+              <AlertCircle size={11} /> diff unavailable
+            </span>
+          </Tooltip>
+        ) : (
+          totals.unavailableCount > 0 && (
+            <Tooltip
+              content={
+                remote
+                  ? `Per-file diffs for files without a recorded baseline — ${REMOTE_UNSUPPORTED_TOOLTIP}`
+                  : "Some files could not be read, so these totals are incomplete."
+              }
+            >
+              <span className="flex items-center gap-1 text-meta text-accent-amber">
+                <AlertCircle size={11} /> {totals.unavailableCount} not diffed
+              </span>
+            </Tooltip>
+          )
+        )}
         {pendingEdits.length > 0 && (
           <span className="text-meta text-accent-amber">
             {pendingEdits.length} awaiting review
@@ -211,6 +243,7 @@ export function ReviewSurface({
                 conversationId={conversationId}
                 projectPath={projectPath}
                 entry={entry}
+                remote={remote}
               />
             </div>
           ))}
@@ -496,10 +529,13 @@ function AppliedFileSection({
   conversationId,
   projectPath,
   entry,
+  remote = false,
 }: {
   conversationId: string;
   projectPath: string;
   entry: WriteFileEntry;
+  /** D3 / P0-4: SSH-backed conversation — no local disk read, no Undo. */
+  remote?: boolean;
 }) {
   // Selector must return a stable primitive (a fresh object every snapshot
   // would re-render forever). `undefined` = no baseline recorded; `null` =
@@ -515,7 +551,12 @@ function AppliedFileSection({
         : { content: baselineContent },
     [baselineContent],
   );
-  const { state: disk, refresh } = useFileDisk(projectPath || undefined, entry.path);
+  // Remote conversations never touch local disk (the hook short-circuits on a
+  // missing project path, so no read is issued).
+  const { state: disk, refresh } = useFileDisk(
+    remote ? undefined : projectPath || undefined,
+    entry.path,
+  );
 
   const signature = editSignature(entry);
   const viewed = useReviewStore(
@@ -528,6 +569,14 @@ function AppliedFileSection({
 
   // Resolve the (before, after) pair for the hunk engine.
   const resolved = useMemo(() => {
+    if (remote) {
+      // Remote: the recorded baseline and the transcript's materialized
+      // content both came over the wire, so THAT pair is truthful and stays
+      // renderable read-only. Without a baseline the "before" would have to
+      // come from disk, which is this machine's disk — refuse instead.
+      if (baseline === undefined) return null;
+      return { before: baseline.content, after: entry.content, undoable: false };
+    }
     if (disk.kind === "loading" || disk.kind === "error") return null;
     const diskContent = disk.kind === "existing" ? disk.oldContent : null;
     if (baseline !== undefined) {
@@ -540,7 +589,7 @@ function AppliedFileSection({
     }
     // Legacy fallback: disk → proposed transcript content, read-only.
     return { before: diskContent, after: entry.content, undoable: false };
-  }, [disk, baseline, entry.content]);
+  }, [disk, baseline, entry.content, remote]);
 
   const hunks = useMemo(
     () => (resolved ? hunksFor(resolved.before, resolved.after) : []),
@@ -556,7 +605,8 @@ function AppliedFileSection({
    * hunks are accepted, so dropping one restores just that region).
    */
   async function undoHunks(idsToUndo: Set<string>) {
-    if (!resolved || resolved.before === null || busy) return;
+    // Undo WRITES to local disk — never on a remote conversation.
+    if (remote || !resolved || resolved.before === null || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -577,7 +627,10 @@ function AppliedFileSection({
     }
   }
 
-  const undoable = resolved?.undoable === true && hunks.length > 0;
+  const undoable = !remote && resolved?.undoable === true && hunks.length > 0;
+  // Remote file with no recorded baseline: the pre-edit side only exists on
+  // the remote host, so this section has nothing truthful to render.
+  const remoteGated = remote && !resolved;
 
   return (
     <div
@@ -606,13 +659,23 @@ function AppliedFileSection({
           <span className="text-accent-green">+{adds}</span>
           <span className="text-accent-red">-{dels}</span>
         </span>
-        {undoable && (
-          <Tooltip content="Restore this file to its pre-edit content">
+        {/* D3 / P0-4: on SSH conversations the Undo control stays VISIBLE but
+            disabled (it writes local disk), so the capability is discoverable
+            rather than silently missing. */}
+        {(undoable || remote) && (
+          <Tooltip
+            content={
+              remote
+                ? `Undo — ${REMOTE_UNSUPPORTED_TOOLTIP}`
+                : "Restore this file to its pre-edit content"
+            }
+          >
             <button
               type="button"
               onClick={() => void undoHunks(new Set(hunks.map((h) => h.id)))}
-              disabled={busy}
-              className="flex items-center gap-1 text-ui px-1.5 py-0.5 rounded border border-bg-border text-text-secondary hover:bg-bg-hover hover:text-accent-red transition-colors disabled:opacity-50"
+              disabled={busy || remote}
+              aria-disabled={busy || remote}
+              className="flex items-center gap-1 text-ui px-1.5 py-0.5 rounded border border-bg-border text-text-secondary hover:bg-bg-hover hover:text-accent-red transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Undo2 size={10} /> Undo all
             </button>
@@ -639,19 +702,30 @@ function AppliedFileSection({
 
       {!viewed && (
         <div className="border-t border-bg-border">
-          {disk.kind === "loading" ? (
+          {remoteGated ? (
+            <div className="px-3 py-3 text-ui text-accent-amber flex items-start gap-2">
+              <AlertCircle size={12} className="mt-0.5 shrink-0" />
+              <span>
+                Applied-file review — {REMOTE_UNSUPPORTED_TOOLTIP}. This file
+                lives on the remote host and no pre-edit baseline was recorded,
+                so there is nothing local to diff against.
+              </span>
+            </div>
+          ) : !remote && disk.kind === "loading" ? (
             <div className="px-3 py-3 flex items-center gap-1.5 text-ui text-text-secondary">
               <Spinner size={12} className="text-text-muted" />
               Loading file from disk…
             </div>
-          ) : disk.kind === "error" ? (
+          ) : !remote && disk.kind === "error" ? (
             <div className="px-3 py-3 text-ui text-accent-red flex items-center gap-2">
               <AlertCircle size={12} />
               Could not read this file from disk.
             </div>
           ) : hunks.length === 0 ? (
             <div className="px-3 py-2 text-ui text-text-muted italic">
-              No changes vs. on-disk content.
+              {remote
+                ? "No changes vs. the recorded baseline."
+                : "No changes vs. on-disk content."}
             </div>
           ) : (
             <div className="flex flex-col gap-1.5 p-1.5">

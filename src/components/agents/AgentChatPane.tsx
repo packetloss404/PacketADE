@@ -31,6 +31,7 @@ import { useLatestPlanPreview } from "./hooks/useLatestPlanPreview";
 import { useDiffTotals } from "./hooks/useDiffTotals";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { getAgentColor } from "@/lib/agentColors";
+import { isRemoteConversation } from "@/lib/remoteConversation";
 
 const AGENT_LABELS: Record<string, string> = {
   "claude-code": "Claude Code",
@@ -218,6 +219,12 @@ export function AgentChatPane({
     applyMode(nextMode(deriveMode(conversation)));
   }
 
+  // D3 / P0-4: Markdown preview reads LOCAL disk. On an SSH-backed
+  // conversation `projectPath` is the remote path, so clicking a .md token
+  // must not open a preview that would read an unrelated local file. The
+  // handler is omitted entirely for remote conversations, which also stops
+  // ClickablePathsRoot from turning those tokens into left-click targets.
+  const isRemote = isRemoteConversation(conversation);
   function handleOpenMarkdown(path: string) {
     if (!/\.mdx?$/i.test(path)) return;
     preview.openMarkdownPreview(path);
@@ -308,7 +315,8 @@ export function AgentChatPane({
 
       <ClickablePathsRoot
         projectPath={conversation.projectPath}
-        onOpenMarkdown={handleOpenMarkdown}
+        onOpenMarkdown={isRemote ? undefined : handleOpenMarkdown}
+        remote={isRemote}
       >
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 py-3">

@@ -12,6 +12,13 @@ export interface DiffTotals {
    * union pending paths against this set instead of adding
    * `pendingEdits.length`, or one gated file displays as two. */
   paths: ReadonlySet<string>;
+  /** D3 / P0-4: files whose counts could not be computed (failed disk read, or
+   * an SSH-backed conversation whose filesystem is not this machine's). When
+   * `> 0`, `totalAdds`/`totalDels` are a floor and must be labelled as such. */
+  unavailableCount: number;
+  /** The whole aggregate threw. Distinct from "no edits": render an error, not
+   * a zero. */
+  failed: boolean;
 }
 
 const EMPTY: DiffTotals = {
@@ -19,7 +26,11 @@ const EMPTY: DiffTotals = {
   totalAdds: 0,
   totalDels: 0,
   paths: new Set(),
+  unavailableCount: 0,
+  failed: false,
 };
+
+const FAILED: DiffTotals = { ...EMPTY, failed: true };
 
 /** `fileCount` plus the pending gated edits NOT already in the aggregate
  * (in-process providers deliver tool input only on tool_result, so their
@@ -67,9 +78,11 @@ export function useDiffTotals(
           totalAdds: result.totalAdds,
           totalDels: result.totalDels,
           paths: new Set(result.perFile.map((f) => f.path)),
+          unavailableCount: result.unavailableCount,
+          failed: false,
         });
       } catch {
-        if (!cancelled) setTotals(EMPTY);
+        if (!cancelled) setTotals(FAILED);
       }
     })();
     return () => {

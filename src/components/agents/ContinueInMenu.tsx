@@ -17,6 +17,7 @@ import {
   openConversationGitEnding,
   openConversationProjectInWorkspace,
 } from "@/lib/agentHandoffs";
+import { isRemoteConversation } from "@/lib/remoteConversation";
 
 interface MenuItemProps {
   icon: React.ReactNode;
@@ -116,7 +117,7 @@ export function ContinueInMenu({
   onRequestFlight = () => {},
 }: ContinueInMenuProps) {
   const projectPath = conversation.projectPath;
-  const isRemote = Boolean(conversation.sshTarget);
+  const isRemote = isRemoteConversation(conversation);
   const hasPath = Boolean(projectPath);
   const localOnlyDisabled = isRemote || !hasPath;
   const cliContinuation = getCliContinuation(conversation.agent);

@@ -20,6 +20,10 @@ import { useAgentSettingsStore, type TranscriptViewMode } from "@/stores/agentSe
 import { useMemoryStore, memoryBriefStats } from "@/stores/memoryStore";
 import type { AgentConversation } from "@/types/agent-conversation";
 import { openMonitorWindow } from "@/lib/monitorWindows";
+import {
+  isRemoteConversation,
+  REMOTE_UNSUPPORTED_TOOLTIP,
+} from "@/lib/remoteConversation";
 
 const VIEW_MODE_OPTIONS: { value: TranscriptViewMode; label: string }[] = [
   { value: "summary", label: "Summary" },
@@ -50,6 +54,7 @@ export function HeaderOverflowMenu({
   onExport,
 }: HeaderOverflowMenuProps) {
   const conversationId = conversation.id;
+  const previewDisabled = isRemoteConversation(conversation);
   const composeMemoryBrief = useMemoryStore((s) => s.composeMemoryBrief);
   const memoryEvents = useMemoryStore((s) => s.events);
   const memoryPatterns = useMemoryStore((s) => s.patterns);
@@ -221,11 +226,24 @@ export function HeaderOverflowMenu({
             </div>
           )}
 
+          {/* D3 / P0-4: the preview pane reads LOCAL disk — disabled (not
+              hidden) for SSH-backed conversations so the capability stays
+              discoverable. */}
           <button
             type="button"
-            onClick={togglePreview}
+            onClick={() => {
+              if (previewDisabled) return;
+              togglePreview();
+            }}
             aria-pressed={previewOpen}
-            className="flex w-full items-center gap-1.5 border-b border-bg-border px-3 py-1.5 text-ui text-text-primary transition-colors hover:bg-bg-hover"
+            aria-disabled={previewDisabled}
+            disabled={previewDisabled}
+            title={previewDisabled ? REMOTE_UNSUPPORTED_TOOLTIP : undefined}
+            className={`flex w-full items-center gap-1.5 border-b border-bg-border px-3 py-1.5 text-ui text-text-primary transition-colors ${
+              previewDisabled
+                ? "cursor-not-allowed opacity-40"
+                : "hover:bg-bg-hover"
+            }`}
           >
             <PanelRightOpen size={11} />
             {previewOpen ? "Hide preview pane" : "Show preview pane"}

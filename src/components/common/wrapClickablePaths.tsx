@@ -32,6 +32,9 @@ interface ClickablePathsRootProps {
   className?: string;
   /** Optional left-click handler for Markdown paths. */
   onOpenMarkdown?: (path: string, line?: number) => void;
+  /** D3 / P0-4: paths in this subtree belong to an SSH-backed conversation, so
+   * the context menu's local-disk actions are disabled. */
+  remote?: boolean;
 }
 
 /**
@@ -109,6 +112,7 @@ export function ClickablePathsRoot({
   children,
   className,
   onOpenMarkdown,
+  remote = false,
 }: ClickablePathsRootProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
@@ -197,6 +201,7 @@ export function ClickablePathsRoot({
           line={menu.line}
           onClose={() => setMenu(null)}
           onAttach={handleAttach}
+          remote={remote}
         />
       )}
     </div>

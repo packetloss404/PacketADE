@@ -10,6 +10,11 @@ import {
 import { useReviewStore } from "@/stores/reviewStore";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
 import { useEditBaselineStore } from "@/stores/editBaselineStore";
+import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import {
+  isRemoteConversation,
+  REMOTE_UNSUPPORTED_TOOLTIP,
+} from "@/lib/remoteConversation";
 import { Spinner } from "@/components/ui/Spinner";
 import { materializeEdits } from "@/lib/parseToolInput";
 import {
@@ -34,6 +39,10 @@ interface FileEntry {
   added: number;
   removed: number;
   loading: boolean;
+  /** D3 / P0-4: counts could not be computed (local read failed, or the
+   * conversation is SSH-backed and no baseline was recorded). Rendered as an
+   * explicit "diff unavailable" instead of a misleading +0/-0. */
+  unavailable?: boolean;
 }
 
 /**
@@ -82,6 +91,12 @@ function MultiFileEditCardImpl({
   const [entries, setEntries] = useState<FileEntry[]>(() =>
     buildSeeds(toolCalls, projectPath),
   );
+  // D3 / P0-4: on an SSH conversation `projectPath` is the REMOTE path, so
+  // `read_file_for_diff` (local) must not run and Markdown preview must not
+  // open. Recorded baselines still give truthful counts.
+  const remote = useAgentTaskStore((s) =>
+    isRemoteConversation(s.conversations.find((c) => c.id === conversationId)),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +123,11 @@ function MultiFileEditCardImpl({
               callBaseline && callBaseline.path === entry.path
                 ? { content: callBaseline.content }
                 : getBaseline(conversationId, entry.path);
+            if (remote && baseline === undefined) {
+              // Remote file, no wire-recorded baseline: the only "before" we
+              // could reach is this machine's disk. Refuse rather than lie.
+              return { ...entry, loading: false, unavailable: true };
+            }
             const original =
               baseline !== undefined
                 ? baseline.content
@@ -118,8 +138,12 @@ function MultiFileEditCardImpl({
             // "After" = the transcript's edit chain replayed on the
             // baseline; when it can't be reproduced (Codex apply_patch),
             // the applied on-disk result is the truthful after.
+            const materialized = materializeEdits(entry.group.edits, original);
+            if (materialized === null && remote) {
+              return { ...entry, loading: false, unavailable: true };
+            }
             const newContent =
-              materializeEdits(entry.group.edits, original) ??
+              materialized ??
               (await invoke<string | null>("read_file_for_diff", {
                 projectPath,
                 relPath: entry.path,
@@ -141,7 +165,8 @@ function MultiFileEditCardImpl({
             );
             return { ...entry, kind, added, removed, loading: false };
           } catch {
-            return { ...entry, loading: false };
+            // A failed read is NOT a zero-line diff (D3 / P0-4).
+            return { ...entry, loading: false, unavailable: true };
           }
         }),
       );
@@ -152,7 +177,7 @@ function MultiFileEditCardImpl({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, projectPath, toolCalls.length]);
+  }, [conversationId, projectPath, toolCalls.length, remote]);
 
   const grouped = useMemo(() => {
     const buckets: Record<FileKind, FileEntry[]> = {
@@ -185,7 +210,9 @@ function MultiFileEditCardImpl({
   };
 
   const handleOpenFile = (path: string) => {
-    if (/\.mdx?$/i.test(path)) {
+    // Markdown preview reads local disk; on SSH conversations fall back to the
+    // review surface (which is itself remote-gated) instead.
+    if (!remote && /\.mdx?$/i.test(path)) {
       usePreviewPaneStore.getState().openMarkdown(path);
       return;
     }
@@ -243,6 +270,17 @@ function MultiFileEditCardImpl({
                         className="text-text-muted shrink-0"
                         label="Loading diff"
                       />
+                    ) : entry.unavailable ? (
+                      <span
+                        className="text-meta text-accent-amber shrink-0"
+                        title={
+                          remote
+                            ? REMOTE_UNSUPPORTED_TOOLTIP
+                            : "This file could not be read, so its line counts are unknown."
+                        }
+                      >
+                        diff unavailable
+                      </span>
                     ) : (
                       <span className="flex items-center gap-1.5 shrink-0">
                         <span className="text-ui font-mono text-accent-green">
