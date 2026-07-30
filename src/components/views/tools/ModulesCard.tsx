@@ -1,6 +1,6 @@
 import { Puzzle } from "lucide-react";
 import { useModuleStore } from "@/stores/moduleStore";
-import { useAppStore, moduleViewId } from "@/stores/appStore";
+import { useAppStore, normalizeView, moduleViewId } from "@/stores/appStore";
 import { getModulesSorted } from "@/modules/registry";
 import { CardHeader } from "./CardHeader";
 
@@ -65,7 +65,10 @@ export function ModulesCard() {
               <button
                 onClick={() => {
                   toggleModule(mod.id);
-                  if (enabled && activeView === moduleViewId(mod.id)) {
+                  // D4: compare against the NORMALIZED view so alias routes
+                  // (e.g. Dictation's canonical `"dictation"`) are also
+                  // navigated away from when their module is disabled.
+                  if (enabled && activeView === normalizeView(moduleViewId(mod.id))) {
                     setActiveView("tools");
                   }
                 }}

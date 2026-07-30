@@ -1,18 +1,15 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import {
-  Search,
-  MessageSquare,
-  Ticket,
-  Clock,
-  Wrench,
-  Github,
-  Brain,
-  FileText,
-} from "lucide-react";
+import { Search, FileText } from "lucide-react";
 import { useAppStore, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { getModulesSorted } from "@/modules/registry";
 import { usePromptStore } from "@/stores/promptStore";
+import {
+  paletteRoutes,
+  resolveModuleAlias,
+  routePaletteIcon,
+  routePaletteLabel,
+} from "@/lib/routeRegistry";
 
 interface PaletteAction {
   id: string;
@@ -36,56 +33,24 @@ export function CommandPalette() {
   const sendPromptToAgent = usePromptStore((s) => s.sendToAgentChat);
 
   const actions = useMemo<PaletteAction[]>(() => {
-    const items: PaletteAction[] = [
-      {
-        id: "workspace",
-        label: "Workspace",
-        description: "View active workspace panes",
-        icon: <MessageSquare size={14} className="text-accent-green" />,
-        action: () => setActiveView("workspace"),
-        keywords: ["sessions", "claude", "codex", "terminal", "pane"],
-      },
-      {
-        id: "issues",
-        label: "Issues Board",
-        description: "Kanban issue tracker",
-        icon: <Ticket size={14} className="text-accent-amber" />,
-        action: () => setActiveView("issues"),
-        keywords: ["kanban", "tickets", "board", "todo"],
-      },
-      {
-        id: "history",
-        label: "Session History",
-        description: "Browse past sessions",
-        icon: <Clock size={14} className="text-text-secondary" />,
-        action: () => setActiveView("history"),
-        keywords: ["past", "log", "previous"],
-      },
-      {
-        id: "github",
-        label: "GitHub",
-        description: "GitHub integration",
-        icon: <Github size={14} className="text-text-primary" />,
-        action: () => setActiveView("github"),
-        keywords: ["git", "repo", "pr", "pull request"],
-      },
-      {
-        id: "memory",
-        label: "Memory",
-        description: "AI memory and file map",
-        icon: <Brain size={14} className="text-accent-purple" />,
-        action: () => setActiveView("memory"),
-        keywords: ["context", "knowledge", "files"],
-      },
-      {
-        id: "settings",
-        label: "Settings",
-        description: "Project and app settings",
-        icon: <Wrench size={14} className="text-text-muted" />,
-        action: () => setActiveView("tools"),
-        keywords: ["config", "preferences", "options"],
-      },
-    ];
+    // D4: every navigation destination comes from the one route registry, so
+    // the palette can no longer drift from the rail (audit P1-9 — it used to
+    // omit Agents, Flight Deck, Costs and Dictation).
+    const items: PaletteAction[] = paletteRoutes()
+      // A route backed by an optional module is only offered while that module
+      // is enabled (preserves the old module-gated Dictation entry).
+      .filter((route) => !route.moduleId || (moduleStates[route.moduleId]?.enabled ?? false))
+      .map((route) => {
+        const Icon = routePaletteIcon(route);
+        return {
+          id: route.id,
+          label: routePaletteLabel(route),
+          description: route.palette.description,
+          icon: <Icon size={14} className={route.palette.iconColor ?? "text-text-secondary"} />,
+          action: () => setActiveView(route.id),
+          keywords: route.palette.keywords,
+        };
+      });
 
     for (const template of promptTemplates) {
       items.push({
@@ -98,8 +63,11 @@ export function CommandPalette() {
       });
     }
 
-    // Add enabled modules
+    // Add enabled modules. Modules that are aliases of a first-class shell
+    // route (Dictation) are skipped — the registry row above is the canonical
+    // destination, so Ctrl+K lists them exactly once.
     for (const mod of getModulesSorted()) {
+      if (resolveModuleAlias(mod.id)) continue;
       if (moduleStates[mod.id]?.enabled) {
         const Icon = mod.icon;
         items.push({

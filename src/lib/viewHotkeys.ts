@@ -1,22 +1,24 @@
 import type { AppView } from "@/stores/appStore";
+import { hotkeyRoutes, resolveViewHotkey } from "@/lib/routeRegistry";
 
 /**
- * Ctrl+Shift+<number> view-switch map, keyed by the SHIFTED character the
- * browser reports (e.g. Shift+1 → "!"). Extracted from App.tsx so the mapping
- * is unit-testable in isolation.
+ * View-switch chords.
  *
- * WA1 restores `"!"` (Ctrl+Shift+1) as the Agents shortcut. Workspace keeps
- * its mnemonic Ctrl+Shift+W shortcut in App.tsx, avoiding a disruptive
- * renumbering of the other long-standing view chords.
+ * D4: the bindings themselves now live in the one route registry
+ * (`@/lib/routeRegistry`). This module is a thin compatibility/derivation
+ * layer so the historical shifted-character contract stays testable.
  *
- * Keyboard-layout caveat: the shifted glyph for the number row varies by
- * layout; this pre-existing caveat is inherited unchanged from the original
- * in-App map.
+ * Layout fix (D4, item 4): `resolveViewHotkey` matches on the PHYSICAL key
+ * (`KeyboardEvent.code`) first, so Ctrl+Shift+<number> works on AZERTY,
+ * QWERTZ, Dvorak, etc. The old shifted-glyph map below is retained purely as
+ * a fallback for events that do not carry `code`.
  */
-export const VIEW_HOTKEY_MAP: Record<string, AppView> = {
-  "!": "agents", // Shift+1
-  "@": "flights", // Shift+2
-  "#": "issues", // Shift+3
-  $: "history", // Shift+4
-  "%": "tools", // Shift+5
-};
+export const VIEW_HOTKEY_MAP: Record<string, AppView> = Object.fromEntries(
+  hotkeyRoutes()
+    // Number-row chords only — the mnemonic letter chords (Ctrl+Shift+W /
+    // Ctrl+Shift+D) never had shifted-glyph entries in this map.
+    .filter((route) => route.hotkey.code.startsWith("Digit"))
+    .map((route) => [route.hotkey.legacyKey, route.id]),
+);
+
+export { resolveViewHotkey };

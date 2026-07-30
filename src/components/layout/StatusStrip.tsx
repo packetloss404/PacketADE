@@ -1,24 +1,11 @@
 import { GitBranch, FolderGit2, Mic, Loader2 } from "lucide-react";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useAppStore, type AppView } from "@/stores/appStore";
+import { useAppStore } from "@/stores/appStore";
 import { useDictationStore } from "@/stores/dictationStore";
 import { useSidecarStatus } from "@/hooks/useSidecarStatus";
+import { routeStatusLabel } from "@/lib/routeRegistry";
 import type { SidecarStatus } from "@/lib/tauri";
-
-const VIEW_LABELS: Partial<Record<AppView, string>> = {
-  workspace: "Workspace",
-  agents: "Agents",
-  flights: "Flight Deck",
-  issues: "Issues",
-  github: "GitHub",
-  memory: "Memory",
-  history: "History",
-  tools: "Tools",
-  cost_dashboard: "Costs",
-  dictation: "Dictation",
-  welcome: "Welcome",
-};
 
 function StatField({
   label,
@@ -101,7 +88,9 @@ export function StatusStrip() {
   const sidecar = useSidecarStatus();
 
   const projectName = projectPath ? (projectPath.split(/[/\\]/).pop() ?? null) : null;
-  const viewLabel = VIEW_LABELS[activeView] ?? null;
+  // D4: labels come from the one route registry, which also resolves
+  // `mod:<id>` aliases (e.g. Dictation) to their canonical route.
+  const viewLabel = routeStatusLabel(activeView);
 
   return (
     <div className="flex h-[26px] flex-shrink-0 select-none items-center gap-3.5 border-t border-bg-border bg-bg-secondary px-3">

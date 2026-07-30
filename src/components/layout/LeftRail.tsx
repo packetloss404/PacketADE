@@ -1,31 +1,20 @@
-import { Bot, Terminal, Plane, KanbanSquare, Brain, Github, Settings } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { useAppStore, type AppView } from "@/stores/appStore";
+import { useAppStore } from "@/stores/appStore";
+import { railFooterRoutes, railPrimaryRoutes, resolveViewRouteId } from "@/lib/routeRegistry";
 
-type RailItem = {
-  id: AppView;
-  icon: LucideIcon;
-  label: string;
-  matches?: AppView[];
-};
-
-const ITEMS: RailItem[] = [
-  { id: "workspace", icon: Terminal, label: "Workspace" },
-  { id: "agents", icon: Bot, label: "Agents" },
-  { id: "flights", icon: Plane, label: "Flight Deck" },
-  { id: "issues", icon: KanbanSquare, label: "Issues" },
-  { id: "memory", icon: Brain, label: "Memory" },
-  { id: "github", icon: Github, label: "GitHub" },
-];
-
+/**
+ * Left Rail. Placement, order, icon and label all come from the D4 route
+ * registry (`@/lib/routeRegistry`) — this component no longer keeps its own
+ * route list (audit P1-9).
+ */
 export function LeftRail() {
   const activeView = useAppStore((s) => s.activeView);
   const setActiveView = useAppStore((s) => s.setActiveView);
+  const activeRouteId = resolveViewRouteId(activeView);
 
   return (
     <div className="flex w-11 flex-shrink-0 flex-col items-center gap-0.5 border-r border-bg-border bg-bg-secondary py-2">
-      {ITEMS.map((it) => {
-        const isActive = it.matches ? it.matches.includes(activeView) : activeView === it.id;
+      {railPrimaryRoutes().map((it) => {
+        const isActive = activeRouteId === it.id;
         const Icon = it.icon;
         return (
           <button
@@ -51,17 +40,23 @@ export function LeftRail() {
 
       <div className="flex-1" />
 
-      <button
-        onClick={() => setActiveView("tools")}
-        title="Settings"
-        className={`grid h-8 w-8 place-items-center rounded-md transition-colors ${
-          activeView === "tools"
-            ? "bg-bg-elevated text-text-primary"
-            : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
-        }`}
-      >
-        <Settings size={15} />
-      </button>
+      {railFooterRoutes().map((it) => {
+        const Icon = it.icon;
+        return (
+          <button
+            key={it.id}
+            onClick={() => setActiveView(it.id)}
+            title={it.label}
+            className={`grid h-8 w-8 place-items-center rounded-md transition-colors ${
+              activeRouteId === it.id
+                ? "bg-bg-elevated text-text-primary"
+                : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
+            }`}
+          >
+            <Icon size={15} />
+          </button>
+        );
+      })}
     </div>
   );
 }

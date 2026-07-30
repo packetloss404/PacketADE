@@ -9,6 +9,7 @@ import { useAppStore, isModuleView, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { getModulesSorted } from "@/modules/registry";
+import { ROUTE_REGISTRY, resolveModuleAlias } from "@/lib/routeRegistry";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { NewIssueForm } from "@/components/issues/NewIssueForm";
@@ -196,10 +197,12 @@ export function Toolbar() {
         <div className="w-px h-4 bg-bg-border self-center" />
 
         {/* Optional Tools (modules) dropdown — primary nav lives in LeftRail */}
-        {/* Dictation is intentionally filtered out here; it surfaces via the dedicated VT button,
-            the CommandPalette, and the StatusStrip indicator instead. */}
+        {/* D4: modules that are aliases of a first-class shell route (Dictation)
+            are filtered out here by the route registry rather than by a
+            hardcoded id; Dictation surfaces via the dedicated VT button, the
+            CommandPalette, and the StatusStrip indicator instead. */}
         {(() => {
-          const toolbarModules = enabledModules.filter((mod) => mod.id !== "dictation");
+          const toolbarModules = enabledModules.filter((mod) => !resolveModuleAlias(mod.id));
           if (toolbarModules.length === 0) return null;
           return (
             <div className="relative" ref={toolsMenuRef}>
@@ -243,7 +246,7 @@ export function Toolbar() {
               ? "bg-bg-elevated text-accent-purple"
               : "bg-bg-elevated text-text-secondary hover:text-accent-purple"
           }`}
-          title="Dictation — voice-to-text with local Whisper transcription. (Ctrl+Shift+D)"
+          title={`${ROUTE_REGISTRY.dictation.label} — ${ROUTE_REGISTRY.dictation.palette.description}. (${ROUTE_REGISTRY.dictation.hotkey?.display})`}
         >
           <Mic size={12} className="text-accent-purple" />
           <span>VT</span>

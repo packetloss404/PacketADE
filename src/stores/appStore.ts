@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { resolveModuleAlias } from "@/lib/routeRegistry";
 import type { SettingsTarget } from "@/types/settings";
 
 export type CoreView =
@@ -20,8 +21,18 @@ export type AppView = CoreView | `mod:${string}`;
  * Workspace/Agents split restores `"agents"` as a real same-window view, so a
  * persisted Agents selection must survive instead of being redirected to
  * Workspace.
+ *
+ * D4 (audit P1-9): also collapses module views that are aliases of a
+ * first-class shell route down to their canonical `CoreView`. Dictation used
+ * to exist as BOTH `"dictation"` and `"mod:dictation"`, which produced
+ * inconsistent rail highlighting and Status Strip text; `mod:dictation` is now
+ * an alias that normalizes to `"dictation"`.
  */
 export function normalizeView(view: AppView): AppView {
+  if (view.startsWith("mod:")) {
+    const canonical = resolveModuleAlias(view.slice(4));
+    if (canonical) return canonical;
+  }
   return view;
 }
 

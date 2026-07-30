@@ -5,6 +5,7 @@ import { useAppStore } from "@/stores/appStore";
 import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
 import { relativeTime } from "@/lib/time";
 import { getAgentColor } from "@/lib/agentColors";
+import { ROUTE_REGISTRY } from "@/lib/routeRegistry";
 
 export function WelcomeScreen() {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
@@ -145,8 +146,9 @@ export function WelcomeScreen() {
           <span>Command palette</span>
         </div>
         <div className="flex items-center gap-1.5">
+          {/* D4: chord label comes from the one route registry. */}
           <kbd className="px-1.5 py-0.5 bg-bg-elevated border border-bg-border rounded text-[9px]">
-            Ctrl+Shift+W
+            {ROUTE_REGISTRY.workspace.hotkey?.display}
           </kbd>
           <span>Workspaces</span>
         </div>

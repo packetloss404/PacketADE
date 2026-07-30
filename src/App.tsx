@@ -16,7 +16,7 @@ import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { ToastProvider } from "@/components/ui/Toast";
 import { FleetSidebar } from "@/components/workspace/FleetSidebar";
 import { useAgentTabHoists } from "@/hooks/useAgentTabHoists";
-import { VIEW_HOTKEY_MAP } from "@/lib/viewHotkeys";
+import { resolveViewHotkey } from "@/lib/viewHotkeys";
 import { initSessionGlue } from "@/stores/sessionGlue";
 import { startMcpWriteBridge } from "@/lib/mcpWriteBridge";
 import { startStallSweep } from "@/lib/flightCoordination";
@@ -214,25 +214,14 @@ export default function App() {
           return;
         }
       }
-      // Ctrl+Shift+1/2/3/4/5/6 to switch views
+      // Ctrl+Shift+<chord> view switching. D4: every binding is declared once
+      // in the route registry and matched on the PHYSICAL key, so the chords
+      // work on non-US keyboard layouts.
       if (e.ctrlKey && e.shiftKey) {
-        // Ctrl+Shift+W → Workspace view
-        if (e.key === "W") {
+        const target = resolveViewHotkey(e);
+        if (target) {
           e.preventDefault();
-          setActiveView("workspace");
-          return;
-        }
-        // Ctrl+Shift+D → Dictation view
-        if (e.key === "D") {
-          e.preventDefault();
-          setActiveView("dictation");
-          return;
-        }
-        // Number-row view shortcuts live in @/lib/viewHotkeys so route
-        // ownership stays unit-testable.
-        if (VIEW_HOTKEY_MAP[e.key]) {
-          e.preventDefault();
-          setActiveView(VIEW_HOTKEY_MAP[e.key]);
+          setActiveView(target);
         }
       }
     },
