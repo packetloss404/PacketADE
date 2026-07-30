@@ -49,7 +49,7 @@ export function PacketCodeHandoffModal({
       if (!result.ok) {
         if (result.code === "packetcode_unavailable" && target.kind === "local") {
           useAppStore.getState().openSettings({
-            section: "agents",
+            section: "cli-clients",
             cliId: "packetcode",
           });
           onFeedback("PacketCode needs setup before this handoff can continue");

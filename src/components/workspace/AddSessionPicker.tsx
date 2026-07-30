@@ -130,7 +130,7 @@ function PickerContent({
   };
 
   const openPacketCodeSetup = () => {
-    openSettings({ section: "agents", cliId: "packetcode" });
+    openSettings({ section: "cli-clients", cliId: "packetcode" });
     onClose();
   };
 

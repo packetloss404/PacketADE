@@ -97,7 +97,7 @@ handoffs, and deep links never materialize wrapper Workspaces.
 - **Send to Monitor**: route a conversation to a separate Rust-restricted
   read-only operations window without duplicating its session or exposing
   composer/approval controls
-- **Durable agent profiles** (Default, Scout, Reviewer built-ins, plus user-created): bundle system prompt + allowed tools + memory + permission posture; pick from the launcher dropdown or edit in `Settings → Agents`
+- **Durable agent profiles** (Default, Scout, Reviewer built-ins, plus user-created): bundle system prompt + allowed tools + memory + permission posture; pick from the launcher dropdown or edit in `Settings → Agents & Models → Agent behavior`
 - **AGENTS.md / CLAUDE.md auto-injection** from project root into the system prompt at session start
 - **Auto-failover on rate-limit**: 429 / quota / overload errors trigger a same-provider fallback (Opus → Sonnet → Haiku, o3 → gpt-5.5 → o4-mini, MiniMax → highspeed) before surfacing the failure
 - **Worktree-per-conversation** (opt-in toggle, local projects): provisions `.pkt-worktrees/<convId>` on a fresh `pkt/<convId>` branch so the conversation's tool calls don't touch the main checkout
@@ -107,7 +107,7 @@ handoffs, and deep links never materialize wrapper Workspaces.
 - **Composer-mode segmented control** (Local / Worktree) at "send" time picks where the conversation runs — Local edits the project tree, Worktree runs on a fresh branch in `.pkt-worktrees/`; the choice also sets the global default
 - **Right-rail tabbed mode** with Inspector / Plan / Preview / Diff / Files tabs in a single 340 px column — lighter alternative to the full mosaic split for smaller screens; persisted toggle
 - **Smart-approval prefix proposals**: permission prompts compute a sensible allowlist rule (e.g. `Bash(git push:*)`) and let you accept it with one click — closes the "approval fatigue" footgun
-- **Cross-tool unified Project Rules editor** in `Settings → Project Rules` reads + writes both `AGENTS.md` and `CLAUDE.md` on save so a single rule set works for both Claude Code and Codex
+- **Cross-tool unified Project Rules editor** in `Settings → Workspaces & Terminal → Project Rules` reads + writes both `AGENTS.md` and `CLAUDE.md` on save so a single rule set works for both Claude Code and Codex
 - **Plan-with-Claude → Execute-with-Codex** one-click handoff: PlanPanel "Hand off to Codex" button spawns a fresh Codex conversation seeded with the distilled spec + plan; "← back to plan" link in the child's chat header
 - **Old-model pinning** per profile via the `pinnedModel` field — locks a known-good model so future provider auto-upgrades don't silently switch away
 - **Auto-resume across restarts**: hydrated conversations capture the provider's resume token and lazily re-establish the session on next send
@@ -209,7 +209,7 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 
 ### Dictation — Voice-to-Text
 
-- Local Whisper transcription (no audio leaves the machine); verified model, stable audio device, microphone doctor, recording limit, language, and custom dictionary configurable from `Settings → Dictation`
+- Local Whisper transcription (no audio leaves the machine); verified model, stable audio device, microphone doctor, recording limit, language, and custom dictionary configurable from `Settings → Integrations & Data → Dictation`
 - Explicitly opt-in OS-level global shortcuts via `tauri-plugin-global-shortcut` so the hotkeys work even when PacketADE is not the focused application:
   - `Ctrl+Alt+Space` (hold) — push-to-talk; records while held, transcribes on release (rebindable; `Cmd+Alt+Space` on macOS)
   - `Ctrl+Alt+R` — toggle recording on/off (rebindable; `Cmd+Alt+R` on macOS)
@@ -257,7 +257,11 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 
 ### Project Operations
 
-- A unified **Local-first MCP Hub** in `Settings → MCP` combines the existing
+- Settings uses six searchable root groups—**General**, **Workspaces &
+  Terminal**, **Agents & Models**, **Automation**, **Integrations & Data**, and
+  **Security & Diagnostics**—with focused sub-tabs and explicit App, Project,
+  Workspace, new-session, new-conversation, or new-Flight scope badges.
+- A unified **Local-first MCP Hub** in `Settings → Integrations & Data → MCP` combines the existing
   client/server editor and PacketADE provider with search, a review-before-add
   official starter catalog, stdio capability diagnostics, per-workspace
   read/write/network/root/tool trust, bounded activity, and an explicit selected

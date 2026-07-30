@@ -104,7 +104,7 @@ describe("AddSessionPicker", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /set up/i })[0]);
 
     expect(openSettings).toHaveBeenCalledWith({
-      section: "agents",
+      section: "cli-clients",
       cliId: "packetcode",
     });
     expect(addPane).not.toHaveBeenCalled();

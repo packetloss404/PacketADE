@@ -411,7 +411,7 @@ Only unresolved follow-ups remain here; shipped audit work is in `CHANGELOG.md`.
   saved bounds, multiple simultaneous Monitor windows, and PTY attachment stay
   later; terminal mirroring must not mount or own the live PTY.
 
-## Workspace/Agents restructuring (current product goal)
+## Workspace/Agents restructuring and Settings contract
 
 Canonical goal:
 [`dev/workspace-agents-restructuring-goal.md`](./dev/workspace-agents-restructuring-goal.md).
@@ -424,9 +424,10 @@ WA3 implementation evidence:
 WA4 evidence gate:
 [`dev/workspace-agents-wa4-dogfood-gate.md`](./dev/workspace-agents-wa4-dogfood-gate.md).
 
-The Workspace/Agents direction is approved. Settings reorganization remains a
-separate decision. Do not delete the current conversation engine or persisted
-conversation panes as cleanup.
+The Workspace/Agents direction is approved, and the six-group Settings
+information architecture is implemented. Remaining Settings work is limited to
+the authority and capability gaps below. Do not delete the current conversation
+engine or persisted conversation panes as cleanup.
 
 - **P0 — WA0: route/ownership contract. COMPLETE.** Every
   entry/deep-link/wrapper/creation path, persistence carrier, compatibility
@@ -462,9 +463,10 @@ conversation panes as cleanup.
   versioned Rust state before allowing a second interactive WebView. The
   current Rust-restricted read-only Monitor does not prove multi-writer safety.
 - **P1 — enforce or remove placebo Settings controls.** AI Provider Routing
-  has no production consumer; Agent launch-location and rail-collapse defaults
-  are unused; PacketADE MCP-provider scope/tool checkboxes are not passed to or
-  enforced by Rust. Hide/disable them until their effective runtime policies
+  has no production consumer; Agent right-rail collapse is unused; PacketADE
+  MCP-provider scope/tool checkboxes are not passed to or enforced by Rust.
+  Default Agent launch location is now consumed by the Agents launcher. Hide or
+  disable the remaining placebo controls until their effective runtime policies
   are observable.
 - **P1 — complete or hide SSH password configuration.** Settings offers
   Password auth but cannot write/delete the keyring secret. Add secure
@@ -474,17 +476,57 @@ conversation panes as cleanup.
   settings currently report Saved before the unawaited backend write completes.
   Add awaitable revisioned saves, dirty/saved/error UI, and race-proof draft
   handling.
-- **P2 — Settings identity and navigation correctness.** Add scoped Settings
-  deep links, use stable scoped MCP server IDs, show the real active local/SSH
-  Workspace in Project settings, and validate provider-aware profile
+- **P2 — Settings identity and navigation correctness.** Typed section/CLI deep
+  links are complete. Use stable scoped MCP server IDs, show the real active
+  local/SSH Workspace in Project settings, and validate provider-aware profile
   model/tool choices.
-- **P2 — reorganize Settings into six groups.** General; Workspaces & Terminal;
-  Agents & Models; Automation; Integrations & Data; Security & Diagnostics.
-  Add search and App/Project/Workspace/New-conversation/New-Flight scope badges.
+- **P2 — reorganize Settings into six groups. COMPLETE.** General; Workspaces &
+  Terminal; Agents & Models; Automation; Integrations & Data; Security &
+  Diagnostics now own all previous cards through lossless sub-tabs. Search,
+  scope badges, current typed PacketCode recovery, and legacy Agent-section CLI
+  recovery compatibility are implemented and test-covered.
 - **P2 — add CLI-first preferences and diagnostics.** Terminal appearance and
   behavior, shell/environment, Workspace restore/template defaults, default CLI
   and model, worktree cleanup, external editor, and a consolidated
   CLI/provider/SSH doctor are the major missing Settings capabilities.
+
+## Main app navigation and right-panel audit
+
+Canonical review:
+[`dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md).
+This was an independent read-only audit; no finding below is silently approved
+for implementation.
+
+- **P0 — remove or explicitly scope the Workspace Agent inspector.** `App`
+  currently mounts an inspector beside Workspace for any globally selected
+  Agent conversation. The final CLI-first Workspace boundary favors keeping
+  Inspector in Agents; legacy panes would require an explicit focused-pane
+  exception.
+- **P0 — establish one right-dock owner.** Editor, Git, and Agent Inspector can
+  compete for fixed width and collapse the main canvas at the supported 800px
+  minimum. Decide one surface-scoped dock with mutual exclusion, shared resize,
+  width clamping, and automatic collapse.
+- **P0 — repair Preview and SSH boundaries.** Preview open/tab/target state is
+  global and not conversation-scoped; Hide/Close disagree; Files does not wire
+  its promised Markdown preview; Preview and applied Review expose local-only
+  disk operations for SSH conversations. Disable unsupported remote actions
+  until a single remote-aware file contract exists.
+- **P1 — unify main navigation metadata.** Left Rail, command palette, Status
+  Strip, hotkeys, and modules maintain separate route identities. Add one view
+  registry, make Dictation canonical, expose missing Agents/Flights/Cost
+  destinations, and make the global New menu truthful.
+- **P1 — correct shell project and Git-host context.** SSH can show or mutate a
+  stale local project/branch; Gitea capability flags do not gate every
+  GitHub-only action; repo/host switches can retain old PR detail. Use typed
+  local/SSH context and clear/capability-gate every dependent surface.
+- **P1 — make operational controls honest.** Agent Stop can report idle before
+  cancellation succeeds; today's spend includes old hydrated conversations;
+  Git says review is required without enforcing it; Flight Monitor failure can
+  be silent; Side Chat requests lack request identity/cancel.
+- **P2 — align labels and accessibility.** Rename shell GitHub to Git Hosts,
+  Fleet to Workspaces, VT to Dictation, and misleading handoff actions; remove
+  the two-ellipsis Agent header; add navigation/tab/menu ARIA and responsive
+  overflow proof.
 
 ## Reliability audit follow-ups
 

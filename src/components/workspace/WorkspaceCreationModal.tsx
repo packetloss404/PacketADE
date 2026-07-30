@@ -437,7 +437,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   }
 
   function handleOpenPacketCodeSettings() {
-    openSettings({ section: "agents", cliId: "packetcode" });
+    openSettings({ section: "cli-clients", cliId: "packetcode" });
     onClose();
   }
 

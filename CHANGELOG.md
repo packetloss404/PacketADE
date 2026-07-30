@@ -46,6 +46,12 @@ task list.
 
 ### Changed — smaller UX and test debt
 
+- Reorganized Settings into six stable groups with lossless sub-tabs, searchable
+  destinations, local/workspace/global scope labels, typed PacketCode recovery,
+  and compatibility for older Agent-section CLI deep links.
+- Added a read-only main-shell audit covering navigation, menus, tabs, buttons,
+  and right-side panel ownership/wiring; its findings remain decision inputs,
+  not silently approved implementation.
 - Saved prompt templates can launch directly from the command palette, and
   review packets can open the authoritative git diff surface.
 - Closed the carried draft-patch, approval-keyboard/focused-input,
@@ -1509,7 +1515,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - `reasoning_tokens` + `cached_input_tokens` from `usage` flow through `turn_summary` and roll into `aggregateConversationCost` (was: under-reporting GPT-5.5 spend)
 - Codex MultiAgentV2 sub-agent attribution: `turn_summary.address` (`/root/agent_a` etc.) routes child tokens into a per-address bucket on the conversation; CostDashboard rolls every bucket into the total
 - AGENTS.md cascading resolver in Rust core (`core::agents_md`) walking `~/.claude/AGENTS{.override,}.md` → git-root → cwd, picking one of `AGENTS.override.md` / `AGENTS.md` / `CLAUDE.md` per directory, concat with `<!-- source: <path> -->` headers, capped at 32 KiB. Honors `CLAUDE_HOME` env override for CI parity with Codex's `CODEX_HOME`
-- `ProjectRulesCard` in `Settings → Project Rules` reads + writes both `AGENTS.md` and `CLAUDE.md` on save; surfaces a Unify affordance when the two files diverge; offers a starter template when neither exists
+- `ProjectRulesCard` in `Settings → Workspaces & Terminal → Project Rules` reads + writes both `AGENTS.md` and `CLAUDE.md` on save; surfaces a Unify affordance when the two files diverge; offers a starter template when neither exists
 - Hover-`+` Codex-App-style diff comments: per-line `+` button in `ToolDiffView` opens an inline composer; queued comments fold into the next user turn as a `File comments:` preamble
 - Smart-approval prefix-rule proposal: `PermissionPrompt` gains a fourth row "Always allow rule `<pattern>`"; one click writes the derived pattern into `conversation.allowedTools`
 - Composer-mode segmented control (Local / Worktree / Cloud) replaces the binary worktree toggle; persisted via localStorage

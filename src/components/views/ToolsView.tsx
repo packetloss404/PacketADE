@@ -1,9 +1,7 @@
-import { useEffect, useState, lazy, Suspense } from "react";
+import { useEffect, useMemo, useState, lazy, Suspense } from "react";
 import {
   Wrench,
   FolderOpen,
-  Ticket,
-  Puzzle,
   FileText,
   Plus,
   Trash2,
@@ -11,22 +9,18 @@ import {
   Plug,
   Clock,
   DollarSign,
-  Mic,
-  Key,
-  Server,
   ShieldCheck,
   AlertTriangle,
   ExternalLink,
   PackageCheck,
   RefreshCw,
-  GitBranch,
   Bot,
   Brain,
-  Github,
   Settings2,
   Palette,
   ChevronRight,
   Settings,
+  Search,
 } from "lucide-react";
 import { PacketAgentSettingsCard } from "./tools/PacketAgentSettingsCard";
 import { useLayoutStore } from "@/stores/layoutStore";
@@ -62,47 +56,28 @@ import { SubscriptionsCard } from "./tools/SubscriptionsCard";
 import { TrustProvenanceCard } from "./tools/TrustProvenanceCard";
 import { WorkspaceAgentsDogfoodCard } from "./tools/WorkspaceAgentsDogfoodCard";
 import type { PromptTemplate } from "@/types/prompt";
-import type { SettingsSection } from "@/types/settings";
+import type { SettingsGroup, SettingsSection } from "@/types/settings";
 import { PromptLibrary } from "@/components/workspace/PromptLibrary";
+import {
+  SETTINGS_GROUPS,
+  normalizeSettingsTarget,
+  searchSettings,
+  settingsDefinitionForSection,
+  settingsGroupForSection,
+} from "@/lib/settingsNavigation";
 
 const HistoryView = lazy(() =>
   import("@/components/views/HistoryView").then((m) => ({ default: m.HistoryView })),
 );
 
-/**
- * v0.8.1 IA reorganisation.
- *
- * The flat 18-tab Settings sidebar was collapsed into a smaller set of
- * grouped sections that match how users actually think about the app:
- *
- *  - "General" merges Theme + Notifications + Project info
- *  - "Workspace" surfaces workspace-pane-only knobs
- *  - "Agents" stacks CLI Agents, API-mode Agents, and Profiles
- *  - "AI Providers" stacks API Keys + Subscriptions + Provider Endpoints
- *  - "MCP" stacks Servers + Provider in one tab
- *  - "GitHub" mounts the new card from v0.8.1
- *  - "Advanced" is the parking lot for crash logs and jump links to the
- *    full-page views that used to be shoehorned into Settings (History,
- *    Cost Dashboard, Prompt Library).
- */
-const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] = [
-  { key: "general", label: "General", icon: Palette },
-  { key: "workspace", label: "Workspace", icon: FolderOpen },
-  { key: "agents", label: "Agents", icon: Bot },
-  { key: "packet-agent", label: "PacketAgent", icon: Bot },
-  { key: "providers", label: "AI Providers", icon: Key },
-  { key: "routing", label: "AI Routing", icon: Route },
-  { key: "memory", label: "Memory", icon: Brain },
-  { key: "flights", label: "Flights", icon: GitBranch },
-  { key: "github", label: "GitHub", icon: Github },
-  { key: "issues", label: "Issues", icon: Ticket },
-  { key: "servers", label: "Servers", icon: Server },
-  { key: "mcp", label: "MCP", icon: Plug },
-  { key: "project-rules", label: "Project Rules", icon: FileText },
-  { key: "modules", label: "Modules", icon: Puzzle },
-  { key: "dictation", label: "Dictation", icon: Mic },
-  { key: "advanced", label: "Advanced", icon: Settings2 },
-];
+const GROUP_ICONS: Record<SettingsGroup, typeof Wrench> = {
+  general: Palette,
+  "workspaces-terminal": FolderOpen,
+  "agents-models": Bot,
+  automation: Route,
+  "integrations-data": Plug,
+  "security-diagnostics": ShieldCheck,
+};
 
 export function ToolsView() {
   const initialTarget = useAppStore.getState().settingsTarget;
@@ -115,188 +90,293 @@ export function ToolsView() {
   const epics = useIssueStore((s) => s.epics);
   const labels = useIssueStore((s) => s.labels);
   const [activeSection, setActiveSection] = useState<SettingsSection>(
-    initialTarget?.section ?? "general",
+    normalizeSettingsTarget(initialTarget),
   );
-  const [focusedCliId, setFocusedCliId] = useState<string | null>(
-    initialTarget?.cliId ?? null,
-  );
+  const [focusedCliId, setFocusedCliId] = useState<string | null>(initialTarget?.cliId ?? null);
+  const [searchQuery, setSearchQuery] = useState("");
   const settingsTarget = useAppStore((s) => s.settingsTarget);
   const clearSettingsTarget = useAppStore((s) => s.clearSettingsTarget);
   const setActiveView = useAppStore((s) => s.setActiveView);
+  const activeGroup = settingsGroupForSection(activeSection);
+  const activeDefinition = settingsDefinitionForSection(activeSection);
+  const searchResults = useMemo(() => searchSettings(searchQuery), [searchQuery]);
 
   useEffect(() => {
     if (!settingsTarget) return;
-    setActiveSection(settingsTarget.section);
+    setActiveSection(normalizeSettingsTarget(settingsTarget));
     setFocusedCliId(settingsTarget.cliId ?? null);
+    setSearchQuery("");
     clearSettingsTarget();
   }, [clearSettingsTarget, settingsTarget]);
+
+  function selectSection(section: SettingsSection) {
+    setActiveSection(section);
+    if (section !== "cli-clients") setFocusedCliId(null);
+  }
 
   return (
     <div className="flex h-full overflow-hidden bg-bg-primary">
       {/* Sidebar nav */}
-      <div className="flex w-44 flex-shrink-0 flex-col border-r border-bg-border bg-bg-secondary">
+      <div className="flex w-56 flex-shrink-0 flex-col border-r border-bg-border bg-bg-secondary">
         <div className="flex items-center gap-2 border-b border-bg-border px-4 py-3">
           <Wrench size={14} className="text-accent-amber" />
           <h2 className="text-xs font-semibold text-text-primary">Settings</h2>
         </div>
-        <div className="flex flex-col gap-0.5 overflow-y-auto p-2">
-          {SECTIONS.map((section) => (
-            <button
-              key={section.key}
-              onClick={() => {
-                setActiveSection(section.key);
-                setFocusedCliId(null);
-              }}
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left text-[11px] transition-colors ${
-                activeSection === section.key
-                  ? "bg-bg-elevated text-accent-green"
-                  : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
-              }`}
-            >
-              <section.icon size={12} />
-              {section.label}
-            </button>
-          ))}
+        <div className="border-b border-bg-border p-2">
+          <label className="relative block">
+            <Search
+              size={11}
+              className="pointer-events-none absolute left-2.5 top-2 text-text-muted"
+            />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search settings"
+              aria-label="Search settings"
+              className="focus:border-accent-green/60 w-full rounded border border-bg-border bg-bg-primary py-1.5 pl-7 pr-2 text-[11px] text-text-primary outline-none placeholder:text-text-faint"
+            />
+          </label>
+        </div>
+        <div className="flex flex-col gap-1 overflow-y-auto p-2">
+          {searchQuery.trim() ? (
+            searchResults.length > 0 ? (
+              searchResults.map(({ group, section }) => (
+                <button
+                  key={section.key}
+                  onClick={() => {
+                    selectSection(section.key);
+                    setSearchQuery("");
+                  }}
+                  className="rounded-lg px-3 py-2 text-left transition-colors hover:bg-bg-hover"
+                >
+                  <span className="block text-[9px] font-medium uppercase tracking-wide text-text-muted">
+                    {group.label}
+                  </span>
+                  <span className="mt-0.5 block text-[11px] text-text-primary">
+                    {section.label}
+                  </span>
+                </button>
+              ))
+            ) : (
+              <div className="px-3 py-4 text-center text-[10px] text-text-muted">
+                No matching settings
+              </div>
+            )
+          ) : (
+            SETTINGS_GROUPS.map((group) => {
+              const Icon = GROUP_ICONS[group.key];
+              const active = activeGroup.key === group.key;
+              return (
+                <button
+                  key={group.key}
+                  onClick={() => selectSection(group.sections[0].key)}
+                  className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[11px] transition-colors ${
+                    active
+                      ? "bg-bg-elevated text-accent-green"
+                      : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+                  }`}
+                >
+                  <Icon size={12} />
+                  <span className="leading-tight">{group.label}</span>
+                </button>
+              );
+            })
+          )}
         </div>
       </div>
 
       {/* Content area */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {activeSection === "general" && (
-          <div className="grid max-w-2xl grid-cols-2 gap-4">
-            <ProjectInfoCard projectPath={projectPath} gitBranch={gitBranch} />
-            <ThemeSettingsCard />
-            <NotificationSettingsCard />
-          </div>
-        )}
+      <div className="min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-5xl p-5">
+          <header className="mb-4 border-b border-bg-border pb-4">
+            <h1 className="text-sm font-semibold text-text-primary">{activeGroup.label}</h1>
+            <p className="mt-1 text-[11px] leading-relaxed text-text-muted">
+              {activeGroup.description}
+            </p>
+            <nav
+              className="mt-3 flex flex-wrap gap-1"
+              aria-label={`${activeGroup.label} settings sections`}
+            >
+              {activeGroup.sections.map((section) => (
+                <button
+                  key={section.key}
+                  onClick={() => selectSection(section.key)}
+                  aria-current={activeSection === section.key ? "page" : undefined}
+                  className={`rounded border px-2.5 py-1.5 text-[10px] transition-colors ${
+                    activeSection === section.key
+                      ? "border-accent-green/40 bg-accent-green/10 text-accent-green"
+                      : "border-bg-border text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+                  }`}
+                >
+                  {section.label}
+                </button>
+              ))}
+            </nav>
+          </header>
 
-        {activeSection === "workspace" && (
-          <div className="max-w-2xl">
-            <WorkspaceSettingsCard />
-          </div>
-        )}
-
-        {activeSection === "agents" && (
-          <div className="max-w-3xl space-y-4">
-            <CliAgentsCard focusedCliId={focusedCliId} />
-            <AgentSettingsCard />
-            <AgentProfilesCard />
-            <WorkspaceAgentsDogfoodCard />
-          </div>
-        )}
-
-        {activeSection === "packet-agent" && (
-          <div className="max-w-2xl">
-            <PacketAgentSettingsCard />
-          </div>
-        )}
-
-        {activeSection === "providers" && (
-          <div className="grid max-w-3xl grid-cols-1 gap-4">
-            <ApiKeysCard />
-            <SubscriptionsCard />
-            <ProviderEndpointsCard />
-          </div>
-        )}
-
-        {activeSection === "routing" && (
-          <div className="max-w-2xl">
-            <ProviderRoutingCard />
-          </div>
-        )}
-
-        {activeSection === "memory" && (
-          <div className="max-w-2xl space-y-3">
-            <div className="rounded-lg border border-bg-border bg-bg-secondary p-4">
-              <div className="mb-1.5 flex items-center gap-2">
-                <Brain size={12} className="text-accent-green" />
-                <h3 className="text-xs font-semibold text-text-primary">Memory pane</h3>
-              </div>
-              <p className="text-[11px] leading-relaxed text-text-muted">
-                Browse, edit, and prune captured patterns and events.
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-xs font-semibold text-text-primary">{activeDefinition.label}</h2>
+              <p className="mt-1 text-[10px] leading-relaxed text-text-muted">
+                {activeDefinition.description}
               </p>
-              <button
-                onClick={() => setActiveView("memory")}
-                className="border-accent-green/30 bg-accent-green/10 hover:bg-accent-green/15 mt-3 inline-flex items-center gap-1.5 rounded border px-3 py-2 text-xs text-accent-green transition-colors"
-              >
-                <Brain size={12} />
-                Manage memory
-              </button>
             </div>
-            <MemorySettingsCard />
+            <div className="flex flex-wrap gap-1" aria-label="Setting scopes">
+              {activeDefinition.scopes.map((scope) => (
+                <span
+                  key={scope}
+                  className="rounded-full border border-bg-border bg-bg-secondary px-2 py-0.5 text-[9px] font-medium text-text-muted"
+                >
+                  {scope}
+                </span>
+              ))}
+            </div>
           </div>
-        )}
 
-        {activeSection === "flights" && (
-          <div className="max-w-2xl">
-            <OrchestrationSettingsCard />
-          </div>
-        )}
+          {activeSection === "general" && (
+            <div className="grid max-w-3xl grid-cols-1 gap-4 xl:grid-cols-2">
+              <ThemeSettingsCard />
+              <NotificationSettingsCard />
+              <KeyboardShortcutsCard />
+            </div>
+          )}
 
-        {activeSection === "github" && (
-          <div className="max-w-2xl">
-            <GitHubSettingsCard />
-          </div>
-        )}
+          {activeSection === "workspace" && (
+            <div className="max-w-3xl space-y-4">
+              <ProjectInfoCard projectPath={projectPath} gitBranch={gitBranch} />
+              <WorkspaceSettingsCard />
+            </div>
+          )}
 
-        {activeSection === "issues" && (
-          <div className="grid max-w-2xl grid-cols-2 gap-4">
-            <IssueSettingsCard ticketPrefix={ticketPrefix} setTicketPrefix={setTicketPrefix} />
-            <TagListCard
-              title="Epics"
-              items={epics}
-              onAdd={addEpic}
-              tagClassName="bg-accent-purple/15 text-accent-purple"
-              placeholder="New epic..."
-            />
-            <TagListCard
-              title="Labels"
-              items={labels}
-              onAdd={addLabel}
-              tagClassName="bg-bg-elevated text-text-muted"
-              placeholder="New label..."
-            />
-          </div>
-        )}
+          {activeSection === "cli-clients" && (
+            <div className="max-w-3xl">
+              <CliAgentsCard focusedCliId={focusedCliId} />
+            </div>
+          )}
 
-        {activeSection === "servers" && (
-          <div className="max-w-2xl">
-            <ServersSettingsCard />
-          </div>
-        )}
+          {activeSection === "agents" && (
+            <div className="max-w-3xl space-y-4">
+              <AgentSettingsCard />
+              <AgentProfilesCard />
+            </div>
+          )}
 
-        {activeSection === "mcp" && (
-          <div className="max-w-3xl">
-            <McpHubCard />
-          </div>
-        )}
+          {activeSection === "packet-agent" && (
+            <div className="max-w-2xl">
+              <PacketAgentSettingsCard />
+            </div>
+          )}
 
-        {activeSection === "project-rules" && (
-          <div className="max-w-3xl">
-            <ProjectRulesCard />
-          </div>
-        )}
+          {activeSection === "providers" && (
+            <div className="grid max-w-3xl grid-cols-1 gap-4">
+              <ApiKeysCard />
+              <SubscriptionsCard />
+              <ProviderEndpointsCard />
+            </div>
+          )}
 
-        {activeSection === "modules" && (
-          <div className="max-w-2xl">
-            <ModulesCard />
-          </div>
-        )}
+          {activeSection === "routing" && (
+            <div className="max-w-2xl">
+              <ProviderRoutingCard />
+            </div>
+          )}
 
-        {activeSection === "dictation" && (
-          <div className="max-w-2xl space-y-4">
-            <DictationSettingsCard />
-            <KeyboardShortcutsCard />
-            <GeminiApiKeyCard />
-          </div>
-        )}
+          {activeSection === "memory" && (
+            <div className="max-w-2xl space-y-3">
+              <div className="rounded-lg border border-bg-border bg-bg-secondary p-4">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <Brain size={12} className="text-accent-green" />
+                  <h3 className="text-xs font-semibold text-text-primary">Memory pane</h3>
+                </div>
+                <p className="text-[11px] leading-relaxed text-text-muted">
+                  Browse, edit, and prune captured patterns and events.
+                </p>
+                <button
+                  onClick={() => setActiveView("memory")}
+                  className="border-accent-green/30 bg-accent-green/10 hover:bg-accent-green/15 mt-3 inline-flex items-center gap-1.5 rounded border px-3 py-2 text-xs text-accent-green transition-colors"
+                >
+                  <Brain size={12} />
+                  Manage memory
+                </button>
+              </div>
+              <MemorySettingsCard />
+            </div>
+          )}
 
-        {activeSection === "advanced" && (
-          <AdvancedSection
-            onOpenHistory={() => setActiveView("history")}
-            onOpenCost={() => setActiveView("cost_dashboard")}
-          />
-        )}
+          {activeSection === "flights" && (
+            <div className="max-w-2xl">
+              <OrchestrationSettingsCard />
+            </div>
+          )}
+
+          {activeSection === "github" && (
+            <div className="max-w-2xl">
+              <GitHubSettingsCard />
+            </div>
+          )}
+
+          {activeSection === "issues" && (
+            <div className="grid max-w-2xl grid-cols-2 gap-4">
+              <IssueSettingsCard ticketPrefix={ticketPrefix} setTicketPrefix={setTicketPrefix} />
+              <TagListCard
+                title="Epics"
+                items={epics}
+                onAdd={addEpic}
+                tagClassName="bg-accent-purple/15 text-accent-purple"
+                placeholder="New epic..."
+              />
+              <TagListCard
+                title="Labels"
+                items={labels}
+                onAdd={addLabel}
+                tagClassName="bg-bg-elevated text-text-muted"
+                placeholder="New label..."
+              />
+            </div>
+          )}
+
+          {activeSection === "servers" && (
+            <div className="max-w-2xl">
+              <ServersSettingsCard />
+            </div>
+          )}
+
+          {activeSection === "mcp" && (
+            <div className="max-w-3xl">
+              <McpHubCard />
+            </div>
+          )}
+
+          {activeSection === "project-rules" && (
+            <div className="max-w-3xl">
+              <ProjectRulesCard />
+            </div>
+          )}
+
+          {activeSection === "modules" && (
+            <div className="max-w-2xl">
+              <ModulesCard />
+            </div>
+          )}
+
+          {activeSection === "dictation" && (
+            <div className="max-w-2xl space-y-4">
+              <DictationSettingsCard />
+              <GeminiApiKeyCard />
+            </div>
+          )}
+
+          {activeSection === "advanced" && (
+            <div className="max-w-3xl space-y-4">
+              <WorkspaceAgentsDogfoodCard />
+              <AdvancedSection
+                onOpenHistory={() => setActiveView("history")}
+                onOpenCost={() => setActiveView("cost_dashboard")}
+              />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -322,7 +402,7 @@ function AdvancedSection({
   const [inlineView, setInlineView] = useState<null | "history" | "cost" | "prompts">(null);
 
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className="space-y-4">
       <ReleaseTrustCard />
       <TrustProvenanceCard />
       <CrashViewerCard />

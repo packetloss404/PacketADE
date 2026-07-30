@@ -1,7 +1,8 @@
 # PacketADE Workspace, Agents, and Settings Decision Report
 
 Date: 2026-07-29
-Status: Workspace/Agents recommendation implemented; Settings IA remains for review
+Status: Workspace/Agents recommendation and six-group Settings IA implemented;
+Settings authority corrections remain open
 Scope: PacketADE Workspaces, GUI agent placement, PacketCode positioning, and Settings
 
 ## Executive answer
@@ -37,10 +38,12 @@ The recommendation is a staged Option B:
 5. Final owner decision: remove new GUI-agent attachment from Workspaces while
    retaining read/close compatibility for existing attached conversations.
 
-The Settings surface should remain, but its current 16-section information
-architecture should not. It mixes preferences, credentials, operational tools,
-status, and navigation. Before adding more switches, fix the controls that do
-not govern runtime behavior and reorganize Settings into six coherent groups.
+The Settings surface remains. Its former 16-section root navigation mixed
+preferences, credentials, operational tools, status, and navigation. The owner
+approved the six-group Option B on 2026-07-29, and the lossless grouped
+navigation, sub-tabs, search, scope badges, and typed CLI recovery routes are
+implemented. Controls that do not govern runtime behavior still require the
+separate authority cleanup below.
 
 ## The decision in one table
 
@@ -336,10 +339,32 @@ Keep Settings, but make it authoritative. Every control must answer:
 3. When does it take effect?
 4. Did the runtime accept it?
 
-The current sidebar still has 16 root sections. It mixes durable preferences,
-credentials/integrations, operational management, status, and navigation.
-Several controls persist desired state without changing effective runtime
-state.
+The sidebar now has six root groups. All former cards remain reachable through
+focused sub-tabs, and search can find them by product terminology. Scope badges
+show whether the selected subsection affects the App, Project, Workspace, new
+sessions, new conversations, or new Flights.
+
+The grouping decision is complete. Several controls still persist desired
+state without changing effective runtime state; grouping them did not pretend
+to fix their authority.
+
+### Six-group implementation checkpoint — 2026-07-29
+
+- **General** owns appearance, notifications, and global shortcuts.
+- **Workspaces & Terminal** owns Workspace defaults, CLI Clients, Remote Hosts,
+  and Project Rules.
+- **Agents & Models** owns Agent behavior/profiles and provider/model accounts.
+- **Automation** owns Flights/Autonomy, Task Role Defaults, and PacketAgent.
+- **Integrations & Data** owns Git Hosts, MCP, Issues, Memory, Dictation, and
+  Modules.
+- **Security & Diagnostics** owns trust, release/runtime evidence, crashes,
+  History, Cost, prompt management, and the completed Workspace/Agents
+  migration evidence.
+
+The implementation preserves legacy `{ section: "agents", cliId }` recovery
+links while all current PacketCode recovery producers target **CLI Clients**
+directly. Focused tests and a browser-mode application smoke cover group
+navigation, search, scopes, and compatibility routing.
 
 ## Settings findings that should block more polish
 
@@ -373,14 +398,14 @@ API provider rows.
 Remove it until consumed, or wire it end to end and rename it **Task Role
 Defaults**. Launch review must show the resolved agent/model and source.
 
-### P1 - two Agent settings are placebo
+### P1 - one Agent setting remains placebo
 
-Default launch location and Start right rail collapsed persist but have no
-production consumer. The draft path hardcodes local launch, and rail collapse
-is not read by layout.
+Default launch location is now consumed by the first-class Agents launcher.
+**Start right rail collapsed** still persists but has no production consumer;
+the Inspector owns its collapsed state separately.
 
-Remove or wire them. Surface real hidden preferences such as transcript density
-and worktree cleanup instead.
+Remove or wire the rail setting. Surface real hidden preferences such as
+transcript density and worktree cleanup instead.
 
 ### P1 - MCP defaults are unsafe when names collide across scopes
 
@@ -396,13 +421,11 @@ Workspace that value intentionally remains the previous local path.
 Project management belongs under Workspaces & Terminal and must read the active
 Workspace's local/SSH identity directly.
 
-### P1 - Settings cannot deep link to a section
+### Resolved - Settings can deep link to a section
 
-`activeSection` is local component state. Calls such as "Manage in Settings >
-API Keys" can open only the broad Settings view and land on General.
-
-Add an `openSettings(section, anchor?)` contract and persist the last section
-while allowing explicit links to win.
+`appStore.openSettings(target)` now carries a typed section and optional CLI
+anchor. Explicit links win over the default section, and legacy PacketCode
+targets normalize into the new CLI Clients subsection.
 
 ### P1 - Flight settings can say Saved before persistence succeeds
 
@@ -510,7 +533,7 @@ conversations**, or **New Flights** scope badge.
 
 ### Product quality
 
-1. Implement the six-group IA with search and scope badges.
+1. **Complete:** implement the six-group IA with search and scope badges.
 2. Add terminal and CLI preferences.
 3. Add provider/CLI/SSH diagnostics.
 4. Add non-secret export/import and data management.
@@ -527,7 +550,7 @@ changes:
 3. **Approved with amendment:** preserve read-compatible saved panes, but
    remove every producer for new Workspace agent attachments.
 4. Defer interactive native Agent windows until single-writer state exists.
-5. Approve the six-group Settings IA.
+5. **Approved and implemented:** the six-group Settings IA.
 6. Approve immediate removal/disablement of placebo settings before adding new
    terminal preferences.
 

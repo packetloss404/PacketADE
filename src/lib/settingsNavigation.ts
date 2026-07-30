@@ -1,0 +1,240 @@
+import type {
+  SettingsGroup,
+  SettingsScope,
+  SettingsSection,
+  SettingsTarget,
+} from "@/types/settings";
+
+export interface SettingsSectionDefinition {
+  key: SettingsSection;
+  label: string;
+  description: string;
+  scopes: SettingsScope[];
+  keywords: string[];
+}
+
+export interface SettingsGroupDefinition {
+  key: SettingsGroup;
+  label: string;
+  description: string;
+  sections: SettingsSectionDefinition[];
+}
+
+export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
+  {
+    key: "general",
+    label: "General",
+    description: "App-wide appearance, notifications, and keyboard behavior.",
+    sections: [
+      {
+        key: "general",
+        label: "Preferences",
+        description: "Theme, notifications, and global keyboard shortcuts.",
+        scopes: ["App"],
+        keywords: [
+          "appearance",
+          "theme",
+          "dark",
+          "light",
+          "notifications",
+          "keyboard",
+          "shortcuts",
+        ],
+      },
+    ],
+  },
+  {
+    key: "workspaces-terminal",
+    label: "Workspaces & Terminal",
+    description: "Project workrooms, CLI clients, remote hosts, and project rules.",
+    sections: [
+      {
+        key: "workspace",
+        label: "Workspace defaults",
+        description: "Active project identity and defaults for new Workspace layouts.",
+        scopes: ["App", "Workspace"],
+        keywords: ["project", "layout", "template", "terminal", "path", "restore"],
+      },
+      {
+        key: "cli-clients",
+        label: "CLI Clients",
+        description: "Detect, configure, and repair PacketCode and other coding CLIs.",
+        scopes: ["App", "New sessions"],
+        keywords: ["packetcode", "claude", "codex", "gemini", "opencode", "shell", "binary"],
+      },
+      {
+        key: "servers",
+        label: "Remote Hosts",
+        description: "SSH hosts, authentication methods, paths, and host-key trust.",
+        scopes: ["App", "Workspace"],
+        keywords: ["ssh", "servers", "remote", "password", "key", "host", "fingerprint"],
+      },
+      {
+        key: "project-rules",
+        label: "Project Rules",
+        description: "Instructions and operational rules for the active project.",
+        scopes: ["Project"],
+        keywords: ["agents md", "claude md", "instructions", "rules", "project"],
+      },
+    ],
+  },
+  {
+    key: "agents-models",
+    label: "Agents & Models",
+    description: "GUI-agent behavior, profiles, provider accounts, endpoints, and models.",
+    sections: [
+      {
+        key: "agents",
+        label: "Agent behavior",
+        description: "Conversation defaults, profiles, cleanup, failover, and onboarding.",
+        scopes: ["App", "New conversations"],
+        keywords: ["profile", "worktree", "archive", "failover", "conversation", "tools", "rail"],
+      },
+      {
+        key: "providers",
+        label: "Providers & Models",
+        description: "API credentials, subscription accounts, endpoints, and available models.",
+        scopes: ["App", "New conversations"],
+        keywords: ["api keys", "anthropic", "openai", "minimax", "openrouter", "ollama", "models"],
+      },
+    ],
+  },
+  {
+    key: "automation",
+    label: "Automation",
+    description: "Flight policy, task-role defaults, and durable PacketAgent handoffs.",
+    sections: [
+      {
+        key: "flights",
+        label: "Flights & Autonomy",
+        description: "Commit attribution and bounded autonomy defaults for new Flights.",
+        scopes: ["New Flights"],
+        keywords: ["flight", "yolo", "autonomy", "commit", "trailer", "policy", "approval"],
+      },
+      {
+        key: "routing",
+        label: "Task Role Defaults",
+        description: "Desired agent assignments by task role.",
+        scopes: ["App", "New conversations", "New Flights"],
+        keywords: ["routing", "task", "role", "review", "research", "debug", "agent"],
+      },
+      {
+        key: "packet-agent",
+        label: "PacketAgent",
+        description: "Endpoint, identity, and credentials for always-on worker handoffs.",
+        scopes: ["App", "New Flights"],
+        keywords: ["worker", "remote", "endpoint", "token", "handoff", "durable"],
+      },
+    ],
+  },
+  {
+    key: "integrations-data",
+    label: "Integrations & Data",
+    description: "Git hosts, MCP, issues, Memory, dictation, and first-party modules.",
+    sections: [
+      {
+        key: "github",
+        label: "Git Hosts",
+        description: "GitHub and self-hosted Gitea or Forgejo connections.",
+        scopes: ["App", "Workspace"],
+        keywords: ["github", "gitea", "forgejo", "git", "pull request", "token"],
+      },
+      {
+        key: "mcp",
+        label: "MCP",
+        description: "MCP clients, the PacketADE provider, trust, and diagnostics.",
+        scopes: ["App", "Project", "New conversations"],
+        keywords: ["model context protocol", "server", "provider", "tools", "trust", "catalog"],
+      },
+      {
+        key: "issues",
+        label: "Issues",
+        description: "Ticket identifiers, epics, labels, and issue organization.",
+        scopes: ["Project"],
+        keywords: ["ticket", "prefix", "epic", "label", "taxonomy"],
+      },
+      {
+        key: "memory",
+        label: "Memory",
+        description: "Project memory behavior, retention, and data access.",
+        scopes: ["Project", "New conversations"],
+        keywords: ["context", "patterns", "retention", "privacy", "capture"],
+      },
+      {
+        key: "dictation",
+        label: "Dictation",
+        description: "Speech capture, transcription, devices, and Gemini credentials.",
+        scopes: ["App"],
+        keywords: ["voice", "microphone", "speech", "gemini", "shortcut", "push to talk"],
+      },
+      {
+        key: "modules",
+        label: "Modules",
+        description: "Enable and configure first-party PacketADE modules.",
+        scopes: ["App"],
+        keywords: ["quality", "dictation", "integration", "extension"],
+      },
+    ],
+  },
+  {
+    key: "security-diagnostics",
+    label: "Security & Diagnostics",
+    description: "Trust posture, release state, crash reports, history, and diagnostics.",
+    sections: [
+      {
+        key: "advanced",
+        label: "Trust & Diagnostics",
+        description:
+          "Runtime evidence, trust, crashes, release status, history, cost, and prompts.",
+        scopes: ["App"],
+        keywords: [
+          "security",
+          "trust",
+          "provenance",
+          "crash",
+          "history",
+          "cost",
+          "release",
+          "prompt",
+        ],
+      },
+    ],
+  },
+];
+
+const sections = SETTINGS_GROUPS.flatMap((group) =>
+  group.sections.map((section) => ({ group, section })),
+);
+
+export function settingsGroupForSection(section: SettingsSection): SettingsGroupDefinition {
+  return (
+    sections.find((candidate) => candidate.section.key === section)?.group ?? SETTINGS_GROUPS[0]
+  );
+}
+
+export function settingsDefinitionForSection(section: SettingsSection): SettingsSectionDefinition {
+  return (
+    sections.find((candidate) => candidate.section.key === section)?.section ??
+    SETTINGS_GROUPS[0].sections[0]
+  );
+}
+
+export function normalizeSettingsTarget(target: SettingsTarget | null): SettingsSection {
+  if (!target) return "general";
+  if (target.section === "agents" && target.cliId) return "cli-clients";
+  return target.section;
+}
+
+export function searchSettings(query: string): Array<{
+  group: SettingsGroupDefinition;
+  section: SettingsSectionDefinition;
+}> {
+  const normalized = query.trim().toLocaleLowerCase();
+  if (!normalized) return [];
+  return sections.filter(({ group, section }) =>
+    [group.label, group.description, section.label, section.description, ...section.keywords]
+      .join(" ")
+      .toLocaleLowerCase()
+      .includes(normalized),
+  );
+}

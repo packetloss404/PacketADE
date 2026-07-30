@@ -90,7 +90,8 @@ gate and unsigned-package evidence is in
 | D10 | Trust and provenance      |       P2 | Source complete / environment-gated    | Run packaged local/SSH/provider-parity evidence and visual inspection; keep current denial floors unchanged.                                                                           |
 | D11 | Local-first MCP Hub       |       P2 | Source complete / environment-gated    | Run real Codex/local/SSH crash/reload/version-skew, packaged catalog/removal, offline, trust-downgrade, and reconnect smoke.                                                           |
 | D12 | Workspace/Agents surface  |       P0 | Ownership/source complete              | New attachment is retired; preserve saved-pane compatibility. Run remaining SSH/external-runtime release proof separately; interactive native popouts still wait for one-writer state. |
-| D13 | Settings authority and IA |       P1 | Audit complete / decision pending      | Approve the six-group IA, then remove or enforce placebo controls before adding terminal/CLI preferences.                                                                              |
+| D13 | Settings authority and IA |       P1 | Six-group IA complete; authority cleanup open | Remove or enforce remaining placebo controls, make safety saves authoritative, and complete SSH/MCP/provider correctness before adding more preferences.                              |
+| D14 | Main shell and right dock |       P1 | Audit complete / decisions pending     | Decide stale Workspace inspector removal, one shared RightDock, SSH gating, one route registry, and the unreachable Editor's future.                                                   |
 
 ## Later
 
