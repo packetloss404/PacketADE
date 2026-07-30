@@ -46,7 +46,8 @@ Use these as the trust anchors before reading older plan files:
 
 ### Recently archived — 2026-07-30
 
-The midway-review consolidation moved fourteen completed/historical root-level
+The State of the ADE review consolidation moved fourteen completed/historical
+root-level
 files into [`archive/`](./archive/). Their final states are recorded in the
 docs themselves; the short version:
 
@@ -85,7 +86,8 @@ where the loop ledgers say they do.
 
 ### Verification checkpoint — 2026-07-30 (planning-doc consolidation)
 
-Midway-review consolidation of this directory: every root-level `dev/*.md`
+State of the ADE review consolidation of this directory: every root-level
+`dev/*.md`
 header was re-read and classified ACTIVE / REFERENCE / ARCHIVED against its own
 status line; the fourteen files listed under "Recently archived" above were
 `git mv`-ed into `archive/`, and links in kept docs (`ssh-remote-loop.md`,
@@ -197,7 +199,7 @@ remain user-launched. Do not restore archived Planner v1.
 - `archive/zen-workspace/` — workspace model plan, gap analysis, research, project-workspaces feature spec
 - `archive/vibetotext/` — sprint plan, features spec, README
 
-Added 2026-07-30 (midway-review consolidation — see "Recently archived" above for one-line summaries):
+Added 2026-07-30 (State of the ADE review consolidation — see "Recently archived" above for one-line summaries):
 
 - `archive/gitea-support-loop.md`, `archive/memory-v9-loop.md`, `archive/mcp-provider-transport.md`, `archive/reliability-low-fix-loop-2026-07-19.md` — shipped loops, all gates closed
 - `archive/p1-p2-fix-loop-spec.md`, `archive/p1-p2-fix-loop.workflow.js`, `archive/session-resume-2026-07-19.md` — completed July P1/P2 hardening loop

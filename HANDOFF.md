@@ -7,18 +7,21 @@ before older plans or audit notes.
 
 ## Resume here
 
-The 2026-07-30 midway review is complete. It comprised a research fleet pass
+The 2026-07-30 State of the ADE review is complete. It comprised a research
+fleet pass
 over the landscape, a bug-fix wave, a full root-documentation overhaul
 (`README.md`, `ROADMAP.md`, `backlog.md`, `CHANGELOG.md`, this file), and the
 removal of Gemini CLI support from the PTY session surface. Its shipped
 outcomes and open recommendations are ledgered in
-[`backlog.md`](./backlog.md#2026-07-30-midway-review); the full consolidated
-report is `docs/reports/midway-review-2026-07-30.html` (11 chapters, with the
+[`backlog.md`](./backlog.md#2026-07-30-state-of-the-ade-review); the full
+consolidated report is `docs/reports/state-of-the-ade-2026-07-30.html`
+(11 chapters, with the
 UX Ledger, Visual Audit, and Outstanding Audits Ledger).
 
 One thread is open from here:
 
-1. **Committed and verified.** The midway-review work landed on `main` as
+1. **Committed and verified.** The State of the ADE review work landed on
+   `main` as
    `72b2734` (bug fixes + Gemini removal + docs), `580ee80` (build evidence),
    and `3f8aba1` (consolidated ledger expansion), all pushed; gates were green
    at each commit (pnpm build, cargo check + test 440/440, vitest 1260/1260,
@@ -45,7 +48,10 @@ The five owner decisions, all made 2026-07-30:
 5. **DECIDED: RECONNECT.** The lightweight Editor becomes a first-class
    `RightDock` panel — wire `editorStore.openFile` production callers and
    protect dirty buffers. In-app quick editing IS part of PacketADE's
-   positioning. This folds into decision 2's `RightDock` scope.
+   positioning. This folds into decision 2's `RightDock` scope. Amended same
+   day (2026-07-30): D5's scope explicitly includes a wired Markdown viewer —
+   the reconnected Editor panel must open/preview `.md` files, resolving
+   audit finding P1-5 (Files' unwired Markdown-Preview path).
 
 Implement in this order: D1 inspector removal first (smallest), then D3 SSH
 gating, then D4 route registry, then D2 `RightDock` including D5's Editor
@@ -55,8 +61,8 @@ boundaries, one right dock, one navigation registry, then polish/proof.
 ## Current product state
 
 - `main` is at `3f8aba1` (consolidated 6-month ledger expansion), on top of
-  `72b2734` (midway review: 16 verified bug fixes, Gemini CLI removal, docs
-  overhaul) — all committed and pushed 2026-07-30.
+  `72b2734` (State of the ADE review: 16 verified bug fixes, Gemini CLI
+  removal, docs overhaul) — all committed and pushed 2026-07-30.
 - Gemini CLI is no longer a supported PTY agent. Supported PTY CLIs are Claude
   Code, Codex CLI, OpenCode, PacketCode, and plain shells; the GUI-agent picker
   keeps its eight chat rows (Anthropic subscription/API, OpenAI
@@ -138,8 +144,8 @@ runbooks and record evidence when the required environment exists.
 
 ## Latest Windows build
 
-On 2026-07-30, `pnpm tauri build` succeeded from the midway-review commit
-`72b2734` (16 verified bug fixes, Gemini CLI removal, docs overhaul). Sidecar
+On 2026-07-30, `pnpm tauri build` succeeded from the State of the ADE review
+commit `72b2734` (16 verified bug fixes, Gemini CLI removal, docs overhaul). Sidecar
 development dependencies were restored after the production prune and the
 repository was left clean.
 
@@ -201,7 +207,8 @@ limited to existing `ts-rs` serde-alias and Vite chunk/dynamic-import warnings.
 ## Suggested first prompt
 
 > Read `HANDOFF.md`. First, run the quality gates over the uncommitted
-> midway-review working tree (Gemini CLI removal + docs overhaul) and commit it
+> State of the ADE review working tree (Gemini CLI removal + docs overhaul)
+> and commit it
 > if they pass. Then read the main-shell navigation/right-panel audit and begin
 > implementing the five decided (2026-07-30) items in order: D1 Workspace
 > inspector removal, D3 SSH gating, D4 route registry, then D2 RightDock

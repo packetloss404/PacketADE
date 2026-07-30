@@ -5,12 +5,13 @@ five main-shell/right-dock decisions were made 2026-07-30 and their
 implementation is the current pass; Remote Agents remains preserved at its
 Sprint-0 decision gate)
 
-> **2026-07-30 — midway review completed.** The midway project review ran to
+> **2026-07-30 — State of the ADE review completed.** The State of the ADE
+> review ran to
 > completion on this date: a research fleet surveyed the landscape, a bug-fix
 > pass landed, the root documentation set was overhauled, and Gemini CLI
 > support was removed from the PTY session surface (saved Gemini panes reopen
 > as plain terminals). Review recommendations are tracked in
-> [`backlog.md`](./backlog.md#2026-07-30-midway-review).
+> [`backlog.md`](./backlog.md#2026-07-30-state-of-the-ade-review).
 
 `ROADMAP.md` is the short product-direction document. It says what matters now
 and why. The task ledger lives in [`backlog.md`](./backlog.md); implementation

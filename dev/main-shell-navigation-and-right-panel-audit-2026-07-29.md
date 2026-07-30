@@ -141,6 +141,10 @@ Evidence:
 - `src/components/agents/AgentInspectorPane.tsx:310-315`
 - `src/components/agents/AgentPreviewPane.tsx:163-170`
 
+Resolution: folded into decision 5 by the 2026-07-30 amendment — the wired
+Markdown viewer in the reconnected `RightDock` Editor panel resolves this
+finding; it closes with the D5 implementation.
+
 ### 6. Plan and Changes each have competing presentations
 
 Plan appears above chat, in the Inspector Plan tab, and again inside Preview.
@@ -357,7 +361,8 @@ Recommendation: add request IDs to events and a cancellation command.
 4. Route Files → Markdown Preview and Changes → Review through the dock.
 5. Reconnect the lightweight Editor as a first-class dock panel (decided
    2026-07-30): wire `editorStore.openFile` production callers and protect
-   dirty buffers.
+   dirty buffers. Per the same-day D5 amendment, the panel must also open and
+   preview Markdown (`.md`) files, resolving finding P1-5.
 
 ### MS3 — one navigation registry
 
@@ -404,6 +409,11 @@ All five decisions were made by the owner on 2026-07-30.
    callers and protect dirty buffers. In-app quick editing IS part of
    PacketADE's positioning. This folds into decision 2's `RightDock` scope and
    lands inside the MS2 milestone.
+   — **AMENDED 2026-07-30 (same day):** D5's scope explicitly includes a wired
+   Markdown viewer — the reconnected `RightDock` Editor panel must open and
+   preview `.md` files, resolving finding P1-5 (Files advertises a
+   Markdown-Preview path that is not wired; `onSelectFile` not provided by
+   `AgentInspectorPane`).
 
 ## Evidence limits
 

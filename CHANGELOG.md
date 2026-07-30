@@ -75,8 +75,9 @@ task list.
   first-party competitor evidence, a compatibility-first surface split, and an
   authoritative Settings cleanup backlog. No surface migration was implied by
   the documentation change.
-- Overhauled the root documentation set (2026-07-30 midway review): `README.md`
-  provider table and CLI list re-verified against the source catalog,
+- Overhauled the root documentation set (2026-07-30 State of the ADE review):
+  `README.md` provider table and CLI list re-verified against the source
+  catalog,
   `ROADMAP.md`/`HANDOFF.md` restated to the post-review restart point, and the
   review's outcomes ledgered in `backlog.md`. A `marketing/` press-kit pointer
   was added to the README documentation map.

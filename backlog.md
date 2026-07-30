@@ -574,9 +574,9 @@ No unresolved low-rated findings remain. The 30-item remediation loop completed
 on 2026-07-19; its per-finding acceptance evidence and gate record live in
 [`dev/archive/reliability-low-fix-loop-2026-07-19.md`](./dev/archive/reliability-low-fix-loop-2026-07-19.md).
 
-## 2026-07-30 midway review
+## 2026-07-30 State of the ADE review
 
-Dated snapshot from the midway project review. Shipped items are recorded here
+Dated snapshot from the State of the ADE review. Shipped items are recorded here
 until the next release cut moves them into `CHANGELOG.md`; open items follow
 the normal priority scheme.
 
@@ -593,9 +593,9 @@ the normal priority scheme.
   macOS/Linux (`claudetools-bash/statusline/`, bash + `jq`/`bc`, with
   installer). Not part of the PacketADE build; noted here so the ledger does
   not lose cross-repo work.
-- **P2 — adopt midway-review recommendations.** Triage the review's
+- **P2 — adopt State of the ADE review recommendations.** Triage the review's
   recommendations into concrete backlog items (see
-  `docs/reports/midway-review-2026-07-30.html`).
+  `docs/reports/state-of-the-ade-2026-07-30.html`).
 - **✅ Shipped — same-day review expansion into the consolidated 6-month
   ledger.** The report now carries three new chapters: the reconciled UX
   Ledger (07-29 main-shell audit + code review + rendered visual audit → five
@@ -616,7 +616,8 @@ the normal priority scheme.
   production callers, protect dirty buffers; folds into D2's RightDock scope).
 - **P0 — implement the five decisions.** Sequence: D1 inspector removal first
   (smallest), then D3 SSH gating, then D4 route registry, then D2 RightDock
-  including D5's Editor panel — mapping onto the audit's MS1–MS4 slices.
+  including D5's Editor panel (incl. wired MD viewer, resolves P1-5) — mapping
+  onto the audit's MS1–MS4 slices.
   Attach the UX quick wins to this pass: Ctrl+K guard, close-confirm,
   Escape-close opt-ins, and the Issues-board grid fix.
 - **P3 — sweep remaining historical Gemini references.** Comments/aliases kept
