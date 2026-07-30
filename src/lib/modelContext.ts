@@ -27,9 +27,6 @@ const MODEL_CONTEXT_TOKENS: Record<string, number> = {
   "gpt-5.5": 400_000,
   "gpt-5.4": 400_000,
   "gpt-5.3-codex": 400_000,
-  // Google
-  "gemini-3.1-pro": 2_000_000,
-  "gemini-3-flash": 1_000_000,
 };
 
 const DEFAULT_CONTEXT_TOKENS = 200_000;

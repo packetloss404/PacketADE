@@ -337,7 +337,7 @@ export function useTerminalSession({
       if (sessionFinished) return;
 
       if (initialPrompt?.trim()) {
-        // Claude Code is ready for input immediately; other CLIs (OpenCode, Gemini)
+        // Claude Code is ready for input immediately; other CLIs (e.g. OpenCode)
         // need time to initialize their TUI before accepting stdin.
         const delay = cliCommand === "claude" ? 0 : 3000;
         const sendInitialPrompt = () => {

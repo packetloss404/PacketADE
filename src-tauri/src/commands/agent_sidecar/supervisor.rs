@@ -6,7 +6,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
@@ -128,6 +128,25 @@ pub struct SidecarManager {
     /// using `writer_tx`; remote sessions get a dedicated SSH process so
     /// local and remote conversations cannot steal each other's stdin.
     pub(super) remote_sessions: Arc<Mutex<HashMap<String, RemoteSidecarSession>>>,
+    /// E8-ACCUM — last-processed `turn_summary` sequence number plus the
+    /// last-seen cumulative token snapshot per (session_id, address) for
+    /// snapshot-semantics providers (openai-codex, whose `turn_summary`
+    /// events carry session-cumulative running totals). The `turn_summary`
+    /// handler uses this to roll only the delta up onto the owning Flight,
+    /// and drops events whose sequence is older than the stored one so
+    /// unordered rollup tasks can't misread a late-arriving older snapshot
+    /// as a counter reset. Values are `(seq, [input, output, cache_read,
+    /// cache_creation])`. Entries are dropped at every session-death
+    /// cleanup site: [`Self::forget_owned_session`], the local crash
+    /// fan-out ([`fan_out_crash_error_to_local_sessions`]), and the remote
+    /// per-child wait task in [`Self::spawn_remote_sidecar_for_session`].
+    pub(super) exec_token_snapshots: Arc<Mutex<HashMap<(String, String), (u64, [u64; 4])>>>,
+    /// E8-ACCUM — monotonic stamp source for `exec_token_snapshots`
+    /// sequence numbers. Incremented in `handle_event` for each
+    /// `turn_summary` BEFORE the rollup task is spawned, so stamps reflect
+    /// per-session arrival order even though the rollup tasks themselves
+    /// complete in arbitrary order.
+    pub(super) exec_turn_seq: AtomicU64,
     /// Synchronous process bookkeeping used by the Tauri exit hook. These
     /// locks must remain usable after the async runtime begins shutting down.
     local_child: StdMutex<Option<ChildHandle>>,
@@ -154,6 +173,8 @@ impl SidecarManager {
             oneshot_waiters: Arc::new(Mutex::new(HashMap::new())),
             remote_owned_sessions: Arc::new(Mutex::new(HashSet::new())),
             remote_sessions: Arc::new(Mutex::new(HashMap::new())),
+            exec_token_snapshots: Arc::new(Mutex::new(HashMap::new())),
+            exec_turn_seq: AtomicU64::new(0),
             local_child: StdMutex::new(None),
             remote_children: Arc::new(StdMutex::new(HashMap::new())),
             shutting_down: AtomicBool::new(false),
@@ -192,8 +213,16 @@ impl SidecarManager {
     }
 
     pub(super) async fn forget_owned_session(&self, session_id: &str) {
-        let mut sessions = self.owned_sessions.lock().await;
-        sessions.remove(session_id);
+        {
+            let mut sessions = self.owned_sessions.lock().await;
+            sessions.remove(session_id);
+        }
+        // Drop any executor-cost snapshot entries for this session so a
+        // later session reusing the id can't inherit a stale baseline.
+        self.exec_token_snapshots
+            .lock()
+            .await
+            .retain(|(sid, _), _| sid != session_id);
     }
 
     /// E10-SUMMARIZE — register a one-shot completion waiter for
@@ -438,6 +467,7 @@ impl SidecarManager {
             let owned_sessions = Arc::clone(&self.owned_sessions);
             let remote_owned_sessions = Arc::clone(&self.remote_owned_sessions);
             let oneshot_waiters = Arc::clone(&self.oneshot_waiters);
+            let exec_token_snapshots = Arc::clone(&self.exec_token_snapshots);
             let app_handle = self.app_handle.clone();
             tokio::spawn(async move {
                 let status = child.wait().await;
@@ -455,6 +485,13 @@ impl SidecarManager {
                     let mut guard = remote_owned_sessions.lock().await;
                     guard.remove(&session_for_wait);
                 };
+                // This cleanup path bypasses forget_owned_session, so drop
+                // any executor-cost snapshot baselines here too — a later
+                // session reusing the id must not inherit a stale baseline.
+                exec_token_snapshots
+                    .lock()
+                    .await
+                    .retain(|(sid, _), _| sid != &session_for_wait);
                 let message = match status {
                     Ok(exit) if exit.success() => {
                         format!("SSH sidecar for {} exited", target_for_wait)
@@ -927,7 +964,21 @@ impl SidecarManager {
                     break;
                 }
                 Err(e) => {
-                    warn!(error = %e, "agent sidecar stdout read error");
+                    warn!(
+                        error = %e,
+                        "agent sidecar stdout read error — killing sidecar so the supervisor can restart it"
+                    );
+                    // The protocol stream is unusable (oversized record,
+                    // invalid UTF-8, or a pipe I/O failure). Breaking alone
+                    // would leave the child alive with nobody reading its
+                    // stdout: `child.wait()` in spawn_via_tokio never
+                    // returns, no crash fan-out fires, the status chip stays
+                    // Ready, and every session freezes silently. Kill the
+                    // child so wait() unblocks and the run loop's existing
+                    // crash-error fan-out + restart machinery takes over.
+                    if let Some(child) = self.local_child.lock().unwrap().take() {
+                        kill_process_tree(child.pid, child.own_group);
+                    }
                     break;
                 }
             }
@@ -989,8 +1040,13 @@ impl SidecarManager {
                                         message: message.clone(),
                                     },
                                 );
-                                self.forget_owned_session(&session_id).await;
-                                self.close_remote_session(&session_id).await;
+                                // Per-turn errors are recoverable — keep
+                                // session ownership and the SSH route alive
+                                // so the user can resend/retry (mirrors the
+                                // "error" arm in handler.rs). Process death
+                                // is handled by the detached wait task in
+                                // `spawn_remote_sidecar_for_session`; user
+                                // close goes through forward_close.
                                 let mut waiters = self.oneshot_waiters.lock().await;
                                 if let Some(mut waiter) = waiters.remove(&session_id) {
                                     if let Some(sender) = waiter.sender.take() {
@@ -1012,7 +1068,26 @@ impl SidecarManager {
                 }
                 Ok(None) => break,
                 Err(e) => {
-                    warn!(error = %e, "remote sidecar stdout read error");
+                    warn!(
+                        session_id = %session_id,
+                        error = %e,
+                        "remote sidecar stdout read error — killing remote sidecar"
+                    );
+                    // Same rationale as `reader_loop`: the stream is
+                    // unusable, so kill the SSH child instead of leaving it
+                    // running unread. Bookkeeping removal and the api-agent
+                    // error emission are handled by the detached per-child
+                    // wait task in `spawn_remote_sidecar_for_session`, which
+                    // fires once the killed child exits.
+                    let pid = self
+                        .remote_children
+                        .lock()
+                        .unwrap()
+                        .get(&session_id)
+                        .copied();
+                    if let Some(pid) = pid {
+                        kill_process_tree(pid, true);
+                    }
                     break;
                 }
             }
@@ -1035,6 +1110,7 @@ impl SidecarManager {
             &self.owned_sessions,
             &self.remote_owned_sessions,
             &self.oneshot_waiters,
+            &self.exec_token_snapshots,
             message,
             |event, payload| {
                 let _ = self.app_handle.emit(&event, payload);
@@ -1048,6 +1124,7 @@ async fn fan_out_crash_error_to_local_sessions<F>(
     owned_sessions: &Arc<Mutex<HashSet<String>>>,
     remote_owned_sessions: &Arc<Mutex<HashSet<String>>>,
     oneshot_waiters: &Arc<Mutex<HashMap<String, OneshotWaiter>>>,
+    exec_token_snapshots: &Arc<Mutex<HashMap<(String, String), (u64, [u64; 4])>>>,
     message: &str,
     mut emit_error: F,
 ) where
@@ -1081,6 +1158,16 @@ async fn fan_out_crash_error_to_local_sessions<F>(
     let mut guard = owned_sessions.lock().await;
     guard.retain(|session_id| remote_owned.contains(session_id));
     drop(guard);
+
+    // This cleanup path bypasses forget_owned_session, so drop the cleared
+    // sessions' executor-cost snapshot baselines here too. Without this a
+    // conversation restarted under the same session id against the fresh
+    // sidecar would inherit a stale cumulative baseline and under-count its
+    // first rollup.
+    {
+        let mut snapshots = exec_token_snapshots.lock().await;
+        snapshots.retain(|(sid, _), _| !sessions.iter().any(|cleared| cleared == sid));
+    }
 
     // E10-SUMMARIZE — also resolve any outstanding one-shot waiters
     // with the crash error so awaiters don't hang forever after a
@@ -1533,12 +1620,21 @@ mod supervisor_tests {
             ("remote-a".to_string(), remote_waiter),
             ("orphan-a".to_string(), orphan_waiter),
         ])));
+        // Seed executor-cost snapshot baselines for one cleared local session
+        // and the surviving remote session: the fan-out must purge the
+        // former (stale baselines survive crashes otherwise) and keep the
+        // latter (remote sessions are untouched by the local crash path).
+        let exec_token_snapshots = Arc::new(Mutex::new(HashMap::from([
+            (("local-a".to_string(), String::new()), (3_u64, [10, 20, 30, 40])),
+            (("remote-a".to_string(), String::new()), (7_u64, [1, 2, 3, 4])),
+        ])));
 
         let mut emitted = Vec::new();
         fan_out_crash_error_to_local_sessions(
             &owned_sessions,
             &remote_owned_sessions,
             &oneshot_waiters,
+            &exec_token_snapshots,
             SIDECAR_RESTART_RECOVERABLE_ERROR,
             |event, payload| emitted.push((event, payload.message)),
         )
@@ -1595,10 +1691,24 @@ mod supervisor_tests {
                 .is_some());
         }
 
+        {
+            let snapshots = exec_token_snapshots.lock().await;
+            assert!(
+                !snapshots.contains_key(&("local-a".to_string(), String::new())),
+                "cleared local session's cost baseline must be purged"
+            );
+            assert_eq!(
+                snapshots.get(&("remote-a".to_string(), String::new())),
+                Some(&(7_u64, [1, 2, 3, 4])),
+                "surviving remote session's cost baseline must be kept"
+            );
+        }
+
         fan_out_crash_error_to_local_sessions(
             &owned_sessions,
             &remote_owned_sessions,
             &oneshot_waiters,
+            &exec_token_snapshots,
             "Sidecar crashed and could not restart",
             |event, payload| emitted.push((event, payload.message)),
         )

@@ -202,6 +202,10 @@ function normalizePane(raw: unknown): WorkspacePane | null {
   // so hydrating a persisted id would expose a stale write/kill target.
   const normalized = { ...pane } as Record<string, unknown>;
   normalized.sessionId = null;
+  // Legacy alias: Gemini CLI support was removed (2026-07). Persisted panes
+  // that still reference the retired slot degrade to a plain terminal pane —
+  // same read-only-alias spirit as the mission→flight ids.
+  if (normalized.agentId === "gemini") normalized.agentId = "terminal";
   if (isConversation) {
     normalized.kind = "conversation";
     normalized.conversationId = pane.conversationId;
@@ -221,6 +225,13 @@ function normalizePane(raw: unknown): WorkspacePane | null {
 export function normalizePanes(workspaces: Workspace[]): Workspace[] {
   return workspaces.map((w) => ({
     ...w,
+    // Legacy alias sweep: retired "gemini" slot entries in the agents list
+    // degrade to plain terminals, mirroring normalizePane's pane-level alias.
+    agents: Array.isArray(w.agents)
+      ? w.agents.map((agent) =>
+          (agent as string) === "gemini" ? ("terminal" as WorkspaceAgentSlot) : agent,
+        )
+      : [],
     panes: Array.isArray(w.panes)
       ? w.panes
           .map((pane) => normalizePane(pane))

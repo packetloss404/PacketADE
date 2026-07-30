@@ -853,6 +853,9 @@ pub fn integrate_local_attempt(
     if !git_stdout(attempt_path, &["status", "--porcelain"])?.is_empty() {
         return Err("Attempt worktree has uncommitted changes. Ask the builder to commit before integration.".to_string());
     }
+    if !git_stdout(integration_path, &["status", "--porcelain"])?.is_empty() {
+        return Err("Integration worktree has uncommitted changes. Commit or discard them in the integration worktree before integrating.".to_string());
+    }
     let output = std::process::Command::new("git")
         .args(["merge", "--no-ff", "--no-edit", attempt_branch])
         .current_dir(integration_path)
@@ -871,6 +874,22 @@ pub fn integrate_local_attempt(
             .args(["merge", "--abort"])
             .current_dir(integration_path)
             .output();
+        if conflicts.is_empty() {
+            // Non-conflict failure (missing branch ref, overwrite refusal, ...):
+            // returning Ok here would let the caller mark the task integrated
+            // even though nothing merged. Fail closed with git's reason.
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let detail = if stderr.trim().is_empty() {
+                stdout.trim().to_string()
+            } else {
+                stderr.trim().to_string()
+            };
+            return Err(format!(
+                "Attempt merge failed without producing conflicts: {}",
+                detail
+            ));
+        }
         return Ok(IntegrationMergeState {
             head_sha: git_stdout(integration_path, &["rev-parse", "HEAD"])?,
             conflict_files: conflicts,
@@ -906,6 +925,13 @@ pub async fn integrate_remote_attempt(
     if dirty_code != 0 || !dirty.trim().is_empty() {
         return Err("Remote attempt worktree has uncommitted changes. Ask the builder to commit before integration.".to_string());
     }
+    let (int_dirty, int_dirty_code) =
+        ssh_git(cfg, integration_path, &["status", "--porcelain"]).await?;
+    if int_dirty_code != 0 || !int_dirty.trim().is_empty() {
+        return Err(
+            "Remote integration worktree has uncommitted changes. Commit or discard them before integrating.".to_string(),
+        );
+    }
     let (merge, merge_code) = ssh_git(
         cfg,
         integration_path,
@@ -913,22 +939,32 @@ pub async fn integrate_remote_attempt(
     )
     .await?;
     if merge_code != 0 {
-        let (conflicts, _) = ssh_git(
+        let (conflicts_raw, _) = ssh_git(
             cfg,
             integration_path,
             &["diff", "--name-only", "--diff-filter=U"],
         )
         .await?;
         let _ = ssh_git(cfg, integration_path, &["merge", "--abort"]).await;
+        let conflicts: Vec<String> = conflicts_raw
+            .lines()
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+            .map(str::to_string)
+            .collect();
+        if conflicts.is_empty() {
+            // Non-conflict failure: returning Ok would let the caller mark the
+            // task integrated even though nothing merged. Fail closed with
+            // git's reason (`merge` carries combined stdout+stderr).
+            return Err(format!(
+                "Remote attempt merge failed without producing conflicts: {}",
+                merge.trim()
+            ));
+        }
         let (head, _) = ssh_git(cfg, integration_path, &["rev-parse", "HEAD"]).await?;
         return Ok(IntegrationMergeState {
             head_sha: head.trim().to_string(),
-            conflict_files: conflicts
-                .lines()
-                .map(str::trim)
-                .filter(|path| !path.is_empty())
-                .map(str::to_string)
-                .collect(),
+            conflict_files: conflicts,
         });
     }
     let (head, head_code) = ssh_git(cfg, integration_path, &["rev-parse", "HEAD"]).await?;
@@ -967,7 +1003,13 @@ pub fn land_local_integration_branch(
     if !root_is_clean_for_integration(&status) {
         return Err("Landing requires a clean base working tree.".to_string());
     }
-    git_stdout(base, &["merge", "--no-ff", "--no-edit", integration_branch])?;
+    if let Err(err) = git_stdout(base, &["merge", "--no-ff", "--no-edit", integration_branch]) {
+        // The merge runs in the user's primary checkout: never leave it
+        // mid-merge (MERGE_HEAD + conflict markers). Best-effort abort,
+        // mirroring land_remote_integration_branch.
+        let _ = git_stdout(base, &["merge", "--abort"]);
+        return Err(format!("Flight landing failed: {}", err));
+    }
     git_stdout(base, &["rev-parse", "HEAD"])
 }
 
@@ -2067,6 +2109,128 @@ mod tests {
         assert_eq!(conflict.conflict_files, vec!["f.txt"]);
         assert!(std::path::Path::new(&first).exists());
         assert!(std::path::Path::new(&second).exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn cooperative_integration_rejects_dirty_integration_worktree() {
+        let root = fixture_repo_with_worktree("coop-dirty-int", "unrelated");
+        let base = root.to_string_lossy().to_string();
+        let integration =
+            prepare_local_integration_branch(&base, "flight-coop-dirty-int", "main").unwrap();
+        let attempt_path = create_local_worktree(&base, "coop-dirty-task", &integration.branch)
+            .await
+            .unwrap();
+        std::fs::write(
+            std::path::Path::new(&attempt_path).join("task.txt"),
+            "cooperative\n",
+        )
+        .unwrap();
+        git_stdout(&attempt_path, &["add", "task.txt"]).unwrap();
+        git_stdout(&attempt_path, &["commit", "-m", "task"]).unwrap();
+        // Leftover file in the integration worktree (e.g. an aborted manual
+        // conflict resolution) must block integration, not be silently
+        // reported as a successful merge.
+        std::fs::write(
+            std::path::Path::new(&integration.worktree_path).join("stray.txt"),
+            "leftover\n",
+        )
+        .unwrap();
+
+        let err = integrate_local_attempt(
+            &integration.worktree_path,
+            &integration.branch,
+            &attempt_path,
+            &branch_name("coop-dirty-task"),
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("Integration worktree has uncommitted changes"),
+            "unexpected error: {}",
+            err
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn cooperative_integration_fails_closed_on_non_conflict_merge_failure() {
+        let root = fixture_repo_with_worktree("coop-nonconflict", "unrelated");
+        let base = root.to_string_lossy().to_string();
+        let integration =
+            prepare_local_integration_branch(&base, "flight-coop-nonconflict", "main").unwrap();
+        let attempt_path = create_local_worktree(&base, "coop-nc-task", &integration.branch)
+            .await
+            .unwrap();
+        let before = git_stdout(&integration.worktree_path, &["rev-parse", "HEAD"]).unwrap();
+
+        // A missing attempt branch ref fails the merge with zero unmerged
+        // entries — previously reported as Ok { conflict_files: [] }.
+        let err = integrate_local_attempt(
+            &integration.worktree_path,
+            &integration.branch,
+            &attempt_path,
+            "pkt/does-not-exist",
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("failed without producing conflicts"),
+            "unexpected error: {}",
+            err
+        );
+        assert_eq!(
+            git_stdout(&integration.worktree_path, &["rev-parse", "HEAD"]).unwrap(),
+            before,
+            "integration HEAD must be unchanged after a failed merge"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn land_local_integration_branch_aborts_conflicted_merge() {
+        let root = fixture_repo_with_worktree("coop-land-conflict", "unrelated");
+        let base = root.to_string_lossy().to_string();
+        let integration =
+            prepare_local_integration_branch(&base, "flight-coop-land-conflict", "main").unwrap();
+        let attempt_path = create_local_worktree(&base, "coop-lc-task", &integration.branch)
+            .await
+            .unwrap();
+        std::fs::write(
+            std::path::Path::new(&attempt_path).join("f.txt"),
+            "base\nattempt\n",
+        )
+        .unwrap();
+        git_stdout(&attempt_path, &["add", "f.txt"]).unwrap();
+        git_stdout(&attempt_path, &["commit", "-m", "attempt work"]).unwrap();
+        let merged = integrate_local_attempt(
+            &integration.worktree_path,
+            &integration.branch,
+            &attempt_path,
+            &branch_name("coop-lc-task"),
+        )
+        .unwrap();
+        assert!(merged.conflict_files.is_empty());
+        // Diverge main with a conflicting commit after the integration branch
+        // was prepared, so landing conflicts.
+        std::fs::write(root.join("f.txt"), "base\nmainline\n").unwrap();
+        git_stdout(&base, &["add", "f.txt"]).unwrap();
+        git_stdout(&base, &["commit", "-m", "mainline work"]).unwrap();
+
+        let err = land_local_integration_branch(&base, "main", &integration.branch).unwrap_err();
+        assert!(
+            err.contains("Flight landing failed"),
+            "unexpected error: {}",
+            err
+        );
+        assert!(
+            !root.join(".git").join("MERGE_HEAD").exists(),
+            "landing failure must not leave the base checkout mid-merge"
+        );
+        let status = git_stdout(&base, &["status", "--porcelain"]).unwrap();
+        assert!(
+            root_is_clean_for_integration(&status),
+            "base working tree must be restored after aborted landing: {}",
+            status
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 }

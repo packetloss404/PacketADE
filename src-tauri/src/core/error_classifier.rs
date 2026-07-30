@@ -183,7 +183,13 @@ fn extract_message(stderr: &str) -> String {
         .unwrap_or(stderr)
         .trim();
     if msg.len() > 200 {
-        format!("{}...", &msg[..197])
+        // Walk the cut index back to a char boundary so multi-byte
+        // codepoints (em-dashes, emoji, non-Latin text) never panic.
+        let mut end = 197;
+        while end > 0 && !msg.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}...", &msg[..end])
     } else {
         msg.to_string()
     }
@@ -327,6 +333,15 @@ mod tests {
         let long = "x".repeat(300);
         let msg = extract_message(&long);
         assert!(msg.len() <= 203); // 200 + "..."
+    }
+
+    #[test]
+    fn extract_message_truncates_multibyte_without_panic() {
+        // 100 em-dashes = 300 bytes; byte 197 falls mid-codepoint.
+        let long = "\u{2014}".repeat(100);
+        let msg = extract_message(&long);
+        assert!(msg.ends_with("..."));
+        assert!(msg.len() <= 203);
     }
 }
 

@@ -103,6 +103,9 @@ pub fn pricing_for(model: &str) -> Option<ModelPricing> {
     // Strip a leading `anthropic/` (OpenRouter) for matching.
     let anthro = m.strip_prefix("anthropic/").unwrap_or(&m).to_string();
 
+    if anthro.starts_with("claude-opus-4-8") {
+        return Some(ModelPricing::anthropic(15.0, 75.0));
+    }
     if anthro.starts_with("claude-opus-4-7") {
         return Some(ModelPricing::anthropic(15.0, 75.0));
     }
@@ -137,18 +140,29 @@ pub fn pricing_for(model: &str) -> Option<ModelPricing> {
     if oai.starts_with("o4-mini") {
         return Some(ModelPricing::openai(1.10, 4.40));
     }
+    // Plain gpt-5 family (Codex row offers bare "gpt-5"; also gpt-5-codex).
+    // Kept below the more specific gpt-5.x arms so it cannot shadow them.
+    if oai == "gpt-5"
+        || oai.starts_with("gpt-5-")
+        || oai.starts_with("gpt-5.")
+        || oai == "chatgpt-5"
+        || oai.starts_with("chatgpt-5-")
+        || oai.starts_with("chatgpt-5.")
+    {
+        return Some(ModelPricing::openai(5.0, 15.0));
+    }
 
     // --- Google (direct + OpenRouter mirror) ---
     let goog = m.strip_prefix("google/").unwrap_or(&m).to_string();
 
-    if goog.starts_with("gemini-2.5-pro") || goog.starts_with("gemini-3.1-pro") {
+    if goog.starts_with("gemini-2.5-pro") {
         return Some(ModelPricing::google(1.25, 5.0));
-    }
-    if goog.starts_with("gemini-3-flash") {
-        return Some(ModelPricing::google(0.075, 0.30));
     }
 
     // --- MiniMax ---
+    if m.contains("minimax-m3") {
+        return Some(ModelPricing::openai_style(0.30, 1.20));
+    }
     if m.contains("minimax-m1") || m.contains("minimax-m2") {
         return Some(ModelPricing::openai_style(0.40, 2.20));
     }
@@ -287,6 +301,20 @@ mod tests {
         // 1M input + 1M output on Opus 4.7 = 15 + 75 = $90
         let cost = calculate_cost("claude-opus-4-7", 1_000_000, 1_000_000, 0, 0);
         assert!((cost - 90.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn current_default_models_are_priced() {
+        let opus8 = pricing_for("claude-opus-4-8").expect("opus 4.8");
+        assert_eq!(opus8.input_per_mtok, 15.0);
+        assert_eq!(opus8.output_per_mtok, 75.0);
+        assert!(pricing_for("anthropic/claude-opus-4-8").is_some());
+        let g5 = pricing_for("gpt-5").expect("gpt-5");
+        assert_eq!(g5.input_per_mtok, 5.0);
+        assert!(pricing_for("gpt-5-codex").is_some());
+        let m3 = pricing_for("MiniMax-M3").expect("minimax m3");
+        assert_eq!(m3.input_per_mtok, 0.30);
+        assert_eq!(m3.output_per_mtok, 1.20);
     }
 
     #[test]

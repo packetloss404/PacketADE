@@ -1,6 +1,6 @@
 # Conversation-as-Tile Program — Sprint Plan
 
-Source of truth: `dev/conversation-tile-design.md` (FINAL ruled spec, 2026-07-08). This document decomposes
+Source of truth: `dev/archive/conversation-tile-design.md` (FINAL ruled spec, 2026-07-08). This document decomposes
 its 5 phases into 16 ordered work items, each sized for one strong implementation agent in one sitting,
 each leaving the tree green and committable. Nothing here re-decides a ruling; where the code contradicted
 a spec detail on contact, it is listed under **Flagged risks** at the bottom, not silently re-decided.

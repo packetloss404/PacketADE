@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PacketADE Midway Review — 2026-07-30</title>
+<style>
+  :root {
+    --bg: #050b14;
+    --bg-panel: #0a1220;
+    --bg-panel-2: #0d1626;
+    --bg-inset: #071019;
+    --border: #17263c;
+    --border-soft: #101c2e;
+    --green: #2EE86B;
+    --green-dim: #1da54c;
+    --green-faint: rgba(46,232,107,0.08);
+    --text: #c7d3e3;
+    --text-dim: #7d8ea6;
+    --text-faint: #55657c;
+    --amber: #f0b429;
+    --red: #f4577a;
+    --orange: #f08c3a;
+    --blue: #4aa8ff;
+    --mono: "JetBrains Mono", "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px 120px; }
+  a { color: var(--green); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ---------- header ---------- */
+  header {
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #081222 0%, var(--bg) 100%);
+    padding: 56px 0 40px;
+    margin-bottom: 48px;
+  }
+  .header-inner { max-width: 1080px; margin: 0 auto; padding: 0 28px; display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
+  .header-inner img { width: 88px; height: 88px; border-radius: 18px; box-shadow: 0 0 40px rgba(46,232,107,0.18); }
+  .kicker { font-family: var(--mono); font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--green); margin-bottom: 10px; }
+  h1 { font-family: var(--mono); font-size: 32px; font-weight: 700; color: #eaf2fb; letter-spacing: -0.5px; line-height: 1.2; }
+  .subtitle { color: var(--text-dim); margin-top: 10px; font-size: 15px; max-width: 720px; }
+  .meta-row { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 18px; font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
+  .meta-row b { color: var(--text-dim); font-weight: 500; }
+
+  /* ---------- typography ---------- */
+  h2 {
+    font-family: var(--mono); font-size: 22px; color: #eaf2fb; font-weight: 700;
+    margin: 72px 0 8px; padding-top: 24px; border-top: 1px solid var(--border);
+    letter-spacing: -0.3px;
+  }
+  h2 .num { color: var(--green); margin-right: 12px; }
+  h3 { font-family: var(--mono); font-size: 16px; color: #dce7f5; font-weight: 600; margin: 40px 0 12px; }
+  h3 .tag { font-size: 11px; color: var(--green); letter-spacing: 0.12em; text-transform: uppercase; margin-right: 10px; }
+  h4 { font-family: var(--mono); font-size: 13px; color: var(--green); font-weight: 600; margin: 26px 0 10px; letter-spacing: 0.06em; text-transform: uppercase; }
+  p { margin: 0 0 14px; }
+  .lead { color: #d9e4f2; font-size: 16px; }
+  .dim { color: var(--text-dim); }
+  .faint { color: var(--text-faint); font-size: 13px; }
+  code, .mono { font-family: var(--mono); font-size: 0.88em; color: #9fd8b4; background: var(--bg-inset); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border-soft); }
+  ul, ol { margin: 0 0 16px 22px; }
+  li { margin-bottom: 7px; }
+  li::marker { color: var(--green-dim); }
+
+  /* ---------- components ---------- */
+  .panel {
+    background: var(--bg-panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 22px 26px; margin: 20px 0;
+  }
+  .panel.accent { border-left: 3px solid var(--green); }
+  .panel.warn { border-left: 3px solid var(--amber); }
+  .panel.danger { border-left: 3px solid var(--red); }
+
+  .statgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 26px 0; }
+  .stat { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+  .stat .v { font-family: var(--mono); font-size: 24px; font-weight: 700; color: var(--green); line-height: 1.1; }
+  .stat .l { font-size: 12px; color: var(--text-dim); margin-top: 6px; line-height: 1.4; }
+
+  .badge {
+    display: inline-block; font-family: var(--mono); font-size: 10px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 8px; border-radius: 4px;
+    vertical-align: middle; white-space: nowrap;
+  }
+  .sev-critical { background: rgba(244,87,122,0.14); color: var(--red); border: 1px solid rgba(244,87,122,0.4); }
+  .sev-high { background: rgba(240,140,58,0.13); color: var(--orange); border: 1px solid rgba(240,140,58,0.4); }
+  .sev-medium { background: rgba(240,180,41,0.12); color: var(--amber); border: 1px solid rgba(240,180,41,0.35); }
+  .sev-low { background: rgba(74,168,255,0.1); color: var(--blue); border: 1px solid rgba(74,168,255,0.3); }
+  .badge-fixed { background: var(--green-faint); color: var(--green); border: 1px solid rgba(46,232,107,0.4); }
+  .badge-open { background: rgba(244,87,122,0.1); color: var(--red); border: 1px solid rgba(244,87,122,0.3); }
+  .badge-dim { background: rgba(125,142,166,0.1); color: var(--text-dim); border: 1px solid var(--border); }
+
+  .problem { border-left: 2px solid var(--border); padding: 4px 0 4px 16px; margin: 14px 0; }
+  .problem .p-title { color: #dce7f5; font-weight: 600; }
+  .problem .p-file { font-family: var(--mono); font-size: 11.5px; color: var(--text-faint); margin: 2px 0 4px; }
+  .problem .p-detail { color: var(--text-dim); font-size: 14px; margin: 0; }
+  .problem.crit { border-left-color: var(--red); }
+  .problem.high { border-left-color: var(--orange); }
+  .problem.med { border-left-color: var(--amber); }
+  .problem.low { border-left-color: var(--blue); }
+
+  .scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; margin: 20px 0; max-width: 100%; }
+  table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 13.5px; }
+  th {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--green); text-align: left; padding: 12px 14px; background: var(--bg-panel-2);
+    border-bottom: 1px solid var(--border); position: sticky; top: 0;
+  }
+  td { padding: 11px 14px; border-bottom: 1px solid var(--border-soft); vertical-align: top; color: var(--text); }
+  tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) td { background: rgba(13,22,38,0.4); }
+  td .tfile { font-family: var(--mono); font-size: 11px; color: var(--text-faint); display: block; margin-top: 3px; }
+
+  /* TOC */
+  nav.toc { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 12px; padding: 26px 30px; margin: 30px 0 10px; }
+  nav.toc h2 { border: none; margin: 0 0 16px; padding: 0; font-size: 15px; }
+  nav.toc ol { margin-left: 20px; columns: 2; column-gap: 44px; }
+  nav.toc > ol > li { margin-bottom: 9px; break-inside: avoid; }
+  nav.toc ol ol { columns: 1; margin-top: 6px; font-size: 13px; }
+  nav.toc a { color: var(--text); }
+  nav.toc a:hover { color: var(--green); }
+  nav.toc ol ol a { color: var(--text-dim); }
+  @media (max-width: 720px) { nav.toc ol { columns: 1; } }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 820px) { .two-col { grid-template-columns: 1fr; } }
+
+  .idea { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin: 12px 0; }
+  .idea .i-name { font-family: var(--mono); font-weight: 600; color: #dce7f5; font-size: 14px; }
+  .idea .i-pitch { color: var(--text-dim); font-size: 13.5px; margin: 6px 0 0; }
+
+  .top12 { counter-reset: t12; }
+  .top12 .t-card {
+    background: linear-gradient(135deg, var(--bg-panel) 0%, var(--bg-panel-2) 100%);
+    border: 1px solid var(--border); border-left: 3px solid var(--green);
+    border-radius: 12px; padding: 22px 26px; margin: 18px 0; position: relative;
+  }
+  .t-card .t-rank { font-family: var(--mono); font-size: 30px; font-weight: 700; color: rgba(46,232,107,0.25); position: absolute; top: 14px; right: 22px; }
+  .t-card .t-name { font-family: var(--mono); font-size: 16px; font-weight: 700; color: #eaf2fb; margin-bottom: 8px; padding-right: 70px; }
+  .t-card .t-pitch { color: var(--text); font-size: 14px; margin-bottom: 10px; }
+  .t-card .t-seq { color: var(--text-dim); font-size: 13px; border-top: 1px dashed var(--border); padding-top: 10px; }
+  .t-card .t-seq b { color: var(--green); font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
+
+  .gate-list li { font-family: var(--mono); font-size: 13px; margin-bottom: 10px; }
+  .checkline { color: var(--text-dim); }
+
+  .phase { border: 1px solid var(--border); border-radius: 12px; margin: 20px 0; overflow: hidden; }
+  .phase .ph-head { background: var(--bg-panel-2); padding: 14px 22px; font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--green); border-bottom: 1px solid var(--border); }
+  .phase .ph-head span { color: var(--text-dim); font-weight: 400; font-size: 12px; margin-left: 12px; }
+  .phase .ph-body { padding: 18px 24px 8px; }
+
+  footer { border-top: 1px solid var(--border); margin-top: 90px; padding-top: 26px; font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
+  .backtop { float: right; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <img src="data:image/png;base64,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" alt="PacketADE logo">
+    <div>
+      <div class="kicker">Packet ADE // Flagship Deliverable</div>
+      <h1>Midway Review — Six-Month Checkpoint</h1>
+      <div class="subtitle">A full multi-fleet review of the PacketADE Agent Development Environment: seven domain deep dives, a 22-agent bug hunt with fixes applied, competitive and technology briefs, a four-lens vision panel, and a sequenced 90-day plan.</div>
+      <div class="meta-row">
+        <span><b>Date</b> 2026-07-30</span>
+        <span><b>Repo</b> D:\projects\PacketADE @ main (a874f0f)</span>
+        <span><b>Fleets</b> 14 research + 22 bug-hunt agents</span>
+        <span><b>Version</b> 0.10.2 · protocol v11</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<nav class="toc" id="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#exec">Executive Summary</a></li>
+    <li><a href="#codebase">State of the Codebase</a>
+      <ol>
+        <li><a href="#d-frontend">Frontend (React / TypeScript)</a></li>
+        <li><a href="#d-rust">Rust Backend</a></li>
+        <li><a href="#d-sidecar">Sidecar &amp; Provider Layer</a></li>
+        <li><a href="#d-flights">Flights, Worktrees &amp; Remote</a></li>
+        <li><a href="#d-security">Security</a></li>
+        <li><a href="#d-ux">Daily-Driver UX</a></li>
+        <li><a href="#d-quality">Quality &amp; Infrastructure</a></li>
+      </ol>
+    </li>
+    <li><a href="#bugs">Bug Hunt &amp; Fixes</a></li>
+    <li><a href="#market">Competitive Landscape &amp; Tech Trends</a></li>
+    <li><a href="#features">Feature Program</a></li>
+    <li><a href="#frontier">The Frontier (Vision Panel &amp; Top 12)</a></li>
+    <li><a href="#actions">Actions Taken This Session &amp; Verification</a></li>
+    <li><a href="#next90">Recommended Next 90 Days</a></li>
+  </ol>
+</nav>
+
+<!-- ================================================================ -->
+<h2 id="exec"><span class="num">1</span>Executive Summary</h2>
+
+<p class="lead">At its six-month midpoint, PacketADE is a real product, not a prototype. The engineering quality in its hardest subsystems — atomic state persistence with corruption recovery, a concurrency-correct agent turn lifecycle, battle-hardened xterm/PTY handling, a versioned sidecar protocol with restart supervision, and above-average SSH security — is well beyond what solo desktop projects usually achieve. Its breadth is its moat: an eight-provider chat matrix mixing subscription OAuth with API keys and local models, SSH-remote execution for both terminals and agent tools, worktree-isolated parallel Flights with cost rollup, a memory layer, an MCP hub, and Windows-native support. No competitor bundles all of this.</p>
+
+<p>The review found the weaknesses cluster in three bands, none of them structural rot:</p>
+<ul>
+  <li><b>Lifecycle and recovery seams.</b> Both critical bugs and most of the high-severity ones lived where sessions cancel, error, crash, or restart: the Anthropic <code>cancel()</code> killing the whole conversation, sidecar errors bricking live sessions, crash-recovery instructions that could never work, Flights with no startup recovery, merges that report success without merging. These are exactly the seams the test suites never exercised against real providers.</li>
+  <li><b>Process infrastructure.</b> Zero CI, no coverage measurement, unsigned installers, no auto-updater, no crash telemetry, and macOS/Linux targets that have never been compiled. The quality ladder is genuinely good — and entirely voluntary.</li>
+  <li><b>Daily-driver polish.</b> Ctrl+K stealing keystrokes from terminals, the app forgetting your view on every launch, one-click session-destroying window close, silent failures (~96 console-only error sites vs. one toast consumer), and a flagship launch modal that forgets your targets every time.</li>
+</ul>
+
+<div class="statgrid">
+  <div class="stat"><div class="v">~177k</div><div class="l">Lines of code under review (frontend + Rust + sidecar)</div></div>
+  <div class="stat"><div class="v">16</div><div class="l">Bugs confirmed by the adversarial verify stage (0 refuted)</div></div>
+  <div class="stat"><div class="v">2 / 9 / 5</div><div class="l">Critical / high / medium severity split</div></div>
+  <div class="stat"><div class="v">16 / 16</div><div class="l">Bugs fixed this session (15 distinct defects; two findings reconciled as one)</div></div>
+  <div class="stat"><div class="v">8</div><div class="l">Chat providers across two transports, one event contract</div></div>
+  <div class="stat"><div class="v">0</div><div class="l">CI workflows, signed installers, or telemetry channels</div></div>
+</div>
+
+<div class="panel accent">
+  <h4 style="margin-top:0">Headline strengths</h4>
+  <ul style="margin-bottom:0">
+    <li>Transport-agnostic <code>api-agent:*</code> event contract spanning the in-process Rust runtime and the Node sidecar — the architectural decision everything else composes on.</li>
+    <li>Durable-by-design persistence: tmp + fsync + rename + backup, quarantine-first corruption recovery, backend-owned merge semantics that stop stale UI snapshots from rewinding attempt state.</li>
+    <li>SSH posture: host-key pinning, <code>sh_quote</code> everywhere, keyring passwords via askpass (never argv/env), fail-closed remote path containment.</li>
+    <li>Test depth where risk is highest: 165 Vitest files, 417 Rust unit tests, 14 deterministic sidecar smoke gates — plus a Rust→TS schema drift gate.</li>
+    <li>Flights: the one-prompt-N-agents orchestrator with path-claim collision gating, reviewer gates enforced in Rust, and per-flight cost rollup — a feature set competitors don't have in one place.</li>
+  </ul>
+</div>
+
+<div class="panel danger">
+  <h4 style="margin-top:0">Headline risks (post-fix)</h4>
+  <ul style="margin-bottom:0">
+    <li><b>Permission-mode semantics are dangerous and inconsistent:</b> the default "auto" mode maps to <code>--dangerously-bypass-approvals-and-sandbox</code> for Codex sessions — a stock ChatGPT-subscription conversation runs with no sandbox and no approvals. Rated critical by the security review; still open.</li>
+    <li><b>No Flight recovery across restarts:</b> a crash mid-flight leaves zombie attempts spinning forever, and failed attempts destroy their uncommitted work. Rated critical by the flights review; still open.</li>
+    <li><b>The quality ladder is discipline-only:</b> at 177k LOC with no CI, one skipped <code>pnpm check</code> ships regressions silently. The bug fleet's findings — clustered in untested lifecycle seams — are direct evidence.</li>
+    <li><b>Distribution is stuck:</b> unsigned, updater-less releases mean every update is a manual 78 MB SmartScreen-flagged install. This caps any user base at approximately one.</li>
+    <li><b>Approving a gated write on the flagship Claude subscription provider hangs the turn forever</b> (the Anthropic <code>pending_edit</code> event omits the required <code>toolUseId</code>) — a one-line fix identified by the sidecar review but outside the 16-bug fix scope; still open.</li>
+  </ul>
+</div>
+
+<h4>What was fixed this session</h4>
+<p>All 16 confirmed bugs were repaired by four fixer agents with disjoint file territories, with regression tests added across the board. Highlights: the Anthropic cancel-kills-conversation critical, the Codex flight-cost over-counting critical, worktree merge failures masquerading as success, the zombie-sidecar oversized-line hang, session-bricking on advisory errors, and the packetcode→packetade migration ordering defect. Separately: Gemini CLI support was removed entirely (45 files), the public docs were rewritten for honesty, the statusline work shipped in a sibling repo, and a marketing identity ("Phosphor Deck") was produced. Details in <a href="#actions">§7</a>; verification gate status in <a href="#verification">§7.3</a>.</p>
+
+<p><b>Verdict:</b> the project has earned a "ship it to more humans" posture — but only after the trust seams close. The recommended order (<a href="#next90">§8</a>): lock in this session's fixes with CI, close the four open trust items (Codex auto-bypass, edit-approval hang, flight recovery, evidence-destroying cleanup), then ship the updater + signing, and only then spend on the frontier bets — starting with the data-capture layers (trust ledger, flight recorder journal) whose value compounds with every week they run.</p>
+
+<!-- ================================================================ -->
+<h2 id="codebase"><span class="num">2</span>State of the Codebase</h2>
+<p class="dim">Seven domain deep dives. Each chapter carries the reviewer's summary, selected strengths, the full ranked problem list (severity-badged), and consolidated recommendations. Problems fixed during this session's bug loop are marked; everything else is open.</p>
+
+<!-- ---------------- frontend ---------------- -->
+<h3 id="d-frontend"><span class="tag">2.1</span>Frontend — React 19 / TypeScript / Zustand</h3>
+<p>A mature, unusually well-documented codebase (~119k LOC in <code>src/</code>) with genuinely sophisticated engineering in its hardest areas: the rAF-coalesced streaming pipeline with flush-before-done ordering; xterm/PTY handling that works around an xterm 6.0 parser crash, WebGL-on-hidden-container blanking, and StrictMode double-spawns; and disciplined hydration ordering with <code>sessionGlue</code> as the single eslint-enforced bridge between the conversation and placement engines. Store test coverage is strong (50+ test files) and inline comments carry design rationale, making a 55-store architecture legible.</p>
+<p>The weaknesses: (1) state-management scale effects — a single <code>conversations</code> array holds every transcript and always-mounted chrome subscribes to all of it, recomputing O(all-messages) cost aggregation per streaming frame, while unmemoized message rows re-parse markdown per frame; (2) persistence fragmented across five coexisting mechanisms with hand-rolled duplication; (3) dead code from rapid churn that now actively misleads — a vestigial pane registry silently breaking Prompt Library, a routing settings card wired to nothing, a persisted view that is saved but never restored. None of it is structurally rotten; it is the residue of fast, well-tested iteration.</p>
+
+<h4>Strengths</h4>
+<ul>
+  <li>Stream coalescer batches token events to one store write per animation frame with explicit <code>flushNow()</code> ordering — tail chunks never drop or reorder.</li>
+  <li>Battle-hardened xterm layer: DECRQM crash workaround, deferred WebGL, 0×0 resize guards, sequence-aware transcript replay.</li>
+  <li>Enforced decoupling: conversation and placement engines never import each other; all wiring lives in <code>sessionGlue.ts</code>.</li>
+  <li>50+ store/hook/view test suites including 931-line listener tests and dual-run parity tests.</li>
+  <li>Code-splitting done right: lazy views, xterm out of the entry chunk, retained-mount workspaces so live PTYs survive navigation.</li>
+</ul>
+
+<h4>Problems (ranked)</h4>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="p-title">Prompt Library "Send to terminal" silently broken via dead layoutStore pane registry</span>
+  <div class="p-file">src/stores/layoutStore.ts</div>
+  <p class="p-detail"><code>layoutStore.addPane</code> is never called, so the pane registry is permanently empty; <code>promptStore.sendToTerminal</code> always gets <code>undefined</code> and the action is a silent no-op. CLAUDE.md still documents the dead path.</p></div>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="p-title">Always-mounted chrome subscribes to the full conversations array per streaming frame</span>
+  <div class="p-file">src/components/layout/LiveSpendChip.tsx</div>
+  <p class="p-detail">LiveSpendChip, RunningAgentsChip, and PinnedApprovalBanner re-render at up to ~60 fps during streaming; the spend chip re-runs cost aggregation over every message of every conversation each frame.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Unmemoized message rows and MarkdownRenderer — full markdown re-parse of mounted history during streaming</span>
+  <div class="p-file">src/components/agents/chat/MessageList.tsx</div>
+  <p class="p-detail">Rows mount once and never unmount; after scrolling a long transcript, the entire conversation's markdown re-parses per frame. Tool cards are memoized — the same treatment is missing one level up.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Persistence fragmented across five mechanisms with hand-rolled duplication</span>
+  <div class="p-file">src/stores/layoutStore.ts</div>
+  <p class="p-detail">Zustand persist, manual localStorage helpers, backend state slices, per-conversation files, and localStorage caches coexist; <code>layoutStore.setProjectPath</code> re-implements workspaceStore's persistence inline — a documented drift hazard.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">routingStore task-type routing UI is a dead end — resolveForTask has zero callers</span>
+  <div class="p-file">src/stores/routingStore.ts</div>
+  <p class="p-detail">Users can configure routing that has no effect anywhere. Matches the pending local-model-routing plan (LM1–LM7): wire it into launch paths or hide the card until the plan lands.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Persisted selectedView written on every change but never restored — app always boots to Welcome</span>
+  <div class="p-file">src/lib/bootstrap.ts</div>
+  <p class="p-detail">Half of the persistence round-trip is dead code; daily users re-navigate to their working view on every launch.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Monolithic view components with high hook density</span>
+  <div class="p-file">src/components/views/GitHubView.tsx</div>
+  <p class="p-detail">GitHubView 1204 lines / 23 hooks, MemoryView 1185, WorkspaceCreationModal 1138 / 26 hooks, FlightsView 1128 — data fetching, derived state, and rendering mixed in single files.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Fragile PTY approval automation and initial-prompt timing heuristics</span>
+  <div class="p-file">src/hooks/useTerminalSession.ts</div>
+  <p class="p-detail">Approval buttons write <code>y\n</code>/<code>n\n</code> based on regex classification of TUI output — a CLI redesign can misfire; non-Claude CLIs get their initial prompt after a blind 3-second delay that can swallow it on slow machines.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">Trailing-edge-only conversation save debounce loses in-flight turns on crash</span>
+  <div class="p-file">src/stores/agentConversationPersistence.ts</div>
+  <p class="p-detail">During continuous streaming the 500 ms timer never fires; a renderer crash mid-turn loses the whole turn. A max-interval flush would bound the loss.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">~25 hardcoded "packetade:" literals despite brand.ts centralization</span>
+  <div class="p-file">src/lib/brand.ts</div>
+  <p class="p-detail">A future rename would again be a multi-file churn — the exact thing the brand module exists to prevent.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">Dead files and duplicated routing surfaces</span>
+  <div class="p-file">src/components/views/ServersView.tsx</div>
+  <p class="p-detail">ServersView imported nowhere; HistoryView mounted via two paths; three overlapping session registries persist.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">Four always-on status-line pollers regardless of session state</span>
+  <div class="p-file">src/hooks/useStatusLine.ts</div>
+  <p class="p-detail">Four IPC round-trips per 5 s of idle even with zero PTY sessions; could be gated on live sessions and consolidated into one backend call.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">Window CustomEvent side-channel for cross-component control</span>
+  <div class="p-file">src/components/agents/paneEvents.ts</div>
+  <p class="p-detail">Untyped window events bypass the store layer — a second, invisible communication mechanism that is harder to test and trace.</p></div>
+
+<h4>Recommendations</h4>
+<ul>
+  <li>Memoize <code>LazyMessageRow</code> and <code>MarkdownRenderer</code>; the coalescer already preserves referential identity, so <code>memo()</code> alone eliminates most per-frame work.</li>
+  <li>Give chrome components derived selectors (cost updated on turn boundaries, not per chunk); split conversation metadata from message bodies so a one-token append does not rebuild the whole array.</li>
+  <li>Delete the vestigial layoutStore pane API, repoint promptStore at workspaceStore, and fix CLAUDE.md's stale convention.</li>
+  <li>Restore <code>selectedView</code> on boot (only the read side is missing); consolidate localStorage access behind <code>storageKey()</code> with an eslint ban on the raw prefix.</li>
+  <li>Replace the 3000 ms initial-prompt delay with readiness detection, and add a max-interval flush to conversation saves.</li>
+</ul>
+
+<!-- ---------------- rust ---------------- -->
+<h3 id="d-rust"><span class="tag">2.2</span>Rust Backend — commands, core, supervision, persistence</h3>
+<p>A genuinely mature Tauri v2 backend. The riskiest subsystems show deliberate engineering: <code>storage.rs</code> implements an atomic write path with a quarantine-first corruption-recovery ladder and hermetic tests; <code>api_agent.rs</code> has a correct turn-ownership protocol with cancellation handled at stream, tool-join, and pending-prompt levels; the sidecar supervisor rate-limits restarts and kills whole process trees on all platforms. Secrets live in the OS keyring with careful write-before-delete migration. Production <code>unwrap</code> usage is nearly all confined to tests.</p>
+<p>The weaknesses are architectural: everything lives in one <code>state.v1.json</code> fully rewritten (pretty-printed, double-fsynced) on every slice save behind a hand-rolled dual-lock with a spin-loop sync path; and the security model is "trusted webview" — <code>ssh_exec</code> accepts raw argv from the frontend, the PTY allowlist includes shells (making it cosmetic), and the default <code>PermissionMode::Auto</code> runs bash and file writes unprompted while the risky-tool gate covers only two tool names, with MCP and web tools bypassing it entirely.</p>
+
+<h4>Strengths</h4>
+<ul>
+  <li>Durable write path (tmp + fsync + rename + parent-dir sync) with a recovery ladder that provably cannot clobber a good backup — covered by crash-ordering tests.</li>
+  <li>Concurrency-correct turn lifecycle: monotonic turn ids, deny-safe oneshot draining, tokio-tested cancellation.</li>
+  <li>Backend-owned-field merge prevents stale UI snapshots from rewinding attempt status — a lost-update class most apps never consider.</li>
+  <li>Thoughtful SSH: SHA256 pinning against app-managed <code>known_hosts</code>, POSIX quoting on every remote command, traversal rejection, password-auth refused where stdin is a protocol channel.</li>
+  <li>Process hygiene: process-group kills, startup reaping of orphaned PTY children, sidecar crash fan-out, synchronous exit hooks.</li>
+</ul>
+
+<h4>Problems (ranked)</h4>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="p-title">ssh_exec accepts arbitrary argv (and password) from the webview — local code execution via ProxyCommand</span>
+  <div class="p-file">src-tauri/src/commands/pty.rs:727</div>
+  <p class="p-detail">Any webview compromise yields arbitrary local execution plus exfiltration of saved SSH passwords. The backend should build ssh argv itself from a saved ServerConfig id, never accept raw argv or passwords over IPC.</p></div>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="p-title">Default PermissionMode::Auto runs bash/write_file unprompted; risky-tool gate covers only two tool names</span>
+  <div class="p-file">src-tauri/src/commands/api_agent.rs:37</div>
+  <p class="p-detail">MCP tools (arbitrary child processes / network) and web tools bypass the permission gate entirely. Default should be <code>ask_for_risky</code>, with the gate classifying MCP/web tools too.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Sync state writers use a try_lock spin loop with 1 ms sleeps and no fairness</span>
+  <div class="p-file">src-tauri/src/core/storage.rs:353</div>
+  <p class="p-detail">Sync writers busy-wait and can be starved indefinitely while an async lock holder runs. Replace with a blocking bridge or make writers async.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Monolithic state.v1.json rewritten on every slice save; memory slices unbounded</span>
+  <div class="p-file">src-tauri/src/core/storage.rs:100</div>
+  <p class="p-detail">O(total-state) disk churn on every UI persist as flights and memory events accumulate; a corruption of one slice risks the whole file. Move to per-slice files or SQLite; cap/compact memory events.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">write_pty holds the global PtyManager mutex across a blocking PTY write</span>
+  <div class="p-file">src-tauri/src/commands/pty.rs:615</div>
+  <p class="p-detail">One wedged child freezes create/list/resize/kill for every session. Per-session writer mutexes fix it.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Usage JSONL append not serialized across concurrent sessions — interleaved lines can corrupt the log</span>
+  <div class="p-file">src-tauri/src/commands/usage.rs:35</div>
+  <p class="p-detail">Two sessions finishing turns simultaneously can interleave writes and corrupt entries the cost dashboard parses. Single pre-joined buffer under a static Mutex.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">PTY command allowlist is cosmetic; env injection unrestricted</span>
+  <div class="p-file">src-tauri/src/commands/pty.rs:25</div>
+  <p class="p-detail">The allowlist includes bash/sh/powershell, and the frontend can pass arbitrary env (LD_PRELOAD, PATH). Document the trust model or restrict shells to user-initiated panes.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">In-process agent history unbounded — no compaction or context-window management</span>
+  <div class="p-file">src-tauri/src/commands/api_agent.rs:95</div>
+  <p class="p-detail">Long sessions eventually fail with opaque provider context errors. The sidecar path gets SDK compaction; the in-process path gets nothing.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">CLAUDE.md contradicts the code on GitHub auth; legacy plaintext token file path persists</span>
+  <div class="p-file">src-tauri/src/commands/github.rs:34</div>
+  <p class="p-detail">Tokens persist in the keyring by design; the doc says memory-only. A pre-keyring plaintext credential lingers until explicit clear.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">Unknown providers silently mislabeled as api-claude in usage analytics</span>
+  <div class="p-file">src-tauri/src/commands/api_agent.rs:692</div>
+  <p class="p-detail">A future provider missing from the match silently pollutes Claude's cost attribution.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">ssh_check_remote_path outer timeout equals ConnectTimeout, masking the real SSH error</span>
+  <div class="p-file">src-tauri/src/commands/pty.rs:1075</div>
+  <p class="p-detail">Generic "Probe timed out" wins over ssh's specific stderr. Make the outer timeout larger.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">Three different home-directory resolvers coexist</span>
+  <div class="p-file">src-tauri/src/commands/shared.rs:27</div>
+  <p class="p-detail">On exotic setups these can disagree, splitting the data dir. Standardize on one.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">~200 commands registered by hand in lib.rs with per-command TS bindings</span>
+  <div class="p-file">src-tauri/src/lib.rs:231</div>
+  <p class="p-detail">Forgotten registration is a runtime-only failure; tauri-specta would remove the drift class entirely.</p></div>
+
+<h4>Recommendations</h4>
+<ul>
+  <li>Backend-constructed SSH invocations keyed by ServerConfig id — closes the ProxyCommand hole and keeps passwords out of IPC.</li>
+  <li>Safer default permission posture (<code>ask_for_risky</code>), gate MCP/web tools, add a per-workspace "trusted" toggle.</li>
+  <li>Migrate state storage to per-slice files (interim) then SQLite; replace the spin lock; add a manual <code>restart_sidecar</code> command.</li>
+  <li>Context compaction for the in-process LlmProvider loop; typed error enums replacing <code>Result&lt;_, String&gt;</code> prose matching.</li>
+  <li>Adopt tauri-specta for generated command registration and TS bindings; add <code>#![deny(clippy::unwrap_used)]</code> to lock in current discipline.</li>
+</ul>
+
+<!-- ---------------- sidecar ---------------- -->
+<h3 id="d-sidecar"><span class="tag">2.3</span>Sidecar &amp; Provider Layer</h3>
+<p>The most architecturally interesting part of PacketADE: a versioned NDJSON stdio protocol (v11 — CLAUDE.md still said v10) connecting a Rust supervisor to a Node sidecar hosting three real providers (Claude Agent SDK, Codex CLI exec, OpenAI Agents SDK), plus five in-process Rust providers sharing an OpenAI-compat core. Fundamentals are strong: one event contract keeps the frontend transport-agnostic, the protocol file carries an inline changelog, restart supervision is rate-limited with persisted lifetime stats, and the MCPH4 frozen-trust-snapshot design (immutable per-session authority, denial floors, a Codex trust proxy) is genuinely well thought out.</p>
+<p>The two systemic weaknesses were: (1) the protocol conflates advisory and terminal errors, and the supervisor treated every error as session death — bricking live conversations on routine failures (fixed this session); and (2) cancel/edit-approval lifecycle correctness in the Anthropic provider — <code>cancel()</code> aborting the session-lifetime query (fixed this session) and <code>pending_edit</code> omitting the mandatory <code>toolUseId</code> so gated write approvals can never resolve (<b>still open</b>). The 14 smoke gates are better than typical glue coverage but run against the echo provider — exactly the class of bug that shipped has no coverage.</p>
+
+<h4>Strengths</h4>
+<ul>
+  <li>One <code>api-agent:*</code> contract across two backends — SSH-remote sidecars dropped in cleanly because of it.</li>
+  <li>MCPH4 trust snapshots: immutable per-session authority, denial floors, transport filtering, Codex stdio trust proxy with <code>--strict-config</code>.</li>
+  <li>Defensive I/O: 8 MB capped line reader, stdout reserved for frames, UTF-8 boundary-safe truncation, SSE final-record handling.</li>
+  <li>Codex provider shows deep operational knowledge: .cmd shim workarounds, dual-schema parsing with suffix dedupe, idle watchdog, per-address sub-agent token attribution.</li>
+  <li>Thorough remote-sidecar preflight with typed error messages; password-auth SSH rejected because stdin is the protocol channel.</li>
+</ul>
+
+<h4>Problems (ranked)</h4>
+<div class="problem crit"><span class="badge sev-critical">Critical</span> <span class="badge badge-open">Open</span> <span class="p-title">Anthropic pending_edit omits toolUseId — gated write approvals can never resolve</span>
+  <div class="p-file">agent-sidecar/src/providers/anthropic.ts</div>
+  <p class="p-detail">The edit resolver is parked under the tool-use id, but the emitted event carries no id; the frontend responds with <code>""</code>, the lookup misses, and the SDK stalls on the write tool forever. v9 made the id mandatory for exactly this; the Anthropic emitter was never updated. One-line fix; the echo-only smoke test is why it was not caught.</p></div>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="badge badge-fixed">Fixed</span> <span class="p-title">Supervisor treats every sidecar error event as session-terminal, bricking live sessions on advisory errors</span>
+  <div class="p-file">src-tauri/src/commands/agent_sidecar/handler.rs</div>
+  <p class="p-detail">A benign "does not support set_model" or a Codex "previous turn still running" permanently unrouted the session; subsequent sends fell through to the wrong backend and the sidecar-side session (and its MCP children) leaked. Fixed: ownership survives per-turn errors.</p></div>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="badge badge-fixed">Fixed</span> <span class="p-title">Anthropic cancel() aborts the long-lived query, breaking v10's cancel-keeps-conversation contract</span>
+  <div class="p-file">agent-sidecar/src/providers/anthropic.ts</div>
+  <p class="p-detail">Post-cancel sends pushed into a dead query and spun forever. Fixed: interrupt-first with tracked success; abort only as a loud-failing fallback. (See bug spotlight, §3.)</p></div>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="badge badge-fixed">Fixed</span> <span class="p-title">Codex cumulative token snapshots additively accumulated into Flight cost</span>
+  <div class="p-file">src-tauri/src/commands/agent_sidecar/handler.rs</div>
+  <p class="p-detail">Sum-of-prefix-sums inflation, roughly quadratic with stream length. Fixed with provider-aware delta accounting. (See bug spotlight, §3.)</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Cancel done/pump-done race can prematurely terminate the next turn</span>
+  <div class="p-file">agent-sidecar/src/session-registry.ts</div>
+  <p class="p-detail">A stale late <code>done</code> can settle a new turn's streaming message with zero tokens; post-terminal errors are silently swallowed, hiding diagnostics.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">MCP trust name-regex heuristics cause false denials; path floors not enforced on real arguments for openai-agents</span>
+  <div class="p-file">agent-sidecar/src/mcp-trust.ts</div>
+  <p class="p-detail"><code>get_dataset</code> (contains "set"), <code>runbook_search</code> (contains "run") are denied in read-only sessions; workspace containment is list-time-only for openai-agents MCP tools.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">No manual sidecar restart — 3 crashes in 60 s wedges the sidecar until full app restart</span>
+  <div class="p-file">src-tauri/src/commands/agent_sidecar/mod.rs</div>
+  <p class="p-detail">After the restart cap the supervisor permanently gives up; there is no <code>restart_sidecar</code> command, so all subscription-provider chats are lost until app restart.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Codex retry/fallback loses system prompt and context on session-id miss; Anthropic retry drops attachments</span>
+  <div class="p-file">agent-sidecar/src/providers/openai-codex.ts</div>
+  <p class="p-detail">A fresh-exec fallback can start with neither history nor system prompt; Anthropic retry can replay a wake trigger instead of the user's message.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Anthropic allow_always is not sticky — user re-prompted for the same tool every call</span>
+  <div class="p-file">agent-sidecar/src/providers/anthropic.ts</div>
+  <p class="p-detail">approve/allow_once/allow_always all map to a single allow with no persistent rule; the UI's allow_always is a lie for claude-oauth sessions.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Protocol has no ack/nack; unknown request types vanish into stderr</span>
+  <div class="p-file">agent-sidecar/src/index.ts</div>
+  <p class="p-detail">Version-skew degradation is silent. Unknown requests should emit a typed nack so the host can surface it.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Smoke gates never exercise the real providers' approval/cancel paths</span>
+  <div class="p-file">agent-sidecar/test</div>
+  <p class="p-detail">Protocol/lifecycle gates run against echo or builders. Three of the four highest-severity bugs above live exactly in these untested seams.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">StartSessionRequest is a god-object with undocumented alias fields read via casts</span>
+  <div class="p-file">agent-sidecar/src/providers/openai-codex.ts</div>
+  <p class="p-detail">The wire contract is wider than its type; per-provider option sub-objects would keep the shared shape honest.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">Version documentation drift (CLAUDE.md v10, mod.rs changelog stops at v10, code is v11); echo provider ships in production provider list</span>
+  <div class="p-file">src-tauri/src/commands/agent_sidecar/mod.rs</div>
+  <p class="p-detail">For a protocol whose safety net is documentation-in-lockstep, the lockstep is already broken. The echo provider should be debug-gated.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">openai-agents grep compiles model-supplied regex; bash output buffers unbounded payloads</span>
+  <div class="p-file">agent-sidecar/src/providers/openai-agents.ts</div>
+  <p class="p-detail">Catastrophic-backtracking patterns can pin the shared sidecar event loop; untruncated extended output inflates NDJSON toward the 8 MB line cap.</p></div>
+
+<h4>Recommendations</h4>
+<ul>
+  <li>Add a terminal/advisory distinction on the wire and a regression test that ownership survives advisory errors (the handler fix shipped; the protocol flag should follow).</li>
+  <li>Ship <code>toolUseId</code> on Anthropic <code>pending_edit</code> (one line) and a <code>restart_sidecar</code> command with a status-chip action.</li>
+  <li>Real-provider integration smoke gates behind env-gated credentials: edit-approval round-trip, cancel-then-continue, error-then-send.</li>
+  <li>Adopt a real test runner (node:test) for the sidecar; generate Rust protocol structs from protocol.ts (or shared JSON Schema) to end hand-duplication drift.</li>
+  <li>Word-boundary MCP trust heuristics; enforce path floors against real arguments in the openai-agents execute path.</li>
+</ul>
+
+<!-- ---------------- flights ---------------- -->
+<h3 id="d-flights"><span class="tag">2.4</span>Flights, Worktrees, SSH Remote Execution &amp; the Remote Agents Plan</h3>
+<p>A genuinely mature "one prompt, N parallel agents" orchestrator. The Rust backend owns attempt lifecycle behind a serialized state lock while the frontend owns UX projection and re-hydrates from the backend as source of truth. Hard-won correctness is everywhere: merge protection against stale snapshots, path-claim collision detection enforced identically on both sides of IPC, publish-before-teardown ordering, reviewer gates enforced in Rust. SSH security is notably above average.</p>
+<p>The weakest area is failure recovery across process death: startup recovery never touches attempts, so a crash leaves zombie running attempts with dead sessions; a Failed transition force-removes the worktree, destroying the failed agent's uncommitted work; and SSH cleanup on event-driven failures is deferred to a frontend call that never happens. The Remote Agents plan (Cloudflare relay, PWA-first, desktop-owns-execution) is a thorough, well-researched package — and 100% unimplemented; Sprint 0 has not started and two gating decisions (auth provider, payload-encryption timing) remain open.</p>
+
+<h4>Strengths</h4>
+<ul>
+  <li>Backend-authoritative state with careful merge semantics; terminal attempt states cannot be rewound by stale saves.</li>
+  <li>Fail-closed SSH host-key pinning for async launches with defense-in-depth re-checks; passwords via 0600 askpass files, never argv/env.</li>
+  <li>Path-claim collision gating re-validated under the state lock so concurrent launches cannot slip through.</li>
+  <li>Reviewer gate enforced in Rust as well as the UI — acceptance policy cannot be bypassed by direct command invocation.</li>
+  <li>Cooperative-flight mode with integration branches, conflict pausing, and explicit user-driven landing; hermetic money-path tests.</li>
+</ul>
+
+<h4>Problems (ranked)</h4>
+<div class="problem crit"><span class="badge sev-critical">Critical</span> <span class="badge badge-open">Open</span> <span class="p-title">No startup recovery for attempts — zombie running attempts after restart/crash</span>
+  <div class="p-file">src-tauri/src/core/orchestrator.rs</div>
+  <p class="p-detail"><code>recover_flights_on_startup</code> resets tasks and autonomy runtime but never touches <code>flight.attempts</code>. After restart, running attempts reference dead sessions; listeners re-subscribe to events that will never fire; worktrees leak. Resume infrastructure (<code>resume_token</code>/<code>resume_messages</code>) already exists and is unused by the flight path.</p></div>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="badge badge-open">Open</span> <span class="p-title">Failed/rejected attempts destroy uncommitted agent work</span>
+  <div class="p-file">src-tauri/src/core/worktree.rs</div>
+  <p class="p-detail"><code>git worktree remove --force</code> runs on every terminal transition including Failed. The branch survives, but uncommitted changes — typically everything — are irrecoverably deleted, losing exactly the evidence needed to diagnose the failure.</p></div>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="badge badge-open">Open</span> <span class="p-title">SSH remote worktrees orphaned on event-driven failures</span>
+  <div class="p-file">src/stores/asyncAttemptTerminalListeners.ts</div>
+  <p class="p-detail">The failure path defers SSH cleanup to a frontend call that never comes; every SSH attempt failing via agent error leaves a remote worktree and branch behind. The cancel path already demonstrates the backend-side fix.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Unbounded pkt/* branch and worktree-dir accumulation in user repos</span>
+  <div class="p-file">src-tauri/src/core/worktree.rs</div>
+  <p class="p-detail">No GC for settled attempts' branches or directories; <code>.pkt-worktrees/</code> pollutes <code>git status</code>. A daily user accrues dozens of stale branches within weeks.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Sequential multi-target provisioning makes N-agent launches slow and partial failures common</span>
+  <div class="p-file">src-tauri/src/commands/flight_attempts.rs</div>
+  <p class="p-detail">A 4-agent SSH launch pays 4× serial latency (no ControlMaster on Windows); a late failure rejects the whole command while earlier attempts run on.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Pinned fingerprint is only a boolean flag, never verified against known_hosts</span>
+  <div class="p-file">src-tauri/src/core/execution.rs</div>
+  <p class="p-detail">The stored SHA256 is never compared to the known_hosts line actually used; no known-hosts management UI exists; strict-check failures surface as opaque ssh errors.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Attempt-level cost never populated; token counts have two competing writers</span>
+  <div class="p-file">src/components/flights/AttemptTile.tsx</div>
+  <p class="p-detail">Users comparing N parallel attempts cannot see per-attempt spend — the core comparison metric for a multi-agent race.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">flightStore persistence swallows errors and rewrites the whole slice on every mutation</span>
+  <div class="p-file">src/stores/flightStore.ts</div>
+  <p class="p-detail">A persistent backend write failure silently drops every subsequent flight mutation with only a console.warn.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Remote Agents plan has zero implementation</span>
+  <div class="p-file">dev/remoteagents/06-implementation-plan.md</div>
+  <p class="p-detail">No relay worker, no shared protocol package, no PWA skeleton, no feature flag. The plan is high quality and correctly scopes the MVP to projecting the existing event contract; "planning package" is the honest status.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">Memory-brief injection silently skipped for SSH and multi-path targets</span>
+  <div class="p-file">src/stores/asyncFlightStore.ts</div>
+  <p class="p-detail">Remote attempts quietly behave worse than local ones on the same flight, with no UI indication.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">Draft-PR publish target coupled to the globally-selected GitHub repo</span>
+  <div class="p-file">src/stores/asyncFlightStore.ts</div>
+  <p class="p-detail">Switching the GitHub pane between launch and acceptance publishes against the wrong repo; per-flight binding is the correct model.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">All-cancelled flights roll up to "paused"; mixed-terminal semantics surprising</span>
+  <div class="p-file">src/stores/flightStore.ts</div>
+  <p class="p-detail">A flight whose accepted attempt landed still reads "failed" if a losing sibling failed rather than cancelled.</p></div>
+
+<h4>Recommendations</h4>
+<ul>
+  <li>Attempt-aware startup recovery (mark interrupted, offer resume via the already-plumbed parameters, sweep orphaned worktrees) — the single biggest reliability gap for daily use.</li>
+  <li>Preserve failed-attempt evidence: auto-commit/stash WIP before any worktree removal, or keep the worktree until explicit discard.</li>
+  <li>Backend-owned SSH cleanup on all terminal transitions, reusing <code>resolve_server_ssh_config</code>.</li>
+  <li>Worktree/branch GC ("Clean up settled attempts" + periodic sweep + auto-exclude), first-class diff review on AttemptTile, and per-attempt cost keyed by session id.</li>
+  <li>Remote Agents Sprint 0: shared protocol package, relay + PWA skeletons, desktop feature flag; resolve the two blocking decisions.</li>
+</ul>
+
+<!-- ---------------- security ---------------- -->
+<h3 id="d-security"><span class="tag">2.5</span>Security</h3>
+<p>Substantially better than typical for a solo-developed desktop agent tool. Credential handling is genuinely good (keyring everywhere, booleans-only across IPC, careful migrations); remote SSH tooling is defensively engineered; the Tauri side has a strict CSP, a monitor-window invoke allowlist, and no <code>dangerouslySetInnerHTML</code> anywhere. The most serious gap is permission-mode semantics: the default "auto" mode maps to <code>--dangerously-bypass-approvals-and-sandbox</code> for Codex sessions while mapping to prompting modes elsewhere — three radically different safety postures behind one UI label, with the most dangerous as the default. Several IPC "validations" are best understood as defense-in-depth theater under the honest trusted-webview threat model — acceptable, but it should be stated explicitly.</p>
+
+<h4>Strengths</h4>
+<ul>
+  <li>API keys never cross IPC (set/exists/delete only); keyring failures distinguished from missing credentials.</li>
+  <li>Exemplary Unix SSH password path: self-reinvoking SSH_ASKPASS, 0600 secret in 0700 dir, cleaned on drop.</li>
+  <li>All remote commands POSIX-quoted and workspace-confined with symlink-aware fail-closed preludes.</li>
+  <li>Strict CSP (script-src 'self'), monitor windows restricted to a 5-command read-only allowlist at the IPC boundary.</li>
+  <li>OAuth cred parsing extracts only expiry/refresh booleans; tokens never leave the Rust side.</li>
+</ul>
+
+<h4>Problems (ranked)</h4>
+<div class="problem crit"><span class="badge sev-critical">Critical</span> <span class="badge badge-open">Open</span> <span class="p-title">Default "auto" permission mode maps to --dangerously-bypass-approvals-and-sandbox for Codex sessions</span>
+  <div class="p-file">agent-sidecar/src/providers/openai-codex.ts</div>
+  <p class="p-detail">A stock OpenAI-subscription conversation runs with no sandbox and no approvals on the host; prompt injection from repo content or MCP output becomes silent arbitrary code execution. "auto" should map to workspace-write sandboxing; bypass should require an explicit selection plus a visible warning chip.</p></div>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="p-title">Silent TOFU fallback when SSH host fingerprint is unpinned</span>
+  <div class="p-file">src-tauri/src/core/execution.rs</div>
+  <p class="p-detail">Legacy servers stay in accept-new mode indefinitely with only an invisible tracing warning; unattended flight traffic and credentials are delivered to whatever host answers first. Surface the state as a badge; hard-require pinning for password-auth servers.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Windows piping of SSH password to stdin can leak the password to the remote command</span>
+  <div class="p-file">src-tauri/src/core/tool_runtime_ssh.rs</div>
+  <p class="p-detail">The hazard the team fixed on Unix exists on Windows — the primary dev platform — whenever key/agent auth succeeds first: the password line becomes the remote command's first stdin line.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Unused, broad shell:allow-execute grants (npx and node with arbitrary args)</span>
+  <div class="p-file">src-tauri/capabilities/default.json</div>
+  <p class="p-detail">Arbitrary-code-execution primitives granted directly to the webview for zero current benefit. Remove all non-sidecar entries.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">PTY transcripts persist all terminal output to disk, unencrypted, with no retention or cleanup</span>
+  <div class="p-file">src-tauri/src/core/pty.rs</div>
+  <p class="p-detail">Terminal sessions routinely contain secrets; files have default permissions, no size cap, no age-out. Add 0600 perms, retention, delete-on-close.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">ssh_exec accepts arbitrary ssh argv from the webview, including ProxyCommand</span>
+  <div class="p-file">src-tauri/src/commands/pty.rs</div>
+  <p class="p-detail">Security-relevant options are assembled in JS, so the Rust boundary enforces nothing and pinning can silently diverge. Move option construction into Rust.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">Stale CSP allowance for specs-gen.vercel.app (frame-src + connect-src)</span>
+  <div class="p-file">src-tauri/tauri.conf.json</div>
+  <p class="p-detail">No code references it; a repurposed deployment could be framed inside trusted app chrome. Remove both entries.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">MCP raw configs (including Authorization headers) shipped wholesale to the webview; project .mcp.json is an untrusted input channel</span>
+  <div class="p-file">src-tauri/src/commands/mcp.rs</div>
+  <p class="p-detail">Redact secret-bearing fields before IPC; require explicit trust confirmation for project-scoped servers regardless of entry path.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">Workspace confinement on fs commands is caller-supplied; read has no sensitive-file filtering</span>
+  <div class="p-file">src-tauri/src/commands/fs.rs</div>
+  <p class="p-detail">Listings filter credentials; reads don't. Align the editor fs commands with the agent tool runtime's <code>resolve_workspace_path</code>.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">Auto-install of agent CLIs on every SSH connect without per-host consent</span>
+  <div class="p-file">src/hooks/useServerConnection.ts</div>
+  <p class="p-detail">Modifying remote hosts as a side effect of "connect" is a change-control problem on shared machines. Make it per-server opt-in.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">GitHub device flow requests full "repo" scope; CLAUDE.md security note is stale</span>
+  <div class="p-file">src-tauri/src/commands/github.rs</div>
+  <p class="p-detail">Full read/write on all private repos is broad for the features used; the doc claims the token is not persisted but it now lives in the keyring by design.</p></div>
+
+<h4>Recommendations</h4>
+<ul>
+  <li>Permission-mode unification with truthful labels — one documented vocabulary mapped consistently across all three runtimes; remove the Codex auto→bypass mapping. Required before handing the app to anyone but the author.</li>
+  <li>Visible SSH trust state per server with one-click re-pin; hard-require pinning for password-auth hosts.</li>
+  <li>A written threat model in <code>dev/</code> so capability/IPC decisions are made against an explicit boundary rather than accretion.</li>
+  <li>PTY transcript lifecycle management and secret redaction before IPC — both relevant to the enterprise enterprise pitch.</li>
+  <li>An in-app "security posture" panel showing the effective sandbox/approval flags actually passed to each provider.</li>
+</ul>
+
+<!-- ---------------- UX ---------------- -->
+<h3 id="d-ux"><span class="tag">2.6</span>Daily-Driver UX — shell, navigation, keyboard, lifecycle</h3>
+<p>The shell is genuinely well-considered where ambient awareness matters: pinned approval banners visible from any view, a running-agents-and-spend HUD, workspace PTYs that survive navigation, and a single status-rollup truth so surfaces never disagree. The unified Composer (launch + chat, @-mentions, slash commands, persisted drafts, queued-send-while-streaming) is the strongest single surface in the app.</p>
+<p>Where it would grind an 8-hour/day user down is the keyboard and lifecycle model: five scattered keydown listeners with inconsistent guards (Ctrl+K pops the palette over your shell mid-readline), layout-dependent view chords, no workspace/pane cycling shortcut, a nav-only substring-matched palette missing core destinations, one-click session-annihilating window close, forced Welcome on every boot, no undo anywhere, ~96 console-only failure sites versus one toast consumer, and a flagship launch modal that forgets your targets every time and ignores Escape. None of this is architectural — the primitives all exist; they just haven't been threaded through the daily loop.</p>
+
+<h4>Strengths</h4>
+<ul>
+  <li>PinnedApprovalBanner: blocking approvals stay pinned from any view with one-click jump — exactly right for a multi-agent app.</li>
+  <li>RunningAgentsChip + LiveSpendChip: a persistent "what's chewing and what it costs" HUD reachable everywhere.</li>
+  <li>One Composer for launch and chat with drafts, image paste, voice input, and deliberate queued-send semantics.</li>
+  <li>Flight launch safety rails: path-collision detection, unpinned-host launch gate, memory-backed recurring-error hints.</li>
+  <li>Atomic persisted-state writes with recovery — a daily user's data is safe at rest.</li>
+</ul>
+
+<h4>Problems (ranked)</h4>
+<div class="problem crit"><span class="badge sev-critical">Critical</span> <span class="badge badge-open">Open</span> <span class="p-title">Global Ctrl+K (and Escape) handler fires inside terminals and text inputs</span>
+  <div class="p-file">src/App.tsx</div>
+  <p class="p-detail">No editable-target guard and no xterm <code>attachCustomKeyEventHandler</code> anywhere: pressing readline's kill-line in a PTY both sends ^K to the shell and pops the palette over your terminal. The guards exist elsewhere — they are inconsistently applied.</p></div>
+<div class="problem crit"><span class="badge sev-critical">Critical</span> <span class="badge badge-open">Open</span> <span class="p-title">Closing the app kills all PTYs, agents, and attempts with zero confirmation; restart lands on Welcome with dead panes</span>
+  <div class="p-file">src/components/layout/TitleBar.tsx</div>
+  <p class="p-detail">No <code>onCloseRequested</code> guard exists; one misclick on the X ends every running session, and bootstrap force-routes to Welcome despite dutifully persisting the selected view.</p></div>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="p-title">~96 console.warn/error sites vs one toast consumer — failures are overwhelmingly silent</span>
+  <div class="p-file">src/lib/bootstrap.ts</div>
+  <p class="p-detail">Persistence, migration, and bridge failures go to a console the user never sees; the app looks fine while data quietly isn't saving.</p></div>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="p-title">Flight launch modal forgets picked targets every time and doesn't close on Escape</span>
+  <div class="p-file">src/components/flights/LaunchAsyncFlightModal.tsx</div>
+  <p class="p-detail">A user who launches flights all day re-picks the same agents/branch/path on every single launch; Modal defaults <code>closeOnEscape</code> to false.</p></div>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="p-title">Command palette is nav-only, substring-matched, and missing core destinations</span>
+  <div class="p-file">src/components/common/CommandPalette.tsx</div>
+  <p class="p-detail">Flights, Agents, Cost Dashboard, and Dictation are absent; no actions, no recents, no fuzzy scoring — a shell of what a Ctrl+K-branded palette needs.</p></div>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="p-title">No undo anywhere; destructive actions permanent with inconsistent confirm patterns</span>
+  <div class="p-file">src/components/views/MemoryView.tsx</div>
+  <p class="p-detail">Three confirm styles including native <code>window.confirm</code>; "Clear all memory" is one dialog from wiping months of learned patterns.</p></div>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="p-title">Keyboard model has no session/workspace switching and layout-dependent chords</span>
+  <div class="p-file">src/lib/viewHotkeys.ts</div>
+  <p class="p-detail">No Ctrl+Tab / Ctrl+1..9; view chords key on shifted glyphs (self-documented as broken on non-US layouts); shortcuts are undocumented in-app and unrebindable.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Notification gating inconsistent; OS toasts are dead ends</span>
+  <div class="p-file">src/lib/notifications.ts</div>
+  <p class="p-detail">Attempt completions require the window to be fully hidden and bypass prefs; no notification has an onclick, and there is no in-app notification center — miss the toast and the event is gone.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">One-click "Bypass perms" toggle with no confirmation</span>
+  <div class="p-file">src/components/views/WorkspaceView.tsx</div>
+  <p class="p-detail">A misclick silently removes the human gate on agent actions; a security-relevant setting deserves a confirm step.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Startup blocks on full conversation-file hydration and forces Welcome</span>
+  <div class="p-file">src/lib/bootstrap.ts</div>
+  <p class="p-detail">With months of daily conversations this becomes a linearly-growing startup stall behind a generic "Loading…".</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">"New" menu promises sessions it doesn't offer; Settings/Tools naming collision</span>
+  <div class="p-file">src/components/layout/Toolbar.tsx</div>
+  <p class="p-detail">Three related-but-different "tools" concepts coexist across the rail, palette, and toolbar.</p></div>
+
+<h4>Recommendations</h4>
+<ul>
+  <li>Terminal-safe shortcut scoping (xterm custom key handler + one shared guard for all global chords) — the target audience will be burned within the first hour without it.</li>
+  <li>Close-confirmation with live-session counts, selected-view restore, and a "relaunch previous panes" offer.</li>
+  <li>Command palette v2 (fuzzy, all views, actions, recents) and workspace/pane keyboard cycling.</li>
+  <li>Route background failures through the already-mounted ToastProvider; adopt one confirm primitive; add undo via soft-delete + grace-period toast.</li>
+  <li>Sticky flight-launch defaults per project; Escape-to-close as the modal default; a central shortcut registry with a cheat-sheet overlay.</li>
+</ul>
+
+<!-- ---------------- quality ---------------- -->
+<h3 id="d-quality"><span class="tag">2.7</span>Quality &amp; Infrastructure — tests, gates, CI, release, telemetry</h3>
+<p>Unusually strong at the unit level, unusually weak at the process level. 165 Vitest files (~28.3k LOC, 50 of 54 stores covered), 417 Rust tests concentrated where risk is highest, 13 sidecar smoke scripts written from real regressions, a Rust→TS schema drift gate, and cross-compile bundle assertions in the pruning script. The bundling pipeline (SHA256-verified pinned Node, byte-exact restore) is the best code in this review area.</p>
+<p>But every gate is voluntary: CI absence is an explicit decision, there are no git hooks, and the full gate is long enough that skipping under pressure is inevitable. Coverage is never measured; E2E is 134 lines of web-mode smoke with all IPC mocked — the native shell, PTY layer, and sidecar supervisor have zero automated end-to-end coverage. macOS/Linux exist only as an unexercised runbook. Distribution: no updater, no signing, version triplicated, zero field visibility when the app crashes on someone else's machine.</p>
+
+<h4>Strengths</h4>
+<ul>
+  <li>Real store-level coverage including migration fixtures and lifecycle/cleanup suites.</li>
+  <li>Schema drift gate between Rust DTOs and TS bindings — cheap, high-value contract testing.</li>
+  <li>Build-failing cross-compile assertions; SHA256-verified Node fetching with atomic writes.</li>
+  <li>Layered, honest release gating (version alignment, bundle config, updater-manifest shape, signing signals).</li>
+  <li>Local crash capture end-to-end (panic hook → CrashViewerCard); <code>logSwallowed()</code> as a single future-telemetry seam.</li>
+</ul>
+
+<h4>Problems (ranked)</h4>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="p-title">No CI of any kind — all gates voluntary at 177k LOC</span>
+  <div class="p-file">dev/local-quality-gates.md</div>
+  <p class="p-detail">Session logs show multi-week fix loops landing on main between full gate runs. Even a solo developer benefits from a dumb push-triggered lint + vitest + cargo test workflow.</p></div>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="p-title">macOS/Linux support documented but never compiled</span>
+  <div class="p-file">dev/multi-platform-build.md</div>
+  <p class="p-detail">The first macOS or Linux user will be the integration test. A compile-only CI matrix would catch cross-platform breakage at commit time.</p></div>
+<div class="problem high"><span class="badge sev-high">High</span> <span class="p-title">No updater and no code signing — every release is a manual, SmartScreen-flagged reinstall</span>
+  <div class="p-file">dev/updater-setup.md</div>
+  <p class="p-detail">The runbook is complete and correct; only the ops work (keypair + Releases hosting + ~30 lines) is outstanding. The single largest friction multiplier for any user base beyond the author.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">E2E coverage is 134 lines of web-mode smoke with all Tauri IPC mocked</span>
+  <div class="p-file">playwright.config.ts</div>
+  <p class="p-detail">The product's core value paths — PTY, sidecar handshake, flight lifecycle, SSH — have zero automated end-to-end verification.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Coverage never measured — no vitest coverage config, no cargo llvm-cov</span>
+  <div class="p-file">vitest.config.ts</div>
+  <p class="p-detail">View/component coverage is visibly thinner than store coverage; without numbers there is no way to know where the uncovered risk sits.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">prune-sidecar.js destroys the sidecar dev environment on every production build</span>
+  <div class="p-file">scripts/prune-sidecar.js</div>
+  <p class="p-detail">Any build followed by sidecar dev work silently fails to compile until devDeps are reinstalled. Stage the bundle tree separately or restore automatically.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">No clippy, no fmt gate, lint permits warnings, prettier covers almost nothing</span>
+  <div class="p-file">package.json</div>
+  <p class="p-detail">An entire class of Rust lints is never enforced; <code>src/</code> has no enforced formatting baseline despite a format script existing.</p></div>
+<div class="problem med"><span class="badge sev-medium">Medium</span> <span class="p-title">Zero field visibility during beta: crash reports never leave the user's machine</span>
+  <div class="p-file">src-tauri/src/commands/crashes.rs</div>
+  <p class="p-detail">An opt-in "submit crash report" (even a prefilled GitHub issue) would close the loop without telemetry infrastructure; frontend errors never reach disk at all.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">Sidecar tests are 2.9k lines of bespoke sequential .mjs smoke scripts</span>
+  <div class="p-file">agent-sidecar/test</div>
+  <p class="p-detail">No runner, no parallelism; mid-chain failures abort the rest. node:test would fix it with zero new dependencies.</p></div>
+<div class="problem low"><span class="badge sev-low">Low</span> <span class="p-title">Version triplicated across package.json / tauri.conf.json / Cargo.toml; Playwright config keys off a CI env that can never be set</span>
+  <div class="p-file">scripts/release-gate.mjs</div>
+  <p class="p-detail">A single bump script would remove the failure mode instead of detecting it; the CI-keyed retry config has never actually run.</p></div>
+
+<h4>Recommendations</h4>
+<ul>
+  <li>Adopt CI incrementally: one 10-minute workflow (lint, vitest, cargo test) now, compile matrix later — local gates stay the source of truth; CI becomes the net for skipped runs.</li>
+  <li>Ship the updater before any other distribution work; the runbook has already made every design decision. Then signing (OV cert or Azure Trusted Signing).</li>
+  <li>Measure coverage before writing more tests; add clippy + rustfmt to the ladder before lint debt compounds.</li>
+  <li>One golden-path native smoke test (launch, PTY session, sidecar ready handshake, clean shutdown) — 80% of the mocked-IPC blind spot for 5% of the effort.</li>
+  <li>Automate the release runbook as a script first (gate + build + sign + latest.json), which becomes the CI job body later.</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2 id="bugs"><span class="num">3</span>Bug Hunt &amp; Fixes</h2>
+<p>The 22-agent bug-hunt fleet ran six dimension-scoped finders, deduplication, then adversarial verification with fix designs. <b>All 16 findings survived the adversarial verify stage (0 refuted)</b> — every entry below was confirmed against the code with a reasoned verdict, and <b>all were fixed this session</b> by four fixer agents with disjoint file territories and regression tests. Findings #13 and #15 describe the same underlying TOCTOU defect from two dimensions and were reconciled during fixing — 15 distinct defects were repaired.</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>#</th><th>Sev</th><th>Title</th><th>Failure scenario</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><span class="badge sev-critical">Critical</span></td><td>Anthropic <code>cancel()</code> aborts the session-lifetime AbortController<span class="tfile">agent-sidecar/src/providers/anthropic.ts:1073</span></td><td>Stop mid-turn, then any follow-up message spins forever; every subsequent turn silently swallowed until app restart.</td><td><span class="badge badge-fixed">Applied</span></td></tr>
+    <tr><td>2</td><td><span class="badge sev-critical">Critical</span></td><td>Codex flight cost over-count: cumulative <code>turn_summary</code> snapshots re-accumulated<span class="tfile">src-tauri/src/commands/agent_sidecar/handler.rs:546</span></td><td>Sum of prefix sums — roughly an order of magnitude cost/token inflation persisted onto Flights for Codex attempts.</td><td><span class="badge badge-fixed">Applied</span></td></tr>
+    <tr><td>3</td><td><span class="badge sev-high">High</span></td><td>packetcode→packetade localStorage migration runs after store hydration (ESM import hoisting)<span class="tfile">src/main.tsx:6</span></td><td>Upgraders see a fully-reset app; first-session writes permanently overwrite the migrated data behind a one-shot guard key.</td><td><span class="badge badge-fixed">Applied</span></td></tr>
+    <tr><td>4</td><td><span class="badge sev-high">High</span></td><td><code>flight-planner:cost-updated</code> emitted with no frontend listener<span class="tfile">src-tauri/src/commands/agent_sidecar/handler.rs:567</span></td><td>Autonomy budget hard-stop and cost UI run on stale totals; the dollar cap can be exceeded by at least one full attempt's spend.</td><td><span class="badge badge-fixed">Applied</span></td></tr>
+    <tr><td>5</td><td><span class="badge sev-high">High</span></td><td>UTF-8 char-boundary panic in <code>error_classifier::extract_message</code><span class="tfile">src-tauri/src/core/error_classifier.rs:186</span></td><td>A &gt;200-byte non-ASCII error message panics mid-critical-section; the attempt is never marked Failed and sticks in Running forever.</td><td><span class="badge badge-fixed">Applied</span></td></tr>
+    <tr><td>6</td><td><span class="badge sev-high">High</span></td><td>Reader loop exits on an oversized (&gt;8 MB) stdout line, leaving a zombie sidecar<span class="tfile">src-tauri/src/commands/agent_sidecar/supervisor.rs:929</span></td><td>A large pending-edit payload kills the reader; every sidecar conversation freezes mid-turn with no error, no restart, status chip still Ready.</td><td><span class="badge badge-fixed">Applied</span></td></tr>
+    <tr><td>7</td><td><span class="badge sev-high">High</span></td><td>Every sidecar <code>error</code> event treated as session-terminal<span class="tfile">src-tauri/src/commands/agent_sidecar/handler.rs:600</span></td><td>One transient Codex exit or advisory error permanently bricks the conversation and leaks the sidecar-side session.</td><td><span class="badge badge-fixed">Applied</span></td></tr>
+    <tr><td>8</td><td><span class="badge sev-high">High</span></td><td>Sidecar crash-recovery contract broken: "please resend" can never re-create the session<span class="tfile">src/stores/agentTaskStore.ts:701</span></td><td>After a sidecar crash, every resend fails identically with "No active session" until the whole app restarts.</td><td><span class="badge badge-fixed">Applied</span></td></tr>
+    <tr><td>9</td><td><span class="badge sev-high">High</span></td><td>Non-conflict merge failure during cooperative integration reported as success<span class="tfile">src-tauri/src/core/worktree.rs:874</span></td><td>Task marked done and "integrated" while nothing merged; Land Flight then lands without the accepted work — silent loss (local + SSH).</td><td><span class="badge badge-fixed">Applied</span></td></tr>
+    <tr><td>10</td><td><span class="badge sev-high">High</span></td><td><code>land_local_integration_branch</code> leaves the user's checkout mid-merge (no <code>merge --abort</code>)<span class="tfile">src-tauri/src/core/worktree.rs:970</span></td><td>A conflicting landing strands MERGE_HEAD and conflict markers in the user's real repo; all in-app git operations wedge until a manual abort.</td><td><span class="badge badge-fixed">Applied</span></td></tr>
+    <tr><td>11</td><td><span class="badge sev-high">High</span></td><td>Backend pricing table missing current default models (claude-opus-4-8, gpt-5, MiniMax-M3)<span class="tfile">src-tauri/src/commands/pricing.rs:106</span></td><td>Flight rollups and usage.jsonl silently record $0 for the default (and most expensive) models while the UI pill shows dollars — guardrails never trip.</td><td><span class="badge badge-fixed">Applied</span></td></tr>
+    <tr><td>12</td><td><span class="badge sev-medium">Medium</span></td><td><code>done</code> handler auto-sends queued messages even when the turn was cancelled<span class="tfile">src/stores/apiAgentListeners.ts:360</span></td><td>Cancelling an attempt re-sends the queued follow-up 0 ms later — restarting a turn the user just killed, or erroring against a closed session.</td><td><span class="badge badge-fixed">Applied</span></td></tr>
+    <tr><td>13</td><td><span class="badge sev-medium">Medium</span></td><td>Concurrent <code>resumeApiConversation</code> installs duplicate api-agent listener sets<span class="tfile">src/stores/agentTaskStore.ts:431</span></td><td>Chunks applied twice (visibly doubled transcript text), a spurious failed state, and one listener set leaked for the window's lifetime.</td><td><span class="badge badge-fixed">Applied</span></td></tr>
+    <tr><td>14</td><td><span class="badge sev-medium">Medium</span></td><td><code>issue-watcher:fixed</code> listener registers in Monitor windows and clobbers the issues slice<span class="tfile">src/stores/issueStore.ts:774</span></td><td>A monitor window's stale copy overwrites shared localStorage — comments, handoff links, and labels added since monitor boot are destroyed.</td><td><span class="badge badge-fixed">Applied</span></td></tr>
+    <tr><td>15</td><td><span class="badge sev-medium">Medium</span></td><td><code>ensureApiAgentListeners</code> TOCTOU (second-dimension finding; reconciled with #13 as one defect)<span class="tfile">src/stores/agentTaskStore.ts:431</span></td><td>Same root cause as #13 surfaced via the events-listeners dimension: single-flight install + resume-in-flight guard fixes both.</td><td><span class="badge badge-fixed">Applied</span></td></tr>
+    <tr><td>16</td><td><span class="badge sev-medium">Medium</span></td><td><code>write_file_contents</code> cannot create new files (canonicalizes the not-yet-existing target)<span class="tfile">src-tauri/src/commands/mod.rs:68</span></td><td>Project Rules save always fails on repos missing AGENTS.md or CLAUDE.md — and can create the exact file divergence the card exists to eliminate.</td><td><span class="badge badge-fixed">Applied</span></td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>Spotlight: the two criticals</h3>
+
+<div class="panel danger">
+  <h4 style="margin-top:0"><span class="badge sev-critical">Critical #1</span> &nbsp;Cancel kills the conversation — the flagship provider's Stop button was a session grenade</h4>
+  <p><b>What happened.</b> On the "Anthropic (Subscription)" provider — the flagship row — <code>cancel()</code> ran the SDK's turn-scoped <code>interrupt()</code> and then <em>unconditionally</em> aborted the single session-lifetime AbortController that owns the long-lived <code>query()</code> serving every turn. The message pump exited via AbortError and never restarted, but every other layer believed the conversation was alive: protocol v10 explicitly makes cancel non-terminal, the registry emitted <code>done {cancelled:true}</code> and kept the session, and the Rust side kept routing ownership. The next send succeeded at every layer and then pushed into a dead iterable — no chunk, no done, no error, ever.</p>
+  <p><b>User impact.</b> Click Stop, type a follow-up, and the assistant bubble spins forever; every subsequent turn in that conversation is silently swallowed until app restart. Cancel-then-continue is a core daily workflow.</p>
+  <p style="margin-bottom:0"><b>Fix applied.</b> Cancel is now turn-scoped: parked permission/edit hook resolvers are drained first (so interrupt cannot stall on a blocked turn), <code>interrupt()</code> success is tracked, and the session-lifetime abort runs only as a fallback — in which case the prompt iterable is explicitly ended so follow-up sends fail loudly instead of hanging. The registry's terminal-dedupe already suppresses stray late events. Regression risk assessed low; the openai-agents provider (fresh controller per turn) was already correct and untouched.</p>
+</div>
+
+<div class="panel danger">
+  <h4 style="margin-top:0"><span class="badge sev-critical">Critical #2</span> &nbsp;Codex flight costs inflated by an order of magnitude — the money path misread cumulative counters as deltas</h4>
+  <p><b>What happened.</b> The Codex provider emits a <code>turn_summary</code> on <em>every</em> token-count event carrying session-cumulative running totals — its own source comment says "replace, not accumulate," and the frontend HUD correctly replaces. But the Rust handler's flight rollup treated each event as a per-turn delta: it priced the whole snapshot and added it to <code>flight.total_cost</code>/<code>total_tokens</code>. For N mid-stream snapshots T₁&lt;T₂&lt;…&lt;T_N the flight accumulated T₁+…+T_N instead of T_N — sum of prefix sums, roughly quadratic inflation with stream length, compounded further for MultiAgentV2 sub-agent addresses, and persisted into state. The Anthropic provider emits genuine deltas, so the additive logic was right for exactly one of the two providers.</p>
+  <p><b>User impact.</b> Cost analytics — the feature that justifies API spend and feeds the flight-scope guardrails — was untrustworthy for exactly the provider class it was built to track.</p>
+  <p style="margin-bottom:0"><b>Fix applied.</b> Provider-aware accounting in Rust: for snapshot-semantics providers (openai-codex) the handler tracks the last cumulative snapshot per (session, sub-agent address) and accumulates only the positive component-wise delta, with monotonic-reset re-baselining for fresh Codex processes; delta-semantics providers keep the existing path. The wire event and frontend consumers are unchanged. Snapshot state is cleaned up on session release.</p>
+</div>
+
+<p class="faint">Pattern worth naming: 10 of 16 confirmed bugs live in cancel/error/crash/restart seams of the session lifecycle — precisely the paths the deterministic echo-provider smoke gates structurally cannot reach. The single highest-leverage test investment identified by this review is a small set of real-provider lifecycle gates (edit-approval round-trip, cancel-then-continue, error-then-send) behind env-gated credentials.</p>
+
+<!-- ================================================================ -->
+<h2 id="market"><span class="num">4</span>Competitive Landscape &amp; Tech Trends</h2>
+
+<h3>4.1 The mid-2026 agent-orchestration market</h3>
+<p>The entire market moved to parallel, background, and cloud agent execution in H1 2026 — and simultaneously demonstrated that the venture-funded cloud-orchestrator tier burns out.</p>
+<ul>
+  <li><b>Cursor 3</b> (Apr 2026): a dedicated Agents Window — up to 8 parallel agents per prompt in isolated worktrees or cloud/remote machines, outputting PRs; cloud agents with computer-use verification (Feb) and self-hosted cloud agents for enterprises (Mar); Automations; its own fast model (Composer 2).</li>
+  <li><b>Windsurf → Devin Desktop</b> (Jun 2026 rebrand by Cognition): Agent Command Center (Kanban of every local + cloud agent), Spaces, multi-agent support for Codex/Claude Agent/OpenCode/Junie/Gemini CLI via the open Agent Client Protocol (ACP); Devin Cloud from $20/mo.</li>
+  <li><b>Conductor</b> (Melty Labs): the category-defining Mac-only app — parallel Claude Code/Codex/Cursor agents in worktrees, strong diff/PR flow, free with BYO subscription; used at Linear, Vercel, Notion, Stripe. Limits: macOS-only, Claude/Codex-centric, no remote execution.</li>
+  <li><b>Shakeout:</b> Terragon Labs (cloud fleet orchestrator) shut down Jan 2026 and open-sourced; Bloop shut down Apr 2026, leaving Vibe Kanban as community-maintained OSS. Cloud-orchestrator burn rates are fatal; orphaned users are up for grabs.</li>
+  <li><b>Claude Code ecosystem:</b> Agent Teams (Feb, with fleet guardrails added in July: 20-subagent cap, depth 3); Claude Code Desktop redesigned around parallel agents with per-session worktrees and an in-app diff viewer; sandboxed in-app browser; Remote Control (outbound-HTTPS-only sync to claude.ai/code and mobile).</li>
+  <li><b>VS Code</b> is now a multi-agent hub (Agent Sessions view, native Claude/Codex agents, /delegate, plan-then-delegate); <b>Zed + JetBrains</b> standardized on ACP and co-launched an agent registry — ACP is becoming "LSP for agents," replacing bespoke PTY scraping.</li>
+  <li><b>OpenCode</b> (most-starred OSS coding agent) and <b>Crush</b> are BYOK terminal-first engines PacketADE can wrap, not direct competitors.</li>
+  <li><b>Category table-stakes</b> (per the 2026 survey of 10 tools): session visibility, isolation, diff review, workspace organization, resumption. Differentiators: mobile oversight, container sandboxing, SSH/remote execution (only Mux), IDE-level controls.</li>
+</ul>
+
+<div class="panel accent">
+  <h4 style="margin-top:0">What PacketADE has that rivals lack</h4>
+  <ul style="margin-bottom:0">
+    <li>The 8-provider chat matrix mixing subscription-OAuth reuse with API keys <em>and</em> local Ollama/OpenRouter/MiniMax — broader than Conductor or Devin Desktop's ACP list.</li>
+    <li>SSH-remote execution for both PTY sessions and API-agent tools + remote worktrees with host-key pinning — only Mux offers anything comparable.</li>
+    <li>Flights as a work organizer above issues/sessions with built-in Kanban, GitHub integration, and per-flight cost rollup — cross-provider cost analytics is essentially absent in every competitor.</li>
+    <li>Memory layer, MCP client + provider hub, prompt library, dictation, deploy pipeline, scaffolding in one app; Windows/Linux-native via Tauri (Conductor is Mac-only, Claude Code Desktop is Anthropic-only).</li>
+  </ul>
+</div>
+
+<h4>Strategic implications</h4>
+<ul>
+  <li><b>Ship the Remote Agents plan with urgency</b> — the market moved to background execution with remote oversight. PacketADE's differentiated angle: "your own SSH boxes as the fleet" — self-hosted-first, no cloud bill, directly reusable in the enterprise enterprise pitch.</li>
+  <li><b>Adopt ACP as a second agent transport</b> alongside PTY and the sidecar: one integration buys Devin Local, Junie, Goose, Cline, Auggie and future agents; map ACP sessions onto the existing <code>api-agent:*</code> contract so tiles stay transport-agnostic.</li>
+  <li><b>Make PRs the first-class output of attempts</b> with inline line-comment review in the diff viewer — Conductor and Vibe Kanban set this expectation; Cursor agents emit PRs by default.</li>
+  <li><b>Add an agent-verified-outcome step</b> (browser/UI verification pass, "verified" badge on AttemptTile) — computer-use self-checking became a 2026 differentiator.</li>
+  <li><b>Attention routing before full mobile:</b> a blocked/needs-review rollup across all Flights plus OS notifications; longer-term the thin PWA status surface the remote plan already specifies.</li>
+  <li><b>Scheduled/webhook-triggered Flight launches</b> as triggers into the existing user-launched pipeline — not a revival of the removed autonomous planner FSM. Optional container isolation for attempts strengthens the shared-server SSH story.</li>
+  <li><b>Positioning:</b> lead with what nobody else bundles — cost dashboard, subscription reuse, Windows-native, SSH remotes, MCP hub. Comparison targets: "Conductor for Windows/Linux + remotes" and "Devin Desktop without the vendor lock or cloud spend." Target migration paths for Terragon and Vibe Kanban refugees.</li>
+</ul>
+
+<h3>4.2 Technology trends and their implications</h3>
+<ul>
+  <li><b>Claude Agent SDK:</b> rapid cadence — nested sub-agents (depth 3), fallback model chains, per-agent cost attribution, scoped permissions, subagent text streaming; Sonnet 5 shipped with 1M context / 128k output.</li>
+  <li><b>MCP spec 2026-07-28</b> (largest revision since launch): stateless core on plain HTTP, formal Extensions framework, Tasks extension (durable long-running work), MCP Apps (sandboxed-iframe server UIs), auth hardening (RFC 9207 iss validation; DCR → client-metadata documents), simplified elicitation, deprecation policy. Official MCP Registry targeted Q4 2026.</li>
+  <li><b>OpenAI:</b> Agents SDK gained a native sandbox and harness-compute separation (Python-first; TypeScript lags); Responses API is replacing Chat Completions; Codex CLI deprecated <code>--full-auto</code> for explicit permission profiles, and the app-server JSON-RPC protocol is now the documented long-term integration path.</li>
+  <li><b>Local models:</b> Ollama 0.24 with MLX runner and <code>ollama launch</code> desktop integration; Qwen3-Coder family, Devstral Small 2, Kimi K2.6 are genuinely agent-capable — validating the per-task-class local routing decision (LM1–LM7).</li>
+  <li><b>Sandboxing is now a defined market</b> with ~5 production isolation tiers; Anthropic ships an official OS-level sandbox runtime (srt: Seatbelt/bubblewrap + network proxy); Docker Sandboxes GA'd microVM-wrapped coding agents; lightweight Landlock/Seatbelt wrappers (nono) appeared. Unsandboxed agent tool execution is rapidly becoming unacceptable for enterprise.</li>
+  <li><b>Terminal &amp; platform:</b> xterm.js remains the only mature embeddable web terminal (keep; enable WebGL; Canvas renderer deprecated). Tauri v3 is a draft milestone — v2 is the safe base; the updater plugin is mature across all bundle types and tauri-action produces signed multi-platform installers.</li>
+</ul>
+
+<div class="panel warn">
+  <h4 style="margin-top:0">Adopt / watch / obsolescence</h4>
+  <ul style="margin-bottom:0">
+    <li><b>Adopt:</b> MCP 2026-07-28 (revision + Tasks extension mapped onto Flights + auth updates; MCP Apps spike for in-pane tool UIs); MCP Registry awareness ahead of Q4; Claude SDK upgrades (sub-agent trees + per-agent cost in the chat pane; Sonnet 5 in the catalog); OS-level sandboxing for agent tools (srt/Landlock; AppContainer or Docker-sandbox mode on Windows); Responses API in <code>llm_openai.rs</code>; Tauri v2 updater now (v2 artifact format from day one); richer Ollama routing defaults (Qwen3-Coder/Devstral-class).</li>
+    <li><b>Watch/migrate:</b> Codex <code>exec</code> → app-server JSON-RPC; OpenAI Agents SDK TypeScript sandbox parity before promising it.</li>
+    <li><b>Obsolescence list:</b> MCP session-stateful assumptions and 2025-era elicitation fields; Chat Completions as primary OpenAI surface; <code>--full-auto</code>; xterm Canvas renderer; unsandboxed agent tool execution; DCR for MCP OAuth; manual MCP server entry as the sole onboarding path.</li>
+  </ul>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="features"><span class="num">5</span>Feature Program</h2>
+<p class="dim">Consolidated from all seven domain reviews: what to fix now (open defects and trust gaps), what to change (structural), what to add next (features the reviews rated "needed"), what is merely nice — and an honest account of what would make a daily driver hate it.</p>
+
+<h3>5.1 Fix now — open items after this session's repairs</h3>
+<div class="scroll">
+<table>
+  <thead><tr><th>Item</th><th>Sev</th><th>Domain</th><th>Why now</th></tr></thead>
+  <tbody>
+    <tr><td>Codex "auto" → <code>--dangerously-bypass-approvals-and-sandbox</code> mapping<span class="tfile">agent-sidecar/src/providers/openai-codex.ts</span></td><td><span class="badge sev-critical">Critical</span></td><td>Security</td><td>The default mode silently runs unsandboxed, unapproved host execution; one prompt injection from host compromise.</td></tr>
+    <tr><td>Anthropic <code>pending_edit</code> missing <code>toolUseId</code><span class="tfile">agent-sidecar/src/providers/anthropic.ts</span></td><td><span class="badge sev-critical">Critical</span></td><td>Sidecar</td><td>Gated write approvals hang the turn forever on the flagship provider; one-line fix.</td></tr>
+    <tr><td>Attempt-aware startup recovery<span class="tfile">src-tauri/src/core/orchestrator.rs</span></td><td><span class="badge sev-critical">Critical</span></td><td>Flights</td><td>Crash/restart mid-flight leaves permanent zombie attempts; resume plumbing already exists unused.</td></tr>
+    <tr><td>Ctrl+K / global-shortcut guards + xterm key handler<span class="tfile">src/App.tsx</span></td><td><span class="badge sev-critical">Critical</span></td><td>UX</td><td>The palette pops over your shell on readline kill-line — the #1 rage-inducer for the target audience.</td></tr>
+    <tr><td>Close-confirmation + selected-view restore<span class="tfile">src/components/layout/TitleBar.tsx, src/lib/bootstrap.ts</span></td><td><span class="badge sev-critical">Critical</span></td><td>UX</td><td>One misclick kills every session; every boot forgets where you were. The persistence write already exists.</td></tr>
+    <tr><td>Preserve failed-attempt worktrees (stash/commit before removal)<span class="tfile">src-tauri/src/core/worktree.rs</span></td><td><span class="badge sev-high">High</span></td><td>Flights</td><td>Failures are currently undiagnosable — the evidence is force-deleted.</td></tr>
+    <tr><td>Backend-owned SSH worktree cleanup on failure paths<span class="tfile">src/stores/asyncAttemptTerminalListeners.ts</span></td><td><span class="badge sev-high">High</span></td><td>Flights</td><td>Remote hosts accumulate orphaned worktrees; the cancel path already shows the fix.</td></tr>
+    <tr><td><code>restart_sidecar</code> command + status-chip action<span class="tfile">src-tauri/src/commands/agent_sidecar/mod.rs</span></td><td><span class="badge sev-high">High</span></td><td>Sidecar</td><td>Three crashes in 60 s currently cost every subscription conversation until full app restart.</td></tr>
+    <tr><td>Backend-constructed ssh argv (retire raw <code>ssh_exec</code>)<span class="tfile">src-tauri/src/commands/pty.rs</span></td><td><span class="badge sev-high">High</span></td><td>Security</td><td>ProxyCommand local-execution hole; passwords in IPC payloads.</td></tr>
+    <tr><td>Fix or remove Prompt Library "send to terminal"; wire or hide routingStore card; SSH TOFU badge<span class="tfile">src/stores/promptStore.ts, src/stores/routingStore.ts</span></td><td><span class="badge sev-high">High</span></td><td>Frontend</td><td>Settings surfaces that silently do nothing erode trust in every other setting.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>5.2 Change — structural</h3>
+<ul>
+  <li><b>Persistence:</b> split <code>state.v1.json</code> into per-slice files (reusing the existing write machinery) as an interim step toward SQLite; cap/compact memory events; replace the spin-lock with fair queuing; surface persistence failures as toasts, not console.warn.</li>
+  <li><b>Permission model:</b> one documented mode vocabulary mapped consistently across in-process, Anthropic, and Codex runtimes; default <code>ask_for_risky</code>; MCP/web tools classified by the risky gate; an "effective sandbox" field on session start so the UI can render reality.</li>
+  <li><b>Streaming performance:</b> memoize message rows and the markdown renderer; derived selectors for chrome; split conversation metadata from bodies; true transcript virtualization for the product's core use case (long agent sessions).</li>
+  <li><b>Contracts over convention:</b> tauri-specta (or equivalent) for command registration/bindings; generate Rust protocol structs from protocol.ts; typed error enums replacing string matching; terminal/advisory error distinction on the sidecar wire.</li>
+  <li><b>Process:</b> incremental CI (lint + vitest + cargo test now; compile matrix later), clippy + rustfmt in the ladder, coverage measurement, node:test for sidecar smokes, one golden-path native smoke test, single-source version bumping.</li>
+</ul>
+
+<h3>5.3 Add next — features the reviews rated "needed"</h3>
+<div class="two-col">
+  <div class="panel">
+    <h4 style="margin-top:0">Workflow &amp; daily loop</h4>
+    <ul style="margin-bottom:0">
+      <li>Restore last view/workspace/conversation on boot; one-click relaunch of previous panes.</li>
+      <li>Global search across conversations, transcripts, and flights — "that session where the agent fixed X."</li>
+      <li>Command palette v2: fuzzy, all views, actions, recents; workspace/pane keyboard cycling.</li>
+      <li>Sticky flight-launch defaults per project; Escape-to-close modals; undo via soft-delete + grace toast.</li>
+      <li>In-app notification center with click-to-jump; unified pref gating; OS toast onclick handlers.</li>
+      <li>First-class diff review on AttemptTile (attempt-vs-base before Accept/Reject); per-attempt cost.</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <h4 style="margin-top:0">Platform &amp; trust</h4>
+    <ul style="margin-bottom:0">
+      <li>Auto-updater per the existing runbook, then Windows code signing; cross-platform compile matrix.</li>
+      <li>Worktree/branch GC; known-hosts management UI; PTY transcript lifecycle (0600, retention, delete-on-close).</li>
+      <li>Context compaction for in-process providers; provider-aware token semantics (done for cost; extend to retry paths).</li>
+      <li>Real-provider integration smoke gates (edit approval, cancel-continue, error-then-send) behind env credentials.</li>
+      <li>Remote Agents Sprint 0: shared protocol package, relay + PWA skeletons, feature flag; resolve auth + encryption decisions.</li>
+      <li>Written threat model; secret redaction before IPC; opt-in crash report submission.</li>
+    </ul>
+  </div>
+</div>
+
+<h3>5.4 Nice-to-have (selected)</h3>
+<p class="dim">Crash-safe streaming persistence (max-interval flush); command-palette flight relaunch; draggable tile splits with persisted layout; consolidated status-line poller; light-theme completion; sticky allow_always for Anthropic; sidecar heartbeat ping; remote sidecar auto-deploy; per-flight GitHub repo binding; desktop notifications for stalled attempts; shortcut cheat-sheet overlay with rebinding; frecency recents in the palette; cost sparkline on the spend chip; window-state restore; sidecar devDep auto-restore post-build; release automation script; fine-grained GitHub PAT guidance.</p>
+
+<h3 id="blockers">5.5 Daily-driver blockers — what would make you hate it</h3>
+<div class="panel warn">
+<p style="margin-bottom:10px">The reviews were asked what would grind down an 8-hour/day user. The honest consolidated answer, grouped by theme (items fixed this session are marked):</p>
+<ul style="margin-bottom:0">
+  <li><b>It fights your hands.</b> Ctrl+K in a terminal pops the palette over your shell; no keyboard way to switch workspaces or panes; view chords break on non-US layouts; Escape doesn't close the most-used modals.</li>
+  <li><b>It forgets.</b> Every launch lands on Welcome with dead panes; every flight launch re-picks the same targets; GitHub re-auth every morning (deliberate, but it compounds).</li>
+  <li><b>It loses work without telling you.</b> One misclick on X kills every session with no confirmation; a crash mid-turn loses the in-flight transcript; restart mid-flight leaves zombie attempts; failed attempts delete their uncommitted work; ~96 silent failure sites mean you discover data loss later, not when it happens; "Clear all memory" is one native dialog from wiping months of patterns.</li>
+  <li><b>Its trust surfaces lied.</b> <span class="badge badge-fixed">Fixed</span> cancel-then-continue zombied conversations; advisory errors bricked sessions; "please resend" never worked; Codex flight costs were inflated ~10×; default models priced at $0 so guardrails never tripped. <span class="badge badge-open">Open</span> gated-write approval hangs on the flagship provider; the default Codex mode runs sandbox-less; approving PTY prompts writes <code>y\n</code> on regex guesses; legacy SSH hosts silently stay unpinned; the budget can still be overrun by design gaps in per-attempt cost.</li>
+  <li><b>It litters and decays.</b> pkt/* branches and worktree dirs accumulate forever in your repo; pty-transcripts grow unbounded and capture every secret ever echoed; monolithic state.v1.json rewrites become visible latency within months; long in-process conversations eventually die on raw context-length errors.</li>
+  <li><b>It's hard to keep and share.</b> Every update is a manual 78 MB SmartScreen-flagged install; macOS/Linux have never been compiled; when it crashes on someone else's machine, nobody finds out; auto-installing npm packages onto every SSH host will get it banned from controlled environments.</li>
+</ul>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="frontier"><span class="num">6</span>The Frontier — Vision Panel &amp; the Top 12</h2>
+<p class="dim">Four lenses generated 38 raw ideas; a synthesis judge merged near-duplicates and ranked the twelve never-built features most worth doing. The lenses first, briefly — then the Top 12 as the centerpiece.</p>
+
+<h3>6.1 Lens: Fleet Operations &amp; Orchestration</h3>
+<p class="faint">Air-traffic-control for coding agents: Flights/Attempts as aircraft in shared airspace with routing, weather, black-box recorders, and an economy of escalation.</p>
+<div class="idea"><span class="i-name">Agent Reputation Ledger with Skill-Weighted Auto-Routing</span><p class="i-pitch">Every attempt already ends with a rich outcome tuple that gets discarded. An append-only ledger keyed by (agent × task type × repo area × model) computes Elo-style win rates and upgrades static routing into evidence-backed dispatch — the launch modal shows the receipt.</p></div>
+<div class="idea"><span class="i-name">Flight Recorder: Time-Travel Replay &amp; Counterfactual Forks</span><p class="i-pitch">Journal every event plus lightweight git snapshots at tool boundaries; scrub any attempt step-by-step, then fork from step 14 into a fresh worktree with an injected correction. Failed attempts become branch points, not sunk cost.</p></div>
+<div class="idea"><span class="i-name">Airspace Control: Fleet-Wide Path Claims &amp; Conflict Sequencing</span><p class="i-pitch">Active attempts continuously file claims (paths/symbols actually being edited); a controller detects converging traffic across flights before merge conflicts materialize — hold, reroute, or sequence like ATC.</p></div>
+<div class="idea"><span class="i-name">Escalation Auction: Bid-Based Failure Recovery</span><p class="i-pitch">On failure, spawn capped-budget triage bids from different agents — diagnosis plus fix plan plus confidence — and award the recovery to the best bid instead of blind relaunch.</p></div>
+<div class="idea"><span class="i-name">Fleet Weather: Provider Health Forecasting &amp; Ground Stops</span><p class="i-pitch">Aggregate rate-limit events, failure categories, and OAuth expiry into a live weather map; ground-stop queued tasks on degraded providers and hold work until quota resets.</p></div>
+<div class="idea"><span class="i-name">Shakedown Flights: Shadow Replay for Model &amp; Policy Certification</span><p class="i-pitch">Replay past completed flights against a candidate model/policy in throwaway worktrees; your own finished flights become a private, perfectly-relevant eval suite.</p></div>
+<div class="idea"><span class="i-name">Filed Flight Plans: Playbook Mining from Retrospectives</span><p class="i-pitch">Mine completed flights into reusable templates with track records attached — "this plan flew 4 times, 100% gate pass, median $1.20."</p></div>
+<div class="idea"><span class="i-name">Tournament Mode: Bracketed Attempt Judging &amp; Best-of Assembly</span><p class="i-pitch">A reviewer agent runs pairwise diff comparisons in a bracket, ranks a leaderboard, and can assemble a best-of composite by cherry-picking file-level wins into the integration branch.</p></div>
+<div class="idea"><span class="i-name">Convoy Corridors: Cross-Flight Dependency Contracts</span><p class="i-pitch">Flight B declares a typed dependency on what Flight A will land; dependent tasks hold, auto-rebase on landing, and receive handoff artifacts — breaking changes trigger typed blockers, not silent conflicts.</p></div>
+
+<h3>6.2 Lens: Memory, Knowledge &amp; Context</h3>
+<div class="idea"><span class="i-name">Flight-to-Runbook Distiller</span><p class="i-pitch">Compile successful flights into executable, parameterized runbooks (ordered tool calls, decision points, verification steps, dead ends stripped) surfaced at launch.</p></div>
+<div class="idea"><span class="i-name">Pitfall Tripwires (Active Memory Enforcement)</span><p class="i-pitch">Learned pitfalls gain triggers (file glob, command regex); when an agent approaches one, the environment interjects a warning turn. Memory stops being something agents must remember to read.</p></div>
+<div class="idea"><span class="i-name">Agent Exit Debriefs</span><p class="i-pitch">At session end, ask the agent one structured question — "what does the next agent here need to know?" — deduped against existing patterns. First-person capture at maximum context, for one cheap turn.</p></div>
+<div class="idea"><span class="i-name">Closed-Loop Context Compiler</span><p class="i-pitch">Token-budgeted per-turn briefs, with tracking of whether injected items were actually load-bearing feeding automatic confidence rerating: patterns that earn their tokens rise, unused ones decay.</p></div>
+<div class="idea"><span class="i-name">Memory A/B on Parallel Attempts</span><p class="i-pitch">Give one attempt the memory brief and its sibling none; join cost rollups with outcomes to compute memory ROI — the counterfactual nobody else can run is free here.</p></div>
+<div class="idea"><span class="i-name">Nightly Consolidation Daemon (Sleep Cycle)</span><p class="i-pitch">Cluster events into candidate patterns, merge near-duplicates, decay stale entries, and promote stable high-confidence patterns into AGENTS.md as reviewable diffs — exporting knowledge to plain CLI sessions.</p></div>
+<div class="idea"><span class="i-name">Decision Provenance (Blame for Why)</span><p class="i-pitch">Link every applied edit to the turn, memory items, and flight that produced it: "why does this line exist" becomes one click, six months later.</p></div>
+<div class="idea"><span class="i-name">Memory Packs &amp; Context Marketplace</span><p class="i-pitch">Signed, versioned bundles of patterns/pitfalls/runbooks installable like MCP servers, with per-pack trust. New projects start with expert memory instead of empty memory.</p></div>
+<div class="idea"><span class="i-name">Cross-Host Memory Mesh for SSH Fleets</span><p class="i-pitch">Sync learned patterns bidirectionally across hosts working the same repo — a pitfall discovered on the prod-adjacent box teaches your laptop before it repeats the mistake.</p></div>
+
+<h3>6.3 Lens: Remote, Mobile &amp; Collaboration</h3>
+<div class="idea"><span class="i-name">Unified Approval Inbox with Risk-Tiered Swipe Triage</span><p class="i-pitch">Every pending permission/edit/plan approval across all hosts and Flights in one risk-ranked queue: batch-approve low-risk reads in one swipe; expand high-risk items into diff cards.</p></div>
+<div class="idea"><span class="i-name">Time-Boxed Autonomy Grants ("Leash Slider")</span><p class="i-pitch">Scoped, expiring grants from the phone: "writes under src/components for 30 minutes," "shell for pnpm/cargo until 6pm" — signed policies with visible countdown, auto-revoked on expiry.</p></div>
+<div class="idea"><span class="i-name">Agent Presence &amp; Live Handoff Between Devices</span><p class="i-pitch">Supervision as a transferable seat: drafts, scroll position, and queued follow-ups move atomically between desktop and phone, with presence preventing double-answered approvals.</p></div>
+<div class="idea"><span class="i-name">SSH Fleet Mesh: Attempt Migration Across Hosts</span><p class="i-pitch">When the laptop lid closes mid-flight, snapshot and re-hydrate the attempt on another capable host; the Flight Deck shows where each attempt physically runs.</p></div>
+<div class="idea"><span class="i-name">Morning Brief: Overnight Digest with In-Bed Merge Triage</span><p class="i-pitch">A signed per-flight digest — what shipped, cost burned, decisions made under standing grants, questions queued — delivered as a swipeable stack at a chosen hour.</p></div>
+<div class="idea"><span class="i-name">Pair Tower: Multi-Human Shared Flight with Role-Scoped Approvals</span><p class="i-pitch">Invite a second human as Observer / Reviewer / Co-Pilot; permission requests route to whoever is online and authorized, with per-human audit.</p></div>
+<div class="idea"><span class="i-name">Dead-Man Escalation Chains for Blocked Agents</span><p class="i-pitch">Approvals past an SLA escalate: urgency re-push, pre-authored fallback policy, optionally page a second human — with blocked-time metered on the Flight next to cost.</p></div>
+<div class="idea"><span class="i-name">Walkie-Talkie Mode: Voice-Native Supervision</span><p class="i-pitch">Push-to-talk steering with TTS narration of turn summaries and voice-answerable approvals — supervision that survives driving or walking.</p></div>
+<div class="idea"><span class="i-name">Flight Radar: Glanceable Fleet Wallboard</span><p class="i-pitch">An ambient always-on surface (lock screen, spare monitor, TV) showing every attempt as a tile: phase, burn rate, blocked badge, staleness.</p></div>
+<div class="idea"><span class="i-name">Guest Approval Links: Lend One Decision, Not Your Desktop</span><p class="i-pitch">A scoped, expiring capability URL for a single pending decision — a teammate reviews one migration diff on their phone with no org model, identity stamped into the audit log.</p></div>
+
+<h3>6.4 Lens: Trust, Autonomy &amp; Verification</h3>
+<p class="faint">Turning provenance envelopes (TP1–TP8), the bounded-YOLO policy evaluator (AP1–AP9), and the reviewer gate (RG1–RG7) from static guardrails into a dynamic trust economy.</p>
+<div class="idea"><span class="i-name">Autonomy Licenses (graduated trust tiers per agent profile)</span><p class="i-pitch">Agents earn expanded YOLO bounds through verifiable track record; any hard-stop breach demotes the license automatically, with reasons persisted.</p></div>
+<div class="idea"><span class="i-name">Signed Commit Provenance (cryptographic agent authorship chain)</span><p class="i-pitch">Signed attestation trailers linking commit → attempt → Flight → conversation → evidence envelopes, verifiable offline — the compliance story (EU AI Act, SOC2) no ADE ships.</p></div>
+<div class="idea"><span class="i-name">Adversarial Verification Lane (red-team gate)</span><p class="i-pitch">A second isolated worktree spawns an attacker whose only contract is "break this diff or concede"; verdicts flip to "survived adversary" only on demonstrated failure.</p></div>
+<div class="idea"><span class="i-name">Blast-Radius Budgets (metered write scope per attempt)</span><p class="i-pitch">Files/directories/LOC-delta/manifest-touch quotas debited live by the attempt runtime — bounding damage surface, not just spend and turns.</p></div>
+<div class="idea"><span class="i-name">Rollback Contracts (pre-proven undo insurance)</span><p class="i-pitch">Autonomous integration is authorized only after the revert is generated, dry-run-applied, and proven clean — "YOLO, but fully collateralized."</p></div>
+<div class="idea"><span class="i-name">Taint Counterfactual Replay</span><p class="i-pitch">Re-run a tainted turn in a shadow session with the untrusted evidence redacted; divergence is hard proof the injection steered the agent. (Moonshot.)</p></div>
+<div class="idea"><span class="i-name">Escrowed Claims for Agent Handoffs</span><p class="i-pitch">"Tests pass" becomes a machine-checkable claim held in escrow until a deterministic verifier confirms it; refuted claims ding the builder's license.</p></div>
+<div class="idea"><span class="i-name">Policy Flight Recorder &amp; Counterfactual Replay Lab</span><p class="i-pitch">Record full evaluator inputs so any past autonomous decision replays exactly — policy changes ship with regression evidence, not vibes.</p></div>
+<div class="idea"><span class="i-name">Risk-Priced Verification Router</span><p class="i-pitch">Score each change (radius, taint, path criticality, license tier) and route to a proportional lane: trivial diffs auto-land; high risk gets the adversary plus human ack.</p></div>
+<div class="idea"><span class="i-name">Honeytoken Tripwires (live canary credentials)</span><p class="i-pitch">Plant decoy credentials in agent-visible locations; any read/transmit trips an instant hard stop and a full incident record — catching exfiltration in the act.</p></div>
+
+<h3 id="top12">6.5 The Top 12 — synthesized, ranked, sequenced</h3>
+<div class="top12">
+
+<div class="t-card"><div class="t-rank">01</div><div class="t-name">Earned Trust Ledger: Reputation-Weighted Routing &amp; Autonomy Licenses</div>
+<div class="t-pitch">Merge of the Reputation Ledger and Autonomy Licenses (with Escrowed Claims as a signal source) — two views of one asset. An append-only local ledger of per-attempt outcomes keyed by (agent × task type × repo area × model), computed from review-gate verdicts, failure categories, cost-per-accepted-diff, and refuted handoff claims that PacketADE already persists but discards. It drives two consumers: a live router that upgrades static RouteMapping into evidence-backed dispatch, and graduated autonomy tiers the policy evaluator consults to widen or revoke YOLO bounds automatically. Trust becomes a computed, auditable quantity — and the launch modal shows the receipt.</div>
+<div class="t-seq"><b>Difficulty: medium.</b> Build the data-capture layer FIRST, before anything else on this list — the ledger only becomes valuable once months of outcomes accumulate, so every week of delay is lost training data. Capture + read-only stats panel first; routing and license tiers follow once the record has statistical weight. Nearly every other item feeds it — it is the flywheel hub.</div></div>
+
+<div class="t-card"><div class="t-rank">02</div><div class="t-name">Tournament Mode: Bracketed Judging, Best-of Assembly &amp; Bid-Based Recovery</div>
+<div class="t-pitch">Merge of Tournament Mode and the Escalation Auction — the auction is the tournament run at failure time with capped-budget triage bids. A reviewer-agent bracket runs pairwise diff comparisons over the parallel worktree attempts, produces a ranked leaderboard with per-file verdicts, and can assemble a best-of composite in the existing integration branch when no single attempt sweeps. On failure, the same machinery spawns cheap diagnosis bids and awards the relaunch to the winning plan. All judgments flow into the trust ledger. No other tool has the worktrees, reviewer runtime, and integration branch in one place.</div>
+<div class="t-seq"><b>Difficulty: medium.</b> Build after ledger capture exists and the reviewer-gate runtime is stable — it reuses that machinery wholesale. It attacks today's sharpest UX pain (eyeballing N diffs), so it is the highest-visible-payoff item in the first wave.</div></div>
+
+<div class="t-card"><div class="t-rank">03</div><div class="t-name">Unified Approval Inbox with Leash Slider &amp; Dead-Man Escalation</div>
+<div class="t-pitch">One coherent mobile supervision surface: every permission request, pending edit, and plan approval across all hosts and Flights aggregates into a risk-ranked triage queue — low-risk reads batch into one swipe, high-risk items expand into diff cards. From any card, grant scoped expiring autonomy ("writes under src/components for 30 min") as signed desktop-side policies with visible countdown. Approvals past an SLA escalate, and blocked-time is metered on the Flight next to cost. No competitor's one-session-at-a-time remote control can match a cross-agent queue.</div>
+<div class="t-seq"><b>Difficulty: medium.</b> Sequence with the Remote Agents flagship plan — this IS the mobile MVP done right; fold it into that workstream. The inbox and risk scoring can ship desktop-first (useful immediately with concurrent attempts) before the relay/PWA transport lands.</div></div>
+
+<div class="t-card"><div class="t-rank">04</div><div class="t-name">Rollback Contracts: Pre-Proven Undo Insurance for Autonomy</div>
+<div class="t-pitch">Before autonomous integration of any reviewer-passed branch, construct and PROVE the unwind: revert commits generated and dry-run-applied in a scratch worktree, snapshots captured, contract persisted. Integration proceeds only if the undo is demonstrated clean; the Flight carries a permanent one-click "unwind everything this policy did." It inverts the industry's framing — everyone offers undo-ish checkpoints; nobody makes verified reversibility a precondition of autonomous action. "YOLO, but fully collateralized" is the strongest trust pitch PacketADE can make, including to enterprise.</div>
+<div class="t-seq"><b>Difficulty: large.</b> Build immediately after the auto-integration adapter ships, as its gating precondition — retrofitting insurance after users get burned is the wrong order. Scope v1 to fast-forward-only integration; contract invalidation on base movement is the hard part.</div></div>
+
+<div class="t-card"><div class="t-rank">05</div><div class="t-name">Flight Recorder: Time-Travel Replay &amp; Counterfactual Forks</div>
+<div class="t-pitch">One black-box subsystem, two consumers. Journal every <code>api-agent:*</code> event plus a lightweight git snapshot at each tool-result boundary; a scrubber UI replays any attempt with diff and reasoning evolving in sync. The killer move is fork-from-step: branch any past attempt into a fresh worktree with an injected correction. Because the policy evaluator is a pure function, the same journal enables policy backtesting — replay recorded decisions against a candidate policy before adopting it. Failed attempts stop being sunk cost; policy changes ship with regression evidence.</div>
+<div class="t-seq"><b>Difficulty: large.</b> Start the journaling substrate early (cheap, additive — same "record now, exploit later" logic as the ledger); defer the scrubber and fork UX to a second wave.</div></div>
+
+<div class="t-card"><div class="t-rank">06</div><div class="t-name">Runbook Distiller: Filed Flight Plans from Successful Flights</div>
+<div class="t-pitch">Two lenses independently proposed this — evidence of its gravity. Retrospectives currently sit inert; instead compile a completed flight into an executable, parameterized template: task-graph shape, routing choices, prompts, review criteria, budget, and verification steps that actually worked, dead ends stripped. When a new Flight's objective semantically matches, the launch modal offers "file the same plan" with its track record attached. Runbooks version as later flights amend them — the memory investment becomes compounding fleet capability no prompt library approaches.</div>
+<div class="t-seq"><b>Difficulty: large.</b> Mid-sequence: needs the ledger for track-record stats and a few dozen completed flights as raw material. Ship distillation-on-completion first; the semantic-match launcher follows. Shakedown Flights returns later as runbook regression-testing against new models.</div></div>
+
+<div class="t-card"><div class="t-rank">07</div><div class="t-name">Risk-Priced Verification: Blast-Radius Budgets + Proportional Review Routing</div>
+<div class="t-pitch">The budget is the metering primitive, the router its consumer. Per-attempt quotas on files, directories, LOC delta, manifest touches, and network mutations are debited live by the Rust attempt runtime (the cost rollup already proves the metering pattern); overage pauses into Needs Attention with the exact breach shown. A risk score from radius consumed, taint exposure, path criticality, and license tier routes each change to a proportional lane: trivial diffs auto-land, medium risk requires the reviewer, high risk requires the adversarial lane plus human ack — score and inputs shown on the AttemptTile so routing is contestable.</div>
+<div class="t-seq"><b>Difficulty: medium.</b> Budgets first (standalone value the moment YOLO ships), router second once the reviewer gate and license tiers exist. The connective tissue between the trust items — sequence between Rollback Contracts and the Adversarial Lane.</div></div>
+
+<div class="t-card"><div class="t-rank">08</div><div class="t-name">Closed-Loop Context Compiler with Exit Debriefs &amp; Sleep-Cycle Consolidation</div>
+<div class="t-pitch">One self-tuning memory lifecycle. Per turn, a compiler assembles a token-budgeted brief from patterns, notes, and retrospectives — then tracks whether injected items were actually load-bearing (referenced in tool calls or the final diff) and feeds that into automatic confidence rerating. Intake improves via a one-question end-of-session debrief deduped against existing patterns; a background daemon merges near-duplicates, decays stale entries, and promotes stable high-confidence patterns into AGENTS.md as reviewable diffs — exporting learned knowledge to plain CLI sessions outside the app. Memory becomes measured, garbage-collected, and compounding.</div>
+<div class="t-seq"><b>Difficulty: large.</b> Ship the two small pieces first (exit debriefs is days of work; the consolidation daemon is a contained Rust task), then usage-tracking, then close the rerating loop. Memory A/B on parallel attempts survives here as the validation method.</div></div>
+
+<div class="t-card"><div class="t-rank">09</div><div class="t-name">Adversarial Verification Lane (Red-Team Gate)</div>
+<div class="t-pitch">Beyond the cooperative reviewer: an institutionalized attacker in a second isolated worktree whose only contract is "produce a failing test, crashing input, or injection escalation against this diff — or concede," reusing the evidence bundle and existing session machinery. The verdict flips to "survived adversary" only when the attacker demonstrably fails; successful breaks auto-package as reviewer findings and ding the builder's license. Every AI review product does cooperative critique; a budgeted adversary with a worktree is a genuinely different verification primitive — and the attempt runtime makes the isolation essentially free.</div>
+<div class="t-seq"><b>Difficulty: large.</b> Build after Risk-Priced Verification — an adversary is too expensive for every diff; it only makes economic sense as the high-risk lane the router escalates into.</div></div>
+
+<div class="t-card"><div class="t-rank">10</div><div class="t-name">Fleet Weather: Provider Health Forecasting &amp; Ground Stops</div>
+<div class="t-pitch">The fleet already emits the meteorology — typed rate-limit events, failure categories, OAuth expiry — but each surface consumes it in isolation. Aggregate into a live per-provider weather map: health, rate-limit pressure trends, time-to-quota-reset forecasts. The autonomy runtime then flies around weather: ground-stop queued tasks on a degraded provider, divert launches to the healthiest capable agent per the trust ledger, and hold tasks when "your Claude subscription resets in 40 minutes" beats burning retries. Local telemetry plus subscription-quota awareness as a scheduling input is genuinely new.</div>
+<div class="t-seq"><b>Difficulty: medium.</b> After the ledger's routing consumer exists — weather is the real-time modifier on the ledger's historical prior. The aggregation panel alone is a cheap early ship.</div></div>
+
+<div class="t-card"><div class="t-rank">11</div><div class="t-name">Provenance Blame: Signed Agent Authorship + "Why Does This Line Exist"</div>
+<div class="t-pitch">One lineage chain consumed at two depths. Every attempt commit carries a signed attestation trailer (keyring-held per-install key, sigstore-style, git notes — no blockchain) linking commit → attempt → Flight → conversation → the evidence envelopes consumed during authoring, verifiable offline. On top, a "why does this line exist" action walks git blame → applied-edit record → conversation excerpt → the memory pattern that motivated it — and the answer can be captured back as a pattern. git blame answers who and when; only a tool owning both the VCS surface and the conversations can answer why. The signed layer is the compliance story (EU AI Act, SOC2) anchoring the enterprise pitch.</div>
+<div class="t-seq"><b>Difficulty: large.</b> Start recording the linkage metadata early so history is retroactively blameable; defer signing and the blame UI until the trust-provenance loop lands. Pull forward if the enterprise pitch goes live.</div></div>
+
+<div class="t-card"><div class="t-rank">12</div><div class="t-name">Runtime Tripwires: Honeytokens + Active Pitfall Guards</div>
+<div class="t-pitch">One interception layer on the tool-call stream, two trigger sources. Security: realistic decoy credentials planted in agent-visible locations, tracked by envelope ID — any read/transmit/embed trips an instant hard stop, pauses the Flight, demotes the license, and writes a source-chain incident record, catching prompt-injected exfiltration in the act. Knowledge: learned pitfall patterns gain file-glob/command-regex triggers, and the environment interjects a warning when an agent approaches one. Memory and security both stop being things agents must remember and become things the environment enforces.</div>
+<div class="t-seq"><b>Difficulty: small.</b> Ship the honeytoken half FIRST in absolute sequence — the smallest item on the list, needing only event-stream matching plus canary planting, and it delivers an active intrusion alarm before any autonomy expansion raises the stakes. <span class="faint">Cut from the Top 12: Flight Radar, Walkie-Talkie, Pair Tower, Guest Links, SSH attempt migration, cross-host memory mesh, memory marketplace, convoy corridors, taint counterfactual replay (moonshot — revisit once the Flight Recorder journal exists), and presence/handoff (folds into the Remote plan's relay work).</span></div></div>
+
+</div>
+
+<!-- ================================================================ -->
+<h2 id="actions"><span class="num">7</span>Actions Taken This Session &amp; Verification</h2>
+
+<h3>7.1 Fleets run</h3>
+<ul>
+  <li><b>Research fleet — 14 agents:</b> 7 domain deep dives (frontend, Rust backend, sidecar/providers, flights/remote, security, daily-driver UX, quality/infra), 2 web-research briefs (mid-2026 competitor landscape, technology trends), and a 4-lens vision panel with a synthesis judge.</li>
+  <li><b>Bug-hunt fleet — 22 agents:</b> 6 dimension finders → dedup → adversarial verify + fix design. 16 bugs confirmed (2 critical, 9 high, 5 medium), 0 refuted at the verify stage. Findings #13/#15 were reconciled as one defect during fixing — 15 distinct defects repaired.</li>
+</ul>
+
+<h3>7.2 Code and content shipped (uncommitted at report time)</h3>
+<ol>
+  <li><b>Gemini CLI support removed entirely:</b> 5 files deleted (provider, status bar, API-key card + test, statusline module), 40 files edited across TS + Rust. Graceful load-compat: persisted "gemini" panes remap to plain terminal (mirroring the mission→flight alias pattern); retired agent ids dropped on hydration. The OpenRouter chat model <code>google/gemini-2.5-pro</code> is intentionally kept (it is not the CLI). Both compile gates passed immediately after removal.</li>
+  <li><b>All 16 confirmed bugs fixed</b> by 4 fixer agents with disjoint file territories, with regression tests added across the board. Highlights beyond the two criticals: the worktree merge machine no longer reports non-conflict failures as success (local + SSH) and failed landings now <code>git merge --abort</code> instead of stranding the user's checkout; oversized sidecar output no longer leaves a zombie process (tree-kill → crash fan-out → restart); per-turn errors no longer brick sessions (local + SSH); the orphaned cost event was renamed and actually wired to a frontend listener; the localStorage migration now runs before store hydration via an ESM side-effect module; crash-recovery resend actually resumes; cancelled turns no longer auto-send queued messages; the duplicate-listener TOCTOU got single-flight installs; Monitor windows no longer clobber the issues slice; the UTF-8 truncation panic is fixed; the pricing table gained claude-opus-4-8, the gpt-5 family, and MiniMax-M3; <code>write_file_contents</code> can create new files while preserving workspace confinement.</li>
+  <li><b>Statusline</b> (separate repo <code>claude-code-tools</code>, committed 84f794f and pushed): Claude Code wiring verified byte-identical; research established that Codex CLI supports only built-in status-line item ids (no external command; upstream issue open) and OpenCode has none — so no fake adapters were written; a real tmux fallback segment shipped, and peer review corrected the Codex item-id vocabulary in the docs from third-party blog guesses to verified ids.</li>
+  <li><b>Docs overhaul:</b> <code>docs/index.html</code> rewritten (fabricated stats counter, "Missions," Gemini, and deleted-planner claims removed; honest status strip); <code>docs/roadmap.html</code> rebuilt mirroring the real R0–R11 tracks with truthful status labels; <code>docs/packetade-manual.html</code> rewritten task-oriented; <code>docs/deferred-work.md</code> re-verified per item; 14 completed/stale dev/ docs archived via <code>git mv</code>; root README / ROADMAP / backlog / HANDOFF / CHANGELOG refreshed with the user's uncommitted edits preserved.</li>
+  <li><b>Marketing:</b> hero poster, one-pager PDF, social banner, and a design-philosophy document ("Phosphor Deck" identity) built from the real logo.</li>
+</ol>
+
+<h3 id="verification">7.3 Verification gates</h3>
+<p class="dim">Status recorded at report finalization by the orchestrator.</p>
+<ul class="gate-list">
+  <li><code>pnpm build</code> (tsc + vite, Windows toolchain) — <span class="badge badge-fixed">Pass</span> <span class="checkline">vite built in 33.6 s, zero TS errors.</span></li>
+  <li><code>cargo check</code> (Windows toolchain) — <span class="badge badge-fixed">Pass</span> <span class="checkline">only pre-existing ts-rs serde-attribute warnings.</span></li>
+  <li><code>pnpm sidecar:build</code> (sidecar tsc) — <span class="badge badge-fixed">Pass</span> <span class="checkline">plus <code>tsc --noEmit</code> clean for app and sidecar.</span></li>
+  <li><code>vitest run</code> (src/stores/__tests__ + src/lib/__tests__) — <span class="badge badge-fixed">Pass</span> <span class="checkline">1,260 tests across 166 files (440 Rust tests also pass via <code>cargo test</code>). Two pre-existing load-induced flaky tests were stabilized test-side during the session (timeout budget for cold module imports); every substantive failure found during gating was fixed.</span></li>
+  <li>Peer-review fleet over the full diff — <span class="badge badge-fixed">Complete</span> <span class="checkline">4 reviewers (Gemini removal, Rust fixes, frontend fixes, docs truth): 3× approve-with-nits, 1× needs-changes; all 12 findings remediated — including one major (order-safe Codex cost delta accounting via per-session sequence stamping) — and re-verified green.</span></li>
+  <li>Windows exe compile — <span class="badge sev-medium">Queued</span> <span class="checkline">runs immediately after this report is committed; artifacts and hashes will be recorded in HANDOFF.md.</span></li>
+</ul>
+
+<h3>7.4 Notable truths surfaced</h3>
+<ul>
+  <li>Zero CI, zero coverage measurement, unsigned installers, no updater, no crash telemetry — the quality ladder is discipline-only.</li>
+  <li>PROTOCOL_VERSION is 11; CLAUDE.md said 10 (stale; the file is gitignored/generated — verify against code).</li>
+  <li>The "1,261 passing Vitest tests" figure originated from a docs-agent count and should be verified against the vitest gate output above before quoting externally.</li>
+  <li>Known-broken surfaces deliberately left for the next loop rather than rushed: Prompt Library "send to terminal" (dead pane registry), the routing settings card that configures nothing, and the never-restored persisted view.</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2 id="next90"><span class="num">8</span>Recommended Next 90 Days</h2>
+<p class="lead">The data supports a clear order: lock in what was fixed, close the trust seams, unblock distribution, then start the frontier bets whose value compounds with time. Do not invert this — every frontier item assumes a foundation that does not silently lose work, and every week without CI risks re-breaking the 15 defects just repaired.</p>
+
+<div class="phase">
+  <div class="ph-head">Phase 1 — Lock in &amp; close the trust seams <span>days 0–14</span></div>
+  <div class="ph-body">
+    <ul>
+      <li><b>Green the gates and commit.</b> Run the six verification gates (§7.3), land the session's diff, and tag it. Nothing else proceeds on an unverified base.</li>
+      <li><b>CI first — it is the cheapest insurance in this report.</b> One push-triggered workflow: <code>pnpm lint</code>, <code>vitest run</code>, <code>cargo test</code>. The local-gates philosophy stays true; CI becomes the net for skipped runs. Add clippy + rustfmt in the same PR while the ladder is open.</li>
+      <li><b>Close the four open trust items:</b> (1) Codex "auto" → workspace-write sandbox, bypass only on explicit selection with a warning chip; (2) <code>toolUseId</code> on Anthropic <code>pending_edit</code> — one line, unbricks gated writes on the flagship provider; (3) <code>restart_sidecar</code> command + chip action; (4) stash-before-remove on failed attempt worktrees. All are small, all are trust-critical.</li>
+      <li><b>Kill the top three daily rage-inducers:</b> terminal-safe shortcut guards (xterm custom key handler), close-confirmation with live-session counts, and selected-view restore (the write side already exists).</li>
+      <li><b>Truth pass:</b> fix or hide the Prompt Library send-to-terminal and the routing card; update CLAUDE.md (protocol v11, GitHub auth, worktree paths, dead layoutStore convention).</li>
+    </ul>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="ph-head">Phase 2 — Reliability &amp; distribution <span>days 15–45</span></div>
+  <div class="ph-body">
+    <ul>
+      <li><b>Flight recovery:</b> attempt-aware startup recovery (mark interrupted, offer resume via the existing plumbing, orphan-worktree sweep), backend-owned SSH cleanup on all terminal transitions, and worktree/branch GC with auto-exclude. This is the single biggest reliability gap for daily use.</li>
+      <li><b>Updater, then signing.</b> The runbook has already made every decision — keypair, GitHub Releases, full-installer strategy; ~30 lines of code. Follow with an OV cert or Azure Trusted Signing so SmartScreen stops killing beta conversion. Add the compile-only ubuntu/macos CI matrix in the same window so non-Windows breakage surfaces at commit time.</li>
+      <li><b>Streaming performance pass:</b> memoize rows + renderer, derived chrome selectors, max-interval save flush — three contained changes that fix the "sluggish long session" class.</li>
+      <li><b>Failure visibility:</b> route <code>logSwallowed</code> and persistence failures through the ToastProvider; one confirm primitive; opt-in crash-report submission (prefilled GitHub issue).</li>
+      <li><b>Flights polish that pays daily:</b> sticky launch defaults per project, per-attempt cost (backend-side rollup), attempt diff review before Accept/Reject, notification unification with click-to-jump.</li>
+      <li><b>Security hardening batch:</b> backend-constructed ssh argv, prune the npx/node capability grants and stale CSP entry, SSH trust-state badges with hard-require pinning for password hosts, PTY transcript retention + 0600.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="ph-head">Phase 3 — Frontier bets &amp; the remote flagship <span>days 46–90</span></div>
+  <div class="ph-body">
+    <ul>
+      <li><b>Start the two "record now, exploit later" substrates immediately</b> — their value compounds with every week of accumulated data: the <b>Earned Trust Ledger</b> capture layer + read-only stats panel (Top 12 #1), and the <b>Flight Recorder</b> event/snapshot journal (#5). Neither needs UI polish to start earning.</li>
+      <li><b>Ship Runtime Tripwires' honeytoken half</b> (#12) — the smallest Top 12 item, an active intrusion alarm before any autonomy expansion raises the stakes.</li>
+      <li><b>Remote Agents Sprint 0, folded together with the Approval Inbox (#3):</b> resolve the two blocking decisions (auth provider, payload-encryption timing), create the shared protocol package + relay and PWA skeletons + desktop feature flag — and build the approvals inbox desktop-first so it delivers value before the relay exists. The market brief is unambiguous: background execution with remote oversight is where every competitor went in H1 2026, and "your own SSH boxes as the fleet" is the differentiated, enterprise-compatible angle.</li>
+      <li><b>Tournament Mode (#2)</b> once ledger capture exists — the highest-visible-payoff frontier item, directly attacking the compare-N-diffs pain.</li>
+      <li><b>Standards spikes, timeboxed:</b> MCP 2026-07-28 revision support (Tasks extension mapped onto Flights; auth updates), an ACP transport spike mapped onto the <code>api-agent:*</code> contract, and an OS-sandbox spike (srt/Landlock; Windows options) for agent tools. Watch the Codex app-server migration; adopt the Responses API in <code>llm_openai.rs</code>.</li>
+      <li><b>Defer deliberately:</b> Rollback Contracts until auto-integration actually ships; the Adversarial Lane until risk routing exists; SQLite migration until per-slice files prove insufficient; full mobile until the inbox proves the supervision loop.</li>
+    </ul>
+  </div>
+</div>
+
+<p><b>The through-line:</b> PacketADE's differentiators — provider breadth, SSH fleets, cost truth, and soon the trust economy no competitor is building — all depend on the same foundation: sessions that survive their own lifecycle, releases that update themselves, and gates that run without willpower. Ninety days of the sequence above turns a formidable solo tool into something that can be handed to a second person without apology — which is precisely the bar the enterprise opportunity and any public beta will demand.</p>
+
+<footer>
+  <a class="backtop" href="#toc">↑ contents</a>
+  PacketADE Midway Review · 2026-07-30 · generated from research-results.json (14 agents), bug-results.json (22 agents), and session-actions.md · report engine: Claude Code multi-fleet orchestration
+</footer>
+
+</div>
+</body>
+</html>

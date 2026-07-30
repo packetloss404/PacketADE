@@ -11,7 +11,6 @@ import type { Issue } from "@/stores/issueStore";
 import type {
   StatusLineData,
   CodexStatusLineData,
-  GeminiStatusLineData,
   OpenCodeStatusLineData,
 } from "@/types/statusline";
 import type { Workspace } from "@/types/workspace";
@@ -934,10 +933,6 @@ export async function readStatusLineStates(): Promise<StatusLineData[]> {
 
 export async function readCodexStatusLineStates(): Promise<CodexStatusLineData[]> {
   return invoke<CodexStatusLineData[]>("read_codex_statusline_states");
-}
-
-export async function readGeminiStatusLineStates(): Promise<GeminiStatusLineData[]> {
-  return invoke<GeminiStatusLineData[]>("read_gemini_statusline_states");
 }
 
 export async function readOpenCodeStatusLineStates(): Promise<OpenCodeStatusLineData[]> {

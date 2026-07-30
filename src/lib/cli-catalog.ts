@@ -6,8 +6,8 @@
  * to probe for each binary; the UI consumes `CLI_CATALOG` directly to render
  * detection cards (icon, label, color, description).
  *
- * Ordering note: PacketCode (entry 6) is intentionally placed immediately
- * after OpenCode (entry 5) — PacketCode is the sibling terminal TUI to
+ * Ordering note: PacketCode is intentionally placed immediately
+ * after OpenCode — PacketCode is the sibling terminal TUI to
  * PacketADE and the two are visually paired in the grid.
  */
 
@@ -108,15 +108,6 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
     color: "neutral",
     description: "Cognition's autonomous coding agent",
     comingSoon: true,
-  },
-  {
-    id: "gemini",
-    name: "Gemini CLI",
-    binary: "gemini",
-    iconName: "Sparkles",
-    color: "blue",
-    description: "Google's CLI coding agent",
-    installCommand: "npm i -g @google/gemini-cli",
   },
   {
     id: "opencode",

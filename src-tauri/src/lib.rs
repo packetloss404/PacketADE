@@ -335,7 +335,6 @@ pub fn run() {
             // Status line
             commands::statusline::claude::read_statusline_states,
             commands::statusline::codex::read_codex_statusline_states,
-            commands::statusline::gemini::read_gemini_statusline_states,
             commands::statusline::opencode::read_opencode_statusline_states,
             // Spec parsing
             commands::spec::parse_spec_to_flight,

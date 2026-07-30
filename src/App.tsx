@@ -32,7 +32,6 @@ import { getModule } from "@/modules/registry";
 import {
   useStatusLinePoller,
   useCodexStatusLinePoller,
-  useGeminiStatusLinePoller,
   useOpenCodeStatusLinePoller,
 } from "@/hooks/useStatusLine";
 import { initializeApp, persistUiState } from "@/lib/bootstrap";
@@ -100,7 +99,6 @@ export default function App() {
   useIssueFlightMirrorPoller();
   useMonitorMainRouter();
   useCodexStatusLinePoller();
-  useGeminiStatusLinePoller();
   useOpenCodeStatusLinePoller();
   // App-level agent shortcuts and auto-archive maintenance remain active even
   // when the first-class Agents view is not mounted.

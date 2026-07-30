@@ -7,6 +7,7 @@ const listenMock = vi.fn();
 const invokeMock = vi.fn();
 const loadConversationsMock = vi.fn();
 const sendApiAgentMessageMock = vi.fn();
+const startApiAgentSessionMock = vi.fn();
 const respondPermissionTauriMock = vi.fn();
 let listeners: Map<string, EventListener>;
 
@@ -57,7 +58,7 @@ vi.mock("@/lib/tauri", () => ({
   detectAgent: vi.fn(),
   loadPersistedState: vi.fn(),
   saveAgentsSlice: vi.fn().mockResolvedValue(undefined),
-  startApiAgentSession: vi.fn().mockResolvedValue(undefined),
+  startApiAgentSession: (...args: unknown[]) => startApiAgentSessionMock(...args),
   sendApiAgentMessage: (...args: unknown[]) => sendApiAgentMessageMock(...args),
   cancelApiAgentSession: vi.fn(),
   cancelPendingTools: vi.fn(),
@@ -461,6 +462,178 @@ describe("Stop with a queued message does not re-send it (G33)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("does not drain the queue when a cancelled done arrives without Stop clearing it first", async () => {
+    vi.useFakeTimers();
+    try {
+      const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+      const { installApiAgentListeners } = await import("@/stores/apiAgentListeners");
+      const conv: AgentConversation = {
+        id: "conv-attempt-cancel",
+        title: "Cancelled outside Stop",
+        agent: "api-openai",
+        projectPath: "D:/projects/example",
+        status: "active",
+        messages: [
+          makeMessage({ id: "msg-initial", content: "initial" }),
+          makeMessage({
+            id: "msg-current-assistant",
+            role: "assistant",
+            content: "current response",
+            isStreaming: true,
+          }),
+          makeMessage({
+            id: "msg-queued",
+            content: "please cancel me",
+            queued: true,
+          }),
+        ],
+        queuedMessages: ["please cancel me"],
+        sessionId: "conv-attempt-cancel",
+        rawOutput: "",
+        createdAt: 1,
+        updatedAt: 1,
+        mode: "api",
+        provider: "openai",
+        model: "gpt-4o",
+      };
+      useAgentTaskStore.setState({
+        conversations: [conv],
+        selectedConversationId: null,
+      });
+
+      await installApiAgentListeners("conv-attempt-cancel");
+
+      // No cancelActiveConversation here: Flight Deck's cancelAttempt (and
+      // any backend-side cancel) closes the session directly, so the queue
+      // is still populated when `done { cancelled: true }` lands. The done
+      // handler itself must refuse to drain and must un-strand the bubble.
+      listeners.get("api-agent:done:conv-attempt-cancel")?.({
+        payload: {
+          input_tokens: 1,
+          output_tokens: 2,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+          cancelled: true,
+        },
+      });
+
+      vi.runAllTimers();
+
+      expect(sendApiAgentMessageMock).not.toHaveBeenCalled();
+      expect(notifySessionCompleteMock).not.toHaveBeenCalled();
+
+      const updated = useAgentTaskStore
+        .getState()
+        .conversations.find((c) => c.id === "conv-attempt-cancel");
+      expect(updated?.queuedMessages).toEqual([]);
+      expect(updated?.status).toBe("idle");
+      expect(updated?.messages.some((m) => m.queued)).toBe(false);
+      expect(updated?.messages.some((m) => m.isStreaming)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("sidecar crash recovery releases listeners so resend resumes (F1)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    vi.doUnmock("@/stores/agentTaskStore");
+    vi.doUnmock("@/stores/apiAgentListeners");
+    localStorage.clear();
+    listeners = new Map();
+    listenMock.mockImplementation((eventName: string, callback: EventListener) => {
+      listeners.set(eventName, callback);
+      return Promise.resolve(() => {});
+    });
+    invokeMock.mockResolvedValue(undefined);
+    loadConversationsMock.mockResolvedValue([]);
+    sendApiAgentMessageMock.mockResolvedValue(undefined);
+    startApiAgentSessionMock.mockResolvedValue(undefined);
+  });
+
+  /** Real timers: drain the microtask cascade behind the resume path's
+   * awaited mocks plus the deferred (setTimeout 0) listener release. */
+  const flushAsync = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+
+  it("routes the resend after a sidecar-restart error through the resume path, not send", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const conv: AgentConversation = {
+      id: "conv-crash",
+      title: "Crash recovery",
+      agent: "api-openai",
+      projectPath: "D:/projects/example",
+      status: "idle",
+      messages: [makeMessage({ id: "msg-user", content: "go" })],
+      sessionId: "conv-crash",
+      rawOutput: "",
+      createdAt: 1,
+      updatedAt: 1,
+      mode: "api",
+      provider: "openai",
+      model: "gpt-4o",
+      // Pre-frozen (empty) MCP trust so the resume path skips the live
+      // capture — this test is about listener lifecycle, not MCP.
+      mcpTrustSnapshot: [],
+    };
+    useAgentTaskStore.setState({
+      conversations: [conv],
+      selectedConversationId: "conv-crash",
+    });
+
+    // 1. First send after hydration: no live listeners yet, so sendMessage
+    //    routes through resumeApiConversation, which installs the listener
+    //    block via the REAL ensureApiAgentListeners path (populating the
+    //    private cleanup map) and starts the backend session.
+    useAgentTaskStore.getState().sendMessage("conv-crash", "first send");
+    await flushAsync();
+    expect(startApiAgentSessionMock).toHaveBeenCalledTimes(1);
+    expect(sendApiAgentMessageMock).not.toHaveBeenCalled();
+
+    // Settle the resume's turn so the next send isn't queued behind it.
+    listeners.get("api-agent:done:conv-crash")?.({
+      payload: {
+        input_tokens: 1,
+        output_tokens: 2,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+    });
+
+    // 2. Send BEFORE the crash: listeners are registered, so this takes the
+    //    plain send path. This is the non-vacuity guard — it proves the
+    //    cleanup entry exists, so step 3's routing genuinely depends on the
+    //    error listener releasing it.
+    useAgentTaskStore.getState().sendMessage("conv-crash", "pre-crash send");
+    await flushAsync();
+    expect(sendApiAgentMessageMock).toHaveBeenCalledTimes(1);
+    expect(startApiAgentSessionMock).toHaveBeenCalledTimes(1);
+
+    // Supervisor crash fan-out: ownership is cleared backend-side, so a
+    // plain send_api_agent_message can only 404. The error listener must
+    // release the listener block so the next send re-routes through resume.
+    listeners.get("api-agent:error:conv-crash")?.({
+      payload: {
+        message: "Sidecar restarted — please resend your message to continue this conversation.",
+      },
+    });
+    await flushAsync(); // flush the deferred listener release
+
+    // 3. Send AFTER the crash: routed via resumeApiConversation (session
+    //    re-create), NOT the dead plain send path — which was the broken
+    //    "please resend" contract. If the sessionLost release in
+    //    apiAgentListeners.ts were deleted, this send would take the plain
+    //    path and the send count would grow to 2.
+    useAgentTaskStore.getState().sendMessage("conv-crash", "resend me");
+    await flushAsync();
+    expect(sendApiAgentMessageMock).toHaveBeenCalledTimes(1);
+    expect(startApiAgentSessionMock).toHaveBeenCalledTimes(2);
   });
 });
 

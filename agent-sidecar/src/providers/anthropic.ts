@@ -1042,8 +1042,10 @@ export class AnthropicProvider implements ProviderHandler {
    */
   async cancelPendingTools(_req: CancelPendingToolsRequest, _emit: Emit): Promise<void> {
     // Permissions: deny WITHOUT interrupt — the SDK fabricates a
-    // tool_result and feeds it back to the model. interrupt:true would
-    // abort the streaming input pipeline.
+    // tool_result and feeds it back to the model. interrupt:true is the
+    // deny-side equivalent of Query.interrupt() (a turn-scoped interrupt
+    // control request, not a pipeline teardown), which would end the
+    // current turn — contradicting this method's keep-generating contract.
     for (const [id, resolver] of this.pendingPermissions.entries()) {
       this.pendingPermissions.delete(id);
       resolver({ behavior: "deny", message: "User cancelled this tool" });
@@ -1061,32 +1063,55 @@ export class AnthropicProvider implements ProviderHandler {
   }
 
   async cancel(_emit: Emit): Promise<void> {
-    // Try the Query.interrupt() control first (cleaner shutdown), then abort.
-    try {
-      if (this.q && typeof this.q.interrupt === "function") {
-        await this.q.interrupt().catch(() => undefined);
-      }
-    } catch (err) {
-      logStderr(`interrupt failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    try {
-      this.abort?.abort();
-    } catch (err) {
-      logStderr(`abort failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    // Resolve any pending permission requests as denied so the SDK can
-    // finish unwinding.
+    // Turn-scoped cancel: Query.interrupt() is the SDK's documented
+    // turn-cancel for streaming-input mode and leaves the long-lived
+    // query (and this.prompt) alive for follow-up turns. Aborting
+    // this.abort would kill the session-lifetime AbortController — the
+    // pump would exit permanently and every later send would be silently
+    // swallowed — so abort is fallback-only.
+    //
+    // Resolve parked hooks first so interrupt() cannot stall on a turn
+    // that is blocked awaiting one of our promises. Deny WITHOUT
+    // `interrupt`: the explicit q.interrupt() below is the single
+    // turn-cancel signal, and when interrupt is unavailable the fallback
+    // branch ends the prompt pipeline explicitly. Routing all
+    // interruption through q.interrupt() keeps this cancel correct even
+    // if the CLI treated deny+interrupt as more than turn-scoped — a
+    // parked permission at cancel time can never strand this.prompt as a
+    // live-but-unconsumed iterable that silently swallows later sends.
     for (const [id, resolver] of this.pendingPermissions.entries()) {
       this.pendingPermissions.delete(id);
-      resolver({ behavior: "deny", message: "cancelled", interrupt: true });
+      resolver({ behavior: "deny", message: "cancelled" });
     }
-    // Same for pending PreToolUse edit hooks: resolve them as blocked so
-    // the SDK's query iterator unwinds instead of hanging on our promise.
     for (const [id, meta] of this.pendingEdits.entries()) {
       this.pendingEdits.delete(id);
       meta.resolver({ continue: false, stopReason: "cancelled" });
     }
-    // done/error is emitted by the pump when the iterator unwinds.
+    let interrupted = false;
+    try {
+      if (this.q && typeof this.q.interrupt === "function") {
+        await this.q.interrupt();
+        interrupted = true;
+      }
+    } catch (err) {
+      logStderr(`interrupt failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (!interrupted) {
+      // Fallback: no interrupt support — abort kills the session-lifetime
+      // controller, so this Query can never serve another turn. End the
+      // prompt so follow-up sendMessage/injectUserTurn/retry emit an error
+      // instead of silently pushing into an unconsumed iterable.
+      try {
+        this.abort?.abort();
+      } catch (err) {
+        logStderr(`abort failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      this.prompt?.end();
+      this.prompt = null;
+    }
+    // done{cancelled:true} is emitted synthetically by the registry; any
+    // late SDK `result`/error from the interrupted turn is deduped by
+    // lifecycleEmit.
   }
 
   /**

@@ -249,7 +249,10 @@ pub async fn write_file_contents(
     content: String,
 ) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        super::is_within_workspace(&file_path, &workspace)?;
+        // Write-aware containment: the target may not exist yet (this
+        // command creates new files), so canonicalize the parent directory
+        // instead of the target itself.
+        super::is_within_workspace_for_write(&file_path, &workspace)?;
 
         let path = Path::new(&file_path);
 

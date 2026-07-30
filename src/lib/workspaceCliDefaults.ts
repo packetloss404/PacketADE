@@ -11,7 +11,6 @@ export const WORKSPACE_CLI_PRIORITY: readonly WorkspaceAgentSlot[] = [
   "packetcode",
   "claude-code",
   "codex",
-  "gemini",
   "opencode",
   "terminal",
 ];

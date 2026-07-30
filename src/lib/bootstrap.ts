@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import {
   loadPersistedState,
   getCwd,
@@ -21,6 +22,28 @@ import { sampleWorkspaceAgentsDisplayTopology } from "@/stores/workspaceAgentsDo
 import { hydrateConversations } from "@/stores/agentConversationPersistence";
 
 const PROJECT_PATH_KEY = "packetade:project-path";
+
+/** App-lifetime listener for Rust's `flight:cost-updated` event, emitted
+ *  after every executor cost accumulation (sidecar `turn_summary` handler and
+ *  the in-process rollup in api_agent.rs). Applies the delta to the in-memory
+ *  flightStore so the autonomy budget hard-stop, cost guardrail, and cost UI
+ *  see spend as it accrues instead of waiting for the next hydrate. Never
+ *  unlistened by design; the guard keeps a re-entrant initializeApp (e.g.
+ *  StrictMode double-mount) from double-applying deltas. */
+let flightCostListenerRegistered = false;
+
+function registerFlightCostListener(): void {
+  if (flightCostListenerRegistered) return;
+  flightCostListenerRegistered = true;
+  void listen<{ flightId: string; totalTokens: number; costUsd: number }>(
+    "flight:cost-updated",
+    ({ payload }) => {
+      useFlightStore
+        .getState()
+        .applyBackendCostDelta(payload.flightId, payload.totalTokens ?? 0, payload.costUsd ?? 0);
+    },
+  );
+}
 
 /** A path inside the app's own build output is never a real project to launch
  *  CLIs in. Adopting it as a default is what historically poisoned the
@@ -162,6 +185,7 @@ export async function initializeApp(): Promise<void> {
   }
 
   startBoundedAutonomyRuntime();
+  registerFlightCostListener();
   void sampleWorkspaceAgentsDisplayTopology();
 
   // Kick CLI detection in the background — surfaces installed status to the

@@ -18,6 +18,7 @@ hashes.
 - [`dev/README.md`](./dev/README.md) — planning index, active implementation briefs, runbooks, and archive.
 - [`dev/remoteagents/README.md`](./dev/remoteagents/README.md) — canonical Remote Agents plan.
 - [`CHANGELOG.md`](./CHANGELOG.md) — shipped history only.
+- [`marketing/`](./marketing/) — press-kit assets: one-pager PDF, hero poster, social banner, and the design-philosophy note.
 - `AGENTS.md` / `CLAUDE.md` — local agent-facing repository instructions (generated and intentionally gitignored).
 
 The current product conversation is the reviewed—but not yet
@@ -31,7 +32,7 @@ remains paused at its three Sprint-0 decisions.
   in the first-class **Agents** surface — Claude Code subscription, Codex
   subscription, OpenAI Agents SDK, four API-key providers, and local Ollama all
   normalize into one event contract
-- Run PacketCode, Claude Code, Codex CLI, Gemini, OpenCode, and plain shells in
+- Run PacketCode, Claude Code, Codex CLI, OpenCode, and plain shells in
   CLI-first **Workspaces** with persistent draggable mosaics
 - Launch and supervise larger units of work from the **Flight Deck** — a single-screen master-detail flight control surface
 - Track issues on a kanban board and send them directly to workspace sessions
@@ -47,10 +48,12 @@ PacketADE connects two complementary execution styles.
 
 - Claude Code
 - OpenAI Codex CLI
-- Gemini CLI
 - OpenCode
 - PacketCode
 - Plain terminal
+
+> Gemini CLI support was removed on 2026-07-30. Saved workspace panes that
+> referenced it reopen as plain terminal sessions; no data is lost.
 
 **GUI/API agents in the Agents view** — durable structured conversations with
 streaming, tool calls, permission gating, plans, review, Memory, and worktree
@@ -63,11 +66,13 @@ endings:
 | OpenAI (ChatGPT Plus/Pro) | `api-openai-codex`  | Codex CLI OAuth (`codex login`) — uses your ChatGPT subscription    |
 | OpenAI (API)              | `api-openai`        | `OPENAI_API_KEY` in OS keyring                                      |
 | OpenAI Agents SDK (API)   | `api-openai-agents` | `OPENAI_API_KEY` in OS keyring                                      |
-| MiniMax                   | `api-minimax`       | API key in OS keyring                                               |
+| MiniMax (Token Plan)      | `api-minimax`       | API key in OS keyring                                               |
 | OpenRouter                | `api-openrouter`    | API key in OS keyring                                               |
-| Ollama                    | `api-ollama`        | none — local daemon at `localhost:11434`                            |
+| Ollama (Local)            | `api-ollama`        | none — local daemon at `localhost:11434`                            |
 
 Auth status is probed live and shown as a badge next to each row (`ready` / `login_required` / `missing_key` / `service_down`). An fs watcher flips the badge automatically after a `claude login` / `codex login` completes, and expired-but-refreshable tokens stay `ready` (the SDK / CLI refreshes them transparently). Most API-key providers run in-process in Rust; subscription providers and the OpenAI Agents SDK provider run in the Node sidecar. Each session can be launched with agent-specific arguments and model selections exposed through the UI.
+
+One known limitation: the OpenAI (ChatGPT Plus/Pro) row runs Codex `exec`, whose stdin is closed, so it cannot service per-tool approval round-trips — every mode maps to a sandbox posture, and its mode picker only offers postures the sandbox can actually enforce. All other providers support interactive approvals.
 
 ## Main Features
 
@@ -321,7 +326,6 @@ Examples:
 
 - Claude Code for Claude sessions
 - Codex CLI for Codex sessions
-- Gemini CLI for Gemini sessions
 - OpenCode for OpenCode sessions
 
 ### Install

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { loadFromStorage, saveToStorage, generateId as genId } from "@/lib/storage";
+import { MONITOR_WINDOW_QUERY_KEY } from "@/lib/brand";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createIssueWorktree, saveIssuesSlice } from "@/lib/tauri";
 import { logSwallowed } from "@/lib/logSwallowed";
@@ -771,7 +772,17 @@ async function registerIssueWatcher() {
   }
 }
 
-void registerIssueWatcher();
+// Read-only Monitor windows evaluate this module too (main.tsx statically
+// imports the whole App graph), but their issueStore snapshot is frozen at
+// window boot and this handler whole-slice-saves `packetade:issues` —
+// registering here would let a stale monitor copy clobber the shared
+// localStorage. The main window owns the close-loop. (Inline check instead
+// of `isMonitorBoot()` to avoid the issueStore → monitorWindows →
+// flightStore → issueStore import cycle.)
+const bootedAsMonitorWindow =
+  typeof window !== "undefined" &&
+  new URLSearchParams(window.location.search).get(MONITOR_WINDOW_QUERY_KEY) === "monitor";
+if (!bootedAsMonitorWindow) void registerIssueWatcher();
 
 /**
  * v0.8.5: exported for HMR + tests. Detaches the `issue-watcher:fixed`

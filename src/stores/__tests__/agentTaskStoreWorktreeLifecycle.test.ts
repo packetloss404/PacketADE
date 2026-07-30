@@ -104,6 +104,10 @@ describe("agentTaskStore — worktree lifecycle plumbing (P2-S2)", () => {
     removeConversationWorktreeMock.mockResolvedValue(undefined);
   });
 
+  // First test in the file pays the cold dynamic-import cost of the full
+  // agentTaskStore graph (~2s in isolation, more under parallel suite load
+  // on Windows) plus a real 500ms persist debounce — the default 5s test
+  // timeout is too tight under load, so give this one explicit headroom.
   it("setConversationWorktreeState flips the lifecycle state and persists", async () => {
     const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
     useAgentTaskStore.setState({ conversations: [seedWorktreeConversation()] } as never);
@@ -113,13 +117,17 @@ describe("agentTaskStore — worktree lifecycle plumbing (P2-S2)", () => {
     const conv = useAgentTaskStore.getState().conversations.find((c) => c.id === CONV_ID);
     expect(conv?.worktree?.state).toBe("landed");
     expect(saveConversationMock).not.toHaveBeenCalled(); // debounced
-    await vi.waitFor(() => {
-      expect(saveConversationMock).toHaveBeenCalled();
-      const [id, json] = saveConversationMock.mock.calls[saveConversationMock.mock.calls.length - 1];
-      expect(id).toBe(CONV_ID);
-      expect(JSON.parse(json as string).worktree.state).toBe("landed");
-    });
-  });
+    await vi.waitFor(
+      () => {
+        expect(saveConversationMock).toHaveBeenCalled();
+        const [id, json] = saveConversationMock.mock.calls[saveConversationMock.mock.calls.length - 1];
+        expect(id).toBe(CONV_ID);
+        expect(JSON.parse(json as string).worktree.state).toBe("landed");
+      },
+      // 500ms debounce + slack for CI/parallel-run scheduling jitter.
+      { timeout: 4000 },
+    );
+  }, 15_000);
 
   it("recordConversationPr stores the PR number on the worktree, persisted through the snapshot", async () => {
     const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
@@ -129,11 +137,14 @@ describe("agentTaskStore — worktree lifecycle plumbing (P2-S2)", () => {
 
     const conv = useAgentTaskStore.getState().conversations.find((c) => c.id === CONV_ID);
     expect(conv?.worktree?.prNumber).toBe(77);
-    await vi.waitFor(() => {
-      const [, json] = saveConversationMock.mock.calls[saveConversationMock.mock.calls.length - 1];
-      expect(JSON.parse(json as string).worktree.prNumber).toBe(77);
-    });
-  });
+    await vi.waitFor(
+      () => {
+        const [, json] = saveConversationMock.mock.calls[saveConversationMock.mock.calls.length - 1];
+        expect(JSON.parse(json as string).worktree.prNumber).toBe(77);
+      },
+      { timeout: 4000 },
+    );
+  }, 15_000);
 
   it("discardConversationWorktree on a CLEAN tree removes dir + branch and flips state → discarded", async () => {
     const { useAgentTaskStore } = await import("@/stores/agentTaskStore");

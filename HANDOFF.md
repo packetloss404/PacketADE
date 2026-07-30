@@ -7,11 +7,26 @@ before older plans or audit notes.
 
 ## Resume here
 
-The current decision target is the main application shell: navigation, menus,
-tabs, buttons, and right-side panel ownership. The review is complete, but none
-of its recommendations has been silently approved or implemented.
+The 2026-07-30 midway review is complete. It comprised a research fleet pass
+over the landscape, a bug-fix wave, a full root-documentation overhaul
+(`README.md`, `ROADMAP.md`, `backlog.md`, `CHANGELOG.md`, this file), and the
+removal of Gemini CLI support from the PTY session surface. Its shipped
+outcomes and open recommendations are ledgered in
+[`backlog.md`](./backlog.md#2026-07-30-midway-review); the report placeholder
+is `docs/reports/midway-review-2026-07-30.html`.
 
-Start with
+Two threads are open from here:
+
+1. **Commit and verify the midway-review working tree.** The Gemini removal
+   (~650 net lines across `src/` and `src-tauri/`) and the documentation
+   overhaul are uncommitted on `main` as of this handoff. Run the usual gates
+   (`pnpm lint`, `pnpm test`, `pnpm build`, `cargo check`) before committing.
+2. **The main-shell decision pass** remains the current owner decision target:
+   navigation, menus, tabs, buttons, and right-side panel ownership. The
+   review is complete, but none of its recommendations has been silently
+   approved or implemented.
+
+For thread 2, start with
 [`dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md)
 and step through these five owner decisions before changing code:
 
@@ -36,7 +51,14 @@ polish/proof.
 ## Current product state
 
 - The most recent functional source commit before this documentation handoff is
-  `a7feb4a` (`Reorganize Settings and audit main shell`) on `main`.
+  `a7feb4a` (`Reorganize Settings and audit main shell`) on `main`. The
+  2026-07-30 midway-review changes (Gemini removal + docs overhaul) sit
+  uncommitted on top of it.
+- Gemini CLI is no longer a supported PTY agent. Supported PTY CLIs are Claude
+  Code, Codex CLI, OpenCode, PacketCode, and plain shells; the GUI-agent picker
+  keeps its eight chat rows (Anthropic subscription/API, OpenAI
+  ChatGPT/API/Agents SDK, MiniMax, OpenRouter, Ollama). Saved panes that
+  referenced `gemini` reopen as plain terminals.
 - Workspace/Agents restructuring is complete. Workspaces are CLI/PacketCode
   first; Agents is the first-class GUI-agent surface; new Workspace
   conversation attachments are retired; saved panes remain compatible.
@@ -174,7 +196,9 @@ limited to existing `ts-rs` serde-alias and Vite chunk/dynamic-import warnings.
 
 ## Suggested first prompt
 
-> Read `HANDOFF.md` and the main-shell navigation/right-panel audit. Do not
-> implement yet. Step me through the five owner decisions, beginning with the
-> Workspace Agent inspector and the shared RightDock, and explain what
+> Read `HANDOFF.md`. First, run the quality gates over the uncommitted
+> midway-review working tree (Gemini CLI removal + docs overhaul) and commit it
+> if they pass. Then read the main-shell navigation/right-panel audit — do not
+> implement yet — and step me through the five owner decisions, beginning with
+> the Workspace Agent inspector and the shared RightDock, explaining what
 > functionality is preserved or lost by each choice.

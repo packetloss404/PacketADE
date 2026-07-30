@@ -89,14 +89,13 @@ export const CHAT_AGENTS: ChatAgentEntry[] = API_PROVIDERS.map((p) => ({
 }));
 
 /**
- * The six Terminal slots, in the historical WorkspaceView order. Faces come
+ * The five Terminal slots, in the historical WorkspaceView order. Faces come
  * from `cli-catalog.ts` where present (Claude Code, Codex CLI, …); the bare
  * `terminal` slot has no catalog entry and is named directly.
  */
 const TERMINAL_SLOTS: WorkspaceAgentSlot[] = [
   "claude-code",
   "codex",
-  "gemini",
   "opencode",
   "packetcode",
   "terminal",

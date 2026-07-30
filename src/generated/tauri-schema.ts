@@ -1,6 +1,6 @@
 // Auto-generated from Rust API DTOs. Run `pnpm generate:tauri-schema` to refresh.
 
-export type WorkspaceAgentSlotDto = "terminal" | "claude-code" | "codex" | "gemini" | "opencode" | "packetcode";
+export type WorkspaceAgentSlotDto = "terminal" | "claude-code" | "codex" | "opencode" | "packetcode";
 
 export type WorkspaceStatusDto = "active" | "archived";
 

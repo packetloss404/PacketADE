@@ -11,7 +11,7 @@ describe("choosePreferredWorkspaceCli", () => {
   });
 
   it("falls through the supported CLI order", () => {
-    expect(choosePreferredWorkspaceCli(new Set(["codex", "gemini"]))).toBe(
+    expect(choosePreferredWorkspaceCli(new Set(["codex", "opencode"]))).toBe(
       "codex",
     );
   });

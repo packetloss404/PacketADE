@@ -598,7 +598,7 @@ Current first-party web sources, checked 2026-07-29:
 
 Repository evidence:
 
-- [`conversation-tile-design.md`](./conversation-tile-design.md)
+- [`archive/conversation-tile-design.md`](./archive/conversation-tile-design.md)
 - [`tile-program/plan.md`](./tile-program/plan.md)
 - [`bridgemind/bridgespace-competitive-brief.md`](./bridgemind/bridgespace-competitive-brief.md)
 - `src/App.tsx`

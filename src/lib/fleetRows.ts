@@ -125,7 +125,6 @@ export function agentLabelFor(agent: string): string {
   const labels: Record<string, string> = {
     "claude-code": "Claude",
     codex: "Codex",
-    gemini: "Gemini",
     opencode: "OpenCode",
     packetcode: "PacketCode",
   };

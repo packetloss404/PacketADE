@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { StatusLineData, CodexStatusLineData, GeminiStatusLineData, OpenCodeStatusLineData } from "@/types/statusline";
+import type { StatusLineData, CodexStatusLineData, OpenCodeStatusLineData } from "@/types/statusline";
 
 export interface StatusLineEntryBase {
   cwd: string;
@@ -73,9 +73,6 @@ export const useStatusLineForCwd = createForCwdSelector(useStatusLineStore);
 
 export const useCodexStatusLineStore = createStatusLineStore<CodexStatusLineData>();
 export const useCodexStatusLineForCwd = createForCwdSelector(useCodexStatusLineStore);
-
-export const useGeminiStatusLineStore = createStatusLineStore<GeminiStatusLineData>();
-export const useGeminiStatusLineForCwd = createForCwdSelector(useGeminiStatusLineStore);
 
 export const useOpenCodeStatusLineStore = createStatusLineStore<OpenCodeStatusLineData>();
 export const useOpenCodeStatusLineForCwd = createForCwdSelector(useOpenCodeStatusLineStore);

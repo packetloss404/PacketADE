@@ -503,6 +503,7 @@ impl SidecarManager {
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty())
                     .map(String::from);
+                let address_for_async = address.clone();
                 let _ = self.app_handle.emit(
                     &turn_summary_event(&session_id),
                     TurnSummaryPayload {
@@ -519,10 +520,20 @@ impl SidecarManager {
                 // the owning Flight DTO for executor sidecar sessions linked
                 // to a flight via `attempt.session_id` or `task.session_id`.
                 // Rolls up onto `flight.total_tokens` / `total_cost`; lookup
-                // via the on-disk PersistedState. The StatGrid chip in the
-                // frontend derives the "Exec" cost as `totalCost -
-                // plannerCost`; pre-E8 the chip always showed zero because
-                // nothing wrote `total_cost`.
+                // via the on-disk PersistedState. After persisting, emits the
+                // fixed-name `flight:cost-updated` event consumed by the
+                // bootstrap-registered flightStore listener so the frontend's
+                // in-memory `flight.totalCost` / `totalTokens` (budget
+                // hard-stop, launch guardrail, StatGrid cost chip) track the
+                // spend live instead of waiting for the next hydrate.
+                //
+                // Provider semantics differ: the Anthropic provider emits
+                // genuine per-message deltas, but the openai-codex provider
+                // emits SESSION-CUMULATIVE running totals on every
+                // `token_count` update (see openai-codex.ts: "replace, not
+                // accumulate"). For snapshot-semantics providers we track the
+                // last-seen snapshot per (session, address) and roll up only
+                // the positive component-wise delta.
                 //
                 // Async-dispatched so we never block the sidecar event loop
                 // on the `with_state_lock` mutex, and short-circuits cleanly
@@ -530,6 +541,21 @@ impl SidecarManager {
                 // standalone API-agent chat) — no-op fallthrough.
                 let session_for_async = session_id.clone();
                 let app_for_async = self.app_handle.clone();
+                let snapshots = std::sync::Arc::clone(&self.exec_token_snapshots);
+                // Order guard for the cumulative-delta accounting below: the
+                // rollup runs in an unordered spawned task whose
+                // variable-latency load_state() means a newer/larger codex
+                // snapshot can reach the lock before an older/smaller one —
+                // which would read as a counter reset and re-roll the full
+                // session-cumulative as new spend. Stamp each turn_summary
+                // with a monotonic sequence HERE (events for one session are
+                // dispatched sequentially by their reader loop, so stamps
+                // reflect per-session arrival order) and drop out-of-order
+                // events under the lock; the next in-order event's delta
+                // self-corrects.
+                let seq = self
+                    .exec_turn_seq
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 tauri::async_runtime::spawn(async move {
                     let state_snap = crate::core::storage::load_state();
                     let owner = match crate::commands::flight_cost::flight_for_executor_session(
@@ -539,16 +565,71 @@ impl SidecarManager {
                         Some(o) => o,
                         None => return,
                     };
-                    let exec_total_tokens = input_tokens
-                        .saturating_add(output_tokens)
-                        .saturating_add(cache_read_input_tokens)
-                        .saturating_add(cache_creation_input_tokens);
+                    // Codex `turn_summary` events carry session-cumulative
+                    // totals — accumulate only the delta since the previous
+                    // snapshot. Everything else (claude-oauth) is per-turn.
+                    let cumulative = owner.provider == "openai-codex";
+                    let (d_in, d_out, d_cr, d_cc) = if cumulative {
+                        let key = (
+                            session_for_async.clone(),
+                            address_for_async.unwrap_or_default(),
+                        );
+                        let cur = [
+                            input_tokens,
+                            output_tokens,
+                            cache_read_input_tokens,
+                            cache_creation_input_tokens,
+                        ];
+                        let mut map = snapshots.lock().await;
+                        let prev_entry = map.get(&key).copied();
+                        if let Some((prev_seq, _)) = prev_entry {
+                            if seq < prev_seq {
+                                // Out-of-order arrival: a newer snapshot was
+                                // already processed for this (session,
+                                // address). Drop this event — its spend is
+                                // subsumed by the newer snapshot's delta.
+                                return;
+                            }
+                        }
+                        let prev = prev_entry.map(|(_, totals)| totals).unwrap_or([0; 4]);
+                        // Counter reset (new codex process): any component
+                        // shrinking means the cumulative counter restarted —
+                        // re-baseline at zero so the new spend is counted
+                        // once in full.
+                        let base = if (0..4).any(|i| cur[i] < prev[i]) {
+                            [0; 4]
+                        } else {
+                            prev
+                        };
+                        map.insert(key, (seq, cur));
+                        (
+                            cur[0] - base[0],
+                            cur[1] - base[1],
+                            cur[2] - base[2],
+                            cur[3] - base[3],
+                        )
+                    } else {
+                        (
+                            input_tokens,
+                            output_tokens,
+                            cache_read_input_tokens,
+                            cache_creation_input_tokens,
+                        )
+                    };
+                    let exec_total_tokens = d_in
+                        .saturating_add(d_out)
+                        .saturating_add(d_cr)
+                        .saturating_add(d_cc);
+                    if exec_total_tokens == 0 {
+                        // Nothing new to roll up (repeat cumulative snapshot).
+                        return;
+                    }
                     let exec_cost_usd = crate::commands::pricing::calculate_cost(
                         &owner.model,
-                        input_tokens,
-                        output_tokens,
-                        cache_read_input_tokens,
-                        cache_creation_input_tokens,
+                        d_in,
+                        d_out,
+                        d_cr,
+                        d_cc,
                     );
                     if let Err(e) = crate::commands::flight_cost::accumulate_executor_cost(
                         &owner.flight_id,
@@ -564,13 +645,13 @@ impl SidecarManager {
                         );
                     } else {
                         let _ = app_for_async.emit(
-                            &format!("flight-planner:cost-updated:{}", owner.flight_id),
+                            "flight:cost-updated",
                             serde_json::json!({
                                 "flightId": owner.flight_id,
-                                "inputTokens": input_tokens,
-                                "outputTokens": output_tokens,
-                                "cacheReadInputTokens": cache_read_input_tokens,
-                                "cacheCreationInputTokens": cache_creation_input_tokens,
+                                "inputTokens": d_in,
+                                "outputTokens": d_out,
+                                "cacheReadInputTokens": d_cr,
+                                "cacheCreationInputTokens": d_cc,
                                 "totalTokens": exec_total_tokens,
                                 "costUsd": exec_cost_usd,
                                 "source": "executor",
@@ -597,8 +678,17 @@ impl SidecarManager {
                         message: message.clone(),
                     },
                 );
-                self.forget_owned_session(&session_id).await;
-                self.close_remote_session(&session_id).await;
+                // Per-turn errors are recoverable: the sidecar registry only
+                // deletes a session on START-time failure (session-registry.ts
+                // startNow), and the codex provider spawns a fresh
+                // `codex exec resume` every turn. Ownership is lifecycle
+                // state (see protocol.rs forward_send) — dropping it here
+                // would reroute the next send/retry into the in-process
+                // runtime ("No active session") and permanently brick the
+                // conversation while leaking the sidecar-side session.
+                // Lifetime cleanup is owned by forward_close and by the
+                // supervisor's crash fan-out, both of which already clear
+                // ownership and the SSH remote route.
 
                 // E10-SUMMARIZE — resolve any one-shot waiter for this
                 // session with the error. The compaction summarizer treats

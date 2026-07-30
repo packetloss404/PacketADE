@@ -4,6 +4,13 @@ Last updated: 2026-07-30 (Workspace/Agents and Settings IA are complete; the
 main-shell/right-dock review is the current owner decision pass; Remote Agents
 remains preserved at its Sprint-0 decision gate)
 
+> **2026-07-30 — midway review completed.** The midway project review ran to
+> completion on this date: a research fleet surveyed the landscape, a bug-fix
+> pass landed, the root documentation set was overhauled, and Gemini CLI
+> support was removed from the PTY session surface (saved Gemini panes reopen
+> as plain terminals). Review recommendations are tracked in
+> [`backlog.md`](./backlog.md#2026-07-30-midway-review).
+
 `ROADMAP.md` is the short product-direction document. It says what matters now
 and why. The task ledger lives in [`backlog.md`](./backlog.md); implementation
 briefs, runbooks, and historical planning live under [`dev/`](./dev/README.md).
@@ -34,7 +41,7 @@ surface goal. It is preserved, not canceled, at its three Sprint-0 decisions.
 | R11 | Main shell and right-dock ownership       |       P1 | Review complete; five owner decisions pending                         | [`HANDOFF.md`](./HANDOFF.md), [`dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md)                                                                                                                                                                                                                          |
 | R10 | Workspace/Agents restructuring            |       P0 | Complete; final owner policy implemented and fully verified           | [`dev/workspace-agents-restructuring-goal.md`](./dev/workspace-agents-restructuring-goal.md), [`dev/workspace-agents-wa0-route-contract.md`](./dev/workspace-agents-wa0-route-contract.md), [`dev/workspace-agents-wa3-handoff-evidence.md`](./dev/workspace-agents-wa3-handoff-evidence.md), [`dev/workspace-agents-wa4-dogfood-gate.md`](./dev/workspace-agents-wa4-dogfood-gate.md) |
 | R0  | Remote Agents: PWA + Packet Cloud relay   |       P1 | Preserved; paused at three Sprint-0 product decisions                 | [`dev/remoteagents/README.md`](./dev/remoteagents/README.md)                                                                                                                                                                                                                                                                                                                           |
-| R1  | Docs and planning consolidation           |       P1 | Refreshed; ongoing maintenance                                        | [`dev/README.md`](./dev/README.md)                                                                                                                                                                                                                                                                                                                                                     |
+| R1  | Docs and planning consolidation           |       P1 | Root set overhauled 2026-07-30; ongoing maintenance                   | [`dev/README.md`](./dev/README.md)                                                                                                                                                                                                                                                                                                                                                     |
 | R2  | Distribution readiness: signing + updater |       P1 | Still blocked on signing certificates                                 | [`dev/updater-setup.md`](./dev/updater-setup.md), [`dev/multi-platform-build.md`](./dev/multi-platform-build.md)                                                                                                                                                                                                                                                                       |
 | R3  | Flight Deck supervision                   |       P1 | Core loops implemented; manual/SSH smoke remains                      | [`dev/bridgemind/reviewer-gate-loop.md`](./dev/bridgemind/reviewer-gate-loop.md), [`dev/bridgemind/cooperative-flight-graph-loop.md`](./dev/bridgemind/cooperative-flight-graph-loop.md), [`dev/bridgemind/coordination-inbox-loop.md`](./dev/bridgemind/coordination-inbox-loop.md), [`dev/bridgemind/autonomy-policy-loop.md`](./dev/bridgemind/autonomy-policy-loop.md)             |
 | R4  | PacketCode integration                    |       P1 | Source integration complete; release proof gated                      | [`dev/bridgemind/packetcode-bridgecode-loop.md`](./dev/bridgemind/packetcode-bridgecode-loop.md)                                                                                                                                                                                                                                                                                       |
@@ -64,7 +71,7 @@ canonical plan docs.
 ## Next
 
 The reliability loop in
-[`dev/p1-p2-fix-loop-spec.md`](./dev/p1-p2-fix-loop-spec.md) is complete. The
+[`dev/archive/p1-p2-fix-loop-spec.md`](./dev/archive/p1-p2-fix-loop-spec.md) is complete. The
 orphaned deploy backend was already deleted; its unused constants and test mocks
 have now been removed as well. Flight Deck Option B is implemented as an
 explicit read-only `AgentConversation`: the user refines a structured plan,

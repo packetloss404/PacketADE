@@ -40,7 +40,6 @@ import { McpHubCard } from "./tools/McpHubCard";
 import { CostCard } from "./tools/CostCard";
 import { DictationSettingsCard } from "./tools/DictationSettingsCard";
 import { KeyboardShortcutsCard } from "./tools/KeyboardShortcutsCard";
-import { GeminiApiKeyCard } from "./tools/GeminiApiKeyCard";
 import { ApiKeysCard } from "./tools/ApiKeysCard";
 import { ServersSettingsCard } from "./tools/ServersSettingsCard";
 import { AgentProfilesCard } from "./tools/AgentProfilesCard";
@@ -363,7 +362,6 @@ export function ToolsView() {
           {activeSection === "dictation" && (
             <div className="max-w-2xl space-y-4">
               <DictationSettingsCard />
-              <GeminiApiKeyCard />
             </div>
           )}
 

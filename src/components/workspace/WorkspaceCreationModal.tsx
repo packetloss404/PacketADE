@@ -11,7 +11,7 @@ import { usePromptStore } from "@/stores/promptStore";
 import { useAppStore } from "@/stores/appStore";
 import { computeGridLayout } from "@/lib/gridLayout";
 import { INSTALL_HINTS } from "@/lib/agent-install-hints";
-import { CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS, OPENCODE_MODELS, PACKETCODE_MODELS, EFFORT_LEVELS, type EffortLevel } from "@/lib/models";
+import { CLAUDE_MODELS, CODEX_MODELS, OPENCODE_MODELS, PACKETCODE_MODELS, EFFORT_LEVELS, type EffortLevel } from "@/lib/models";
 import { sshCheckRemotePath, gitGetOriginUrl, cloneRepoRemote, type RemotePathCheck } from "@/lib/tauri";
 import { buildRemoteCloneArgs, shouldOfferRemoteClone } from "@/lib/remoteClone";
 import { parseGithubRemote } from "@/lib/git";
@@ -28,7 +28,7 @@ type PathProbeState =
   | { kind: "ok"; result: RemotePathCheck }
   | { kind: "error"; message: string };
 
-type AgentChoice = "claude-code" | "codex" | "gemini" | "opencode" | "packetcode";
+type AgentChoice = "claude-code" | "codex" | "opencode" | "packetcode";
 
 /** CLI sessions that support the --effort flag. */
 const EFFORT_SUPPORTED = new Set<string>(["claude-code"]);
@@ -38,7 +38,6 @@ const AGENT_SLOTS: { id: WorkspaceAgentSlot; cliId: AgentChoice | null; label: s
   { id: "terminal", cliId: null, label: "Terminal", cliCommand: "bash" },
   { id: "claude-code", cliId: "claude-code", label: "Claude Code", cliCommand: "claude" },
   { id: "codex", cliId: "codex", label: "Codex CLI", cliCommand: "codex" },
-  { id: "gemini", cliId: "gemini", label: "Gemini CLI", cliCommand: "gemini" },
   { id: "opencode", cliId: "opencode", label: "OpenCode", cliCommand: "opencode" },
 ];
 
@@ -46,14 +45,12 @@ const WORKSPACE_TEMPLATES = [
   { id: "packetcode", label: "PacketCode", description: "Recommended terminal coding loop", sessions: ["packetcode"] as WorkspaceAgentSlot[] },
   { id: "cli-pair", label: "CLI Pair", description: "PacketCode + Codex side-by-side", sessions: ["packetcode", "codex"] as WorkspaceAgentSlot[] },
   { id: "review-pair", label: "Review Pair", description: "Claude Code + Codex CLI", sessions: ["claude-code", "codex"] as WorkspaceAgentSlot[] },
-  { id: "research", label: "Research", description: "Claude Code + Gemini CLI", sessions: ["claude-code", "gemini"] as WorkspaceAgentSlot[] },
   { id: "shell", label: "Shell", description: "One plain terminal", sessions: ["terminal"] as WorkspaceAgentSlot[] },
 ];
 
 const CLI_MODEL_MAP: Record<AgentChoice, typeof CLAUDE_MODELS> = {
   "claude-code": CLAUDE_MODELS,
   codex: CODEX_MODELS,
-  gemini: GEMINI_MODELS,
   opencode: OPENCODE_MODELS,
   packetcode: PACKETCODE_MODELS,
 };

@@ -2,8 +2,8 @@
 
 Created: 2026-07-25
 Backlog: [`../backlog.md`](../backlog.md) → "GitHub pane v0.9+ (from v0.8 deferrals)".
-Shape: same gated-loop cadence as [`gitea-support-loop.md`](./gitea-support-loop.md)
-and [`memory-v9-loop.md`](./memory-v9-loop.md) (discrete, independently-gated
+Shape: same gated-loop cadence as [`archive/gitea-support-loop.md`](./archive/gitea-support-loop.md)
+and [`archive/memory-v9-loop.md`](./archive/memory-v9-loop.md) (discrete, independently-gated
 items; per-item commit; verify → record).
 
 ## Objective

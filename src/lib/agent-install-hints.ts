@@ -19,10 +19,6 @@ export const INSTALL_HINTS: Record<string, InstallHint> = {
     label: "Install Codex CLI",
     url: "https://github.com/openai/codex",
   },
-  gemini: {
-    label: "Install Gemini CLI",
-    url: "https://github.com/google-gemini/gemini-cli",
-  },
   opencode: {
     label: "Install OpenCode",
     url: "https://opencode.ai",

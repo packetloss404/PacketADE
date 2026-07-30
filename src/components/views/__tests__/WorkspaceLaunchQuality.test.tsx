@@ -59,7 +59,6 @@ const mocks = vi.hoisted(() => {
       agents: [
         { id: "claude-code", installed: true },
         { id: "codex", installed: true },
-        { id: "gemini", installed: true },
         { id: "opencode", installed: true },
         { id: "packetcode", installed: true },
       ],
@@ -210,7 +209,11 @@ describe("workspace launch installed-agent checks", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /research/i }));
+    // The "Review Pair" template wants claude-code + codex, but the mock
+    // server only reports claude-code installed — applying it must filter
+    // the sessions down to the remotely-available subset. (This used the
+    // "Research" template before the Gemini CLI removal deleted it.)
+    fireEvent.click(screen.getByRole("button", { name: /review pair/i }));
 
     // The new Location step debounces an SSH probe before enabling Save.
     // Wait for the button to become enabled before clicking it.
@@ -219,7 +222,7 @@ describe("workspace launch installed-agent checks", () => {
     fireEvent.click(saveBtn);
 
     expect(mocks.workspaceState.createWorkspace).toHaveBeenCalledWith(
-      "Research",
+      "Review Pair",
       ["claude-code"],
       "/srv/app",
       expect.objectContaining({

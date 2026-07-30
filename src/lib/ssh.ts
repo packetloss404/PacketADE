@@ -125,7 +125,6 @@ export const REMOTE_INSTALL_COMMANDS: Record<string, string> = {
   "claude-code": "npm install -g @anthropic-ai/claude-code",
   opencode: "curl -fsSL https://opencode.ai/install | bash",
   codex: "npm install -g @openai/codex",
-  gemini: "npm install -g @anthropic-ai/gemini-cli",
   packetcode:
     "curl -fsSL https://raw.githubusercontent.com/packetloss404/packetcode/main/install.sh | INSTALL_DIR=\"$HOME/.local/bin\" bash",
 };
@@ -135,6 +134,5 @@ export const AGENT_CLI_NAMES: Record<string, string> = {
   "claude-code": "claude",
   opencode: "opencode",
   codex: "codex",
-  gemini: "gemini",
   packetcode: "packetcode",
 };

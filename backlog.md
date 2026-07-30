@@ -320,7 +320,7 @@ source of truth is
 ## Git host providers — GitHub + Gitea/Forgejo (dual-config)
 
 > **Shipped (G1–G14), peer-reviewed and merged to `main`.**
-> Ledger: [`dev/gitea-support-loop.md`](./dev/gitea-support-loop.md). Self-hosted
+> Ledger: [`dev/archive/gitea-support-loop.md`](./dev/archive/gitea-support-loop.md). Self-hosted
 > **Gitea/Forgejo** alongside cloud GitHub, **both configurable at once** — a
 > workspace uses whichever host its `origin` remote belongs to, and the pane's
 > icon/labels follow that host. The single in-memory GitHub token became a
@@ -336,7 +336,7 @@ source of truth is
 
 ## Memory v0.9+ (from v0.8 deferrals)
 
-> **Shipped:** the M1–M10 loop ([`dev/memory-v9-loop.md`](./dev/memory-v9-loop.md))
+> **Shipped:** the M1–M10 loop ([`dev/archive/memory-v9-loop.md`](./dev/archive/memory-v9-loop.md))
 > was peer-reviewed and merged to `main` on 2026-07-24 — IDF-ranked Timeline
 > search (M1), project + date-range scope chips (M2), export/import JSON+MD (M3),
 > "+ Add to memory" on the flight timeline + agent transcript (M4), confidence
@@ -529,12 +529,73 @@ for implementation.
   the two-ellipsis Agent header; add navigation/tab/menu ARIA and responsive
   overflow proof.
 
+## Local model routing (Ollama-first)
+
+Full plan, decision record, and the three-mechanism auxiliary-LLM audit live in
+[`dev/local-model-routing.md`](./dev/local-model-routing.md). A Cursor-style API
+gateway, self-hosted inference as a product, and a self-trained model are all
+explicitly **out of scope**; the chosen direction is per-task-class routing so
+auxiliary calls can run on local hardware while the agentic loop stays on
+frontier models.
+
+- **P1 — LM1: fix Ollama fundamentals.** `stream_chat_compat` never sends
+  `num_ctx` or `keep_alive`, so Ollama silently truncates the front of the
+  conversation at its default context and reloads the model between calls.
+  Needs a native `/api/chat` path in `core/llm_ollama.rs`, a `/api/show`
+  tool-capability probe with picker gating, and a visible over-context warning
+  instead of silent truncation. Blocks everything else in this section.
+- **P2 — LM2: custom OpenAI-compatible endpoint row.** One provider row wrapping
+  `stream_chat_compat` with a user-supplied base URL covers vLLM, LM Studio,
+  LiteLLM, hosted inference, and any self-hosted gateway. Independently useful.
+- **P2 — LM3: unify the auxiliary LLM entry point.** Auxiliary surfaces reach a
+  model three incompatible ways — in-process `get_provider` (4 sites), sidecar
+  `claude-oauth` one-shots (3 sites), and `claude` CLI shell-out (4 sites, no
+  provider abstraction and no token accounting). Only 4 of ~15 sit behind
+  `get_provider`, so routing is a new `core/aux_llm.rs` seam, not a signature
+  change.
+- **P2 — LM4/LM5: migrate auxiliary sites onto the seam.** Mechanism-3 sites
+  (`memory.rs`, `insights.rs`, `spec.rs`, `github.rs:1577`) first — they drop a
+  hard `claude`-on-PATH dependency and gain token accounting. Then the
+  sidecar sites, keeping `claude-oauth` selectable so subscription-funded
+  operation stays the default.
+- **P3 — LM6/LM7: routing settings and cost proof.** New `modelRoutingStore`
+  plus settings slice mapping task class → provider/model (not
+  `orchestrationSettingsStore`, which is flight-scoped), and a local-vs-metered
+  split in `CostDashboardView` to make the saving visible.
+
 ## Reliability audit follow-ups
 
 Full evidence for the original findings remains in
-[`dev/code-review-2026-06-07.md`](./dev/code-review-2026-06-07.md). This section
+[`dev/archive/code-review-2026-06-07.md`](./dev/archive/code-review-2026-06-07.md). This section
 contains only unresolved items.
 
 No unresolved low-rated findings remain. The 30-item remediation loop completed
 on 2026-07-19; its per-finding acceptance evidence and gate record live in
-[`dev/reliability-low-fix-loop-2026-07-19.md`](./dev/reliability-low-fix-loop-2026-07-19.md).
+[`dev/archive/reliability-low-fix-loop-2026-07-19.md`](./dev/archive/reliability-low-fix-loop-2026-07-19.md).
+
+## 2026-07-30 midway review
+
+Dated snapshot from the midway project review. Shipped items are recorded here
+until the next release cut moves them into `CHANGELOG.md`; open items follow
+the normal priority scheme.
+
+- **✅ Shipped — Gemini CLI removal.** The Gemini PTY agent, its statusline
+  parser (`commands/statusline/gemini.rs`), status bar, API-key card, agent
+  config, and catalog entries are removed. Persisted panes/slots that
+  referenced `gemini` are remapped to plain terminal on load
+  (`workspaceStore.ts`), and retired builtin agent configs are filtered on
+  hydrate (`agentStore.ts`). Supported PTY CLIs are now Claude Code, Codex
+  CLI, OpenCode, PacketCode, and plain shells.
+- **✅ Shipped — statusline tooling in `claude-code-tools`.** The sibling
+  `claude-code-tools` repo now carries feature-synced Claude Code statuslines
+  for Windows (`claudetools-win/statusline.ps1`, PowerShell, no deps) and
+  macOS/Linux (`claudetools-bash/statusline/`, bash + `jq`/`bc`, with
+  installer). Not part of the PacketADE build; noted here so the ledger does
+  not lose cross-repo work.
+- **P2 — adopt midway-review recommendations.** Triage the review's
+  recommendations into concrete backlog items (see
+  `docs/reports/midway-review-2026-07-30.html`).
+- **P3 — sweep remaining historical Gemini references.** Comments/aliases kept
+  intentionally for load-compat (`agentStore.ts`, `workspaceStore.ts`) stay;
+  audit stray descriptive mentions (e.g. `src/agents/packetcode.ts`
+  description) at the next cleanup pass.

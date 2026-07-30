@@ -1,6 +1,6 @@
 # Conversation-as-Tile Program — Phase Plan (P1–P5)
 
-Derived with planning fidelity from the ruled spec `dev/conversation-tile-design.md` (2026-07-08 two-team consensus). Every ruling in the spec is settled; this document sequences it into entry/exit-gated phases with explicit blast radius. All file references below were re-verified against the working tree on branch `feat/tile-program` on 2026-07-08; corrections to stale spec line numbers are marked **[corrected]** and collected in the appendix.
+Derived with planning fidelity from the ruled spec `dev/archive/conversation-tile-design.md` (2026-07-08 two-team consensus). Every ruling in the spec is settled; this document sequences it into entry/exit-gated phases with explicit blast radius. All file references below were re-verified against the working tree on branch `feat/tile-program` on 2026-07-08; corrections to stale spec line numbers are marked **[corrected]** and collected in the appendix.
 
 **Settled rulings (not revisitable in any phase):** derived-projection session model (no merged store) · `kind` discriminant on WorkspacePane (never overloading agentId) · inert-carrier downgrade (`agent_id:"terminal"`, no version-stamp refusal) · endings-first ordering (P2 before any tile work) · two-prop unforked AgentChatPane (no AgentChatBody extraction) · capability-filtered Codex postures (whole mode set, sandbox vocabulary) · CSS-maximize zoom (`setZoomedPane` / `data-pane-zoomed`, never remount) · virtual rows + lazy materialization (no bulk migration).
 

@@ -55,12 +55,11 @@ describe("agent-catalog merged registry", () => {
     }
   });
 
-  it("exposes the six Terminal slots with catalog faces, ending in a bare Terminal", () => {
+  it("exposes the five Terminal slots with catalog faces, ending in a bare Terminal", () => {
     const slots = TERMINAL_AGENTS.map((t) => t.slot);
     expect(slots).toEqual([
       "claude-code",
       "codex",
-      "gemini",
       "opencode",
       "packetcode",
       "terminal",

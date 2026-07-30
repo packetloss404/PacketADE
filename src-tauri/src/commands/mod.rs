@@ -77,6 +77,37 @@ pub fn is_within_workspace(path: &str, workspace: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Like `is_within_workspace`, but permits a not-yet-existing final
+/// component so commands that create files can be validated. The parent
+/// directory must exist and resolve inside the workspace.
+pub fn is_within_workspace_for_write(path: &str, workspace: &str) -> Result<(), String> {
+    let p = Path::new(path);
+    // Existing entries (including symlinks, even dangling ones) go through
+    // the strict check so symlink targets are always resolved.
+    if p.symlink_metadata().is_ok() {
+        return is_within_workspace(path, workspace);
+    }
+    // New file: the final component must be a real file name (rejects
+    // paths ending in `..`), and the parent must resolve into the workspace.
+    if p.file_name().is_none() {
+        return Err(format!("Invalid file path '{}'", path));
+    }
+    let parent = p
+        .parent()
+        .ok_or_else(|| format!("Path '{}' has no parent directory", path))?;
+    let canonical_workspace = std::fs::canonicalize(workspace)
+        .map_err(|e| format!("Cannot resolve workspace '{}': {}", workspace, e))?;
+    let canonical_parent = std::fs::canonicalize(parent)
+        .map_err(|e| format!("Parent directory does not exist: {}: {}", parent.display(), e))?;
+    if !canonical_parent.starts_with(&canonical_workspace) {
+        return Err(format!(
+            "Path '{}' is outside the workspace '{}'",
+            path, workspace
+        ));
+    }
+    Ok(())
+}
+
 /// Maximum allowed input size for text payloads (1 MB).
 pub const MAX_INPUT_SIZE: usize = 1_000_000;
 
@@ -130,5 +161,43 @@ mod tests {
         let exact = "x".repeat(MAX_INPUT_SIZE);
         let result = validate_input_size(&exact, MAX_INPUT_SIZE, "test");
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn within_workspace_for_write_accepts_new_file_in_workspace() {
+        let ws = tempfile::tempdir().expect("tempdir");
+        let target = ws.path().join("AGENTS.md");
+        let result =
+            is_within_workspace_for_write(target.to_str().unwrap(), ws.path().to_str().unwrap());
+        assert!(result.is_ok(), "unexpected err: {:?}", result);
+    }
+
+    #[test]
+    fn within_workspace_for_write_rejects_parent_escape() {
+        let outer = tempfile::tempdir().expect("tempdir");
+        let ws = outer.path().join("ws");
+        std::fs::create_dir(&ws).expect("mkdir ws");
+        let escape = ws.join("..").join("outside.txt");
+        let result = is_within_workspace_for_write(escape.to_str().unwrap(), ws.to_str().unwrap());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn within_workspace_for_write_rejects_dotdot_final_component() {
+        let ws = tempfile::tempdir().expect("tempdir");
+        let target = ws.path().join("..");
+        let result =
+            is_within_workspace_for_write(target.to_str().unwrap(), ws.path().to_str().unwrap());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn within_workspace_for_write_existing_file_uses_strict_check() {
+        let ws = tempfile::tempdir().expect("tempdir");
+        let target = ws.path().join("existing.txt");
+        std::fs::write(&target, "x").expect("write");
+        let result =
+            is_within_workspace_for_write(target.to_str().unwrap(), ws.path().to_str().unwrap());
+        assert!(result.is_ok(), "unexpected err: {:?}", result);
     }
 }

@@ -9,7 +9,6 @@ const agentState = vi.hoisted(() => ({
   agents: [
     { id: "claude-code", installed: true },
     { id: "codex", installed: true },
-    { id: "gemini", installed: false },
     { id: "opencode", installed: false },
     { id: "packetcode", installed: true },
   ],
@@ -55,7 +54,6 @@ describe("AddSessionPicker", () => {
     agentState.agents = [
       { id: "claude-code", installed: true },
       { id: "codex", installed: true },
-      { id: "gemini", installed: false },
       { id: "opencode", installed: false },
       { id: "packetcode", installed: true },
     ];

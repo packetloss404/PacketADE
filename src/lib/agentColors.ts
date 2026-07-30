@@ -17,7 +17,6 @@
 type AgentFamily =
   | "claude"
   | "codex"
-  | "gemini"
   | "opencode"
   | "packetcode"
   | "minimax"
@@ -36,7 +35,6 @@ export interface AgentColor {
 const FAMILY_COLORS: Record<AgentFamily, AgentColor> = {
   claude: { text: "text-accent-green", bg: "bg-accent-green/10", border: "border-accent-green/30" },
   codex: { text: "text-accent-amber", bg: "bg-accent-amber/10", border: "border-accent-amber/30" },
-  gemini: { text: "text-accent-blue", bg: "bg-accent-blue/10", border: "border-accent-blue/30" },
   opencode: { text: "text-accent-purple", bg: "bg-accent-purple/10", border: "border-accent-purple/30" },
   packetcode: { text: "text-accent-purple", bg: "bg-accent-purple/10", border: "border-accent-purple/30" },
   minimax: { text: "text-accent-blue", bg: "bg-accent-blue/10", border: "border-accent-blue/30" },
@@ -52,7 +50,6 @@ function agentFamily(agentId: string): AgentFamily {
   const id = agentId.toLowerCase();
   if (id === "claude" || id === "claude-code" || id.startsWith("api-claude")) return "claude";
   if (id === "codex" || id.startsWith("api-openai")) return "codex";
-  if (id === "gemini") return "gemini";
   // Ollama (local) shares OpenCode's slot color in the legacy sidebar map.
   if (id === "opencode" || id === "api-ollama") return "opencode";
   if (id === "packetcode") return "packetcode";
@@ -63,7 +60,7 @@ function agentFamily(agentId: string): AgentFamily {
 
 /**
  * Stable identity colors for an agent. Consistent across Agents and
- * Workspaces for codex/claude/gemini/opencode/packetcode/minimax.
+ * Workspaces for codex/claude/opencode/packetcode/minimax.
  *
  * For a solid identity dot, pair `.text` with `bg-current` on the same span
  * (`className={`${c.text} bg-current`}`) — the dot inherits the accent color

@@ -2,8 +2,8 @@
 
 **Program:** conversation-as-tile / single-surface migration
 **Branch:** feat/tile-program
-**Authoritative design spec:** `dev/conversation-tile-design.md` (two-team consensus, 2026-07-08 — FINAL, RULED)
-**Prerequisite context:** `dev/consensus-ux-consolidation-plan.md` (completed 20-item consolidation program; its Keep list is protected here)
+**Authoritative design spec:** `dev/archive/conversation-tile-design.md` (two-team consensus, 2026-07-08 — FINAL, RULED)
+**Prerequisite context:** `dev/archive/consensus-ux-consolidation-plan.md` (completed 20-item consolidation program; its Keep list is protected here)
 **Total budget:** 7.75 engineer-weeks across 5 independently-shippable phases
 
 This charter governs execution. It does not re-decide anything: every contested point in the spec was cross-examined, defended, and ruled by a moderator with code evidence. Rulings are settled. If a ruling proves impossible on contact with the code, the implementing engineer STOPS and flags it to the program owner — nobody silently re-decides.
@@ -64,7 +64,7 @@ Every phase gates on: the protected keep list untouched, the PTY persistence smo
 
 ## 4. Protected keep-list obligations
 
-The consolidation program's Keep list (dev/consensus-ux-consolidation-plan.md) remains protected; the spec's "Keep-list protection plan" is the binding per-item mechanism. Summary of obligations:
+The consolidation program's Keep list (dev/archive/consensus-ux-consolidation-plan.md) remains protected; the spec's "Keep-list protection plan" is the binding per-item mechanism. Summary of obligations:
 
 1. **Fork-and-resend** — AgentChatPane never forked/rewritten; two additive props with standalone-preserving defaults; suite unmodified every phase + P3 two-tiles variant; engine paths pinned by `sessionContract.test.ts`.
 2. **Queued-send-while-streaming** — Composer and agentDraftStore move nowhere; drafts already per-conversation-keyed; suite unmodified every phase + P3 two-tile independence test.

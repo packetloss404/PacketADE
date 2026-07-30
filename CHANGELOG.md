@@ -9,6 +9,20 @@ task list.
 
 ## [Unreleased]
 
+### Removed — Gemini CLI (2026-07-30)
+
+- Removed Gemini CLI as a supported PTY agent: the agent definition, statusline
+  parser (`commands/statusline/gemini.rs`), Gemini status bar, API-key card,
+  agent-config and CLI-catalog entries, install hints, and model metadata are
+  deleted (~650 net lines). Supported PTY CLIs are now Claude Code, Codex CLI,
+  OpenCode, PacketCode, and plain shells.
+- Persisted workspace panes and agent slots that referenced `gemini` remap to
+  plain terminal on load, and retired builtin agent configs are filtered on
+  hydrate, so old saved layouts keep working without the removed CLI.
+- Note: a previously saved Gemini API key may remain in the OS keyring (the
+  app no longer reads or manages it); it can be removed with the system
+  credential manager (Windows Credential Manager / macOS Keychain Access).
+
 ### Added — cross-product supervision and operations
 
 - Added the PacketAgent W9 Flight handoff consumer: frozen canonical fixture
@@ -61,6 +75,11 @@ task list.
   first-party competitor evidence, a compatibility-first surface split, and an
   authoritative Settings cleanup backlog. No surface migration was implied by
   the documentation change.
+- Overhauled the root documentation set (2026-07-30 midway review): `README.md`
+  provider table and CLI list re-verified against the source catalog,
+  `ROADMAP.md`/`HANDOFF.md` restated to the post-review restart point, and the
+  review's outcomes ledgered in `backlog.md`. A `marketing/` press-kit pointer
+  was added to the README documentation map.
 
 ## [0.10.2] - 2026-07-28
 
@@ -295,7 +314,7 @@ remains deliberately deferred (do it only if keyword misses are measured).
   explicit `cancelled` terminal marker; Codex tool IDs, Flight prompt parity,
   retry notices, and late tool results are preserved. The completed
   per-finding ledger and gate record are in
-  [`dev/reliability-low-fix-loop-2026-07-19.md`](./dev/reliability-low-fix-loop-2026-07-19.md).
+  [`dev/archive/reliability-low-fix-loop-2026-07-19.md`](./dev/archive/reliability-low-fix-loop-2026-07-19.md).
 - **API-agent turn cancellation ownership (F28).** In-process sessions now own
   cancellation per turn, serialize overlapping send/retry work before mutating
   the transcript, keep cancelled turns reserved until their task unwinds, and
@@ -596,7 +615,7 @@ validation and moved out of the review ledger:
 
 ### Fixed — two-team code review remediation (8 peer-reviewed fixes)
 
-A two-team subagent review of the whole codebase surfaced one recurring theme: the weak link is failure-path and async-lifecycle discipline, not architecture. Eight fixes shipped, each **sanity-checked against the code before implementation** and **peer-reviewed after**. The review gate caught two would-be regressions before they landed — a Codex `stream_error` false positive (the finding was wrong) and a `write_file` symlink fail-open (a reviewer-caught hole in the fix itself). Full report in [`dev/code-review-2026-05-31.md`](./dev/code-review-2026-05-31.md).
+A two-team subagent review of the whole codebase surfaced one recurring theme: the weak link is failure-path and async-lifecycle discipline, not architecture. Eight fixes shipped, each **sanity-checked against the code before implementation** and **peer-reviewed after**. The review gate caught two would-be regressions before they landed — a Codex `stream_error` false positive (the finding was wrong) and a `write_file` symlink fail-open (a reviewer-caught hole in the fix itself). Full report in [`dev/archive/code-review-2026-05-31.md`](./dev/archive/code-review-2026-05-31.md).
 
 #### Resource & lifecycle
 

@@ -18,11 +18,6 @@ export const CODEX_MODELS: ModelOption[] = [
   { label: "GPT-5.3 Codex", value: "gpt-5.3-codex" },
 ];
 
-export const GEMINI_MODELS: ModelOption[] = [
-  { label: "Gemini 3.1 Pro", value: "gemini-3.1-pro" },
-  { label: "Gemini 3 Flash", value: "gemini-3-flash" },
-];
-
 export type EffortLevel = "low" | "medium" | "high";
 
 export const EFFORT_LEVELS: { label: string; value: EffortLevel }[] = [
@@ -51,8 +46,6 @@ export function getModelsForAgent(agentConfigId: string): ModelOption[] {
       return CLAUDE_MODELS;
     case "codex":
       return CODEX_MODELS;
-    case "gemini":
-      return GEMINI_MODELS;
     case "opencode":
       return OPENCODE_MODELS;
     case "packetcode":

@@ -1,8 +1,8 @@
 # Tile Program — Feature Behavior Specs
 
 Source of truth for **how the conversation-as-tile program should feel and behave**, written for reviewers.
-Derived 1:1 from the ruled design spec (`dev/conversation-tile-design.md`, 2026-07-08 consensus) and the
-consolidation program's protected keep list (`dev/consensus-ux-consolidation-plan.md`). Every ruling in the
+Derived 1:1 from the ruled design spec (`dev/archive/conversation-tile-design.md`, 2026-07-08 consensus) and the
+consolidation program's protected keep list (`dev/archive/consensus-ux-consolidation-plan.md`). Every ruling in the
 design spec is settled; this document translates rulings into observable behavior, edge cases, empty/error
 states, and acceptance checks a reviewer can execute by hand or by running the named gates. Nothing here
 re-decides anything. Where a behavior lands in a specific phase, the phase is noted so reviewers judge the

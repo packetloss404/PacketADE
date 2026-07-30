@@ -637,7 +637,7 @@ export function CostDashboardView() {
         <div className="flex items-start gap-2 rounded-lg border border-bg-border bg-bg-secondary p-3 text-[11px] text-text-secondary">
           <Info size={12} className="mt-0.5 flex-shrink-0" />
           <span className="flex-1">
-            Gemini and OpenCode usage tracking isn't available — those CLIs don't expose token data.
+            OpenCode usage tracking isn't available — that CLI doesn't expose token data.
           </span>
           <button
             onClick={() => setShowInfo(false)}

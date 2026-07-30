@@ -279,75 +279,6 @@ impl AgentConfig {
         }
     }
 
-    pub fn gemini() -> Self {
-        Self {
-            id: "gemini".into(),
-            name: "Gemini CLI".into(),
-            command: "gemini".into(),
-            default_args: vec![],
-            description: "Google's CLI coding agent".into(),
-            installed: false,
-            capabilities: vec![
-                AgentCapability::CodeEdit,
-                AgentCapability::CodeReview,
-                AgentCapability::Testing,
-                AgentCapability::Research,
-                AgentCapability::Shell,
-                AgentCapability::Refactor,
-            ],
-            icon: "Sparkles".into(),
-            color: "text-accent-blue".into(),
-            status_patterns: AgentStatusPatterns {
-                approval: vec![
-                    r"\(y\/n\)".into(),
-                    r"\[Y\/n\]".into(),
-                    r"\[y\/N\]".into(),
-                    r"Do you want to (?:proceed|continue|allow)".into(),
-                    r"Allow\s+\w+.*\?".into(),
-                ],
-                thinking: vec![
-                    r"Thinking".into(),
-                    r"thinking\.\.\.".into(),
-                    r"Planning".into(),
-                ],
-                tool_use: vec![
-                    ToolUsePattern {
-                        pattern: r"Reading\s+(.+)".into(),
-                        tool: "Read".into(),
-                        file_group: Some(1),
-                    },
-                    ToolUsePattern {
-                        pattern: r"Editing\s+(.+)".into(),
-                        tool: "Edit".into(),
-                        file_group: Some(1),
-                    },
-                    ToolUsePattern {
-                        pattern: r"Writing\s+(.+)".into(),
-                        tool: "Write".into(),
-                        file_group: Some(1),
-                    },
-                    ToolUsePattern {
-                        pattern: r"Running\s+(.+)".into(),
-                        tool: "Bash".into(),
-                        file_group: Some(1),
-                    },
-                    ToolUsePattern {
-                        pattern: r"Searching\s+(.+)".into(),
-                        tool: "Search".into(),
-                        file_group: Some(1),
-                    },
-                ],
-                idle: vec![r"^\s*[>❯\$]\s*$".into()],
-            },
-            approval_actions: AgentApprovalActions {
-                approve: "y\n".into(),
-                deny: "n\n".into(),
-                abort: "\u{3}".into(),
-            },
-            is_builtin: true,
-        }
-    }
-
     pub fn terminal() -> Self {
         Self {
             id: "terminal".into(),
@@ -454,7 +385,6 @@ impl AgentConfig {
             Self::claude_code(),
             Self::opencode(),
             Self::codex(),
-            Self::gemini(),
             Self::packetcode(),
             Self::terminal(),
         ]

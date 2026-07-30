@@ -177,6 +177,13 @@ interface FlightStore {
   // `issueIds` is a legacy frontend cache; Rust flights do not round-trip it.
   reconcileIssueLinks: (options?: { persist?: boolean; touchUpdatedAt?: boolean }) => void;
   hydrateFromBackend: (persisted?: Awaited<ReturnType<typeof loadPersistedState>>) => Promise<void>;
+  /** Apply an executor cost/token delta from Rust's `flight:cost-updated`
+   *  event (see bootstrap's listener) onto the in-memory flight so the
+   *  autonomy budget hard-stop, launch guardrail, and cost UI track spend
+   *  live instead of waiting for the next hydrateFromBackend. Deliberately
+   *  does NOT saveState(): Rust already persisted the accumulation in
+   *  accumulate_executor_cost, and the backend merge takes max() anyway. */
+  applyBackendCostDelta: (flightId: string, totalTokens: number, costUsd: number) => void;
 }
 
 const initial = loadState();
@@ -348,5 +355,19 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     } catch (err) {
       console.warn("[flightStore.hydrate] swallowed error:", err);
     }
+  },
+
+  applyBackendCostDelta: (flightId, totalTokens, costUsd) => {
+    set((s) => ({
+      flights: s.flights.map((f) =>
+        f.id === flightId
+          ? {
+              ...f,
+              totalCost: (f.totalCost ?? 0) + costUsd,
+              totalTokens: (f.totalTokens ?? 0) + totalTokens,
+            }
+          : f,
+      ),
+    }));
   },
 }));

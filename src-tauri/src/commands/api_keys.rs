@@ -10,7 +10,6 @@ const VALID_PROVIDERS: &[&str] = &[
     "minimax-api",
     "openrouter",
     "ollama",
-    "gemini",
 ];
 
 fn validate_provider(provider: &str) -> Result<(), String> {

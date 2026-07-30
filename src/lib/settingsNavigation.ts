@@ -60,7 +60,7 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
         label: "CLI Clients",
         description: "Detect, configure, and repair PacketCode and other coding CLIs.",
         scopes: ["App", "New sessions"],
-        keywords: ["packetcode", "claude", "codex", "gemini", "opencode", "shell", "binary"],
+        keywords: ["packetcode", "claude", "codex", "opencode", "shell", "binary"],
       },
       {
         key: "servers",
@@ -163,9 +163,9 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
       {
         key: "dictation",
         label: "Dictation",
-        description: "Speech capture, transcription, devices, and Gemini credentials.",
+        description: "Speech capture, transcription, and input devices.",
         scopes: ["App"],
-        keywords: ["voice", "microphone", "speech", "gemini", "shortcut", "push to talk"],
+        keywords: ["voice", "microphone", "speech", "shortcut", "push to talk"],
       },
       {
         key: "modules",

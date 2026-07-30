@@ -3,13 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>PacketADE Manual | The Complete User Guide</title>
-<meta name="description" content="Complete user manual for PacketADE v0.9.3 — the open-source AI desktop IDE. The four modes, workspaces, Flight Deck Missions, Issues, GitHub, Code Quality, Cost Dashboard, and more." />
+<title>PacketADE Manual | User Guide</title>
+<meta name="description" content="User manual for PacketADE v0.10 — the local-first desktop Agent Development Environment. Workspaces, Agents, Flight Deck, Issues, Memory, MCP, SSH remotes, dictation, and cost tracking." />
 <link rel="canonical" href="https://packetade.app/packetade-manual.html" />
 <link rel="icon" type="image/png" href="favicon.png" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -17,7 +14,8 @@
   --border:#30363d;--border-soft:rgba(48,54,61,0.5);
   --text-primary:#e6edf3;--text-secondary:#8b949e;--text-muted:#484f58;
   --green:#3fb950;--neon:#00ff41;--blue:#58a6ff;--purple:#bc8cff;--amber:#d29922;--red:#f85149;--cyan:#39d2c0;
-  --font-sans:'Sora',system-ui,sans-serif;--font-mono:'JetBrains Mono',monospace;
+  --font-sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,"Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
   --nav-h:56px;--toc-w:280px;
 }
 html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;scroll-padding-top:72px}
@@ -133,7 +131,9 @@ kbd{display:inline-block;padding:2px 7px;font-family:var(--font-mono);font-size:
 .kbd-row .plus{color:var(--text-muted);font-size:0.8em;margin:0 1px}
 
 /* ===== TABLES ===== */
+.table-scroll{overflow-x:auto;margin:20px 0}
 .ref-table{width:100%;border-collapse:collapse;margin:20px 0;font-size:0.85rem;background:rgba(22,27,34,0.4);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.table-scroll .ref-table{margin:0;min-width:560px}
 .ref-table thead{background:var(--bg-tertiary)}
 .ref-table th{padding:10px 14px;text-align:left;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);border-bottom:1px solid var(--border)}
 .ref-table td{padding:10px 14px;border-bottom:1px solid var(--border-soft);color:var(--text-secondary);vertical-align:top}
@@ -159,26 +159,6 @@ kbd{display:inline-block;padding:2px 7px;font-family:var(--font-mono);font-size:
 .feature-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin:20px 0}
 .feature-grid .feature-box{margin:0}
 
-/* ===== MODE CARDS (mirror index.html for "Four Modes") ===== */
-.mode-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:24px 0 8px}
-.mode-tile{position:relative;padding:24px 22px;background:rgba(22,27,34,0.55);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:all 0.3s}
-.mode-tile:hover{transform:translateY(-2px);border-color:var(--text-muted)}
-.mode-tile::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
-.mode-tile.cyan::before{background:linear-gradient(90deg,var(--cyan),var(--blue))}
-.mode-tile.green::before{background:linear-gradient(90deg,var(--green),var(--cyan))}
-.mode-tile.purple::before{background:linear-gradient(90deg,var(--purple),#d2a8ff)}
-.mode-tile.amber::before{background:linear-gradient(90deg,var(--amber),#e3b341)}
-.mode-tile .mode-cap{font-family:var(--font-mono);font-size:0.62rem;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px}
-.mode-tile.cyan .mode-cap{color:var(--cyan)}
-.mode-tile.green .mode-cap{color:var(--green)}
-.mode-tile.purple .mode-cap{color:var(--purple)}
-.mode-tile.amber .mode-cap{color:var(--amber)}
-.mode-tile h4{font-size:1.05rem;font-weight:700;margin-bottom:8px}
-.mode-tile p{font-size:0.85rem;color:var(--text-secondary);line-height:1.6;margin-bottom:10px}
-.mode-tile .mode-when{font-size:0.75rem;color:var(--text-muted);padding-top:8px;border-top:1px solid var(--border-soft)}
-.mode-tile .mode-when strong{color:var(--text-secondary);font-family:var(--font-mono);font-size:0.68rem;letter-spacing:0.06em;text-transform:uppercase;margin-right:4px}
-@media(max-width:720px){.mode-grid{grid-template-columns:1fr}}
-
 /* ===== DEFINITION LIST ===== */
 dl.def-list{display:grid;grid-template-columns:180px 1fr;gap:10px 20px;margin:16px 0;font-size:0.9rem}
 dl.def-list dt{font-weight:600;color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem}
@@ -193,11 +173,6 @@ dl.def-list dd{color:var(--text-secondary)}
 /* ===== FOOTER ===== */
 footer.manual-foot{border-top:1px solid var(--border-soft);padding:28px 48px;margin-top:48px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;color:var(--text-muted);font-size:0.8rem}
 footer.manual-foot a{color:var(--text-secondary)}
-
-/* ===== ROADMAP LINK ===== */
-.roadmap-link{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:0.72rem;color:var(--text-muted);padding:4px 10px;border:1px solid var(--border);border-radius:999px;margin-top:8px;text-decoration:none}
-.roadmap-link:hover{border-color:var(--cyan);color:var(--cyan)}
-.roadmap-link svg{width:11px;height:11px}
 
 /* ===== RESPONSIVE ===== */
 @media(max-width:960px){
@@ -254,155 +229,62 @@ footer.manual-foot a{color:var(--text-secondary)}
   <div class="toc-title">Contents</div>
   <ol>
     <li class="ch-item">
-      <a href="#chapter-1"><span class="ch-num">01</span>Quick Start</a>
+      <a href="#chapter-1"><span class="ch-num">01</span>Getting Started</a>
       <ul class="subs">
         <li><a href="#ch1-what">What is PacketADE?</a></li>
         <li><a href="#ch1-install">Install &amp; first run</a></li>
+        <li><a href="#ch1-auth">Provider auth setup</a></li>
         <li><a href="#ch1-first-workspace">Your first workspace</a></li>
-        <li><a href="#ch1-first-session">Your first session</a></li>
+        <li><a href="#ch1-orientation">Finding your way around</a></li>
       </ul>
     </li>
     <li class="ch-item">
-      <a href="#chapter-2"><span class="ch-num">02</span>The Four Modes</a>
+      <a href="#chapter-2"><span class="ch-num">02</span>Core Concepts</a>
       <ul class="subs">
-        <li><a href="#ch2-overview">Mode overview</a></li>
-        <li><a href="#ch2-flightdeck">Mode 1 &middot; Flight Deck</a></li>
-        <li><a href="#ch2-workspace">Mode 2 &middot; Workspace</a></li>
-        <li><a href="#ch2-agents-mode">Mode 3 &middot; Agents</a></li>
-        <li><a href="#ch2-issues-mode">Mode 4 &middot; Issues</a></li>
+        <li><a href="#ch2-workspaces">Workspaces</a></li>
+        <li><a href="#ch2-agents">Agents conversations</a></li>
+        <li><a href="#ch2-flights">Flights &amp; the Flight Deck</a></li>
+        <li><a href="#ch2-issues">Issues</a></li>
+        <li><a href="#ch2-memory">Memory</a></li>
+        <li><a href="#ch2-mcp">The MCP hub</a></li>
+        <li><a href="#ch2-ssh">SSH remotes</a></li>
       </ul>
     </li>
     <li class="ch-item">
-      <a href="#chapter-3"><span class="ch-num">03</span>The LeftRail Tour</a>
+      <a href="#chapter-3"><span class="ch-num">03</span>How-To Guides</a>
       <ul class="subs">
-        <li><a href="#ch3-rail">The six pinned views</a></li>
-        <li><a href="#ch3-toolbar">Toolbar at a glance</a></li>
-        <li><a href="#ch3-statusstrip">StatusStrip</a></li>
+        <li><a href="#ch3-cli">Launch a CLI session</a></li>
+        <li><a href="#ch3-api">Start an API-agent conversation</a></li>
+        <li><a href="#ch3-plan">Plan a Flight</a></li>
+        <li><a href="#ch3-attempts">Launch parallel attempts</a></li>
+        <li><a href="#ch3-review">Review &amp; publish an attempt</a></li>
+        <li><a href="#ch3-ssh">Connect an SSH server</a></li>
+        <li><a href="#ch3-mcp">Configure MCP</a></li>
+        <li><a href="#ch3-dictation">Use dictation</a></li>
+        <li><a href="#ch3-costs">Track costs</a></li>
       </ul>
     </li>
     <li class="ch-item">
-      <a href="#chapter-4"><span class="ch-num">04</span>Workspaces</a>
+      <a href="#chapter-4"><span class="ch-num">04</span>Troubleshooting</a>
       <ul class="subs">
-        <li><a href="#ch4-create">Creating workspaces</a></li>
-        <li><a href="#ch4-folder-picker">The folder picker</a></li>
-        <li><a href="#ch4-mosaic">Multi-pane mosaic</a></li>
-        <li><a href="#ch4-bypass">Bypass permissions</a></li>
-        <li><a href="#ch4-remote">Remote (SSH) workspaces</a></li>
+        <li><a href="#ch4-auth">Auth badges</a></li>
+        <li><a href="#ch4-sidecar">Sidecar status</a></li>
+        <li><a href="#ch4-attempts">Attempt failures</a></li>
+        <li><a href="#ch4-git">Git endings &amp; publish</a></li>
+        <li><a href="#ch4-misc">Other common issues</a></li>
       </ul>
     </li>
     <li class="ch-item">
-      <a href="#chapter-5"><span class="ch-num">05</span>Sessions</a>
+      <a href="#chapter-5"><span class="ch-num">05</span>Reference</a>
       <ul class="subs">
-        <li><a href="#ch5-pty">PTY CLI sessions</a></li>
-        <li><a href="#ch5-api">API agent conversations</a></li>
-        <li><a href="#ch5-sidecar">Sidecar vs in-process</a></li>
-        <li><a href="#ch5-chat-features">Slash, @, voice, diffs</a></li>
-      </ul>
-    </li>
-    <li class="ch-item">
-      <a href="#chapter-6"><span class="ch-num">06</span>The Mission Planner</a>
-      <ul class="subs">
-        <li><a href="#ch6-spec">Spec mode</a></li>
-        <li><a href="#ch6-decompose">Autonomous decomposition</a></li>
-        <li><a href="#ch6-journal">Mission journal</a></li>
-        <li><a href="#ch6-cost-split">Cost split &amp; compaction</a></li>
-        <li><a href="#ch6-approvals">Approvals &amp; safety</a></li>
-        <li><a href="#ch6-delete">Deleting missions</a></li>
-      </ul>
-    </li>
-    <li class="ch-item">
-      <a href="#chapter-7"><span class="ch-num">07</span>Issues &amp; Spec Import</a>
-      <ul class="subs">
-        <li><a href="#ch7-board">Five-column board</a></li>
-        <li><a href="#ch7-spec-import">Spec import</a></li>
-        <li><a href="#ch7-send">Send to Workspace</a></li>
-        <li><a href="#ch7-autodone">Auto-Done on Fixes #N</a></li>
-        <li><a href="#ch7-detail">Issue detail &amp; filters</a></li>
-      </ul>
-    </li>
-    <li class="ch-item">
-      <a href="#chapter-8"><span class="ch-num">08</span>GitHub Integration</a>
-      <ul class="subs">
-        <li><a href="#ch8-auth">Auth</a></li>
-        <li><a href="#ch8-pr-actions">PR lifecycle &amp; checks</a></li>
-        <li><a href="#ch8-ai">AI: description, review, digest, triage</a></li>
-        <li><a href="#ch8-autobind">Workspace auto-bind</a></li>
-        <li><a href="#ch8-draft-prs">Publish attempts as draft PRs</a></li>
-      </ul>
-    </li>
-    <li class="ch-item">
-      <a href="#chapter-9"><span class="ch-num">09</span>Memory Layer</a>
-      <ul class="subs">
-        <li><a href="#ch9-events">Auto-captured events</a></li>
-        <li><a href="#ch9-patterns">Patterns &amp; scope</a></li>
-        <li><a href="#ch9-pinned">Pinned patterns &amp; manual notes</a></li>
-        <li><a href="#ch9-surfaces">Inline surfaces</a></li>
-      </ul>
-    </li>
-    <li class="ch-item">
-      <a href="#chapter-10"><span class="ch-num">10</span>CLI Catalog</a>
-      <ul class="subs">
-        <li><a href="#ch10-grid">Grid &amp; detection</a></li>
-        <li><a href="#ch10-install">Install / Browse / Coming Soon</a></li>
-        <li><a href="#ch10-override">Manual path override</a></li>
-      </ul>
-    </li>
-    <li class="ch-item">
-      <a href="#chapter-11"><span class="ch-num">11</span>Code Quality &amp; AutoFix</a>
-      <ul class="subs">
-        <li><a href="#ch11-runner">Live check runner</a></li>
-        <li><a href="#ch11-autofix">AutoFix integrations</a></li>
-        <li><a href="#ch11-ai">AI explain &amp; summary</a></li>
-      </ul>
-    </li>
-    <li class="ch-item">
-      <a href="#chapter-12"><span class="ch-num">12</span>Settings Panel</a>
-      <ul class="subs">
-        <li><a href="#ch12-tabs">The 15 tabs</a></li>
-        <li><a href="#ch12-providers">API Keys &amp; Subscriptions</a></li>
-        <li><a href="#ch12-prompts">Project rules &amp; templates</a></li>
-      </ul>
-    </li>
-    <li class="ch-item">
-      <a href="#chapter-13"><span class="ch-num">13</span>Cost Tracking</a>
-      <ul class="subs">
-        <li><a href="#ch13-dashboard">Cross-provider dashboard</a></li>
-        <li><a href="#ch13-cache">Cache-aware metrics</a></li>
-        <li><a href="#ch13-mission">Per-mission totals</a></li>
-      </ul>
-    </li>
-    <li class="ch-item">
-      <a href="#chapter-14"><span class="ch-num">14</span>Keyboard Shortcuts</a>
-    </li>
-    <li class="ch-item">
-      <a href="#chapter-15"><span class="ch-num">15</span>MCP</a>
-    </li>
-    <li class="ch-item">
-      <a href="#chapter-16"><span class="ch-num">16</span>Voice Input</a>
-    </li>
-    <li class="ch-item">
-      <a href="#chapter-17"><span class="ch-num">17</span>Module System</a>
-    </li>
-    <li class="ch-item">
-      <a href="#chapter-18"><span class="ch-num">18</span>Troubleshooting</a>
-    </li>
-    <li class="ch-item">
-      <a href="#chapter-19"><span class="ch-num">19</span>Architecture</a>
-    </li>
-    <li class="ch-item">
-      <a href="#chapter-20"><span class="ch-num">20</span>Remote Agents</a>
-      <ul class="subs">
-        <li><a href="#ch20-scope">Scope</a></li>
-        <li><a href="#ch20-security">Security model</a></li>
-        <li><a href="#ch20-status">Status</a></li>
-      </ul>
-    </li>
-    <li class="ch-item">
-      <a href="#appendix"><span class="ch-num">A</span>Appendix</a>
-      <ul class="subs">
-        <li><a href="#ap-files">File locations</a></li>
-        <li><a href="#ap-events">Tauri event channels</a></li>
-        <li><a href="#ap-glossary">Glossary</a></li>
+        <li><a href="#ch5-providers">Provider table</a></li>
+        <li><a href="#ch5-clis">PTY CLI table</a></li>
+        <li><a href="#ch5-keys">Keyboard shortcuts</a></li>
+        <li><a href="#ch5-slash">Slash commands</a></li>
+        <li><a href="#ch5-settings">Settings map</a></li>
+        <li><a href="#ch5-status">Status glossary</a></li>
+        <li><a href="#ch5-events">Event channels</a></li>
+        <li><a href="#ch5-data">Data locations</a></li>
       </ul>
     </li>
   </ol>
@@ -411,1091 +293,435 @@ footer.manual-foot a{color:var(--text-secondary)}
 <!-- ===== MAIN ===== -->
 <main class="manual">
   <header class="doc-head">
-    <div class="eyebrow">The Complete User Guide</div>
+    <div class="eyebrow">User Guide</div>
     <h1>PacketADE <span>Manual</span></h1>
-    <p class="lede">Everything you need to run every agent, orchestrate Missions, wire up integrations, and ship from one cockpit. Written to be readable top-to-bottom, or dipped into by chapter when you need the reference.</p>
+    <p class="lede">How to install PacketADE, wire up your providers, and run real development work through Workspaces, Agents, and the Flight Deck. Task-oriented where possible, honest about limits everywhere.</p>
     <div class="meta">
-      <span>v0.9.3</span>
+      <span>v0.10.2</span>
       <span>Apache 2.0</span>
       <span>Tauri v2 &middot; React 19 &middot; Rust &middot; Node sidecar</span>
-      <span>No telemetry &middot; BYOK</span>
+      <span>Local-first &middot; BYOK</span>
     </div>
   </header>
 
-<!-- ===== CHAPTER 1: QUICK START ===== -->
+<!-- ===== CHAPTER 1: GETTING STARTED ===== -->
 <section class="chapter" id="chapter-1">
 <span class="chapter-badge">Chapter 01</span>
-<h2 class="chapter-title">Quick Start</h2>
-<p class="chapter-lede">Install PacketADE, open a folder, and have a CLI agent talking to you in under five minutes. The rest of the manual is reference material; this chapter is the on-ramp.</p>
+<h2 class="chapter-title">Getting Started</h2>
+<p class="chapter-lede">Install the app, authenticate at least one provider, open a folder, and start your first session. Everything else in this manual builds on the pieces you set up here.</p>
 
 <h3 class="section-title" id="ch1-what">What is PacketADE?</h3>
-<p>PacketADE is an open-source desktop IDE that unifies every AI coding agent &mdash; CLI and API &mdash; into a single multi-pane cockpit. It wraps the major CLI agents (Claude Code, OpenAI Codex, Google Gemini, OpenCode, and others from a 13-entry catalog) alongside eight API provider rows spanning Anthropic subscription/API, OpenAI subscription/API, OpenAI Agents SDK, MiniMax, OpenRouter, and local Ollama. You bring the keys; PacketADE brings the cockpit.</p>
-<p>The product is built around <strong>four modes</strong> &mdash; pick the one that matches the shape of your task, then mix freely:</p>
+<p>PacketADE is a local-first desktop <strong>Agent Development Environment</strong>: a single native app for running and supervising AI software work. It connects two complementary execution styles:</p>
 <ul class="bullet-list">
-  <li><span class="pill pill-cyan">Flight Deck</span> Spec a mission and let it run autonomously.</li>
-  <li><span class="pill pill-green">Workspace</span> Tile CLI agents in worktrees and orchestrate them by hand.</li>
-  <li><span class="pill pill-purple">Agents</span> One focused, single-thread chat with tool diffs.</li>
-  <li><span class="pill pill-amber">Issues</span> AI-structured intake, then hand each ticket to a supervised agent.</li>
+  <li><strong>PTY-backed CLI sessions</strong> — real terminals in draggable workspace mosaics, running Claude Code, Codex CLI, OpenCode, PacketCode, or a plain shell.</li>
+  <li><strong>GUI/API agent conversations</strong> — durable structured chats in the Agents view with streaming, tool calls, permission gating, inline diffs, plans, review, and git worktree endings. Eight provider rows: Anthropic subscription and API, OpenAI ChatGPT/API/Agents SDK, MiniMax, OpenRouter, and local Ollama.</li>
 </ul>
-<p>Built for solo developers and small teams who want an AI-first IDE without committing to a single vendor's walled garden. Apache 2.0. No telemetry. Your keys, your models.</p>
+<p>Above the sessions sit the organizing surfaces: <strong>Flights</strong> (units of delegated work on the Flight Deck), an <strong>Issues</strong> kanban board with AI spec import, a project <strong>Memory</strong> layer, git-host integration (GitHub plus self-hosted Gitea/Forgejo), an MCP hub, SSH remotes, local Whisper dictation, and cross-provider cost tracking.</p>
+<p>Everything stays on your machine: API keys in the OS keyring, conversations and history under <code>~/.packetade</code>, execution on your hardware (or your SSH hosts). There is no PacketADE cloud service and no telemetry.</p>
 
 <div class="callout callout-info">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-  <div class="callout-body"><strong>Naming note.</strong> This product was previously called <em>PacketCode</em>. It was renamed PacketADE to free that name for a separate TUI sibling. You may see lingering "packetcode" references in legacy data paths and localStorage migration code &mdash; that is by design.</div>
+  <div class="callout-body"><strong>Naming notes.</strong> This product was previously called <em>PacketCode</em>; that name now belongs to a separate terminal (TUI) coding agent that PacketADE detects and treats as its recommended workspace CLI. You may also see the word "Mission" in very old data — the current term for a unit of work is <strong>Flight</strong>, managed on the <strong>Flight Deck</strong>.</div>
 </div>
 
 <h3 class="section-title" id="ch1-install">Install &amp; first run</h3>
 
-<h4 class="subsection-title">Option 1 &mdash; Download a release</h4>
-<p>Grab the latest beta installer or package from the <a href="https://github.com/packetloss404/PacketADE/releases" target="_blank" rel="noopener">GitHub Releases page</a>. Run it, open PacketADE, skip ahead to <a href="#ch1-first-workspace">Your first workspace</a>.</p>
+<h4 class="subsection-title">Option 1 — Download a release</h4>
+<p>Grab the latest installer from the <a href="https://github.com/packetloss404/PacketADE/releases" target="_blank" rel="noopener">GitHub Releases page</a>, run it, and open PacketADE.</p>
 
 <div class="callout callout-warn">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-  <div class="callout-body"><strong>Beta distribution status:</strong> PacketADE is manual-install today. Windows Authenticode signing, macOS notarization, and the Tauri auto-updater are planned release-trust gates but are not enabled in the repo yet, so beta builds may trigger SmartScreen or Gatekeeper prompts.</div>
+  <div class="callout-body"><strong>Builds are currently unsigned.</strong> Windows Authenticode signing, macOS notarization, and the auto-updater are planned but blocked on code-signing certificates. Expect a SmartScreen or Gatekeeper warning on first launch, and install updates manually.</div>
 </div>
 
-<h4 class="subsection-title">Option 2 &mdash; Build from source</h4>
-<p>Prerequisites: Node.js 18+, pnpm 9+, Rust 1.70+, and the Tauri OS toolchain (VS Build Tools on Windows, Xcode CLT on macOS, <code>libgtk-3-dev</code> + <code>webkit2gtk-4.1</code> on Linux).</p>
+<h4 class="subsection-title">Option 2 — Build from source</h4>
+<p>Prerequisites: Node.js, pnpm, a Rust toolchain, and the Tauri OS toolchain for your platform (VS Build Tools on Windows, Xcode CLT on macOS, GTK/WebKit dev packages on Linux).</p>
 <pre><code>git clone https://github.com/packetloss404/PacketADE.git
 cd PacketADE
 pnpm install
 pnpm tauri dev      # hot-reload dev mode
-pnpm tauri build    # production build</code></pre>
-<p>The first <code>pnpm tauri dev</code> compiles the Rust backend and the Node sidecar &mdash; expect a few minutes. Subsequent runs use the build cache.</p>
+pnpm tauri build    # production build (also fetches Node + builds the sidecar)</code></pre>
+<p>The first build compiles the Rust backend and the Node agent sidecar — expect several minutes. On Windows, the Rust stable toolchain's <code>bin</code> directory must be on <code>PATH</code> (e.g. <code>%USERPROFILE%\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin</code>).</p>
 
-<div class="callout callout-warn">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-  <div class="callout-body"><strong>Windows note:</strong> the Rust stable target's <code>bin</code> directory must be on <code>PATH</code> for Tauri dev builds. Add <code>C:\Users\&lt;you&gt;\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin</code> to your environment before running <code>pnpm tauri dev</code>.</div>
-</div>
+<h3 class="section-title" id="ch1-auth">Provider auth setup</h3>
+<p>Each provider row in the app shows a <strong>live auth badge</strong>. You only need to set up the providers you plan to use — one is enough to start.</p>
+
+<table class="ref-table">
+  <thead><tr><th>Provider</th><th>What you need</th><th>How to set it up</th></tr></thead>
+  <tbody>
+    <tr><td>Anthropic (Subscription)</td><td>Claude Pro/Max subscription + Claude Code CLI</td><td>Run <code>claude login</code> in any terminal, or click <strong>Log in</strong> on the provider row — PacketADE opens a one-shot login terminal in a modal. Credentials live in <code>~/.claude/.credentials.json</code>.</td></tr>
+    <tr><td>OpenAI (ChatGPT Plus/Pro)</td><td>ChatGPT subscription + Codex CLI</td><td>Run <code>codex login</code>, or click <strong>Log in</strong> on the row. Credentials live in <code>~/.codex/auth.json</code>.</td></tr>
+    <tr><td>Claude (API), OpenAI (API), OpenAI Agents SDK, MiniMax, OpenRouter</td><td>An API key for the vendor</td><td>Paste the key in <em>Settings &rarr; Agents &amp; Models &rarr; Providers &amp; Models</em>. Keys are stored in the OS keyring (service <code>packetade</code>), never in files.</td></tr>
+    <tr><td>Ollama</td><td>Ollama installed and running locally</td><td>No key. PacketADE probes <code>localhost:11434</code> and lists your pulled models automatically. This is the fastest zero-cost path to a working agent.</td></tr>
+  </tbody>
+</table>
+
+<p>A file watcher monitors the Claude and Codex credential files, so badges flip to <span class="pill pill-green">ready</span> on their own moments after a login completes — no restart needed. See <a href="#ch4-auth">Troubleshooting &rsaquo; Auth badges</a> for what each badge state means.</p>
 
 <h3 class="section-title" id="ch1-first-workspace">Your first workspace</h3>
-<p>PacketADE opens to a <strong>Welcome</strong> screen when no workspace is active. From here:</p>
+<p>PacketADE opens to a Welcome screen when nothing is active.</p>
 <ol class="step-list">
-  <li>Click <strong>New Workspace</strong>.</li>
-  <li>Pick a folder &mdash; either from the OS picker or from the Recents dropdown.</li>
-  <li>Name the workspace. The folder path you picked is the project path.</li>
-  <li>Click <strong>Save</strong>. The workspace opens with an empty mosaic pane.</li>
+  <li>Click <strong>New Workspace</strong> (also available from the toolbar's folder picker).</li>
+  <li>Pick a project folder — from the OS picker or the recents list.</li>
+  <li>Save. The workspace opens with an empty mosaic and a session picker.</li>
+  <li>Pick a CLI from the picker (Terminal always works; installed CLIs are detected automatically) — a live PTY pane appears.</li>
 </ol>
-<p>That's it. PacketADE will scan for installed CLIs (Claude Code, Codex, etc.), auto-detect a GitHub remote if one exists, and remember every pane, model, and bypass-permission toggle for next time you open the workspace.</p>
+<p>Workspaces remember their panes, layout, and settings across restarts. A workspace can also be bound to an SSH server, in which case its sessions run on the remote host (see <a href="#ch3-ssh">Connect an SSH server</a>).</p>
 
-<h3 class="section-title" id="ch1-first-session">Your first session</h3>
-<p>Inside the workspace, the empty pane shows a launcher. The fastest path to your first agent:</p>
-<ol class="step-list">
-  <li>Press <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>K</kbd></span> to open the command palette.</li>
-  <li>Type "claude" and pick <strong>New Claude session</strong>. A PTY pane spawns with the <code>claude</code> CLI live and ready.</li>
-  <li>Alternatively, click the <strong>+ New</strong> dropdown on the toolbar and pick <em>New Claude session</em>, <em>New Codex session</em>, <em>New Mission</em>, <em>New Issue</em>, or <em>New deploy run</em>.</li>
-</ol>
-<p>If you'd rather chat with an API agent than drive a CLI, jump to the <a href="#chapter-5">Agents</a> view from the LeftRail and pick a provider. <span class="pill pill-green">Ollama</span> is the zero-key path &mdash; install Ollama, run <code>ollama serve</code>, and PacketADE will discover it on <code>localhost:11434</code> automatically.</p>
+<h3 class="section-title" id="ch1-orientation">Finding your way around</h3>
+<p>The <strong>left rail</strong> pins six views — Workspace, Agents, Flight Deck, Issues, Memory, GitHub — with the Settings gear at the bottom. Three more surfaces (Session History, Cost Dashboard, Dictation) are reached from the command palette, keyboard shortcuts, the toolbar mic button, or the status strip's live-spend chip.</p>
+<ul class="bullet-list">
+  <li><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>K</kbd></span> opens the <strong>command palette</strong> — views, prompt templates, and tool modules, all searchable.</li>
+  <li><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>W</kbd></span> Workspace &middot; <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>1</kbd></span> Agents &middot; <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>2</kbd></span> Flight Deck. Full list in the <a href="#ch5-keys">shortcut reference</a>.</li>
+  <li>The <strong>status strip</strong> along the bottom shows the current view, running agents, live session spend, and a sidecar health chip when the sidecar is unhealthy.</li>
+</ul>
 
 <div class="callout callout-tip">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 00-4 12.74V17h8v-2.26A7 7 0 0012 2z"/></svg>
-  <div class="callout-body"><strong>Five-minute tour:</strong> open a workspace, hit <kbd>Ctrl</kbd>+<kbd>K</kbd>, launch a Claude session, type "explain the architecture of this project", then try a Mission &mdash; click the Plane icon in the LeftRail and start a spec conversation. Read on for the deep dives.</div>
+  <div class="callout-body"><strong>Five-minute tour:</strong> authenticate one provider, open a workspace at a real repo, launch a Claude Code pane and ask it to explain the codebase. Then open <strong>Agents</strong> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>) and start a structured conversation with the same provider to see the GUI-agent side: streaming, tool cards, and inline diffs.</div>
 </div>
 </section>
 
-<!-- ===== CHAPTER 2: FOUR MODES ===== -->
+<!-- ===== CHAPTER 2: CORE CONCEPTS ===== -->
 <section class="chapter" id="chapter-2">
 <span class="chapter-badge">Chapter 02</span>
-<h2 class="chapter-title">The Four Modes</h2>
-<p class="chapter-lede">Every PacketADE workflow falls into one of four modes &mdash; from fully autonomous Missions down to a single focused chat. Pick the mode for the work in front of you. They share memory, costs, and providers, so mixing them is free.</p>
+<h2 class="chapter-title">Core Concepts</h2>
+<p class="chapter-lede">Seven ideas explain almost everything in PacketADE. Read this chapter once and the rest of the app becomes predictable.</p>
 
-<h3 class="section-title" id="ch2-overview">Mode overview</h3>
-<div class="mode-grid">
-  <div class="mode-tile cyan">
-    <div class="mode-cap">Mode 01 &middot; Full Autonomous</div>
-    <h4>Flight Deck</h4>
-    <p>Write a spec. A Sonnet 4.6 planner decomposes it into milestones and tasks. Executors run end-to-end. You step in only on approval gates.</p>
-    <div class="mode-when"><strong>When:</strong> Large multi-step work you want to delegate.</div>
-  </div>
-  <div class="mode-tile green">
-    <div class="mode-cap">Mode 02 &middot; Semi-Autonomous</div>
-    <h4>Workspace</h4>
-    <p>Tile PTY-backed CLI agents in worktrees. Give each one a task, supervise mid-stream, reply, switch, branch, steer them in parallel.</p>
-    <div class="mode-when"><strong>When:</strong> Hands-on orchestration with bypass-perms within reach.</div>
-  </div>
-  <div class="mode-tile purple">
-    <div class="mode-cap">Mode 03 &middot; Single-Thread Chat</div>
-    <h4>Agents</h4>
-    <p>One conversation, one API agent. Structured chat with tool diffs, slash commands, @-file mentions, and voice input.</p>
-    <div class="mode-when"><strong>When:</strong> Focused threads, exploratory Q&amp;A, one chat is the right shape.</div>
-  </div>
-  <div class="mode-tile amber">
-    <div class="mode-cap">Mode 04 &middot; AI-Structured Intake</div>
-    <h4>Issues</h4>
-    <p>Paste a spec. AI breaks it into discrete tickets. One-click <em>Send to Workspace</em> spawns a Claude pane in a worktree with the ticket as the opening turn.</p>
-    <div class="mode-when"><strong>When:</strong> You want AI to structure the work, you (or a supervised agent) drive the code.</div>
-  </div>
-</div>
+<h3 class="section-title" id="ch2-workspaces">Workspaces</h3>
+<p>A workspace is a project workroom: a folder (local or on an SSH host) plus a persistent mosaic of terminal panes. Workspaces are deliberately <strong>CLI-first</strong> — the session picker offers only PTY sessions (Terminal, Claude Code, Codex CLI, OpenCode, PacketCode). Structured GUI-agent conversations are created in the Agents view, not here; older saved layouts that contain conversation panes still load for compatibility.</p>
+<p>Each pane is a real terminal driven by the CLI's own UI. PacketADE adds status bars for the CLIs it understands (Claude, Codex, OpenCode), install detection with recovery hints, and — when PacketCode is installed — marks it as the recommended CLI. Panes, models, and toggles are remembered per workspace.</p>
+<p>The workspace header also hosts the <strong>Git dashboard</strong> slide-out: branch state, and the worktree lifecycle actions for conversations that ended with pending work (see <a href="#ch4-git">Git endings</a>).</p>
 
-<h3 class="section-title" id="ch2-flightdeck">Mode 1 &middot; Flight Deck</h3>
-<p>Flight Deck is the most autonomous mode. You start a spec conversation with a planner agent (Claude Sonnet 4.6 by default) and describe the outcome you want. When you click <strong>Launch</strong>, the planner decomposes the spec into 2&ndash;4 milestones and 4&ndash;10 tasks, spawns one executor agent per task in its own git worktree, reacts to completions and failures, and only escalates when it genuinely needs your input.</p>
-<p>Open it from the <span class="pill pill-cyan">Plane</span> icon in the LeftRail (Flight Deck), <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>6</kbd></span>, or the <strong>+ New &rarr; New Mission</strong> entry in the toolbar dropdown. Chapter 6 covers the planner in depth.</p>
-<a class="roadmap-link" href="roadmap.html#missions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg> See Missions on the roadmap</a>
+<h3 class="section-title" id="ch2-agents">Agents conversations</h3>
+<p>The Agents view owns GUI-agent work: creating conversations, the cross-project conversation and attention list, one large active conversation, and its inspector. A conversation is a durable, structured thread with an API or subscription provider.</p>
+<p>Two backends serve these conversations behind <strong>one event contract</strong>: most API-key providers run in-process in Rust; the two subscription providers and the OpenAI Agents SDK run in a bundled Node sidecar. The frontend cannot tell the difference, and neither will you — every conversation gets the same streaming, tool cards, permission prompts, per-hunk diff acceptance, plan panel, and cost accounting.</p>
+<p>Key mechanics:</p>
+<ul class="bullet-list">
+  <li><strong>Modes</strong> — a single chip cycles <code>default</code> / <code>plan</code> / <code>manual</code> / <code>deny</code> / <code>yolo</code> with <span class="kbd-row"><kbd>Shift</kbd><span class="plus">+</span><kbd>Tab</kbd></span>. Plan mode keeps the model read-only until you approve its proposed plan inline; manual asks before risky tools; deny blocks all writes; yolo skips permission prompts. Providers that can't pause for approvals (Codex <code>exec</code>) show only three honest sandbox postures instead: <em>Read-only</em>, <em>Workspace-write</em>, and <em>Full access</em>.</li>
+  <li><strong>Pending edits</strong> — file writes arrive as reviewable diffs. Accept whole files or individual hunks; batch "Apply all / Reject all" rollups appear when 2+ prompts stack up.</li>
+  <li><strong>Worktree endings</strong> — a conversation that wrote code can hand off to git explicitly: the ReviewBar's Finish flow opens the workspace git panel scoped to that conversation's worktree, with Merge back / Create PR / Discard / Keep.</li>
+  <li><strong>Extras</strong> — slash commands, <code>@</code>-file mentions, image attachments (drag or paste, 5&nbsp;MB cap), a Side Chat overlay for side questions, inline transcript restore (rewind), and a <code>/review</code> reviewer subagent that critiques pending writes.</li>
+</ul>
 
-<h3 class="section-title" id="ch2-workspace">Mode 2 &middot; Workspace</h3>
-<p>Workspace is where the keyboard meets the agent. You open a workspace at a project folder; inside, you tile multiple PTY panes &mdash; each one a real terminal running <code>claude</code>, <code>codex</code>, <code>gemini</code>, <code>opencode</code>, <code>packetcode</code>, or a plain shell. Panes survive view switches, models and bypass-permission toggles are remembered per-pane, and the mosaic layout (1&times;1 through 3&times;2) is one click away.</p>
-<p>Open it from the <span class="pill pill-green">Terminal</span> icon in the LeftRail (Workspace), or <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>W</kbd></span>. Chapter 4 covers the workspace in depth.</p>
+<h3 class="section-title" id="ch2-flights">Flights &amp; the Flight Deck</h3>
+<p>A <strong>Flight</strong> is the top-level unit of work — above issues and sessions. The <strong>Flight Deck</strong> is its single-screen master-detail control surface: flight list on the left, detail (attempts, plan, coordination, output review, cost) on the right.</p>
+<p>A flight can carry an upfront plan (milestones and tasks, produced by the <a href="#ch3-plan">planning conversation</a>) and any number of <strong>attempts</strong>. An attempt is one agent executing against the flight's objective in its <em>own git worktree and branch</em> — on your machine or an SSH host. Because attempts are isolated, you can launch several in parallel (different agents, different hosts) and compare the results.</p>
+<p>Two important honesty notes:</p>
+<ul class="bullet-list">
+  <li>Attempts are <strong>user-launched</strong>. The plan structures the work; it does not autonomously schedule executors. (An earlier autonomous planner was intentionally removed.)</li>
+  <li>Flights link bidirectionally to Issues and can roll up token costs from their attempts.</li>
+</ul>
 
-<h3 class="section-title" id="ch2-agents-mode">Mode 3 &middot; Agents</h3>
-<p>The Agents view runs structured single-thread conversations through one of eight API provider rows. Unlike a PTY session, an API agent is a Rust-side agentic loop that owns the system prompt, the tool schema, the streaming, and the UI. You get inline diffs on every <code>write_file</code> call, slash commands, @-mentions, voice input, and a cost pill on every turn.</p>
-<p>Open it from the <span class="pill pill-purple">Sparkles</span> icon in the LeftRail (Agents), or <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>1</kbd></span>. Chapter 5 covers API conversations in depth.</p>
+<h3 class="section-title" id="ch2-issues">Issues</h3>
+<p>The Issues view is a kanban board with nine statuses (Backlog, Up Next, To Do, In Progress, In Review, QA, Done, Blocked, Needs Human), priorities, labels, epics, and acceptance criteria. Two features distinguish it from a plain board:</p>
+<ul class="bullet-list">
+  <li><strong>Spec import</strong> — paste a spec or feature description into <em>Import Spec</em>; Claude decomposes it into editable ticket drafts you accept into the backlog.</li>
+  <li><strong>Send to Workspace</strong> — an issue can be handed to a workspace session, and commit trailers (<code>Fixes #N</code>) close the loop back to the board.</li>
+</ul>
 
-<h3 class="section-title" id="ch2-issues-mode">Mode 4 &middot; Issues</h3>
-<p>Issues is more than a kanban board &mdash; it is the AI-structured intake layer. Paste a spec, PRD, design doc, or feature request into the <strong>Import Spec</strong> modal and a one-shot Claude OAuth session returns a list of inline-editable Issue drafts (title, body, acceptance criteria, labels, suggested epic). Accept the ones you want, and they land in the <strong>Backlog</strong> column grouped by a shared spec-import batch.</p>
-<p>From any Issue card, click <strong>Send to Workspace</strong> to provision an Issue-bound git worktree, install a <code>prepare-commit-msg</code> hook that auto-appends <code>Fixes #N</code> trailers, and spawn a Claude pane in that worktree seeded with the issue body. When you commit, the trailer parser recognizes <code>Fixes #N</code> and flips the Issue to Done automatically. Open Issues from the LeftRail or <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>3</kbd></span>. Chapter 7 covers the close-loop end-to-end.</p>
+<h3 class="section-title" id="ch2-memory">Memory</h3>
+<p>The Memory view keeps project context that outlives individual conversations, in four tabs: <strong>Patterns</strong> (learned, deduplicated observations), <strong>Timeline</strong> (auto-captured events), <strong>Project notes</strong> (manual), and <strong>Ask</strong> (query your memory). Memory can be exported as JSON or a Markdown digest, imported, filtered by flight or project, and cleared.</p>
+<p>In an Agents conversation, a header <strong>memory toggle</strong> controls whether memory context is injected into the system prompt — its tooltip previews exactly what would be injected.</p>
 
+<h3 class="section-title" id="ch2-mcp">The MCP hub</h3>
+<p>PacketADE is both an MCP <strong>client</strong> and an MCP <strong>server</strong>:</p>
+<ul class="bullet-list">
+  <li><strong>Client</strong> — configure MCP servers at global or project scope; conversations expose an <code>N/M</code> header dropdown to toggle which servers a given conversation may use.</li>
+  <li><strong>Provider</strong> — PacketADE can serve its own flights, tasks, and memory as MCP resources to external clients (default port <code>3100</code>). It is strictly read-only unless you explicitly enable the append-only handoff write tool.</li>
+</ul>
+
+<h3 class="section-title" id="ch2-ssh">SSH remotes</h3>
+<p>A <strong>server</strong> record (name, host, port, user, auth method) is the single SSH identity used everywhere: remote workspace PTY sessions, API-agent file/bash tools running against remote code, and remote flight attempts with remote worktrees. Auth methods are SSH agent, key file, or password (passwords go in the OS keyring). Host-key <strong>fingerprint pinning</strong> is enforced: PacketADE records a server's fingerprint and refuses flight launches against servers without one.</p>
 </section>
 
-<!-- ===== CHAPTER 3: LEFTRAIL TOUR ===== -->
+<!-- ===== CHAPTER 3: HOW-TO GUIDES ===== -->
 <section class="chapter" id="chapter-3">
 <span class="chapter-badge">Chapter 03</span>
-<h2 class="chapter-title">The LeftRail Tour</h2>
-<p class="chapter-lede">The LeftRail is the 44-pixel vertical strip on the far left of the app. It pins six views &mdash; the ones you reach for every day &mdash; with Settings anchored at the bottom. Everything else lives in the toolbar dropdowns or the command palette.</p>
+<h2 class="chapter-title">How-To Guides</h2>
+<p class="chapter-lede">Recipes for the workflows you'll actually run, in roughly the order you'll meet them.</p>
 
-<h3 class="section-title" id="ch3-rail">The six pinned views</h3>
-<table class="ref-table">
-  <thead><tr><th>Icon</th><th>View</th><th>What it does</th><th>Shortcut</th></tr></thead>
-  <tbody>
-    <tr><td><span class="pill pill-purple">Sparkles</span></td><td>Agents</td><td>Single-thread API agent chats with tool diffs, profiles, slash commands, and @-mentions.</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd></td></tr>
-    <tr><td><span class="pill pill-green">Terminal</span></td><td>Workspace</td><td>Multi-pane mosaic of PTY CLI sessions scoped to the active project.</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd></td></tr>
-    <tr><td><span class="pill pill-cyan">Plane</span></td><td>Flight Deck</td><td>Autonomous Missions &mdash; spec, decompose, execute, approve.</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>6</kbd></td></tr>
-    <tr><td><span class="pill pill-amber">Kanban</span></td><td>Issues</td><td>Spec import, five-column board, Send to Workspace, auto-Done close-loop.</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>3</kbd></td></tr>
-    <tr><td><span class="pill pill-blue">Github</span></td><td>GitHub</td><td>PR lifecycle, AI review, repo browser, Catch-me-up digest, issue triage drawer.</td><td>&mdash;</td></tr>
-    <tr><td><span class="pill pill-muted">Settings</span></td><td>Settings</td><td>15-tab settings hub (API keys, subscriptions, profiles, MCP, modules, etc.).</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>5</kbd></td></tr>
-  </tbody>
-</table>
-<p>The Workspace icon highlights when any session view is active (<code>workspace</code>, <code>claude</code>, <code>codex</code>, <code>gemini</code>, <code>opencode</code>, or <code>packetcode</code>) so you don't lose your place when an agent takes you into its own subview.</p>
-
-<h3 class="section-title" id="ch3-toolbar">Toolbar at a glance</h3>
-<p>The top toolbar is split into a left cluster (navigation + new), a middle cluster (workspace + cost), and a right cluster (sidecar status, modules, git, folder, and the Bell). Reading left to right:</p>
-<dl class="def-list">
-  <dt>Search</dt><dd>Click the search chip (or press <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>K</kbd></span>) to open the command palette.</dd>
-  <dt>+ New</dt><dd>Dropdown with: <em>New Claude session</em>, <em>New Codex session</em>, <em>New Mission</em>, <em>New Issue</em>, <em>New deploy run</em>.</dd>
-  <dt>Workspace tabs</dt><dd>Tab strip for the currently open workspaces. Each tab is a different project context.</dd>
-  <dt>LiveSpendChip</dt><dd>Today's combined spend (persisted analytics + live in-memory session totals). Click to open the Cost Dashboard.</dd>
-  <dt>Quality</dt><dd>Opens the Code Quality modal against the active workspace. Chapter 11.</dd>
-  <dt>Modules</dt><dd>Dropdown to enable Ideation Scanner / Scaffold / future modules.</dd>
-  <dt>VT (Dictation)</dt><dd>Push-to-talk capture and quick toggle for voice input. <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>D</kbd></span>.</dd>
-  <dt>Git pill</dt><dd>Current branch + GitActionButtons (commit / push / pull).</dd>
-  <dt>Folder picker</dt><dd>Click the folder icon to change the active workspace's project path. The tooltip shows the full path + workspace name. With no active workspace, you get a follow-up modal asking whether to create a new workspace at the picked path or set it as the default.</dd>
-  <dt>Bell</dt><dd>Pending approvals indicator. Red badge with a count when work is parked on <em>approval_needed</em>; muted otherwise. Clicking opens the Review Queue. <span class="pill pill-muted">v0.8.7</span></dd>
-</dl>
-
+<h3 class="section-title" id="ch3-cli">Launch a CLI session</h3>
+<ol class="step-list">
+  <li>Open the <strong>Workspace</strong> view (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd>) with an active workspace.</li>
+  <li>Click <strong>Add Session</strong> in the workspace header (or use the inline picker in an empty workspace).</li>
+  <li>Pick one of the five session types: <strong>Terminal</strong>, <strong>Claude Code</strong>, <strong>Codex CLI</strong>, <strong>OpenCode</strong>, or <strong>PacketCode</strong>. Uninstalled CLIs show an install hint; PacketCode shows a guided setup link. For SSH-bound workspaces, availability reflects what's installed on the remote host.</li>
+  <li>The pane spawns with the CLI live. Drag panes to rearrange the mosaic; panes persist across view switches and app restarts.</li>
+</ol>
 <div class="callout callout-info">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-  <div class="callout-body"><strong>Theme toggle:</strong> the Sun/Moon button was removed from the toolbar in v0.8.7. The canonical theme control now lives in <em>Settings &rarr; General &rarr; Theme</em>.</div>
+  <div class="callout-body"><strong>Gemini CLI support was removed.</strong> Saved layouts that contained a Gemini pane load as plain Terminal panes. On Windows, PacketADE resolves <code>.cmd</code> wrappers (<code>claude.cmd</code>, <code>codex.cmd</code>, …) automatically.</div>
 </div>
 
-<h3 class="section-title" id="ch3-statusstrip">StatusStrip</h3>
-<p>The thin bar at the very bottom of the window is the StatusStrip. It surfaces the active project name, git branch, total active sessions (counted by type: Claude / Codex / shell / etc.), the sidecar health dot, a REC indicator when dictation is capturing, and rotating keyboard-shortcut hints. If a poll has not refreshed in 30 seconds, the strip dims to 50% so you know the data is stale.</p>
+<h3 class="section-title" id="ch3-api">Start an API-agent conversation</h3>
+<ol class="step-list">
+  <li>Open <strong>Agents</strong> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>).</li>
+  <li>In the launcher, pick a provider row — eight rows grouped by vendor, each with a live auth badge. Pick a model, an optional agent profile, and a project.</li>
+  <li>Optionally set the mode chip (<kbd>Shift</kbd>+<kbd>Tab</kbd> cycles <code>default / plan / manual / deny / yolo</code>; Codex shows sandbox postures instead) and attach images (drag-drop or paste, 5&nbsp;MB each).</li>
+  <li>Type your prompt — use <code>/</code> for commands and saved templates, <code>@</code> to mention files — and send.</li>
+</ol>
+<p>During the run you'll see streamed text, thinking indicators, tool cards with outputs, permission prompts (unless yolo), and pending-edit diffs you can accept per hunk. The header shows model, context-percent gauge, cumulative tokens, session cost, and git branch. When writes settle, use the ReviewBar to review everything, then <strong>Finish &rarr; Commit…</strong> to open the git ending surface.</p>
+<p><kbd>Ctrl</kbd>+<kbd>N</kbd> starts a new conversation while you're in Agents.</p>
+
+<h3 class="section-title" id="ch3-plan">Plan a Flight (Option B planning)</h3>
+<p>Flight planning is an ordinary read-only agent conversation that produces a structured plan you explicitly apply. Nothing runs autonomously.</p>
+<ol class="step-list">
+  <li>On the <strong>Flight Deck</strong> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd>), click <strong>New Flight</strong> (or the toolbar's <em>+ New &rarr; New Flight</em>).</li>
+  <li>In the launch modal, describe the objective, select an agent, and click <strong>Plan first</strong> instead of launching.</li>
+  <li>PacketADE starts a planning conversation restricted to read-only tools (<code>read_file</code>, <code>list_directory</code>, <code>grep</code>). Refine the plan conversationally — the agent explores the repo and emits its plan as a fenced <code>packetade-flight-plan</code> JSON block (up to 12 milestones, each with tasks, dependencies, owned paths, and validation criteria).</li>
+  <li>Back on the flight's detail pane, the <strong>Planning card</strong> parses the latest plan block. Click <strong>Apply latest plan</strong> (or <strong>Replace with latest</strong>) to materialize milestones and tasks onto the flight.</li>
+  <li>Launch attempts whenever you're ready — planning and execution are separate, deliberate steps. Reopen the plan conversation anytime via <strong>Open plan</strong>.</li>
+</ol>
+
+<h3 class="section-title" id="ch3-attempts">Launch parallel worktree attempts</h3>
+<ol class="step-list">
+  <li>From the Flight Deck, open the launch modal — <strong>New Flight</strong> for a fresh flight or <strong>Launch attempt</strong> on an existing one.</li>
+  <li>Pick one or more <strong>targets</strong>: your local machine and/or configured SSH servers, each paired with an agent. One attempt is created per target, each in its own git worktree and branch, so they can't collide.</li>
+  <li>Optional toggles: <strong>publish attempts as draft PRs</strong> (auto-push + draft PR on clean completion — requires a repo connected in the GitHub view) and an <strong>independent reviewer gate</strong> with its own reviewer agent.</li>
+  <li>Press <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Enter</kbd></span> to launch.</li>
+</ol>
+<p>Attempts progress through <code>queued &rarr; provisioning &rarr; running &rarr; reviewing &rarr; completed</code> (or <code>failed</code> / <code>cancelled</code>). While an attempt runs you can send it follow-up messages from its tile composer, open a read-only <strong>Monitor</strong> window, or open its worktree in a full Workspace.</p>
+<div class="callout callout-warn">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+  <div class="callout-body"><strong>SSH targets require a pinned host key.</strong> Launches against servers without a recorded fingerprint are blocked. Re-run the server's connection test in Remote Hosts settings to capture one.</div>
+</div>
+
+<h3 class="section-title" id="ch3-review">Review &amp; publish an attempt</h3>
+<ol class="step-list">
+  <li>When an attempt reaches <span class="pill pill-amber">reviewing</span>, open its tile on the flight detail pane. The <strong>Output review</strong> card summarizes reported files and owned paths across the flight's tasks.</li>
+  <li>If the reviewer gate is enabled, its verdict appears on the tile: <code>pass</code>, <code>changes_requested</code>, or <code>blocked</code>, with findings. You can <strong>retry</strong> the gate, <strong>send findings to the builder</strong> agent as a follow-up turn, or <strong>override</strong> the gate with a written reason.</li>
+  <li>To inspect the actual changes, click <strong>Open in Workspace</strong> — the attempt's worktree opens in a CLI-first workspace where you can diff, test, and edit.</li>
+  <li>Mark the attempt <strong>completed</strong>. If the flight has draft-PR publishing enabled, PacketADE pushes the attempt branch and opens a draft PR at that moment (while the worktree still exists). Publish failures are recorded on the attempt without failing it.</li>
+  <li>Losing attempts can be marked <strong>cancelled</strong> or discarded; their worktrees are independent, so dropping one never affects another.</li>
+</ol>
+
+<h3 class="section-title" id="ch3-ssh">Connect an SSH server</h3>
+<ol class="step-list">
+  <li>Open <em>Settings &rarr; Workspaces &amp; Terminal &rarr; Remote Hosts</em> and click <strong>Add Server</strong>.</li>
+  <li>Enter name, host, port, username, and an auth method: <strong>SSH agent</strong>, <strong>key file</strong> (path to a private key), or <strong>password</strong>. Passwords are stored in the OS keyring, and password-auth servers prompt at connect time.</li>
+  <li>Run the connection test. It walks through connect/auth steps, records the host-key <strong>fingerprint</strong> for pinning, and detects which agent CLIs are installed on the host.</li>
+  <li>Use the server anywhere: bind a workspace to it (remote PTY sessions), point an Agents conversation at a remote project (remote file/bash tools), or select it as a flight-attempt target (remote worktrees).</li>
+</ol>
+<p>Without a pinned fingerprint, connections fall back to trust-on-first-use with a logged warning — and flight launches are blocked entirely. Prefer re-testing the connection to capture the fingerprint.</p>
+
+<h3 class="section-title" id="ch3-mcp">Configure MCP</h3>
+<h4 class="subsection-title">Servers PacketADE connects to</h4>
+<ol class="step-list">
+  <li>Open <em>Settings &rarr; Integrations &amp; Data &rarr; MCP</em>.</li>
+  <li>Add a server at <strong>global</strong> or <strong>project</strong> scope. Diagnostics on each entry show connection health.</li>
+  <li>In any Agents conversation, use the header <code>N/M</code> MCP dropdown to toggle which servers that conversation may use. Remote (SSH) conversations receive their MCP configuration over the wire as well.</li>
+</ol>
+<h4 class="subsection-title">PacketADE as an MCP server</h4>
+<p>Enable the provider in the same settings section to expose flights, tasks, and memory as MCP resources on port <code>3100</code> (configurable). Choose project or global scope, restrict the allowed tool list, and — only if you need external agents to write handoffs — enable the append-only write tool. Everything else stays read-only.</p>
+
+<h3 class="section-title" id="ch3-dictation">Use dictation</h3>
+<p>Dictation is fully local: audio is transcribed on-device by Whisper. Nothing leaves your machine.</p>
+<ol class="step-list">
+  <li>Open the Dictation view via the toolbar mic button or <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>D</kbd></span>.</li>
+  <li>Download a Whisper model (sizes trade speed for accuracy) and pick your input device in <em>Settings &rarr; Integrations &amp; Data &rarr; Dictation</em>.</li>
+  <li>Record: <strong>push-to-talk</strong> (hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> — release to transcribe and auto-paste) or <strong>toggle</strong> (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd>). <kbd>Esc</kbd> cancels a recording.</li>
+</ol>
+<p>Notes: OS-global shortcuts are an explicit opt-in (both shortcuts are re-bindable); transcripts auto-paste into the focused PacketADE field, with an optional system-wide paste into whatever app is foregrounded; a custom dictionary biases transcription toward your jargon; language can be fixed or auto-detected; recordings are capped (configurable, 10–1800&nbsp;s). The view also keeps a history with analytics — WPM, streaks, top words.</p>
+
+<h3 class="section-title" id="ch3-costs">Track costs</h3>
+<p>Every API-agent turn reports token usage, and PacketADE rolls it up in three places:</p>
+<ul class="bullet-list">
+  <li><strong>In the conversation</strong> — the tile header shows cumulative tokens and session dollars live; <code>/usage</code> jumps to the dashboard.</li>
+  <li><strong>The Cost Dashboard</strong> — open it from the status strip's live-spend chip. Filter by source/provider, scan daily spend bars and the per-model usage table (cache-aware token columns), and set a monthly overall limit plus per-provider limits.</li>
+  <li><strong>Per flight</strong> — attempts roll token costs up onto their flight, so a flight's detail pane answers "what did this piece of work cost?" across every agent that touched it.</li>
+</ul>
+<p>Subscription-provider sessions (Claude OAuth, ChatGPT) don't bill per token; their usage still appears in the roll-ups but costs your subscription, not your API budget.</p>
 </section>
 
-<!-- ===== CHAPTER 4: WORKSPACES ===== -->
+<!-- ===== CHAPTER 4: TROUBLESHOOTING ===== -->
 <section class="chapter" id="chapter-4">
 <span class="chapter-badge">Chapter 04</span>
-<h2 class="chapter-title">Workspaces</h2>
-<p class="chapter-lede">A workspace is a named project context that bundles multiple AI agents and terminal panes scoped to one project directory. Open a workspace and your entire rig comes back exactly as you left it &mdash; which panes were open, which models they were using, which system prompts were injected, whether bypass-permission was toggled on.</p>
+<h2 class="chapter-title">Troubleshooting</h2>
+<p class="chapter-lede">The failure modes you're most likely to hit, what they mean, and the shortest path out.</p>
 
-<h3 class="section-title" id="ch4-create">Creating workspaces</h3>
-<p>Three entry points:</p>
+<h3 class="section-title" id="ch4-auth">Auth badges</h3>
+<table class="ref-table">
+  <thead><tr><th>Badge</th><th>Meaning</th><th>Fix</th></tr></thead>
+  <tbody>
+    <tr><td><span class="pill pill-green">ready</span></td><td>Provider is usable now.</td><td>—</td></tr>
+    <tr><td><span class="pill pill-amber">login_required</span></td><td>OAuth credentials missing or expired with no refresh token.</td><td>Click <strong>Log in</strong> on the row (opens a one-shot <code>claude login</code> / <code>codex login</code> terminal) or run the login in any terminal. The badge updates automatically when the credential file changes.</td></tr>
+    <tr><td><span class="pill pill-amber">missing_key</span></td><td>No API key in the OS keyring for this provider.</td><td>Add the key under <em>Settings &rarr; Agents &amp; Models &rarr; Providers &amp; Models</em>.</td></tr>
+    <tr><td><span class="pill pill-red">service_down</span></td><td>The provider's local service isn't reachable — for Ollama, the daemon isn't answering on <code>localhost:11434</code>.</td><td>Start the service (e.g. launch Ollama) and re-check.</td></tr>
+    <tr><td><span class="pill pill-muted">coming_soon</span></td><td>Provider row exists but isn't wired up.</td><td>—</td></tr>
+  </tbody>
+</table>
+<div class="callout callout-info">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>An expired access token is not a problem.</strong> If a refresh token is present, the badge stays <em>ready</em> ("Session will auto-refresh on next use") — the SDK/CLI refreshes transparently. Don't re-login just because a token's expiry date has passed.</div>
+</div>
+
+<h3 class="section-title" id="ch4-sidecar">Sidecar status</h3>
+<p>Subscription providers and the OpenAI Agents SDK run in a supervised Node sidecar. When it's healthy the status chip is <em>hidden</em>; you'll only see it when something is wrong:</p>
+<table class="ref-table">
+  <thead><tr><th>Chip</th><th>Meaning</th><th>Fix</th></tr></thead>
+  <tbody>
+    <tr><td>sidecar restarting (n/3)</td><td>The sidecar process exited and the supervisor is relaunching it (up to 3 tries). The tooltip carries the last error.</td><td>Usually self-heals. If it keeps cycling, check the tooltip's error.</td></tr>
+    <tr><td>sidecar down</td><td>Restart budget exhausted; sidecar-backed providers are unavailable. In-process providers (Claude API, OpenAI API, MiniMax, OpenRouter, Ollama) keep working.</td><td>Restart the app. In dev, ensure <code>agent-sidecar/dist/index.js</code> is built and <code>node</code> is on PATH; the env vars <code>PACKETADE_SIDECAR_PATH</code> / <code>PACKETADE_NODE_PATH</code> override entry-point resolution.</td></tr>
+  </tbody>
+</table>
+<p>A protocol-version mismatch between the app and the sidecar logs a warning but is non-fatal.</p>
+
+<h3 class="section-title" id="ch4-attempts">Attempt failures</h3>
+<p>A failed attempt carries a structured failure category:</p>
+<table class="ref-table">
+  <thead><tr><th>Category</th><th>Likely cause / fix</th></tr></thead>
+  <tbody>
+    <tr><td><code>auth</code></td><td>Provider credentials invalid on the machine that ran the attempt — re-login or fix the key (remember: SSH attempts use the <em>remote</em> host's CLI auth).</td></tr>
+    <tr><td><code>billing</code></td><td>Provider account out of credit or plan limits.</td></tr>
+    <tr><td><code>rate_limit</code></td><td>Provider throttling — wait or spread attempts across providers.</td></tr>
+    <tr><td><code>context_overflow</code></td><td>The task blew past the model's context window — split the flight into smaller tasks or use a larger-context model.</td></tr>
+    <tr><td><code>timeout</code> / <code>server_error</code></td><td>Transient provider or network trouble — relaunch the attempt.</td></tr>
+    <tr><td><code>not_installed</code></td><td>The selected agent CLI isn't installed on the target — install it, or re-run the server's connection test to refresh detection.</td></tr>
+    <tr><td><code>unknown</code></td><td>Uncategorized — read the attempt's error output.</td></tr>
+  </tbody>
+</table>
+
+<h3 class="section-title" id="ch4-git">Git endings &amp; publish</h3>
 <ul class="bullet-list">
-  <li>Welcome screen &rarr; <strong>New Workspace</strong>.</li>
-  <li>Toolbar workspace tabs &rarr; <strong>+</strong>.</li>
-  <li><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>W</kbd></span> from anywhere.</li>
+  <li><strong>"Nothing to land"</strong> on Merge back — the conversation branch has no changes to merge; Discard it if you're done.</li>
+  <li><strong>Discard requires an explicit confirm</strong> when the worktree is dirty. There is deliberately no silent path that drops uncommitted work.</li>
+  <li><strong>Merge back is disabled for SSH conversations</strong> — merge remotely from a shell, or use Create PR.</li>
+  <li><strong>"Draft-PR publish skipped: no GitHub repo selected"</strong> — connect and select a repo in the GitHub view; publishing pushes the branch and calls the host's PR API. Similar messages distinguish push failures from PR-creation failures.</li>
+  <li><strong>Publish never fails the attempt</strong> — a failed publish is recorded as an error message on the attempt; the work in the worktree is untouched.</li>
 </ul>
-<p>The <em>WorkspaceCreationModal</em> exposes:</p>
-<dl class="def-list">
-  <dt>Name</dt><dd>Display name in the workspace tab strip.</dd>
-  <dt>Location</dt><dd><span class="pill pill-blue">Local</span> or <span class="pill pill-cyan">Remote (SSH)</span> &mdash; SSH lets you build against a fingerprint-verified server.</dd>
-  <dt>Folder</dt><dd>OS picker + a Recents dropdown. Browse is always available; if there are no recents the modal auto-jumps to the OS picker. Save is gated on a non-empty path so a workspace can never persist with <code>projectPath: ""</code>. <span class="pill pill-muted">v0.8.8</span></dd>
-  <dt>Bypass permissions</dt><dd>Default for new panes. Defaults to off; can be overridden globally in <em>Settings &rarr; Workspace</em>.</dd>
-  <dt>GitHub auto-bind</dt><dd>If a <code>git remote get-url origin</code> exists, PacketADE stamps <code>{owner, repo}</code> onto the workspace. <span class="pill pill-muted">v0.8.0</span> Toggle off the global setting if you'd rather opt in case by case.</dd>
-</dl>
 
-<h3 class="section-title" id="ch4-folder-picker">The workspace-aware folder picker</h3>
-<p>The folder icon in the toolbar changes its behavior based on what's active. <span class="pill pill-muted">v0.8.8</span></p>
+<h3 class="section-title" id="ch4-misc">Other common issues</h3>
 <ul class="bullet-list">
-  <li><strong>With an active workspace:</strong> the picker reads "Change folder for '{workspaceName}'" and writes through to that workspace's <code>projectPath</code>. The tooltip shows the path + workspace name.</li>
-  <li><strong>With no active workspace:</strong> a follow-up modal asks whether to create a new workspace at the picked path or set it as the default for the next workspace.</li>
+  <li><strong>GitHub asks you to reconnect after every restart.</strong> By design: the git-host token is held in backend memory only and is not persisted.</li>
+  <li><strong>SmartScreen / Gatekeeper blocks the installer.</strong> Builds are unsigned until code-signing certificates land; "Run anyway" / right-click-Open is currently the expected path.</li>
+  <li><strong>A flight launch is blocked on an SSH server.</strong> The server has no pinned host fingerprint — re-run its connection test.</li>
+  <li><strong>Dictation global shortcuts don't fire.</strong> They're an explicit opt-in toggle in Dictation settings; also check the shortcut hasn't been claimed by another app.</li>
+  <li><strong>Data from an old PacketCode install.</strong> On first boot PacketADE migrates <code>~/.packetcode</code> &rarr; <code>~/.packetade</code>, legacy keyring entries, and <code>packetcode:*</code> localStorage keys automatically.</li>
+  <li><strong>Old view shortcuts changed?</strong> The number-row chords map by shifted character (<kbd>Shift</kbd>+<kbd>1</kbd> = <code>!</code>), so non-US keyboard layouts can shift which number triggers which view. This is a known caveat.</li>
 </ul>
-<p>Under the hood, <code>layoutStore.projectPath</code> is a synchronized mirror of the active workspace's <code>projectPath</code>. Remote workspaces (those with a <code>serverId</code>) skip the mirror so your last local path is preserved when you flip between local and remote.</p>
-
-<h3 class="section-title" id="ch4-mosaic">Multi-pane mosaic</h3>
-<p>Workspaces use a React Mosaic tiling system. Each pane is a real PTY (xterm.js + portable-pty) running a CLI agent or shell. Split, focus, and resize:</p>
-<ul class="bullet-list">
-  <li><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>\</kbd></span> &mdash; split the active pane.</li>
-  <li><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>1</kbd></span> &hellip; <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>4</kbd></span> &mdash; focus panes 1&ndash;4 by mosaic leaf order.</li>
-  <li>Drag any divider to resize.</li>
-  <li>Preset layouts in the WorkspaceView toolbar: <span class="pill pill-muted">1&times;1</span> <span class="pill pill-muted">1&times;2</span> <span class="pill pill-muted">2&times;1</span> <span class="pill pill-muted">2&times;2</span> <span class="pill pill-muted">2&times;3</span> <span class="pill pill-muted">3&times;2</span>.</li>
-</ul>
-<p>Per-pane state persisted across launches includes the session ID, model override, system prompt, bypass-permission toggle, and an optional <em>keep terminals alive</em> flag so PTYs survive view switches. WorkspaceView itself is always mounted under a <code>display: none</code> wrapper, so flipping to Issues and back never tears down a running agent.</p>
-
-<h3 class="section-title" id="ch4-bypass">Bypass permissions</h3>
-<p>The bypass-permission toggle lives at three levels:</p>
-<ol class="step-list">
-  <li><strong>Per pane:</strong> a toggle in the pane header. Wins over all defaults.</li>
-  <li><strong>Per workspace:</strong> the default for new panes (set at workspace creation, editable in Settings).</li>
-  <li><strong>Global:</strong> <em>Settings &rarr; Workspace &rarr; Default new workspaces to bypass permission prompts</em>. The whole-app fallback.</li>
-</ol>
-<p>The flag is passed through to the underlying CLI (e.g. Claude's <code>--dangerously-skip-permissions</code>). PacketADE was careful in v0.8.7 to stop passing Claude's bypass flag to OpenCode by accident &mdash; if you run both CLIs, you benefit transparently.</p>
-
-<h3 class="section-title" id="ch4-remote">Remote (SSH) workspaces</h3>
-<p>Pick <span class="pill pill-cyan">Remote (SSH)</span> in the WorkspaceCreationModal to build against a server. You need a <code>ServerConfig</code> registered first (<em>Settings &rarr; Servers</em>) with a verified host fingerprint &mdash; PacketADE replaced TOFU host-key acceptance with explicit SHA256 pinning in v0.6.0. Once verified, enter a remote project path; a live probe reports <code>DIR_GIT | DIR | FILE | MISSING</code> within 8 seconds.</p>
-<p>Remote workspaces are first-class for PTY sessions and most agent flows. A few features are explicitly gated:</p>
-<ul class="bullet-list">
-  <li><strong>Code Quality</strong> short-circuits with a "not yet supported on remote workspaces" message; the toolbar Quality button is disabled with a tooltip.</li>
-  <li><strong>Editor pane</strong> shows a placeholder card; file tabs still render so open-files state is visible.</li>
-  <li><strong>Flight Deck local-base targets</strong> filter out remote workspaces.</li>
-  <li><strong>Sidecar providers</strong> (Anthropic OAuth + Codex OAuth) return a clear error rather than silently running locally when you point them at SSH.</li>
-</ul>
-<p>SSH passwords live in the OS keyring under <code>ssh-&lt;ServerConfig.id&gt;</code>; the per-connection <code>SshConfig</code> always carries <code>host_fingerprint</code> from <code>ServerConfig</code> so host-key pinning is enforced.</p>
 </section>
 
-<!-- ===== CHAPTER 5: SESSIONS ===== -->
+<!-- ===== CHAPTER 5: REFERENCE ===== -->
 <section class="chapter" id="chapter-5">
 <span class="chapter-badge">Chapter 05</span>
-<h2 class="chapter-title">Sessions</h2>
-<p class="chapter-lede">PacketADE runs two kinds of AI sessions side by side: real terminal-based CLIs in PTY panes, and first-class API agents with streaming, tool use, and inline diffs. They share the Agents view UI, the cost dashboard, and memory &mdash; you pick the right one per task.</p>
-
-<h3 class="section-title" id="ch5-pty">PTY CLI sessions</h3>
-<p>A PTY session is a real pseudo-terminal (backed by <code>portable-pty</code>) running one of the catalog CLIs. PacketADE auto-resolves <code>.cmd</code> wrappers on Windows (so <code>claude.cmd</code> works when you reference <code>claude</code>), and prefers native <code>.exe</code> binaries when both exist.</p>
-
-<h4 class="subsection-title">Launching</h4>
-<p>Three paths:</p>
-<ul class="bullet-list">
-  <li><strong>+ New</strong> dropdown in the toolbar &mdash; pre-baked entries for New Claude / New Codex.</li>
-  <li>Click an empty mosaic pane &rarr; pick a CLI from the launcher dialog (CLI choice, profile, model, extra flags, env vars; bypass-permission toggle for Claude).</li>
-  <li>Command palette &rarr; "Quick Claude session" or equivalent.</li>
-</ul>
-
-<h4 class="subsection-title">Working in the terminal</h4>
-<p>Terminals are xterm.js with ~1000 lines of scrollback. Mouse selection auto-copies to the clipboard. Paste with <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>V</kbd></span>. Resizing the pane sends <code>SIGWINCH</code> to the child &mdash; run <code>stty size</code> to confirm.</p>
-<p>The pane status bar (varies per CLI) shows model, context %, accumulated cost in USD, current git branch, and session duration. Hover for token breakdown (input / output / cached).</p>
-
-<h4 class="subsection-title">Lifecycle</h4>
-<p>A session moves through <span class="pill pill-muted">start</span> &rarr; <span class="pill pill-green">running</span> &rarr; <span class="pill pill-red">stopped</span>. The kill button sends <code>SIGTERM</code> first, escalates to <code>SIGKILL</code> if needed. For a graceful interrupt, press <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>C</kbd></span> inside the terminal.</p>
-
-<h3 class="section-title" id="ch5-api">API agent conversations</h3>
-<p>The Agents view (LeftRail Sparkles, <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>1</kbd></span>) is a three-column surface. Left: <em>AgentSidebar</em> with every conversation you've ever started, grouped by project. Center/right: <em>AgentInputArea</em> for new chats, or <em>AgentChatPane</em> for an active one.</p>
-
-<h4 class="subsection-title">Seven provider rows</h4>
-<table class="ref-table">
-  <thead><tr><th>Row</th><th>AgentCli</th><th>Auth</th><th>Backend</th></tr></thead>
-  <tbody>
-    <tr><td>Anthropic (Subscription)</td><td><code>api-claude-oauth</code></td><td><span class="pill pill-cyan">OAuth</span> <code>~/.claude/.credentials.json</code></td><td>Node sidecar &rarr; Claude Agent SDK</td></tr>
-    <tr><td>Claude (API)</td><td><code>api-claude</code></td><td><span class="pill pill-amber">BYOK</span> keyring</td><td>Rust in-process</td></tr>
-    <tr><td>OpenAI (ChatGPT Plus/Pro)</td><td><code>api-openai-codex</code></td><td><span class="pill pill-cyan">OAuth</span> <code>~/.codex/auth.json</code></td><td>Node sidecar &rarr; <code>codex exec</code></td></tr>
-    <tr><td>OpenAI (API)</td><td><code>api-openai</code></td><td><span class="pill pill-amber">BYOK</span> keyring</td><td>Rust in-process</td></tr>
-    <tr><td>MiniMax</td><td><code>api-minimax</code></td><td><span class="pill pill-amber">BYOK</span> keyring</td><td>Rust in-process</td></tr>
-    <tr><td>OpenRouter</td><td><code>api-openrouter</code></td><td><span class="pill pill-amber">BYOK</span> keyring</td><td>Rust in-process</td></tr>
-    <tr><td>Ollama</td><td><code>api-ollama</code></td><td><span class="pill pill-green">Local, no key</span></td><td>Rust in-process &mdash; <code>localhost:11434</code></td></tr>
-  </tbody>
-</table>
-<p>Each row has a live auth badge with one of: <code>ready</code> / <code>login_required</code> / <code>missing_key</code> / <code>service_down</code> / <code>coming_soon</code>. For OAuth providers, an expired access token with a present refresh token still reads <em>ready</em> with the note "Session will auto-refresh on next use." The auth watcher fires a <code>provider-auth:changed</code> event whenever <code>~/.claude</code> or <code>~/.codex</code> changes, so badges refresh after a <code>claude login</code> or <code>codex login</code> completes.</p>
-
-<h4 class="subsection-title">Agent profiles</h4>
-<p>Profiles are named system-prompt overrides. Five ship by default; you can author more under <em>Settings &rarr; Agents &rarr; Profiles</em>.</p>
-<table class="ref-table">
-  <thead><tr><th>Profile</th><th>Stance</th></tr></thead>
-  <tbody>
-    <tr><td><span class="pill pill-green">Auto (Optimized)</span></td><td>No override &mdash; uses the workspace / CLI default.</td></tr>
-    <tr><td><span class="pill pill-amber">Speed Runner</span></td><td>Concise, code-first, skip confirmations.</td></tr>
-    <tr><td><span class="pill pill-blue">Thorough Reviewer</span></td><td>Step-by-step reasoning, edge-case analysis.</td></tr>
-    <tr><td><span class="pill pill-red">Security Auditor</span></td><td>OWASP top 10 focus, flag XSS / CSRF / SQLi.</td></tr>
-    <tr><td><span class="pill pill-purple">Refactor Pro</span></td><td>DRY/SOLID, readability, maintainability.</td></tr>
-  </tbody>
-</table>
-
-<h4 class="subsection-title">Conversation lifecycle</h4>
-<dl class="def-list">
-  <dt><span class="pill pill-green">active</span></dt>
-  <dd>Streaming. Send becomes a red Stop. Type-while-streaming queues, sends with a <em>(queued)</em> badge on turn end.</dd>
-  <dt><span class="pill pill-cyan">idle</span></dt>
-  <dd>Turn complete. Continue / Explain / Undo quick actions appear.</dd>
-  <dt><span class="pill pill-muted">done</span></dt>
-  <dd>Closed cleanly; a follow-up flips it back to active.</dd>
-  <dt><span class="pill pill-red">failed</span></dt>
-  <dd>Last turn errored (missing key, network, refusal). The error stays in the transcript so you can retry.</dd>
-</dl>
-
-<h3 class="section-title" id="ch5-sidecar">Sidecar vs in-process</h3>
-<p>Two transports, one event contract. API-key providers run <strong>in-process</strong> in Rust via the <code>LlmProvider</code> trait (<code>src-tauri/src/core/llm_provider.rs</code>). The two OAuth subscription providers route through the <strong>Node sidecar</strong> (<code>agent-sidecar/</code>). Both emit identical <code>api-agent:{kind}:{sessionId}</code> Tauri events, so the chat pane never knows or cares which backend served a given turn.</p>
-<p>Sidecar communication is newline-delimited JSON over stdio. The protocol version is currently <strong>6</strong> (see <code>agent-sidecar/src/protocol.ts</code>); the Rust supervisor reconciles versions on the <code>ready</code> event and warns &mdash; non-fatally &mdash; on mismatch. Entry-point resolution in priority order:</p>
-<ol class="step-list">
-  <li><code>PACKETADE_SIDECAR_PATH</code> / <code>PACKETADE_NODE_PATH</code> env vars (for development overrides).</li>
-  <li>Dev: <code>CARGO_MANIFEST_DIR/../agent-sidecar/dist/index.js</code> + system <code>node</code>.</li>
-  <li>Release: <code>resource_dir/agent-sidecar/dist/index.js</code> + bundled Node via Tauri shell sidecar.</li>
-</ol>
-
-<h3 class="section-title" id="ch5-chat-features">Slash commands, @-mentions, voice, and diffs</h3>
-
-<h4 class="subsection-title">Slash commands</h4>
-<p>Type <code>/</code> at the start of the composer (or after whitespace) to open the slash popover. The base set:</p>
-<table class="ref-table">
-  <thead><tr><th>Command</th><th>Action</th></tr></thead>
-  <tbody>
-    <tr><td><code>/clear</code></td><td>Clear messages, keep model/profile/project.</td></tr>
-    <tr><td><code>/model</code></td><td>Open the model dropdown in the chat header.</td></tr>
-    <tr><td><code>/help</code></td><td>Insert a keybinding cheatsheet message.</td></tr>
-    <tr><td><code>/new</code></td><td>Fresh conversation with the same agent/model/profile.</td></tr>
-    <tr><td><code>/usage</code></td><td>Insert running token + cost totals.</td></tr>
-    <tr><td><code>/review</code></td><td>Spawn a Reviewer subagent against pending writes &mdash; Blockers / Asks / Nits.</td></tr>
-    <tr><td><code>/goal</code></td><td>Bind a goal to the conversation; mirrors into PlanPanel and the linked Mission.</td></tr>
-    <tr><td><code>/template</code></td><td>Insert a saved prompt template. Templates also surface as native <code>/&lt;slug&gt;</code> commands.</td></tr>
-  </tbody>
-</table>
-<p>Saved prompt templates from <em>Settings &rarr; Advanced &rarr; Prompt Templates</em> are exposed as kebab-cased slash commands. <span class="pill pill-muted">v0.8.6</span></p>
-
-<h4 class="subsection-title">@-mentions</h4>
-<p>Type <code>@</code> to fuzzy-match the project's file tree (up to 20 results, debounced 100&nbsp;ms). Arrow to a result, <kbd>Tab</kbd> or <kbd>Enter</kbd> to insert. The path lands as <code>@src/auth/controller.ts</code> with a trailing space. API agents typically call <code>read_file</code> on mentioned paths before answering.</p>
-
-<h4 class="subsection-title">Inline tool diffs</h4>
-<p>When an API agent invokes <code>write_file</code>, the tool card renders an inline diff &mdash; not a JSON blob. Header shows <code>+N / &minus;M</code> stats; body shows the line-by-line diff (computed with <code>diffLines</code> against the on-disk file at diff time). New-file writes get a <span class="pill pill-green">New file</span> badge and the full content. Hover any added line and a <code>+</code> icon offers a Codex-style inline comment composer &mdash; queued comments fold into the next user turn as a <code>File comments:</code> preamble.</p>
-
-<h4 class="subsection-title">Voice input</h4>
-<p>The mic button in the composer starts capture. PacketADE prefers a local Whisper model if one is installed; otherwise it falls back to the browser Web Speech API. Transcripts are <em>appended</em> to whatever is in the composer &mdash; they never overwrite &mdash; so you can dictate in bursts, edit, then dictate again. Chapter 16 covers global push-to-talk and the analytics dashboard.</p>
-
-<h4 class="subsection-title">Tool runtime</h4>
-<p>API agents have five tools, enforced at the Rust runtime boundary. The agent cannot access anything outside this list, no matter what the prompt asks for.</p>
-<table class="ref-table">
-  <thead><tr><th>Tool</th><th>Parameters</th><th>Limits</th></tr></thead>
-  <tbody>
-    <tr><td><code>read_file</code></td><td><code>{ path }</code></td><td>Max 2 MB.</td></tr>
-    <tr><td><code>write_file</code></td><td><code>{ path, content }</code></td><td>Creates or overwrites; auto-creates parents; triggers inline diff.</td></tr>
-    <tr><td><code>list_directory</code></td><td><code>{ path }</code></td><td>Directories prefixed with <code>[DIR]</code>.</td></tr>
-    <tr><td><code>bash</code></td><td><code>{ command, timeout? }</code></td><td>Runs in project root. Output capped at 256 KB. Default 30 s, max 120 s.</td></tr>
-    <tr><td><code>grep</code></td><td><code>{ pattern, path?, include? }</code></td><td>Returns <code>file:line:content</code> rows.</td></tr>
-  </tbody>
-</table>
-<p>The agentic loop is hard-limited to <strong>25 tool calls per turn</strong>. At the cap, the loop exits cleanly with a summary &mdash; not infinite spin. If you hit the cap repeatedly, split the task or switch to a Thorough Reviewer profile.</p>
-
-<h4 class="subsection-title">Persistence</h4>
-<p>API conversations are saved as <code>~/.packetade/conversations/{id}.json</code> (debounced 500&nbsp;ms). The frontend hydrates the sidebar from this folder on startup. PTY sessions are <em>not</em> persisted &mdash; scrollback is gone when the pane closes. If you need a record, use the matching API provider instead.</p>
-</section>
-
-<!-- ===== CHAPTER 6: MISSION PLANNER ===== -->
-<section class="chapter" id="chapter-6">
-<span class="chapter-badge">Chapter 06</span>
-<h2 class="chapter-title">The Mission Planner v1</h2>
-<p class="chapter-lede">The Mission Planner is the autonomous core of Flight Deck. You write a spec; one Claude session owns the mission from there &mdash; decomposing into milestones and tasks, spawning executor agents per task, reacting to completions and failures, asking for approval when it needs to, and writing every move to a markdown journal you can read live. <span class="pill pill-muted">v0.7.0</span></p>
-
-<h3 class="section-title" id="ch6-spec">Spec mode</h3>
-<p>From Flight Deck, click <strong>Start a mission</strong>. A spec-mode chat opens with a Sonnet 4.6 planner agent. Talk to it about what you want to build &mdash; goal, constraints, must-haves, nice-to-haves. The planner asks clarifying questions until it has enough to decompose; when you're ready, hit <strong>Launch</strong>.</p>
-
-<h3 class="section-title" id="ch6-decompose">Autonomous decomposition</h3>
-<p>On launch, the planner breaks your spec into <strong>2&ndash;4 milestones</strong>, each containing <strong>4&ndash;10 tasks</strong>. Each task is spawned as an executor agent (Claude Code in a dedicated git worktree) with the task brief, acceptance criteria, and a scoped tool surface. Tasks run in parallel where their file claims don't collide; collision-detection is part of the orchestrator.</p>
-<p>The planner reacts to executor lifecycle events:</p>
-<ul class="bullet-list">
-  <li><strong>Task completed</strong> &rarr; review output, mark <code>done</code>, advance the milestone.</li>
-  <li><strong>Task failed (retryable)</strong> &rarr; replan with a tightened brief. Rate-limit and network failures are exempted from the replan cap.</li>
-  <li><strong>Task failed (terminal)</strong> &rarr; mark the milestone <code>blocked</code>, escalate via the approval gate.</li>
-  <li><strong>Approval requested</strong> &rarr; surface in the toolbar Bell and the Review Queue; mission pauses until you respond.</li>
-</ul>
-
-<h3 class="section-title" id="ch6-journal">Mission journal</h3>
-<p>Every planner action &mdash; tool call, decision, replan, escalation &mdash; is appended to an immutable markdown file at <code>~/.packetade/missions/&lt;shortId&gt;_&lt;id&gt;.md</code>. The <strong>Journal</strong> tab on the mission detail pane renders it live. This is the audit trail; everything the planner did, in order, with timestamps. Open the file directly to grep across past missions.</p>
-
-<h3 class="section-title" id="ch6-cost-split">Cost split &amp; context compaction</h3>
-<p>The mission StatGrid splits costs into <strong>Planner</strong> spend (the controlling Claude session) and <strong>Executor</strong> spend (every spawned worktree agent). OAuth subscriptions also get a cumulative-token chip. The split makes it obvious when the planner is over-thinking and the executors aren't doing enough &mdash; or vice versa.</p>
-<p>At <strong>150K cumulative input tokens</strong>, the planner's conversation is summarized and the session is reset with the summary as priming context. Multi-day missions do not hit the context wall.</p>
-
-<h3 class="section-title" id="ch6-approvals">Approvals &amp; safety rails</h3>
-<p>Approval is a first-class gate, not a CLI prompt. When the planner needs human input, it sends an <code>approval_needed</code> task into the Review Queue and pauses. The toolbar Bell turns red with a count; clicking it opens the queue, where you can approve / reject / amend inline. Wired in v0.8.7 so both <code>permission-request</code> and <code>pending-edit</code> events from API agents flip linked tasks to <code>approval_needed</code>.</p>
-<p>Safety rails baked in:</p>
-<ul class="bullet-list">
-  <li>Per-mode tool-call caps: 50 (planner) / 25 (executor) / 25 (helper).</li>
-  <li>Total task ceiling: 60 per mission.</li>
-  <li>Rate-limit detection with auto-resume after backoff.</li>
-  <li>Kill-switch button on every active mission.</li>
-  <li>Awake-stickiness watchdog &mdash; missions can't be left silently asleep.</li>
-  <li>Cold-start enforcement: active missions flip to <em>paused</em> on app restart so you confirm before resuming.</li>
-</ul>
-
-<h3 class="section-title" id="ch6-delete">Deleting missions</h3>
-<p>Each Mission row has a hover-revealed trash icon. <span class="pill pill-muted">v0.8.7</span> Click once &mdash; the row enters a two-step confirm with a 3-second auto-revert. If the mission has running attempts or queued / approval tasks, the confirm copy escalates to <strong>"Active work &mdash; delete?"</strong>. Confirmed deletion cascades to clear <code>Issue.flightId</code> back-references on every linked issue.</p>
-
-<a class="roadmap-link" href="roadmap.html#missions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg> Mission Planner roadmap</a>
-</section>
-
-<!-- ===== CHAPTER 7: ISSUES ===== -->
-<section class="chapter" id="chapter-7">
-<span class="chapter-badge">Chapter 07</span>
-<h2 class="chapter-title">Issues &amp; Spec Import</h2>
-<p class="chapter-lede">In v0.8.5 the Issues pane was repositioned as a fourth user mode &mdash; AI-structured intake at the front, human-orchestrated CLI agents in Workspace panes at the back, with a commit-trailer auto-close loop in the middle.</p>
-
-<h3 class="section-title" id="ch7-board">Five-column board</h3>
-<p>Columns, left to right:</p>
-<div class="feature-box">
-  <span class="pill pill-muted">Backlog</span>
-  <span class="pill pill-blue">Up Next</span>
-  <span class="pill pill-amber">In Progress</span>
-  <span class="pill pill-purple">In Review</span>
-  <span class="pill pill-green">Done</span>
-</div>
-<p>The <strong>Backlog</strong> column is the landing zone for spec-imported tickets. <strong>In Review</strong> auto-displays when an issue's linked Flight has a draft PR. <strong>Done</strong> is hidden by default; toggle <em>Show completed</em> to surface it. Legacy status enum values from earlier versions roll up &mdash; nothing falls off.</p>
-
-<h3 class="section-title" id="ch7-spec-import">Spec import</h3>
-<p>The <strong>Import Spec</strong> button at the top of the board opens a two-stage modal: <em>Paste &rarr; Review-and-accept</em>. <span class="pill pill-muted">v0.8.5</span></p>
-<ol class="step-list">
-  <li>Paste a spec, PRD, design doc, or feature brief into stage 1. Submit.</li>
-  <li>A one-shot Claude OAuth sidecar session (with an explicit anti-injection envelope on your input) returns Issue drafts.</li>
-  <li>Stage 2 lists every draft &mdash; title, body, labels, acceptance criteria, suggested epic &mdash; all inline-editable and individually selectable.</li>
-  <li>Accept what you want. The created Issues share a <code>specImportBatchId</code> so they're grouped semantically, and land in the <strong>Backlog</strong> column.</li>
-</ol>
-
-<h3 class="section-title" id="ch7-send">Send to Workspace</h3>
-<p>Every Issue card has a <strong>Send to Workspace</strong> CTA. Clicking it kicks off <code>sendIssueToWorkspace</code>:</p>
-<ol class="step-list">
-  <li>Provisions an Issue-bound git worktree (one branch per issue, sandboxed).</li>
-  <li>Installs a <code>prepare-commit-msg</code> hook that idempotently appends <code>Fixes #{n}</code> and <code>Run-By: PacketADE issue I-{id}</code> trailers to every commit made inside.</li>
-  <li>Spins up a workspace with one <code>claude-code</code> pane at the worktree path. The conversation is seeded with the issue title + body + acceptance criteria as the opening turn.</li>
-  <li>Stamps <code>workspaceId</code>, <code>sessionId</code>, and <code>sentToWorkspaceAt</code> on the Issue. Status flips to <code>in_progress</code> and the view switches to Workspace.</li>
-</ol>
-<p>Linked Issues show a <strong>&rarr; Workspace</strong> pill that jumps you back to the worktree pane. If worktree provisioning fails (uncommitted changes, branch conflict, non-git project), the workspace still opens in the bare project path &mdash; you just lose the auto-Done leg for that session.</p>
-
-<h3 class="section-title" id="ch7-autodone">Auto-Done on <code>Fixes #N</code></h3>
-<p>The <code>git_commit</code> Tauri command parses commit-message trailers with a word-boundary-anchored regex. It recognizes <code>Fixes</code> / <code>Closes</code> / <code>Resolves</code> &mdash; case-insensitive, start-of-line only, optional colon. Rejects <code>#42foo</code>. Dedupes. Multiple trailers per message all parse.</p>
-<p>On a match, it emits <code>issue-watcher:fixed</code> with the issueId, commitSha, and subject. The frontend listener auto-flips the matching Issue to <code>done</code> and appends a system audit comment: <em>"Auto-closed by commit {sha7}: {commit_subject}"</em>.</p>
-<p>CommitModal is Issue-aware: when the active workspace is bound to an Issue, the message textarea opens with <code>Fixes #{n}\n\n</code> pre-seeded and a "🔗 Linked to Issue #N: {title}" hint above. One-shot per open &mdash; it never overwrites your typing.</p>
-
-<h3 class="section-title" id="ch7-detail">IssueDetail &amp; filters</h3>
-<p>Click any card to open the <strong>IssueDetail</strong> modal: markdown body, acceptance-criteria checklist, assignee inline editor, dependency lists (blocks / blocked-by), linked workspace pill, full status grid, and an inline comment thread + composer.</p>
-<p>Above the board, <strong>IssueFilterChips</strong> give you multi-select popovers for Label / Epic / Workspace / Assignee, with a type-ahead filter when there are more than 6 options. A search box does full-text across titles and descriptions.</p>
-
-<div class="callout callout-warn">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-  <div class="callout-body"><strong>Acceptance-criteria caveat:</strong> once added, criteria cannot be edited &mdash; only deleted and re-added. Dependency cycles are not auto-detected, so avoid manually creating loops.</div>
-</div>
-
-<a class="roadmap-link" href="roadmap.html#issues"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg> Issues on the roadmap</a>
-</section>
-
-<!-- ===== CHAPTER 8: GITHUB ===== -->
-<section class="chapter" id="chapter-8">
-<span class="chapter-badge">Chapter 08</span>
-<h2 class="chapter-title">GitHub Integration</h2>
-<p class="chapter-lede">In v0.8.0 the GitHub pane went from a read-only viewer to a real daily-loop surface &mdash; PR lifecycle actions, AI code review, Catch-me-up digests, issue triage, draft-PR publishing from Mission attempts, and workspace auto-bind to the linked repo.</p>
-
-<h3 class="section-title" id="ch8-auth">Auth</h3>
-<p>Open the GitHub view from the LeftRail. First launch shows the auth screen. Generate a Personal Access Token with <code>repo</code> scope (classic or fine-grained both work), paste it, hit <strong>Connect</strong>. The token is handed to the Rust backend and kept in memory only &mdash; <strong>not persisted across app restarts</strong>. Reconnect on every launch. Treat it like a session cookie.</p>
-<p>You can rotate or disconnect from <em>Settings &rarr; GitHub</em>.</p>
-
-<h3 class="section-title" id="ch8-pr-actions">PR lifecycle &amp; checks</h3>
-<p>Every PR detail surfaces state-aware actions:</p>
-<ul class="bullet-list">
-  <li><strong>Merge</strong> with strategy chooser (merge / squash / rebase). The default strategy is configurable in <em>Settings &rarr; GitHub</em>.</li>
-  <li><strong>Close</strong> / <strong>Reopen</strong>.</li>
-  <li><strong>Convert to draft</strong> / <strong>Mark ready for review</strong>.</li>
-  <li><strong>Confirm-on-destructive</strong> toggle in Settings adds a double-tap guard to close / convert-to-draft.</li>
-</ul>
-<p>The <strong>Checks</strong> tab on every PR lists per-workflow status (app, duration, html link). PR cards in the list show a combined CI status pill with a tooltip breakdown of passing / failing / pending.</p>
-
-<h4 class="subsection-title">PR creation</h4>
-<p>The PR creation modal handles head and base branch autocomplete (default branch + recent branches sorted first), a draft toggle, <code>Closes #N</code> autofill seeded from the active issue, and pickers for reviewers / labels / milestones.</p>
-
-<h4 class="subsection-title">Diff viewer file tree</h4>
-<p>The PR diff has a left-side navigator listing every changed file grouped by directory with +/-/M status icons. Clicking scrolls the diff. Header summary: <code>N files changed &middot; +X / -Y</code>. A read-only review panel below the diff renders existing review submissions (Approved / Changes Requested / Commented) and line-comment threads grouped by file.</p>
-
-<h3 class="section-title" id="ch8-ai">AI: description, review, digest, triage</h3>
-
-<h4 class="subsection-title">PR description generator</h4>
-<p>One-shot Claude call inside the PR creation modal generates a structured description from diff + commits + linked issues. Editable before submit.</p>
-
-<h4 class="subsection-title">Pre-flight AI code review</h4>
-<p>Streaming review on every PR detail with structured Blocking / Asks / Nits output keyed by <code>file:line</code>. Cached per PR &mdash; re-opening doesn't re-burn the call.</p>
-
-<h4 class="subsection-title">Catch me up &mdash; repo digest</h4>
-<p>The Activity tab has a <strong>Catch me up</strong> button with 24h / 7d / 30d scope chips. Streams a markdown summary across four sections: Shipped / In progress / Needs attention / Quiet.</p>
-
-<h4 class="subsection-title">Issue triage drawer</h4>
-<p>Bulk-suggest labels, priority (P0&ndash;P3), rationale, and duplicate-of links across selected untriaged issues. Batches of 20 per call. You pick what to apply.</p>
-
-<h3 class="section-title" id="ch8-autobind">Workspace auto-bind</h3>
-<p>On workspace creation, PacketADE runs <code>git remote get-url origin</code> and stamps <code>{owner, repo}</code> onto the workspace record. A small linked-repo badge surfaces in the sidebar. You can opt out per workspace, or globally via <em>Settings &rarr; Workspace &rarr; Auto-detect GitHub repo on workspace creation</em>.</p>
-
-<h3 class="section-title" id="ch8-draft-prs">Publish attempts as draft PRs</h3>
-<p>Every Mission Flight has a <strong>Publish attempts as draft PRs</strong> option. <span class="pill pill-muted">v0.8.0</span> When toggled on, every attempt that completes successfully pushes its worktree branch to origin and opens a draft PR titled <code>[Flight {title}] Attempt {id}</code> with the Flight objective as the body. The per-attempt link surfaces on the attempt tile. Failures fall through to <code>errorMessage</code> so you see why.</p>
-<p>Pair this with the <strong>Auto-trailer</strong> setting (<em>Settings &rarr; Missions &rarr; Auto-trailer</em>) and every commit inside a Mission worktree gets a <code>Run-By: PacketADE mission F-&lt;flightId&gt; attempt A-&lt;attemptId&gt;</code> trailer for full provenance.</p>
-
-<a class="roadmap-link" href="roadmap.html#github"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg> GitHub roadmap</a>
-</section>
-
-<!-- ===== CHAPTER 9: MEMORY ===== -->
-<section class="chapter" id="chapter-9">
-<span class="chapter-badge">Chapter 09</span>
-<h2 class="chapter-title">Memory Layer</h2>
-<p class="chapter-lede">Memory is the persistent, searchable store of patterns, decisions, and events PacketADE has learned about your codebase. It auto-captures events, extracts patterns by category, scopes everything per-project, and injects relevant context into your prompts without you asking.</p>
-
-<h3 class="section-title" id="ch9-events">Auto-captured events</h3>
-<p>Memory listens for three event types:</p>
-<dl class="def-list">
-  <dt>session_completed</dt><dd>Duration, summary, tokens used, files touched.</dd>
-  <dt>task_completed</dt><dd>Outcome of a Mission task, including results and affected files.</dd>
-  <dt>flight_completed</dt><dd>Final Mission summary with milestones achieved.</dd>
-</dl>
-<p>A fourth variant, <code>manual_note</code>, was added in v0.8.0 for human-captured knowledge &mdash; the GitHub <strong>Save as memory</strong> CTA writes to this variant, and any future capture surfaces will too.</p>
-
-<h3 class="section-title" id="ch9-patterns">Patterns &amp; scope</h3>
-<p>Patterns are extracted by the backend after every 3 new session summaries and fall into four categories:</p>
-<div class="feature-box">
-  <span class="pill pill-blue">architecture</span>
-  <span class="pill pill-green">convention</span>
-  <span class="pill pill-purple">preference</span>
-  <span class="pill pill-red">pitfall</span>
-</div>
-<p>Each pattern carries a confidence score between 0 and 1. Storage is capped at 200 events and 20 patterns, both FIFO.</p>
-<p>In v0.8.0, patterns gained a <code>projectPath</code> field &mdash; they're project-scoped on extraction. Legacy patterns without <code>projectPath</code> remain global (match every project) for back-compat. The scope behavior is configurable in <em>Settings &rarr; Memory &rarr; Match memory by project path</em>: <span class="pill pill-blue">Exact</span> / <span class="pill pill-cyan">Parent directory</span> / <span class="pill pill-muted">Global</span>.</p>
-
-<h3 class="section-title" id="ch9-pinned">Pinned patterns &amp; manual notes</h3>
-<p>Click the star icon on any pattern to pin it. Pinned patterns sort first in <code>getContextForSession</code> and are exempt from the <code>capPatterns</code> eviction limit. <span class="pill pill-muted">v0.8.0</span> Toggle <em>Settings &rarr; Memory &rarr; Pinned patterns survive cap eviction</em> if you want the override behavior different.</p>
-
-<h3 class="section-title" id="ch9-surfaces">Inline surfaces</h3>
-<p>Memory shows up across the app, not just in its own view:</p>
-<ul class="bullet-list">
-  <li><strong>AgentInputArea context-preview chevron</strong> &mdash; a collapsible above the input lists the memories about to be injected into the next user turn. Live-reactive to the memory store.</li>
-  <li><strong>MissionsView memory chip</strong> &mdash; completed missions show "Brain N" with the count of extracted lessons; clicking deep-links into MemoryView filtered to that mission.</li>
-  <li><strong>WorkspaceSidebar Recent learnings</strong> &mdash; the last 5 memory events for the active project, with a <em>View all &rarr;</em> link.</li>
-</ul>
-<p>The Memory view itself has two tabs &mdash; <strong>Patterns</strong> and <strong>Timeline</strong> &mdash; with manual controls: <em>Refresh Patterns</em>, <em>Delete Event</em>, <em>Delete Pattern</em>, <em>Clear Memory</em>.</p>
-
-<div class="callout callout-info">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-  <div class="callout-body">Deleting events does <strong>not</strong> retrigger pattern extraction. Click <em>Refresh Patterns</em> manually if deletions should change what's being matched.</div>
-</div>
-</section>
-
-<!-- ===== CHAPTER 10: CLI CATALOG ===== -->
-<section class="chapter" id="chapter-10">
-<span class="chapter-badge">Chapter 10</span>
-<h2 class="chapter-title">CLI Catalog</h2>
-<p class="chapter-lede">In v0.8.3 the CLI detection card became a full 13-entry catalog grid; in v0.8.7 it grew install buttons, browse-for-binary support, manual path overrides, and "Coming Soon" placeholders. Open it from <em>Settings &rarr; Agents &rarr; Local CLI</em>.</p>
-
-<h3 class="section-title" id="ch10-grid">Grid &amp; detection</h3>
-<p>The grid is 2-column, each entry a 32&times;32 brand icon swatch + name + version (or "not installed") + status dot. Detection runs concurrently &mdash; <code>tokio::process::Command</code> + <code>join_all</code> &mdash; with per-probe timeouts (2&nbsp;s PATH lookup, 3&nbsp;s version probe) and Windows <code>.cmd</code> shim fallback so npm-installed CLIs (claude, codex, gemini, opencode) are found.</p>
-<p>Click a card to select it. Click again to deselect. Click another to switch. Status dot color: <span class="pill pill-amber">amber</span> = selected, <span class="pill pill-green">green</span> = installed (passive), <span class="pill pill-muted">faint</span> = not installed.</p>
-<p>The 13 catalog entries, in display order:</p>
-<table class="ref-table">
-  <thead><tr><th>Entry</th><th>Binary</th><th>State</th></tr></thead>
-  <tbody>
-    <tr><td>Claude Code</td><td><code>claude</code></td><td>Installable</td></tr>
-    <tr><td>Codex CLI</td><td><code>codex</code></td><td>Installable</td></tr>
-    <tr><td>Devin for Terminal</td><td><code>devin</code></td><td>Coming Soon</td></tr>
-    <tr><td>Gemini CLI</td><td><code>gemini</code></td><td>Installable</td></tr>
-    <tr><td>OpenCode</td><td><code>opencode</code></td><td>Installable</td></tr>
-    <tr><td>PacketCode</td><td>&mdash;</td><td>Browse-only</td></tr>
-    <tr><td>GitHub Copilot CLI</td><td><code>gh copilot</code></td><td>Installable</td></tr>
-    <tr><td>Kimi CLI</td><td><code>kimi</code></td><td>Coming Soon</td></tr>
-    <tr><td>Cursor Agent</td><td><code>cursor</code></td><td>Coming Soon</td></tr>
-    <tr><td>Qwen Code</td><td><code>qwen</code></td><td>Installable</td></tr>
-    <tr><td>Qoder CLI</td><td><code>qoder</code></td><td>Installable</td></tr>
-    <tr><td>Mistral Vibe CLI</td><td><code>mistral</code></td><td>Coming Soon</td></tr>
-    <tr><td>DeepSeek TUI</td><td><code>deepseek</code></td><td>Coming Soon</td></tr>
-  </tbody>
-</table>
-
-<h3 class="section-title" id="ch10-install">Install / Browse / Coming Soon</h3>
-<p>Card variants:</p>
-<dl class="def-list">
-  <dt>Installed</dt><dd>Green dot, version on display, ready to launch.</dd>
-  <dt>Installable</dt><dd>Has an <code>installCommand</code>. Clicking <strong>Install</strong> spawns a one-shot terminal workspace that runs the command.</dd>
-  <dt>Browse-only</dt><dd>PacketCode falls here &mdash; click <strong>Browse</strong> and pick the binary via OS file picker (<code>.exe</code> filter on Windows, no filter on POSIX). Path persists in <code>cliOverrideStore</code>.</dd>
-  <dt>Coming Soon</dt><dd>Devin, Kimi, Cursor, Mistral, DeepSeek &mdash; surfaces a "Coming Soon" pill instead of an install button.</dd>
-  <dt>Browse-fallback</dt><dd>For installable entries when install fails &mdash; offers Browse as an alternative.</dd>
-</dl>
-<p>Above the grid, a header row shows the <strong>"N installed"</strong> pill plus <strong>Test</strong> / <strong>Rescan</strong> buttons. Test reuses detection on just the selected CLI and renders the version + path inline (✓/✕ icon, 8-second auto-clear, also clears on selection change).</p>
-
-<h3 class="section-title" id="ch10-override">Manual path override</h3>
-<p>For installed-but-not-on-PATH binaries, the Browse-fallback path lets you point PacketADE at an absolute path. The override displays as a clearable <strong>"Override: {basename}"</strong> tag on the card. Backend <code>DetectCatalogItem.manualPath</code> skips PATH lookup and probes the user-supplied path directly via <code>probe_version_at(path)</code>.</p>
-</section>
-
-<!-- ===== CHAPTER 11: CODE QUALITY ===== -->
-<section class="chapter" id="chapter-11">
-<span class="chapter-badge">Chapter 11</span>
-<h2 class="chapter-title">Code Quality &amp; AutoFix</h2>
-<p class="chapter-lede">The Code Quality modal (Toolbar Quality button) runs lint, typecheck, test, build, and audit checks live &mdash; per-check tabs with sticky status badges, ANSI-rendered output, last-5-runs history, and AI explain / autofix hooks. <span class="pill pill-muted">v0.8.7</span></p>
-
-<h3 class="section-title" id="ch11-runner">Live check runner</h3>
-<p>The backend <code>quality_runner.rs</code> spawns each check with <code>kill_on_drop</code>, a 3&nbsp;s path probe + 300&nbsp;s run timeout, and streams output via <code>quality:chunk:{run_id}</code>, <code>quality:check-start</code>, <code>quality:check-done</code>, and <code>quality:done</code> events. The <code>cancel_quality_run</code> command lets you abort cleanly.</p>
-<p>Frontend per-check tabs render with sticky status badges &mdash; <span class="pill pill-muted">idle</span> <span class="pill pill-muted">queued</span> <span class="pill pill-blue">running</span> <span class="pill pill-green">passed</span> <span class="pill pill-red">failed</span> <span class="pill pill-muted">cancelled</span> <span class="pill pill-muted">skipped</span> <span class="pill pill-amber">errored</span> &mdash; and an in-house ANSI renderer (no new deps) with SGR + 256-color + truecolor support. Lines are filterable; <code>path:line:col</code> rows are click-to-copy.</p>
-<p>Run history dropdown keeps the last 5 runs, keyed on normalized project path. Fullscreen toggle. <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>R</kbd></span> to refresh. <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>F</kbd></span> for filter focus. <span class="kbd-row"><kbd>Esc</kbd></span> to close.</p>
-
-<h3 class="section-title" id="ch11-autofix">AutoFix integrations</h3>
-<p>The <code>code_quality_autofix.rs</code> command wires four canonical fixers behind confirm modals:</p>
-<ul class="bullet-list">
-  <li><strong>ESLint</strong> &rarr; <code>eslint --fix</code></li>
-  <li><strong>Prettier</strong> &rarr; <code>prettier --write</code></li>
-  <li><strong>Rust</strong> &rarr; <code>cargo fix</code></li>
-  <li><strong>pnpm audit</strong> &rarr; <code>pnpm audit --fix</code></li>
-</ul>
-<p>Each streams via <code>quality-fix:chunk:{run_id}</code>. After a fix completes, an re-analyze nonce chain refreshes the modal so you immediately see the updated counts. A duplicate-run-id rejection registry plus <code>cancel_quality_fix</code> prevents the dreaded "double-click sent two fixes" footgun.</p>
-
-<h3 class="section-title" id="ch11-ai">AI explain &amp; summary</h3>
-<p>Three AI affordances per check:</p>
-<ul class="bullet-list">
-  <li><strong>Explain</strong> &mdash; per-error streamed Markdown explanation. Anti-injection envelope on every user-supplied tool output (XML-ish tags + system-prompt warning); per-check + total byte caps with two-pass shrink.</li>
-  <li><strong>Fix in Workspace</strong> &mdash; creates a backlog Issue, provisions an issue-bound worktree, spawns a Claude pane seeded with the error context.</li>
-  <li><strong>File Issue</strong> &mdash; one-click ticket creation, labeled <code>lint</code> / <code>typecheck</code> / <code>test-failure</code> / <code>build</code> based on the check kind.</li>
-</ul>
-<p>Below the per-check tabs, a bottom-of-modal <strong>AI summary</strong> generates a digest of the whole run. A run-hash cache keys results by content, with clear-by-hash (not full wipe) so you can refresh selectively.</p>
-
-<div class="callout callout-info">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-  <div class="callout-body"><strong>Remote workspaces:</strong> Code Quality is local-only. Pointing at a remote workspace surfaces a "not yet supported on remote workspaces" placeholder and the toolbar Quality button is disabled with an explanatory tooltip.</div>
-</div>
-</section>
-
-<!-- ===== CHAPTER 12: SETTINGS ===== -->
-<section class="chapter" id="chapter-12">
-<span class="chapter-badge">Chapter 12</span>
-<h2 class="chapter-title">Settings Panel</h2>
-<p class="chapter-lede">In v0.8.1 the Settings panel was reorganized from 18 flat sections into 15 grouped tabs. The new IA stacks related cards together &mdash; CLI + Settings + Profiles in <em>Agents</em>, API Keys + Subscriptions + Endpoints in <em>AI Providers</em>, and so on &mdash; so you spend less time hunting and more time configuring.</p>
-
-<h3 class="section-title" id="ch12-tabs">The 15 tabs</h3>
-<table class="ref-table">
-  <thead><tr><th>Tab</th><th>What lives here</th></tr></thead>
-  <tbody>
-    <tr><td>General</td><td>Theme (Dark/Light), Notifications (sound + desktop).</td></tr>
-    <tr><td>Workspace</td><td>Default bypass-permission for new workspaces, GitHub auto-bind on creation.</td></tr>
-    <tr><td>Agents</td><td>CLI catalog (13-entry grid), Agent settings (default launch location), Profiles (5 built-ins + custom).</td></tr>
-    <tr><td>AI Providers</td><td>API Keys (Anthropic / OpenAI / Gemini / MiniMax / OpenRouter / Ollama), Subscriptions (Claude OAuth + Codex OAuth status, Sign in / out), Endpoints (custom base URLs).</td></tr>
-    <tr><td>AI Routing</td><td>Task type &rarr; agent / model mapping (Code Review, Code Generation, Debugging, Testing, Planning, Analysis).</td></tr>
-    <tr><td>Memory</td><td>Project-scope mode (Exact / Parent / Global), pinned-pattern eviction toggle.</td></tr>
-    <tr><td>Missions</td><td>Auto-trailer config (toggle + format with <code>{flightId}</code> / <code>{attemptId}</code> / <code>{flightTitle}</code> placeholders + live preview).</td></tr>
-    <tr><td>GitHub</td><td>Token status / Rotate / Disconnect, default merge strategy, require-confirmation toggle, "default new PRs to draft", "publish Mission attempts as draft PRs by default".</td></tr>
-    <tr><td>Issues</td><td>Ticket prefix, default labels, default epics.</td></tr>
-    <tr><td>Servers</td><td>SSH ServerConfig CRUD with host fingerprint verification.</td></tr>
-    <tr><td>MCP</td><td>Servers (global + project scope) and Provider (PacketADE-as-MCP readiness).</td></tr>
-    <tr><td>Project Rules</td><td>AGENTS.md and CLAUDE.md editor &mdash; reads + writes both, surfaces Unify when they diverge, offers a starter template when neither exists.</td></tr>
-    <tr><td>Modules</td><td>Enable / disable sidebar modules (Ideation / Scaffold / Dictation).</td></tr>
-    <tr><td>Dictation</td><td>Push-to-talk + toggle hotkey rebinding (in-place capture, Esc to cancel, modifier required).</td></tr>
-    <tr><td>Advanced</td><td>Crash Reports, History link, Cost Dashboard link, Prompt Templates editor.</td></tr>
-  </tbody>
-</table>
-
-<h3 class="section-title" id="ch12-providers">API Keys &amp; Subscriptions</h3>
-<p>BYOK keys live in the OS keyring under <code>packetade:api-key-{provider}</code> &mdash; Keychain on macOS, Credential Manager on Windows, Secret Service on Linux. They are never written to disk in plaintext and never exposed to the frontend JavaScript context. The Rust backend attaches them at request time.</p>
-<p>The <strong>Subscriptions</strong> card surfaces the live status of Claude OAuth and Codex OAuth (Ready / Login required / Expired). <strong>Sign in</strong> opens a PTY login workspace running <code>claude login</code> or <code>codex login</code>. <strong>Sign out</strong> calls the <code>sign_out_provider</code> backend command which removes the credential file.</p>
-
-<h3 class="section-title" id="ch12-prompts">Project rules &amp; prompt templates</h3>
-<p><strong>Project Rules</strong> is the AGENTS.md / CLAUDE.md editor. It reads from the project root, writes to both files on save, and surfaces a <em>Unify</em> affordance when the two files have diverged. The cascading resolver walks <code>~/.claude/AGENTS{.override,}.md</code> &rarr; git-root &rarr; cwd, picks one of <code>AGENTS.override.md</code> / <code>AGENTS.md</code> / <code>CLAUDE.md</code> per directory, concatenates with <code>&lt;!-- source: &lt;path&gt; --&gt;</code> headers, and caps at 32 KiB.</p>
-<p><strong>Prompt Templates</strong> (under Advanced) is a full CRUD modal. Saved templates become slash commands &mdash; type <code>/&lt;slug&gt;</code> and the body replaces the slash query. Workspace panes also get a BookOpen-icon dropdown that writes a template body + CR to the active PTY.</p>
-</section>
-
-<!-- ===== CHAPTER 13: COST ===== -->
-<section class="chapter" id="chapter-13">
-<span class="chapter-badge">Chapter 13</span>
-<h2 class="chapter-title">Cost Tracking</h2>
-<p class="chapter-lede">PacketADE aggregates spend across every source it can observe &mdash; Claude CLI, Codex CLI, Claude subscription/API, OpenAI subscription/API, MiniMax, OpenRouter, and Ollama (local runs are almost always $0 but still counted for session totals). The toolbar LiveSpendChip shows today's combined total in real time.</p>
-
-<h3 class="section-title" id="ch13-dashboard">Cross-provider dashboard</h3>
-<p>Open the Cost Dashboard from the LiveSpendChip in the toolbar or from <em>Settings &rarr; Advanced &rarr; Cost</em>. Four summary cards sit at the top: <strong>Total Cost</strong>, <strong>Total Sessions</strong>, <strong>Input Tokens</strong>, <strong>Output Tokens</strong>. Below them, a daily chart of the last 30 days as green bars &mdash; hover for per-day totals.</p>
-<p>The model usage table is the main reference surface:</p>
-<table class="ref-table">
-  <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
-  <tbody>
-    <tr><td>Source</td><td>Pill tag: claude-cli, codex-cli, claude-api, openai-api, openrouter, ollama, sidecar-anthropic, sidecar-codex.</td></tr>
-    <tr><td>Model</td><td>Model name reported by the provider.</td></tr>
-    <tr><td>Sessions</td><td>Distinct sessions touching that model.</td></tr>
-    <tr><td>Input / Output</td><td>Token counts, rolled up.</td></tr>
-    <tr><td>Cost</td><td>USD, computed from the pricing table for that model.</td></tr>
-  </tbody>
-</table>
-<p>Filter dropdown narrows by source. Usage is persisted per-session to <code>~/.packetade/usage.jsonl</code>; API agents write on each <em>Done</em> event, keeping the file append-only.</p>
-
-<h3 class="section-title" id="ch13-cache">Cache-aware metrics</h3>
-<p>When the Claude API is in use, two extra pills surface <code>cache_read_input_tokens</code> and <code>cache_creation_input_tokens</code> &mdash; a material discount once prompt caching kicks in. The Codex Spring 2026 absorption (v0.5.0) added <code>reasoning_tokens</code> and <code>cached_input_tokens</code> flow-through for GPT-5.5 spend, so what was previously under-reported now rolls into the totals correctly. Codex MultiAgentV2 sub-agent token attribution is bucketed by address (<code>/root/agent_a</code> etc.) and rolled into the conversation total.</p>
-
-<h3 class="section-title" id="ch13-mission">Per-mission totals</h3>
-<p>Inside Flight Deck, the mission StatGrid splits cost into <strong>Planner</strong> and <strong>Executor</strong> spend &mdash; one of the most useful signals for understanding whether a mission is over-planning or over-executing. OAuth subscriptions also surface a cumulative-token chip on the mission row.</p>
-
-<div class="callout callout-info">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-  <div class="callout-body"><strong>Coverage gaps:</strong> Gemini and OpenCode CLIs do not expose token data, so they are not tracked. There is no date-range filter yet (the chart is last-30 and the table is all-time) and no budget alerts.</div>
-</div>
-</section>
-
-<!-- ===== CHAPTER 14: SHORTCUTS ===== -->
-<section class="chapter" id="chapter-14">
-<span class="chapter-badge">Chapter 14</span>
-<h2 class="chapter-title">Keyboard Shortcuts</h2>
-<p class="chapter-lede">PacketADE is keyboard-first. Learn these and you'll rarely touch the mouse.</p>
-
-<h3 class="section-title" id="ch14-global">Global</h3>
-<table class="ref-table">
-  <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
-  <tbody>
-    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>K</kbd></span></td><td>Toggle the command palette</td></tr>
-    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>\</kbd></span></td><td>Split the active pane (spawns a Claude or Codex pane based on current view)</td></tr>
-    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>1</kbd></span> &hellip; <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>4</kbd></span></td><td>Focus pane 1&ndash;4 (by mosaic leaf order)</td></tr>
-    <tr><td><span class="kbd-row"><kbd>Esc</kbd></span></td><td>Close command palette, cancel an active dictation recording</td></tr>
-  </tbody>
-</table>
-
-<h3 class="section-title" id="ch14-views">View navigation</h3>
-<table class="ref-table">
-  <thead><tr><th>Shortcut</th><th>Jumps to</th></tr></thead>
-  <tbody>
-    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>1</kbd></span></td><td>Claude session view</td></tr>
-    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>2</kbd></span></td><td>Codex session view</td></tr>
-    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>3</kbd></span></td><td>Issues</td></tr>
-    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>4</kbd></span></td><td>History</td></tr>
-    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>5</kbd></span></td><td>Settings (Tools)</td></tr>
-    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>W</kbd></span></td><td>Workspace</td></tr>
-    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>D</kbd></span></td><td>Dictation</td></tr>
-  </tbody>
-</table>
-
-<h3 class="section-title" id="ch14-chat">Chat composer</h3>
-<table class="ref-table">
-  <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
-  <tbody>
-    <tr><td><kbd>Enter</kbd></td><td>Send message</td></tr>
-    <tr><td><span class="kbd-row"><kbd>Shift</kbd><span class="plus">+</span><kbd>Enter</kbd></span></td><td>Newline</td></tr>
-    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Enter</kbd></span></td><td>Send / confirm modal</td></tr>
-    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>N</kbd></span></td><td>New agent conversation (Agents view)</td></tr>
-    <tr><td><kbd>@</kbd></td><td>Open file mention popover</td></tr>
-    <tr><td><kbd>/</kbd></td><td>Open slash command popover</td></tr>
-    <tr><td><kbd>Tab</kbd></td><td>Queue a follow-up turn (mid-stream)</td></tr>
-    <tr><td><span class="kbd-row"><kbd>Shift</kbd><span class="plus">+</span><kbd>Tab</kbd></span></td><td>Cycle the mode chip (default / plan / manual / yolo)</td></tr>
-    <tr><td><span class="kbd-row"><kbd>Alt</kbd><span class="plus">+</span><kbd>.</kbd></span> / <span class="kbd-row"><kbd>Alt</kbd><span class="plus">+</span><kbd>,</kbd></span></td><td>Nudge the model toward thorough / fast within the same provider</td></tr>
-  </tbody>
-</table>
-
-<h3 class="section-title" id="ch14-dictation">Dictation</h3>
-<table class="ref-table">
-  <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
-  <tbody>
-    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>V</kbd></span> (hold)</td><td>Push-to-talk &mdash; records while held, transcribes on release</td></tr>
-    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>R</kbd></span></td><td>Toggle recording on/off</td></tr>
-    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>D</kbd></span></td><td>Open Dictation view</td></tr>
-    <tr><td><kbd>Esc</kbd></td><td>Cancel an active recording (discarded client-side)</td></tr>
-  </tbody>
-</table>
-
-<h3 class="section-title" id="ch14-terminal">Terminal</h3>
-<table class="ref-table">
-  <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
-  <tbody>
-    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>V</kbd></span></td><td>Paste into xterm.js (does not conflict with push-to-talk when inside the terminal &mdash; push-to-talk is a global handler)</td></tr>
-    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>C</kbd></span></td><td>Send SIGINT to the child process</td></tr>
-  </tbody>
-</table>
-
-<h3 class="section-title" id="ch14-approvals">Approval overlays</h3>
-<table class="ref-table">
-  <thead><tr><th>Key</th><th>Action</th></tr></thead>
-  <tbody>
-    <tr><td><kbd>Y</kbd></td><td>Approve</td></tr>
-    <tr><td><kbd>N</kbd></td><td>Reject</td></tr>
-    <tr><td><kbd>Esc</kbd></td><td>Abort</td></tr>
-  </tbody>
-</table>
-</section>
-
-<!-- ===== CHAPTER 15: MCP ===== -->
-<section class="chapter" id="chapter-15">
-<span class="chapter-badge">Chapter 15</span>
-<h2 class="chapter-title">MCP</h2>
-<p class="chapter-lede">The Model Context Protocol is an open spec for tool and resource exposure. PacketADE manages it from two cards under <em>Settings &rarr; MCP</em>: <strong>Servers</strong> (clients PacketADE connects to) and <strong>Provider</strong> (PacketADE-owned resources exposed to other clients).</p>
-
-<h3 class="section-title" id="ch15-servers">MCP Servers</h3>
-<p>Add a server with name, command (typically <code>npx</code> / <code>python</code> / <code>node</code> / absolute path), arguments, environment variables, and scope:</p>
-<dl class="def-list">
-  <dt>Global</dt><dd>Lands in <code>~/.claude/settings.json</code>. Available to every project.</dd>
-  <dt>Project</dt><dd>Lands in <code>./.mcp.json</code> at the project root. Available to this project only.</dd>
-</dl>
-<p>The pencil icon reopens the modal for edits (name is locked once created). Disabled servers show a badge. The trash icon deletes with a confirmation.</p>
-
-<h3 class="section-title" id="ch15-provider">MCP Provider</h3>
-<p>The Provider card is a readiness / configuration surface for exposing PacketADE-owned resources through MCP. Today it persists the enabled state, port, scope, resource catalog, and per-tool allow list in the frontend store. The external listener is not wired yet, so toggling does not make PacketADE reachable from other clients by itself.</p>
-
-<div class="callout callout-warn">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-  <div class="callout-body"><strong>Tool name collisions:</strong> two servers exposing the same tool name is undefined behavior &mdash; last-loaded wins. Namespace your tools when running multiple servers with overlapping features.</div>
-</div>
-
-<p>The Mission Planner runs an in-process MCP server inside the agent-sidecar that exposes 7 planner tools to Claude &mdash; this is separate from the external Provider listener and ships ready-to-use.</p>
-</section>
-
-<!-- ===== CHAPTER 16: VOICE INPUT ===== -->
-<section class="chapter" id="chapter-16">
-<span class="chapter-badge">Chapter 16</span>
-<h2 class="chapter-title">Voice Input</h2>
-<p class="chapter-lede">The Dictation module is a full voice-to-text workspace: push-to-talk anywhere with <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>V</kbd></span>, native Whisper transcription, focus-aware insertion, and an analytics dashboard.</p>
-
-<h3 class="section-title" id="ch16-modes">Native vs Web Speech</h3>
-<p>PacketADE checks for local Whisper models on startup via <code>listWhisperModels()</code>. If any model is present, the dictation hook flips into native mode. Otherwise it falls back to the browser Web Speech API. Recognition is locked to <code>en-US</code>.</p>
-<p>Native is more accurate; Web Speech is the fallback. Native dedupe may collapse rapid repeated digits; the Web Speech path does not.</p>
-
-<h3 class="section-title" id="ch16-hotkeys">Hotkeys &amp; focus-aware insertion</h3>
-<p>All four dictation hotkeys (push-to-talk, toggle, open view, cancel) are registered as OS-level global shortcuts via <code>tauri-plugin-global-shortcut</code>. Push-to-talk works even when PacketADE is not the focused application. In-window listeners are kept as a fallback for cases where OS registration is denied (e.g., macOS Accessibility permission not granted).</p>
-<p>PacketADE tracks the most recently focused text input across every view. When transcription finishes and <em>Auto-paste after transcription</em> is on (default), the result is inserted at that input's cursor &mdash; agent chat box, flight title, issue description, prompt library, or anywhere else you've typed recently. Terminal panes and the Dictation view's own search box are deliberately excluded.</p>
-<p>If you dictated from another app via the global hotkey and no PacketADE input was tracked, the transcript falls back to the system clipboard.</p>
-
-<h3 class="section-title" id="ch16-dashboard">Analytics dashboard</h3>
-<p>The Dictation view surfaces Total Words, Avg WPM, Fastest WPM, Avg Sentiment, Total Time, Entries, Daily Streak, an estimated Time Saved, and a Vocab Diversity score. Charts: Sentiment over Time (bar), WPM over Time (line), Activity by Hour (histogram), Top Words (frequency), Words per Entry (distribution).</p>
-
-<p>The hotkey bindings are user-rebindable. <span class="pill pill-muted">v0.8.1</span> In <em>Settings &rarr; Dictation</em>, click any hotkey to enter capture mode; <kbd>Esc</kbd> cancels; modifier required for validity. <code>useDictationGlobalShortcuts</code> re-registers on change.</p>
-</section>
-
-<!-- ===== CHAPTER 17: MODULES ===== -->
-<section class="chapter" id="chapter-17">
-<span class="chapter-badge">Chapter 17</span>
-<h2 class="chapter-title">Module System</h2>
-<p class="chapter-lede">Modules are optional sidebar extensions declared as <code>ModuleManifest</code> objects. The registry lives in <code>src/modules/registry.ts</code> and currently ships three built-ins. Toggle them on or off from <em>Settings &rarr; Modules</em>.</p>
-
-<h3 class="section-title" id="ch17-builtins">Built-in modules</h3>
-<dl class="def-list">
-  <dt>Ideation Scanner</dt><dd><span class="pill pill-purple">AI</span> Codebase opportunity scanner. Streams improvement ideas in groups &mdash; Code Improvements, Security, Performance, Code Quality, Documentation, UI/UX. Each idea has a severity pill, affected files, Promote / Dismiss / Convert-to-Issue actions.</dd>
-  <dt>Scaffold</dt><dd><span class="pill pill-cyan">Utility</span> Project templating &mdash; React + Vite, Next.js, Node.js Express, Rust CLI, Python FastAPI, Blank. Tool availability check above the grid.</dd>
-  <dt>Dictation</dt><dd><span class="pill pill-purple">AI</span> Voice-to-text workspace (Chapter 16).</dd>
-</dl>
-
-<h3 class="section-title" id="ch17-add">Adding a custom module</h3>
-<p>Create <code>src/modules/my-module.ts</code>, export a <code>ModuleManifest</code>, and push it into <code>moduleRegistry</code> in <code>registry.ts</code>:</p>
-<pre><code>import { Zap } from "lucide-react";
-import MyFeature from "./my-feature-view";
-
-export const myModule: ModuleManifest = {
-  id: "my-feature",
-  name: "My Feature",
-  description: "A custom module",
-  icon: Zap,
-  iconColor: "text-accent-blue",
-  component: MyFeature,
-  category: "utility",
-  enabledByDefault: true,
-};</code></pre>
-
-<div class="callout callout-info">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-  <div class="callout-body"><strong>No lazy loading:</strong> every registered module is imported at app startup, enabled or not. Keep module entry points light &mdash; lift heavy dependencies into the view component itself rather than the manifest file.</div>
-</div>
-</section>
-
-<!-- ===== CHAPTER 18: TROUBLESHOOTING ===== -->
-<section class="chapter" id="chapter-18">
-<span class="chapter-badge">Chapter 18</span>
-<h2 class="chapter-title">Troubleshooting / FAQ</h2>
-<p class="chapter-lede">Common issues, fast answers. If you're still stuck, grab a crash file and open an issue on GitHub.</p>
-
-<h3 class="section-title" id="ch18-common">Common issues</h3>
-<table class="ref-table">
-  <thead><tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr></thead>
-  <tbody>
-    <tr><td>CLI agent pane shows "command not found"</td><td>CLI not on PATH</td><td>Install via the Catalog grid <em>Install</em> button, Browse to an absolute path, or fix PATH and restart PacketADE</td></tr>
-    <tr><td>API agent errors "No API key configured"</td><td>Keyring entry missing</td><td><em>Settings &rarr; AI Providers &rarr; API Keys</em>, paste key, save</td></tr>
-    <tr><td>Ollama agent fails to respond</td><td>Daemon not running</td><td><code>ollama serve</code>, verify <code>http://localhost:11434</code></td></tr>
-    <tr><td>GitHub disconnects after restart</td><td>Token is not persisted by design</td><td>Re-paste PAT each launch &mdash; backend-only auth, intentional</td></tr>
-    <tr><td>Sidecar status chip is red</td><td>Node sidecar failed to spawn</td><td>Check <code>~/.packetade/crashes/</code> and the sidecar log; verify bundled Node is present in <code>resource_dir/binaries/</code></td></tr>
-    <tr><td>Mission stuck in <em>draft</em></td><td>No milestones added</td><td>Open the spec chat, refine until the planner produces a plan, then Launch</td></tr>
-    <tr><td>Mission attempt didn't open a draft PR</td><td>Toggle off, or push failed</td><td>Check <em>Settings &rarr; GitHub &rarr; publish Mission attempts as draft PRs</em> and the attempt's <code>errorMessage</code></td></tr>
-    <tr><td>Cost dashboard shows $0 for a provider</td><td>Pricing data missing for that model</td><td>Update PacketADE; verify the model ID is registered in the pricing table</td></tr>
-    <tr><td>Code Quality button is disabled</td><td>Active workspace is remote (SSH)</td><td>Switch to a local workspace &mdash; Code Quality is local-only</td></tr>
-    <tr><td>Auto-Done didn't fire on commit</td><td>Trailer regex didn't match, or worktree wasn't Issue-bound</td><td>Verify the commit message has a literal <code>Fixes #N</code> trailer (start of line); check the worktree was provisioned via Send to Workspace</td></tr>
-  </tbody>
-</table>
-
-<h3 class="section-title" id="ch18-crash">Crash reports</h3>
-<p>Crash reports land in <code>~/.packetade/crashes/</code> (Windows: <code>%APPDATA%\packetade\crashes\</code>). Open one via <em>Settings &rarr; Advanced &rarr; Crash Reports</em>, or browse the directory directly. Reports persist indefinitely &mdash; prune by hand when the list gets long.</p>
-<p>If you hit a reproducible bug, attach the crash file when filing an issue on GitHub.</p>
-
-<div class="callout callout-info">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-  <div class="callout-body"><strong>File a bug:</strong> <a href="https://github.com/packetloss404/PacketADE/issues" target="_blank" rel="noopener">github.com/packetloss404/PacketADE/issues</a> with your OS, PacketADE version, repro steps, and the crash file if one was generated.</div>
-</div>
-</section>
-
-<!-- ===== CHAPTER 19: ARCHITECTURE ===== -->
-<section class="chapter" id="chapter-19">
-<span class="chapter-badge">Chapter 19</span>
-<h2 class="chapter-title">Architecture Overview</h2>
-<p class="chapter-lede">For contributors: a fast tour of how the pieces hang together. PacketADE is a Tauri v2 desktop app with three runtimes &mdash; React 19 frontend, Rust backend, Node sidecar &mdash; and a PTY layer for terminal-based CLIs.</p>
-
-<h3 class="section-title" id="ch19-stack">The stack</h3>
-<dl class="def-list">
-  <dt>Desktop shell</dt><dd>Tauri v2 (Rust). Custom dark theme, custom titlebar on Win/Linux, native traffic lights on macOS.</dd>
-  <dt>Frontend</dt><dd>React 19 + TypeScript + Vite. Zustand for state (persisted to localStorage under <code>packetade:*</code>; legacy <code>packetcode:*</code> read for migration only).</dd>
-  <dt>Styling</dt><dd>Tailwind with custom dark theme tokens (<code>bg-bg-primary</code>, <code>text-accent-green</code>, etc.). Never raw Tailwind colors.</dd>
-  <dt>Terminal</dt><dd>xterm.js + portable-pty. PTY-only session model &mdash; the legacy JSONL session stack was removed.</dd>
-  <dt>Backend</dt><dd>Rust. Tauri commands under <code>src-tauri/src/commands/</code>, registered in <code>lib.rs</code>. TypeScript bindings in <code>src/lib/tauri.ts</code>.</dd>
-  <dt>Sidecar</dt><dd>Node (TypeScript) in <code>agent-sidecar/</code>. Bundled with the installer; pinned Node 24.15.0 for the host triple.</dd>
-</dl>
-
-<h3 class="section-title" id="ch19-flow">Data flow &mdash; an API agent turn</h3>
-<ol class="step-list">
-  <li>User types into <code>AgentInputArea</code>. Hits Enter.</li>
-  <li>Frontend pre-allocates a session ID, attaches Tauri listeners on <code>api-agent:chunk:{id}</code>, <code>:tool-start:{id}</code>, <code>:tool-result:{id}</code>, <code>:done:{id}</code>, <code>:error:{id}</code> BEFORE invoking the backend.</li>
-  <li><code>start_api_agent_session</code> (Rust) routes the request: API-key providers go in-process via <code>LlmProvider</code>; OAuth providers go to the Node sidecar.</li>
-  <li>Backend streams chunks back as Tauri events. <code>agentTaskStore</code> on the frontend reduces them into the conversation state.</li>
-  <li>On <code>permission-request</code> or <code>pending-edit</code>, <code>findTaskBySessionId</code> looks up any linked Mission task and flips it to <code>approval_needed</code> &mdash; the Bell badge updates.</li>
-  <li>On <code>done</code>, usage is written to <code>~/.packetade/usage.jsonl</code>; the conversation JSON is persisted to <code>~/.packetade/conversations/{id}.json</code> (debounced 500&nbsp;ms).</li>
-</ol>
-
-<h3 class="section-title" id="ch19-events">Event contract</h3>
-<p>Backend features emit scoped Tauri events; the frontend listens via <code>@tauri-apps/api/event</code>. Event names are feature-scoped to avoid collisions:</p>
-<ul class="bullet-list">
-  <li><code>api-agent:{kind}:{sessionId}</code> &mdash; the canonical agent stream (Chapter 5).</li>
-  <li><code>insights:chunk</code> / <code>:done</code> / <code>:error</code> &mdash; Insights chat.</li>
-  <li><code>flight-chat:chunk</code> / <code>:done</code> &mdash; New Mission planner chat (separate from Insights to avoid collision).</li>
-  <li><code>side-chat:chunk</code> &mdash; the SideChatOverlay.</li>
-  <li><code>quality:chunk:{run_id}</code> + <code>quality:check-start</code> / <code>:check-done</code> / <code>:done</code> &mdash; Code Quality runner (Chapter 11).</li>
-  <li><code>quality-fix:chunk:{run_id}</code> &mdash; Code Quality AutoFix.</li>
-  <li><code>issue-watcher:fixed</code> &mdash; trailer parser fired (Chapter 7).</li>
-  <li><code>provider-auth:changed</code> &mdash; <code>~/.claude</code> or <code>~/.codex</code> mutation.</li>
-  <li><code>sidecar-status:changed</code> &mdash; supervisor lifecycle.</li>
-</ul>
-
-<h3 class="section-title" id="ch19-source">Source layout</h3>
-<pre><code>src/
-  App.tsx                          # Root, view routing, global keyboard handlers
-  components/
-    agents/                        # AgentInputArea, AgentChatPane, AgentSidebar
-    flights/                       # NewFlightModal, FlightChatPanel
-    issues/                        # IssueBoard, IssueDetail, SpecImportModal
-    layout/                        # TitleBar, Toolbar, LeftRail, StatusStrip
-    quality/CodeQualityModal.tsx
-    session/                       # TerminalPane, ClaudeStatusBar, CodexStatusBar
-    views/                         # AgentsView, GitHubView, MemoryView, MissionsView, etc.
-    workspace/                     # WorkspaceView, sidebar, prompt library
-  hooks/                           # useGitInfo, useStatusLine, useFlightChat, useVoiceInput
-  lib/
-    tauri.ts                       # All Tauri invoke wrappers + TS event helpers
-    api-models.ts                  # API_PROVIDERS catalog (8 rows)
-    cli-catalog.ts                 # 13-entry CLI catalog
-    brand.ts                       # APP_NAME, STORAGE_PREFIX
-  stores/                          # Zustand stores (agent, flight, issue, layout, mcp, ...)
-  types/                           # TypeScript interfaces
-  modules/registry.ts              # Built-in module manifests
-
-src-tauri/
-  src/
-    lib.rs                         # Tauri builder + command registration + sidecar setup
-    commands/                      # All Tauri commands
-    core/
-      brand.rs                     # APP_NAME, DATA_DIR, KEYRING_SERVICE
-      llm_provider.rs              # LlmProvider trait (anthropic / openai / minimax / openrouter / ollama)
-      orchestrator.rs              # Mission scheduling
-    claude/                        # Claude CLI interaction helpers
-    session/                       # Session DTOs
-
-agent-sidecar/                     # Node sidecar (separate package)
-  src/
-    index.ts                       # stdio JSON dispatcher
-    protocol.ts                    # SidecarRequest / SidecarEvent types, PROTOCOL_VERSION
-    providers/                     # echo, anthropic, openai-codex, openai-agents, base</code></pre>
-
-<h3 class="section-title" id="ch19-build">Build &amp; bundle</h3>
-<p>The release pipeline runs <code>scripts/fetch-node.js</code> (pinned Node 24.15.0 per triple), <code>pnpm sidecar:install</code>, <code>pnpm sidecar:build</code>, and <code>scripts/prune-sidecar.js</code> (destructive hoisted prod-only reinstall). Node + sidecar dist + pruned <code>node_modules</code> are embedded as <code>externalBin</code> + <code>resources</code> per <code>src-tauri/tauri.conf.json</code>.</p>
-<p>After bundling, re-run <code>pnpm sidecar:install</code> to restore devDeps for development.</p>
-
-<a class="roadmap-link" href="https://github.com/packetloss404/PacketADE" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg> Source on GitHub</a>
-</section>
-
-<!-- ===== CHAPTER 20: REMOTE AGENTS ===== -->
-<section class="chapter" id="chapter-20">
-<span class="chapter-badge">Chapter 20</span>
-<h2 class="chapter-title">Remote Agents Roadmap</h2>
-<p class="chapter-lede">Remote Agents is the next major PacketADE track: a PWA-first way to use PacketADE Agents from a phone while the desktop keeps ownership of providers, models, secrets, MCP config, workspaces, permissions, and execution.</p>
-
-<h3 class="section-title" id="ch20-scope">Scope</h3>
-<p>The first release focuses on API-agent conversations, not raw terminal control. From the PWA, a trusted device should be able to list hosts, workspaces, providers, models, profiles, and conversations; start or continue an API-agent conversation; stream existing <code>api-agent:*</code> events; respond to permission or edit prompts; cancel, retry, change model, close; and observe cost/status summaries.</p>
-<p>Remote Agents deliberately does <strong>not</strong> expose a generic Tauri bridge. New remote actions require explicit protocol commands and security review.</p>
-
-<h3 class="section-title" id="ch20-security">Security model</h3>
-<dl class="def-list">
-  <dt>Packet account sign-in</dt><dd>The primary phone flow is account sign-in. QR may become a shortcut later, but it is not the main trust path.</dd>
-  <dt>Desktop trust gate</dt><dd>A desktop host must approve a device before the PWA can control sessions. Revocation and audit trails are part of the MVP.</dd>
-  <dt>Desktop-owned secrets</dt><dd>Provider keys, OAuth tokens, local files, shells, MCP servers, and SSH access remain on the desktop. Packet Cloud relays frames; it does not call model providers or tools.</dd>
-  <dt>End-to-end encryption</dt><dd>E2EE, replay protection, sequence validation, and protocol fixtures are gates before any external beta.</dd>
-  <dt>Push boundaries</dt><dd>Foreground interaction is WebSocket. Web Push is only for attention-needed notifications such as permission requests, pending edits, errors, and done summaries.</dd>
-</dl>
-
-<h3 class="section-title" id="ch20-status">Status</h3>
-<p>Planning is complete and ready for implementation split. The canonical implementation package lives in <a href="https://github.com/packetloss404/PacketADE/blob/main/dev/remoteagents/README.md" target="_blank" rel="noopener"><code>dev/remoteagents/README.md</code></a>, with product scope, architecture, protocol, security, PWA UX, sprint plan, six-agent runbook, testing, and open decisions. The top-level summary is in <a href="roadmap.html">the public roadmap</a>.</p>
-
-<div class="callout callout-info">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-  <div class="callout-body"><strong>Availability:</strong> Remote Agents is not in the current desktop release. It is the active roadmap track after the docs/planning consolidation.</div>
-</div>
-</section>
-
-<!-- ===== APPENDIX ===== -->
-<section class="chapter" id="appendix">
-<span class="chapter-badge">Appendix</span>
 <h2 class="chapter-title">Reference</h2>
-<p class="chapter-lede">Quick-reference tables for file locations, event channels, and a glossary of PacketADE-specific terms.</p>
+<p class="chapter-lede">Tables you'll come back to: providers, CLIs, shortcuts, statuses, events, and where your data lives.</p>
 
-<h3 class="section-title" id="ap-files">File locations</h3>
-<p>PacketADE persists state under your OS home directory. Most paths are relative to <code>~/.packetade/</code> on macOS and Linux, and <code>%APPDATA%\packetade\</code> on Windows.</p>
+<h3 class="section-title" id="ch5-providers">API-agent provider table</h3>
+<div class="table-scroll">
 <table class="ref-table">
-  <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
+  <thead><tr><th>Picker row</th><th>Internal id</th><th>Backend</th><th>Auth</th></tr></thead>
   <tbody>
-    <tr><td><code>~/.packetade/conversations/</code></td><td>One JSON file per API agent conversation</td></tr>
-    <tr><td><code>~/.packetade/missions/</code></td><td>Markdown journals for each Mission Planner run</td></tr>
-    <tr><td><code>~/.packetade/usage.jsonl</code></td><td>Per-session token and cost records (append-only)</td></tr>
-    <tr><td><code>~/.packetade/crashes/</code></td><td>Stack traces from the crash reporter</td></tr>
-    <tr><td><code>~/.packetade/state.json</code></td><td>Persisted backend state (flights, attempts, settings)</td></tr>
-    <tr><td><code>~/.packetade/ssh/known_hosts</code></td><td>App-managed SSH known_hosts (pinned fingerprints)</td></tr>
-    <tr><td><code>&lt;app_data&gt;/ssh-cm/</code></td><td>ControlMaster sockets (0700, Unix only)</td></tr>
-    <tr><td><code>.mcp.json</code> (project root)</td><td>Project-scoped MCP servers</td></tr>
-    <tr><td><code>~/.claude/settings.json</code></td><td>Global MCP server configuration</td></tr>
-    <tr><td><code>~/.claude/.credentials.json</code></td><td>Claude OAuth tokens (used by sidecar provider)</td></tr>
-    <tr><td><code>~/.codex/auth.json</code></td><td>Codex OAuth tokens (used by sidecar provider)</td></tr>
-    <tr><td><code>packetade.deploy.json</code> (project root)</td><td>Deploy pipeline configs (when present)</td></tr>
-    <tr><td>OS keyring (<code>packetade:api-key-*</code>)</td><td>BYOK API keys per provider</td></tr>
-    <tr><td>OS keyring (<code>ssh-&lt;ServerConfig.id&gt;</code>)</td><td>SSH passwords for registered servers</td></tr>
+    <tr><td>Anthropic (Subscription)</td><td><code>api-claude-oauth</code></td><td>Sidecar &rarr; Claude Agent SDK</td><td><code>~/.claude/.credentials.json</code> OAuth</td></tr>
+    <tr><td>Claude (API)</td><td><code>api-claude</code></td><td>In-process Rust</td><td>Keyring: Anthropic API key</td></tr>
+    <tr><td>OpenAI (ChatGPT Plus/Pro)</td><td><code>api-openai-codex</code></td><td>Sidecar &rarr; <code>codex exec</code></td><td><code>~/.codex/auth.json</code> OAuth</td></tr>
+    <tr><td>OpenAI (API)</td><td><code>api-openai</code></td><td>In-process Rust</td><td>Keyring: OpenAI API key</td></tr>
+    <tr><td>OpenAI Agents SDK (API)</td><td><code>api-openai-agents</code></td><td>Sidecar &rarr; OpenAI Agents SDK</td><td>Keyring: OpenAI API key</td></tr>
+    <tr><td>MiniMax</td><td><code>api-minimax</code></td><td>In-process Rust</td><td>Keyring: MiniMax API key</td></tr>
+    <tr><td>OpenRouter</td><td><code>api-openrouter</code></td><td>In-process Rust</td><td>Keyring: OpenRouter API key</td></tr>
+    <tr><td>Ollama</td><td><code>api-ollama</code></td><td>In-process Rust</td><td>None — local daemon on <code>localhost:11434</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3 class="section-title" id="ch5-clis">PTY CLI table</h3>
+<table class="ref-table">
+  <thead><tr><th>Session type</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Terminal</td><td>Plain shell; always available. Legacy Gemini panes load as Terminal.</td></tr>
+    <tr><td>Claude Code</td><td>Anthropic's CLI; dedicated status bar; also powers spec import and in-app login.</td></tr>
+    <tr><td>Codex CLI</td><td>OpenAI's CLI; dedicated status bar.</td></tr>
+    <tr><td>OpenCode</td><td>Open-source CLI agent; dedicated status bar.</td></tr>
+    <tr><td>PacketCode</td><td>Sibling TUI product; recommended workspace CLI when detected, with guided install/setup recovery in Settings.</td></tr>
   </tbody>
 </table>
 
-<h3 class="section-title" id="ap-events">Tauri event channels</h3>
+<h3 class="section-title" id="ch5-keys">Keyboard shortcuts</h3>
 <table class="ref-table">
-  <thead><tr><th>Event</th><th>Emitter</th><th>Listener</th></tr></thead>
+  <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
   <tbody>
-    <tr><td><code>api-agent:chunk:{sid}</code></td><td>API runtime + sidecar</td><td><code>agentTaskStore</code></td></tr>
-    <tr><td><code>api-agent:thinking:{sid}</code></td><td>API runtime</td><td>chat pane thinking pill</td></tr>
-    <tr><td><code>api-agent:tool-start:{sid}</code></td><td>API runtime + sidecar</td><td>tool card render</td></tr>
-    <tr><td><code>api-agent:tool-result:{sid}</code></td><td>API runtime + sidecar</td><td>tool card render</td></tr>
-    <tr><td><code>api-agent:permission-request:{sid}</code></td><td>sidecar</td><td>approval overlay + Bell</td></tr>
-    <tr><td><code>api-agent:pending-edit:{sid}</code></td><td>sidecar</td><td>edit gate + Bell</td></tr>
-    <tr><td><code>api-agent:done:{sid}</code></td><td>API runtime + sidecar</td><td>usage write + state flip</td></tr>
-    <tr><td><code>api-agent:error:{sid}</code></td><td>API runtime + sidecar</td><td>error banner + state flip</td></tr>
-    <tr><td><code>flight-chat:chunk</code></td><td>NewFlightModal planner</td><td><code>useFlightChat</code></td></tr>
-    <tr><td><code>insights:chunk</code></td><td>InsightsView</td><td>InsightsView</td></tr>
-    <tr><td><code>quality:chunk:{run_id}</code></td><td>quality_runner</td><td>CodeQualityModal</td></tr>
-    <tr><td><code>quality-fix:chunk:{run_id}</code></td><td>code_quality_autofix</td><td>CodeQualityModal</td></tr>
-    <tr><td><code>issue-watcher:fixed</code></td><td>git_commit trailer parser</td><td>issueStore auto-Done</td></tr>
-    <tr><td><code>provider-auth:changed</code></td><td>auth_watcher (fs notify)</td><td>provider auth badges</td></tr>
-    <tr><td><code>sidecar-status:changed</code></td><td>agent_sidecar supervisor</td><td>Toolbar Sidecar chip</td></tr>
-    <tr><td><code>packetade:open-claude-login</code></td><td>AgentInputArea (frontend)</td><td>App.tsx (spawns PTY)</td></tr>
-    <tr><td><code>packetade:open-codex-login</code></td><td>AgentInputArea (frontend)</td><td>App.tsx (spawns PTY)</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Command palette (Esc closes)</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd></td><td>Workspace view</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd></td><td>Agents view</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd></td><td>Flight Deck</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>3</kbd></td><td>Issues board</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>4</kbd></td><td>Session History</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>5</kbd></td><td>Settings</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd></td><td>Dictation view</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>N</kbd></td><td>New Agent conversation (in Agents) / new Workspace (elsewhere)</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>Tab</kbd></td><td>Cycle conversation mode chip (default / plan / manual / deny / yolo)</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd></td><td>Cycle transcript view mode (Summary &rarr; Normal &rarr; Verbose)</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Launch (flight launch modal)</td></tr>
+    <tr><td><kbd>Y</kbd> / <kbd>N</kbd> / <kbd>Esc</kbd></td><td>Approve / deny / abort a detected approval prompt in a PTY pane</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> (hold)</td><td>Dictation push-to-talk — opt-in global, re-bindable</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd></td><td>Dictation toggle recording — opt-in global, re-bindable</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>Cancel active dictation recording / close palette</td></tr>
+  </tbody>
+</table>
+<p>Number-row view chords match the <em>shifted character</em> of the key, so behavior varies on non-US layouts.</p>
+
+<h3 class="section-title" id="ch5-slash">Composer slash commands</h3>
+<table class="ref-table">
+  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>/plan</code></td><td>Ask for a plan / enter plan flow</td></tr>
+    <tr><td><code>/permissions</code></td><td>Adjust the conversation's permission posture</td></tr>
+    <tr><td><code>/model</code></td><td>Switch model</td></tr>
+    <tr><td><code>/compact</code></td><td>Compact the conversation context</td></tr>
+    <tr><td><code>/review</code></td><td>Spawn a read-only reviewer subagent over pending writes; returns blockers / concerns / nits with file:line citations</td></tr>
+    <tr><td><code>/usage</code></td><td>Open the Cost Dashboard</td></tr>
+    <tr><td><code>/history</code> &middot; <code>/clear</code> &middot; <code>/new</code> &middot; <code>/help</code></td><td>History, clear thread, new conversation, help</td></tr>
+    <tr><td><code>/&lt;slug&gt;</code></td><td>Saved prompt templates and project skills surface as native commands</td></tr>
   </tbody>
 </table>
 
-<h3 class="section-title" id="ap-glossary">Glossary</h3>
+<h3 class="section-title" id="ch5-settings">Settings map (six groups)</h3>
+<table class="ref-table">
+  <thead><tr><th>Group</th><th>Sections</th></tr></thead>
+  <tbody>
+    <tr><td>General</td><td>Preferences (theme, notifications, global keyboard behavior)</td></tr>
+    <tr><td>Workspaces &amp; Terminal</td><td>Workspace defaults &middot; CLI Clients &middot; Remote Hosts (SSH) &middot; Project Rules</td></tr>
+    <tr><td>Agents &amp; Models</td><td>Agent behavior (profiles, cleanup, failover) &middot; Providers &amp; Models (keys, subscriptions, endpoints)</td></tr>
+    <tr><td>Automation</td><td>Flights &amp; Autonomy &middot; Task Role Defaults &middot; PacketAgent</td></tr>
+    <tr><td>Integrations &amp; Data</td><td>Git Hosts (GitHub / Gitea / Forgejo) &middot; MCP &middot; Issues &middot; Memory &middot; Dictation &middot; Modules</td></tr>
+    <tr><td>Security &amp; Diagnostics</td><td>Trust &amp; Diagnostics (provenance, crashes, release status, history, cost, prompts)</td></tr>
+  </tbody>
+</table>
+<p>Settings has full-text search, and each section carries scope badges (App / Project / Workspace / New sessions / New conversations / New Flights) telling you what a change affects.</p>
+
+<h3 class="section-title" id="ch5-status">Status glossary</h3>
 <dl class="def-list">
-  <dt>Workspace</dt><dd>A project folder PacketADE has opened. Sessions, missions, issues, and memory are scoped per workspace.</dd>
-  <dt>Session / Pane</dt><dd>A single running PTY pane inside a workspace &mdash; a shell, CLI agent, or terminal process.</dd>
-  <dt>Mission (Flight)</dt><dd>User-facing: a Mission. Internal types still say "Flight". The top-level planning unit; one Sonnet 4.6 planner owns it end-to-end.</dd>
-  <dt>Attempt</dt><dd>One executor agent run for one task inside a Mission. Multiple attempts can exist per task on retry.</dd>
-  <dt>Agent profile</dt><dd>A saved configuration of system prompt, allowed tools, and default model. Reusable across conversations.</dd>
-  <dt>API agent</dt><dd>A conversation driven through a provider's API by the in-process Rust agentic loop or the Node sidecar.</dd>
-  <dt>CLI agent</dt><dd>A conversation driven through a locally-installed vendor CLI (<code>claude</code>, <code>codex</code>, etc.) in a PTY.</dd>
-  <dt>Sidecar</dt><dd>The bundled Node runtime that hosts the Claude Agent SDK and Codex exec providers. JSON-over-stdio.</dd>
-  <dt>Memory</dt><dd>The persistent, project-scoped store of session summaries, learned patterns, and manual notes.</dd>
-  <dt>Worktree</dt><dd>A git worktree provisioned per Mission attempt or per Issue. Lets executor agents work in isolation without stomping main.</dd>
-  <dt>Bypass permissions</dt><dd>The toggle that suppresses CLI permission prompts for write tools (e.g. Claude's <code>--dangerously-skip-permissions</code>).</dd>
-  <dt>FlightDeck</dt><dd>The sibling terminal-first product at <code>d:\projects\flightdeck</code>. Mirrors the same Mission concepts; separate repo, separate git history.</dd>
-  <dt>PacketCode</dt><dd>The sibling TUI product (OpenCode rival) at <code>d:\projects\packetcode</code>. Not the same as this product, despite the legacy name.</dd>
-  <dt>Remote Agents</dt><dd>The planned PWA + Packet Cloud relay track for controlling PacketADE API-agent conversations from a trusted phone while execution and secrets stay on desktop.</dd>
+  <dt>Flight</dt><dd><code>spec &middot; draft &middot; planning &middot; ready &middot; active &middot; paused &middot; review &middot; done &middot; failed &middot; cancelled</code></dd>
+  <dt>Attempt</dt><dd><code>queued &middot; provisioning &middot; running &middot; reviewing &middot; completed &middot; failed &middot; cancelled</code></dd>
+  <dt>Reviewer gate</dt><dd><code>pending &middot; running &middot; passed &middot; changes_requested &middot; blocked &middot; error &middot; overridden</code></dd>
+  <dt>Issue</dt><dd><code>backlog &middot; up_next &middot; todo &middot; in_progress &middot; in_review &middot; qa &middot; done &middot; blocked &middot; needs_human</code></dd>
+  <dt>Provider auth</dt><dd><code>ready &middot; login_required &middot; missing_key &middot; service_down &middot; coming_soon</code></dd>
+  <dt>Sidecar</dt><dd><code>not_started &middot; ready &middot; restarting &middot; down</code> (chip renders only for the last two)</dd>
 </dl>
 
+<h3 class="section-title" id="ch5-events">Event channels</h3>
+<p>All AI streaming uses feature-scoped Tauri events. The API-agent contract is <code>api-agent:{kind}:{sessionId}</code> where <code>kind</code> is one of:</p>
+<pre><code>chunk · thinking · thinking-stop · tool-start · tool-result
+permission-request · pending-edit · edit-baseline · plan-block
+tool-output-extended · turn-summary · mcp-sources · done · error</code></pre>
+<p>Both backends (in-process Rust and the Node sidecar) emit this exact shape. Global app events: <code>provider-auth:changed</code> (auth badge refresh) and <code>sidecar-status:changed</code> (health chip). Other features use their own scopes, e.g. <code>insights:chunk</code>, <code>side-chat:chunk</code>. The sidecar's stdio protocol is newline-delimited JSON, currently protocol version <strong>11</strong>.</p>
+
+<h3 class="section-title" id="ch5-data">Data locations</h3>
+<dl class="def-list">
+  <dt>~/.packetade</dt><dd>Persistent app data: conversations, checkpoints, slash commands, usage logs, dictation history, and more. A legacy <code>~/.packetcode</code> directory is migrated once on startup.</dd>
+  <dt>OS keyring</dt><dd>Service <code>packetade</code>: provider API keys and SSH passwords (<code>ssh-&lt;serverId&gt;</code> entries). Legacy <code>packetcode</code> entries are read and migrated.</dd>
+  <dt>Log directory</dt><dd><code>%APPDATA%\PacketADE</code> on Windows; <code>~/Library/Application Support/PacketADE</code> on macOS.</dd>
+  <dt>localStorage</dt><dd>UI store persistence under the <code>packetade:*</code> prefix (legacy <code>packetcode:*</code> keys read only for migration).</dd>
+  <dt>~/.claude, ~/.codex</dt><dd>OAuth credentials owned by the Claude Code / Codex CLIs. PacketADE watches them but never writes them.</dd>
+  <dt>Git-host token</dt><dd>Backend memory only — not persisted; reconnect after each app restart.</dd>
+</dl>
+
+<div class="callout callout-info">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>Accuracy note.</strong> This manual is written against the PacketADE v0.10.2 source. Where behavior depends on environments we can't verify from source (packaged-build specifics on every OS, remote-host edge cases), the manual says so rather than guessing. Corrections welcome via GitHub issues.</div>
+</div>
 </section>
 
-<footer class="manual-foot">
-  <div>&copy; PacketADE v0.9.3 &mdash; Apache 2.0 licensed. No telemetry. Your keys, your models.</div>
-  <div><a href="index.html">Home</a> &middot; <a href="roadmap.html">Roadmap</a> &middot; <a href="https://github.com/packetloss404/PacketADE" target="_blank" rel="noopener">Source</a> &middot; <a href="https://github.com/packetloss404/PacketADE/releases" target="_blank" rel="noopener">Releases</a></div>
-</footer>
 </main>
 </div>
 
@@ -1503,10 +729,13 @@ agent-sidecar/                     # Node sidecar (separate package)
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
 </button>
 
+<footer class="manual-foot">
+  <span>PacketADE Manual &middot; v0.10.2 &middot; Apache 2.0</span>
+  <span><a href="index.html">Home</a> &middot; <a href="roadmap.html">Roadmap</a> &middot; <a href="https://github.com/packetloss404/PacketADE" target="_blank" rel="noopener">GitHub</a></span>
+</footer>
+
 <script>
 (function(){
-  'use strict';
-
   /* TOC toggle (mobile) */
   var toc = document.getElementById('toc');
   var tocToggle = document.getElementById('toc-toggle');
@@ -1549,7 +778,7 @@ agent-sidecar/                     # Node sidecar (separate package)
     Object.keys(tocLinks).forEach(function(id){
       tocLinks[id].classList.toggle('active', id === current);
     });
-    // chapter-level highlight
+    /* chapter-level highlight */
     document.querySelectorAll('.toc .ch-item').forEach(function(item){ item.classList.remove('active'); });
     if (current) {
       var match = current.match(/^ch(\d+)/);
@@ -1559,9 +788,6 @@ agent-sidecar/                     # Node sidecar (separate package)
       } else if (current.indexOf('chapter-') === 0) {
         var a = toc.querySelector('a[href="#' + current + '"]');
         if (a) a.closest('.ch-item').classList.add('active');
-      } else if (current === 'appendix' || current.indexOf('ap-') === 0) {
-        var aA = toc.querySelector('a[href="#appendix"]');
-        if (aA) aA.closest('.ch-item').classList.add('active');
       }
     }
     /* back-to-top */

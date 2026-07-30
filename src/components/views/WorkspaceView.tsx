@@ -21,7 +21,6 @@ const agentLabel: Record<WorkspaceAgentSlot, string> = {
   terminal: "Terminal",
   "claude-code": "Claude",
   codex: "Codex",
-  gemini: "Gemini",
   opencode: "OpenCode",
   packetcode: "PacketCode",
 };

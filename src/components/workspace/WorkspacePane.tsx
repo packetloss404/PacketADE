@@ -25,7 +25,6 @@ const BYPASS_FLAGS: Record<string, string> = {
   "claude-code": "--dangerously-skip-permissions",
   // codex >= 0.x dropped `--full-auto`; the full-bypass equivalent is this.
   codex: "--dangerously-bypass-approvals-and-sandbox",
-  gemini: "--yolo",
 };
 
 interface WorkspacePaneProps {

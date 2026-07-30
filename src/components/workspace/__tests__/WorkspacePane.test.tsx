@@ -5,7 +5,7 @@ import type { TerminalHeaderRenderState } from "@/components/session/TerminalPan
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { CODEX_CONFIG } from "@/agents/codex";
-import { GEMINI_CONFIG } from "@/agents/gemini";
+import { OPENCODE_CONFIG } from "@/agents/opencode";
 import type { Workspace } from "@/types/workspace";
 
 // The tile header lives entirely inside WorkspacePane's `renderHeader`
@@ -42,10 +42,10 @@ function makeWorkspace(): Workspace {
   return {
     id: "ws-1",
     name: "Header diet test workspace",
-    agents: ["codex", "gemini"],
+    agents: ["codex", "opencode"],
     panes: [
       { id: "pane-codex", agentId: "codex", sessionId: null },
-      { id: "pane-gemini", agentId: "gemini", sessionId: null },
+      { id: "pane-opencode", agentId: "opencode", sessionId: null },
     ],
     projectPath: "/tmp/project",
     createdAt: now,
@@ -64,7 +64,7 @@ describe("WorkspacePane tile header", () => {
     useAgentStore.setState({
       agents: [
         { ...CODEX_CONFIG, installed: true },
-        { ...GEMINI_CONFIG, installed: true },
+        { ...OPENCODE_CONFIG, installed: true },
       ],
       detecting: false,
     });
@@ -105,13 +105,13 @@ describe("WorkspacePane tile header", () => {
     expect(name.className).toContain("text-accent-amber");
   });
 
-  it("gemini identity resolves to a different agentColors token (text-accent-blue) — proves the divergent per-file maps died", () => {
-    currentHeaderState = { ...currentHeaderState, cliCommand: "gemini" };
+  it("opencode identity resolves to a different agentColors token (text-accent-purple) — proves the divergent per-file maps died", () => {
+    currentHeaderState = { ...currentHeaderState, cliCommand: "opencode" };
     const workspace = useWorkspaceStore.getState().workspaces[0];
     render(<WorkspacePane pane={workspace.panes[1]} workspaceId={workspace.id} />);
 
-    const name = screen.getByText(GEMINI_CONFIG.name);
-    expect(name.className).toContain("text-accent-blue");
+    const name = screen.getByText(OPENCODE_CONFIG.name);
+    expect(name.className).toContain("text-accent-purple");
     expect(name.className).not.toContain("text-accent-amber");
   });
 

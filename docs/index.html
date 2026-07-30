@@ -3,19 +3,15 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>PacketADE | Open-Source AI Desktop IDE</title>
-<meta name="description" content="PacketADE is a 100% open-source desktop IDE that unifies Claude Code, Codex, Gemini, OpenCode and eight provider rows into one multi-pane cockpit with autonomous Flight Deck orchestration, four build modes, cross-provider cost tracking, and a PWA-first Remote Agents roadmap." />
-<meta property="og:title" content="PacketADE — One cockpit. Every AI agent." />
-<meta property="og:description" content="Open-source AI desktop IDE: CLI + API agents, BYOK, conversational chat with tool diffs, Flight Deck orchestration, cross-provider cost tracking, and Remote Agents planning." />
+<title>PacketADE — Your agent fleet. One flight deck.</title>
+<meta name="description" content="PacketADE is a local-first desktop Agent Development Environment: multi-CLI workspaces (Claude Code, Codex CLI, OpenCode, PacketCode), an eight-provider agent picker, Flight Deck orchestration with parallel worktree attempts, SSH remote workspaces, an MCP hub, project memory, issue tracking with GitHub and Gitea sync, dictation, and cost analytics — in one native Tauri app." />
+<meta property="og:title" content="PacketADE — Your agent fleet. One flight deck." />
+<meta property="og:description" content="A local-first desktop ADE for orchestrating AI software work: CLI and API agents, Flight Deck orchestration with parallel worktree attempts, SSH remotes, MCP hub, memory, issues, dictation, and cost tracking." />
 <meta property="og:image" content="https://packetade.app/screenshot.png" />
 <meta property="og:url" content="https://packetade.app" />
-<meta name="twitter:card" content="summary_large_image" />
 <link rel="canonical" href="https://packetade.app" />
-<link rel="icon" type="image/png" href="favicon.png" />
+<link rel="icon" type="image/png" href="icon-192.png" />
 <link rel="apple-touch-icon" href="icon-192.png" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <style>
 /* ===== RESET & BASE ===== */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -23,8 +19,9 @@
   --bg-primary:#0d1117;--bg-secondary:#161b22;--bg-tertiary:#1c2333;--bg-elevated:#21283b;
   --border:#30363d;--text-primary:#e6edf3;--text-secondary:#8b949e;--text-muted:#484f58;
   --green:#3fb950;--neon:#00ff41;--blue:#58a6ff;--purple:#bc8cff;--amber:#d29922;--red:#f85149;--cyan:#39d2c0;
-  --font-sans:'Sora',system-ui,sans-serif;--font-mono:'JetBrains Mono',monospace;
-  --nav-h:64px;
+  --font-sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,"Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
+  --nav-h:60px;
 }
 html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
 body{font-family:var(--font-sans);background:var(--bg-primary);color:var(--text-primary);line-height:1.6;overflow-x:hidden;-webkit-font-smoothing:antialiased}
@@ -33,594 +30,202 @@ img{max-width:100%;display:block}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
 ul{list-style:none}
 section{position:relative}
+code{font-family:var(--font-mono)}
 
-/* ===== CANVAS ===== */
-#particles-canvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none}
-
-/* ===== AURORA ===== */
-.aurora{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;overflow:hidden}
-.aurora::before,.aurora::after,.aurora .aurora-layer{content:'';position:absolute;border-radius:50%;filter:blur(120px);animation:aurora-drift 20s ease-in-out infinite alternate}
-.aurora::before{width:800px;height:800px;top:-20%;left:-10%;background:radial-gradient(circle,rgba(63,185,80,0.07) 0%,transparent 70%)}
-.aurora::after{width:600px;height:600px;bottom:-10%;right:-5%;background:radial-gradient(circle,rgba(57,210,192,0.05) 0%,transparent 70%);animation-delay:-7s;animation-duration:25s}
-.aurora .aurora-layer{width:700px;height:700px;top:30%;left:40%;background:radial-gradient(circle,rgba(88,166,255,0.04) 0%,transparent 70%);animation-delay:-13s;animation-duration:22s}
-@keyframes aurora-drift{0%{transform:translate(0,0) scale(1)}33%{transform:translate(60px,-40px) scale(1.1)}66%{transform:translate(-40px,50px) scale(0.95)}100%{transform:translate(30px,-20px) scale(1.05)}}
-
-.grid-bg{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;
+/* ===== BACKDROP ===== */
+.grid-bg{position:fixed;inset:0;z-index:0;pointer-events:none;
   background-image:linear-gradient(rgba(63,185,80,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(63,185,80,0.03) 1px,transparent 1px);
   background-size:64px 64px}
+.aurora{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.aurora::before{content:'';position:absolute;width:800px;height:800px;top:-20%;left:-10%;border-radius:50%;
+  filter:blur(120px);background:radial-gradient(circle,rgba(63,185,80,0.07) 0%,transparent 70%)}
+.aurora::after{content:'';position:absolute;width:600px;height:600px;bottom:-10%;right:-5%;border-radius:50%;
+  filter:blur(120px);background:radial-gradient(circle,rgba(57,210,192,0.05) 0%,transparent 70%)}
 
-/* ===== LAYOUT ===== */
-.container{max-width:1200px;margin:0 auto;padding:0 24px;position:relative;z-index:1}
+.container{max-width:1100px;margin:0 auto;padding:0 24px;position:relative;z-index:1}
 
 /* ===== NAV ===== */
 nav{position:fixed;top:0;left:0;right:0;z-index:100;height:var(--nav-h);display:flex;align-items:center;
-  background:rgba(13,17,23,0.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
-  border-bottom:1px solid rgba(48,54,61,0.5);transition:all 0.3s ease}
-nav.scrolled{height:52px;background:rgba(13,17,23,0.95);box-shadow:0 4px 30px rgba(0,0,0,0.3)}
+  background:rgba(13,17,23,0.88);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  border-bottom:1px solid rgba(48,54,61,0.5)}
 nav .container{display:flex;align-items:center;justify-content:space-between;width:100%}
-.nav-brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.1rem;letter-spacing:-0.02em}
-.nav-brand img{width:32px;height:32px;border-radius:8px}
-.nav-links{display:flex;align-items:center;gap:32px}
+.nav-brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.05rem;letter-spacing:-0.02em}
+.nav-brand img{width:28px;height:28px;border-radius:7px}
+.nav-links{display:flex;align-items:center;gap:26px}
 .nav-links a{font-size:0.85rem;color:var(--text-secondary);transition:color 0.2s;font-weight:500}
 .nav-links a:hover{color:var(--text-primary)}
-.nav-actions{display:flex;align-items:center;gap:12px}
 .btn-github{display:flex;align-items:center;gap:6px;padding:6px 14px;border:1px solid var(--border);border-radius:8px;font-size:0.8rem;font-weight:500;transition:all 0.2s;color:var(--text-secondary)}
 .btn-github:hover{border-color:var(--text-muted);color:var(--text-primary)}
 .btn-github svg{width:16px;height:16px}
-.btn-download-nav{padding:7px 18px;border-radius:999px;font-size:0.8rem;font-weight:600;
-  background:linear-gradient(135deg,var(--green),#2ea043);color:#fff;transition:all 0.25s;box-shadow:0 0 20px rgba(63,185,80,0.15)}
-.btn-download-nav:hover{box-shadow:0 0 30px rgba(63,185,80,0.3);transform:translateY(-1px)}
 .hamburger{display:none;flex-direction:column;gap:5px;padding:4px}
-.hamburger span{display:block;width:22px;height:2px;background:var(--text-secondary);border-radius:2px;transition:all 0.3s}
+.hamburger span{display:block;width:22px;height:2px;background:var(--text-secondary);border-radius:2px}
 
 /* ===== HERO ===== */
-.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:calc(var(--nav-h) + 40px) 24px 80px;position:relative}
-.hero-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 16px;border:1px solid var(--border);border-radius:999px;font-size:0.78rem;font-weight:500;color:var(--text-secondary);margin-bottom:28px;background:rgba(22,27,34,0.6);backdrop-filter:blur(10px)}
-.hero-badge .dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse-dot 2s ease-in-out infinite;box-shadow:0 0 8px var(--green)}
-@keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.6;transform:scale(0.85)}}
-.hero h1{font-size:clamp(2.5rem,7vw,5rem);font-weight:800;letter-spacing:-0.04em;line-height:1.08;margin-bottom:24px}
+.hero{min-height:88vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;
+  padding:calc(var(--nav-h) + 56px) 24px 64px;position:relative}
+.hero-logo{font-family:var(--font-mono);font-size:clamp(2rem,5vw,3rem);font-weight:700;color:var(--neon);
+  margin-bottom:22px;text-shadow:0 0 18px rgba(0,255,65,0.55),0 0 50px rgba(0,255,65,0.25);letter-spacing:-0.02em}
+.hero h1{font-size:clamp(2.4rem,6.5vw,4.4rem);font-weight:800;letter-spacing:-0.04em;line-height:1.08;margin-bottom:18px}
 .gradient-text{background:linear-gradient(135deg,var(--green),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.hero-lead{font-size:clamp(1rem,2vw,1.2rem);color:var(--text-secondary);max-width:640px;margin:0 auto 12px;line-height:1.7}
-.typed-line{font-size:clamp(0.95rem,1.8vw,1.1rem);color:var(--text-secondary);margin-bottom:36px;min-height:1.8em}
-.typed-cursor{display:inline-block;width:2px;height:1.1em;background:var(--green);vertical-align:text-bottom;margin-left:2px;animation:blink 1s step-end infinite}
-@keyframes blink{50%{opacity:0}}
-.hero-buttons{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:32px}
-.btn-primary{padding:14px 32px;border-radius:999px;font-size:0.95rem;font-weight:600;
+.hero-tagline{font-size:clamp(1.1rem,2.4vw,1.45rem);color:var(--text-primary);font-weight:600;margin-bottom:14px;letter-spacing:-0.01em}
+.hero-lead{font-size:clamp(0.95rem,1.8vw,1.1rem);color:var(--text-secondary);max-width:660px;margin:0 auto 32px;line-height:1.7}
+.hero-lead strong{color:var(--text-primary);font-weight:600}
+.hero-buttons{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:30px}
+.btn-primary{padding:13px 30px;border-radius:999px;font-size:0.92rem;font-weight:600;
   background:linear-gradient(135deg,var(--green),#2ea043);color:#fff;transition:all 0.3s;
   box-shadow:0 0 30px rgba(63,185,80,0.2),0 4px 20px rgba(0,0,0,0.3)}
 .btn-primary:hover{box-shadow:0 0 50px rgba(63,185,80,0.35),0 8px 30px rgba(0,0,0,0.4);transform:translateY(-2px)}
-.btn-outline{padding:14px 32px;border-radius:999px;font-size:0.95rem;font-weight:600;
+.btn-outline{padding:13px 30px;border-radius:999px;font-size:0.92rem;font-weight:600;
   border:1px solid var(--border);color:var(--text-primary);transition:all 0.3s}
 .btn-outline:hover{border-color:var(--text-muted);background:rgba(255,255,255,0.03);transform:translateY(-2px)}
 .tag-chips{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:48px}
 .tag-chip{padding:4px 12px;border:1px solid var(--border);border-radius:999px;font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);font-weight:500}
-.hero-screenshot{position:relative;max-width:960px;width:100%;margin:0 auto}
+.hero-screenshot{position:relative;max-width:940px;width:100%;margin:0 auto}
 .window-frame{border-radius:14px;overflow:hidden;border:1px solid var(--border);background:var(--bg-secondary);box-shadow:0 25px 80px rgba(0,0,0,0.5)}
-.window-titlebar{display:flex;align-items:center;gap:8px;padding:12px 16px;background:var(--bg-tertiary);border-bottom:1px solid var(--border)}
-.window-dot{width:12px;height:12px;border-radius:50%}
-.window-dot.r{background:#f85149}.window-dot.y{background:#d29922}.window-dot.g{background:#3fb950}
+.window-titlebar{display:flex;align-items:center;gap:8px;padding:11px 16px;background:var(--bg-tertiary);border-bottom:1px solid var(--border)}
+.window-dot{width:11px;height:11px;border-radius:50%}
+.window-dot.r{background:var(--red)}.window-dot.y{background:var(--amber)}.window-dot.g{background:var(--green)}
 .window-title{margin-left:8px;font-family:var(--font-mono);font-size:0.72rem;color:var(--text-muted)}
 .window-frame img{width:100%;display:block}
 .hero-glow{position:absolute;top:50%;left:50%;width:700px;height:700px;transform:translate(-50%,-50%);
   background:radial-gradient(circle,rgba(63,185,80,0.08) 0%,transparent 65%);pointer-events:none;z-index:-1}
 
-/* ===== REVEAL SYSTEM ===== */
-.reveal{opacity:0;transform:translateY(24px);transition:opacity 0.7s ease,transform 0.7s ease;transition-delay:var(--delay,0s)}
+/* ===== REVEAL ===== */
+.reveal{opacity:0;transform:translateY(22px);transition:opacity 0.7s ease,transform 0.7s ease;transition-delay:var(--delay,0s)}
 .reveal.show{opacity:1;transform:translateY(0)}
 
 /* ===== SECTION HEADERS ===== */
-.section-header{text-align:center;margin-bottom:56px}
-.section-header h2{font-size:clamp(1.8rem,4vw,2.8rem);font-weight:800;letter-spacing:-0.03em;margin-bottom:12px}
-.section-header p{color:var(--text-secondary);font-size:clamp(0.95rem,1.5vw,1.1rem);max-width:560px;margin:0 auto}
+.section-header{text-align:center;margin-bottom:48px}
+.section-header h2{font-size:clamp(1.7rem,3.8vw,2.5rem);font-weight:800;letter-spacing:-0.03em;margin-bottom:12px}
+.section-header p{color:var(--text-secondary);font-size:clamp(0.92rem,1.5vw,1.05rem);max-width:620px;margin:0 auto}
+.eyebrow{display:inline-block;font-family:var(--font-mono);font-size:0.68rem;font-weight:600;letter-spacing:0.18em;
+  text-transform:uppercase;color:var(--green);margin-bottom:14px;padding:5px 14px;border:1px solid rgba(63,185,80,0.3);
+  border-radius:999px;background:rgba(63,185,80,0.06)}
 
-/* ===== STATS ===== */
-.stats{padding:40px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:0 auto;max-width:1200px}
-.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;text-align:center}
-.stat-number{font-size:clamp(2rem,4vw,3.2rem);font-weight:800;letter-spacing:-0.03em;line-height:1.1;margin-bottom:4px}
-.stat-number.green{background:linear-gradient(135deg,var(--green),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.stat-number.purple{background:linear-gradient(135deg,var(--purple),#d2a8ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.stat-number.blue{background:linear-gradient(135deg,var(--blue),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.stat-number.amber{background:linear-gradient(135deg,var(--amber),#e3b341);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.stat-label{font-size:0.85rem;color:var(--text-secondary);font-weight:500}
+/* ===== WHAT IT IS ===== */
+.what{padding:90px 0 60px}
+.what-body{max-width:760px;margin:0 auto}
+.what-body p{color:var(--text-secondary);font-size:clamp(0.95rem,1.6vw,1.05rem);line-height:1.8;margin-bottom:18px}
+.what-body p strong{color:var(--text-primary);font-weight:600}
+.what-body p code{font-size:0.85em;color:var(--cyan)}
+.what-body p:last-child{margin-bottom:0}
 
-/* ===== MODES (PRIMARY PRODUCT STORY) ===== */
-.modes{padding:120px 0 110px;position:relative}
-.modes::before{content:'';position:absolute;top:50%;left:50%;width:1100px;height:900px;transform:translate(-50%,-50%);
-  background:radial-gradient(ellipse,rgba(57,210,192,0.05) 0%,rgba(188,140,255,0.04) 35%,transparent 70%);pointer-events:none}
-.modes .container{position:relative;z-index:1}
-.modes-header{text-align:center;margin-bottom:64px;max-width:760px;margin-left:auto;margin-right:auto}
-.modes-eyebrow{display:inline-block;font-family:var(--font-mono);font-size:0.7rem;font-weight:600;letter-spacing:0.18em;
-  text-transform:uppercase;color:var(--cyan);margin-bottom:16px;padding:5px 14px;border:1px solid rgba(57,210,192,0.3);
-  border-radius:999px;background:rgba(57,210,192,0.06)}
-.modes-header h2{font-size:clamp(2rem,5vw,3.3rem);font-weight:800;letter-spacing:-0.035em;line-height:1.08;margin-bottom:18px}
-.modes-header h2 .gradient-text{background:linear-gradient(135deg,var(--cyan),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.modes-header p{color:var(--text-secondary);font-size:clamp(1rem,1.7vw,1.18rem);line-height:1.65;max-width:620px;margin:0 auto}
-.modes-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:24px}
-.mode-card{position:relative;padding:44px 40px 40px;background:rgba(22,27,34,0.55);border:1px solid var(--border);
-  border-radius:24px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transition:all 0.4s ease;overflow:hidden;
-  display:flex;flex-direction:column;min-height:340px}
-.mode-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:24px 24px 0 0;opacity:0.9}
-.mode-card::after{content:'';position:absolute;top:-1px;left:0;right:0;height:80px;pointer-events:none;border-radius:24px 24px 0 0;opacity:0.6}
-.mode-card.cyan::before{background:linear-gradient(90deg,var(--cyan),var(--blue))}
-.mode-card.cyan::after{background:linear-gradient(180deg,rgba(57,210,192,0.12),transparent)}
-.mode-card.green::before{background:linear-gradient(90deg,var(--green),var(--cyan))}
-.mode-card.green::after{background:linear-gradient(180deg,rgba(63,185,80,0.12),transparent)}
-.mode-card.purple::before{background:linear-gradient(90deg,var(--purple),#d2a8ff)}
-.mode-card.purple::after{background:linear-gradient(180deg,rgba(188,140,255,0.12),transparent)}
-.mode-card.amber::before{background:linear-gradient(90deg,var(--amber),#e3b341)}
-.mode-card.amber::after{background:linear-gradient(180deg,rgba(210,153,34,0.12),transparent)}
-.mode-card:hover{transform:translateY(-6px);border-color:var(--text-muted);box-shadow:0 20px 60px rgba(0,0,0,0.35)}
-.mode-card-head{display:flex;align-items:flex-start;gap:18px;margin-bottom:22px;position:relative;z-index:1}
-.mode-icon{width:60px;height:60px;border-radius:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.mode-icon svg{width:30px;height:30px}
-.mode-icon.cyan{background:rgba(57,210,192,0.12);color:var(--cyan);box-shadow:0 0 24px rgba(57,210,192,0.18) inset}
-.mode-icon.green{background:rgba(63,185,80,0.12);color:var(--green);box-shadow:0 0 24px rgba(63,185,80,0.18) inset}
-.mode-icon.purple{background:rgba(188,140,255,0.12);color:var(--purple);box-shadow:0 0 24px rgba(188,140,255,0.18) inset}
-.mode-icon.amber{background:rgba(210,153,34,0.12);color:var(--amber);box-shadow:0 0 24px rgba(210,153,34,0.18) inset}
-.mode-titles{flex:1;min-width:0;padding-top:4px}
-.mode-caption{display:block;font-family:var(--font-mono);font-size:0.66rem;font-weight:600;letter-spacing:0.12em;
-  text-transform:uppercase;color:var(--text-muted);margin-bottom:6px}
-.mode-card.cyan .mode-caption{color:var(--cyan)}
-.mode-card.green .mode-caption{color:var(--green)}
-.mode-card.purple .mode-caption{color:var(--purple)}
-.mode-card.amber .mode-caption{color:var(--amber)}
-.mode-card h3{font-size:1.6rem;font-weight:800;letter-spacing:-0.02em;line-height:1.15}
-.mode-card .mode-body{font-size:0.95rem;color:var(--text-secondary);line-height:1.7;margin-bottom:24px;position:relative;z-index:1}
-.mode-when{margin-top:auto;padding-top:18px;border-top:1px solid rgba(48,54,61,0.6);font-size:0.78rem;color:var(--text-muted);
-  line-height:1.5;display:flex;align-items:flex-start;gap:8px;position:relative;z-index:1}
-.mode-when strong{color:var(--text-secondary);font-weight:600;font-family:var(--font-mono);font-size:0.7rem;
-  letter-spacing:0.08em;text-transform:uppercase;flex-shrink:0;margin-top:1px}
-.modes-footnote{text-align:center;margin-top:48px;font-size:0.85rem;color:var(--text-muted);font-family:var(--font-mono);letter-spacing:0.02em}
-
-/* breadcrumb chip used on Flight Deck section */
-.mode-breadcrumb{display:inline-flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.7rem;
-  font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:var(--cyan);padding:5px 14px;
-  border:1px solid rgba(57,210,192,0.3);border-radius:999px;background:rgba(57,210,192,0.06);margin-bottom:18px}
-.mode-breadcrumb .dot{width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
-
-/* ===== FEATURES ===== */
-.features{padding:100px 0}
-.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
-.feature-card{position:relative;padding:32px 28px;background:rgba(22,27,34,0.6);border:1px solid var(--border);border-radius:20px;
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);transition:all 0.35s ease;overflow:hidden}
+/* ===== CAPABILITIES ===== */
+.features{padding:70px 0 80px}
+.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.feature-card{position:relative;padding:28px 24px;background:rgba(22,27,34,0.6);border:1px solid var(--border);border-radius:18px;
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);transition:all 0.3s ease;overflow:hidden}
 .feature-card:hover{transform:translateY(-4px);border-color:var(--text-muted);box-shadow:0 12px 40px rgba(0,0,0,0.25)}
-.feature-card.wide{grid-column:span 2}
-.feature-card.wide::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;
-  background:linear-gradient(90deg,var(--cyan),var(--blue));border-radius:20px 20px 0 0}
-.feature-icon{width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;margin-bottom:18px;flex-shrink:0}
+.feature-icon{width:44px;height:44px;border-radius:13px;display:flex;align-items:center;justify-content:center;margin-bottom:16px}
 .feature-icon.green{background:rgba(63,185,80,0.12);color:var(--green)}
 .feature-icon.purple{background:rgba(188,140,255,0.12);color:var(--purple)}
 .feature-icon.cyan{background:rgba(57,210,192,0.12);color:var(--cyan)}
 .feature-icon.amber{background:rgba(210,153,34,0.12);color:var(--amber)}
 .feature-icon.blue{background:rgba(88,166,255,0.12);color:var(--blue)}
 .feature-icon.red{background:rgba(248,81,73,0.12);color:var(--red)}
-.feature-icon svg{width:24px;height:24px}
-.feature-card h3{font-size:1.05rem;font-weight:700;margin-bottom:8px;letter-spacing:-0.01em}
-.feature-card p{font-size:0.85rem;color:var(--text-secondary);line-height:1.65}
+.feature-icon svg{width:22px;height:22px}
+.feature-card h3{font-size:1rem;font-weight:700;margin-bottom:8px;letter-spacing:-0.01em}
+.feature-card p{font-size:0.83rem;color:var(--text-secondary);line-height:1.65}
+.feature-card p strong{color:var(--text-primary);font-weight:600}
+.feature-card p code{font-size:0.76rem;color:var(--cyan)}
 
-/* ===== FLIGHT DECK SPOTLIGHT ===== */
-.flight-deck{padding:100px 0;position:relative}
-.flight-deck::before{content:'';position:absolute;top:50%;left:50%;width:900px;height:900px;transform:translate(-50%,-50%);
-  background:radial-gradient(circle,rgba(57,210,192,0.06) 0%,transparent 60%);pointer-events:none}
-.flight-deck .section-header{margin-bottom:48px}
-.flight-deck-body{font-size:0.95rem;color:var(--text-secondary);max-width:680px;margin:0 auto 56px;text-align:center;line-height:1.75}
+/* ===== STATUS STRIP ===== */
+.status{padding:60px 0}
+.status-panel{max-width:860px;margin:0 auto;background:rgba(22,27,34,0.6);border:1px solid rgba(210,153,34,0.3);
+  border-radius:18px;padding:32px 36px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.status-panel h2{font-size:1.15rem;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.status-panel h2 .ver{font-family:var(--font-mono);font-size:0.75rem;font-weight:600;color:var(--green);
+  padding:3px 10px;border:1px solid rgba(63,185,80,0.35);border-radius:999px;background:rgba(63,185,80,0.08)}
+.status-intro{font-size:0.85rem;color:var(--text-secondary);margin-bottom:20px}
+.status-list{display:flex;flex-direction:column;gap:12px}
+.status-item{display:flex;align-items:flex-start;gap:12px;font-size:0.85rem;line-height:1.6}
+.status-item .mark{flex-shrink:0;width:18px;height:18px;margin-top:2px;display:flex;align-items:center;justify-content:center}
+.status-item .mark svg{width:16px;height:16px}
+.status-item.ok .mark{color:var(--green)}
+.status-item.warn .mark{color:var(--amber)}
+.status-item strong{color:var(--text-primary);font-weight:600}
+.status-item span{color:var(--text-secondary)}
+.status-item a{color:var(--cyan);border-bottom:1px dotted rgba(57,210,192,0.4)}
+.status-item a:hover{color:var(--green);border-bottom-color:var(--green)}
+.status-item code{font-size:0.78rem;color:var(--cyan)}
 
-.pipeline{display:flex;align-items:flex-start;justify-content:center;gap:0;margin-bottom:64px;position:relative}
-.pipeline-step{flex:1;max-width:220px;text-align:center;position:relative;padding:0 16px}
-.pipeline-num{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-  font-weight:800;font-size:1.1rem;margin:0 auto 14px;
-  background:linear-gradient(135deg,var(--cyan),var(--blue));color:var(--bg-primary)}
-.pipeline-step h4{font-size:0.95rem;font-weight:700;margin-bottom:6px}
-.pipeline-step p{font-size:0.78rem;color:var(--text-muted);line-height:1.6}
-.pipeline-connector{width:60px;height:2px;margin-top:24px;flex-shrink:0;position:relative;overflow:hidden}
-.pipeline-connector::after{content:'';position:absolute;top:0;left:0;width:100%;height:100%;
-  background:repeating-linear-gradient(90deg,rgba(57,210,192,0.3) 0,rgba(57,210,192,0.3) 6px,transparent 6px,transparent 12px);
-  background-size:200% 100%;animation:march 1s linear infinite}
-@keyframes march{to{background-position:-24px 0}}
-
-.fd-mockup{max-width:700px;margin:0 auto;background:var(--bg-secondary);border:1px solid var(--border);border-radius:14px;overflow:hidden}
-.fd-status-strip{display:flex;gap:20px;padding:14px 20px;border-bottom:1px solid var(--border);background:var(--bg-tertiary)}
-.fd-status{display:flex;align-items:center;gap:6px;font-size:0.75rem;font-weight:500}
-.fd-dot{width:8px;height:8px;border-radius:50%}
-.fd-dot.active{background:var(--blue)}.fd-dot.blocked{background:var(--red)}.fd-dot.human{background:var(--amber)}
-.fd-cards{padding:16px 20px;display:flex;flex-direction:column;gap:12px}
-.fd-card{padding:14px 18px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:10px}
-.fd-card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-.fd-card-title{font-size:0.82rem;font-weight:600}
-.fd-card-badge{font-size:0.65rem;font-weight:600;padding:2px 8px;border-radius:999px}
-.fd-card-badge.active{background:rgba(88,166,255,0.15);color:var(--blue)}
-.fd-card-badge.blocked{background:rgba(248,81,73,0.15);color:var(--red)}
-.fd-card-meta{font-size:0.7rem;color:var(--text-muted);display:flex;gap:14px}
-
-/* ===== MODULE SYSTEM ===== */
-.modules{padding:100px 0}
-.modules-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
-.module-card{position:relative;padding:28px 24px 28px 28px;background:rgba(22,27,34,0.5);border:1px solid var(--border);border-radius:16px;transition:all 0.3s}
-.module-card:hover{transform:translateY(-3px);border-color:var(--text-muted)}
-.module-card::before{content:'';position:absolute;left:0;top:20px;bottom:20px;width:3px;border-radius:3px}
-.module-card.purple-border::before{background:var(--purple)}
-.module-card.amber-border::before{background:var(--amber)}
-.module-card.blue-border::before{background:var(--blue)}
-.module-card.green-border::before{background:var(--green)}
-.module-tag{position:absolute;top:16px;right:16px;font-family:var(--font-mono);font-size:0.6rem;font-weight:600;
-  text-transform:uppercase;padding:3px 8px;border:1px solid var(--border);border-radius:999px;color:var(--text-muted);letter-spacing:0.05em}
-.module-card h3{font-size:0.95rem;font-weight:700;margin-bottom:8px}
-.module-card p{font-size:0.82rem;color:var(--text-secondary);line-height:1.65;padding-right:60px}
-
-/* ===== AGENT PROFILES ===== */
-.profiles{padding:100px 0}
-.profiles-row{display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-bottom:8px}
-.profiles-row::-webkit-scrollbar{height:4px}
-.profiles-row::-webkit-scrollbar-track{background:var(--bg-secondary);border-radius:4px}
-.profiles-row::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
-.profile-card{min-width:210px;flex:1;padding:24px 20px;background:rgba(22,27,34,0.5);border:1px solid var(--border);
-  border-radius:16px;scroll-snap-align:start;transition:all 0.3s;position:relative;overflow:hidden}
-.profile-card:hover{transform:translateY(-3px);border-color:var(--text-muted)}
-.profile-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px}
-.profile-card.green-top::before{background:linear-gradient(90deg,var(--green),var(--cyan))}
-.profile-card.amber-top::before{background:linear-gradient(90deg,var(--amber),#e3b341)}
-.profile-card.blue-top::before{background:linear-gradient(90deg,var(--blue),var(--cyan))}
-.profile-card.red-top::before{background:linear-gradient(90deg,var(--red),#ff6e6e)}
-.profile-card.purple-top::before{background:linear-gradient(90deg,var(--purple),#d2a8ff)}
-.profile-icon{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:14px}
-.profile-icon.green-bg{background:rgba(63,185,80,0.12);color:var(--green)}
-.profile-icon.amber-bg{background:rgba(210,153,34,0.12);color:var(--amber)}
-.profile-icon.blue-bg{background:rgba(88,166,255,0.12);color:var(--blue)}
-.profile-icon.red-bg{background:rgba(248,81,73,0.12);color:var(--red)}
-.profile-icon.purple-bg{background:rgba(188,140,255,0.12);color:var(--purple)}
-.profile-icon svg{width:20px;height:20px}
-.profile-card h3{font-size:0.88rem;font-weight:700;margin-bottom:4px}
-.profile-card .profile-desc{font-size:0.78rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.5}
-.profile-card .profile-prompt{font-family:var(--font-mono);font-size:0.65rem;color:var(--text-muted);line-height:1.5;
-  overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-style:italic}
-
-/* ===== MEMORY ===== */
-.memory{padding:100px 0}
-.memory-panel{max-width:700px;margin:0 auto;background:var(--bg-secondary);border:1px solid var(--border);border-radius:14px;
-  overflow:hidden;perspective:1000px;transform:rotateY(-2deg) rotateX(1deg);transition:transform 0.5s ease;box-shadow:0 20px 60px rgba(0,0,0,0.3)}
-.memory-panel:hover{transform:rotateY(0) rotateX(0)}
-.memory-section{padding:20px 24px;border-bottom:1px solid var(--border)}
-.memory-section:last-child{border-bottom:none}
-.memory-section-title{font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:14px}
-.memory-entry{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(48,54,61,0.4)}
-.memory-entry:last-child{border-bottom:none}
-.memory-file{font-family:var(--font-mono);font-size:0.78rem;color:var(--green);font-weight:500}
-.memory-desc{font-size:0.78rem;color:var(--text-secondary);flex:1;margin:0 16px}
-.memory-time{font-size:0.7rem;color:var(--text-muted);white-space:nowrap}
-.pattern-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid rgba(48,54,61,0.3)}
-.pattern-row:last-child{border-bottom:none}
-.pattern-text{font-size:0.78rem;color:var(--text-primary);flex:1}
-.pattern-tag{font-family:var(--font-mono);font-size:0.6rem;font-weight:600;padding:2px 8px;border-radius:999px;text-transform:uppercase;flex-shrink:0}
-.pattern-tag.arch{background:rgba(57,210,192,0.12);color:var(--cyan)}
-.pattern-tag.conv{background:rgba(63,185,80,0.12);color:var(--green)}
-.pattern-tag.pitfall{background:rgba(210,153,34,0.12);color:var(--amber)}
-.confidence-bar{width:60px;height:4px;background:var(--bg-elevated);border-radius:4px;overflow:hidden;flex-shrink:0}
-.confidence-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--green),var(--cyan))}
-
-/* ===== WORKFLOW ===== */
-.workflow{padding:100px 0}
-.workflow-steps{display:flex;gap:24px;justify-content:center;align-items:flex-start;position:relative}
-.workflow-step{flex:1;max-width:320px;text-align:center;position:relative}
-.workflow-num{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-  font-weight:800;font-size:1.3rem;margin:0 auto 18px;
-  background:linear-gradient(135deg,var(--green),var(--cyan));color:var(--bg-primary)}
-.workflow-step h3{font-size:1.05rem;font-weight:700;margin-bottom:8px}
-.workflow-step p{font-size:0.82rem;color:var(--text-secondary);line-height:1.65}
-.workflow-arrow{width:48px;margin-top:28px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted)}
-.workflow-arrow svg{width:24px;height:24px}
-
-/* ===== DOWNLOAD ===== */
-.download{padding:100px 0}
-.download-buttons{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-bottom:40px}
-.release-note{max-width:720px;margin:-16px auto 36px;padding:14px 18px;border:1px solid rgba(210,153,34,0.25);border-radius:12px;background:rgba(210,153,34,0.06);color:var(--text-secondary);font-size:0.82rem;line-height:1.65;text-align:left}
-.release-note strong{color:var(--text-primary)}
-.release-note a{color:var(--cyan);border-bottom:1px dotted rgba(57,210,192,0.4)}
-.release-note a:hover{color:var(--green);border-bottom-color:var(--green)}
-.btn-win{padding:14px 32px;border-radius:14px;font-weight:600;font-size:0.92rem;
-  background:linear-gradient(135deg,var(--green),#2ea043);color:#fff;transition:all 0.3s;
-  display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(63,185,80,0.2)}
-.btn-win:hover{box-shadow:0 8px 30px rgba(63,185,80,0.35);transform:translateY(-2px)}
-.btn-mac{padding:14px 32px;border-radius:14px;font-weight:600;font-size:0.92rem;
-  background:linear-gradient(135deg,var(--blue),var(--purple));color:#fff;transition:all 0.3s;
-  display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(88,166,255,0.15)}
-.btn-mac:hover{box-shadow:0 8px 30px rgba(88,166,255,0.3);transform:translateY(-2px)}
-.btn-linux{padding:14px 32px;border-radius:14px;font-weight:600;font-size:0.92rem;
-  border:1px solid var(--border);color:var(--text-primary);transition:all 0.3s;
-  display:flex;align-items:center;gap:8px}
-.btn-linux:hover{border-color:var(--text-muted);transform:translateY(-2px)}
-.code-block{max-width:600px;margin:0 auto;background:var(--bg-elevated);border:1px solid var(--border);border-radius:12px;
-  position:relative;overflow:hidden}
-.code-block pre{padding:20px 24px;font-family:var(--font-mono);font-size:0.8rem;color:var(--text-secondary);
-  overflow-x:auto;line-height:1.7;white-space:pre}
-.btn-copy{position:absolute;top:10px;right:10px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;
-  font-size:0.7rem;color:var(--text-muted);transition:all 0.2s;display:flex;align-items:center;gap:4px;background:var(--bg-tertiary)}
-.btn-copy:hover{border-color:var(--text-muted);color:var(--text-secondary)}
-.btn-copy svg{width:14px;height:14px}
-
-/* ===== OPEN SOURCE CTA ===== */
-.oss-cta{padding:100px 0;position:relative;text-align:center}
-.oss-cta::before{content:'';position:absolute;top:50%;left:50%;width:800px;height:800px;transform:translate(-50%,-50%);
+/* ===== LINKS / CTA ===== */
+.links{padding:70px 0 100px;text-align:center}
+.links::before{content:'';position:absolute;top:50%;left:50%;width:800px;height:800px;transform:translate(-50%,-50%);
   background:radial-gradient(circle,rgba(63,185,80,0.06) 0%,transparent 55%);pointer-events:none}
-.oss-cta .section-header{margin-bottom:24px}
-.oss-body{font-size:0.95rem;color:var(--text-secondary);max-width:580px;margin:0 auto 36px;line-height:1.75}
-.oss-buttons{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
-
-/* ===== SIBLING PROJECT (PacketCode TUI) ===== */
-.sibling{padding:110px 0 100px;position:relative}
-.sibling::before{content:'';position:absolute;top:50%;left:50%;width:1100px;height:900px;transform:translate(-50%,-50%);
-  background:radial-gradient(ellipse,rgba(188,140,255,0.07) 0%,rgba(57,210,192,0.04) 45%,transparent 70%);pointer-events:none}
-.sibling .container{position:relative;z-index:1}
-.sibling-wrap{display:grid;grid-template-columns:1.05fr 1fr;gap:56px;align-items:center}
-.sibling-eyebrow{display:inline-flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.7rem;font-weight:600;
-  letter-spacing:0.18em;text-transform:uppercase;color:var(--purple);margin-bottom:18px;padding:5px 14px;
-  border:1px solid rgba(188,140,255,0.3);border-radius:999px;background:rgba(188,140,255,0.07)}
-.sibling-eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--purple);box-shadow:0 0 8px var(--purple)}
-.sibling h2{font-size:clamp(2rem,4.6vw,3rem);font-weight:800;letter-spacing:-0.035em;line-height:1.08;margin-bottom:18px}
-.sibling h2 .gradient-purple{background:linear-gradient(135deg,var(--purple),var(--cyan));-webkit-background-clip:text;
-  -webkit-text-fill-color:transparent;background-clip:text}
-.sibling-lead{font-size:clamp(1rem,1.6vw,1.12rem);color:var(--text-secondary);line-height:1.7;margin-bottom:24px;max-width:520px}
-.sibling-bullets{display:flex;flex-direction:column;gap:12px;margin-bottom:28px}
-.sibling-bullet{display:flex;align-items:flex-start;gap:12px;font-size:0.92rem;color:var(--text-primary);line-height:1.55}
-.sibling-bullet svg{width:16px;height:16px;color:var(--purple);flex-shrink:0;margin-top:3px}
-.sibling-bullet strong{font-weight:600;color:var(--text-primary)}
-.sibling-bullet span{color:var(--text-secondary)}
-.sibling-meta{display:flex;align-items:center;gap:10px;margin-bottom:28px;flex-wrap:wrap}
-.sibling-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;
-  font-family:var(--font-mono);font-size:0.68rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase}
-.sibling-badge.dev{background:rgba(210,153,34,0.12);color:var(--amber);border:1px solid rgba(210,153,34,0.3)}
-.sibling-badge.dev .dot{width:6px;height:6px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber);
-  animation:pulse-dot 2s ease-in-out infinite}
-.sibling-badge.oss{background:rgba(188,140,255,0.1);color:var(--purple);border:1px solid rgba(188,140,255,0.3)}
-.sibling-badge.lang{background:rgba(57,210,192,0.1);color:var(--cyan);border:1px solid rgba(57,210,192,0.3)}
-.sibling-actions{display:flex;gap:12px;flex-wrap:wrap}
-.btn-purple{padding:12px 26px;border-radius:999px;font-size:0.9rem;font-weight:600;
-  background:linear-gradient(135deg,var(--purple),#9d6df7);color:#fff;transition:all 0.3s;
-  box-shadow:0 0 24px rgba(188,140,255,0.18),0 4px 18px rgba(0,0,0,0.3);display:inline-flex;align-items:center;gap:8px}
-.btn-purple:hover{box-shadow:0 0 40px rgba(188,140,255,0.32),0 8px 26px rgba(0,0,0,0.4);transform:translateY(-2px)}
-.btn-purple svg{width:16px;height:16px}
-.btn-ghost-purple{padding:12px 26px;border-radius:999px;font-size:0.9rem;font-weight:600;
-  border:1px solid rgba(188,140,255,0.35);color:var(--text-primary);transition:all 0.3s;
-  display:inline-flex;align-items:center;gap:8px;background:rgba(188,140,255,0.04)}
-.btn-ghost-purple:hover{border-color:var(--purple);background:rgba(188,140,255,0.1);transform:translateY(-2px)}
-
-/* terminal mock */
-.tui-mock{background:#080b11;border:1px solid var(--border);border-radius:14px;overflow:hidden;
-  box-shadow:0 24px 60px rgba(0,0,0,0.45),0 0 0 1px rgba(188,140,255,0.08);position:relative}
-.tui-mock::after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:14px;
-  background:linear-gradient(135deg,rgba(188,140,255,0.06),transparent 40%,rgba(57,210,192,0.04))}
-.tui-titlebar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:#0d1117;border-bottom:1px solid var(--border)}
-.tui-titlebar .window-dot{width:11px;height:11px;border-radius:50%}
-.tui-titlebar .title{margin-left:8px;font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted)}
-.tui-body{font-family:var(--font-mono);font-size:0.74rem;line-height:1.65;padding:16px 18px;color:var(--text-secondary);
-  background:linear-gradient(180deg,#080b11 0%,#0a0d15 100%)}
-.tui-statusline{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-bottom:1px solid var(--border);
-  margin:-16px -18px 14px;background:#0b0f17;color:var(--text-muted);font-size:0.68rem}
-.tui-statusline .left{display:flex;gap:14px}
-.tui-statusline .pill{padding:1px 8px;border-radius:4px}
-.tui-statusline .pill.green{background:rgba(63,185,80,0.15);color:var(--green)}
-.tui-statusline .pill.purple{background:rgba(188,140,255,0.15);color:var(--purple)}
-.tui-line{white-space:pre;display:block}
-.tui-prompt{color:var(--green)}
-.tui-cmd{color:var(--text-primary)}
-.tui-out{color:var(--text-secondary)}
-.tui-dim{color:var(--text-muted)}
-.tui-warn{color:var(--amber)}
-.tui-key{color:var(--cyan)}
-.tui-accent{color:var(--purple)}
-.tui-cursor{display:inline-block;width:8px;height:1em;background:var(--purple);vertical-align:text-bottom;
-  margin-left:1px;animation:blink 1.1s step-end infinite}
-.tui-footer{margin-top:14px;padding-top:10px;border-top:1px dashed rgba(48,54,61,0.6);
-  display:flex;gap:14px;font-size:0.66rem;color:var(--text-muted)}
-.tui-footer kbd{font-family:var(--font-mono);background:rgba(188,140,255,0.1);color:var(--purple);
-  padding:1px 6px;border-radius:3px;border:1px solid rgba(188,140,255,0.25);font-size:0.62rem}
-
-.sibling-compare{margin-top:64px;display:grid;grid-template-columns:1fr auto 1fr;gap:0;align-items:center;
-  max-width:880px;margin-left:auto;margin-right:auto;padding:24px 28px;border:1px solid var(--border);
-  border-radius:18px;background:rgba(22,27,34,0.5);backdrop-filter:blur(10px)}
-.sibling-compare-side{padding:8px 18px}
-.sibling-compare-side h4{font-size:0.95rem;font-weight:700;margin-bottom:4px}
-.sibling-compare-side p{font-size:0.78rem;color:var(--text-muted);line-height:1.5}
-.sibling-compare-side .label{font-family:var(--font-mono);font-size:0.62rem;font-weight:600;letter-spacing:0.14em;
-  text-transform:uppercase;margin-bottom:8px}
-.sibling-compare-side.left .label{color:var(--green)}
-.sibling-compare-side.right .label{color:var(--purple)}
-.sibling-compare-divider{font-family:var(--font-mono);color:var(--text-muted);font-size:1rem;padding:0 8px;
-  border-left:1px solid var(--border);border-right:1px solid var(--border);align-self:stretch;
-  display:flex;align-items:center;justify-content:center;min-width:40px}
-
-@media(max-width:1024px){
-  .sibling-wrap{grid-template-columns:1fr;gap:40px}
-  .sibling-compare{grid-template-columns:1fr;gap:16px}
-  .sibling-compare-divider{display:none}
-}
-@media(max-width:768px){
-  .sibling{padding:80px 0 70px}
-  .tui-body{font-size:0.68rem;padding:14px 14px}
-  .tui-statusline{margin:-14px -14px 12px}
-  .sibling-compare{padding:20px}
-}
+.links-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;max-width:860px;margin:0 auto}
+.link-card{padding:28px 24px;background:rgba(22,27,34,0.6);border:1px solid var(--border);border-radius:18px;
+  transition:all 0.3s;text-align:left;display:block}
+.link-card:hover{transform:translateY(-4px);border-color:var(--text-muted);box-shadow:0 12px 40px rgba(0,0,0,0.25)}
+.link-card h3{font-size:0.98rem;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.link-card h3 svg{width:18px;height:18px;color:var(--green);flex-shrink:0}
+.link-card p{font-size:0.8rem;color:var(--text-secondary);line-height:1.6}
+.link-card p code{font-size:0.72rem;color:var(--cyan)}
+.link-card .go{display:inline-block;margin-top:12px;font-family:var(--font-mono);font-size:0.72rem;color:var(--cyan);font-weight:600}
+.link-card:hover .go{color:var(--green)}
 
 /* ===== FOOTER ===== */
-footer{border-top:1px solid var(--border);padding:32px 0;position:relative;z-index:1}
+footer{border-top:1px solid var(--border);padding:30px 0;position:relative;z-index:1}
 footer .container{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px}
-.footer-brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:0.9rem;color:var(--text-secondary)}
-.footer-brand img{width:24px;height:24px;border-radius:6px}
-.footer-links{display:flex;gap:24px}
+.footer-brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:0.88rem;color:var(--text-secondary)}
+.footer-brand img{width:22px;height:22px;border-radius:6px}
+.footer-links{display:flex;gap:22px}
 .footer-links a{font-size:0.8rem;color:var(--text-muted);transition:color 0.2s}
 .footer-links a:hover{color:var(--text-secondary)}
-.footer-domains{font-size:0.78rem;color:var(--text-muted)}
+.footer-note{font-size:0.75rem;color:var(--text-muted)}
 
-/* ===== FOCUS STYLES ===== */
 a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offset:2px;border-radius:4px}
 
 /* ===== RESPONSIVE ===== */
 @media(max-width:1024px){
   .features-grid{grid-template-columns:repeat(2,1fr)}
-  .feature-card.wide{grid-column:span 2}
-  .pipeline{flex-wrap:wrap;gap:16px}
-  .pipeline-connector{display:none}
-  .workflow-steps{flex-direction:column;align-items:center}
-  .workflow-arrow{transform:rotate(90deg);width:auto;margin:0}
-  .modes-grid{grid-template-columns:1fr;gap:20px}
-  .mode-card{padding:36px 28px 32px;min-height:auto}
-  .mode-card h3{font-size:1.4rem}
 }
 @media(max-width:768px){
   .nav-links{position:fixed;top:var(--nav-h);left:0;right:0;background:rgba(13,17,23,0.97);backdrop-filter:blur(20px);
     flex-direction:column;padding:24px;gap:20px;border-bottom:1px solid var(--border);
-    transform:translateY(-100%);opacity:0;pointer-events:none;transition:all 0.3s}
+    transform:translateY(-110%);opacity:0;pointer-events:none;transition:all 0.3s}
   .nav-links.open{transform:translateY(0);opacity:1;pointer-events:all}
   .hamburger{display:flex}
   .features-grid{grid-template-columns:1fr}
-  .feature-card.wide{grid-column:span 1}
-  .stats-grid{grid-template-columns:repeat(2,1fr)}
-  .modules-grid{grid-template-columns:1fr}
-  .pipeline{flex-direction:column;align-items:center}
-  .pipeline-connector{width:2px;height:32px;margin:0}
-  .pipeline-connector::after{background:repeating-linear-gradient(180deg,rgba(57,210,192,0.3) 0,rgba(57,210,192,0.3) 6px,transparent 6px,transparent 12px)}
-  .memory-panel{transform:none}
-  .memory-panel:hover{transform:none}
-  .memory-entry{flex-direction:column;align-items:flex-start;gap:4px}
-  .memory-desc{margin:0}
-  .download-buttons{flex-direction:column;align-items:center}
+  .links-grid{grid-template-columns:1fr}
+  .status-panel{padding:26px 22px}
   footer .container{flex-direction:column;text-align:center}
-  .modes{padding:80px 0}
-  .modes-header{margin-bottom:44px}
-  .mode-card{padding:32px 24px 28px}
-  .mode-card h3{font-size:1.25rem}
-  .mode-icon{width:52px;height:52px;border-radius:14px}
-  .mode-icon svg{width:26px;height:26px}
 }
 @media(max-width:480px){
-  .hero h1{font-size:2.2rem}
   .hero-buttons{flex-direction:column;align-items:center}
-  .btn-primary,.btn-outline{width:100%;text-align:center;justify-content:center}
-  .stats-grid{grid-template-columns:1fr 1fr;gap:16px}
-  .workflow-steps{gap:16px}
-  .profiles-row{gap:12px}
-  .profile-card{min-width:180px}
+  .btn-primary,.btn-outline{width:100%;text-align:center}
 }
 
-/* ===== ANNOUNCEMENT BAR ===== */
-:root{--announcement-h:38px}
-.announcement{position:fixed;top:0;left:0;right:0;height:var(--announcement-h);z-index:200;
-  display:flex;align-items:center;justify-content:center;
-  background:linear-gradient(90deg,#7a4cf5 0%,var(--purple) 28%,#a07ef9 50%,var(--cyan) 78%,#39d2c0 100%);
-  background-size:220% 100%;background-position:0% 50%;
-  animation:announcement-shift 8s ease-in-out infinite alternate;
-  box-shadow:0 2px 18px rgba(122,76,245,0.25),0 1px 0 rgba(255,255,255,0.06) inset;
-  font-size:0.82rem;color:#fff;font-weight:500;letter-spacing:-0.005em;
-  transition:transform 260ms ease, opacity 260ms ease;will-change:transform,opacity}
-.announcement.is-hiding{transform:translateY(-100%);opacity:0;pointer-events:none}
-.announcement-link{flex:1 1 auto;display:flex;align-items:center;justify-content:center;
-  gap:10px;height:100%;padding:0 56px 0 20px;color:#fff;text-shadow:0 1px 0 rgba(0,0,0,0.18);
-  white-space:nowrap;overflow:hidden}
-.announcement-link:hover .announcement-cta{transform:translateX(3px)}
-.announcement-rocket{font-size:1rem;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,0.25))}
-.announcement-text strong{font-weight:700}
-.announcement-dot{display:inline-block;width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,0.55);margin:0 4px;vertical-align:middle}
-.announcement-cta{font-weight:700;display:inline-flex;align-items:center;gap:4px;transition:transform 0.2s ease}
-.announcement-mobile{display:none}
-.announcement-desktop{display:inline}
-.announcement-close{position:absolute;right:8px;top:50%;transform:translateY(-50%);
-  width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-  color:rgba(255,255,255,0.85);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);
-  transition:all 0.2s ease;font-size:0.95rem;line-height:1}
-.announcement-close:hover{background:rgba(255,255,255,0.18);color:#fff;transform:translateY(-50%) scale(1.05)}
-.announcement-close:focus-visible{outline:2px solid #fff;outline-offset:2px}
-@keyframes announcement-shift{0%{background-position:0% 50%}100%{background-position:100% 50%}}
-
-/* body offset when announcement is present */
-body.has-announcement nav{top:var(--announcement-h)}
-body.has-announcement .hero{padding-top:calc(var(--nav-h) + var(--announcement-h) + 40px)}
-
-/* hero NEW pill (companion to announcement) */
-.hero-new-pill{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;margin:0 0 28px 8px;
-  border:1px solid rgba(188,140,255,0.45);border-radius:999px;
-  background:linear-gradient(135deg,rgba(188,140,255,0.18),rgba(57,210,192,0.10));
-  font-size:0.74rem;font-weight:600;letter-spacing:0.02em;color:#fff;
-  box-shadow:0 0 18px rgba(188,140,255,0.18);transition:all 0.25s ease;
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
-.hero-new-pill:hover{border-color:var(--purple);transform:translateY(-1px);
-  box-shadow:0 0 24px rgba(188,140,255,0.32)}
-.hero-new-pill .new-tag{font-family:var(--font-mono);font-size:0.62rem;font-weight:700;
-  letter-spacing:0.12em;padding:2px 7px;border-radius:999px;
-  background:linear-gradient(135deg,var(--purple),#9d6df7);color:#fff;text-transform:uppercase;
-  box-shadow:0 0 10px rgba(188,140,255,0.4)}
-.hero-new-pill .pill-arrow{font-size:0.85rem;color:var(--purple);transition:transform 0.2s ease}
-.hero-new-pill:hover .pill-arrow{transform:translateX(2px)}
-.hero-badges-row{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;margin-bottom:28px}
-.hero-badges-row .hero-badge{margin-bottom:0}
-.hero-badges-row .hero-new-pill{margin:0}
-
-@media(max-width:600px){
-  .announcement-desktop{display:none}
-  .announcement-mobile{display:inline}
-  .announcement-link{padding:0 48px 0 14px;font-size:0.76rem}
-}
-@media(max-width:480px){
-  .hero-new-pill{margin:8px 0 28px 0;font-size:0.7rem;padding:5px 12px}
-}
-
-/* ===== REDUCED MOTION ===== */
 @media(prefers-reduced-motion:reduce){
   .reveal{opacity:1;transform:none;transition:none}
-  .aurora::before,.aurora::after,.aurora .aurora-layer{animation:none}
-  .pipeline-connector::after{animation:none}
-  .hero-badge .dot{animation:none}
-  .typed-cursor{animation:none}
-  #particles-canvas{display:none}
-  .announcement{animation:none;background-position:30% 50%}
   *{transition-duration:0.01ms !important;animation-duration:0.01ms !important}
 }
 </style>
 </head>
 <body>
 
-<!-- Particle Canvas -->
-<canvas id="particles-canvas" aria-hidden="true"></canvas>
-
-<!-- Aurora Background -->
-<div class="aurora" aria-hidden="true"><div class="aurora-layer"></div></div>
+<div class="aurora" aria-hidden="true"></div>
 <div class="grid-bg" aria-hidden="true"></div>
 
-<!-- ===== ANNOUNCEMENT BAR ===== -->
-<div class="announcement" id="announcement" role="region" aria-label="Site announcement">
-  <a href="#packetcode" class="announcement-link" id="announcement-link">
-    <span class="announcement-rocket" aria-hidden="true">&#128640;</span>
-    <span class="announcement-text">
-      <span class="announcement-desktop">Introducing <strong>PacketCode</strong> &mdash; the terminal-first sibling to PacketADE <span class="announcement-dot" aria-hidden="true"></span> Pre-release on GitHub</span>
-      <span class="announcement-mobile"><strong>PacketCode</strong> now in pre-release</span>
-    </span>
-    <span class="announcement-cta" aria-hidden="true">&rarr;</span>
-  </a>
-  <button type="button" class="announcement-close" id="announcement-close" aria-label="Dismiss announcement">&times;</button>
-</div>
-
 <!-- ===== NAV ===== -->
-<nav role="navigation" aria-label="Main navigation">
+<nav aria-label="Main navigation">
   <div class="container">
     <a href="#" class="nav-brand" aria-label="PacketADE Home">
-      <img src="icon-192.png" alt="PacketADE logo" width="32" height="32" />
+      <img src="icon-192.png" alt="PacketADE logo" width="28" height="28" />
       PacketADE
     </a>
     <div class="nav-links" id="nav-links">
-      <a href="#features">Features</a>
-      <a href="#modes">Modes</a>
-      <a href="#remote-agents">Remote Agents</a>
-      <a href="#flight-deck">Flight Deck</a>
-      <a href="#providers">Providers</a>
-      <a href="#modules">Modules</a>
+      <a href="#what">What it is</a>
+      <a href="#capabilities">Capabilities</a>
+      <a href="#status">Status</a>
       <a href="packetade-manual.html">Manual</a>
-      <a href="#download">Download</a>
-      <a href="#packetcode">PacketCode</a>
+      <a href="roadmap.html">Roadmap</a>
     </div>
     <div class="nav-actions">
       <a href="https://github.com/packetloss404/PacketADE" class="btn-github" target="_blank" rel="noopener" aria-label="View on GitHub">
         <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-        Star
+        GitHub
       </a>
-      <a href="https://github.com/packetloss404/PacketADE/releases" class="btn-download-nav">Download</a>
     </div>
     <button class="hamburger" id="hamburger" aria-label="Toggle menu" aria-expanded="false">
       <span></span><span></span><span></span>
@@ -632,37 +237,23 @@ body.has-announcement .hero{padding-top:calc(var(--nav-h) + var(--announcement-h
 
 <!-- ===== HERO ===== -->
 <section class="hero" id="hero">
-  <div class="hero-badges-row reveal">
-    <div class="hero-badge">
-      <span class="dot"></span>
-      Open Source &mdash; 100% Free
-    </div>
-    <a href="#packetcode" class="hero-new-pill" aria-label="PacketCode TUI — new release announcement">
-      <span class="new-tag">New</span>
-      <span>PacketCode TUI</span>
-      <span class="pill-arrow" aria-hidden="true">&rarr;</span>
-    </a>
-    <a href="#remote-agents" class="hero-new-pill" aria-label="Remote Agents roadmap">
-      <span class="new-tag">Plan</span>
-      <span>Remote Agents</span>
-      <span class="pill-arrow" aria-hidden="true">&rarr;</span>
-    </a>
-  </div>
-  <h1 class="reveal" style="--delay:0.1s">One cockpit.<br><span class="gradient-text">Every AI agent.</span><br>Ship faster.</h1>
-  <p class="hero-lead reveal" style="--delay:0.2s">Four ways to build &mdash; autonomous <strong>Missions</strong>, supervised <strong>Workspace</strong>, single-thread <strong>Agents</strong>, AI-structured <strong>Issues</strong> &mdash; unifying Claude Code, Codex, Gemini, OpenCode and eight provider rows in one native desktop app. Remote Agents brings that cockpit to your phone next.</p>
-  <div class="typed-line reveal" style="--delay:0.3s">Built to <span id="typed-target"></span><span class="typed-cursor"></span></div>
-  <div class="hero-buttons reveal" style="--delay:0.35s">
-    <a href="https://github.com/packetloss404/PacketADE/releases" class="btn-primary">Download for Free</a>
+  <div class="hero-logo reveal" aria-hidden="true">P&gt;_</div>
+  <h1 class="reveal" style="--delay:0.05s">Packet<span class="gradient-text">ADE</span></h1>
+  <p class="hero-tagline reveal" style="--delay:0.12s">Your agent fleet. One flight deck.</p>
+  <p class="hero-lead reveal" style="--delay:0.2s">A local-first desktop <strong>Agent Development Environment</strong>. Run coding-agent CLIs in multi-pane workspaces, hold structured conversations across eight provider backends, and orchestrate larger units of work as <strong>Flights</strong> with parallel worktree attempts &mdash; on your machine or over SSH.</p>
+  <div class="hero-buttons reveal" style="--delay:0.28s">
+    <a href="https://github.com/packetloss404/PacketADE/releases" class="btn-primary">Download</a>
+    <a href="packetade-manual.html" class="btn-outline">Read the Manual</a>
     <a href="https://github.com/packetloss404/PacketADE" class="btn-outline" target="_blank" rel="noopener">View Source</a>
   </div>
-  <div class="tag-chips reveal" style="--delay:0.4s">
+  <div class="tag-chips reveal" style="--delay:0.34s">
     <span class="tag-chip">Tauri v2</span>
-    <span class="tag-chip">8 Provider Rows</span>
-    <span class="tag-chip">BYOK</span>
-    <span class="tag-chip">Apache 2.0</span>
     <span class="tag-chip">Local-First</span>
+    <span class="tag-chip">BYOK</span>
+    <span class="tag-chip">8 Provider Rows</span>
+    <span class="tag-chip">Open Source</span>
   </div>
-  <div class="hero-screenshot reveal" style="--delay:0.5s">
+  <div class="hero-screenshot reveal" style="--delay:0.42s">
     <div class="hero-glow"></div>
     <div class="window-frame">
       <div class="window-titlebar">
@@ -671,718 +262,162 @@ body.has-announcement .hero{padding-top:calc(var(--nav-h) + var(--announcement-h
         <span class="window-dot g"></span>
         <span class="window-title">PacketADE</span>
       </div>
-      <img src="screenshot.png" alt="PacketADE desktop IDE showing multi-pane AI sessions, API agents with tool diffs, kanban board, and Flight Deck orchestration" loading="lazy" />
+      <img src="screenshot.png" alt="PacketADE desktop app showing multi-pane agent sessions, kanban issues, and Flight Deck orchestration" loading="lazy" />
     </div>
   </div>
 </section>
 
-<!-- ===== MODES (PRIMARY PRODUCT STORY) ===== -->
-<section class="modes" id="modes">
-  <div class="container">
-    <div class="modes-header reveal">
-      <span class="modes-eyebrow">The Four Modes</span>
-      <h2>Four ways to build.<br><span class="gradient-text">One desktop app.</span></h2>
-      <p>Every PacketADE workflow falls into one of four modes &mdash; from fully autonomous Missions down to a single focused chat. Pick the mode for the work in front of you. Mix them freely.</p>
-    </div>
-
-    <div class="modes-grid">
-      <!-- Mode 1: Flight Deck (Missions) -->
-      <div class="mode-card cyan reveal" style="--delay:0s">
-        <div class="mode-card-head">
-          <div class="mode-icon cyan" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-          </div>
-          <div class="mode-titles">
-            <span class="mode-caption">Mode 01 &middot; Full Autonomous</span>
-            <h3>Flight Deck</h3>
-          </div>
-        </div>
-        <p class="mode-body">Write a spec. A Sonnet 4.6 planner decomposes it into milestones and tasks, executors run end-to-end, and you only step in to approve gates. Status, blockers, and costs roll up automatically.</p>
-        <p class="mode-when"><strong>When:</strong> Large multi-step work you want to delegate &mdash; &ldquo;ship the feature&rdquo; and walk away.</p>
-      </div>
-
-      <!-- Mode 2: Workspace -->
-      <div class="mode-card green reveal" style="--delay:0.08s">
-        <div class="mode-card-head">
-          <div class="mode-icon green" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="2" y1="9" x2="22" y2="9"/><line x1="12" y1="9" x2="12" y2="17"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-          </div>
-          <div class="mode-titles">
-            <span class="mode-caption">Mode 02 &middot; Semi-Autonomous</span>
-            <h3>Workspace</h3>
-          </div>
-        </div>
-        <p class="mode-body">Tile PTY-backed CLI agents &mdash; Claude Code, Codex, Gemini, OpenCode, PacketCode &mdash; in worktrees. Give each one a task, supervise mid-stream, reply, switch, branch, and steer them all in parallel.</p>
-        <p class="mode-when"><strong>When:</strong> Hands-on work where you orchestrate multiple agents and want a Bypass-perms throttle within reach.</p>
-      </div>
-
-      <!-- Mode 3: Agents -->
-      <div class="mode-card purple reveal" style="--delay:0.16s">
-        <div class="mode-card-head">
-          <div class="mode-icon purple" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/></svg>
-          </div>
-          <div class="mode-titles">
-            <span class="mode-caption">Mode 03 &middot; Single-Thread Chat</span>
-            <h3>Agents</h3>
-          </div>
-        </div>
-        <p class="mode-body">One conversation, one API agent &mdash; Claude OAuth subscription, OpenAI API, MiniMax, OpenRouter, or local Ollama. Structured chat with tool diffs, slash commands, @-file mentions, and voice input.</p>
-        <p class="mode-when"><strong>When:</strong> Focused threads, exploratory questions, anything where one chat is the right shape.</p>
-      </div>
-
-      <!-- Mode 4: Issues -->
-      <div class="mode-card amber reveal" style="--delay:0.24s">
-        <div class="mode-card-head">
-          <div class="mode-icon amber" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-          </div>
-          <div class="mode-titles">
-            <span class="mode-caption">Mode 04 &middot; AI-Structured Intake</span>
-            <h3>Issues</h3>
-          </div>
-        </div>
-        <p class="mode-body">Paste a spec, doc, or PRD. AI breaks it into discrete tickets. One click &ldquo;Send to Workspace&rdquo; spawns a Claude pane in a worktree with the ticket as the opening turn. Commits with <code>Fixes #N</code> auto-close.</p>
-        <p class="mode-when"><strong>When:</strong> You want AI to <em>structure</em> the work but you (or a supervised agent) drive the coding.</p>
-      </div>
-    </div>
-
-    <p class="modes-footnote reveal" style="--delay:0.3s">Mix and match. Hand a Mission off to Workspace. Promote a chat to an Issue. Every mode shares memory, costs, and providers.</p>
-  </div>
-</section>
-
-<!-- ===== STATS ===== -->
-<section class="stats reveal" id="stats">
-  <div class="container">
-    <div class="stats-grid">
-      <div>
-        <div class="stat-number green" data-target="4">0</div>
-        <div class="stat-label">Build Modes</div>
-      </div>
-      <div>
-        <div class="stat-number purple" data-target="8">0</div>
-        <div class="stat-label">Provider Rows</div>
-      </div>
-      <div>
-        <div class="stat-number blue" data-target="13">0</div>
-        <div class="stat-label">CLI Agents Cataloged</div>
-      </div>
-      <div>
-        <div class="stat-number amber" data-target="200" data-suffix="+">0</div>
-        <div class="stat-label">Tauri Commands</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ===== REMOTE AGENTS ===== -->
-<section class="features" id="remote-agents">
+<!-- ===== WHAT IT IS ===== -->
+<section class="what" id="what">
   <div class="container">
     <div class="section-header reveal">
-      <h2>Remote Agents are the next big bet</h2>
-      <p>PWA first, Packet account sign-in, Packet Cloud relay, and desktop-owned execution. Use PacketADE Agents from your phone without sending provider secrets or tool access to the cloud.</p>
+      <span class="eyebrow">What it is</span>
+      <h2>One native app for real agent-driven development</h2>
     </div>
-    <div class="features-grid">
-      <div class="feature-card wide reveal" style="--delay:0s">
-        <div class="feature-icon cyan">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
-        </div>
-        <h3>Phone control, desktop ownership</h3>
-        <p>The PWA can list providers, models, profiles, workspaces, and conversations; start or continue API-agent chats; stream <code>api-agent:*</code> events; and approve permission or edit prompts. Files, shells, MCP servers, provider secrets, and execution stay on the PacketADE desktop.</p>
-      </div>
-      <div class="feature-card reveal" style="--delay:0.08s">
-        <div class="feature-icon green">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
-        </div>
-        <h3>Sign in, then trust a host</h3>
-        <p>Packet account sign-in is the primary flow. A desktop must still approve and trust each device before it can control conversations.</p>
-      </div>
-      <div class="feature-card reveal" style="--delay:0.16s">
-        <div class="feature-icon blue">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6 4 4 6-6"/><path d="M14 9h6v6"/></svg>
-        </div>
-        <h3>Relay, not cloud agent</h3>
-        <p>Packet Cloud carries encrypted frames and push notifications. It does not call OpenAI, Anthropic, Ollama, shells, or MCP tools.</p>
-      </div>
-      <div class="feature-card reveal" style="--delay:0.24s">
-        <div class="feature-icon amber">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
-        </div>
-        <h3>Push only for attention</h3>
-        <p>Foreground work streams over WebSocket. Web Push is reserved for approval requests, pending edits, errors, and done summaries.</p>
-      </div>
-    </div>
-    <div class="hero-buttons reveal" style="--delay:0.3s; margin-top:34px">
-      <a href="roadmap.html" class="btn-primary">Read the Roadmap</a>
-      <a href="https://github.com/packetloss404/PacketADE/blob/main/dev/remoteagents/README.md" class="btn-outline" target="_blank" rel="noopener">Implementation Plan</a>
+    <div class="what-body reveal" style="--delay:0.1s">
+      <p>PacketADE combines two complementary execution styles in a single desktop window. <strong>PTY-backed CLI sessions</strong> run Claude Code, Codex CLI, OpenCode, PacketCode, or a plain shell in draggable workspace panes, driven by each CLI&rsquo;s own interface. <strong>GUI/API agents</strong> in the Agents view hold durable structured conversations &mdash; streaming responses, tool calls, permission gating, plan review, and per-hunk diff acceptance &mdash; against eight provider backends that all normalize into one event contract.</p>
+      <p>Above both sits the <strong>Flight Deck</strong>: define a Flight, refine its plan in a read-only agent conversation, then launch one or more local or SSH agents against isolated git worktrees and supervise every attempt from a single master-detail surface. Issues, project memory, MCP configuration, git-host integration, dictation, and cost tracking live in the same app.</p>
+      <p>Everything stays on your machine: API keys in the OS keyring, transcripts and memory on local disk, execution local or over SSH connections you configure. There is no hosted service &mdash; bring your own subscriptions and keys.</p>
     </div>
   </div>
 </section>
 
-<!-- ===== FEATURES ===== -->
-<section class="features" id="features">
+<!-- ===== CAPABILITY GRID ===== -->
+<section class="features" id="capabilities">
   <div class="container">
     <div class="section-header reveal">
-      <h2>Cross-cutting capabilities</h2>
-      <p>Eight features that compose across every mode &mdash; from Missions to a single chat.</p>
+      <span class="eyebrow">Capabilities</span>
+      <h2>What&rsquo;s in the box</h2>
     </div>
     <div class="features-grid">
+
       <div class="feature-card reveal" style="--delay:0s">
-        <div class="feature-icon purple">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        <div class="feature-icon green" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
         </div>
-        <h3>BYOK across eight provider rows</h3>
-        <p>Anthropic subscription + API, OpenAI ChatGPT + API + Agents SDK, MiniMax, OpenRouter, and local Ollama. Streaming tool use, cache-aware token metrics, OAuth refresh handled for you.</p>
+        <h3>Multi-CLI Workspaces</h3>
+        <p>Run <strong>Claude Code</strong>, <strong>Codex CLI</strong>, <strong>OpenCode</strong>, <strong>PacketCode</strong>, and plain shells side by side in persistent draggable pane mosaics, with per-CLI status lines and saved layouts that hydrate dormant &mdash; nothing launches until you open the workspace.</p>
       </div>
-      <div class="feature-card reveal" style="--delay:0.08s">
-        <div class="feature-icon blue">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        </div>
-        <h3>Agent Profiles</h3>
-        <p>Five built-in personalities &mdash; Auto, Speed Runner, Thorough Reviewer, Security Auditor, Refactor Pro &mdash; plus custom profiles. System prompt, tool allowlist, and default model in one keystroke.</p>
-      </div>
-      <div class="feature-card wide reveal" style="--delay:0.16s">
-        <div class="feature-icon amber">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/><path d="M12 6v2"/><path d="M12 16v2"/></svg>
-        </div>
-        <h3>Code Quality with AutoFix &amp; AI Explain</h3>
-        <p>Live-streaming lint, typecheck, test, and audit runner. ESLint <code>--fix</code>, Prettier <code>--write</code>, <code>cargo fix</code>, <code>npm audit fix</code> &mdash; one click each. Per-error AI Explain, one-shot "Fix in Workspace" that spins up a Claude pane in a worktree, and a cached AI summary at the bottom of every run.</p>
-      </div>
-      <div class="feature-card reveal" style="--delay:0.24s">
-        <div class="feature-icon purple">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"/></svg>
-        </div>
-        <h3>GitHub, deeply wired</h3>
-        <p>Merge / squash / rebase, draft toggle, CI status pills, AI PR descriptions, streaming pre-flight code review, "Catch me up" repo digests, bulk issue triage. Plan flights, branch from issues, or hand off to Claude in one click.</p>
-      </div>
-      <div class="feature-card reveal" style="--delay:0.32s">
-        <div class="feature-icon green">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v6"/><path d="M18 3v6"/><circle cx="12" cy="13" r="6"/><path d="M9 13l2 2 4-4"/></svg>
-        </div>
-        <h3>Worktree-bound commits</h3>
-        <p>Issues spawn a Claude pane inside a Git worktree with a <code>prepare-commit-msg</code> hook that auto-appends <code>Fixes #N</code> and <code>Run-By: PacketADE</code> trailers. Commits matching the trailer auto-close the linked Issue.</p>
-      </div>
-      <div class="feature-card reveal" style="--delay:0.4s">
-        <div class="feature-icon cyan">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
-        </div>
-        <h3>Cross-provider cost dashboard</h3>
-        <p>Unified spend across Claude CLI, Codex, and every API row. Cache-aware token metrics, per-model breakdowns, per-flight totals, and a live spend chip in the toolbar.</p>
-      </div>
-      <div class="feature-card reveal" style="--delay:0.48s">
-        <div class="feature-icon green">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 00-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 012-3.95A12.88 12.88 0 0122 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 01-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
-        </div>
-        <h3>Deploy pipeline</h3>
-        <p>Configure environments, trigger deploys, stream live terminal output. Run history with status, env vars, and per-run logs &mdash; reachable from the global <kbd>+ New</kbd> menu.</p>
-      </div>
-      <div class="feature-card reveal" style="--delay:0.56s">
-        <div class="feature-icon red">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-        </div>
-        <h3>Voice-to-text, OS-wide</h3>
-        <p>Native Whisper dictation with waveform, history search, sentiment trend, and WPM analytics. Push-to-talk anywhere with <code>Ctrl+Shift+V</code> &mdash; transcripts land at the cursor of your last-focused input, or in the clipboard if focus is gone.</p>
-      </div>
-    </div>
-  </div>
-</section>
 
-<!-- ===== FLIGHT DECK SPOTLIGHT (deep dive on Mode 1) ===== -->
-<section class="flight-deck" id="flight-deck">
-  <div class="container">
-    <div class="section-header reveal" style="margin-bottom:24px">
-      <span class="mode-breadcrumb"><span class="dot"></span>Mode 01 of 04 &middot; Full Autonomous</span>
-      <h2>Flight Deck, in depth</h2>
-      <p>A closer look at the most autonomous of the four modes</p>
-    </div>
-    <p class="flight-deck-body reveal" style="--delay:0.1s">Define an objective. Link your issues. Flight Deck coordinates CLI and API agents across sessions, tracks blockers, captures memory snapshots, and surfaces what needs your attention &mdash; so you steer instead of type.</p>
+      <div class="feature-card reveal" style="--delay:0.05s">
+        <div class="feature-icon purple" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <h3>Eight-Row Agent Picker</h3>
+        <p>Structured conversations with <strong>Anthropic</strong> (subscription or API), <strong>OpenAI</strong> (ChatGPT, API, or Agents SDK), <strong>MiniMax</strong>, <strong>OpenRouter</strong>, and local <strong>Ollama</strong> &mdash; each row with a live auth badge, one shared composer, one event contract.</p>
+      </div>
 
-    <div class="pipeline reveal" style="--delay:0.15s">
-      <div class="pipeline-step">
-        <div class="pipeline-num">1</div>
-        <h4>Ideate</h4>
-        <p>Surface ideas and opportunities from your codebase</p>
+      <div class="feature-card reveal" style="--delay:0.1s">
+        <div class="feature-icon cyan" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        </div>
+        <h3>Flight Deck Orchestration</h3>
+        <p>Organize work as <strong>Flights</strong>: plan in a read-only agent conversation, apply structured milestones and tasks, then launch parallel <strong>worktree attempts</strong> across local and SSH agents with status, attention, and cost rollups.</p>
       </div>
-      <div class="pipeline-connector" aria-hidden="true"></div>
-      <div class="pipeline-step">
-        <div class="pipeline-num">2</div>
-        <h4>Plan</h4>
-        <p>Structure into issues with priorities and acceptance criteria</p>
-      </div>
-      <div class="pipeline-connector" aria-hidden="true"></div>
-      <div class="pipeline-step">
-        <div class="pipeline-num">3</div>
-        <h4>Build</h4>
-        <p>Agents execute. Flight Deck tracks progress in real time</p>
-      </div>
-      <div class="pipeline-connector" aria-hidden="true"></div>
-      <div class="pipeline-step">
-        <div class="pipeline-num">4</div>
-        <h4>Ship</h4>
-        <p>Review blockers, approve, deploy. All from one view</p>
-      </div>
-    </div>
 
-    <div class="fd-mockup reveal" style="--delay:0.2s">
-      <div class="fd-status-strip">
-        <div class="fd-status"><span class="fd-dot active"></span> 2 Active</div>
-        <div class="fd-status"><span class="fd-dot blocked"></span> 1 Blocked</div>
-        <div class="fd-status"><span class="fd-dot human"></span> 1 Needs Human</div>
-      </div>
-      <div class="fd-cards">
-        <div class="fd-card">
-          <div class="fd-card-top">
-            <span class="fd-card-title">Implement auth flow</span>
-            <span class="fd-card-badge active">Active</span>
-          </div>
-          <div class="fd-card-meta">
-            <span>P1 &middot; High</span>
-            <span>3 issues linked</span>
-            <span>Updated 12m ago</span>
-          </div>
-        </div>
-        <div class="fd-card">
-          <div class="fd-card-top">
-            <span class="fd-card-title">Refactor store layer</span>
-            <span class="fd-card-badge blocked">Blocked</span>
-          </div>
-          <div class="fd-card-meta">
-            <span>P2 &middot; Medium</span>
-            <span>5 issues linked</span>
-            <span>Updated 1h ago</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ===== API PROVIDERS ===== -->
-<section class="profiles" id="providers">
-  <div class="container">
-    <div class="section-header reveal">
-      <h2>Eight provider rows. One chat interface.</h2>
-      <p>Subscription auth, bring-your-own-key, or fully local. Five vendors. Frontier models from Opus 4.7 to Llama 4 to local Qwen 3.</p>
-    </div>
-    <div class="profiles-row reveal" style="--delay:0.1s">
-      <div class="profile-card purple-top">
-        <div class="profile-icon purple-bg">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
-        </div>
-        <h3>Anthropic (Subscription)</h3>
-        <p class="profile-desc">Claude Agent SDK via Claude Code OAuth</p>
-        <p class="profile-prompt">Structured sidecar turns with tool and edit approvals</p>
-      </div>
-      <div class="profile-card purple-top">
-        <div class="profile-icon purple-bg">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
-        </div>
-        <h3>Claude (API)</h3>
-        <p class="profile-desc">Opus 4.7, Opus 4.6, Sonnet 4.6, Haiku 4.5</p>
-        <p class="profile-prompt">Native Claude API with cache-aware token metrics</p>
-      </div>
-      <div class="profile-card green-top">
-        <div class="profile-icon green-bg">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-        </div>
-        <h3>OpenAI (ChatGPT Plus/Pro)</h3>
-        <p class="profile-desc">Codex OAuth through <code>codex exec</code></p>
-        <p class="profile-prompt">Subscription-backed Codex runs in the sidecar</p>
-      </div>
-      <div class="profile-card green-top">
-        <div class="profile-icon green-bg">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-        </div>
-        <h3>OpenAI (API)</h3>
-        <p class="profile-desc">GPT-5.5, ChatGPT 5.4, GPT-4o, o3, o4-mini</p>
-        <p class="profile-prompt">OpenAI-compatible streaming with tool use</p>
-      </div>
-      <div class="profile-card green-top">
-        <div class="profile-icon green-bg">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-        </div>
-        <h3>OpenAI Agents SDK</h3>
-        <p class="profile-desc">GPT-5.5, ChatGPT 5.4, GPT-4o, o3, o4-mini</p>
-        <p class="profile-prompt">Agents SDK runtime with hosted tool loops</p>
-      </div>
-      <div class="profile-card amber-top">
-        <div class="profile-icon amber-bg">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-        </div>
-        <h3>MiniMax</h3>
-        <p class="profile-desc">M2.7 + M2.7 high-speed</p>
-        <p class="profile-prompt">Long-context reasoning via BYOK API</p>
-      </div>
-      <div class="profile-card blue-top">
-        <div class="profile-icon blue-bg">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
-        </div>
-        <h3>OpenRouter</h3>
-        <p class="profile-desc">Auto + Claude 4.7, GPT-5.5, Gemini 2.5 Pro, Llama 4 Maverick</p>
-        <p class="profile-prompt">One key, every frontier model</p>
-      </div>
-      <div class="profile-card red-top">
-        <div class="profile-icon red-bg">
+      <div class="feature-card reveal" style="--delay:0.15s">
+        <div class="feature-icon blue" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
         </div>
-        <h3>Ollama (Local)</h3>
-        <p class="profile-desc">Llama 3.3 70B, Qwen 3 32B, DeepSeek Coder V2, CodeLlama 34B</p>
-        <p class="profile-prompt">100% offline &mdash; no key required</p>
+        <h3>SSH Remote Workspaces</h3>
+        <p>Add servers with key, agent, or password auth, detect installed CLIs, and run agent sessions and worktree attempts on remote machines. Host-key pinning is enforced whenever a server&rsquo;s fingerprint is saved.</p>
       </div>
-    </div>
-  </div>
-</section>
 
-<!-- ===== MODULES ===== -->
-<section class="modules" id="modules">
-  <div class="container">
-    <div class="section-header reveal">
-      <h2>Extensible by design</h2>
-      <p>Three opt-in modules plus a Settings-driven Tools surface that grows with your workflow.</p>
-    </div>
-    <div class="modules-grid">
-      <div class="module-card amber-border reveal" style="--delay:0s">
-        <span class="module-tag">Module</span>
-        <h3>Ideation Scanner</h3>
-        <p>Scans your codebase and surfaces improvement ideas, refactoring opportunities, and security concerns. Filter, promote to Issues, or drop each candidate.</p>
+      <div class="feature-card reveal" style="--delay:0.2s">
+        <div class="feature-icon amber" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-6"/><path d="M6 20v-4"/><path d="M18 20v-8"/><rect x="2" y="2" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="10" y1="6" x2="10.01" y2="6"/></svg>
+        </div>
+        <h3>Local-First MCP Hub</h3>
+        <p>Manage the MCP servers PacketADE consumes and the configs it writes for Claude Code and Codex in one place, with per-conversation server toggles and trust frozen into each managed session.</p>
       </div>
-      <div class="module-card green-border reveal" style="--delay:0.08s">
-        <span class="module-tag">Module</span>
-        <h3>Scaffold</h3>
-        <p>Spin up new projects from built-in templates &mdash; Next.js, React, FastAPI, Rust CLI, and more. New scaffolds land directly in your workspace ready to run.</p>
+
+      <div class="feature-card reveal" style="--delay:0.25s">
+        <div class="feature-icon green" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.4 1 2.3h6c0-.9.4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg>
+        </div>
+        <h3>Project Memory</h3>
+        <p>An auto-learning memory layer keeps file maps, conventions, and pitfalls per project, injects relevant context into agent sessions (with a visible toggle and preview), and is browsable in a dedicated view.</p>
       </div>
-      <div class="module-card purple-border reveal" style="--delay:0.16s">
-        <span class="module-tag">Module</span>
+
+      <div class="feature-card reveal" style="--delay:0.3s">
+        <div class="feature-icon blue" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+        </div>
+        <h3>Issues + GitHub &amp; Gitea</h3>
+        <p>A kanban issue board with AI-structured issue creation, send-to-session handoffs, Flight linkage, and sync against cloud <strong>GitHub</strong> and self-hosted <strong>Gitea/Forgejo</strong> &mdash; both configurable at once.</p>
+      </div>
+
+      <div class="feature-card reveal" style="--delay:0.35s">
+        <div class="feature-icon red" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </div>
         <h3>Dictation</h3>
-        <p>Native Whisper voice-to-text with waveform, history search, sentiment trend, and WPM analytics. OS-wide push-to-talk with rebindable hotkeys; transcripts land at your last-focused cursor.</p>
+        <p>Local Whisper voice-to-text with OS-global push-to-talk and toggle hotkeys, focus-aware transcript insertion, a microphone doctor, and a custom dictionary. No audio leaves the machine.</p>
       </div>
-      <div class="module-card blue-border reveal" style="--delay:0.24s">
-        <span class="module-tag">Settings</span>
-        <h3>MCP Hub</h3>
-        <p>Browse, configure, and toggle Claude Code MCP servers across user, project, and local scopes. Provider enablement and routing from one card.</p>
+
+      <div class="feature-card reveal" style="--delay:0.4s">
+        <div class="feature-icon amber" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        </div>
+        <h3>Cost Analytics</h3>
+        <p>A Cost Dashboard aggregates persisted spend plus live in-session costs across every provider, a toolbar spend chip tracks today&rsquo;s total, and executor token costs roll up onto their Flights.</p>
       </div>
-      <div class="module-card purple-border reveal" style="--delay:0.32s">
-        <span class="module-tag">Toolbar Modal</span>
-        <h3>Code Quality</h3>
-        <p>Live-streaming lint/typecheck/test/audit runner with one-click AutoFix (ESLint, Prettier, cargo, npm audit), per-error AI Explain, and a cached AI summary per run.</p>
-      </div>
-      <div class="module-card amber-border reveal" style="--delay:0.4s">
-        <span class="module-tag">Settings</span>
-        <h3>Crash Viewer</h3>
-        <p>Inspect local crash reports with timestamps, summaries, and full stack traces in a single panel &mdash; surfaced from Settings &gt; Advanced.</p>
-      </div>
+
     </div>
   </div>
 </section>
 
-<!-- ===== AGENT PROFILES ===== -->
-<section class="profiles" id="profiles">
+<!-- ===== CURRENT STATUS ===== -->
+<section class="status" id="status">
   <div class="container">
-    <div class="section-header reveal">
-      <h2>Five personalities. One keystroke.</h2>
-      <p>Switch agent behavior on the fly &mdash; from rapid-fire code to thorough security audits. Stack on top of any provider.</p>
-    </div>
-    <div class="profiles-row reveal" style="--delay:0.1s">
-      <div class="profile-card green-top">
-        <div class="profile-icon green-bg">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+    <div class="status-panel reveal">
+      <h2>Current status <span class="ver">v0.10.2</span></h2>
+      <p class="status-intro">PacketADE is in active development and dogfooded daily. Here is exactly where distribution stands today &mdash; no surprises after you download.</p>
+      <div class="status-list">
+        <div class="status-item ok">
+          <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          <div><strong>Windows builds are available</strong> <span>from <a href="https://github.com/packetloss404/PacketADE/releases">GitHub Releases</a>. They are <strong>unsigned</strong> &mdash; expect a SmartScreen warning on first run until code-signing certificates are in place.</span></div>
         </div>
-        <h3>Auto (Optimized)</h3>
-        <p class="profile-desc">Balanced default with no extra system prompt</p>
-        <p class="profile-prompt">&nbsp;</p>
-      </div>
-      <div class="profile-card amber-top">
-        <div class="profile-icon amber-bg">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 00-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 012-3.95A12.88 12.88 0 0122 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 01-4 2z"/></svg>
+        <div class="status-item warn">
+          <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
+          <div><strong>macOS and Linux are build-from-source only.</strong> <span>The app targets all three platforms, but no prebuilt macOS/Linux binaries are published yet &mdash; follow the runbook at <code>dev/multi-platform-build.md</code> in the repo.</span></div>
         </div>
-        <h3>Speed Runner</h3>
-        <p class="profile-desc">Fast, code-first responses with minimal explanation</p>
-        <p class="profile-prompt">Be concise. Code-first. Skip confirmations...</p>
-      </div>
-      <div class="profile-card blue-top">
-        <div class="profile-icon blue-bg">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <div class="status-item warn">
+          <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
+          <div><strong>No auto-updater yet.</strong> <span>New versions are installed manually from Releases. Code signing and the Tauri updater are planned release-trust gates on the <a href="roadmap.html">roadmap</a>.</span></div>
         </div>
-        <h3>Thorough Reviewer</h3>
-        <p class="profile-desc">Step-by-step reasoning with edge case analysis</p>
-        <p class="profile-prompt">Think step-by-step. Consider edge cases...</p>
-      </div>
-      <div class="profile-card red-top">
-        <div class="profile-icon red-bg">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        </div>
-        <h3>Security Auditor</h3>
-        <p class="profile-desc">Focus on vulnerabilities and security best practices</p>
-        <p class="profile-prompt">Focus on OWASP top 10. Flag XSS, CSRF...</p>
-      </div>
-      <div class="profile-card purple-top">
-        <div class="profile-icon purple-bg">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-        </div>
-        <h3>Refactor Pro</h3>
-        <p class="profile-desc">Clean code advocate with DRY/SOLID focus</p>
-        <p class="profile-prompt">DRY, SOLID principles. Improve readability...</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ===== MEMORY ===== -->
-<section class="memory" id="memory">
-  <div class="container">
-    <div class="section-header reveal">
-      <h2>Memory that survives every session</h2>
-      <p>Per-project file maps and learned patterns &mdash; scoped exact / parent / global, pinned where it matters, refreshed on every agent run.</p>
-    </div>
-    <div class="memory-panel reveal" style="--delay:0.1s">
-      <div class="memory-section">
-        <div class="memory-section-title">File Map</div>
-        <div class="memory-entry">
-          <span class="memory-file">src/App.tsx</span>
-          <span class="memory-desc">Root component, view routing</span>
-          <span class="memory-time">2h ago</span>
-        </div>
-        <div class="memory-entry">
-          <span class="memory-file">src/stores/flightStore.ts</span>
-          <span class="memory-desc">Flight state management</span>
-          <span class="memory-time">4h ago</span>
-        </div>
-        <div class="memory-entry">
-          <span class="memory-file">src-tauri/src/commands/pty.rs</span>
-          <span class="memory-desc">PTY session lifecycle</span>
-          <span class="memory-time">1d ago</span>
-        </div>
-      </div>
-      <div class="memory-section">
-        <div class="memory-section-title">Learned Patterns &middot; pinned survive cap eviction</div>
-        <div class="pattern-row">
-          <span class="pattern-text">Uses Zustand for all state management</span>
-          <span class="pattern-tag arch">architecture</span>
-          <div class="confidence-bar"><div class="confidence-fill" style="width:92%"></div></div>
-        </div>
-        <div class="pattern-row">
-          <span class="pattern-text">Never use raw Tailwind colors &mdash; theme tokens only</span>
-          <span class="pattern-tag conv">convention</span>
-          <div class="confidence-bar"><div class="confidence-fill" style="width:95%"></div></div>
-        </div>
-        <div class="pattern-row">
-          <span class="pattern-text">Fixes #N trailer auto-closes the linked Issue</span>
-          <span class="pattern-tag conv">convention</span>
-          <div class="confidence-bar"><div class="confidence-fill" style="width:88%"></div></div>
-        </div>
-        <div class="pattern-row">
-          <span class="pattern-text">PTY sessions resolve .cmd shims on Windows</span>
-          <span class="pattern-tag pitfall">pitfall</span>
-          <div class="confidence-bar"><div class="confidence-fill" style="width:78%"></div></div>
+        <div class="status-item ok">
+          <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          <div><strong>Bring your own auth.</strong> <span>PacketADE has no hosted service &mdash; it uses your existing Claude / ChatGPT subscriptions via their CLIs, or your own API keys stored in the OS keyring. Ollama runs fully local with no key at all.</span></div>
         </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ===== WORKFLOW: HOW MODES COMPOSE ===== -->
-<section class="workflow" id="workflow">
+<!-- ===== LINKS ===== -->
+<section class="links" id="links">
   <div class="container">
     <div class="section-header reveal">
-      <h2>Modes compose. Memory persists. Costs total up.</h2>
-      <p>The four modes share workspace state, memory, providers, and a single spend ledger &mdash; so handoffs are zero-friction.</p>
+      <span class="eyebrow">Go deeper</span>
+      <h2>Docs &amp; source</h2>
     </div>
-    <div class="workflow-steps reveal" style="--delay:0.1s">
-      <div class="workflow-step">
-        <div class="workflow-num">1</div>
-        <h3>Structure intake</h3>
-        <p>Paste a PRD into <strong>Issues</strong>. AI breaks it into tickets with labels, acceptance criteria, and a suggested epic. Drop each into Backlog or Up Next.</p>
-      </div>
-      <div class="workflow-arrow" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-      </div>
-      <div class="workflow-step">
-        <div class="workflow-num">2</div>
-        <h3>Choose the right autonomy</h3>
-        <p>Big multi-step features &rarr; <strong>Flight Deck</strong>. Hands-on parallel work &rarr; <strong>Workspace</strong> with worktree-bound panes. Focused threads &rarr; a single <strong>Agents</strong> chat.</p>
-      </div>
-      <div class="workflow-arrow" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-      </div>
-      <div class="workflow-step">
-        <div class="workflow-num">3</div>
-        <h3>Ship and roll up</h3>
-        <p><code>Fixes #N</code> trailers auto-close Issues. GitHub merges with AI-drafted PRs. Deploy from <kbd>+ New</kbd>. The spend chip totals every provider on the way out.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ===== KEYBOARD SHORTCUTS ===== -->
-<section class="features" id="shortcuts" style="padding:60px 0">
-  <div class="container">
-    <div class="section-header reveal">
-      <h2>Keyboard-driven by default</h2>
-      <p>Navigate the cockpit without leaving the home row.</p>
-    </div>
-    <div class="table-wrap reveal" style="--delay:0.1s">
-      <table style="max-width:640px;margin:0 auto;font-size:0.85rem;border-collapse:collapse">
-        <thead><tr><th style="text-align:left;padding:10px 16px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600">Shortcut</th><th style="text-align:left;padding:10px 16px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600">Action</th></tr></thead>
-        <tbody>
-          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+K</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Command palette &mdash; jump anywhere</td></tr>
-          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+\</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Split &mdash; new session pane</td></tr>
-          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+1&ndash;4</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Focus workspace pane 1&ndash;4 (spatial order)</td></tr>
-          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Shift+1&ndash;5</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Jump to Claude / Codex / Issues / History / Settings</td></tr>
-          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Shift+W</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Jump to Workspace view</td></tr>
-          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Shift+D</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Jump to Dictation view</td></tr>
-          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Shift+R</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Toggle dictation recording (start / stop)</td></tr>
-          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Shift+V</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Push-to-talk &mdash; hold to dictate, release to insert</td></tr>
-          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">/</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Slash commands &mdash; expand prompt templates in chat</td></tr>
-          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">@</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Mention a file from the workspace</td></tr>
-          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Enter</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Send message &middot; start session</td></tr>
-          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+R</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Refresh inside Code Quality modal</td></tr>
-          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+F</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Focus line filter inside Code Quality modal</td></tr>
-          <tr><td style="padding:8px 16px;font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Esc</td><td style="padding:8px 16px;color:var(--text-secondary)">Close palette / modal &middot; cancel push-to-talk</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</section>
-
-<!-- ===== DOWNLOAD ===== -->
-<section class="download" id="download">
-  <div class="container">
-    <div class="section-header reveal">
-      <h2>Get PacketADE</h2>
-      <p>Free and open source. Current beta builds install manually from GitHub Releases.</p>
-    </div>
-    <div class="download-buttons reveal" style="--delay:0.1s">
-      <a href="https://github.com/packetloss404/PacketADE/releases" class="btn-win">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
-        Windows
+    <div class="links-grid">
+      <a href="packetade-manual.html" class="link-card reveal" style="--delay:0s">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>User Manual</h3>
+        <p>Task-oriented documentation for every surface: Workspaces, Agents, Flight Deck, SSH, MCP, memory, dictation, and settings.</p>
+        <span class="go">Read the manual &rarr;</span>
       </a>
-      <a href="https://github.com/packetloss404/PacketADE/releases" class="btn-mac">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-        macOS
+      <a href="roadmap.html" class="link-card reveal" style="--delay:0.07s">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>Roadmap</h3>
+        <p>Where the product is headed: distribution trust (signing + updater), Flight Deck supervision, and the Remote Agents bet.</p>
+        <span class="go">See what&rsquo;s next &rarr;</span>
       </a>
-      <a href="https://github.com/packetloss404/PacketADE/releases" class="btn-linux">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.368 1.884 1.43.868.065 1.157-.49 1.291-.872.654-.174 1.548-.368 2.283-.874 1.234-.675 1.929-.935 2.115-1.862.09-.353.055-.696-.09-1.005l.02-.007c.092-.164.195-.306.294-.516.147-.317.215-.698.163-1.072-.088-.636-.473-1.235-1.066-1.593-.18-.105-.378-.189-.593-.237a.795.795 0 00-.277-.58c-.093-.091-.212-.154-.322-.223a1.023 1.023 0 01-.163-.162c-.063-.097-.043-.225-.091-.345-.112-.26-.375-.543-.653-.637-.108-.04-.234-.046-.35-.035a.653.653 0 00-.162-.085 1.17 1.17 0 00-.119-.044c.004-.01.01-.018.013-.027.117-.284-.091-.562-.261-.707a.768.768 0 00-.146-.08l-.029-.016a3.4 3.4 0 00.122-.743c.098-.702-.024-1.417-.392-2.009-.756-1.187-1.924-2.068-2.883-3.139-.958-1.119-1.598-2.213-1.74-3.768-.034-1.381.563-5.876-3.045-6.278a5.5 5.5 0 00-.553-.024z"/></svg>
-        Linux
+      <a href="https://github.com/packetloss404/PacketADE" class="link-card reveal" style="--delay:0.14s" target="_blank" rel="noopener">
+        <h3><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</h3>
+        <p>Full source, releases, and issue tracker. Star the repo, file bugs, or build it yourself from the runbooks in <code>dev/</code>.</p>
+        <span class="go">View the source &rarr;</span>
       </a>
-    </div>
-    <div class="release-note reveal" style="--delay:0.15s">
-      <strong>Beta distribution status:</strong> code signing, macOS notarization, and the Tauri auto-updater are next release-trust targets, not active guarantees in the current repo. Fresh beta downloads may still trigger SmartScreen or Gatekeeper prompts. Contributors can follow the setup runbook in <a href="https://github.com/packetloss404/PacketADE/blob/main/dev/updater-setup.md" target="_blank" rel="noopener">dev/updater-setup.md</a>.
-    </div>
-    <div class="code-block reveal" style="--delay:0.2s">
-      <button class="btn-copy" id="btn-copy" aria-label="Copy to clipboard">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-        Copy
-      </button>
-      <pre><code>git clone https://github.com/packetloss404/PacketADE.git
-cd PacketADE &amp;&amp; pnpm install &amp;&amp; pnpm tauri dev</code></pre>
-    </div>
-  </div>
-</section>
-
-<!-- ===== OPEN SOURCE CTA ===== -->
-<section class="oss-cta" id="open-source">
-  <div class="container">
-    <div class="section-header reveal">
-      <h2>Built in the open. Built for builders.</h2>
-    </div>
-    <p class="oss-body reveal" style="--delay:0.1s">PacketADE is Apache 2.0 licensed and free forever. No telemetry, no vendor lock-in, no paywalls. Bring your own keys, run your own models, contribute back.</p>
-    <div class="oss-buttons reveal" style="--delay:0.15s">
-      <a href="https://github.com/packetloss404/PacketADE" class="btn-primary" target="_blank" rel="noopener">Star on GitHub</a>
-      <a href="https://github.com/packetloss404/PacketADE#readme" class="btn-outline" target="_blank" rel="noopener">Read the Docs</a>
-    </div>
-  </div>
-</section>
-
-<!-- ===== SIBLING PROJECT: PacketCode (TUI) ===== -->
-<section class="sibling" id="packetcode">
-  <div class="container">
-    <div class="sibling-wrap">
-      <div class="sibling-copy reveal">
-        <span class="sibling-eyebrow"><span class="dot"></span>Sibling Project &middot; From the same team</span>
-        <h2>PacketCode &mdash; the<br><span class="gradient-purple">terminal-first sibling</span>.</h2>
-        <p class="sibling-lead">A keyboard-first, multi-provider AI coding agent that lives in your terminal. Same crew, different cockpit &mdash; an open-source alternative to OpenCode for developers who never leave the shell.</p>
-
-        <div class="sibling-bullets">
-          <div class="sibling-bullet">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            <div><strong>Six providers, one TUI.</strong> <span>OpenAI, Anthropic, Gemini, MiniMax, OpenRouter, and Ollama &mdash; switch with <code>Ctrl+P</code> or <code>/provider</code>, no restart.</span></div>
-          </div>
-          <div class="sibling-bullet">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            <div><strong>Approval-gated by default.</strong> <span>File writes, patches, shell commands, and MCP tool calls all confirm before they run. <code>--trust</code> opts you in.</span></div>
-          </div>
-          <div class="sibling-bullet">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            <div><strong>Background agents &amp; MCP.</strong> <span><code>/spawn</code> delegates work in parallel; <code>[mcp.*]</code> blocks wire up MCP servers as provider-safe tool aliases.</span></div>
-          </div>
-          <div class="sibling-bullet">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            <div><strong>Pairs with PacketADE.</strong> <span>Same provider conventions, same BYOK model, same approval mental model &mdash; one product in the desktop, one in the shell.</span></div>
-          </div>
-        </div>
-
-        <div class="sibling-meta">
-          <span class="sibling-badge dev"><span class="dot"></span>Pre-release</span>
-          <span class="sibling-badge lang">Go 1.24+</span>
-          <span class="sibling-badge oss">MIT licensed</span>
-        </div>
-
-        <div class="sibling-actions">
-          <a href="https://github.com/packetloss404/packetcode" class="btn-purple" target="_blank" rel="noopener">
-            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-            View on GitHub
-          </a>
-          <a href="https://github.com/packetloss404/packetcode#start-here" class="btn-ghost-purple" target="_blank" rel="noopener">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-            Install with one curl
-          </a>
-        </div>
-      </div>
-
-      <div class="tui-mock reveal" style="--delay:0.15s" aria-hidden="true">
-        <div class="tui-titlebar">
-          <span class="window-dot r" style="background:#f85149"></span>
-          <span class="window-dot y" style="background:#d29922"></span>
-          <span class="window-dot g" style="background:#3fb950"></span>
-          <span class="title">packetcode &mdash; ~/projects/api</span>
-        </div>
-        <div class="tui-body">
-          <div class="tui-statusline">
-            <div class="left">
-              <span class="pill purple">anthropic</span>
-              <span class="pill green">claude-opus-4-7</span>
-              <span>ctx 14%</span>
-            </div>
-            <div><span class="tui-dim">tokens 2.4k &middot;</span> <span class="tui-key">$0.043</span></div>
-          </div>
-<span class="tui-line"><span class="tui-prompt">&gt;</span> <span class="tui-cmd">/spawn --write add retry to the rate-limit middleware</span></span>
-<span class="tui-line"><span class="tui-dim">  spawned background agent</span> <span class="tui-accent">job-7af</span> <span class="tui-dim">(read+write)</span></span>
-<span class="tui-line"></span>
-<span class="tui-line"><span class="tui-prompt">&gt;</span> <span class="tui-cmd">refactor handlers.go to use the new logger</span></span>
-<span class="tui-line"><span class="tui-out">  reading internal/handlers/handlers.go ...</span></span>
-<span class="tui-line"><span class="tui-out">  planning edit: replace fmt.Println with slog ...</span></span>
-<span class="tui-line"><span class="tui-warn">  ? apply patch (3 hunks, +18 -11) [Y/n]</span> <span class="tui-cursor"></span></span>
-          <div class="tui-footer">
-            <span><kbd>Ctrl+P</kbd> provider</span>
-            <span><kbd>Ctrl+M</kbd> model</span>
-            <span><kbd>/agents</kbd> view jobs</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="sibling-compare reveal" style="--delay:0.25s">
-      <div class="sibling-compare-side left">
-        <div class="label">PacketADE</div>
-        <h4>Desktop cockpit</h4>
-        <p>Native multi-pane IDE. Missions, kanban, cost dashboard, GUI dictation, Tauri v2.</p>
-      </div>
-      <div class="sibling-compare-divider">/</div>
-      <div class="sibling-compare-side right">
-        <div class="label">PacketCode</div>
-        <h4>Terminal cockpit</h4>
-        <p>Pure TUI. No webview, no GUI, no daemon &mdash; one Go binary, your shell, your scrollback.</p>
-      </div>
     </div>
   </div>
 </section>
@@ -1393,15 +428,16 @@ cd PacketADE &amp;&amp; pnpm install &amp;&amp; pnpm tauri dev</code></pre>
 <footer>
   <div class="container">
     <div class="footer-brand">
-      <img src="icon-192.png" alt="" width="24" height="24" />
+      <img src="icon-192.png" alt="" width="22" height="22" />
       PacketADE
     </div>
     <div class="footer-links">
+      <a href="packetade-manual.html">Manual</a>
+      <a href="roadmap.html">Roadmap</a>
       <a href="https://github.com/packetloss404/PacketADE" target="_blank" rel="noopener">GitHub</a>
       <a href="https://github.com/packetloss404/PacketADE/releases" target="_blank" rel="noopener">Releases</a>
-      <a href="https://github.com/packetloss404/PacketADE/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
     </div>
-    <div class="footer-domains">packetade.app &middot; packetloss.dev</div>
+    <div class="footer-note">Local-first. Bring your own keys.</div>
   </div>
 </footer>
 
@@ -1409,56 +445,23 @@ cd PacketADE &amp;&amp; pnpm install &amp;&amp; pnpm tauri dev</code></pre>
 (function(){
   'use strict';
 
-  /* ===== ANNOUNCEMENT BAR ===== */
-  var ANNOUNCEMENT_KEY = 'packetade.announcement.packetcode.dismissed';
-  var announcementEl = document.getElementById('announcement');
-  var announcementClose = document.getElementById('announcement-close');
-  var announcementLink = document.getElementById('announcement-link');
-
-  function dismissAnnouncement(animated) {
-    if (!announcementEl) return;
-    document.body.classList.remove('has-announcement');
-    if (animated) {
-      announcementEl.classList.add('is-hiding');
-      setTimeout(function() {
-        if (announcementEl && announcementEl.parentNode) {
-          announcementEl.parentNode.removeChild(announcementEl);
-        }
-      }, 280);
-    } else {
-      if (announcementEl.parentNode) announcementEl.parentNode.removeChild(announcementEl);
-    }
-  }
-
-  try {
-    if (localStorage.getItem(ANNOUNCEMENT_KEY) === '1') {
-      dismissAnnouncement(false);
-    } else if (announcementEl) {
-      document.body.classList.add('has-announcement');
-    }
-  } catch (err) {
-    if (announcementEl) document.body.classList.add('has-announcement');
-  }
-
-  if (announcementClose) {
-    announcementClose.addEventListener('click', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      try { localStorage.setItem(ANNOUNCEMENT_KEY, '1'); } catch (err) {}
-      dismissAnnouncement(true);
+  /* Mobile nav toggle */
+  var hamburger = document.getElementById('hamburger');
+  var navLinks = document.getElementById('nav-links');
+  if (hamburger && navLinks) {
+    hamburger.addEventListener('click', function() {
+      var isOpen = navLinks.classList.toggle('open');
+      hamburger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     });
-  }
-  if (announcementLink) {
-    announcementLink.addEventListener('click', function(e) {
-      var target = document.querySelector('#packetcode');
-      if (target) {
-        e.preventDefault();
-        target.scrollIntoView({ behavior: 'smooth' });
+    navLinks.addEventListener('click', function(e) {
+      if (e.target.tagName === 'A') {
+        navLinks.classList.remove('open');
+        hamburger.setAttribute('aria-expanded', 'false');
       }
     });
   }
 
-  /* ===== SCROLL REVEALS ===== */
+  /* Scroll reveals */
   var revealEls = document.querySelectorAll('.reveal');
   if ('IntersectionObserver' in window) {
     var revealObs = new IntersectionObserver(function(entries) {
@@ -1468,173 +471,13 @@ cd PacketADE &amp;&amp; pnpm install &amp;&amp; pnpm tauri dev</code></pre>
           revealObs.unobserve(e.target);
         }
       });
-    }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
     revealEls.forEach(function(el) { revealObs.observe(el); });
   } else {
     revealEls.forEach(function(el) { el.classList.add('show'); });
   }
 
-  /* ===== NAV SCROLL ===== */
-  var nav = document.querySelector('nav');
-  var lastScroll = 0;
-  window.addEventListener('scroll', function() {
-    var y = window.scrollY;
-    if (y > 50) { nav.classList.add('scrolled'); }
-    else { nav.classList.remove('scrolled'); }
-    lastScroll = y;
-  }, { passive: true });
-
-  /* ===== COUNTER ANIMATION ===== */
-  var statsSection = document.getElementById('stats');
-  var counters = document.querySelectorAll('.stat-number');
-  var counted = false;
-  function easeOutExpo(t) { return t === 1 ? 1 : 1 - Math.pow(2, -10 * t); }
-  function animateCounter(el) {
-    var target = parseInt(el.getAttribute('data-target'), 10);
-    var suffix = el.getAttribute('data-suffix') || '';
-    var duration = 1500;
-    var start = performance.now();
-    function tick(now) {
-      var elapsed = now - start;
-      var progress = Math.min(elapsed / duration, 1);
-      var value = Math.round(easeOutExpo(progress) * target);
-      el.textContent = value + suffix;
-      if (progress < 1) requestAnimationFrame(tick);
-    }
-    requestAnimationFrame(tick);
-  }
-  if ('IntersectionObserver' in window) {
-    var statsObs = new IntersectionObserver(function(entries) {
-      entries.forEach(function(e) {
-        if (e.isIntersecting && !counted) {
-          counted = true;
-          counters.forEach(animateCounter);
-          statsObs.unobserve(e.target);
-        }
-      });
-    }, { threshold: 0.3 });
-    statsObs.observe(statsSection);
-  } else {
-    counters.forEach(function(el) {
-      el.textContent = el.getAttribute('data-target') + (el.getAttribute('data-suffix') || '');
-    });
-  }
-
-  /* ===== TYPED TEXT ===== */
-  var typedEl = document.getElementById('typed-target');
-  var phrases = ['orchestrate agents in parallel', 'bring your own key', 'run every frontier model', 'ship autonomously', 'total spend across providers', 'remember every session'];
-  var phraseIdx = 0;
-  var charIdx = 0;
-  var isDeleting = false;
-  var typingSpeed = 80;
-  var deleteSpeed = 40;
-  var pauseDuration = 2000;
-
-  function typeLoop() {
-    var current = phrases[phraseIdx];
-    if (!isDeleting) {
-      charIdx++;
-      typedEl.textContent = current.substring(0, charIdx);
-      if (charIdx === current.length) {
-        isDeleting = true;
-        setTimeout(typeLoop, pauseDuration);
-        return;
-      }
-      setTimeout(typeLoop, typingSpeed);
-    } else {
-      charIdx--;
-      typedEl.textContent = current.substring(0, charIdx);
-      if (charIdx === 0) {
-        isDeleting = false;
-        phraseIdx = (phraseIdx + 1) % phrases.length;
-        setTimeout(typeLoop, 300);
-        return;
-      }
-      setTimeout(typeLoop, deleteSpeed);
-    }
-  }
-  setTimeout(typeLoop, 800);
-
-  /* ===== FLOATING PARTICLES ===== */
-  var canvas = document.getElementById('particles-canvas');
-  var ctx = canvas.getContext('2d');
-  var particles = [];
-  var particleCount = 40;
-  var reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-  function resizeCanvas() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-  }
-  resizeCanvas();
-
-  if ('ResizeObserver' in window) {
-    new ResizeObserver(resizeCanvas).observe(document.body);
-  } else {
-    window.addEventListener('resize', resizeCanvas);
-  }
-
-  function createParticle() {
-    return {
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
-      size: 1 + Math.random(),
-      opacity: 0.03 + Math.random() * 0.09,
-      speedY: -(0.1 + Math.random() * 0.3),
-      speedX: (Math.random() - 0.5) * 0.15
-    };
-  }
-  for (var i = 0; i < particleCount; i++) particles.push(createParticle());
-
-  function drawParticles() {
-    if (reducedMotion) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (var j = 0; j < particles.length; j++) {
-      var p = particles[j];
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(63,185,80,' + p.opacity + ')';
-      ctx.fill();
-      p.y += p.speedY;
-      p.x += p.speedX;
-      if (p.y < -10) {
-        p.y = canvas.height + 10;
-        p.x = Math.random() * canvas.width;
-      }
-      if (p.x < -10) p.x = canvas.width + 10;
-      if (p.x > canvas.width + 10) p.x = -10;
-    }
-    requestAnimationFrame(drawParticles);
-  }
-  if (!reducedMotion) requestAnimationFrame(drawParticles);
-
-  /* ===== MOBILE MENU ===== */
-  var hamburger = document.getElementById('hamburger');
-  var navLinks = document.getElementById('nav-links');
-  hamburger.addEventListener('click', function() {
-    var isOpen = navLinks.classList.toggle('open');
-    hamburger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-  });
-  navLinks.querySelectorAll('a').forEach(function(link) {
-    link.addEventListener('click', function() {
-      navLinks.classList.remove('open');
-      hamburger.setAttribute('aria-expanded', 'false');
-    });
-  });
-
-  /* ===== COPY BUTTON ===== */
-  var copyBtn = document.getElementById('btn-copy');
-  copyBtn.addEventListener('click', function() {
-    var code = document.querySelector('.code-block code').textContent;
-    navigator.clipboard.writeText(code).then(function() {
-      copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
-      setTimeout(function() {
-        copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> Copy';
-      }, 2000);
-    });
-  });
-
-  /* ===== SMOOTH SCROLL ===== */
+  /* Smooth in-page scroll */
   document.querySelectorAll('a[href^="#"]').forEach(function(a) {
     a.addEventListener('click', function(e) {
       var target = document.querySelector(this.getAttribute('href'));

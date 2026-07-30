@@ -1,5 +1,9 @@
 # Deferred work — tile composer / conversation tiles
 
+> Canonical ledger: [`backlog.md`](../backlog.md). This file is a scoped
+> resume-cold reference for the tile-composer/conversation-tile deferrals only;
+> anything that becomes actionable belongs in the backlog.
+
 Backlog of things intentionally **not** done during the Waves 1–4 modernization +
 the Codex/PTY/harness fixes, with enough detail to resume each cold. This file
 predates the 2026-07-29 Workspace/Agents restructuring: new GUI-agent work now
@@ -8,58 +12,78 @@ Workspace conversation tiles remain compatible. Ordered roughly by value. The
 full 314-finding review that seeded the waves is archived in
 [`agents-tab-modernization-plan.md`](../dev/archive/agents-tab-modernization-plan.md).
 
+Re-verified against the code on 2026-07-30; the line-ending normalization item
+shipped and was removed. All six deferrals below were confirmed still open in
+this pass (`modeToCodexFlags` still pins `approval_policy=never`, no Composer
+MCP multi-select, no `costCapUsd`, no `reasoningEffort` launch field, no diff
+toolbar controls).
+
 ---
 
 ## 1. Codex — interactive per-command approvals (plan / manual modes)
-**Status:** Not supported. `modeToCodexFlags` maps every mode to `-a never`; the
-sandbox (`read-only` for plan, `workspace-write` otherwise) is the safety
-boundary instead of per-command prompts.
+**Status:** Not supported. `modeToCodexFlags` maps every safe mode to
+`-c approval_policy=never` (the root `-a` flag isn't accepted by `codex exec`
+subcommands); the sandbox (`read-only` for plan, `workspace-write` otherwise)
+is the safety boundary instead of per-command prompts.
+`bypassPermissions` maps to `--dangerously-bypass-approvals-and-sandbox`.
 
 **Why deferred:** `codex exec` blocks reading stdin, so we close stdin after
 spawning (see the "Reading additional input from stdin" fix). That removes the
 channel the old `respondPermission` used to send approval responses back, so
-`-a on-request` would stall the turn.
+interactive approval policies would stall the turn.
 
 **Resume:** `agent-sidecar/src/providers/openai-codex.ts` (`modeToCodexFlags`,
 `respondPermission`). Check whether codex 0.142+ exposes an approval channel that
 doesn't need an open stdin (a control fd, or `codex proto` / app-server mode). If
 so, run Codex through that persistent mode instead of one-shot `exec` and wire
 `permission_request` ↔ the response channel. Otherwise this stays as-is.
+(ROADMAP tracks the app-server transport question as "Later" item A6.)
 
 ## 2. MCP servers at launch (composer)
-**Status:** MCP can only be picked mid-conversation; no launcher picker.
-
-**Why deferred:** needs UI + plumbing through the launch path. The data param
-already exists (`enabledMcpServerIds` on `createApiConversation`, now in its
-options object after Wave 4).
+**Status:** **Partial.** Launch-time MCP now comes from the Settings-level
+default (`defaultEnabledMcpServerIds` in `agentSettingsStore`, edited via
+`McpServersCard`), which `createApiConversation` applies when no explicit list
+is passed; Flight launches pass explicit IDs. What's still missing is a
+per-launch MCP multi-select in the Composer itself. Note the original "MCP can
+only be picked mid-conversation" framing is stale: since protocol v11 froze
+per-session MCP trust, mid-session hot-swap is *not* supported —
+`enabledMcpServerIds` changes apply on the next session start.
 
 **Resume:** add an MCP multi-select to
 `src/components/agents/composer/Composer.tsx` (reuse `mcpStore` + the `Popover`
 primitive), pass `enabledMcpServerIds` through the `createApiConversation`
-options object, and confirm the Rust/sidecar honor it at
-`start_api_agent_session`.
+options object (the plumbing exists — see `agentTaskStore.ts` ~line 520, where
+`createApiConversation` falls back to `defaultEnabledMcpServerIds`), and
+confirm the Rust/sidecar honor it at `start_api_agent_session`.
 
 ## 3. Per-run cost cap — mid-run cancel
 **Status:** **Partial.** Cost guardrails shipped (per-run cost is tracked and
-surfaced), but there is still no mid-run cancel: nothing halts a runaway
-autonomous run once it crosses a threshold.
+surfaced), and Flight-level bounded autonomy now enforces a `maxTotalCost`
+hard-stop (`src/lib/autonomyPolicy.ts`) that blocks further *autonomous*
+actions when a Flight crosses its cost limit. But there is still no
+per-conversation mid-run cancel: nothing halts a runaway single agent run once
+it crosses a threshold.
 
 **Why deferred:** the remaining piece needs a live cost-tracking hook in the
-agent loop that *cancels* on threshold, not just displays.
+agent loop that *cancels* on threshold, not just displays or gates the next
+autonomous action.
 
 **Resume:** add a `costCapUsd` field to the launch options; in
 `src-tauri/src/commands/api_agent.rs` (`run_agent_loop`) or the `turn_summary`
 handler, accumulate cost per turn and cancel the session when exceeded. UI: a cap
-input in the composer's Advanced accordion. (Note: with `MAX_TOOL_ITERATIONS` now
-150 and the autonomy harness, runs are longer — this is more relevant now.)
+input in the composer's Advanced accordion. (Note: with `MAX_TOOL_ITERATIONS`
+at 150 and the autonomy harness, runs are longer — this is more relevant now.)
 
 ## 4. Cross-provider reasoning-effort / thinking-budget control
-**Status:** No control. Only a read-only heuristic speed pill and a hidden
-`Alt+.` model-swap hack.
+**Status:** No launch control. The Codex PTY status bar displays
+`reasoning_effort` read-only, and the composer still has only the heuristic
+speed pill plus the hidden model-swap hack — no way to set effort/budget when
+launching a conversation.
 
 **Why deferred:** each provider applies it differently — Anthropic extended-
-thinking budget, OpenAI/Codex `reasoning_effort` / `model_reasoning_effort` — so
-it needs per-provider plumbing frontend → Rust/sidecar.
+thinking budget (currently hardcoded to 8000 tokens in `api_agent.rs`),
+OpenAI/Codex `reasoning_effort` / `model_reasoning_effort` — so it needs
+per-provider plumbing frontend → Rust/sidecar.
 
 **Resume:** add a `reasoningEffort` ('low'|'medium'|'high') field to the launch
 options + a `SegmentedControl` in the composer. Plumb: Anthropic provider
@@ -69,11 +93,12 @@ providers.
 
 ## 5. Full `agentTaskStore` module split
 **Status:** Wave 4 did a **light** extraction (persistence/hydration helpers →
-`agentConversationPersistence.ts`, public API preserved via re-exports). The full
-split is deferred.
+`agentConversationPersistence.ts`, public API preserved via re-exports), and
+later work trimmed the store to ~1,520 lines (from 1,839). The full split is
+still deferred.
 
-**Why deferred:** the store is 1839 lines with 50+ importers; a full split is high
-regression risk for zero user-visible value.
+**Why deferred:** the store has 50+ importers; a full split is high regression
+risk for zero user-visible value.
 
 **Resume:** keep extracting cohesive slices (legacy PTY tasks, `api-agent`
 listeners, resume logic, conversation CRUD) into sibling modules, re-exporting
@@ -82,23 +107,13 @@ from `agentTaskStore.ts` so importers don't change. Do it incrementally, running
 
 ## 6. Diff viewer — extra controls
 **Status:** Wave 4 rebuilt the diff engine (interleaved rows, line-number gutter,
-background-tint). Still missing: word-wrap toggle, unified/split toggle, copy
-diff/file, expand-context.
+background-tint); the shared renderer now lives in
+`src/components/agents/diff/` (`DiffRows.tsx`, `CommentableRow.tsx`) with hunk
+selection folded into `review/ReviewSurface.tsx`. Still missing: word-wrap
+toggle, unified/split toggle, copy diff/file, expand-context.
 
-**Resume:** `src/components/agents/diff/*` + `HunkSelectableDiff.tsx` — add the
-toolbar controls on top of the new shared row renderer.
-
-## 7. Line-ending normalization (repo-wide)
-**Status:** Added `.gitattributes` with `* -text` (preserves the repo's mixed
-CRLF/LF, prevents tooling from silently flipping them). A full convergence to LF
-is deferred.
-
-**Why deferred:** a repo-wide `git add --renormalize` is a large one-time diff —
-a deliberate call, not something to slip into a feature commit.
-
-**Resume:** change `.gitattributes` to `* text=auto`, run
-`git add --renormalize .`, and commit as a single dedicated "normalize line
-endings to LF" commit (ideally when no big feature branch is open).
+**Resume:** `src/components/agents/diff/*` + `review/ReviewSurface.tsx` — add
+the toolbar controls on top of the shared row renderer.
 
 ---
 

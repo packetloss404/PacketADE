@@ -4,12 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>PacketADE — Roadmap</title>
-<meta name="description" content="What shipped, what's queued. The PacketADE roadmap — Mission Planner v1, GitHub + Memory v0.8, the Issues rebuild, and what's next." />
+<meta name="description" content="The real PacketADE roadmap: twelve active tracks, the decision queue, what's source-complete vs environment-gated, and what's honestly blocked." />
 <link rel="icon" type="image/png" href="favicon.png" />
 <link rel="apple-touch-icon" href="icon-192.png" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <style>
 /* ===== RESET & BASE ===== */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -17,7 +14,8 @@
   --bg-primary:#0d1117;--bg-secondary:#161b22;--bg-tertiary:#1c2333;--bg-elevated:#21283b;
   --border:#30363d;--border-strong:#3a424d;--text-primary:#e6edf3;--text-secondary:#8b949e;--text-muted:#484f58;
   --green:#3fb950;--neon:#00ff41;--blue:#58a6ff;--purple:#bc8cff;--amber:#d29922;--red:#f85149;--cyan:#39d2c0;
-  --font-sans:'Sora',system-ui,sans-serif;--font-mono:'JetBrains Mono',monospace;
+  --font-sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,"Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
   --nav-h:64px;
 }
 html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
@@ -71,7 +69,7 @@ nav .container{display:flex;align-items:center;justify-content:space-between;wid
   border-radius:999px;background:rgba(57,210,192,0.06)}
 .hero h1{font-size:clamp(2.2rem,5vw,3.6rem);font-weight:800;letter-spacing:-0.035em;line-height:1.08;margin-bottom:20px;max-width:880px;margin-left:auto;margin-right:auto}
 .gradient-text{background:linear-gradient(135deg,var(--green),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.hero-lead{font-size:clamp(1rem,1.6vw,1.15rem);color:var(--text-secondary);max-width:720px;margin:0 auto 36px;line-height:1.7}
+.hero-lead{font-size:clamp(1rem,1.6vw,1.15rem);color:var(--text-secondary);max-width:760px;margin:0 auto 36px;line-height:1.7}
 
 /* ===== HEADLINE STATS ===== */
 .headline-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;max-width:980px;margin:0 auto 12px}
@@ -91,77 +89,97 @@ nav .container{display:flex;align-items:center;justify-content:space-between;wid
 
 /* ===== SECTIONS ===== */
 section.tier-section{padding:80px 0 40px}
-.section-header{margin-bottom:48px;max-width:880px}
+.section-header{margin-bottom:40px;max-width:880px}
 .section-header .eyebrow{display:inline-flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.7rem;font-weight:600;
   letter-spacing:0.14em;text-transform:uppercase;margin-bottom:14px;padding:5px 14px;border-radius:999px}
 .section-header .eyebrow .dot{width:6px;height:6px;border-radius:50%}
-.section-header.shipped .eyebrow{color:var(--green);border:1px solid rgba(63,185,80,0.3);background:rgba(63,185,80,0.06)}
-.section-header.shipped .eyebrow .dot{background:var(--green);box-shadow:0 0 8px var(--green)}
-.section-header.backlog .eyebrow{color:var(--amber);border:1px solid rgba(210,153,34,0.3);background:rgba(210,153,34,0.06)}
-.section-header.backlog .eyebrow .dot{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+.section-header.now .eyebrow{color:var(--green);border:1px solid rgba(63,185,80,0.3);background:rgba(63,185,80,0.06)}
+.section-header.now .eyebrow .dot{background:var(--green);box-shadow:0 0 8px var(--green)}
+.section-header.next .eyebrow{color:var(--amber);border:1px solid rgba(210,153,34,0.3);background:rgba(210,153,34,0.06)}
+.section-header.next .eyebrow .dot{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+.section-header.later .eyebrow{color:var(--purple);border:1px solid rgba(188,140,255,0.3);background:rgba(188,140,255,0.06)}
+.section-header.later .eyebrow .dot{background:var(--purple);box-shadow:0 0 8px var(--purple)}
 .section-header.history .eyebrow{color:var(--blue);border:1px solid rgba(88,166,255,0.3);background:rgba(88,166,255,0.06)}
 .section-header.history .eyebrow .dot{background:var(--blue);box-shadow:0 0 8px var(--blue)}
 .section-header h2{font-size:clamp(1.9rem,3.6vw,2.6rem);font-weight:800;letter-spacing:-0.03em;margin-bottom:14px;line-height:1.1}
 .section-header p{color:var(--text-secondary);font-size:clamp(0.95rem,1.4vw,1.1rem);line-height:1.65}
+.section-header p a{color:var(--blue);font-weight:500}
+.section-header p a:hover{color:var(--cyan)}
 
-/* ===== SHIPPED CARDS ===== */
-.shipped-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
-.shipped-card{position:relative;padding:28px 28px 26px;background:rgba(22,27,34,0.55);border:1px solid var(--border);border-radius:18px;
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);transition:all 0.35s ease;overflow:hidden}
-.shipped-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--green),var(--cyan));opacity:0.9;border-radius:18px 18px 0 0}
-.shipped-card:hover{transform:translateY(-3px);border-color:var(--text-muted);box-shadow:0 14px 40px rgba(0,0,0,0.3)}
-.shipped-card.flagship::before{background:linear-gradient(90deg,var(--cyan),var(--purple));height:4px}
-.shipped-card.flagship{box-shadow:0 0 0 1px rgba(57,210,192,0.15)}
-.sc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:6px}
-.sc-version{font-family:var(--font-mono);font-size:0.7rem;font-weight:600;letter-spacing:0.04em;color:var(--green);padding:3px 9px;
-  background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.3);border-radius:999px;flex-shrink:0}
-.sc-version.flagship{color:var(--cyan);background:rgba(57,210,192,0.1);border-color:rgba(57,210,192,0.35)}
-.sc-date{font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);align-self:center}
-.sc-title{font-size:1.15rem;font-weight:700;letter-spacing:-0.015em;margin:6px 0 12px;line-height:1.25}
-.sc-body{font-size:0.88rem;color:var(--text-secondary);line-height:1.65;margin-bottom:14px}
-.sc-points{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
-.sc-point{font-size:0.82rem;color:var(--text-secondary);display:flex;gap:9px;line-height:1.55}
-.sc-point::before{content:'';display:block;flex-shrink:0;width:4px;height:4px;border-radius:50%;background:var(--green);margin-top:8px}
-.sc-card.flagship .sc-point::before{background:var(--cyan)}
-.sc-footer{display:flex;align-items:center;gap:12px;padding-top:12px;border-top:1px solid rgba(48,54,61,0.4);font-size:0.78rem}
-.sc-footer a{color:var(--blue);font-weight:500;transition:color 0.2s}
-.sc-footer a:hover{color:var(--cyan)}
-.sc-tag{font-family:var(--font-mono);font-size:0.64rem;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted);padding:2px 8px;border:1px solid var(--border);border-radius:999px}
-.sc-tag.flagship-tag{color:var(--cyan);border-color:rgba(57,210,192,0.35);background:rgba(57,210,192,0.06)}
+/* ===== STATUS LEGEND ===== */
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:32px}
+.legend .chip{display:inline-flex;align-items:center;gap:8px;font-size:0.76rem;color:var(--text-secondary);
+  padding:6px 14px;background:rgba(22,27,34,0.55);border:1px solid var(--border);border-radius:999px}
+.legend .chip .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.dot.green{background:var(--green);box-shadow:0 0 6px var(--green)}
+.dot.cyan{background:var(--cyan);box-shadow:0 0 6px var(--cyan)}
+.dot.blue{background:var(--blue);box-shadow:0 0 6px var(--blue)}
+.dot.amber{background:var(--amber);box-shadow:0 0 6px var(--amber)}
+.dot.red{background:var(--red);box-shadow:0 0 6px var(--red)}
 
-/* ===== BACKLOG THEMES ===== */
-.backlog-themes{display:flex;flex-direction:column;gap:24px}
-.theme{position:relative;background:rgba(22,27,34,0.5);border:1px solid var(--border);border-radius:18px;padding:28px 32px 24px;
-  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:border-color 0.3s}
-.theme:hover{border-color:var(--border-strong)}
-.theme::before{content:'';position:absolute;left:0;top:24px;bottom:24px;width:3px;border-radius:3px}
-.theme.ssh::before{background:var(--blue)}
-.theme.planner::before{background:var(--purple)}
-.theme.memory::before{background:var(--cyan)}
-.theme.github::before{background:var(--green)}
-.theme.platform::before{background:var(--amber)}
-.theme.perf::before{background:var(--red)}
-.theme-head{display:flex;align-items:baseline;gap:14px;margin-bottom:18px;flex-wrap:wrap}
-.theme-head h3{font-size:1.15rem;font-weight:700;letter-spacing:-0.015em}
-.theme-head .count{font-family:var(--font-mono);font-size:0.72rem;color:var(--text-muted);padding:2px 10px;border:1px solid var(--border);border-radius:999px}
-.theme-items{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
-.b-item{display:flex;gap:10px;padding:11px 14px;background:rgba(13,17,23,0.6);border:1px solid var(--border);border-radius:10px;
+/* ===== TRACK BOARD ===== */
+.track-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
+.track-card{position:relative;padding:24px 26px 20px;background:rgba(22,27,34,0.55);border:1px solid var(--border);border-radius:18px;
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);transition:all 0.35s ease;overflow:hidden;display:flex;flex-direction:column}
+.track-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:18px 18px 0 0}
+.track-card:hover{transform:translateY(-3px);border-color:var(--text-muted);box-shadow:0 14px 40px rgba(0,0,0,0.3)}
+.track-card.complete::before{background:linear-gradient(90deg,var(--green),var(--cyan))}
+.track-card.gated::before{background:var(--cyan)}
+.track-card.decisions::before{background:var(--blue)}
+.track-card.paused::before{background:var(--amber)}
+.track-card.blocked::before{background:var(--red)}
+.track-card.ongoing::before{background:var(--purple)}
+.tc-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.tc-id{font-family:var(--font-mono);font-size:0.7rem;font-weight:600;letter-spacing:0.04em;color:var(--text-muted);
+  padding:3px 9px;border:1px solid var(--border);border-radius:999px;flex-shrink:0}
+.tc-status{font-family:var(--font-mono);font-size:0.64rem;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;
+  padding:3px 10px;border-radius:999px;flex-shrink:0}
+.tc-status.complete{color:var(--green);background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.32)}
+.tc-status.gated{color:var(--cyan);background:rgba(57,210,192,0.08);border:1px solid rgba(57,210,192,0.32)}
+.tc-status.decisions{color:var(--blue);background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.32)}
+.tc-status.paused{color:var(--amber);background:rgba(210,153,34,0.1);border:1px solid rgba(210,153,34,0.32)}
+.tc-status.blocked{color:var(--red);background:rgba(248,81,73,0.1);border:1px solid rgba(248,81,73,0.32)}
+.tc-status.ongoing{color:var(--purple);background:rgba(188,140,255,0.1);border:1px solid rgba(188,140,255,0.32)}
+.tc-prio{font-family:var(--font-mono);font-size:0.64rem;font-weight:600;color:var(--text-muted);margin-left:auto}
+.tc-title{font-size:1.05rem;font-weight:700;letter-spacing:-0.015em;margin-bottom:8px;line-height:1.3}
+.tc-body{font-size:0.85rem;color:var(--text-secondary);line-height:1.6;margin-bottom:14px;flex:1}
+.tc-footer{display:flex;align-items:center;gap:12px;padding-top:10px;border-top:1px solid rgba(48,54,61,0.4);font-size:0.76rem}
+.tc-footer a{color:var(--blue);font-weight:500;transition:color 0.2s}
+.tc-footer a:hover{color:var(--cyan)}
+
+/* ===== NEXT QUEUE TABLE ===== */
+.queue-table{background:rgba(22,27,34,0.55);border:1px solid var(--border);border-radius:14px;overflow:hidden;
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.queue-row{display:grid;grid-template-columns:56px 220px 190px 1fr;gap:20px;padding:14px 24px;border-bottom:1px solid rgba(48,54,61,0.45);
+  align-items:center;font-size:0.85rem;transition:background 0.2s}
+.queue-row:last-child{border-bottom:none}
+.queue-row:hover{background:rgba(13,17,23,0.4)}
+.queue-row.header{background:rgba(13,17,23,0.6);font-family:var(--font-mono);font-size:0.72rem;letter-spacing:0.08em;
+  text-transform:uppercase;color:var(--text-muted);font-weight:600}
+.q-id{font-family:var(--font-mono);font-weight:600;color:var(--text-muted);font-size:0.78rem}
+.q-track{color:var(--text-primary);font-weight:600}
+.q-status{display:inline-flex}
+.q-next{color:var(--text-secondary);line-height:1.55}
+
+/* ===== LATER LIST ===== */
+.later-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.b-item{display:flex;gap:10px;padding:14px 16px;background:rgba(13,17,23,0.6);border:1px solid var(--border);border-radius:10px;
   font-size:0.85rem;line-height:1.55;color:var(--text-secondary);transition:border-color 0.2s,background 0.2s}
 .b-item:hover{border-color:var(--border-strong);background:rgba(13,17,23,0.8)}
 .b-item strong{color:var(--text-primary);font-weight:600}
-.pill{font-family:var(--font-mono);font-size:0.6rem;font-weight:600;padding:2px 7px;border-radius:999px;letter-spacing:0.04em;flex-shrink:0;align-self:flex-start;margin-top:2px}
-.pill.p1{background:rgba(248,81,73,0.12);color:var(--red);border:1px solid rgba(248,81,73,0.35)}
-.pill.p2{background:rgba(210,153,34,0.12);color:var(--amber);border:1px solid rgba(210,153,34,0.35)}
-.pill.p3{background:rgba(63,185,80,0.1);color:var(--green);border:1px solid rgba(63,185,80,0.32)}
+.b-item code{white-space:nowrap}
 
 /* ===== HONESTY CALLOUT ===== */
-.honesty{margin:48px auto 0;max-width:900px;background:rgba(22,27,34,0.55);border:1px solid var(--border);border-radius:18px;
+.honesty{margin:48px auto 0;max-width:940px;background:rgba(22,27,34,0.55);border:1px solid var(--border);border-radius:18px;
   padding:24px 28px;display:flex;gap:16px;align-items:flex-start}
+.honesty.tight{margin-top:32px}
 .honesty .icon{width:36px;height:36px;border-radius:10px;background:rgba(210,153,34,0.12);color:var(--amber);
   display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.honesty .icon.cyan{background:rgba(57,210,192,0.1);color:var(--cyan)}
 .honesty .icon svg{width:20px;height:20px}
 .honesty h4{font-size:0.95rem;font-weight:700;margin-bottom:6px}
 .honesty p{font-size:0.85rem;color:var(--text-secondary);line-height:1.65}
+.honesty p + p{margin-top:8px}
 .honesty a{color:var(--blue);font-weight:500}
 .honesty a:hover{color:var(--cyan)}
 
@@ -210,9 +228,10 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
 
 /* ===== RESPONSIVE ===== */
 @media(max-width:1024px){
-  .shipped-grid{grid-template-columns:1fr}
-  .theme-items{grid-template-columns:1fr}
+  .track-grid{grid-template-columns:1fr}
+  .later-grid{grid-template-columns:1fr}
   .headline-stats{grid-template-columns:repeat(2,1fr)}
+  .queue-row{grid-template-columns:48px 170px 150px 1fr;gap:14px;padding:14px 18px}
 }
 @media(max-width:768px){
   .nav-links{position:fixed;top:var(--nav-h);left:0;right:0;background:rgba(13,17,23,0.97);backdrop-filter:blur(20px);
@@ -220,12 +239,15 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
     transform:translateY(-100%);opacity:0;pointer-events:none;transition:all 0.3s}
   .nav-links.open{transform:translateY(0);opacity:1;pointer-events:all}
   .hamburger{display:flex}
+  .queue-row{grid-template-columns:48px 1fr;row-gap:8px}
+  .queue-row .q-status{grid-column:2}
+  .queue-row .q-next{grid-column:1 / -1}
+  .queue-row.header .q-status,.queue-row.header .q-next{display:none}
   .history-row{grid-template-columns:90px 1fr;gap:14px;padding:14px 18px}
   .history-row .history-date{grid-column:1;font-size:0.72rem}
   .history-row .history-title{grid-column:1 / -1}
   .history-row.header .history-title{display:none}
   footer .container{flex-direction:column;text-align:center}
-  .theme{padding:24px 22px 20px}
   .honesty{flex-direction:column;align-items:flex-start}
 }
 @media(max-width:480px){
@@ -280,438 +302,415 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
 <section class="hero">
   <div class="container">
     <span class="hero-eyebrow reveal">The PacketADE Roadmap</span>
-    <h1 class="reveal" style="--delay:0.05s">What shipped.<br><span class="gradient-text">What's coming next.</span></h1>
-    <p class="hero-lead reveal" style="--delay:0.1s">An honest tour of where PacketADE stands today. Remote Agents, Mission Planner v1, GitHub + Memory v0.8, the Issues rebuild, Code Quality, and the queue we're working through next &mdash; pulled straight from <code>CHANGELOG.md</code>, <code>ROADMAP.md</code>, and <code>backlog.md</code>.</p>
+    <h1 class="reveal" style="--delay:0.05s">Twelve tracks.<br><span class="gradient-text">Honest status labels.</span></h1>
+    <p class="hero-lead reveal" style="--delay:0.1s">Where PacketADE actually stands, pulled straight from <code>ROADMAP.md</code> and <code>backlog.md</code> as of the 2026-07-30 midway project review &mdash; the pass that overhauled the root docs and removed Gemini CLI support from the PTY surface. PacketADE wraps PTY coding CLIs &mdash; Claude Code, Codex CLI, OpenCode, PacketCode, and plain shells &mdash; plus eight API chat providers into one local-first desktop ADE. Most tracks below are <em>source complete</em>: the code is merged and locally tested, and what remains is packaged or live-environment proof. Two things are genuinely blocked or paused, and we say so.</p>
 
     <div class="headline-stats reveal" style="--delay:0.2s">
       <div class="headline-stat">
-        <div class="v green">v0.9.3</div>
-        <div class="k">Current release &middot; May 2026</div>
+        <div class="v green">v0.10.2</div>
+        <div class="k">Current release &middot; 2026-07-28 &middot; unsigned, manual-install</div>
       </div>
       <div class="headline-stat">
         <div class="v blue">12</div>
-        <div class="k">Releases since Mission Planner v1</div>
+        <div class="k">Active roadmap tracks (R0&ndash;R11)</div>
       </div>
       <div class="headline-stat">
-        <div class="v cyan">4</div>
-        <div class="k">Modes &middot; Missions, Workspace, Agents, Issues</div>
+        <div class="v cyan">1,261</div>
+        <div class="k">Vitest tests passing at last verification checkpoint</div>
       </div>
       <div class="headline-stat">
         <div class="v amber">8</div>
-        <div class="k">Provider rows with live auth badges</div>
+        <div class="k">API provider rows with live auth badges</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ===== SHIPPED ===== -->
-<section class="tier-section" id="shipped">
+<!-- ===== NOW ===== -->
+<section class="tier-section" id="now">
   <div class="container">
-    <div class="section-header shipped reveal">
-      <span class="eyebrow"><span class="dot"></span>Shipped &middot; Tier 01</span>
-      <h2>What's already in your hands</h2>
-      <p>Every major feature that's landed since the v0.7 Mission Planner launch &mdash; in shipping order. The two flagship drops are highlighted; everything else is real, tested, and on disk in the latest installer.</p>
+    <div class="section-header now reveal">
+      <span class="eyebrow"><span class="dot"></span>Now &middot; the track board</span>
+      <h2>What's on the board today</h2>
+      <p>The twelve tracks from <a href="https://github.com/packetloss404/PacketADE/blob/main/ROADMAP.md" target="_blank" rel="noopener">ROADMAP.md</a>, active decision passes first. Each card links to its canonical plan document. Status labels mean exactly what they say &mdash; see the legend.</p>
     </div>
 
-    <div class="shipped-grid">
+    <div class="legend reveal" style="--delay:0.05s" aria-label="Status legend">
+      <span class="chip"><span class="dot green"></span>Complete &mdash; implemented and verified</span>
+      <span class="chip"><span class="dot cyan"></span>Source complete &middot; proof gated &mdash; code merged; packaged / live-environment evidence still owed</span>
+      <span class="chip"><span class="dot blue"></span>Decisions pending &mdash; review done; owner choices gate implementation</span>
+      <span class="chip"><span class="dot amber"></span>Paused &mdash; intentionally held at a decision gate</span>
+      <span class="chip"><span class="dot red"></span>Blocked &mdash; waiting on an external dependency</span>
+    </div>
 
-      <!-- v0.7.0 — Mission Planner v1 (flagship) -->
-      <article class="shipped-card flagship reveal" style="--delay:0s">
-        <div class="sc-head">
-          <span class="sc-version flagship">v0.7.0</span>
-          <span class="sc-date">2026-05-15</span>
+    <div class="track-grid">
+
+      <!-- R11 -->
+      <article class="track-card decisions reveal" style="--delay:0s">
+        <div class="tc-head">
+          <span class="tc-id">R11</span>
+          <span class="tc-status decisions">Decisions pending</span>
+          <span class="tc-prio">P1</span>
         </div>
-        <h3 class="sc-title">Mission Planner v1 &mdash; autonomous spec-to-ship</h3>
-        <p class="sc-body">The headline feature. An AI mission planner that owns a spec end-to-end &mdash; one Sonnet 4.6 session per mission, callable tools, journal, safety rails, context compaction.</p>
-        <div class="sc-points">
-          <div class="sc-point">Spec-mode chat &rarr; autonomous decomposition into 2&ndash;4 milestones and 4&ndash;10 tasks, each spawned in its own worktree</div>
-          <div class="sc-point">Self-driving lifecycle &mdash; reacts to task completions, replans on retryable errors, escalates via the async approval gate</div>
-          <div class="sc-point">Per-mode tool-call caps, rate-limit auto-resume, kill switch, watchdog, cold-start enforcement</div>
-          <div class="sc-point">Append-only mission journal + planner-vs-executor cost split with cumulative-token chip for OAuth</div>
-          <div class="sc-point">Context compaction at 150K input tokens so multi-day missions don't hit the context wall</div>
-        </div>
-        <div class="sc-footer">
-          <span class="sc-tag flagship-tag">Flagship</span>
-          <a href="https://github.com/packetloss404/PacketADE/blob/main/CHANGELOG.md#070---2026-05-15">CHANGELOG &rarr;</a>
-        </div>
+        <h3 class="tc-title">Main shell &amp; right-dock ownership</h3>
+        <p class="tc-body">A full audit of the main application shell &mdash; navigation, tabs, toolbar, and the competing right-side panels &mdash; is done. Five owner decisions gate the implementation loop: the Workspace Agent inspector's scope, one shared RightDock, SSH-boundary gating, a single route registry, and the fate of the unreachable Editor.</p>
+        <div class="tc-footer"><a href="https://github.com/packetloss404/PacketADE/blob/main/dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md" target="_blank" rel="noopener">Audit &rarr;</a></div>
       </article>
 
-      <!-- v0.8.0 — GitHub + Memory -->
-      <article class="shipped-card reveal" style="--delay:0.05s">
-        <div class="sc-head">
-          <span class="sc-version">v0.8.0</span>
-          <span class="sc-date">2026-05-15</span>
+      <!-- R10 -->
+      <article class="track-card complete reveal" style="--delay:0.05s">
+        <div class="tc-head">
+          <span class="tc-id">R10</span>
+          <span class="tc-status complete">Complete</span>
+          <span class="tc-prio">P0</span>
         </div>
-        <h3 class="sc-title">GitHub pane overhaul + Memory inline surfaces</h3>
-        <p class="sc-body">The GitHub pane went from read-only viewer to real daily-loop tool. Memory surfaces moved out of their dedicated tab and into the places you actually work.</p>
-        <div class="sc-points">
-          <div class="sc-point">PR lifecycle actions: merge / squash / rebase / close / reopen / draft toggle, live CI status pills, Checks tab</div>
-          <div class="sc-point">AI features: PR description generator, pre-flight code review with Blocking/Asks/Nits, "Catch me up" repo digest, bulk issue triage</div>
-          <div class="sc-point">5 issue CTAs wired end-to-end: Plan flight, Branch from issue, Hand off to Claude, Draft patch, Save as memory</div>
-          <div class="sc-point">Mission attempts auto-publish as draft PRs; workspace auto-binds to <code>origin</code>; <code>Run-By:</code> auto-trailers on agent commits</div>
-          <div class="sc-point">Memory: context-preview chevron, MissionsView memory chip, "Recent learnings" feed, project-scoped patterns, pin button wired</div>
-        </div>
-        <div class="sc-footer">
-          <a href="https://github.com/packetloss404/PacketADE/blob/main/CHANGELOG.md#080---2026-05-15">CHANGELOG &rarr;</a>
-        </div>
+        <h3 class="tc-title">Workspace / Agents restructuring</h3>
+        <p class="tc-body">Workspaces are now CLI/PacketCode-first; GUI agents got a first-class same-window Agents surface; new Workspace conversation attachments are retired while saved panes stay compatible; typed handoffs connect Workspace, Agents, Flight Deck, and Monitor. Detachable interactive Agent windows wait on a single-writer state contract.</p>
+        <div class="tc-footer"><a href="https://github.com/packetloss404/PacketADE/blob/main/dev/workspace-agents-restructuring-goal.md" target="_blank" rel="noopener">Product contract &rarr;</a></div>
       </article>
 
-      <!-- v0.8.5 — Issues rebuild (flagship) -->
-      <article class="shipped-card flagship reveal" style="--delay:0.1s">
-        <div class="sc-head">
-          <span class="sc-version flagship">v0.8.5</span>
-          <span class="sc-date">2026-05-16</span>
+      <!-- R0 -->
+      <article class="track-card paused reveal" style="--delay:0.1s">
+        <div class="tc-head">
+          <span class="tc-id">R0</span>
+          <span class="tc-status paused">Paused at Sprint 0</span>
+          <span class="tc-prio">P1</span>
         </div>
-        <h3 class="sc-title">Issues pane rebuild &mdash; spec import &amp; close-loop</h3>
-        <p class="sc-body">Issues became the fourth user-facing mode: AI-structured intake from any spec or PRD, with a complete commit-to-close loop through Workspace.</p>
-        <div class="sc-points">
-          <div class="sc-point">Spec import &mdash; paste a PRD, get back structured Issue drafts with title, body, labels, acceptance criteria, suggested epic</div>
-          <div class="sc-point">Send to Workspace &mdash; provisions an issue-bound worktree, installs <code>prepare-commit-msg</code> hook, opens Claude pane with the issue seeded</div>
-          <div class="sc-point">Auto-Done on <code>Fixes #N</code> trailer &mdash; commits that close a ticket flip its column and append an audit comment</div>
-          <div class="sc-point">New 5-column board: Backlog / Up Next / In Progress / In Review / Done; multi-select filter chips; inline comment composer</div>
-          <div class="sc-point">Full IssueDetail modal: markdown body, criteria checklist, dependencies, linked workspace pill, status grid, comment thread</div>
-        </div>
-        <div class="sc-footer">
-          <span class="sc-tag flagship-tag">Flagship</span>
-          <a href="https://github.com/packetloss404/PacketADE/blob/main/CHANGELOG.md#085---2026-05-16">CHANGELOG &rarr;</a>
-        </div>
+        <h3 class="tc-title">Remote Agents: PWA + Packet Cloud relay</h3>
+        <p class="tc-body">Supervise your desktop agents from a phone: a PWA over a cloud relay, with providers, secrets, files, and execution staying on the desktop. Preserved, not canceled &mdash; deliberately paused at three Sprint-0 decisions (auth provider, E2EE timing, code location). No relay code gets written until those are resolved.</p>
+        <div class="tc-footer"><a href="https://github.com/packetloss404/PacketADE/blob/main/dev/remoteagents/README.md" target="_blank" rel="noopener">Plan &rarr;</a></div>
       </article>
 
-      <!-- v0.8.7 — Big drop -->
-      <article class="shipped-card reveal" style="--delay:0.15s">
-        <div class="sc-head">
-          <span class="sc-version">v0.8.7</span>
-          <span class="sc-date">2026-05-16</span>
+      <!-- R2 -->
+      <article class="track-card blocked reveal" style="--delay:0.15s">
+        <div class="tc-head">
+          <span class="tc-id">R2</span>
+          <span class="tc-status blocked">Blocked externally</span>
+          <span class="tc-prio">P1</span>
         </div>
-        <h3 class="sc-title">CLI Install &middot; Bell &middot; Code Quality deep dive</h3>
-        <p class="sc-body">Five themes in one drop. The Toolbar Bell, one-click CLI install, a complete Code Quality runner with AI Explain and Fix-in-Workspace, and full Mission delete.</p>
-        <div class="sc-points">
-          <div class="sc-point">CLI catalog gains Install / Browse / Coming Soon variants &mdash; click Install to spawn a one-shot install terminal</div>
-          <div class="sc-point">Review button became a Bell at the toolbar's far right with a count badge for pending approvals</div>
-          <div class="sc-point">Mission delete with two-step confirm + cascade cleanup of linked Issue back-references</div>
-          <div class="sc-point">Code Quality: live-streaming checks, in-house ANSI renderer, per-error AI Explain, "Fix in Workspace" creates an Issue + worktree + Claude pane</div>
-          <div class="sc-point">API-agent permission events now route into the Review queue + Bell &mdash; tasks bound to a conversation get flipped automatically</div>
-        </div>
-        <div class="sc-footer">
-          <a href="https://github.com/packetloss404/PacketADE/blob/main/CHANGELOG.md#087---2026-05-16">CHANGELOG &rarr;</a>
-        </div>
+        <h3 class="tc-title">Distribution: signing + updater</h3>
+        <p class="tc-body">Windows Authenticode, macOS notarization, and the Tauri auto-updater. Blocked on one external dependency: acquiring code-signing certificates. Until then every build is unsigned and manual-install &mdash; SmartScreen warnings on Windows, <code>xattr -cr</code> on macOS. Once certificates land, the remaining work is wiring config per existing runbooks.</p>
+        <div class="tc-footer"><a href="https://github.com/packetloss404/PacketADE/blob/main/dev/updater-setup.md" target="_blank" rel="noopener">Updater runbook &rarr;</a><a href="https://github.com/packetloss404/PacketADE/blob/main/dev/multi-platform-build.md" target="_blank" rel="noopener">Build runbook &rarr;</a></div>
       </article>
 
-      <!-- v0.8.1 — Settings reorg -->
-      <article class="shipped-card reveal" style="--delay:0.2s">
-        <div class="sc-head">
-          <span class="sc-version">v0.8.1</span>
-          <span class="sc-date">2026-05-15</span>
+      <!-- R3 -->
+      <article class="track-card gated reveal" style="--delay:0.2s">
+        <div class="tc-head">
+          <span class="tc-id">R3</span>
+          <span class="tc-status gated">Core done &middot; smoke gated</span>
+          <span class="tc-prio">P1</span>
         </div>
-        <h3 class="sc-title">Settings panel cleanup + missing v0.8 controls</h3>
-        <p class="sc-body">18 flat sections collapsed into 15 sensibly-stacked tabs. Three real labeling bugs fixed. Every control the v0.8 work merited but never got &mdash; shipped.</p>
-        <div class="sc-points">
-          <div class="sc-point">New GitHub tab with token status, default merge strategy, draft toggle, destructive-action confirm</div>
-          <div class="sc-point">Workspace defaults: bypass-permissions, auto-detect GitHub repo on create</div>
-          <div class="sc-point">Memory project scope: Exact / Parent / Global match + pinned-survives-eviction toggle</div>
-          <div class="sc-point">Subscriptions card: Claude OAuth + Codex OAuth status with Sign-in / Sign-out wired to the PTY login flow</div>
-          <div class="sc-point">Editable dictation hotkeys with in-place capture</div>
-        </div>
-        <div class="sc-footer">
-          <a href="https://github.com/packetloss404/PacketADE/blob/main/CHANGELOG.md#081---2026-05-15">CHANGELOG &rarr;</a>
-        </div>
+        <h3 class="tc-title">Flight Deck supervision</h3>
+        <p class="tc-body">The supervision loops around Flights (PacketADE's top-level work units): an opt-in Reviewer Gate with explicit human override, cooperative dependency graphs with user-launched batches, a structured Coordination Inbox, and a bounded-autonomy overlay with cost/time/concurrency limits and a kill switch. Core loops are implemented; packaged local/SSH/manual smoke matrices remain.</p>
+        <div class="tc-footer"><a href="https://github.com/packetloss404/PacketADE/blob/main/dev/bridgemind/reviewer-gate-loop.md" target="_blank" rel="noopener">Reviewer Gate &rarr;</a><a href="https://github.com/packetloss404/PacketADE/blob/main/dev/bridgemind/autonomy-policy-loop.md" target="_blank" rel="noopener">Autonomy policy &rarr;</a></div>
       </article>
 
-      <!-- v0.8.2 — Toolbar overhaul -->
-      <article class="shipped-card reveal" style="--delay:0.25s">
-        <div class="sc-head">
-          <span class="sc-version">v0.8.2</span>
-          <span class="sc-date">2026-05-16</span>
+      <!-- R4 -->
+      <article class="track-card gated reveal" style="--delay:0.25s">
+        <div class="tc-head">
+          <span class="tc-id">R4</span>
+          <span class="tc-status gated">Source complete &middot; release gated</span>
+          <span class="tc-prio">P1</span>
         </div>
-        <h3 class="sc-title">Toolbar overhaul &mdash; Ctrl+K, global +New, Commit modal</h3>
-        <p class="sc-body">Audit-driven cleanup of the top Toolbar. Removed dupes, added discoverability, replaced the <code>window.prompt</code> commit anti-pattern with a real modal.</p>
-        <div class="sc-points">
-          <div class="sc-point">New search chip with visible Ctrl+K hint &mdash; opens the existing CommandPalette</div>
-          <div class="sc-point">Global "+ New" dropdown wiring four creation entry points (Claude / Codex / Mission / Issue)</div>
-          <div class="sc-point">Review badge with live pending-approval count; LiveSpendChip is now the sole cost surface</div>
-          <div class="sc-point">CommitModal replaces <code>window.prompt</code>: multi-line, autofocus, inline error, success state</div>
-          <div class="sc-point">Icon sizes normalized; cluster dividers; tooltip keyboard hints</div>
-        </div>
-        <div class="sc-footer">
-          <a href="https://github.com/packetloss404/PacketADE/blob/main/CHANGELOG.md#082---2026-05-16">CHANGELOG &rarr;</a>
-        </div>
+        <h3 class="tc-title">PacketCode integration</h3>
+        <p class="tc-body">PacketCode is a separate TUI product; PacketADE detects it, recommends it as the default Workspace CLI, and manages install/update with version detection and a bounded <code>doctor</code> probe, locally and over SSH. Source integration is complete; what's gated is the release proof: published signed artifacts and clean-machine install/upgrade/rollback smoke.</p>
+        <div class="tc-footer"><a href="https://github.com/packetloss404/PacketADE/blob/main/dev/bridgemind/packetcode-bridgecode-loop.md" target="_blank" rel="noopener">Loop ledger &rarr;</a></div>
       </article>
 
-      <!-- v0.8.3 — CLI catalog -->
-      <article class="shipped-card reveal" style="--delay:0.3s">
-        <div class="sc-head">
-          <span class="sc-version">v0.8.3</span>
-          <span class="sc-date">2026-05-16</span>
+      <!-- R5 -->
+      <article class="track-card gated reveal" style="--delay:0.3s">
+        <div class="tc-head">
+          <span class="tc-id">R5</span>
+          <span class="tc-status gated">Source complete &middot; proof gated</span>
+          <span class="tc-prio">P1</span>
         </div>
-        <h3 class="sc-title">CLI catalog grid &mdash; 13 agents at a glance</h3>
-        <p class="sc-body">Settings &gt; Agents got the visual + functional upgrade. Claude Code, Codex, Gemini, OpenCode, PacketCode, GitHub Copilot, Kimi, Cursor, Qwen, Qoder, Mistral Vibe, DeepSeek &mdash; all on one 2-column grid.</p>
-        <div class="sc-points">
-          <div class="sc-point">Per-card brand color, lucide icon, status dot, version readout, click-to-select with active highlight</div>
-          <div class="sc-point">New <code>detect_cli_catalog</code> Tauri command runs PATH probes + version captures truly concurrently</div>
-          <div class="sc-point">2s path timeout, 3s version timeout, <code>.cmd</code> shim fallback on Windows so npm-installed CLIs are found</div>
-          <div class="sc-point">Test + Rescan buttons; "Advanced" drawer keeps the Custom-CLI editor reachable</div>
-        </div>
-        <div class="sc-footer">
-          <a href="https://github.com/packetloss404/PacketADE/blob/main/CHANGELOG.md#083---2026-05-16">CHANGELOG &rarr;</a>
-        </div>
+        <h3 class="tc-title">PacketAgent deploy / supervise handoff</h3>
+        <p class="tc-body">PacketAgent (a separate repository) owns durable execution after PacketADE closes. The consumer side of its versioned W9 contract is implemented: validate/deploy/activate Flight packages, poll and acknowledge ordered events, inspect/pause/resume/revoke. Gated on live cross-repository close/restart/reconnect proof with real credentials.</p>
+        <div class="tc-footer"><a href="https://github.com/packetloss404/PacketADE/blob/main/dev/bridgemind/packetagent-handoff-loop.md" target="_blank" rel="noopener">Handoff loop &rarr;</a></div>
       </article>
 
-      <!-- v0.8.6 — Toolbar demotion -->
-      <article class="shipped-card reveal" style="--delay:0.35s">
-        <div class="sc-head">
-          <span class="sc-version">v0.8.6</span>
-          <span class="sc-date">2026-05-16</span>
+      <!-- R7 -->
+      <article class="track-card gated reveal" style="--delay:0.35s">
+        <div class="tc-head">
+          <span class="tc-id">R7</span>
+          <span class="tc-status gated">Source complete &middot; hardware gated</span>
+          <span class="tc-prio">P1</span>
         </div>
-        <h3 class="sc-title">Toolbar demotion &mdash; Deploy + Prompts</h3>
-        <p class="sc-body">Two underused Toolbar buttons demoted to lower-friction surfaces. Both features kept &mdash; they just stopped competing for prime chrome real estate.</p>
-        <div class="sc-points">
-          <div class="sc-point">Deploy moved into the global "+ New" dropdown; Rocket icon retired from the Toolbar</div>
-          <div class="sc-point">Prompts &rarr; new slash-command expansion popover inside AgentInputArea (arrow nav, Enter to insert)</div>
-          <div class="sc-point">Workspace panes gain a BookOpen-icon template dropdown that writes the body + CR directly to the PTY</div>
-          <div class="sc-point">PromptTemplatesCard gets a "Manage..." button opening the full library modal for CRUD</div>
-        </div>
-        <div class="sc-footer">
-          <a href="https://github.com/packetloss404/PacketADE/blob/main/CHANGELOG.md#086---2026-05-16">CHANGELOG &rarr;</a>
-        </div>
+        <h3 class="tc-title">Dictation reliability</h3>
+        <p class="tc-body">The capture pipeline was rebuilt end to end: native microphone formats with downmix/resampling to Whisper's 16&nbsp;kHz mono, race-free push-to-talk and cancel, verified model selection with fallback, and safe editor/PTY insertion. All sixteen source items are done; the gate is physical &mdash; the packaged microphone/platform matrix needs a live mic on each OS.</p>
+        <div class="tc-footer"><a href="https://github.com/packetloss404/PacketADE/blob/main/dev/bridgemind/dictation-repair-hardening-loop.md" target="_blank" rel="noopener">Repair loop &rarr;</a></div>
       </article>
 
-      <!-- v0.8.8 — projectPath -->
-      <article class="shipped-card reveal" style="--delay:0.4s">
-        <div class="sc-head">
-          <span class="sc-version">v0.8.8</span>
-          <span class="sc-date">2026-05-16</span>
+      <!-- R6 -->
+      <article class="track-card gated reveal" style="--delay:0.4s">
+        <div class="tc-head">
+          <span class="tc-id">R6</span>
+          <span class="tc-status gated">Source complete &middot; proof gated</span>
+          <span class="tc-prio">P2</span>
         </div>
-        <h3 class="sc-title">projectPath single source of truth</h3>
-        <p class="sc-body">Eliminates the long-standing drift between global <code>layoutStore.projectPath</code> and per-workspace records. The active workspace is now canonical; global is a mirror.</p>
-        <div class="sc-points">
-          <div class="sc-point"><code>setProjectPath</code> is now a write-through to the active workspace; a subscription mirror keeps the legacy API working</div>
-          <div class="sc-point">Toolbar folder picker shows the workspace context inline; no-workspace state offers a "create or set default" modal</div>
-          <div class="sc-point">Capture-on-open guards for SpecImport, CommitModal, NewFlight &mdash; defends against workspace switches mid-edit</div>
-          <div class="sc-point">WorkspaceCreationModal empty-state gates save on a non-empty path so workspaces can't be created with <code>projectPath: ""</code></div>
+        <h3 class="tc-title">Project-local Memory Hub</h3>
+        <p class="tc-body">Project memory lives in the repo as <code>.agents/memory</code> Markdown with frontmatter: safe CRUD with revisions, graph/backlinks/health, unified retrieval, provenance capture, and permission-gated MCP access. Gated on the packaged external-editor/watch interoperability matrix (watch storms, partial writes, renames, restarts).</p>
+        <div class="tc-footer"><a href="https://github.com/packetloss404/PacketADE/blob/main/dev/bridgemind/project-local-memory-hub-loop.md" target="_blank" rel="noopener">Memory Hub loop &rarr;</a></div>
+      </article>
+
+      <!-- R8 -->
+      <article class="track-card gated reveal" style="--delay:0.45s">
+        <div class="tc-head">
+          <span class="tc-id">R8</span>
+          <span class="tc-status gated">Source complete &middot; proof gated</span>
+          <span class="tc-prio">P2</span>
         </div>
-        <div class="sc-footer">
-          <a href="https://github.com/packetloss404/PacketADE/blob/main/CHANGELOG.md#088---2026-05-16">CHANGELOG &rarr;</a>
+        <h3 class="tc-title">Trust and provenance</h3>
+        <p class="tc-body">Every piece of agent input/output carries a schema-v1 origin/authority/integrity/lineage envelope, surfaced as compact chips, with tainted-turn gates on risky actions and downstream lineage into Flights, Memory, and reviews. Gated on packaged provider/SSH parity proof. Denial floors are never weakened to make a provider pass.</p>
+        <div class="tc-footer"><a href="https://github.com/packetloss404/PacketADE/blob/main/dev/bridgemind/trust-provenance-loop.md" target="_blank" rel="noopener">Provenance loop &rarr;</a></div>
+      </article>
+
+      <!-- R9 -->
+      <article class="track-card gated reveal" style="--delay:0.5s">
+        <div class="tc-head">
+          <span class="tc-id">R9</span>
+          <span class="tc-status gated">Source complete &middot; proof gated</span>
+          <span class="tc-prio">P2</span>
         </div>
+        <h3 class="tc-title">Local-first MCP Hub</h3>
+        <p class="tc-body">One place to inventory, review-before-add, diagnose, and trust MCP servers: a stdio doctor, frozen per-session trust (sidecar protocol v11), redacted audit, and a Codex CLI trust proxy that exposes only the frozen allowlisted surface. Gated on real Codex plus local/SSH crash/reload/version-skew and packaged smoke.</p>
+        <div class="tc-footer"><a href="https://github.com/packetloss404/PacketADE/blob/main/dev/bridgemind/local-first-mcp-hub-loop.md" target="_blank" rel="noopener">MCP Hub loop &rarr;</a></div>
+      </article>
+
+      <!-- R1 -->
+      <article class="track-card ongoing reveal" style="--delay:0.55s">
+        <div class="tc-head">
+          <span class="tc-id">R1</span>
+          <span class="tc-status ongoing">Ongoing</span>
+          <span class="tc-prio">P1</span>
+        </div>
+        <h3 class="tc-title">Docs and planning consolidation</h3>
+        <p class="tc-body">One short <code>ROADMAP.md</code>, one master ledger in <code>backlog.md</code>, and a canonical planning index under <code>dev/</code> &mdash; kept current so old planning docs never become competing task registers. The root set was overhauled in the 2026-07-30 midway review; maintenance is continuous rather than a milestone.</p>
+        <div class="tc-footer"><a href="https://github.com/packetloss404/PacketADE/blob/main/dev/README.md" target="_blank" rel="noopener">Planning index &rarr;</a></div>
       </article>
 
     </div>
-  </div>
-</section>
 
-<!-- ===== BACKLOG / QUEUED ===== -->
-<section class="tier-section" id="backlog">
-  <div class="container">
-    <div class="section-header backlog reveal">
-      <span class="eyebrow"><span class="dot"></span>Queued &middot; Tier 02</span>
-      <h2>What's next on the bench</h2>
-      <p>Curated from <code>backlog.md</code>. Priority pills follow our internal convention: <strong>P1</strong> is a real bug or major user-facing gap, <strong>P2</strong> is correctness or UX worth shipping this quarter, <strong>P3</strong> is opportunistic cleanup. Dates aren't promises &mdash; these ship when they're ready.</p>
+    <!-- Remote Agents acceptance shape -->
+    <div class="honesty reveal" style="--delay:0.1s">
+      <div class="icon cyan" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+      </div>
+      <div>
+        <h4>What "Remote Agents v1" will mean, when it unpauses</h4>
+        <p>Sign into a Packet account from a PWA, trust a desktop host, see your configured providers/models/profiles, start or continue API-agent conversations, stream events, approve or deny permission and edit prompts, and get push notifications when an agent needs attention. Provider secrets, MCP servers, files, shells, and execution never leave the desktop &mdash; there is no generic remote bridge and no raw PTY control in scope. End-to-end encryption is a hard gate before any external beta.</p>
+      </div>
     </div>
 
-    <div class="backlog-themes">
-
-      <!-- Remote Agents -->
-      <div class="theme remote reveal" style="--delay:0s">
-        <div class="theme-head">
-          <h3>Remote Agents</h3>
-          <span class="count">current flagship &middot; PWA + Packet Cloud relay</span>
-        </div>
-        <div class="theme-items">
-          <div class="b-item"><span class="pill p1">P1</span><div><strong>Packet Cloud relay MVP</strong> &mdash; Worker/Durable Object relay, desktop connector, host/session routing, reconnect semantics, and relay observability.</div></div>
-          <div class="b-item"><span class="pill p1">P1</span><div><strong>Account sign-in + device trust</strong> &mdash; Packet account auth, desktop-side approval, revocation, and audit trail. QR is optional later, not the primary flow.</div></div>
-          <div class="b-item"><span class="pill p1">P1</span><div><strong>PWA conversation shell</strong> &mdash; conversation list, chat stream, provider/model/profile picker, approval sheets, and reconnect/offline states.</div></div>
-          <div class="b-item"><span class="pill p1">P1</span><div><strong>Secure remote command envelope</strong> &mdash; narrow API-agent commands only; no generic remote Tauri bridge and no cloud-side provider secrets.</div></div>
-        </div>
-      </div>
-
-      <!-- SSH & remote workspaces -->
-      <div class="theme ssh reveal" style="--delay:0.05s">
-        <div class="theme-head">
-          <h3>SSH &amp; remote workspaces</h3>
-          <span class="count">5 items &middot; biggest open gap</span>
-        </div>
-        <div class="theme-items">
-          <div class="b-item"><span class="pill p1">P1</span><div><strong>Sidecar-over-SSH (Phase 4.1)</strong> &mdash; swap local <code>node</code> for ssh-piped node so Claude OAuth + Codex OAuth work against remote codebases. The biggest user-visible gap after v0.6.0.</div></div>
-          <div class="b-item"><span class="pill p1">P1</span><div><strong>Remote-workspace consumer sweep</strong> &mdash; type-level fix or guard every <code>workspace.projectPath</code> consumer for the local-or-remote union.</div></div>
-          <div class="b-item"><span class="pill p2">P2</span><div><strong>MCP servers over SSH (Phase 4.2)</strong> &mdash; <code>build_mcp_config_for_sidecar</code> currently hardcodes local paths, so remote workspaces lose MCP tools entirely.</div></div>
-          <div class="b-item"><span class="pill p2">P2</span><div><strong>Remote git dashboard write commands</strong> &mdash; today remote workspaces can read git status but not commit/push/pull. Half-implemented is worse than no feature.</div></div>
-          <div class="b-item"><span class="pill p2">P2</span><div><strong>Password-auth fixes</strong> &mdash; migration silently downgrades password-auth users to "agent"; <code>ssh_check_remote_path</code> doesn't pull the saved keyring password.</div></div>
-        </div>
-      </div>
-
-      <!-- Mission Planner v1.1 -->
-      <div class="theme planner reveal" style="--delay:0.1s">
-        <div class="theme-head">
-          <h3>Mission Planner v1.1</h3>
-          <span class="count">5 items &middot; deepens v0.7</span>
-        </div>
-        <div class="theme-items">
-          <div class="b-item"><span class="pill p2">P2</span><div><strong>Helper planner escalation</strong> &mdash; primary planner calls <code>spawn_helper_planner(scope, reason)</code> for heavy decomposition. Cap: 1 successful spawn per mission. Stub in v1 returns "deferred to v1.1".</div></div>
-          <div class="b-item"><span class="pill p3">P3</span><div><strong>Back-port milestone-gating to async path</strong> &mdash; pause-between-milestones and file-collision detection from the PTY orchestrator don't exist on the planner's async path yet.</div></div>
-          <div class="b-item"><span class="pill p3">P3</span><div><strong>Predictive quota awareness</strong> &mdash; today's safety is reactive: catch <code>RateLimitError</code>, pause, auto-resume. Switch to predictive once Anthropic SDK exposes <code>anthropic-ratelimit-*</code> headers.</div></div>
-          <div class="b-item"><span class="pill p3">P3</span><div><strong>Crash-resilient planner sessions</strong> &mdash; persist <code>lastResumeToken</code> so cold-start can rehydrate active missions instead of flipping them to Paused.</div></div>
-          <div class="b-item"><span class="pill p3">P3</span><div><strong>Incremental journal fetch + size cap</strong> &mdash; chatty turns currently trigger 5-20 full-file reads. Add <code>read_journal_after(last_entry_id)</code> + max-bytes safeguard.</div></div>
-        </div>
-      </div>
-
-      <!-- Memory v0.9+ -->
-      <div class="theme memory reveal" style="--delay:0.15s">
-        <div class="theme-head">
-          <h3>Memory v0.9+</h3>
-          <span class="count">4 items &middot; from v0.8 deferrals</span>
-        </div>
-        <div class="theme-items">
-          <div class="b-item"><span class="pill p2">P2</span><div><strong>Embedding / RAG over memory</strong> &mdash; today's retrieval is keyword + recency. An embedding layer (sqlite-vss or LanceDB) unlocks semantic context injection.</div></div>
-          <div class="b-item"><span class="pill p2">P2</span><div><strong>Pre-execution memory brief</strong> &mdash; when a Mission attempt launches, compose a short "what we know about this codebase" brief and inject it as the first user turn.</div></div>
-          <div class="b-item"><span class="pill p3">P3</span><div><strong>Recurring-error detector</strong> &mdash; pattern-extraction pipeline watches for repeated failure modes and surfaces a "this looks familiar" hint on next launch.</div></div>
-          <div class="b-item"><span class="pill p3">P3</span><div><strong>"Ask your project" chat tab</strong> &mdash; chat surface querying memory directly. Trivial once RAG lands; keyword fallback ships first.</div></div>
-        </div>
-      </div>
-
-      <!-- GitHub v0.9+ -->
-      <div class="theme github reveal" style="--delay:0.2s">
-        <div class="theme-head">
-          <h3>GitHub v0.9+</h3>
-          <span class="count">4 items &middot; from v0.8 deferrals</span>
-        </div>
-        <div class="theme-items">
-          <div class="b-item"><span class="pill p2">P2</span><div><strong>Authored PR line comments</strong> &mdash; v0.8 shipped read-only thread viewing. New thread composition needs the in-diff composer UI + two backend command pairs.</div></div>
-          <div class="b-item"><span class="pill p2">P2</span><div><strong>Notifications inbox</strong> &mdash; <code>GET /notifications</code> integration with a dedicated tab, unread badge, mark-as-read, link-back to source.</div></div>
-          <div class="b-item"><span class="pill p3">P3</span><div><strong>Releases / gists / Actions runs view</strong> &mdash; out of scope for v0.8. Worth picking up if the GitHub pane grows into a fuller client.</div></div>
-          <div class="b-item"><span class="pill p3">P3</span><div><strong>Windows hook shim</strong> &mdash; v0.8's <code>prepare-commit-msg</code> hook is POSIX shell. Add <code>prepare-commit-msg.cmd</code> for vanilla Windows OpenSSH targets.</div></div>
-        </div>
-      </div>
-
-      <!-- Platform & distribution -->
-      <div class="theme platform reveal" style="--delay:0.25s">
-        <div class="theme-head">
-          <h3>Platform &amp; distribution</h3>
-          <span class="count">5 items &middot; ops, not features</span>
-        </div>
-        <div class="theme-items">
-          <div class="b-item"><span class="pill p1">P1</span><div><strong>Release trust status surface</strong> &mdash; public docs and Settings should state the truth: current beta builds are manual-install; signing and updater support are planned but not active guarantees.</div></div>
-          <div class="b-item"><span class="pill p2">P2</span><div><strong>Auto-updater (Tauri v2)</strong> &mdash; signing keypair + signed <code>latest.json</code> + UI prompt. Currently PacketADE is manual-install. Runbook lives in <code>dev/updater-setup.md</code>.</div></div>
-          <div class="b-item"><span class="pill p2">P2</span><div><strong>macOS code signing + notarization</strong> &mdash; replaces unsigned beta friction and the <code>xattr -cr</code> Gatekeeper workaround. Requires Apple Developer ID enrollment.</div></div>
-          <div class="b-item"><span class="pill p2">P2</span><div><strong>Windows Authenticode signing</strong> &mdash; reduces SmartScreen friction on first run. Requires a signing certificate; no cert is configured in the repo today.</div></div>
-          <div class="b-item"><span class="pill p3">P3</span><div><strong>Snap / Flatpak packaging</strong> &mdash; broadens Linux reach beyond today's AppImage + DEB.</div></div>
-        </div>
-      </div>
-
-      <!-- Performance & polish -->
-      <div class="theme perf reveal" style="--delay:0.3s">
-        <div class="theme-head">
-          <h3>Performance &amp; polish</h3>
-          <span class="count">3 items &middot; visible wins</span>
-        </div>
-        <div class="theme-items">
-          <div class="b-item"><span class="pill p3">P3</span><div><strong>Cost dashboard planner / executor split</strong> &mdash; post-E8, <code>plannerCost</code> + derived <code>executorCost</code> are on every Mission. Surface the split in the dashboard view.</div></div>
-          <div class="b-item"><span class="pill p3">P3</span><div><strong>Cost-update event verbosity</strong> &mdash; turn-summary events currently fire a full <code>flightStore.hydrateFromBackend()</code>. Patch just the affected flight instead.</div></div>
-          <div class="b-item"><span class="pill p3">P3</span><div><strong>Compaction summary in wake messages</strong> &mdash; planner currently relies on priming context alone post-compaction. Include the latest summary verbatim in wakes until next compaction.</div></div>
-        </div>
-      </div>
-
-    </div>
-
-    <div class="honesty reveal" style="--delay:0.3s">
+    <!-- Signing honesty -->
+    <div class="honesty tight reveal" style="--delay:0.15s">
       <div class="icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
       </div>
       <div>
-        <h4>This isn't the whole backlog.</h4>
-        <p>The full <a href="https://github.com/packetloss404/PacketADE/blob/main/backlog.md" target="_blank" rel="noopener">backlog.md</a> has 100+ items including P3 cleanups, code hygiene, and minor polish work. The list above is curated to give you a sense of direction. If you want to pick something up, <a href="https://github.com/packetloss404/PacketADE/issues" target="_blank" rel="noopener">open an issue</a> referencing the backlog item &mdash; contributions are welcome.</p>
+        <h4>About those unsigned builds</h4>
+        <p>Recent trust work (SSH host-key pinning, remote file-tool confinement) hardened the <em>runtime</em> connection path &mdash; it does not touch binary distribution. Every current artifact is unsigned: expect a SmartScreen warning on Windows and the Gatekeeper workaround on macOS. Signing and the auto-updater stay blocked until Windows + macOS code-signing certificates are acquired; that is an external dependency, not a code gap. Verify downloads against the SHA-256 hashes published with each release.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ===== VERSION HISTORY ===== -->
+<!-- ===== NEXT ===== -->
+<section class="tier-section" id="next">
+  <div class="container">
+    <div class="section-header next reveal">
+      <span class="eyebrow"><span class="dot"></span>Next &middot; the decision queue</span>
+      <h2>D1&ndash;D14: what happens in what order</h2>
+      <p>The "Next" table from <code>ROADMAP.md</code>, verbatim in substance. Several rows are already complete and kept for context; the open ones are mostly environment-gated proof runs, plus two decision gates and one external blocker.</p>
+    </div>
+
+    <div class="queue-table reveal" style="--delay:0.05s">
+      <div class="queue-row header">
+        <div>ID</div>
+        <div>Track</div>
+        <div class="q-status">Status</div>
+        <div class="q-next">Next action</div>
+      </div>
+      <div class="queue-row">
+        <div class="q-id">D1</div>
+        <div class="q-track">Remote Agents Sprint 0</div>
+        <div class="q-status"><span class="tc-status paused">Paused</span></div>
+        <div class="q-next">After the main-shell decision pass (or explicit reprioritization): decide auth provider, E2EE timing, and code location before writing code.</div>
+      </div>
+      <div class="queue-row">
+        <div class="q-id">D2</div>
+        <div class="q-track">Flight Deck scope</div>
+        <div class="q-status"><span class="tc-status complete">Complete</span></div>
+        <div class="q-next">Option B shipped: conversation-backed planning with an explicit apply step; attempts remain user-launched.</div>
+      </div>
+      <div class="queue-row">
+        <div class="q-id">D3</div>
+        <div class="q-track">API-agent concurrency</div>
+        <div class="q-status"><span class="tc-status complete">Complete</span></div>
+        <div class="q-next">Turns have compare-and-remove ownership; sidecar protocol v9 targets edit responses by <code>toolUseId</code>.</div>
+      </div>
+      <div class="queue-row">
+        <div class="q-id">D4</div>
+        <div class="q-track">SSH parity verification</div>
+        <div class="q-status"><span class="tc-status gated">Env-gated</span></div>
+        <div class="q-next">Saved-password path probing is fixed; run the live Codex-over-SSH smoke when a configured remote host is available.</div>
+      </div>
+      <div class="queue-row">
+        <div class="q-id">D5</div>
+        <div class="q-track">Signing and updater</div>
+        <div class="q-status"><span class="tc-status blocked">Blocked</span></div>
+        <div class="q-next">Acquire Windows/macOS signing credentials, then follow the existing release runbooks.</div>
+      </div>
+      <div class="queue-row">
+        <div class="q-id">D6</div>
+        <div class="q-track">Flight supervision gates</div>
+        <div class="q-status"><span class="tc-status gated">Proof gated</span></div>
+        <div class="q-next">Run packaged local/SSH/manual matrices for the Reviewer Gate, cooperative integration, inbox delivery, and bounded autonomy.</div>
+      </div>
+      <div class="queue-row">
+        <div class="q-id">D7</div>
+        <div class="q-track">PacketCode release proof</div>
+        <div class="q-status"><span class="tc-status gated">Proof gated</span></div>
+        <div class="q-next">Publish signed multi-platform artifacts; run clean-machine install/upgrade/rollback and cross-product smoke.</div>
+      </div>
+      <div class="queue-row">
+        <div class="q-id">D8</div>
+        <div class="q-track">Project-local Memory Hub</div>
+        <div class="q-status"><span class="tc-status gated">Env-gated</span></div>
+        <div class="q-next">Run the packaged external-editor/watch, dirty/gitignored-project, and platform proof; no source feature gap remains.</div>
+      </div>
+      <div class="queue-row">
+        <div class="q-id">D9</div>
+        <div class="q-track">Dictation packaged smoke</div>
+        <div class="q-status"><span class="tc-status gated">Hardware gated</span></div>
+        <div class="q-next">Connect an active microphone, then run the Windows 48&nbsp;kHz, fast-PTT, cancel, history, in-app, clipboard, and external-paste matrix.</div>
+      </div>
+      <div class="queue-row">
+        <div class="q-id">D10</div>
+        <div class="q-track">Trust and provenance</div>
+        <div class="q-status"><span class="tc-status gated">Env-gated</span></div>
+        <div class="q-next">Run packaged local/SSH/provider-parity evidence and visual inspection; keep current denial floors unchanged.</div>
+      </div>
+      <div class="queue-row">
+        <div class="q-id">D11</div>
+        <div class="q-track">Local-first MCP Hub</div>
+        <div class="q-status"><span class="tc-status gated">Env-gated</span></div>
+        <div class="q-next">Run real Codex/local/SSH crash/reload/version-skew, packaged catalog/removal, offline, trust-downgrade, and reconnect smoke.</div>
+      </div>
+      <div class="queue-row">
+        <div class="q-id">D12</div>
+        <div class="q-track">Workspace/Agents surface</div>
+        <div class="q-status"><span class="tc-status complete">Source complete</span></div>
+        <div class="q-next">New attachment is retired; saved-pane compatibility preserved. Remaining SSH/external-runtime release proof runs separately; interactive native popouts wait on one-writer state.</div>
+      </div>
+      <div class="queue-row">
+        <div class="q-id">D13</div>
+        <div class="q-track">Settings authority and IA</div>
+        <div class="q-status"><span class="tc-status decisions">Cleanup open</span></div>
+        <div class="q-next">Six-group IA is done. Remove or enforce remaining placebo controls, make safety saves authoritative, and complete SSH/MCP/provider correctness before adding preferences.</div>
+      </div>
+      <div class="queue-row">
+        <div class="q-id">D14</div>
+        <div class="q-track">Main shell and right dock</div>
+        <div class="q-status"><span class="tc-status decisions">Decisions pending</span></div>
+        <div class="q-next">Decide stale Workspace-inspector removal, one shared RightDock, SSH gating, one route registry, and the unreachable Editor's future.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== LATER ===== -->
+<section class="tier-section" id="later">
+  <div class="container">
+    <div class="section-header later reveal">
+      <span class="eyebrow"><span class="dot"></span>Later &middot; deliberately not now</span>
+      <h2>On the horizon, not the bench</h2>
+      <p>Ideas with a revisit condition attached &mdash; not commitments, and not secretly in progress.</p>
+    </div>
+
+    <div class="later-grid reveal" style="--delay:0.05s">
+      <div class="b-item"><div><strong>Codex CLI app-server transport</strong> &mdash; revisit when PacketADE needs long-lived app-server capabilities that <code>codex exec</code> cannot provide.</div></div>
+      <div class="b-item"><div><strong>Send-to-Monitor expansion</strong> &mdash; read-only Agent + Flight Monitor windows are implemented; Approval/Cost routes, saved bounds, multi-window, and PTY attachment come later.</div></div>
+      <div class="b-item"><div><strong>Native iOS / TestFlight for Remote Agents</strong> &mdash; evaluate only after the PWA relay, auth, push, and mobile UX prove useful.</div></div>
+      <div class="b-item"><div><strong>Plugin system</strong> &mdash; a community manifest format, after distribution and updater work are no longer blocked.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SHIPPED FOUNDATION / HISTORY ===== -->
 <section class="tier-section" id="history">
   <div class="container">
     <div class="section-header history reveal">
-      <span class="eyebrow"><span class="dot"></span>Version history &middot; Tier 03</span>
-      <h2>Every release at a glance</h2>
-      <p>Compact timeline. Full notes for each version are in <a href="https://github.com/packetloss404/PacketADE/blob/main/CHANGELOG.md" target="_blank" rel="noopener">CHANGELOG.md</a>.</p>
+      <span class="eyebrow"><span class="dot"></span>Shipped foundation</span>
+      <h2>How we got here</h2>
+      <p>The Flight Deck worktree-attempt runtime, Reviewer Gate, cooperative Flight graphs, Coordination Inbox, bounded autonomy, PacketCode source integration, workspace panes, Issues, GitHub + Gitea/Forgejo hosts, project Memory, dictation, cost analytics and guardrails, API-agent conversations on sidecar protocol v11, PacketADE-as-MCP-server, MCP over SSH, and Codex-over-SSH are all shipped. Full notes per version live in <a href="https://github.com/packetloss404/PacketADE/blob/main/CHANGELOG.md" target="_blank" rel="noopener">CHANGELOG.md</a>. One honest note: the autonomous "Planner v1" that headlined v0.7.0 was deliberately removed in July 2026 &mdash; today's Flight planning is a smaller, explicit conversation-backed step where the user applies the plan and launches attempts.</p>
     </div>
 
     <div class="history-table reveal" style="--delay:0.05s">
       <div class="history-row header">
         <div>Version</div>
         <div>Released</div>
-        <div>Headline</div>
+        <div class="history-title">Headline</div>
       </div>
       <div class="history-row">
-        <div class="history-version">v0.9.3</div>
+        <div class="history-version">Unreleased</div>
+        <div class="history-date">2026-07-30</div>
+        <div class="history-title"><strong>Midway review wave</strong> &mdash; Gemini CLI support removed (saved panes reopen as plain terminals), PacketAgent W9 handoff consumer, Issue&#8596;Flight mirroring, read-only Monitor windows, Codex MCP trust proxy</div>
+      </div>
+      <div class="history-row">
+        <div class="history-version flagship">v0.10.2</div>
+        <div class="history-date">2026-07-28</div>
+        <div class="history-title"><strong>Dictation reliability overhaul</strong> &mdash; native mic formats, downmix/resample to 16&nbsp;kHz, race-free push-to-talk, verified model fallback</div>
+      </div>
+      <div class="history-row">
+        <div class="history-version">v0.10.1</div>
+        <div class="history-date">2026-07-19</div>
+        <div class="history-title"><strong>MCP servers over SSH</strong> &mdash; remote sessions now source MCP config from the remote host, stdio servers included</div>
+      </div>
+      <div class="history-row">
+        <div class="history-version flagship">v0.10.0</div>
+        <div class="history-date">2026-07-09</div>
+        <div class="history-title"><strong>Single-surface Workspace</strong> &mdash; chat agents became conversation tiles in the same mosaic as terminals</div>
+      </div>
+      <div class="history-row">
+        <div class="history-version">v0.9.4</div>
+        <div class="history-date">2026-06-01</div>
+        <div class="history-title"><strong>Failure-path hardening</strong> &mdash; eight peer-reviewed fixes from a two-team full-codebase review (process reaping, MCP pool eviction, data durability)</div>
+      </div>
+      <div class="history-row">
+        <div class="history-version">v0.9.0&ndash;0.9.3</div>
         <div class="history-date">2026-05-17</div>
-        <div class="history-title"><strong>core library audit closeout</strong> &mdash; command/core audit coverage completed, high-priority Rust fixes landed</div>
+        <div class="history-title"><strong>Agents overhaul + audit waves</strong> &mdash; provider polish and reviewer flows, module decomposition, Rust command/core audit closeout</div>
       </div>
       <div class="history-row">
-        <div class="history-version">v0.9.2</div>
-        <div class="history-date">2026-05-17</div>
-        <div class="history-title"><strong>Rust commands audit</strong> &mdash; state race closed, silent-error sweep, command modules reviewed</div>
+        <div class="history-version">v0.8.0&ndash;0.8.8</div>
+        <div class="history-date">2026-05-15/16</div>
+        <div class="history-title"><strong>GitHub + Memory + Issues wave</strong> &mdash; PR lifecycle actions, inline memory surfaces, the Issues board rebuild with spec import, Code Quality, toolbar and settings reorgs</div>
       </div>
       <div class="history-row">
-        <div class="history-version">v0.9.1</div>
-        <div class="history-date">2026-05-17</div>
-        <div class="history-title"><strong>decomposition wave</strong> &mdash; GitHubView, Mission Planner, sidecar, Missions, Dictation, and stores split into tighter modules</div>
-      </div>
-      <div class="history-row">
-        <div class="history-version">v0.9.0</div>
-        <div class="history-date">2026-05-17</div>
-        <div class="history-title"><strong>Agents pane overhaul</strong> &mdash; unified provider polish, reviewer flows, approvals, planning, and sidecar parity</div>
-      </div>
-      <div class="history-row">
-        <div class="history-version">v0.8.8</div>
-        <div class="history-date">2026-05-16</div>
-        <div class="history-title"><strong>projectPath single source of truth</strong> &mdash; layout/workspace drift eliminated; capture-on-open guards for in-flight modals</div>
-      </div>
-      <div class="history-row">
-        <div class="history-version">v0.8.7</div>
-        <div class="history-date">2026-05-16</div>
-        <div class="history-title"><strong>CLI Install / Bell / Mission delete / Code Quality deep dive</strong> &mdash; ~20 parallel agents, 4 P0s + 11 P1s caught and fixed pre-commit</div>
-      </div>
-      <div class="history-row">
-        <div class="history-version">v0.8.6</div>
-        <div class="history-date">2026-05-16</div>
-        <div class="history-title"><strong>Toolbar demotion: Deploy + Prompts</strong> &mdash; both moved to lower-friction surfaces (slash commands, +New dropdown)</div>
-      </div>
-      <div class="history-row">
-        <div class="history-version flagship">v0.8.5</div>
-        <div class="history-date">2026-05-16</div>
-        <div class="history-title"><strong>Issues pane rebuild</strong> &mdash; AI spec import + Send-to-Workspace + auto-Done on <code>Fixes #N</code></div>
-      </div>
-      <div class="history-row">
-        <div class="history-version">v0.8.3</div>
-        <div class="history-date">2026-05-16</div>
-        <div class="history-title"><strong>CLI catalog grid</strong> &mdash; 13 agents detected concurrently with version probes + Test/Rescan</div>
-      </div>
-      <div class="history-row">
-        <div class="history-version">v0.8.2</div>
-        <div class="history-date">2026-05-16</div>
-        <div class="history-title"><strong>Toolbar overhaul</strong> &mdash; Ctrl+K search, global +New, CommitModal, dedupes</div>
-      </div>
-      <div class="history-row">
-        <div class="history-version">v0.8.1</div>
+        <div class="history-version">v0.7.0</div>
         <div class="history-date">2026-05-15</div>
-        <div class="history-title"><strong>Settings cleanup + IA reorg</strong> &mdash; 18 flat sections &rarr; 15 grouped tabs; GitHub / Subscriptions / auto-trailer controls added</div>
-      </div>
-      <div class="history-row">
-        <div class="history-version">v0.8.0</div>
-        <div class="history-date">2026-05-15</div>
-        <div class="history-title"><strong>GitHub pane overhaul + Memory inline surfaces</strong> &mdash; PR lifecycle, AI review, repo digest, mission-attempt draft PRs</div>
-      </div>
-      <div class="history-row">
-        <div class="history-version flagship">v0.7.0</div>
-        <div class="history-date">2026-05-15</div>
-        <div class="history-title"><strong>Mission Planner v1</strong> &mdash; autonomous spec-to-ship with milestones, journal, safety rails, context compaction</div>
+        <div class="history-title"><strong>Autonomous planner v1</strong> &mdash; spec-to-ship planning with milestones, journal, safety rails; the autonomous runtime was later retired in favor of explicit Option B planning</div>
       </div>
       <div class="history-row">
         <div class="history-version">v0.6.0</div>
         <div class="history-date">2026-05-12</div>
-        <div class="history-title"><strong>SSH hardening + remote workspaces (Phases 1&ndash;3)</strong> &mdash; explicit host-key pinning, unified ServerConfig, remote git dashboard read</div>
+        <div class="history-title"><strong>SSH hardening + remote workspaces</strong> &mdash; explicit host-key pinning, unified ServerConfig, remote git dashboard reads</div>
       </div>
       <div class="history-row">
         <div class="history-version">v0.5.0</div>
         <div class="history-date">2026-05-04</div>
         <div class="history-title"><strong>Agents pane "match the best" initiative</strong> &mdash; PlanPanel, Reviewer subagent, agent profiles, sidecar protocol v3&rarr;v4</div>
+      </div>
+    </div>
+
+    <div class="honesty tight reveal" style="--delay:0.1s">
+      <div class="icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      </div>
+      <div>
+        <h4>This page is a summary, and the product used to have a different name.</h4>
+        <p>PacketADE was previously named PacketCode; it was renamed in mid-2026 so that name could go to the companion TUI product, and older release notes reflect the old branding (and the old "Mission" terminology for what are now Flights). The full open-work ledger is <a href="https://github.com/packetloss404/PacketADE/blob/main/backlog.md" target="_blank" rel="noopener">backlog.md</a>; the short direction document this page mirrors is <a href="https://github.com/packetloss404/PacketADE/blob/main/ROADMAP.md" target="_blank" rel="noopener">ROADMAP.md</a>. Dates aren't promises &mdash; things ship when their gates clear.</p>
       </div>
     </div>
   </div>
@@ -721,7 +720,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
 <section class="cta-section reveal">
   <div class="container">
     <h2>Ready to fly?</h2>
-    <p>PacketADE is Apache 2.0 licensed and free forever. Bring your own keys, run your own models, contribute back. If a backlog item caught your eye &mdash; we'd love a PR.</p>
+    <p>PacketADE is Apache 2.0 licensed and free forever. Bring your own keys, run your own models, contribute back. If a track above caught your eye, the backlog is public.</p>
     <div class="cta-buttons">
       <a href="https://github.com/packetloss404/PacketADE/releases" class="btn-primary">Download latest</a>
       <a href="https://github.com/packetloss404/PacketADE" class="btn-outline" target="_blank" rel="noopener">View source</a>

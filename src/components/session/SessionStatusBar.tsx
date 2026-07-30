@@ -1,6 +1,5 @@
 import { ClaudeStatusBar } from "@/components/session/ClaudeStatusBar";
 import { CodexStatusBar } from "@/components/session/CodexStatusBar";
-import { GeminiStatusBar } from "@/components/session/GeminiStatusBar";
 import { OpenCodeStatusBar } from "@/components/session/OpenCodeStatusBar";
 
 interface SessionStatusBarProps {
@@ -13,7 +12,6 @@ export function SessionStatusBar({ cliCommand, alive, projectPath }: SessionStat
   if (!alive) return null;
   if (cliCommand === "claude") return <ClaudeStatusBar projectPath={projectPath} />;
   if (cliCommand === "codex") return <CodexStatusBar projectPath={projectPath} />;
-  if (cliCommand === "gemini") return <GeminiStatusBar projectPath={projectPath} />;
   if (cliCommand === "opencode") return <OpenCodeStatusBar projectPath={projectPath} />;
   return null;
 }

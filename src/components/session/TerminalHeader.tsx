@@ -41,7 +41,6 @@ export function TerminalHeader({
           className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${c.text} ${c.bg} border ${c.border}`}
         >
           {cliCommand === "claude" ? "Claude"
-            : cliCommand === "gemini" ? "Gemini"
             : cliCommand === "opencode" ? "OpenCode"
             : cliCommand === "packetcode" ? "PacketCode"
             : "Codex"}

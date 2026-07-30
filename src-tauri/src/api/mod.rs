@@ -16,8 +16,6 @@ pub enum WorkspaceAgentSlotDto {
     ClaudeCode,
     #[serde(rename = "codex")]
     Codex,
-    #[serde(rename = "gemini")]
-    Gemini,
     #[serde(rename = "opencode")]
     Opencode,
     #[serde(rename = "packetcode")]
@@ -1118,9 +1116,10 @@ impl From<String> for WorkspaceAgentSlotDto {
             "terminal" => Self::Terminal,
             "claude-code" => Self::ClaudeCode,
             "codex" => Self::Codex,
-            "gemini" => Self::Gemini,
             "opencode" => Self::Opencode,
             "packetcode" => Self::Packetcode,
+            // Unknown or retired slots (e.g. the removed "gemini" CLI) degrade
+            // to a plain terminal pane so persisted workspaces keep loading.
             _ => Self::Terminal,
         }
     }
@@ -1132,7 +1131,6 @@ impl From<WorkspaceAgentSlotDto> for String {
             WorkspaceAgentSlotDto::Terminal => "terminal".to_string(),
             WorkspaceAgentSlotDto::ClaudeCode => "claude-code".to_string(),
             WorkspaceAgentSlotDto::Codex => "codex".to_string(),
-            WorkspaceAgentSlotDto::Gemini => "gemini".to_string(),
             WorkspaceAgentSlotDto::Opencode => "opencode".to_string(),
             WorkspaceAgentSlotDto::Packetcode => "packetcode".to_string(),
         }

@@ -144,7 +144,6 @@ export type ApiAgentCli =
 export type AgentCli =
   | "claude-code"
   | "codex"
-  | "gemini"
   | "opencode"
   | "packetcode"
   | "api-claude-oauth"
@@ -212,6 +211,30 @@ function apiAgentCommandPath(agent: AgentCli): string | null {
 
 /** Cleanup functions for API conversation event listeners. */
 const apiConversationCleanup = new Map<string, () => void>();
+
+/** In-flight installApiAgentListeners promises, keyed by conversation id.
+ * Closes the TOCTOU where two concurrent resumes both pass the
+ * apiConversationCleanup.has() check and double-install listener sets
+ * (the second set() would overwrite the first cleanup fn, permanently
+ * leaking the first set's listeners). */
+const apiListenerInstallInFlight = new Map<string, Promise<void>>();
+
+/** Conversations whose resumeApiConversation is currently mid-flight, so
+ * sendMessage routes a concurrent second send into the queued-message path
+ * instead of spawning a duplicate resume + session start. */
+const apiResumeInFlight = new Set<string>();
+
+/** Detach and forget the api-agent listener block for `id`, so the next
+ * sendMessage routes through resumeApiConversation (F1) and re-creates the
+ * backend session. Used when the backend reports the session no longer
+ * exists (sidecar crash fan-out, "No active session"). */
+export function releaseApiConversationListeners(id: string): void {
+  const cleanup = apiConversationCleanup.get(id);
+  if (cleanup) {
+    cleanup();
+    apiConversationCleanup.delete(id);
+  }
+}
 
 /** Per-conversation guard so auto-failover never loops. Cleared whenever
  * the user sends a fresh user turn; replenished on a successful turn.
@@ -430,8 +453,24 @@ interface AgentTaskStore {
  */
 async function ensureApiAgentListeners(id: string): Promise<void> {
   if (apiConversationCleanup.has(id)) return;
-  const cleanup = await installApiAgentListeners(id);
-  apiConversationCleanup.set(id, cleanup);
+  // Single-flight: installApiAgentListeners awaits ~14 sequential listen()
+  // IPC registrations, so the map entry lands well after the has() check
+  // above. Memoize the in-flight install so concurrent callers share one
+  // listener set instead of double-installing (and orphaning) one.
+  let install = apiListenerInstallInFlight.get(id);
+  if (!install) {
+    install = installApiAgentListeners(id)
+      .then((cleanup) => {
+        apiConversationCleanup.set(id, cleanup);
+      })
+      .finally(() => {
+        // Clears on rejection too, so a failed install can be retried by
+        // the next send exactly as today.
+        apiListenerInstallInFlight.delete(id);
+      });
+    apiListenerInstallInFlight.set(id, install);
+  }
+  return install;
 }
 
 async function captureMcpTrustSnapshot(
@@ -697,8 +736,15 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
 
     // F1: hydrated API conversations have no live listeners — route the
     // first send-after-restart through the resume path so the Rust side
-    // re-creates the session before the message arrives.
-    if (conv.mode === "api" && !apiConversationCleanup.has(conversationId)) {
+    // re-creates the session before the message arrives. If a resume is
+    // already mid-flight, fall through to the isRunning queue below (the
+    // resume synchronously set status "active" + a streaming placeholder)
+    // instead of spawning a duplicate resume/session start.
+    if (
+      conv.mode === "api" &&
+      !apiConversationCleanup.has(conversationId) &&
+      !apiResumeInFlight.has(conversationId)
+    ) {
       void get().resumeApiConversation(conversationId, effectiveContent, attachments);
       return;
     }
@@ -792,6 +838,13 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         // Mark the conversation failed AND clear the streaming assistant
         // placeholder created just above — otherwise its spinner never stops.
         failTurn(conversationId, assistantMsgId, err);
+        // "No active session" means the backend has no record of this id
+        // (e.g. sidecar crashed and the supervisor cleared ownership). Drop
+        // the listener block so the next send routes through
+        // resumeApiConversation and re-creates the session (F1).
+        if (String(err).includes("No active session")) {
+          releaseApiConversationListeners(conversationId);
+        }
       });
     } else {
       // PTY mode
@@ -1337,6 +1390,13 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   resumeApiConversation: async (conversationId, content, attachments) => {
     const conv = get().conversations.find((c) => c.id === conversationId);
     if (!conv || conv.mode !== "api" || !conv.provider || !conv.model) return;
+    // Belt-and-braces re-entry guard; sendMessage already routes around an
+    // in-flight resume via apiResumeInFlight, but direct callers must not
+    // be able to double-start the backend session either. The add happens
+    // in this synchronous prefix (before any await) so no interleaving can
+    // observe the flag unset mid-resume.
+    if (apiResumeInFlight.has(conversationId)) return;
+    apiResumeInFlight.add(conversationId);
 
     failoverGuard.delete(conversationId);
 
@@ -1450,6 +1510,16 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       // Clear the streaming placeholder we appended above — no `api-agent:*`
       // event will arrive, so without this the assistant bubble spins forever.
       failTurn(conversationId, assistantMsgId, e);
+      // Same session-loss recovery as sendMessage's catch: if the backend
+      // rejected because it has no session under this id, drop the listener
+      // block (ensureApiAgentListeners above may have registered it before
+      // startApiAgentSession failed) so the next send re-routes through this
+      // resume path instead of dying once more on the plain-send path.
+      if (String(e).includes("No active session")) {
+        releaseApiConversationListeners(conversationId);
+      }
+    } finally {
+      apiResumeInFlight.delete(conversationId);
     }
   },
 

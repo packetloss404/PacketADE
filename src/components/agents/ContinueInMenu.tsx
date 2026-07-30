@@ -79,7 +79,6 @@ interface CliContinuation {
 const CONTINUATION_CLIS: Partial<Record<AgentCli, CliContinuation>> = {
   "claude-code": { command: "claude", label: "Claude" },
   codex: { command: "codex", label: "Codex" },
-  gemini: { command: "gemini", label: "Gemini" },
   opencode: { command: "opencode", label: "OpenCode" },
   packetcode: { command: "packetcode", label: "PacketCode" },
   "api-claude-oauth": { command: "claude", label: "Claude" },

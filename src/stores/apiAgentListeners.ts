@@ -54,6 +54,7 @@ import {
   requestConversationSave,
   failoverGuard,
   failTurn,
+  releaseApiConversationListeners,
 } from "@/stores/agentTaskStore";
 import type {
   AgentConversation,
@@ -187,6 +188,13 @@ function sendPromotedQueuedMessage(
     // previously this only flipped status to "failed", leaving the assistant
     // bubble spinning forever.
     failTurn(conversationId, assistantMsg.id, err);
+    // Same session-loss recovery as sendMessage's catch: "No active session"
+    // means the backend has no record of this id, so drop the listener block
+    // and let the next send route through resumeApiConversation (F1) instead
+    // of failing once more on the dead plain-send path.
+    if (String(err).includes("No active session")) {
+      releaseApiConversationListeners(conversationId);
+    }
   });
 }
 
@@ -357,9 +365,14 @@ export async function installApiAgentListeners(conversationId: string): Promise<
         const queued = c.queuedMessages ?? [];
         let remainingQueued = queued;
         const shouldDrainQueued = !event.payload.cancelled && queued.length > 0;
-        if (queued.length > 0) {
+        if (shouldDrainQueued) {
           nextQueued = queued[0];
           remainingQueued = queued.slice(1);
+        } else if (event.payload.cancelled) {
+          // Cancelled turn: never auto-send a message the user queued behind
+          // a turn they just killed. Mirror cancelActiveConversation (G33):
+          // clear the queue and drop `queued:true` bubbles so none stick.
+          remainingQueued = [];
         }
         let promotedDrainingBubble = false;
         const visibleMessages = shouldDrainQueued
@@ -371,7 +384,9 @@ export async function installApiAgentListeners(conversationId: string): Promise<
               }
               return m;
             })
-          : messages;
+          : event.payload.cancelled
+            ? messages.filter((m) => !m.queued)
+            : messages;
         const newResume = event.payload.resume_token ?? c.resumeToken;
         const next: AgentConversation = {
           ...c,
@@ -473,6 +488,31 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     if (updated) {
       // Pref-gated error notification (honors onSessionError + debounce).
       void notifySessionError(id, updated.title);
+    }
+
+    // Session-loss sentinels from the Rust sidecar supervisor: the crash
+    // fan-out (supervisor.rs SIDECAR_RESTART_RECOVERABLE_ERROR), the
+    // restart-loop give-up message, and the per-session SSH sidecar exit
+    // handler. In all cases the supervisor has cleared session ownership,
+    // so a resend via send_api_agent_message can only 404 with "No active
+    // session". Release the listener block (deferred past this event
+    // dispatch) so the next sendMessage takes the F1 resume path and
+    // re-creates the session — making "please resend your message" true.
+    // Keep these substrings in sync with
+    // src-tauri/src/commands/agent_sidecar/supervisor.rs.
+    //
+    // Intentionally NOT in this set: the SSH spawn failure ("Failed to
+    // spawn SSH sidecar for ...", supervisor.rs). It surfaces only as a
+    // start_session command rejection — never as an api-agent:error event
+    // — so it is handled by the send/resume catches' "No active session"
+    // recovery, not here.
+    const msg = event.payload.message;
+    const sessionLost =
+      msg.includes("Sidecar restarted") ||
+      msg.includes("Sidecar crashed and could not restart") ||
+      /^SSH sidecar for .+ (exited|wait failed)/.test(msg);
+    if (sessionLost) {
+      setTimeout(() => releaseApiConversationListeners(id), 0);
     }
   });
 

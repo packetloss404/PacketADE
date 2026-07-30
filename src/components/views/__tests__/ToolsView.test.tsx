@@ -65,7 +65,9 @@ describe("ToolsView six-group Settings IA", () => {
     fireEvent.click(screen.getByRole("button", { name: "CLI Clients" }));
     expect(screen.getByText("CLI clients card")).toBeInTheDocument();
     expect(screen.getByLabelText("Setting scopes")).toHaveTextContent("New sessions");
-  });
+    // First test in the file pays the full ToolsView import graph; under
+    // parallel suite load that can exceed the default 5s per-test budget.
+  }, 15000);
 
   it("searches across groups with product terminology", () => {
     render(<ToolsView />);

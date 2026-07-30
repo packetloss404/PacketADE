@@ -96,6 +96,14 @@ pub async fn accumulate_executor_cost(
 pub struct ExecutorSessionOwner {
     pub flight_id: String,
     pub model: String,
+    /// Stripped provider id (e.g. "openai-codex", "claude-oauth"): recorded
+    /// directly on the attempt for the attempt linkage, and derived from the
+    /// task's `agent_config_id` with the `api-` prefix stripped (mirroring
+    /// asyncFlightStore's derivation) for the milestone-task linkage. The
+    /// sidecar `turn_summary` handler uses this to decide whether the
+    /// event's totals are per-turn deltas or session-cumulative snapshots
+    /// (openai-codex).
+    pub provider: String,
 }
 
 /// Reverse-lookup: find the Flight that owns the executor session whose
@@ -110,12 +118,11 @@ pub struct ExecutorSessionOwner {
 ///     (planner tasks running through `core::orchestrator`)
 ///
 /// The attempt linkage carries `model` directly on `Attempt`. The task
-/// linkage doesn't carry a model on `Task` itself, so the lookup falls
-/// back to the empty string — `pricing::calculate_cost` treats an unknown
-/// model as zero-priced (returns `0.0`), which means the task path will
-/// still roll up tokens onto `total_tokens` but cost onto `total_cost`
-/// will only land when the model is resolvable. (Acceptable trade for v1
-/// — once `Task` grows a `model` field we can return it here too.)
+/// linkage returns `Task::model` when set, falling back to the empty
+/// string when it is `None` — `pricing::calculate_cost` treats an unknown
+/// model as zero-priced (returns `0.0`), which means such a task will
+/// still roll up tokens onto `total_tokens` but its cost lands on
+/// `total_cost` only when the model is resolvable.
 ///
 /// Cheap: O(flights × (attempts + milestones × tasks_per_milestone)).
 /// State sizes are small enough in practice that linear scan beats
@@ -129,16 +136,24 @@ pub fn flight_for_executor_session(
             return Some(ExecutorSessionOwner {
                 flight_id: f.id.clone(),
                 model: a.model.clone(),
+                provider: a.provider.clone(),
             });
         }
-        if f.milestones.iter().any(|m| {
-            m.tasks
-                .iter()
-                .any(|t| t.session_id.as_deref() == Some(session_id))
-        }) {
+        if let Some(t) = f
+            .milestones
+            .iter()
+            .flat_map(|m| m.tasks.iter())
+            .find(|t| t.session_id.as_deref() == Some(session_id))
+        {
             return Some(ExecutorSessionOwner {
                 flight_id: f.id.clone(),
-                model: String::new(),
+                model: t.model.clone().unwrap_or_default(),
+                // Same derivation asyncFlightStore uses for attempts: the
+                // task's agent id minus the `api-` prefix. Without this, a
+                // codex-backed task session would take the per-turn branch
+                // in the sidecar turn_summary handler and re-add its
+                // session-cumulative totals on every update.
+                provider: t.agent_config_id.trim_start_matches("api-").to_string(),
             });
         }
     }
@@ -450,9 +465,10 @@ mod hermetic_money_path {
     }
 
     /// Legacy milestone-task linkage: a session id living on
-    /// `flight.milestones[].tasks[].session_id` still resolves to the owning
-    /// flight, but `Task` carries no model, so the owner's model is empty
-    /// (priced as zero downstream — the documented v1 trade).
+    /// `flight.milestones[].tasks[].session_id` resolves to the owning
+    /// flight; the provider derives from the task's `agent_config_id`, and
+    /// a `model: None` task yields an empty model (priced as zero
+    /// downstream).
     #[test]
     fn executor_lookup_milestone_task_linkage_returns_empty_model() {
         let mut f = base_flight("flight-b");
@@ -462,7 +478,31 @@ mod hermetic_money_path {
         let owner = flight_for_executor_session(&state, "exec-sess-2")
             .expect("task-linked session must resolve");
         assert_eq!(owner.flight_id, "flight-b");
-        assert_eq!(owner.model, "", "task linkage has no model");
+        assert_eq!(owner.model, "", "model: None task yields empty model");
+        assert_eq!(
+            owner.provider, "claude-code",
+            "provider derives from the task's agent_config_id"
+        );
+    }
+
+    /// Milestone-task linkage with an `api-*` agent: the `api-` prefix is
+    /// stripped (mirroring asyncFlightStore) and `Task::model` is returned,
+    /// so a codex-backed task session takes the cumulative-snapshot branch
+    /// in the sidecar turn_summary handler instead of the per-turn branch.
+    #[test]
+    fn executor_lookup_milestone_task_linkage_strips_api_prefix_and_returns_model() {
+        let mut task = task_with_session("exec-sess-2b");
+        task.agent_config_id = "api-openai-codex".to_string();
+        task.model = Some("gpt-5.2-codex".to_string());
+        let mut f = base_flight("flight-b2");
+        f.milestones = vec![milestone_with(vec![task])];
+        let state = state_with(vec![f]);
+
+        let owner = flight_for_executor_session(&state, "exec-sess-2b")
+            .expect("task-linked session must resolve");
+        assert_eq!(owner.flight_id, "flight-b2");
+        assert_eq!(owner.provider, "openai-codex");
+        assert_eq!(owner.model, "gpt-5.2-codex");
     }
 
     /// Miss: a session id referenced by nobody resolves to `None`.

@@ -12,7 +12,6 @@ Use these as the trust anchors before reading older plan files:
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Session restart point                | [`../HANDOFF.md`](../HANDOFF.md)                                                                                                                                                                                                     | **CURRENT** — completed product decisions, the five pending main-shell/right-dock choices, environment gates, latest Windows build evidence, guardrails, and recommended first prompt.                                                                                               |
 | Live task register                   | [`../backlog.md`](../backlog.md)                                                                                                                                                                                                     | Single source for outstanding work. The July P1/P2 hardening loop is complete.                                                                                                                                                                                                       |
-| Reliability remediation              | [`reliability-low-fix-loop-2026-07-19.md`](./reliability-low-fix-loop-2026-07-19.md)                                                                                                                                                 | Completed 30-finding revalidation, fix, regression, and verification record.                                                                                                                                                                                                         |
 | Release priorities                   | [`../ROADMAP.md`](../ROADMAP.md)                                                                                                                                                                                                     | Short current summary; detailed plans stay in this folder.                                                                                                                                                                                                                           |
 | **Current product contract**         | [`workspace-agents-restructuring-goal.md`](./workspace-agents-restructuring-goal.md)                                                                                                                                                 | **COMPLETE** — CLI/PacketCode-first Workspaces, first-class same-window Agents, attachment producers retired, saved-pane compatibility preserved, and detachable interactivity deferred pending a single-writer contract.                                                            |
 | Workspace/Agents WA0 contract        | [`workspace-agents-wa0-route-contract.md`](./workspace-agents-wa0-route-contract.md)                                                                                                                                                 | **LOCKED** — authoritative current/target route matrix, creation ownership, compatibility policy, handoff authority boundaries, detachable-window gate, and WA1–WA4 implementation proof.                                                                                            |
@@ -36,15 +35,38 @@ Use these as the trust anchors before reading older plan files:
 | Local-first MCP Hub                  | [`bridgemind/local-first-mcp-hub-loop.md`](./bridgemind/local-first-mcp-hub-loop.md)                                                                                                                                                 | SOURCE COMPLETE — reviewed catalog, diagnostics, protocol-v11 frozen trust including the Codex CLI MCP trust proxy, audit/reconnect, suite resources, and unified UI; real Codex/local/SSH and packaged MCPH3/MCPH8 proof remains.                                                   |
 | Dictation repair loop                | [`bridgemind/dictation-repair-hardening-loop.md`](./bridgemind/dictation-repair-hardening-loop.md)                                                                                                                                   | DV1–DV16 SOURCE COMPLETE — stable device doctor, bounded capture, opt-in shortcut trust, safe editor/PTY insertion, packaging metadata, and private telemetry added; physical/package matrix and DV17 are gated.                                                                     |
 | Trust and provenance loop            | [`bridgemind/trust-provenance-loop.md`](./bridgemind/trust-provenance-loop.md)                                                                                                                                                       | TP1–TP7 SOURCE COMPLETE — shared envelope, ingestion/persistence, UI, risky-action gates, downstream lineage, and redacted audit are implemented; packaged provider/SSH parity is gated.                                                                                             |
-| Memory v0.9+ loop                    | [`memory-v9-loop.md`](./memory-v9-loop.md)                                                                                                                                                                                           | SHIPPED (M1–M10, merged 2026-07-24) — fleshed out the Memory pane: fixed half-wired gaps (search/task_completed/confidence/retrospective) + shipped the deferred enhancements. Embeddings deferred.                                                                                  |
-| Gitea/Forgejo support loop           | [`gitea-support-loop.md`](./gitea-support-loop.md)                                                                                                                                                                                   | SHIPPED (G1–G14, merged 2026-07-25) — self-hosted Gitea/Forgejo alongside GitHub, both configurable at once, resolved per-workspace from the origin remote. Peer-reviewed.                                                                                                           |
 | GitHub pane v0.9+ loop               | [`github-pane-v9-loop.md`](./github-pane-v9-loop.md)                                                                                                                                                                                 | SHIPPED GP1–GP7; the follow-on Issue⇄Flight P0–P3 source is now complete and awaits packaged GitHub/Gitea proof.                                                                                                                                                                     |
+| Issue ⇄ Flight mirroring             | [`issue-flight-mirror-design.md`](./issue-flight-mirror-design.md)                                                                                                                                                                   | P0–P3 source implemented; packaged GitHub/Gitea proof remains (GP7 gate).                                                                                                                                                                                                            |
 | SSH & remote workspaces loop         | [`ssh-remote-loop.md`](./ssh-remote-loop.md)                                                                                                                                                                                         | SHIPPED S1–S8 plus the native S7 wire rename (`serverId`, legacy aliases retained). S9/S10/S11 remain environment-gated.                                                                                                                                                             |
 | SSH workspace parity                 | [`sidecar-over-ssh-verification.md`](./sidecar-over-ssh-verification.md)                                                                                                                                                             | Test and manual verification contract for subscription providers on remote workspaces.                                                                                                                                                                                               |
-| MCP provider transport               | [`mcp-provider-transport.md`](./mcp-provider-transport.md)                                                                                                                                                                           | SHIPPED (N3) — PacketADE-as-MCP-server: reads + opt-in append-only writes. Doc records the cut/deferred tools.                                                                                                                                                                       |
+| Local model routing (Ollama-first)   | [`local-model-routing.md`](./local-model-routing.md)                                                                                                                                                                                 | **PLANNED — not started.** Decision record rejecting a Cursor-style gateway/own-model stack, the three-mechanism audit of how auxiliary surfaces reach a model, the Ollama context/keep-alive/tool-capability defects, and the LM1–LM7 plan.                                          |
 | Build and release ops                | [`multi-platform-build.md`](./multi-platform-build.md), [`updater-setup.md`](./updater-setup.md), [`local-quality-gates.md`](./local-quality-gates.md), [`beta-distribution-trust-runbook.md`](./beta-distribution-trust-runbook.md) | Operational runbooks, not feature backlogs.                                                                                                                                                                                                                                          |
 | v0.10.2 release record               | [`release-v0.10.2.md`](./release-v0.10.2.md)                                                                                                                                                                                         | Windows x64 build gates, artifact sizes/hashes, unsigned status, and known non-failing warnings.                                                                                                                                                                                     |
 | Historical plans                     | [`archive/`](./archive/)                                                                                                                                                                                                             | Cold storage; do not treat as current unless an active doc links to a specific artifact as background.                                                                                                                                                                               |
+
+### Recently archived — 2026-07-30
+
+The midway-review consolidation moved fourteen completed/historical root-level
+files into [`archive/`](./archive/). Their final states are recorded in the
+docs themselves; the short version:
+
+- **Shipped loops (all gates closed):** `gitea-support-loop.md` (G1–G14),
+  `memory-v9-loop.md` (M1–M10), `mcp-provider-transport.md` (N3 read-only MCP
+  server; records the cut/deferred tools),
+  `reliability-low-fix-loop-2026-07-19.md` (all 30 findings closed; the
+  Windows loader follow-up landed 2026-07-29).
+- **Completed July hardening loop:** `p1-p2-fix-loop-spec.md`,
+  `p1-p2-fix-loop.workflow.js`, `session-resume-2026-07-19.md`.
+- **Superseded design/audit snapshots:** `conversation-tile-design.md`
+  (superseded by the Workspace/Agents restructuring),
+  `consensus-ux-consolidation-plan.md` (program executed),
+  `codebase-state-2026-07-16.md` (dated snapshot),
+  `code-review-2026-05-31.md`, `code-review-2026-06-07.md`,
+  `rename-audit-report-2026-06-15.html`,
+  `packetade-other-plans-rundown.html`.
+
+Outstanding items those docs surfaced live in [`../backlog.md`](../backlog.md),
+not in the archived files.
 
 ### Verification checkpoint — 2026-07-30
 
@@ -61,6 +83,19 @@ Live microphone/SSH/provider/external-editor, real Codex MCP, PacketAgent,
 other-platform, signing, updater, and manual packaged proof remain open exactly
 where the loop ledgers say they do.
 
+### Verification checkpoint — 2026-07-30 (planning-doc consolidation)
+
+Midway-review consolidation of this directory: every root-level `dev/*.md`
+header was re-read and classified ACTIVE / REFERENCE / ARCHIVED against its own
+status line; the fourteen files listed under "Recently archived" above were
+`git mv`-ed into `archive/`, and links in kept docs (`ssh-remote-loop.md`,
+`github-pane-v9-loop.md`, `workspace-agent-settings-decision-2026-07-29.md`,
+`../backlog.md`, `../ROADMAP.md`) were repointed. Docs with open gates —
+GP7 packaged proof, Issue⇄Flight packaged proof, S9/S10/S11, Monitor packaged
+proof, the main-shell owner decisions, the Settings authority corrections, and
+the new `local-model-routing.md` plan — remain in the root and in the table
+above. No archived doc's content was edited.
+
 ## Reference
 
 Technical runbooks and how-tos. Not backlog items themselves (those live in [`/backlog.md`](../backlog.md)), but the docs the backlog points at.
@@ -71,11 +106,10 @@ Technical runbooks and how-tos. Not backlog items themselves (those live in [`/b
 - `sidecar-over-ssh-verification.md` — test and manual checklist for Sidecar-over-SSH provider parity
 - `updater-setup.md` — runbook for wiring up the Tauri v2 auto-updater (currently not enabled)
 - `bridgemind/swarm-orchestration-plan.md` — shipped human-in-the-loop escalation design record
-- `bridgemind/packetade-mcp-server-plan.md` / `mcp-provider-transport.md` — shipped PacketADE MCP-provider design records; future Hub expansion belongs to `bridgemind/local-first-mcp-hub-loop.md`
+- `bridgemind/packetade-mcp-server-plan.md` / `archive/mcp-provider-transport.md` — shipped PacketADE MCP-provider design records; future Hub expansion belongs to `bridgemind/local-first-mcp-hub-loop.md`
 - `ssh-tech-debt.md` — redirect to `/backlog.md` (left for old links)
-- `p1-p2-fix-loop-spec.md` / `session-resume-2026-07-19.md` — completed July hardening loop and verification record
 
-> Dated `code-review-YYYY-MM-DD.md` files (e.g. `code-review-2026-05-31.md`, `code-review-2026-06-07.md`) are intentionally left unindexed point-in-time audit artifacts; actionable items from them land in `/backlog.md`.
+> Dated `code-review-YYYY-MM-DD.md` audit artifacts now live in `archive/`; actionable items from them land in `/backlog.md`.
 
 ## Active (Outstanding Items)
 
@@ -163,7 +197,14 @@ remain user-launched. Do not restore archived Planner v1.
 - `archive/zen-workspace/` — workspace model plan, gap analysis, research, project-workspaces feature spec
 - `archive/vibetotext/` — sprint plan, features spec, README
 
-> Dated `code-review-YYYY-MM-DD.md` files (e.g. `code-review-2026-05-31.md`, `code-review-2026-06-07.md`) are intentionally unindexed: they are point-in-time audit artifacts, not active planning docs. Outstanding items they surfaced are tracked in [`/backlog.md`](../backlog.md).
+Added 2026-07-30 (midway-review consolidation — see "Recently archived" above for one-line summaries):
+
+- `archive/gitea-support-loop.md`, `archive/memory-v9-loop.md`, `archive/mcp-provider-transport.md`, `archive/reliability-low-fix-loop-2026-07-19.md` — shipped loops, all gates closed
+- `archive/p1-p2-fix-loop-spec.md`, `archive/p1-p2-fix-loop.workflow.js`, `archive/session-resume-2026-07-19.md` — completed July P1/P2 hardening loop
+- `archive/conversation-tile-design.md`, `archive/consensus-ux-consolidation-plan.md` — superseded/executed 2026-07 UX design programs
+- `archive/codebase-state-2026-07-16.md` — dated codebase snapshot (protocol/version facts have drifted; do not cite)
+- `archive/code-review-2026-05-31.md`, `archive/code-review-2026-06-07.md` — point-in-time audit artifacts; outstanding items live in [`/backlog.md`](../backlog.md)
+- `archive/rename-audit-report-2026-06-15.html`, `archive/packetade-other-plans-rundown.html` — historical HTML reports
 
 ## Tracks (All Implemented)
 

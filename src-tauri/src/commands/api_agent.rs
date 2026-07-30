@@ -1573,7 +1573,7 @@ fn spawn_executor_cost_rollup(
             return;
         }
         let _ = app.emit(
-            &format!("flight-planner:cost-updated:{}", owner.flight_id),
+            "flight:cost-updated",
             serde_json::json!({
                 "flightId": owner.flight_id,
                 "inputTokens": input_tokens,

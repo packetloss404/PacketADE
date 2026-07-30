@@ -2,7 +2,7 @@
 
 Created: 2026-07-25
 Backlog: [`../backlog.md`](../backlog.md) → "SSH & remote workspaces".
-Shape: same gated-loop cadence as [`gitea-support-loop.md`](./gitea-support-loop.md)
+Shape: same gated-loop cadence as [`archive/gitea-support-loop.md`](./archive/gitea-support-loop.md)
 (discrete, independently-gated items; per-item commit; verify → record).
 
 ## Objective
