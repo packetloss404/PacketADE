@@ -86,10 +86,7 @@ function createFitAddonRef() {
   };
 }
 
-async function startHook(
-  onSessionEnded?: () => void,
-  env?: Record<string, string>,
-) {
+async function startHook(onSessionEnded?: () => void, env?: Record<string, string>) {
   const { term, ref: xtermRef } = createTerminalRef();
   const { fitAddon, ref: fitAddonRef } = createFitAddonRef();
   const sessionIdRef = { current: null } as RefObject<string | null>;
@@ -170,15 +167,54 @@ describe("useTerminalSession", () => {
       PACKETCODE_HOME: "D:\\PacketCodeData",
     });
 
-    expect(mockCreatePtySession).toHaveBeenCalledWith(
-      "/project-a",
-      120,
-      40,
-      "claude",
-      null,
-      { PACKETCODE_HOME: "D:\\PacketCodeData" },
-    );
+    expect(mockCreatePtySession).toHaveBeenCalledWith("/project-a", 120, 40, "claude", null, {
+      PACKETCODE_HOME: "D:\\PacketCodeData",
+    });
     unmount();
+  });
+
+  it("waits for activation, then auto-starts only once across visibility changes", async () => {
+    const { ref: xtermRef } = createTerminalRef();
+    const { ref: fitAddonRef } = createFitAddonRef();
+    const sessionIdRef = { current: null } as RefObject<string | null>;
+
+    const hook = renderHook(
+      ({ autoStart }) =>
+        useTerminalSession({
+          paneId: "pane-gated",
+          autoStart,
+          cliCommand: "claude",
+          projectPath: "/project-a",
+          xtermRef,
+          fitAddonRef,
+          sessionIdRef,
+        }),
+      { initialProps: { autoStart: false } },
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+    });
+    expect(mockCreatePtySession).not.toHaveBeenCalled();
+
+    hook.rerender({ autoStart: true });
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mockCreatePtySession).toHaveBeenCalledTimes(1);
+
+    hook.rerender({ autoStart: false });
+    hook.rerender({ autoStart: true });
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+    });
+    expect(mockCreatePtySession).toHaveBeenCalledTimes(1);
+
+    hook.unmount();
   });
 
   it("writes PTY output to xterm without altering ANSI sequences", async () => {

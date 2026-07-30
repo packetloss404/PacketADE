@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { ShieldAlert } from "lucide-react";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import { focusConversationDeepLink } from "@/stores/sessionGlue";
+import { openConversationInAgents } from "@/stores/sessionGlue";
 
 /**
  * P1-9: pin approvals that scroll out of view. A blocking permission prompt
@@ -31,8 +31,7 @@ export function PinnedApprovalBanner() {
       if (queue.length === 0) continue;
       waiting.set(conversationId, (waiting.get(conversationId) ?? 0) + queue.length);
     }
-    const entries: { conversationId: string; title: string; count: number }[] =
-      [];
+    const entries: { conversationId: string; title: string; count: number }[] = [];
     for (const [conversationId, count] of waiting) {
       const conv = conversations.find((c) => c.id === conversationId);
       entries.push({
@@ -50,25 +49,22 @@ export function PinnedApprovalBanner() {
   const totalCount = outOfView.reduce((sum, e) => sum + e.count, 0);
   const moreConversations = outOfView.length - 1;
 
-  // Tile program (P5-S1): routes through the materializing deep-link path — the
-  // blocked conversation lands on its focused+flashed workspace tile with the
-  // pending approval visible (replacing the retired Agents-tab navigation).
   const jump = () => {
-    focusConversationDeepLink(first.conversationId);
+    openConversationInAgents(first.conversationId);
   };
 
   return (
     <div
       role="status"
       aria-live="polite"
-      className="fixed bottom-8 right-4 z-40 flex items-center gap-2 max-w-[380px] px-3 py-2 rounded border border-accent-amber/50 bg-bg-elevated shadow-lg animate-[welcomeFadeIn_150ms_ease-out] motion-reduce:animate-none"
+      className="border-accent-amber/50 fixed bottom-8 right-4 z-40 flex max-w-[380px] animate-[welcomeFadeIn_150ms_ease-out] items-center gap-2 rounded border bg-bg-elevated px-3 py-2 shadow-lg motion-reduce:animate-none"
     >
-      <ShieldAlert size={14} className="text-accent-amber shrink-0" />
+      <ShieldAlert size={14} className="shrink-0 text-accent-amber" />
       <span className="min-w-0 flex-1 text-ui text-text-primary">
         <span className="font-medium">
           {totalCount} approval{totalCount === 1 ? "" : "s"} waiting
         </span>{" "}
-        <span className="text-text-secondary truncate">
+        <span className="truncate text-text-secondary">
           · {first.title}
           {moreConversations > 0 && ` +${moreConversations} more`}
         </span>
@@ -76,7 +72,7 @@ export function PinnedApprovalBanner() {
       <button
         type="button"
         onClick={jump}
-        className="shrink-0 text-ui px-2 py-1 rounded bg-accent-amber/15 hover:bg-accent-amber/25 text-accent-amber font-medium transition-colors"
+        className="bg-accent-amber/15 hover:bg-accent-amber/25 shrink-0 rounded px-2 py-1 text-ui font-medium text-accent-amber transition-colors"
       >
         Review
       </button>

@@ -1,0 +1,20 @@
+[
+  {
+    "id": "ws-wrap-conv-durable",
+    "name": "Downgraded wrapper",
+    "agents": [],
+    "panes": [
+      {
+        "id": "pane-stripped",
+        "agentId": "terminal",
+        "sessionId": null,
+        "conversationId": "conv-durable"
+      }
+    ],
+    "projectPath": "C:\\fixture\\project",
+    "createdAt": 5,
+    "updatedAt": 6,
+    "status": "active",
+    "origin": "conversation"
+  }
+]

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { CheckCircle2, MessageSquareText, Route } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
-import { focusConversationDeepLink } from "@/stores/sessionGlue";
+import { openConversationInAgents } from "@/stores/sessionGlue";
 import { materializeFlightPlan, parseLatestFlightPlan } from "@/lib/flightPlanning";
 import type { Flight } from "@/types/flight";
 
@@ -29,7 +29,7 @@ export function FlightPlanningCard({ flight }: { flight: Flight }) {
       setFeedback("The linked planning conversation is not available on this device.");
       return;
     }
-    focusConversationDeepLink(conversation.id);
+    openConversationInAgents(conversation.id);
   }
 
   function applyLatestPlan() {

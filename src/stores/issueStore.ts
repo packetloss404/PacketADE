@@ -3,6 +3,7 @@ import { loadFromStorage, saveToStorage, generateId as genId } from "@/lib/stora
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createIssueWorktree, saveIssuesSlice } from "@/lib/tauri";
 import { logSwallowed } from "@/lib/logSwallowed";
+import { getPreferredWorkspaceCli } from "@/lib/workspaceCliDefaults";
 
 /**
  * Issue lifecycle states.
@@ -666,7 +667,7 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
       );
     }
 
-    const workspaceId = workspaceState.createWorkspace(wsName, ["claude-code"], worktreePath, {
+    const workspaceId = workspaceState.createWorkspace(wsName, [getPreferredWorkspaceCli()], worktreePath, {
       prompt: initialPrompt,
     });
 

@@ -23,7 +23,7 @@ vi.mock("@/lib/tauri", () => ({
   togglePinnedPattern: vi.fn(),
   loadPersistedState: vi.fn(),
   // Pulled in transitively now that event cards deep-link into conversations
-  // (MemoryEventCard → focusConversationDeepLink → sessionGlue → agentTaskStore).
+  // (MemoryEventCard → openConversationInAgents → sessionGlue → agentTaskStore).
   loadConversations: vi.fn().mockResolvedValue([]),
 }));
 

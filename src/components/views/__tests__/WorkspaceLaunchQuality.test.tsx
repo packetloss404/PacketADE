@@ -42,6 +42,7 @@ const mocks = vi.hoisted(() => {
     appState: {
       initialized: true,
       setActiveView: vi.fn(),
+      openSettings: vi.fn(),
     },
     layoutState: {
       projectPath: "D:\\projects\\PacketADE",
@@ -60,6 +61,7 @@ const mocks = vi.hoisted(() => {
         { id: "codex", installed: true },
         { id: "gemini", installed: true },
         { id: "opencode", installed: true },
+        { id: "packetcode", installed: true },
       ],
       detecting: false,
     },
@@ -81,8 +83,13 @@ const mocks = vi.hoisted(() => {
         },
       ],
     },
+    delegateWorkspaceToAgents: vi.fn(),
   };
 });
+
+vi.mock("@/lib/agentHandoffs", () => ({
+  delegateWorkspaceToAgents: mocks.delegateWorkspaceToAgents,
+}));
 
 vi.mock("@/stores/workspaceStore", () => {
   const useWorkspaceStore = Object.assign(
@@ -114,14 +121,24 @@ vi.mock("@/stores/layoutStore", () => ({
 }));
 
 vi.mock("@/stores/agentStore", () => ({
-  useAgentStore: vi.fn((selector: (state: typeof mocks.agentState) => unknown) =>
-    selector(mocks.agentState),
+  useAgentStore: Object.assign(
+    vi.fn((selector: (state: typeof mocks.agentState) => unknown) =>
+      selector(mocks.agentState),
+    ),
+    {
+      getState: vi.fn(() => mocks.agentState),
+    },
   ),
 }));
 
 vi.mock("@/stores/serverStore", () => ({
-  useServerStore: vi.fn((selector: (state: typeof mocks.serverState) => unknown) =>
-    selector(mocks.serverState),
+  useServerStore: Object.assign(
+    vi.fn((selector: (state: typeof mocks.serverState) => unknown) =>
+      selector(mocks.serverState),
+    ),
+    {
+      getState: vi.fn(() => mocks.serverState),
+    },
   ),
 }));
 
@@ -175,13 +192,6 @@ vi.mock("@/components/workspace/GitDashboard", () => ({
   GitDashboard: () => <div />,
 }));
 
-// P3-S4: the AddAgentPicker's Chat section probes ~9 providers via Tauri IPC on
-// mount. Stub the hook so this WorkspaceView test needs no Tauri backend (the
-// terminal-gating assertion doesn't depend on auth state).
-vi.mock("@/components/agents/hooks/useProviderAuthStatus", () => ({
-  useProviderAuthStatus: () => ({ authStatus: {}, refreshAuthStatuses: vi.fn() }),
-}));
-
 describe("workspace launch installed-agent checks", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -200,7 +210,7 @@ describe("workspace launch installed-agent checks", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /duo/i }));
+    fireEvent.click(screen.getByRole("button", { name: /research/i }));
 
     // The new Location step debounces an SSH probe before enabling Save.
     // Wait for the button to become enabled before clicking it.
@@ -209,7 +219,7 @@ describe("workspace launch installed-agent checks", () => {
     fireEvent.click(saveBtn);
 
     expect(mocks.workspaceState.createWorkspace).toHaveBeenCalledWith(
-      "Duo",
+      "Research",
       ["claude-code"],
       "/srv/app",
       expect.objectContaining({
@@ -231,7 +241,7 @@ describe("workspace launch installed-agent checks", () => {
     expect(screen.getByText("Bypass permissions")).toBeInTheDocument();
     fireEvent.click(advancedToggle);
 
-    // Solo is the default-selected template (front door), so naming the
+    // Detected PacketCode is the default-selected template, so naming the
     // workspace is the only field a bare launch needs to touch.
     fireEvent.change(screen.getByPlaceholderText("My Workspace"), {
       target: { value: "My New Workspace" },
@@ -243,23 +253,31 @@ describe("workspace launch installed-agent checks", () => {
 
     expect(mocks.workspaceState.createWorkspace).toHaveBeenCalledWith(
       "My New Workspace",
-      ["claude-code"],
+      ["packetcode"],
       mocks.layoutState.projectPath,
       expect.anything(),
     );
   });
 
-  it("disables Terminal rows that are unavailable on the active remote server", () => {
+  it("disables CLI sessions that are unavailable on the active remote server", () => {
     render(<WorkspaceView />);
 
-    fireEvent.click(screen.getByRole("button", { name: /add agent/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add session/i }));
 
     // The remote server only reports claude-code installed, so the Codex CLI
-    // Terminal row is gated off while Claude Code adds instantly.
+    // row is gated off while Claude Code adds instantly.
     expect(screen.getByRole("button", { name: "Codex CLI" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Claude Code" }));
 
     expect(mocks.workspaceState.addPane).toHaveBeenCalledWith("ws-remote", "claude-code");
     expect(mocks.workspaceState.addPane).not.toHaveBeenCalledWith("ws-remote", "codex");
+  });
+
+  it("delegates the active Workspace target to the Agents launcher", () => {
+    render(<WorkspaceView />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Delegate" }));
+
+    expect(mocks.delegateWorkspaceToAgents).toHaveBeenCalledWith("ws-remote");
   });
 });

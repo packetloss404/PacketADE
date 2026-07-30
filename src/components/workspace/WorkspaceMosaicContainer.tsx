@@ -4,39 +4,35 @@ import { Minimize2 } from "lucide-react";
 import type { MosaicNode, MosaicPath } from "@/types/mosaic";
 import { WorkspacePane } from "./WorkspacePane";
 import { ConversationTile } from "./ConversationTile";
-import { DraftTile } from "./DraftTile";
 import type { Workspace } from "@/types/workspace";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useDraftTileStore } from "@/stores/draftTileStore";
 import { useReviewStore } from "@/stores/reviewStore";
-import { buildPresetTree, presetForCount, addToTree, removeFromTree, getLeafOrder } from "@/lib/mosaicPresets";
+import {
+  buildPresetTree,
+  presetForCount,
+  addToTree,
+  removeFromTree,
+  getLeafOrder,
+} from "@/lib/mosaicPresets";
 
 interface WorkspaceMosaicContainerProps {
   workspace: Workspace;
+  /** Permit initial PTY startup only for the visible, selected Workspace. */
+  autoStartTerminals?: boolean;
 }
 
 /**
  * Mosaic tiling container for workspace multi-agent grids.
  * Each workspace gets its own ephemeral mosaic tree.
  */
-export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainerProps) {
+export function WorkspaceMosaicContainer({
+  workspace,
+  autoStartTerminals = true,
+}: WorkspaceMosaicContainerProps) {
   const [tree, setTree] = useState<MosaicNode<string> | null>(null);
   const prevPaneKeyRef = useRef<string>("");
   const zoomedPaneId = useWorkspaceStore((s) => s.zoomedPaneId);
   const setZoomedPane = useWorkspaceStore((s) => s.setZoomedPane);
-
-  // P3-S4: draft conversation tiles are synthetic, non-persisted mosaic leaves
-  // that live in draftTileStore (never in workspace.panes). Fold their ids into
-  // the same tree-sync so a picked chat agent gets a first-run tile beside the
-  // real ones, and materializing it on send swaps the draft leaf for the real
-  // conversation pane. Subscribed as a stable comma string to avoid re-render
-  // churn.
-  const draftIdKey = useDraftTileStore((s) =>
-    s.drafts
-      .filter((d) => d.workspaceId === workspace.id)
-      .map((d) => d.id)
-      .join(","),
-  );
 
   // Clear zoom when workspace changes
   useEffect(() => {
@@ -63,11 +59,9 @@ export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainer
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [zoomedPaneId, setZoomedPane]);
 
-  // Sync the mosaic tree with workspace panes + draft tiles.
+  // Sync the mosaic tree with persisted Workspace panes.
   // Uses a stable paneKey string to detect actual changes and avoid double-fires.
-  const paneKey = [workspace.panes.map((p) => p.id).join(","), draftIdKey]
-    .filter(Boolean)
-    .join(",");
+  const paneKey = workspace.panes.map((p) => p.id).join(",");
   useEffect(() => {
     // Skip if the set of pane IDs hasn't actually changed
     if (paneKey === prevPaneKeyRef.current) return;
@@ -121,12 +115,9 @@ export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainer
     });
   }, [paneKey]);
 
-  const handleChange = useCallback(
-    (newTree: MosaicNode<string> | null) => {
-      setTree(newTree);
-    },
-    [],
-  );
+  const handleChange = useCallback((newTree: MosaicNode<string> | null) => {
+    setTree(newTree);
+  }, []);
 
   const renderTile = useCallback(
     (id: string, path: MosaicPath) => {
@@ -146,45 +137,27 @@ export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainer
             {pane.kind === "conversation" ? (
               <ConversationTile pane={pane} workspaceId={workspace.id} />
             ) : (
-              <WorkspacePane pane={pane} workspaceId={workspace.id} />
+              <WorkspacePane
+                pane={pane}
+                workspaceId={workspace.id}
+                autoStart={autoStartTerminals}
+              />
             )}
-          </MosaicWindow>
-        );
-      }
-
-      // P3-S4: a draft tile id (read live from draftTileStore — it isn't a
-      // persisted pane). No conversation exists yet; DraftTile owns the
-      // first-run face and materializes a real pane on first send.
-      const draft = useDraftTileStore.getState().drafts.find((d) => d.id === id);
-      if (draft) {
-        return (
-          <MosaicWindow<string>
-            path={path}
-            title="Draft"
-            toolbarControls={<></>}
-            renderToolbar={null}
-            draggable
-          >
-            <DraftTile draftId={id} workspace={workspace} />
           </MosaicWindow>
         );
       }
 
       return <div />;
     },
-    // Drafts are read live from draftTileStore.getState(); the tree value change
-    // (paneKey includes draftIdKey) is what re-invokes renderTile per leaf.
-    [workspace],
+    [autoStartTerminals, workspace],
   );
 
   // Find the zoomed pane (if it belongs to this workspace)
-  const zoomedPane = zoomedPaneId
-    ? workspace.panes.find((p) => p.id === zoomedPaneId)
-    : null;
+  const zoomedPane = zoomedPaneId ? workspace.panes.find((p) => p.id === zoomedPaneId) : null;
 
   return (
-    <div className="flex flex-col flex-1 overflow-hidden">
-      <div className="flex-1 relative overflow-hidden">
+    <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="relative flex-1 overflow-hidden">
         {/* Zoom maximizes the ALREADY-MOUNTED tile via CSS (see
             mosaic-overrides.css: .mosaic-zoom-active) instead of mounting a
             second WorkspacePane — a duplicate pane instance would auto-start
@@ -199,7 +172,7 @@ export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainer
         />
 
         {zoomedPane && (
-          <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1.5 px-2 py-1 rounded bg-bg-secondary/90 border border-bg-border text-meta text-text-muted select-none">
+          <div className="bg-bg-secondary/90 absolute bottom-3 right-3 z-20 flex select-none items-center gap-1.5 rounded border border-bg-border px-2 py-1 text-meta text-text-muted">
             <Minimize2 size={10} />
             <span>Press Esc to exit zoom</span>
           </div>

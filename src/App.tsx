@@ -58,6 +58,9 @@ const MemoryView = lazy(() =>
 const WorkspaceView = lazy(() =>
   import("@/components/views/WorkspaceView").then((m) => ({ default: m.WorkspaceView })),
 );
+const AgentsView = lazy(() =>
+  import("@/components/views/AgentsView").then((m) => ({ default: m.AgentsView })),
+);
 const FlightsView = lazy(() =>
   import("@/components/views/FlightsView").then((m) => ({ default: m.FlightsView })),
 );
@@ -99,14 +102,16 @@ export default function App() {
   useCodexStatusLinePoller();
   useGeminiStatusLinePoller();
   useOpenCodeStatusLinePoller();
-  // Tile program (P5-S1): survivors hoisted out of the retiring AgentsView —
-  // Ctrl+N (new session), Ctrl+Shift+O (transcript view-mode cycler), and the
-  // hourly sweepAutoArchive interval — now live at the App shell.
+  // App-level agent shortcuts and auto-archive maintenance remain active even
+  // when the first-class Agents view is not mounted.
   useAgentTabHoists();
 
-  // Bootstrap: load backend state and hydrate all stores on first mount
+  // Bootstrap: load backend state and hydrate all stores on first mount.
+  // `initializeApp` does not publish `initialized` until conversation-file
+  // hydration has finished, so sessionGlue's reconciliation below always sees
+  // the complete Workspace + AgentConversation graph.
   useEffect(() => {
-    initializeApp();
+    void initializeApp();
     // Request OS notification permission on the first user gesture. macOS
     // WKWebView refuses `Notification.requestPermission()` calls that aren't
     // triggered by a gesture ("can only be done from a user gesture"), so
@@ -227,9 +232,8 @@ export default function App() {
           setActiveView("dictation");
           return;
         }
-        // Tile program (P5-S1): Shift+1 ("!") remapped from "agents" to
-        // "workspace"; the map now lives in @/lib/viewHotkeys so the retirement
-        // remap is unit-testable.
+        // Number-row view shortcuts live in @/lib/viewHotkeys so route
+        // ownership stays unit-testable.
         if (VIEW_HOTKEY_MAP[e.key]) {
           e.preventDefault();
           setActiveView(VIEW_HOTKEY_MAP[e.key]);
@@ -269,6 +273,14 @@ export default function App() {
   }, []);
 
   const showWorkspaceSidebar = activeView === "workspace";
+  // Do not import/mount the full xterm mosaic while the user is still on the
+  // cold-start Welcome screen. Once Workspace has been visited, keep it
+  // mounted so live PTYs survive navigation to Agents/Flights/etc.
+  const [workspaceVisited, setWorkspaceVisited] = useState(false);
+  const shouldMountWorkspace = workspaceVisited || activeView === "workspace";
+  useEffect(() => {
+    if (activeView === "workspace") setWorkspaceVisited(true);
+  }, [activeView]);
   // Right-side inspector/preview pane follows the selected conversation.
   const selectedConversationId = useAgentTaskStore((s) => s.selectedConversationId);
 
@@ -285,9 +297,9 @@ export default function App() {
           <div className="flex flex-1 overflow-hidden">
             {/* Primary view nav */}
             <LeftRail />
-            {/* Fleet sidebar — on the LEFT of the main content (workspace view
-              only). Tile program (P4-S2): the unified fleet list (workspaces +
-              virtual rows for unplaced legacy conversations). */}
+            {/* Workspace-only fleet sidebar. Unplaced GUI conversations now
+              belong to the first-class Agents sidebar; placed compatibility
+              panes still roll up into their owning Workspace row. */}
             {showWorkspaceSidebar && <FleetSidebar />}
             {/* Main content area */}
             <div className="flex flex-1 flex-col overflow-hidden">
@@ -298,16 +310,18 @@ export default function App() {
                     <WelcomeScreen />
                   </div>
                 )}
-                {/* Workspace view — always mounted so PTY sessions stay
-                  alive when the user navigates to other tabs. */}
-                <div
-                  className="flex flex-1 flex-col overflow-hidden"
-                  style={{ display: activeView === "workspace" ? "flex" : "none" }}
-                >
-                  <Suspense fallback={<ViewLoader />}>
-                    <WorkspaceView />
-                  </Suspense>
-                </div>
+                {/* Workspace is lazy-mounted on first visit, then retained so
+                  sessions started by the user stay alive across view changes. */}
+                {shouldMountWorkspace && (
+                  <div
+                    className="flex flex-1 flex-col overflow-hidden"
+                    style={{ display: activeView === "workspace" ? "flex" : "none" }}
+                  >
+                    <Suspense fallback={<ViewLoader />}>
+                      <WorkspaceView surfaceActive={activeView === "workspace"} />
+                    </Suspense>
+                  </div>
+                )}
                 {/* Other views render conditionally */}
                 <Suspense fallback={<ViewLoader />}>
                   <OtherViewContent activeView={activeView} />
@@ -366,6 +380,8 @@ function OtherViewContent({ activeView }: { activeView: AppView }) {
       return <GitHubView />;
     case "memory":
       return <MemoryView />;
+    case "agents":
+      return <AgentsView />;
     case "cost_dashboard":
       return <CostDashboardView />;
     case "dictation":

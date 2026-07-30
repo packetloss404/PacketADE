@@ -3,7 +3,7 @@
  *
  * Provenance ids on a timeline card are clickable and route to the surface that
  * produced the event: flightId → Flights (setActiveFlight + flights view),
- * sessionId → focusConversationDeepLink, taskId → the owning flight. A target
+ * sessionId → openConversationInAgents, taskId → the owning flight. A target
  * that no longer resolves in the store renders as inert text (never a dead
  * link).
  */
@@ -21,9 +21,9 @@ vi.mock("@/lib/tauri", () => ({
 }));
 
 // sessionGlue reaches into other stores; assert the deep-link call directly.
-const focusConversationDeepLink = vi.fn();
+const openConversationInAgents = vi.fn();
 vi.mock("@/stores/sessionGlue", () => ({
-  focusConversationDeepLink: (id: string) => focusConversationDeepLink(id),
+  openConversationInAgents: (id: string) => openConversationInAgents(id),
 }));
 
 import { MemoryEventCard } from "@/components/views/memory/MemoryEventCard";
@@ -136,7 +136,7 @@ const sessionEvent: Extract<MemoryEvent, { type: "session_completed" }> = {
 };
 
 beforeEach(() => {
-  focusConversationDeepLink.mockClear();
+  openConversationInAgents.mockClear();
   useFlightStore.setState({ flights: [], activeFlightId: null });
   useAppStore.setState({ activeView: "memory" });
 });
@@ -177,9 +177,7 @@ describe("MemoryEventCard provenance deep-links", () => {
 
     render(<MemoryEventCard event={taskEvent} onDelete={() => {}} />);
 
-    expect(
-      screen.queryByTitle("Open flight for this task"),
-    ).toBeNull();
+    expect(screen.queryByTitle("Open flight for this task")).toBeNull();
     expect(screen.getByText("Wire the cost alerts")).toBeInTheDocument();
   });
 
@@ -187,6 +185,6 @@ describe("MemoryEventCard provenance deep-links", () => {
     render(<MemoryEventCard event={sessionEvent} onDelete={() => {}} />);
     fireEvent.click(screen.getByTitle("Open conversation"));
 
-    expect(focusConversationDeepLink).toHaveBeenCalledWith("conv-1");
+    expect(openConversationInAgents).toHaveBeenCalledWith("conv-1");
   });
 });

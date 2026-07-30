@@ -1,19 +1,28 @@
 import { create } from "zustand";
+import type { SettingsTarget } from "@/types/settings";
 
-export type CoreView = "welcome" | "issues" | "flights" | "history" | "tools" | "github" | "memory" | "workspace" | "cost_dashboard" | "dictation";
+export type CoreView =
+  | "welcome"
+  | "workspace"
+  | "agents"
+  | "issues"
+  | "flights"
+  | "history"
+  | "tools"
+  | "github"
+  | "memory"
+  | "cost_dashboard"
+  | "dictation";
 export type AppView = CoreView | `mod:${string}`;
 
 /**
- * Tile program (H3): the `"agents"` CoreView was retired with the Agents tab
- * and its one-release redirect shim is now deleted. A legacy persisted
- * `selectedView='agents'` string, or a stale pre-cutover deep link, must
- * resolve to the workspace surface — never a value the render switch no longer
- * handles (which would fall through to a blank screen). `setActiveView` runs
- * every write to `activeView` through here, so this is the single normalization
- * chokepoint for any straggler `"agents"` value that survives from disk.
+ * View-normalization chokepoint for hydrated UI state. The WA1
+ * Workspace/Agents split restores `"agents"` as a real same-window view, so a
+ * persisted Agents selection must survive instead of being redirected to
+ * Workspace.
  */
 export function normalizeView(view: AppView): AppView {
-  return (view as string) === "agents" ? "workspace" : view;
+  return view;
 }
 
 export function isModuleView(view: AppView): boolean {
@@ -46,6 +55,7 @@ interface AppStore {
   claudeVersion: string | null;
   isMaximized: boolean;
   commandPaletteOpen: boolean;
+  settingsTarget: SettingsTarget | null;
   theme: "dark" | "light";
   /** v0.8-H: optional filter applied the next time MemoryView mounts.
    * Consumed by `MemoryView` on mount and cleared after read. */
@@ -62,19 +72,24 @@ interface AppStore {
    * `null` ⇒ the plain workspace git view (opened via the header toggle).
    */
   gitPanelConversationId: string | null;
+  /** Workspace that owns the current Git-ending projection. This replaces the
+   * old requirement that a conversation pane be attached to prove scope. */
+  gitPanelWorkspaceId: string | null;
   setInitialized: (initialized: boolean) => void;
   setActiveView: (view: AppView) => void;
   setGitBranch: (branch: string | null) => void;
   setClaudeVersion: (version: string | null) => void;
   setIsMaximized: (maximized: boolean) => void;
   setCommandPaletteOpen: (open: boolean) => void;
+  openSettings: (target?: SettingsTarget) => void;
+  clearSettingsTarget: () => void;
   setTheme: (theme: "dark" | "light") => void;
   /** Header git toggle: open the plain workspace git view (no lifecycle bar) or
    *  close the panel. Always clears any conversation scope. */
   setGitPanelOpen: (open: boolean) => void;
   /** ReviewBar "Finish → Commit…": open the git panel scoped to a conversation
    *  so its WorktreeLifecycleBar (the endings loop) is directly visible. */
-  openGitPanelForConversation: (conversationId: string) => void;
+  openGitPanelForConversation: (conversationId: string, workspaceId: string) => void;
   /** v0.8-H: switch to MemoryView with an optional filter. The filter
    * lives in store state so the receiving view can react to it without
    * a separate routing layer. */
@@ -89,22 +104,33 @@ export const useAppStore = create<AppStore>((set) => ({
   claudeVersion: null,
   isMaximized: false,
   commandPaletteOpen: false,
+  settingsTarget: null,
   theme: "dark",
   memoryViewFilter: null,
   gitPanelOpen: false,
   gitPanelConversationId: null,
+  gitPanelWorkspaceId: null,
   setInitialized: (initialized) => set({ initialized }),
   setActiveView: (view) => set({ activeView: normalizeView(view) }),
   setGitBranch: (branch) => set({ gitBranch: branch }),
   setClaudeVersion: (version) => set({ claudeVersion: version }),
   setIsMaximized: (maximized) => set({ isMaximized: maximized }),
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
+  openSettings: (target) => set({ activeView: "tools", settingsTarget: target ?? null }),
+  clearSettingsTarget: () => set({ settingsTarget: null }),
   setTheme: (theme) => set({ theme }),
   setGitPanelOpen: (open) =>
-    set({ gitPanelOpen: open, gitPanelConversationId: null }),
-  openGitPanelForConversation: (conversationId) =>
-    set({ gitPanelOpen: true, gitPanelConversationId: conversationId }),
-  openMemoryView: (filter) =>
-    set({ activeView: "memory", memoryViewFilter: filter ?? null }),
+    set({
+      gitPanelOpen: open,
+      gitPanelConversationId: null,
+      gitPanelWorkspaceId: null,
+    }),
+  openGitPanelForConversation: (conversationId, workspaceId) =>
+    set({
+      gitPanelOpen: true,
+      gitPanelConversationId: conversationId,
+      gitPanelWorkspaceId: workspaceId,
+    }),
+  openMemoryView: (filter) => set({ activeView: "memory", memoryViewFilter: filter ?? null }),
   clearMemoryViewFilter: () => set({ memoryViewFilter: null }),
 }));

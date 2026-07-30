@@ -1,19 +1,11 @@
 import type { ReactNode } from "react";
-import {
-  Terminal,
-  CheckCircle,
-  XCircle,
-  Plane,
-  Trash2,
-  Clock,
-  StickyNote,
-} from "lucide-react";
+import { Terminal, CheckCircle, XCircle, Plane, Trash2, Clock, StickyNote } from "lucide-react";
 import { relativeTime } from "@/lib/time";
 import type { MemoryEvent } from "@/types/memory";
 import type { Flight } from "@/types/flight";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAppStore } from "@/stores/appStore";
-import { focusConversationDeepLink } from "@/stores/sessionGlue";
+import { openConversationInAgents } from "@/stores/sessionGlue";
 import { ProvenanceChip } from "@/components/common/ProvenanceChip";
 
 interface MemoryEventCardProps {
@@ -77,14 +69,14 @@ function formatDuration(ms: number): string {
 
 export function MemoryEventCard({ event, onDelete }: MemoryEventCardProps) {
   return (
-    <div className="bg-bg-secondary border border-bg-border rounded-md hover:border-line-strong transition-colors group overflow-hidden">
+    <div className="group overflow-hidden rounded-md border border-bg-border bg-bg-secondary transition-colors hover:border-line-strong">
       <div className="px-3 py-2.5">
         {event.type === "session_completed" && <SessionCard event={event} />}
         {event.type === "task_completed" && <TaskCard event={event} />}
         {event.type === "flight_completed" && <FlightCard event={event} />}
         {event.type === "manual_note" && <ManualNoteCard event={event} />}
       </div>
-      <div className="flex items-center justify-between px-3 py-1 bg-bg-primary border-t border-bg-border text-[9.5px] text-text-faint">
+      <div className="flex items-center justify-between border-t border-bg-border bg-bg-primary px-3 py-1 text-[9.5px] text-text-faint">
         <span className="inline-flex items-center gap-1">
           <Clock size={9} />
           {relativeTime(event.timestamp)}
@@ -97,7 +89,7 @@ export function MemoryEventCard({ event, onDelete }: MemoryEventCardProps) {
               e.stopPropagation();
               onDelete();
             }}
-            className="p-0.5 text-text-faint hover:text-accent-red opacity-0 group-hover:opacity-100 transition-all rounded"
+            className="rounded p-0.5 text-text-faint opacity-0 transition-all hover:text-accent-red group-hover:opacity-100"
             title="Delete event"
           >
             <Trash2 size={9} />
@@ -108,33 +100,15 @@ export function MemoryEventCard({ event, onDelete }: MemoryEventCardProps) {
   );
 }
 
-function TypeChip({
-  label,
-  tone = "muted",
-}: {
-  label: string;
-  tone?: "muted" | "accent";
-}) {
+function TypeChip({ label, tone = "muted" }: { label: string; tone?: "muted" | "accent" }) {
   const cls =
-    tone === "accent"
-      ? "bg-accent-soft text-accent-green"
-      : "bg-bg-elevated text-text-faint";
+    tone === "accent" ? "bg-accent-soft text-accent-green" : "bg-bg-elevated text-text-faint";
   return (
-    <span
-      className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${cls}`}
-    >
-      {label}
-    </span>
+    <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${cls}`}>{label}</span>
   );
 }
 
-function StatusPill({
-  label,
-  tone,
-}: {
-  label: string;
-  tone: "green" | "red" | "muted";
-}) {
+function StatusPill({ label, tone }: { label: string; tone: "green" | "red" | "muted" }) {
   const cls =
     tone === "green"
       ? "bg-accent-green/15 text-accent-green"
@@ -142,74 +116,57 @@ function StatusPill({
         ? "bg-accent-red/15 text-accent-red"
         : "bg-bg-elevated text-text-muted";
   return (
-    <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${cls}`}>
-      {label}
-    </span>
+    <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${cls}`}>{label}</span>
   );
 }
 
 function FilesRow({ files }: { files: string[] }) {
   if (!files?.length) return null;
   return (
-    <div className="flex flex-wrap gap-1 mt-1.5">
+    <div className="mt-1.5 flex flex-wrap gap-1">
       {files.slice(0, 6).map((f, i) => (
         <span
           key={i}
-          className="font-mono text-[9.5px] px-1.5 py-0.5 rounded bg-bg-primary border border-bg-border text-text-faint"
+          className="rounded border border-bg-border bg-bg-primary px-1.5 py-0.5 font-mono text-[9.5px] text-text-faint"
         >
           {f}
         </span>
       ))}
       {files.length > 6 && (
-        <span className="text-[9.5px] text-text-faint px-1 py-0.5">
-          +{files.length - 6}
-        </span>
+        <span className="px-1 py-0.5 text-[9.5px] text-text-faint">+{files.length - 6}</span>
       )}
     </div>
   );
 }
 
-function SessionCard({
-  event,
-}: {
-  event: Extract<MemoryEvent, { type: "session_completed" }>;
-}) {
+function SessionCard({ event }: { event: Extract<MemoryEvent, { type: "session_completed" }> }) {
   const p = event.payload;
-  const tone =
-    p.status === "done" ? "green" : p.status === "error" ? "red" : "muted";
+  const tone = p.status === "done" ? "green" : p.status === "error" ? "red" : "muted";
   return (
     <>
-      <div className="flex items-center gap-2 mb-1">
-        <Terminal size={11} className="text-accent-green flex-shrink-0" />
+      <div className="mb-1 flex items-center gap-2">
+        <Terminal size={11} className="flex-shrink-0 text-accent-green" />
         {p.sessionId ? (
-          // sessionId === conversationId for API agents. focusConversationDeepLink
+          // sessionId === conversationId for API agents.
           // existence-checks the conversation: if it vanished it skips the tile
           // focus and just switches to the workspace view (no crash, no dead
           // link), so the link is always safe to offer when a sessionId exists.
           <ProvenanceLink
             title="Open conversation"
-            onClick={() => focusConversationDeepLink(p.sessionId)}
+            onClick={() => openConversationInAgents(p.sessionId)}
             className="text-[11px] font-semibold text-text-primary"
           >
             {p.agentId}
           </ProvenanceLink>
         ) : (
-          <span className="text-[11px] font-semibold text-text-primary">
-            {p.agentId}
-          </span>
+          <span className="text-[11px] font-semibold text-text-primary">{p.agentId}</span>
         )}
         <StatusPill label={p.status} tone={tone} />
-        <span className="text-[10px] text-text-faint">
-          {formatDuration(p.durationMs)}
-        </span>
+        <span className="text-[10px] text-text-faint">{formatDuration(p.durationMs)}</span>
         <div className="flex-1" />
         <TypeChip label="session" />
       </div>
-      {p.summary && (
-        <p className="text-[11px] text-text-secondary leading-relaxed">
-          {p.summary}
-        </p>
-      )}
+      {p.summary && <p className="text-[11px] leading-relaxed text-text-secondary">{p.summary}</p>}
       <FilesRow files={p.filesModified} />
     </>
   );
@@ -219,11 +176,7 @@ function SessionCard({
 // task scheduler that did was removed in July 2026), and the Timeline no longer
 // offers a "Tasks" filter chip — but this renderer stays so any events persisted
 // before that removal still display under the "All" filter instead of vanishing.
-function TaskCard({
-  event,
-}: {
-  event: Extract<MemoryEvent, { type: "task_completed" }>;
-}) {
+function TaskCard({ event }: { event: Extract<MemoryEvent, { type: "task_completed" }> }) {
   const p = event.payload;
   const flights = useFlightStore((s) => s.flights);
   // taskId → the flight that owns it (search milestones[].tasks). No owning
@@ -233,39 +186,31 @@ function TaskCard({
   const flightExists = flights.some((f) => f.id === p.flightId);
   return (
     <>
-      <div className="flex items-center gap-2 mb-1">
+      <div className="mb-1 flex items-center gap-2">
         {p.success ? (
-          <CheckCircle
-            size={11}
-            className="text-accent-green flex-shrink-0"
-          />
+          <CheckCircle size={11} className="flex-shrink-0 text-accent-green" />
         ) : (
-          <XCircle size={11} className="text-accent-red flex-shrink-0" />
+          <XCircle size={11} className="flex-shrink-0 text-accent-red" />
         )}
         {owningFlight ? (
           <ProvenanceLink
             title="Open flight for this task"
             onClick={() => navigateToFlight(owningFlight.id)}
-            className="text-[11px] font-semibold text-text-primary truncate"
+            className="truncate text-[11px] font-semibold text-text-primary"
           >
             {p.taskTitle}
           </ProvenanceLink>
         ) : (
-          <span className="text-[11px] font-semibold text-text-primary truncate">
+          <span className="truncate text-[11px] font-semibold text-text-primary">
             {p.taskTitle}
           </span>
         )}
-        <StatusPill
-          label={p.success ? "passed" : "failed"}
-          tone={p.success ? "green" : "red"}
-        />
-        <span className="text-[10px] text-text-faint">
-          {formatDuration(p.durationMs)}
-        </span>
+        <StatusPill label={p.success ? "passed" : "failed"} tone={p.success ? "green" : "red"} />
+        <span className="text-[10px] text-text-faint">{formatDuration(p.durationMs)}</span>
         <div className="flex-1" />
         <TypeChip label="task" />
       </div>
-      <div className="text-[10px] text-text-faint mb-1">
+      <div className="mb-1 text-[10px] text-text-faint">
         Flight:{" "}
         {flightExists ? (
           <ProvenanceLink
@@ -279,18 +224,11 @@ function TaskCard({
           <span className="text-text-muted">{p.flightTitle}</span>
         )}
       </div>
-      {p.summary && (
-        <p className="text-[11px] text-text-secondary leading-relaxed">
-          {p.summary}
-        </p>
-      )}
+      {p.summary && <p className="text-[11px] leading-relaxed text-text-secondary">{p.summary}</p>}
       {p.errors.length > 0 && (
         <div className="mt-1.5 space-y-0.5">
           {p.errors.slice(0, 3).map((err, i) => (
-            <p
-              key={i}
-              className="font-mono text-[10px] text-accent-red line-clamp-1"
-            >
+            <p key={i} className="line-clamp-1 font-mono text-[10px] text-accent-red">
               {err}
             </p>
           ))}
@@ -301,35 +239,29 @@ function TaskCard({
   );
 }
 
-function ManualNoteCard({
-  event,
-}: {
-  event: Extract<MemoryEvent, { type: "manual_note" }>;
-}) {
+function ManualNoteCard({ event }: { event: Extract<MemoryEvent, { type: "manual_note" }> }) {
   const p = event.payload;
   return (
     <>
-      <div className="flex items-center gap-2 mb-1">
-        <StickyNote size={11} className="text-accent-amber flex-shrink-0" />
-        <span className="text-[11px] font-semibold text-text-primary truncate">
-          {p.summary}
-        </span>
+      <div className="mb-1 flex items-center gap-2">
+        <StickyNote size={11} className="flex-shrink-0 text-accent-amber" />
+        <span className="truncate text-[11px] font-semibold text-text-primary">{p.summary}</span>
         <div className="flex-1" />
-        <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium bg-accent-amber/15 text-accent-amber">
+        <span className="bg-accent-amber/15 rounded-full px-1.5 py-0.5 text-[9px] font-medium text-accent-amber">
           {p.source}
         </span>
       </div>
       {p.body && (
-        <p className="text-[11px] text-text-secondary leading-relaxed line-clamp-6 whitespace-pre-wrap">
+        <p className="line-clamp-6 whitespace-pre-wrap text-[11px] leading-relaxed text-text-secondary">
           {p.body}
         </p>
       )}
       {p.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-1.5">
+        <div className="mt-1.5 flex flex-wrap gap-1">
           {p.tags.map((t, i) => (
             <span
               key={i}
-              className="text-[9px] px-1.5 py-0.5 rounded-full bg-bg-elevated text-text-faint"
+              className="rounded-full bg-bg-elevated px-1.5 py-0.5 text-[9px] text-text-faint"
             >
               #{t}
             </span>
@@ -340,17 +272,13 @@ function ManualNoteCard({
   );
 }
 
-function FlightCard({
-  event,
-}: {
-  event: Extract<MemoryEvent, { type: "flight_completed" }>;
-}) {
+function FlightCard({ event }: { event: Extract<MemoryEvent, { type: "flight_completed" }> }) {
   const p = event.payload;
   const flightExists = useFlightStore((s) => s.flights.some((f) => f.id === p.flightId));
   return (
     <>
-      <div className="flex items-center gap-2 mb-1.5">
-        <Plane size={11} className="text-accent-green flex-shrink-0" />
+      <div className="mb-1.5 flex items-center gap-2">
+        <Plane size={11} className="flex-shrink-0 text-accent-green" />
         {flightExists ? (
           <ProvenanceLink
             title="Open flight"
@@ -360,26 +288,22 @@ function FlightCard({
             {p.flightTitle}
           </ProvenanceLink>
         ) : (
-          <span className="text-[11px] font-semibold text-text-primary">
-            {p.flightTitle}
-          </span>
+          <span className="text-[11px] font-semibold text-text-primary">{p.flightTitle}</span>
         )}
         <div className="flex-1" />
         <TypeChip label="flight" tone="accent" />
       </div>
-      <p className="text-[11px] text-text-secondary leading-relaxed mb-2">
-        {p.summary}
-      </p>
+      <p className="mb-2 text-[11px] leading-relaxed text-text-secondary">{p.summary}</p>
       {p.lessonsLearned.length > 0 && (
         <div className="mb-1.5">
-          <div className="text-[9.5px] font-semibold tracking-[0.05em] uppercase text-text-secondary mb-1">
+          <div className="mb-1 text-[9.5px] font-semibold uppercase tracking-[0.05em] text-text-secondary">
             Lessons
           </div>
-          <ul className="m-0 p-0 list-none flex flex-col gap-1">
+          <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {p.lessonsLearned.map((l, i) => (
               <li
                 key={i}
-                className="text-[10.5px] text-text-secondary leading-relaxed pl-2 border-l-2 border-accent-line"
+                className="border-l-2 border-accent-line pl-2 text-[10.5px] leading-relaxed text-text-secondary"
               >
                 {l}
               </li>
@@ -389,20 +313,20 @@ function FlightCard({
       )}
       {p.whatWorked.length > 0 && (
         <div className="mb-1">
-          <span className="text-[9.5px] font-semibold tracking-[0.05em] uppercase text-accent-green">
+          <span className="text-[9.5px] font-semibold uppercase tracking-[0.05em] text-accent-green">
             Worked
           </span>
-          <span className="text-[10.5px] text-text-faint ml-2">
+          <span className="ml-2 text-[10.5px] text-text-faint">
             {p.whatWorked.slice(0, 4).join(" · ")}
           </span>
         </div>
       )}
       {p.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-1.5">
+        <div className="mt-1.5 flex flex-wrap gap-1">
           {p.tags.map((t, i) => (
             <span
               key={i}
-              className="text-[9px] px-1.5 py-0.5 rounded-full bg-accent-soft text-accent-green"
+              className="rounded-full bg-accent-soft px-1.5 py-0.5 text-[9px] text-accent-green"
             >
               #{t}
             </span>

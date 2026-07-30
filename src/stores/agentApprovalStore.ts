@@ -12,6 +12,7 @@ import {
   auditSourceChain,
   useProvenanceAuditStore,
 } from "@/stores/provenanceAuditStore";
+import { markWorkspaceAgentsAttentionStarted } from "@/stores/workspaceAgentsDogfoodStore";
 
 export const EMPTY_PENDING_PERMISSIONS: PendingPermission[] = [];
 export const EMPTY_PENDING_EDITS: PendingEdit[] = [];
@@ -81,6 +82,7 @@ export const useAgentApprovalStore = create<AgentApprovalState>((set, get) => ({
   edits: new Map(),
 
   addPendingPermission: (conversationId, perm) => {
+    markWorkspaceAgentsAttentionStarted(conversationId);
     set((s) => {
       const next = new Map(s.permissions);
       const existing = next.get(conversationId) ?? [];
@@ -90,6 +92,7 @@ export const useAgentApprovalStore = create<AgentApprovalState>((set, get) => ({
   },
 
   addPendingEdit: (conversationId, edit) => {
+    markWorkspaceAgentsAttentionStarted(conversationId);
     set((s) => {
       const next = new Map(s.edits);
       const existing = next.get(conversationId) ?? [];

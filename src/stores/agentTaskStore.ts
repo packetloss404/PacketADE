@@ -84,7 +84,6 @@ import {
   scheduleSave,
   requestConversationSave,
   cancelPendingSave,
-  hydrateConversations,
   deriveLegacyWorktree,
 } from "@/stores/agentConversationPersistence";
 import type { McpTrustSnapshot } from "@/types/mcp";
@@ -1484,8 +1483,3 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     if (updated) scheduleSave(updated);
   },
 }));
-
-// Hydrate persisted API conversations on module load. The pass itself lives in
-// `agentConversationPersistence` alongside the save helpers; invoked here so the
-// load-time trigger still runs after the store is created.
-hydrateConversations();

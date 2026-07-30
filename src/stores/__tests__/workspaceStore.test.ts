@@ -79,12 +79,10 @@ describe("workspaceStore.createWorkspace", () => {
 
   it("throws if serverId refers to an unknown server", () => {
     expect(() =>
-      useWorkspaceStore
-        .getState()
-        .createWorkspace("Bad WS", ["claude-code"], "/srv/app", {
-          serverId: "srv-missing",
-          remoteProjectPath: "/srv/app",
-        }),
+      useWorkspaceStore.getState().createWorkspace("Bad WS", ["claude-code"], "/srv/app", {
+        serverId: "srv-missing",
+        remoteProjectPath: "/srv/app",
+      }),
     ).toThrow(/does not match any registered server/i);
 
     expect(useWorkspaceStore.getState().workspaces).toHaveLength(0);
@@ -177,17 +175,29 @@ function makeWorkspace(panes: WorkspacePane[], agents: Workspace["agents"] = [])
 
 describe("normalizePanes (P1-S1)", () => {
   it("defaults a pane with no kind to terminal", () => {
-    const [ws] = normalizePanes([
-      makeWorkspace([{ id: "p1", agentId: "codex", sessionId: null }]),
-    ]);
+    const [ws] = normalizePanes([makeWorkspace([{ id: "p1", agentId: "codex", sessionId: null }])]);
     expect(ws.panes[0].kind).toBe("terminal");
     expect(ws.panes[0]).not.toHaveProperty("conversationId");
+  });
+
+  it("clears persisted PTY session ids because backend processes do not survive hydration", () => {
+    const [ws] = normalizePanes([
+      makeWorkspace([{ id: "p1", agentId: "codex", sessionId: "stale-session" }]),
+    ]);
+
+    expect(ws.panes[0].sessionId).toBeNull();
   });
 
   it("keeps a conversation pane with a conversationId", () => {
     const [ws] = normalizePanes([
       makeWorkspace([
-        { id: "p1", agentId: "terminal", sessionId: null, kind: "conversation", conversationId: "conv-1" },
+        {
+          id: "p1",
+          agentId: "terminal",
+          sessionId: null,
+          kind: "conversation",
+          conversationId: "conv-1",
+        },
       ]),
     ]);
     expect(ws.panes[0].kind).toBe("conversation");
@@ -198,9 +208,7 @@ describe("normalizePanes (P1-S1)", () => {
     // The inert-carrier arm: a stripped conversationId downgrades to terminal
     // (the sweep half of self-heal lands in P1-S2).
     const [ws] = normalizePanes([
-      makeWorkspace([
-        { id: "p1", agentId: "terminal", sessionId: null, kind: "conversation" },
-      ]),
+      makeWorkspace([{ id: "p1", agentId: "terminal", sessionId: null, kind: "conversation" }]),
     ]);
     expect(ws.panes[0].kind).toBe("terminal");
     expect(ws.panes[0]).not.toHaveProperty("conversationId");
@@ -221,7 +229,12 @@ describe("normalizePanes (P1-S1)", () => {
       makeWorkspace([
         null as unknown as WorkspacePane,
         { agentId: "codex", sessionId: null } as unknown as WorkspacePane, // no id
-        { id: "p3", agentId: "codex", sessionId: null, futureField: 42 } as unknown as WorkspacePane,
+        {
+          id: "p3",
+          agentId: "codex",
+          sessionId: null,
+          futureField: 42,
+        } as unknown as WorkspacePane,
       ]),
     ]);
     expect(ws.panes).toHaveLength(1);

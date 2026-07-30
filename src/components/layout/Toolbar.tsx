@@ -13,6 +13,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { NewIssueForm } from "@/components/issues/NewIssueForm";
 import { Modal } from "@/components/ui/Modal";
+import { getPreferredWorkspaceCli } from "@/lib/workspaceCliDefaults";
 
 // Lazy-loaded so the markdown vendor chunk leaves the entry chunk; only
 // fetched when the New Flight modal opens.
@@ -111,7 +112,11 @@ export function Toolbar() {
   }
 
   function handleCreateWorkspaceFromPicker(path: string) {
-    const id = createWorkspace(basenameOfPath(path), ["claude-code"], path);
+    const id = createWorkspace(
+      basenameOfPath(path),
+      [getPreferredWorkspaceCli()],
+      path,
+    );
     setPendingPickedPath(null);
     // Land the user on the workspace view so the new workspace's panes
     // become visible immediately — otherwise the create is invisible.

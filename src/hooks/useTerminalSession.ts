@@ -36,6 +36,8 @@ function useLatestRef<T>(value: T): RefObject<T> {
 
 interface UseTerminalSessionOptions {
   paneId: string;
+  /** Gate the single automatic launch performed by this hook instance. */
+  autoStart?: boolean;
   cliCommand: string;
   cliArgs?: string[];
   env?: Record<string, string>;
@@ -67,6 +69,7 @@ const panesStarting = new Set<string>();
 
 export function useTerminalSession({
   paneId,
+  autoStart = true,
   cliCommand,
   cliArgs,
   env,
@@ -84,6 +87,7 @@ export function useTerminalSession({
   const unlistenersRef = useRef<UnlistenFn[]>([]);
   const exitRequestedRef = useRef(false);
   const endedSessionIdsRef = useRef(new Set<string>());
+  const autoStartTriggeredRef = useRef(false);
 
   // Store callbacks in refs so they never destabilize memoised effects.
   const onSessionCreatedRef = useLatestRef(onSessionCreated);
@@ -382,13 +386,19 @@ export function useTerminalSession({
     emitSessionEnded,
   ]);
 
-  // Auto-start on mount
+  // Auto-start at most once, and only after the owning Workspace is both
+  // visible and selected. The component remains mounted after navigation so a
+  // live PTY survives, but toggling visibility or changing memoized launch
+  // options must never silently restart it.
   useEffect(() => {
+    if (!autoStart || autoStartTriggeredRef.current) return;
     const timer = setTimeout(() => {
-      startSession();
+      if (autoStartTriggeredRef.current) return;
+      autoStartTriggeredRef.current = true;
+      void startSession();
     }, 200);
     return () => clearTimeout(timer);
-  }, [startSession]);
+  }, [autoStart, startSession]);
 
   // Cleanup on unmount
   useEffect(() => {

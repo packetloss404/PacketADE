@@ -7,6 +7,23 @@ use std::sync::Mutex;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 const MONITOR_LABEL: &str = "monitor-main";
+const MONITOR_ALLOWED_APP_COMMANDS: &[&str] = &[
+    "get_monitor_window_route",
+    "close_monitor_window",
+    "focus_monitor_route_in_main",
+    "load_persisted_state",
+    "load_conversations",
+];
+
+/// Application commands are otherwise available to every WebView registered
+/// with the app invoke handler. Keep Monitor's read-only posture authoritative
+/// at that boundary instead of relying on hidden buttons in its frontend.
+pub(crate) fn command_allowed_for_window(window_label: &str, command: &str) -> bool {
+    if window_label == "main" {
+        return true;
+    }
+    window_label.starts_with("monitor-") && MONITOR_ALLOWED_APP_COMMANDS.contains(&command)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(
@@ -193,6 +210,40 @@ pub fn focus_monitor_route_in_main(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn monitor_window_app_command_allowlist_is_read_only() {
+        for command in MONITOR_ALLOWED_APP_COMMANDS {
+            assert!(command_allowed_for_window("monitor-main", command));
+        }
+
+        for command in [
+            "save_persisted_state",
+            "save_conversation",
+            "write_file_contents",
+            "create_pty_session",
+            "start_api_agent_session",
+            "send_api_agent_message",
+            "respond_permission",
+            "respond_edit",
+            "open_monitor_window",
+        ] {
+            assert!(
+                !command_allowed_for_window("monitor-main", command),
+                "{command} must not be callable by Monitor"
+            );
+        }
+
+        assert!(command_allowed_for_window("main", "send_api_agent_message"));
+        assert!(!command_allowed_for_window(
+            "agent-popout",
+            "send_api_agent_message"
+        ));
+        assert!(!command_allowed_for_window(
+            "unreviewed-window",
+            "load_persisted_state"
+        ));
+    }
 
     #[test]
     fn monitor_routes_reject_empty_or_unsafe_ids() {

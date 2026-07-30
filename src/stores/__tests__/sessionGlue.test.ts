@@ -40,7 +40,6 @@ vi.mock("@/lib/tauri", () => ({
 }));
 
 import {
-  openSession,
   runReconciliationSweep,
   installConversationGc,
   conversationWrapperId,
@@ -152,7 +151,9 @@ describe("sessionGlue — reconciliation sweep (self-heal)", () => {
     runReconciliationSweep();
 
     // Ghost wrapper removed.
-    expect(useWorkspaceStore.getState().workspaces.find((w) => w.id === "ws-wrap-conv-1")).toBeUndefined();
+    expect(
+      useWorkspaceStore.getState().workspaces.find((w) => w.id === "ws-wrap-conv-1"),
+    ).toBeUndefined();
     // Conversation untouched: still present, and NO conversation file was written.
     expect(useAgentTaskStore.getState().conversations.some((c) => c.id === "conv-1")).toBe(true);
     expect(saveConversationMock).not.toHaveBeenCalled();
@@ -179,31 +180,8 @@ describe("sessionGlue — reconciliation sweep (self-heal)", () => {
       workspaces: [wrapperWorkspace("conv-1", [conversationPane("conv-1")])],
     });
     runReconciliationSweep();
-    expect(useWorkspaceStore.getState().workspaces.find((w) => w.id === "ws-wrap-conv-1")).toBeDefined();
-  });
-});
-
-describe("sessionGlue — openSession materializer", () => {
-  it("materializes exactly one workspace with the deterministic id, idempotently", () => {
-    useAgentTaskStore.setState({ conversations: [conv({ id: "conv-1", title: "Fix bug" })] });
-
-    const first = openSession({ conversationId: "conv-1" });
-    const second = openSession({ conversationId: "conv-1" });
-
-    expect(first).toBe("ws-wrap-conv-1");
-    expect(second).toBe(first);
-    const wrappers = useWorkspaceStore
-      .getState()
-      .workspaces.filter((w) => w.id === "ws-wrap-conv-1");
-    expect(wrappers).toHaveLength(1);
-    const ws = wrappers[0];
-    expect(ws.origin).toBe("conversation");
-    expect(ws.name).toBe("Fix bug");
-    expect(ws.agents).toEqual([]);
-    expect(ws.panes).toHaveLength(1);
-    expect(ws.panes[0].kind).toBe("conversation");
-    expect(ws.panes[0].conversationId).toBe("conv-1");
-    expect(ws.panes[0].agentId).toBe("terminal");
-    expect(useWorkspaceStore.getState().activeWorkspaceId).toBe("ws-wrap-conv-1");
+    expect(
+      useWorkspaceStore.getState().workspaces.find((w) => w.id === "ws-wrap-conv-1"),
+    ).toBeDefined();
   });
 });

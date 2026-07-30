@@ -12,6 +12,8 @@ import {
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { ContinueInMenu } from "../ContinueInMenu";
+import { AddConversationToFlightModal } from "../AddConversationToFlightModal";
+import { PacketCodeHandoffModal } from "../PacketCodeHandoffModal";
 import { exportConversationJson, copyTranscriptToClipboard } from "./handleExport";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useAgentSettingsStore, type TranscriptViewMode } from "@/stores/agentSettingsStore";
@@ -55,6 +57,9 @@ export function HeaderOverflowMenu({
   const setTranscriptViewMode = useAgentSettingsStore((s) => s.setTranscriptViewMode);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [memoryPreviewOpen, setMemoryPreviewOpen] = useState(false);
+  const [handoffModal, setHandoffModal] = useState<"packetcode" | "flight" | null>(
+    null,
+  );
 
   const memoryBrief = useMemo(() => {
     const scope = conversation.sshTarget
@@ -232,7 +237,9 @@ export function HeaderOverflowMenu({
                 void openMonitorWindow({
                   kind: "agent_conversation",
                   conversationId: conversation.id,
-                }).then(() => flashFeedback("Sent to Monitor"));
+                })
+                  .then(() => flashFeedback("Sent to Monitor"))
+                  .catch(() => flashFeedback("Monitor could not be opened"));
               }}
             >
               <span className="flex items-center gap-1.5 text-ui">
@@ -256,9 +263,28 @@ export function HeaderOverflowMenu({
             </DropdownItem>
           </div>
 
-          <ContinueInMenu conversation={conversation} onFeedback={flashFeedback} />
+          <ContinueInMenu
+            conversation={conversation}
+            onFeedback={flashFeedback}
+            onRequestPacketCode={() => setHandoffModal("packetcode")}
+            onRequestFlight={() => setHandoffModal("flight")}
+          />
         </div>
       </Dropdown>
+      {handoffModal === "packetcode" && (
+        <PacketCodeHandoffModal
+          conversation={conversation}
+          onClose={() => setHandoffModal(null)}
+          onFeedback={flashFeedback}
+        />
+      )}
+      {handoffModal === "flight" && (
+        <AddConversationToFlightModal
+          conversation={conversation}
+          onClose={() => setHandoffModal(null)}
+          onFeedback={flashFeedback}
+        />
+      )}
       {feedback && (
         <div className="absolute right-0 top-full z-50 mt-1 whitespace-nowrap rounded border border-bg-border bg-bg-elevated px-2 py-1 text-meta text-text-secondary shadow">
           {feedback}

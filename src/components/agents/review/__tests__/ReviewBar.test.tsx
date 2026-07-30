@@ -13,10 +13,19 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PendingEdit } from "@/types/agent-conversation";
 
+const handoffMocks = vi.hoisted(() => ({
+  openConversationGitEnding: vi.fn(() => ({
+    ok: true as const,
+    conversationId: "conv-1",
+    workspaceId: "ws-1",
+  })),
+}));
+
 vi.mock("@/stores/appStore", () => ({
   useAppStore: (selector: (s: { commandPaletteOpen: boolean }) => unknown) =>
     selector({ commandPaletteOpen: false }),
 }));
+vi.mock("@/lib/agentHandoffs", () => handoffMocks);
 
 import { ReviewBar } from "@/components/agents/review/ReviewBar";
 import { useReviewStore } from "@/stores/reviewStore";
@@ -191,5 +200,31 @@ describe("ReviewBar", () => {
       expect(respondEdit).toHaveBeenCalledTimes(1);
       expect(respondEdit).toHaveBeenCalledWith("conv-armed", "edit-armed", "apply");
     });
+  });
+
+  it("routes the settled Finish action through the cross-surface Git handoff", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    useAgentTaskStore.setState({
+      conversations: [
+        {
+          id: "conv-1",
+          title: "Finish",
+          agent: "api-openai",
+          projectPath: "/repo",
+          status: "done",
+          messages: [],
+          sessionId: "conv-1",
+          rawOutput: "",
+          createdAt: 1,
+          updatedAt: 1,
+          mode: "api",
+        },
+      ],
+    });
+    renderBar({ fileCount: 1 });
+
+    fireEvent.click(screen.getByRole("button", { name: /finish.*commit/i }));
+
+    expect(handoffMocks.openConversationGitEnding).toHaveBeenCalledWith("conv-1");
   });
 });

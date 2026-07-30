@@ -20,6 +20,8 @@ export interface TerminalHeaderRenderState {
 
 interface TerminalPaneProps {
   paneId: string;
+  /** Whether this mounted pane may perform its one automatic PTY launch. */
+  autoStart?: boolean;
   onClose?: () => void;
   showCloseButton?: boolean;
   cliCommand?: string;
@@ -36,6 +38,7 @@ interface TerminalPaneProps {
 
 export function TerminalPane({
   paneId,
+  autoStart = true,
   onClose,
   showCloseButton = false,
   cliCommand = "claude",
@@ -74,6 +77,7 @@ export function TerminalPane({
     clearApproval,
   } = useTerminalSession({
     paneId,
+    autoStart,
     cliCommand,
     cliArgs,
     env,
@@ -106,7 +110,14 @@ export function TerminalPane({
       onClick={() => setActivePaneId(paneId)}
     >
       {renderHeader ? (
-        renderHeader({ alive, error, showApproval, cliCommand, onRestart: handleRestart, onKill: handleKill })
+        renderHeader({
+          alive,
+          error,
+          showApproval,
+          cliCommand,
+          onRestart: handleRestart,
+          onKill: handleKill,
+        })
       ) : (
         <TerminalHeader
           alive={alive}

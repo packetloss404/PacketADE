@@ -1,13 +1,5 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import {
-  GripHorizontal,
-  Plus,
-  Play,
-  X,
-  Maximize2,
-  Minimize2,
-  MoreVertical,
-} from "lucide-react";
+import { GripHorizontal, Plus, Play, X, Maximize2, Minimize2, MoreVertical } from "lucide-react";
 import { MosaicWindowContext } from "react-mosaic-component";
 import { TerminalPane, type TerminalHeaderRenderState } from "@/components/session/TerminalPane";
 import { useAgentStore } from "@/stores/agentStore";
@@ -39,9 +31,11 @@ const BYPASS_FLAGS: Record<string, string> = {
 interface WorkspacePaneProps {
   pane: WorkspacePaneType;
   workspaceId: string;
+  /** Gate the pane's one-time automatic PTY launch. */
+  autoStart?: boolean;
 }
 
-export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
+export function WorkspacePane({ pane, workspaceId, autoStart = true }: WorkspacePaneProps) {
   const agents = useAgentStore((s) => s.agents);
   const workspace = useWorkspaceStore((s) => s.workspaces.find((w) => w.id === workspaceId));
   const zoomedPaneId = useWorkspaceStore((s) => s.zoomedPaneId);
@@ -53,8 +47,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   // this pane. Purely derived from the auto-clearing store request.
   const isFlashing = useWorkspaceStore(
     (s) =>
-      s.focusPaneRequest?.paneId === pane.id &&
-      s.focusPaneRequest?.workspaceId === workspaceId,
+      s.focusPaneRequest?.paneId === pane.id && s.focusPaneRequest?.workspaceId === workspaceId,
   );
   const agentConfig = agents.find((a) => a.id === pane.agentId);
   // Single overflow menu replaces the standalone model/prompt/pin popovers —
@@ -64,12 +57,8 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   const [newPinCmd, setNewPinCmd] = useState("");
   const overflowRef = useRef<HTMLDivElement>(null);
   const promptTemplates = usePromptStore((s) => s.templates);
-  const packetCodeLocalDataHome = usePacketCodeIntegrationStore(
-    (s) => s.localDataHome,
-  );
-  const packetCodeRemoteDataHomes = usePacketCodeIntegrationStore(
-    (s) => s.remoteDataHomes,
-  );
+  const packetCodeLocalDataHome = usePacketCodeIntegrationStore((s) => s.localDataHome);
+  const packetCodeRemoteDataHomes = usePacketCodeIntegrationStore((s) => s.remoteDataHomes);
 
   // Close the overflow menu on outside click; reset to the root view so it
   // doesn't reopen mid-drill-down next time.
@@ -102,9 +91,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   const sendPromptTemplate = useCallback(
     (templateId: string) => {
       if (!pane.sessionId) return;
-      const tpl = usePromptStore
-        .getState()
-        .templates.find((t) => t.id === templateId);
+      const tpl = usePromptStore.getState().templates.find((t) => t.id === templateId);
       if (!tpl) return;
       // Use CR ("\r") to match `runCommand` — TTY line discipline submits on
       // CR, not LF; some Windows ConPTY configs won't fire the agent's
@@ -170,9 +157,8 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   const knownHostsPath = useServerStore((s) => s.knownHostsPath);
   const isRemote = !!server;
   const localPlatform =
-    typeof navigator !== "undefined" && /windows|win32|win64/i.test(
-      navigator.userAgent || navigator.platform || "",
-    )
+    typeof navigator !== "undefined" &&
+    /windows|win32|win64/i.test(navigator.userAgent || navigator.platform || "")
       ? "windows"
       : "posix";
   const packetCodeHome =
@@ -189,8 +175,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
       : undefined;
   }, [isRemote, localPlatform, packetCodeHome]);
   const effectiveCommand = isRemote ? "ssh" : command;
-  const remoteCommand =
-    isRemote && pane.agentId === "packetcode" ? "packetcode" : command;
+  const remoteCommand = isRemote && pane.agentId === "packetcode" ? "packetcode" : command;
   const effectiveArgs = useMemo(() => {
     if (!isRemote || !server) return cliArgs;
     return buildSshArgs(
@@ -337,7 +322,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                         setShowOverflow(false);
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
-                      className="w-full px-3 py-1.5 text-left text-ui text-text-primary transition-colors hover:bg-accent-red/10 hover:text-accent-red"
+                      className="hover:bg-accent-red/10 w-full px-3 py-1.5 text-left text-ui text-text-primary transition-colors hover:text-accent-red"
                     >
                       Close pane
                     </button>
@@ -358,7 +343,9 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        useWorkspaceStore.getState().setModelOverride(workspaceId, pane.agentId, null);
+                        useWorkspaceStore
+                          .getState()
+                          .setModelOverride(workspaceId, pane.agentId, null);
                         setShowOverflow(false);
                         setOverflowView("root");
                       }}
@@ -389,7 +376,9 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                       </button>
                     ))}
                     <div className="mt-1 border-t border-bg-border px-3 py-1 pt-1">
-                      <span className="text-meta text-text-muted">Takes effect on next session</span>
+                      <span className="text-meta text-text-muted">
+                        Takes effect on next session
+                      </span>
                     </div>
                   </div>
                 )}
@@ -464,7 +453,9 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              useWorkspaceStore.getState().removePinnedCommand(workspaceId, pane.id, i);
+                              useWorkspaceStore
+                                .getState()
+                                .removePinnedCommand(workspaceId, pane.id, i);
                             }}
                             onMouseDown={(e) => e.stopPropagation()}
                             className="shrink-0 p-0.5 text-text-muted transition-colors hover:text-accent-red"
@@ -565,9 +556,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
     ],
   );
 
-  const wrapperBorderClass = isFocused
-    ? "border border-accent-line"
-    : "border border-bg-border";
+  const wrapperBorderClass = isFocused ? "border border-accent-line" : "border border-bg-border";
   // Focus-flash highlight (P4-S1): amber ring pulse while a focusPaneRequest
   // targets this pane.
   const flashClass = isFlashing
@@ -584,6 +573,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
     >
       <TerminalPane
         paneId={pane.id}
+        autoStart={autoStart}
         cliCommand={effectiveCommand}
         cliArgs={effectiveArgs}
         env={isRemote ? undefined : packetCodeEnv}

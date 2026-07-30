@@ -17,6 +17,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useReviewStore } from "@/stores/reviewStore";
 import { getAgentColor } from "@/lib/agentColors";
 import type { WorkspacePane as WorkspacePaneType } from "@/types/workspace";
+import { recordCompatibilityPaneLoaded } from "@/stores/workspaceAgentsDogfoodStore";
 
 interface ConversationTileProps {
   pane: WorkspacePaneType;
@@ -52,6 +53,11 @@ export function ConversationTile({ pane, workspaceId }: ConversationTileProps) {
   const conversation = useAgentTaskStore((s) =>
     s.conversations.find((c) => c.id === conversationId),
   );
+  const conversationFound = Boolean(conversation);
+
+  useEffect(() => {
+    recordCompatibilityPaneLoaded(pane.id, conversationFound);
+  }, [conversationFound, pane.id]);
 
   const activePaneId = useLayoutStore((s) => s.activePaneId);
   const setActivePaneId = useLayoutStore((s) => s.setActivePaneId);

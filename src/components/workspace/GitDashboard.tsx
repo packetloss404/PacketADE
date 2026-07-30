@@ -66,7 +66,7 @@ import {
 import { WorktreeLifecycleBar } from "@/components/workspace/WorktreeLifecycleBar";
 import { ReviewPacketPanel } from "@/components/workspace/ReviewPacketPanel";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
-import { focusConversationDeepLink } from "@/stores/sessionGlue";
+import { openConversationInAgents } from "@/stores/sessionGlue";
 
 function statusIcon(status: string) {
   switch (status) {
@@ -995,7 +995,7 @@ export function GitDashboard({
           }}
           onOpenApproval={(conversationId) => {
             setPacketRefs(null);
-            focusConversationDeepLink(conversationId);
+            openConversationInAgents(conversationId);
           }}
           onOpenDiff={(filePath) => {
             const file = files.find((candidate) => candidate.path === filePath);

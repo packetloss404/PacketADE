@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { MONITOR_WINDOW_QUERY_KEY } from "@/lib/brand";
-import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useAppStore } from "@/stores/appStore";
 import { useFlightStore } from "@/stores/flightStore";
 import type { MonitorLease, MonitorRoute } from "@/types/monitor";
+import { openConversationInAgents } from "@/stores/sessionGlue";
+import { recordWorkspaceAgentsEvent } from "@/stores/workspaceAgentsDogfoodStore";
 
 export function isMonitorBoot(): boolean {
   return new URLSearchParams(window.location.search).get(MONITOR_WINDOW_QUERY_KEY) === "monitor";
@@ -15,7 +16,11 @@ export function monitorLabelFromLocation(): string {
 }
 
 export async function openMonitorWindow(route: MonitorRoute): Promise<MonitorLease> {
-  return invoke<MonitorLease>("open_monitor_window", { route });
+  const lease = await invoke<MonitorLease>("open_monitor_window", { route });
+  recordWorkspaceAgentsEvent(
+    route.kind === "flight" ? "flight_monitor_opened" : "agent_monitor_opened",
+  );
+  return lease;
 }
 
 export async function getMonitorWindowRoute(label: string): Promise<MonitorLease> {
@@ -36,8 +41,7 @@ export function installMonitorMainRouter(): Promise<UnlistenFn> {
       useFlightStore.getState().setActiveFlight(payload.flightId);
       useAppStore.getState().setActiveView("flights");
     } else {
-      useAgentTaskStore.getState().selectConversation(payload.conversationId);
-      useAppStore.getState().setActiveView("workspace");
+      openConversationInAgents(payload.conversationId);
     }
   });
 }

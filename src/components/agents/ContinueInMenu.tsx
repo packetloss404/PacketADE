@@ -1,13 +1,22 @@
 import {
+  Bot,
   FolderOpen,
   Terminal,
   Code2,
   Code,
+  GitMerge,
+  PanelsTopLeft,
+  Plane,
 } from "lucide-react";
 import { useDropdownClose } from "@/components/ui/Dropdown";
 import { open } from "@tauri-apps/plugin-shell";
 import type { AgentConversation } from "@/types/agent-conversation";
 import type { AgentCli } from "@/stores/agentTaskStore";
+import {
+  attachTerminalToConversationProject,
+  openConversationGitEnding,
+  openConversationProjectInWorkspace,
+} from "@/lib/agentHandoffs";
 
 interface MenuItemProps {
   icon: React.ReactNode;
@@ -28,14 +37,7 @@ interface MenuItemProps {
  * on every render of the parent — that was triggering
  * `react-hooks/static-components`.
  */
-function MenuItem({
-  icon,
-  label,
-  subtitle,
-  disabled,
-  disabledReason,
-  onClick,
-}: MenuItemProps) {
+function MenuItem({ icon, label, subtitle, disabled, disabledReason, onClick }: MenuItemProps) {
   const close = useDropdownClose();
   return (
     <button
@@ -47,16 +49,14 @@ function MenuItem({
         void onClick();
         close();
       }}
-      className={`w-full text-left px-3 py-1.5 flex items-start gap-2 transition-colors motion-reduce:transition-none ${
-        disabled
-          ? "opacity-40 cursor-not-allowed"
-          : "hover:bg-bg-hover cursor-pointer"
+      className={`flex w-full items-start gap-2 px-3 py-1.5 text-left transition-colors motion-reduce:transition-none ${
+        disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer hover:bg-bg-hover"
       }`}
     >
-      <span className="mt-0.5 text-text-secondary shrink-0">{icon}</span>
-      <span className="flex flex-col min-w-0">
-        <span className="text-ui text-text-primary truncate">{label}</span>
-        <span className="text-meta text-text-muted truncate">{subtitle}</span>
+      <span className="mt-0.5 shrink-0 text-text-secondary">{icon}</span>
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate text-ui text-text-primary">{label}</span>
+        <span className="truncate text-meta text-text-muted">{subtitle}</span>
       </span>
     </button>
   );
@@ -67,6 +67,8 @@ interface ContinueInMenuProps {
   /** Flash a transient confirmation/error message in the caller's shared
    * feedback slot (e.g. the overflow menu's toast). */
   onFeedback: (msg: string) => void;
+  onRequestPacketCode?: () => void;
+  onRequestFlight?: () => void;
 }
 
 interface CliContinuation {
@@ -108,7 +110,12 @@ function quoteShellArg(value: string): string {
  * SSH-targeted conversations disable the local-path items since the path lives
  * on a remote host.
  */
-export function ContinueInMenu({ conversation, onFeedback }: ContinueInMenuProps) {
+export function ContinueInMenu({
+  conversation,
+  onFeedback,
+  onRequestPacketCode = () => {},
+  onRequestFlight = () => {},
+}: ContinueInMenuProps) {
   const projectPath = conversation.projectPath;
   const isRemote = Boolean(conversation.sshTarget);
   const hasPath = Boolean(projectPath);
@@ -154,30 +161,77 @@ export function ContinueInMenu({ conversation, onFeedback }: ContinueInMenuProps
     }
   }
 
+  function reportResult(
+    result:
+      | ReturnType<typeof openConversationProjectInWorkspace>
+      | ReturnType<typeof attachTerminalToConversationProject>
+      | ReturnType<typeof openConversationGitEnding>,
+    success: string,
+  ) {
+    onFeedback(result.ok ? success : result.message);
+  }
+
   return (
     <div className="min-w-[240px] py-0.5" data-agent-pane-continue-in>
-      <div className="px-3 pt-1 pb-0.5 text-meta font-medium text-text-muted uppercase tracking-wide">
-        Continue in
+      <div className="px-3 pb-0.5 pt-1 text-meta font-medium uppercase tracking-wide text-text-muted">
+        Move work
       </div>
+      <MenuItem
+        icon={<PanelsTopLeft size={12} />}
+        label="Open project in Workspace"
+        subtitle="Open the same target without moving this conversation"
+        onClick={() =>
+          reportResult(
+            openConversationProjectInWorkspace(conversation.id),
+            "Project opened in Workspace",
+          )
+        }
+      />
+      <MenuItem
+        icon={<Terminal size={12} />}
+        label="Attach terminal"
+        subtitle="Add a separate shell on this exact project or worktree"
+        onClick={() =>
+          reportResult(
+            attachTerminalToConversationProject(conversation.id),
+            "Terminal attached in Workspace",
+          )
+        }
+      />
+      <MenuItem
+        icon={<Bot size={12} />}
+        label="Continue in PacketCode…"
+        subtitle="Review a bounded payload, then open PacketCode"
+        onClick={onRequestPacketCode}
+      />
+      <MenuItem
+        icon={<GitMerge size={12} />}
+        label="Open Git ending"
+        subtitle="Review merge, PR, discard, or keep for this worktree"
+        onClick={() =>
+          reportResult(openConversationGitEnding(conversation.id), "Git ending opened in Workspace")
+        }
+      />
+      <MenuItem
+        icon={<Plane size={12} />}
+        label="Add to Flight…"
+        subtitle="Link this conversation without copying its state"
+        onClick={onRequestFlight}
+      />
+      <div className="my-1 border-t border-bg-border" />
       <MenuItem
         icon={<FolderOpen size={12} />}
         label="Open project folder in OS"
         subtitle="Reveal the folder in Explorer / Finder"
         disabled={localOnlyDisabled}
         disabledReason={
-          isRemote
-            ? "Path is on a remote SSH host"
-            : "No project path on this conversation"
+          isRemote ? "Path is on a remote SSH host" : "No project path on this conversation"
         }
         onClick={handleOpenFolder}
       />
       <MenuItem
         icon={<Terminal size={12} />}
-        label={
-          cliContinuation
-            ? `Continue in CLI (${cliContinuation.label})`
-            : "Continue in CLI"
-        }
+        label={cliContinuation ? `Continue in CLI (${cliContinuation.label})` : "Continue in CLI"}
         subtitle={
           cliContinuation
             ? `Copy cd <path> && ${cliContinuation.command} to clipboard`
@@ -199,9 +253,7 @@ export function ContinueInMenu({ conversation, onFeedback }: ContinueInMenuProps
         subtitle="vscode://file/<path>"
         disabled={localOnlyDisabled}
         disabledReason={
-          isRemote
-            ? "Path is on a remote SSH host"
-            : "No project path on this conversation"
+          isRemote ? "Path is on a remote SSH host" : "No project path on this conversation"
         }
         onClick={() => handleOpenInEditor("vscode")}
       />
@@ -211,9 +263,7 @@ export function ContinueInMenu({ conversation, onFeedback }: ContinueInMenuProps
         subtitle="cursor://file/<path>"
         disabled={localOnlyDisabled}
         disabledReason={
-          isRemote
-            ? "Path is on a remote SSH host"
-            : "No project path on this conversation"
+          isRemote ? "Path is on a remote SSH host" : "No project path on this conversation"
         }
         onClick={() => handleOpenInEditor("cursor")}
       />

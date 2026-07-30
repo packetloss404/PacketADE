@@ -5,18 +5,18 @@ import type { AppView } from "@/stores/appStore";
  * browser reports (e.g. Shift+1 → "!"). Extracted from App.tsx so the mapping
  * is unit-testable in isolation.
  *
- * Tile program (P5-S1): `"!"` (Ctrl+Shift+1) was remapped from the retired
- * `"agents"` CoreView to `"workspace"` — the single-surface home. The Agents
- * tab is reachable only through the one-release redirect shim, never a hotkey.
+ * WA1 restores `"!"` (Ctrl+Shift+1) as the Agents shortcut. Workspace keeps
+ * its mnemonic Ctrl+Shift+W shortcut in App.tsx, avoiding a disruptive
+ * renumbering of the other long-standing view chords.
  *
  * Keyboard-layout caveat: the shifted glyph for the number row varies by
  * layout; this pre-existing caveat is inherited unchanged from the original
  * in-App map.
  */
 export const VIEW_HOTKEY_MAP: Record<string, AppView> = {
-  "!": "workspace", // Shift+1 — remapped from "agents" after CoreView retirement
+  "!": "agents", // Shift+1
   "@": "flights", // Shift+2
   "#": "issues", // Shift+3
-  "$": "history", // Shift+4
+  $: "history", // Shift+4
   "%": "tools", // Shift+5
 };

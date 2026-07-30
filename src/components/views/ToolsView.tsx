@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import {
   Wrench,
   FolderOpen,
@@ -60,7 +60,9 @@ import { MemorySettingsCard } from "./tools/MemorySettingsCard";
 import { GitHubSettingsCard } from "./tools/GitHubSettingsCard";
 import { SubscriptionsCard } from "./tools/SubscriptionsCard";
 import { TrustProvenanceCard } from "./tools/TrustProvenanceCard";
+import { WorkspaceAgentsDogfoodCard } from "./tools/WorkspaceAgentsDogfoodCard";
 import type { PromptTemplate } from "@/types/prompt";
+import type { SettingsSection } from "@/types/settings";
 import { PromptLibrary } from "@/components/workspace/PromptLibrary";
 
 const HistoryView = lazy(() =>
@@ -83,24 +85,6 @@ const HistoryView = lazy(() =>
  *    full-page views that used to be shoehorned into Settings (History,
  *    Cost Dashboard, Prompt Library).
  */
-type SettingsSection =
-  | "general"
-  | "workspace"
-  | "agents"
-  | "packet-agent"
-  | "providers"
-  | "routing"
-  | "memory"
-  | "flights"
-  | "github"
-  | "issues"
-  | "servers"
-  | "mcp"
-  | "project-rules"
-  | "modules"
-  | "dictation"
-  | "advanced";
-
 const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] = [
   { key: "general", label: "General", icon: Palette },
   { key: "workspace", label: "Workspace", icon: FolderOpen },
@@ -121,6 +105,7 @@ const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] =
 ];
 
 export function ToolsView() {
+  const initialTarget = useAppStore.getState().settingsTarget;
   const projectPath = useLayoutStore((s) => s.projectPath);
   const gitBranch = useGitInfo();
   const ticketPrefix = useIssueStore((s) => s.ticketPrefix);
@@ -129,8 +114,22 @@ export function ToolsView() {
   const addLabel = useIssueStore((s) => s.addLabel);
   const epics = useIssueStore((s) => s.epics);
   const labels = useIssueStore((s) => s.labels);
-  const [activeSection, setActiveSection] = useState<SettingsSection>("general");
+  const [activeSection, setActiveSection] = useState<SettingsSection>(
+    initialTarget?.section ?? "general",
+  );
+  const [focusedCliId, setFocusedCliId] = useState<string | null>(
+    initialTarget?.cliId ?? null,
+  );
+  const settingsTarget = useAppStore((s) => s.settingsTarget);
+  const clearSettingsTarget = useAppStore((s) => s.clearSettingsTarget);
   const setActiveView = useAppStore((s) => s.setActiveView);
+
+  useEffect(() => {
+    if (!settingsTarget) return;
+    setActiveSection(settingsTarget.section);
+    setFocusedCliId(settingsTarget.cliId ?? null);
+    clearSettingsTarget();
+  }, [clearSettingsTarget, settingsTarget]);
 
   return (
     <div className="flex h-full overflow-hidden bg-bg-primary">
@@ -144,7 +143,10 @@ export function ToolsView() {
           {SECTIONS.map((section) => (
             <button
               key={section.key}
-              onClick={() => setActiveSection(section.key)}
+              onClick={() => {
+                setActiveSection(section.key);
+                setFocusedCliId(null);
+              }}
               className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left text-[11px] transition-colors ${
                 activeSection === section.key
                   ? "bg-bg-elevated text-accent-green"
@@ -176,9 +178,10 @@ export function ToolsView() {
 
         {activeSection === "agents" && (
           <div className="max-w-3xl space-y-4">
-            <CliAgentsCard />
+            <CliAgentsCard focusedCliId={focusedCliId} />
             <AgentSettingsCard />
             <AgentProfilesCard />
+            <WorkspaceAgentsDogfoodCard />
           </div>
         )}
 

@@ -2,20 +2,20 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore } from "@/stores/appStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useEditorStore } from "@/stores/editorStore";
-import { useDraftTileStore } from "@/stores/draftTileStore";
 import { WorkspaceMosaicContainer } from "@/components/workspace/WorkspaceMosaicContainer";
 import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
-import { AddAgentPicker } from "@/components/workspace/AddAgentPicker";
-import { AgentsOnboarding } from "@/components/agents/AgentsOnboarding";
+import { AddSessionPicker } from "@/components/workspace/AddSessionPicker";
 import { OnboardingPane } from "@/components/onboarding/OnboardingPane";
 import { EditorPane } from "@/components/editor/EditorPane";
 import { isOnboardingComplete } from "@/lib/onboarding";
-import { useState } from "react";
-import { LayoutGrid, GitBranch, FileText, Plus, Zap } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Bot, LayoutGrid, GitBranch, FileText, Plus, Zap } from "lucide-react";
 import { GitDashboard } from "@/components/workspace/GitDashboard";
 import { getAgentColor } from "@/lib/agentColors";
 import { useWorkspaceStatuses, attentionDot } from "@/lib/sessionStatus";
 import type { WorkspaceAgentSlot } from "@/types/workspace";
+import { delegateWorkspaceToAgents } from "@/lib/agentHandoffs";
+import { useWorkspaceAgentsDogfoodStore } from "@/stores/workspaceAgentsDogfoodStore";
 
 const agentLabel: Record<WorkspaceAgentSlot, string> = {
   terminal: "Terminal",
@@ -26,7 +26,16 @@ const agentLabel: Record<WorkspaceAgentSlot, string> = {
   packetcode: "PacketCode",
 };
 
-export function WorkspaceView() {
+interface WorkspaceViewProps {
+  /**
+   * True only while the Workspace surface is visible. The view stays mounted
+   * after its first visit to preserve live PTYs, but hidden Workspaces must not
+   * cold-start or restart terminal processes in the background.
+   */
+  surfaceActive?: boolean;
+}
+
+export function WorkspaceView({ surfaceActive = true }: WorkspaceViewProps) {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
@@ -39,8 +48,8 @@ export function WorkspaceView() {
   const gitPanelOpen = useAppStore((s) => s.gitPanelOpen);
   const setGitPanelOpen = useAppStore((s) => s.setGitPanelOpen);
   const gitPanelConversationId = useAppStore((s) => s.gitPanelConversationId);
+  const gitPanelWorkspaceId = useAppStore((s) => s.gitPanelWorkspaceId);
   const [showCreate, setShowCreate] = useState(false);
-  const drafts = useDraftTileStore((s) => s.drafts);
   // Tile program (P4-S1): the tab-strip dot reads the SINGLE status truth
   // (sessionStatus rollup — max severity across member tiles), not a local
   // liveness heuristic.
@@ -56,16 +65,21 @@ export function WorkspaceView() {
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const activeNonArchived = workspaces.filter((w) => w.status === "active");
+  const recordVisibleConversations = useWorkspaceAgentsDogfoodStore(
+    (state) => state.recordVisibleConversations,
+  );
+  const visibleConversationCount =
+    activeWorkspace?.panes.filter((pane) => pane.kind === "conversation").length ?? 0;
 
-  // Scope the GitDashboard's WorktreeLifecycleBar to the conversation the
-  // "Finish → Commit…" CTA opened it for — but only while that conversation
-  // actually has a tile in the workspace on screen (else fall back to the plain
-  // git view). Guards against a stale scope after a workspace switch.
+  useEffect(() => {
+    recordVisibleConversations(visibleConversationCount);
+  }, [recordVisibleConversations, visibleConversationCount]);
+
+  // Scope the GitDashboard's WorktreeLifecycleBar to the project Workspace
+  // opened by the Agent handoff. No conversation pane is created; the explicit
+  // Workspace id prevents stale scope after a tab switch.
   const scopedGitConversationId =
-    gitPanelConversationId &&
-    activeWorkspace?.panes.some(
-      (p) => p.kind === "conversation" && p.conversationId === gitPanelConversationId,
-    )
+    gitPanelConversationId && gitPanelWorkspaceId === activeWorkspace?.id
       ? gitPanelConversationId
       : undefined;
 
@@ -88,7 +102,7 @@ export function WorkspaceView() {
   return (
     <div className="flex flex-1 overflow-hidden">
       <div className="relative flex flex-1 flex-col overflow-hidden">
-        {/* Merged header: workspace tabs · agent badges · + Add Agent · git
+        {/* Merged header: workspace tabs · CLI badges · + Add Session · git
             toggle · pane-layout presets · bypass perms.
             Replaces the previous two-row layout (workspace context header
             stacked above WorkspaceSubTabs). The active tab's tooltip now
@@ -142,11 +156,22 @@ export function WorkspaceView() {
                   );
                 })}
               {activeWorkspace && (
-                <AddAgentPicker
+                <AddSessionPicker
                   workspace={activeWorkspace}
                   variant="popover"
                   onOpenTemplates={() => setShowCreate(true)}
                 />
+              )}
+              {activeWorkspace && (
+                <button
+                  type="button"
+                  onClick={() => delegateWorkspaceToAgents(activeWorkspace.id)}
+                  className="flex items-center gap-1 rounded border border-bg-border bg-bg-secondary px-2 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+                  title="Delegate work on this project to a GUI agent"
+                >
+                  <Bot size={10} />
+                  Delegate
+                </button>
               )}
               {activeWorkspace && (
                 <button
@@ -188,12 +213,7 @@ export function WorkspaceView() {
             {/* All active workspaces stay mounted so PTY sessions persist */}
             {initialized &&
               activeNonArchived.map((ws) => {
-                // Workspace zero-state: an empty workspace (no panes, no draft
-                // tiles) hosts the inline AddAgentPicker centered — first agent
-                // and Nth agent are one flow. A draft tile counts as non-empty
-                // so the mosaic (which renders it) mounts instead.
-                const draftCount = drafts.filter((d) => d.workspaceId === ws.id).length;
-                const empty = ws.panes.length === 0 && draftCount === 0;
+                const empty = ws.panes.length === 0;
                 return (
                   <div
                     key={ws.id}
@@ -203,16 +223,19 @@ export function WorkspaceView() {
                     {empty ? (
                       <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6">
                         <div className="text-center text-xs text-text-muted">
-                          Add your first agent to this workspace
+                          Add your first CLI session to this workspace
                         </div>
-                        <AddAgentPicker
+                        <AddSessionPicker
                           workspace={ws}
                           variant="inline"
                           onOpenTemplates={() => setShowCreate(true)}
                         />
                       </div>
                     ) : (
-                      <WorkspaceMosaicContainer workspace={ws} />
+                      <WorkspaceMosaicContainer
+                        workspace={ws}
+                        autoStartTerminals={surfaceActive && ws.id === activeWorkspaceId}
+                      />
                     )}
                   </div>
                 );
@@ -301,12 +324,6 @@ export function WorkspaceView() {
               <p className="text-xs">Select a workspace from the sidebar or create a new one</p>
             </div>
           ))}
-
-        {/* Tile program (P5-S1): AgentsOnboarding re-homed from the retired
-            AgentsView to the workspace empty-fleet state. Self-gates on
-            onboardingDismissed (renders null once dismissed); shown here so the
-            first-run welcome survives the Agents tab's retirement. */}
-        {initialized && !activeWorkspace && <AgentsOnboarding />}
       </div>
     </div>
   );

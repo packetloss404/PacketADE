@@ -2,6 +2,7 @@ use crate::commands::shared::home_dir;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Clone)]
@@ -68,7 +69,22 @@ struct CostTallyEntry {
 }
 
 #[tauri::command]
-pub fn read_usage_analytics() -> String {
+pub async fn read_usage_analytics() -> String {
+    // A mature Codex install can have several gigabytes of JSONL history.
+    // Running filesystem discovery/parsing in a synchronous Tauri command
+    // starves the native event loop (including custom-protocol assets and every
+    // other invoke). Keep the command asynchronous even though the parser is
+    // mostly I/O-bound so the window remains interactive during refresh.
+    match tauri::async_runtime::spawn_blocking(read_usage_analytics_blocking).await {
+        Ok(analytics) => analytics,
+        Err(error) => {
+            tracing::warn!(%error, "usage analytics worker failed");
+            empty_analytics()
+        }
+    }
+}
+
+fn read_usage_analytics_blocking() -> String {
     let home = match home_dir() {
         Some(h) => h,
         None => return empty_analytics(),
@@ -185,69 +201,18 @@ pub fn read_usage_analytics() -> String {
         collect_jsonl_files_recursive(&codex_sessions_dir, &mut codex_files);
 
         for path in codex_files {
-            let contents = match fs::read_to_string(&path) {
-                Ok(c) => c,
-                Err(_) => continue,
+            // Codex token_count values are cumulative per session, so only the
+            // newest token_count plus newest turn_context are needed. Read from
+            // EOF in bounded chunks and stop as soon as both are found instead
+            // of reparsing the complete transcript (which can exceed 200 MB).
+            let Some(session_usage) = read_latest_codex_session_usage(&path) else {
+                continue;
             };
 
-            // Per session: aggregate the latest token_count (cumulative totals), latest model, latest date.
-            let mut latest_model: Option<String> = None;
-            let mut latest_input: u64 = 0;
-            let mut latest_output: u64 = 0;
-            let mut latest_cached: u64 = 0;
-            let mut latest_date: Option<String> = None;
-            let mut has_tokens = false;
-
-            for line in contents.lines() {
-                let parsed: serde_json::Value = match serde_json::from_str(line) {
-                    Ok(v) => v,
-                    Err(_) => continue,
-                };
-                let top_type = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
-
-                if top_type == "event_msg" {
-                    if let Some(payload) = parsed.get("payload") {
-                        let inner_type = payload.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                        if inner_type == "token_count" {
-                            has_tokens = true;
-                            let info = payload.get("info");
-                            let usage = info.and_then(|i| i.get("total_token_usage"));
-
-                            latest_input = usage
-                                .and_then(|u| u.get("input_tokens"))
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(latest_input);
-                            latest_output = usage
-                                .and_then(|u| u.get("output_tokens"))
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(latest_output);
-                            latest_cached = usage
-                                .and_then(|u| u.get("cached_input_tokens"))
-                                .or_else(|| usage.and_then(|u| u.get("cached_tokens")))
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(latest_cached);
-
-                            if let Some(ts) = parsed.get("timestamp").and_then(|v| v.as_str()) {
-                                if ts.len() >= 10 {
-                                    latest_date = Some(ts[..10].to_string());
-                                }
-                            }
-                        }
-                    }
-                } else if top_type == "turn_context" {
-                    if let Some(payload) = parsed.get("payload") {
-                        if let Some(model) = payload.get("model").and_then(|v| v.as_str()) {
-                            latest_model = Some(model.to_string());
-                        }
-                    }
-                }
-            }
-
-            if !has_tokens {
-                continue;
-            }
-
-            let model = latest_model.unwrap_or_else(|| "unknown".to_string());
+            let model = session_usage.model.unwrap_or_else(|| "unknown".to_string());
+            let latest_input = session_usage.input_tokens;
+            let latest_output = session_usage.output_tokens;
+            let latest_cached = session_usage.cached_input_tokens;
             let pricing_status = crate::commands::pricing::pricing_status_for(&model);
             let cost = crate::commands::pricing::calculate_cost(
                 &model,
@@ -281,7 +246,7 @@ pub fn read_usage_analytics() -> String {
             usage.output_tokens += latest_output;
             usage.cost_usd += cost;
 
-            if let Some(date) = latest_date {
+            if let Some(date) = session_usage.date {
                 *daily_map.entry(date).or_insert(0.0) += cost;
             }
         }
@@ -415,6 +380,140 @@ fn collect_jsonl_files_recursive(dir: &std::path::Path, out: &mut Vec<PathBuf>) 
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct CodexSessionUsage {
+    model: Option<String>,
+    input_tokens: u64,
+    output_tokens: u64,
+    cached_input_tokens: u64,
+    date: Option<String>,
+}
+
+const CODEX_REVERSE_READ_CHUNK_BYTES: u64 = 256 * 1024;
+
+fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|candidate| candidate == needle)
+}
+
+/// Read a Codex JSONL session from newest to oldest and stop once its latest
+/// cumulative token record and model context are known.
+///
+/// Chunk carry-over preserves lines split across read boundaries. Lines that
+/// are not plausible token/model records are rejected by a byte prefilter
+/// before serde sees them, so large tool outputs never become JSON values.
+fn read_latest_codex_session_usage(path: &std::path::Path) -> Option<CodexSessionUsage> {
+    let mut file = fs::File::open(path).ok()?;
+    let mut position = file.metadata().ok()?.len();
+    if position == 0 {
+        return None;
+    }
+
+    let mut leading_fragment = Vec::<u8>::new();
+    let mut latest_model: Option<String> = None;
+    let mut latest_tokens: Option<(u64, u64, u64, Option<String>)> = None;
+
+    while position > 0 && (latest_model.is_none() || latest_tokens.is_none()) {
+        let read_len = position.min(CODEX_REVERSE_READ_CHUNK_BYTES);
+        let start = position - read_len;
+        file.seek(SeekFrom::Start(start)).ok()?;
+
+        let mut block = vec![0_u8; read_len as usize];
+        file.read_exact(&mut block).ok()?;
+        block.extend_from_slice(&leading_fragment);
+
+        let complete_start = if start == 0 {
+            0
+        } else if let Some(first_newline) = block.iter().position(|byte| *byte == b'\n') {
+            first_newline + 1
+        } else {
+            leading_fragment = block;
+            position = start;
+            continue;
+        };
+
+        for line in block[complete_start..].split(|byte| *byte == b'\n').rev() {
+            if line.is_empty() {
+                continue;
+            }
+
+            if latest_tokens.is_none()
+                && contains_bytes(line, b"\"token_count\"")
+                && contains_bytes(line, b"\"event_msg\"")
+            {
+                if let Ok(parsed) = serde_json::from_slice::<serde_json::Value>(line) {
+                    let payload = parsed.get("payload");
+                    if parsed.get("type").and_then(|value| value.as_str()) == Some("event_msg")
+                        && payload
+                            .and_then(|value| value.get("type"))
+                            .and_then(|value| value.as_str())
+                            == Some("token_count")
+                    {
+                        let usage = payload
+                            .and_then(|value| value.get("info"))
+                            .and_then(|value| value.get("total_token_usage"));
+                        let input = usage
+                            .and_then(|value| value.get("input_tokens"))
+                            .and_then(|value| value.as_u64())
+                            .unwrap_or(0);
+                        let output = usage
+                            .and_then(|value| value.get("output_tokens"))
+                            .and_then(|value| value.as_u64())
+                            .unwrap_or(0);
+                        let cached = usage
+                            .and_then(|value| value.get("cached_input_tokens"))
+                            .or_else(|| usage.and_then(|value| value.get("cached_tokens")))
+                            .and_then(|value| value.as_u64())
+                            .unwrap_or(0);
+                        let date = parsed
+                            .get("timestamp")
+                            .and_then(|value| value.as_str())
+                            .filter(|timestamp| timestamp.len() >= 10)
+                            .map(|timestamp| timestamp[..10].to_string());
+                        latest_tokens = Some((input, output, cached, date));
+                    }
+                }
+            }
+
+            if latest_model.is_none()
+                && contains_bytes(line, b"\"turn_context\"")
+                && contains_bytes(line, b"\"model\"")
+            {
+                if let Ok(parsed) = serde_json::from_slice::<serde_json::Value>(line) {
+                    if parsed.get("type").and_then(|value| value.as_str()) == Some("turn_context") {
+                        latest_model = parsed
+                            .get("payload")
+                            .and_then(|value| value.get("model"))
+                            .and_then(|value| value.as_str())
+                            .map(str::to_owned);
+                    }
+                }
+            }
+
+            if latest_model.is_some() && latest_tokens.is_some() {
+                break;
+            }
+        }
+
+        leading_fragment = if start == 0 {
+            Vec::new()
+        } else {
+            block[..complete_start.saturating_sub(1)].to_vec()
+        };
+        position = start;
+    }
+
+    let (input_tokens, output_tokens, cached_input_tokens, date) = latest_tokens?;
+    Some(CodexSessionUsage {
+        model: latest_model,
+        input_tokens,
+        output_tokens,
+        cached_input_tokens,
+        date,
+    })
+}
+
 fn today_date_string() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
@@ -440,4 +539,108 @@ fn days_to_ymd(days_since_epoch: i64) -> (i32, u32, u32) {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = y + if m <= 2 { 1 } else { 0 };
     (y as i32, m as u32, d as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn token_line(input: u64, output: u64, cached: u64, date: &str) -> String {
+        serde_json::json!({
+            "timestamp": format!("{date}T12:34:56Z"),
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {
+                    "total_token_usage": {
+                        "input_tokens": input,
+                        "output_tokens": output,
+                        "cached_input_tokens": cached
+                    }
+                }
+            }
+        })
+        .to_string()
+    }
+
+    fn model_line(model: &str) -> String {
+        serde_json::json!({
+            "type": "turn_context",
+            "payload": { "model": model }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn reverse_reader_uses_latest_cumulative_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.jsonl");
+        let mut file = fs::File::create(&path).unwrap();
+        writeln!(file, "{}", model_line("gpt-old")).unwrap();
+        writeln!(file, "{}", token_line(10, 2, 1, "2026-07-28")).unwrap();
+        writeln!(file, "{}", model_line("gpt-new")).unwrap();
+        writeln!(file, "{}", token_line(25, 7, 5, "2026-07-29")).unwrap();
+
+        assert_eq!(
+            read_latest_codex_session_usage(&path),
+            Some(CodexSessionUsage {
+                model: Some("gpt-new".to_string()),
+                input_tokens: 25,
+                output_tokens: 7,
+                cached_input_tokens: 5,
+                date: Some("2026-07-29".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn reverse_reader_handles_records_split_across_chunks() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.jsonl");
+        let mut file = fs::File::create(&path).unwrap();
+        writeln!(file, "{}", model_line("gpt-split")).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "payload": "x".repeat(CODEX_REVERSE_READ_CHUNK_BYTES as usize + 37)
+            })
+        )
+        .unwrap();
+        writeln!(file, "{}", token_line(99, 11, 8, "2026-07-29")).unwrap();
+
+        assert_eq!(
+            read_latest_codex_session_usage(&path),
+            Some(CodexSessionUsage {
+                model: Some("gpt-split".to_string()),
+                input_tokens: 99,
+                output_tokens: 11,
+                cached_input_tokens: 8,
+                date: Some("2026-07-29".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn reverse_reader_ignores_trailing_partial_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.jsonl");
+        let mut file = fs::File::create(&path).unwrap();
+        writeln!(file, "{}", model_line("gpt-stable")).unwrap();
+        writeln!(file, "{}", token_line(40, 4, 3, "2026-07-29")).unwrap();
+        write!(file, "{{\"type\":\"event_msg\",\"payload\":").unwrap();
+
+        assert_eq!(
+            read_latest_codex_session_usage(&path),
+            Some(CodexSessionUsage {
+                model: Some("gpt-stable".to_string()),
+                input_tokens: 40,
+                output_tokens: 4,
+                cached_input_tokens: 3,
+                date: Some("2026-07-29".to_string()),
+            })
+        );
+    }
 }

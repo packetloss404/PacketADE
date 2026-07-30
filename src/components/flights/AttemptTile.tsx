@@ -14,6 +14,8 @@ import {
   ChevronRight,
   RotateCcw,
   ShieldCheck,
+  MonitorUp,
+  PanelsTopLeft,
 } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
@@ -24,6 +26,8 @@ import { notifyAttemptFailed } from "@/lib/notifications";
 import type { Attempt, AttemptStatus, Flight } from "@/types/flight";
 import type { AgentMessage } from "@/types/agent-conversation";
 import { reviewerGateAllowsAcceptance } from "@/lib/reviewerGate";
+import { openFlightAttemptInWorkspace } from "@/lib/agentHandoffs";
+import { openMonitorWindow } from "@/lib/monitorWindows";
 
 interface AttemptTileProps {
   flight: Flight;
@@ -323,6 +327,34 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
 
         {/* Action row */}
         <div className="border-bg-border/40 flex items-center justify-end gap-1 border-t px-2 py-1">
+          {conversation && (
+            <>
+              <button
+                onClick={() => {
+                  const result = openFlightAttemptInWorkspace(attempt.sessionId);
+                  if (!result.ok) setActionError(result.message);
+                }}
+                className="flex items-center gap-1 rounded border border-bg-border px-2 py-0.5 text-[10px] text-text-secondary hover:text-text-primary"
+                title="Open this attempt's project in a CLI-first Workspace"
+              >
+                <PanelsTopLeft size={10} /> Open in Workspace
+              </button>
+              <button
+                onClick={() =>
+                  void runAction(() =>
+                    openMonitorWindow({
+                      kind: "agent_conversation",
+                      conversationId: attempt.sessionId,
+                    }).then(() => {}),
+                  )
+                }
+                className="flex items-center gap-1 rounded border border-bg-border px-2 py-0.5 text-[10px] text-text-secondary hover:text-text-primary"
+                title="Open a read-only monitor for this attempt"
+              >
+                <MonitorUp size={10} /> Monitor
+              </button>
+            </>
+          )}
           {attempt.status === "reviewing" && (
             <>
               <button

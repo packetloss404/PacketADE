@@ -3,6 +3,7 @@ import { ChevronUp, FileDiff, GitMerge } from "lucide-react";
 import { useReviewStore } from "@/stores/reviewStore";
 import { useAppStore } from "@/stores/appStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { openConversationGitEnding } from "@/lib/agentHandoffs";
 import {
   countReviewFiles,
   type DiffTotals,
@@ -57,17 +58,13 @@ export function ReviewBar({
 
   // The additive "Finish → Commit…" CTA. Shown when the session has settled
   // (done/idle) with reviewed changes (files present, nothing still awaiting a
-  // Y/N). Opens the ONE endings surface — GitDashboard's WorktreeLifecycleBar,
-  // scoped to this conversation's worktree — inside the mosaic workspace (the
-  // P5 replacement for the deleted disposable Agents-tab commit host). Reads
-  // status itself (AgentChatPane is a protected, unmodified surface).
+  // Y/N). The WA3 handoff opens the ONE endings surface —
+  // GitDashboard's WorktreeLifecycleBar — against this exact conversation and
+  // worktree. From Agents it explicitly attaches the same conversation ID to a
+  // matching Workspace; from a compatibility tile it reuses that placement.
   const conversationStatus = useAgentTaskStore(
     (s) => s.conversations.find((c) => c.id === conversationId)?.status,
   );
-  const openGitPanelForConversation = useAppStore(
-    (s) => s.openGitPanelForConversation,
-  );
-
   const topEdit = pendingEdits[0];
   // Dual-mode focus gate (P3-S1): no pane context (undefined) → armed as
   // today; pane context → armed iff this instance holds keyboard scope.
@@ -161,7 +158,7 @@ export function ReviewBar({
       {showFinish && (
         <button
           type="button"
-          onClick={() => openGitPanelForConversation(conversationId)}
+          onClick={() => openConversationGitEnding(conversationId)}
           className="hover:bg-accent-green/10 mt-1 flex w-full items-center justify-center gap-1.5 rounded px-1 py-1 text-ui font-medium text-accent-green transition-colors"
           title="Commit and land this conversation's changes"
         >

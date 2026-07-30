@@ -78,7 +78,9 @@ describe("buildFleetProjection — unified rows", () => {
         conversationAttention: new Map([["conv-unplaced", "idle"]]),
       }),
     );
-    const ids = allRows(p).map((r) => r.id).sort();
+    const ids = allRows(p)
+      .map((r) => r.id)
+      .sort();
     expect(ids).toEqual(["conv-unplaced", "ws-1"]);
     const virt = allRows(p).find((r) => r.id === "conv-unplaced");
     expect(virt?.kind).toBe("virtual");
@@ -113,6 +115,32 @@ describe("buildFleetProjection — unified rows", () => {
     );
     const ids = allRows(p).map((r) => r.id);
     expect(ids).toEqual(["normal-1"]);
+  });
+
+  it("can exclude unplaced conversations while retaining placed workspace rows", () => {
+    const p = buildFleetProjection(
+      baseInput({
+        workspaces: [
+          workspace({
+            id: "ws-placed",
+            panes: [conversationPane("conv-placed")],
+          }),
+        ],
+        conversations: [
+          conv({ id: "conv-placed", title: "Placed" }),
+          conv({ id: "conv-unplaced", title: "Agents only" }),
+        ],
+        workspaceStatuses: new Map([["ws-placed", "idle"]]),
+        conversationAttention: new Map([
+          ["conv-placed", "idle"],
+          ["conv-unplaced", "idle"],
+        ]),
+        includeVirtualConversations: false,
+      }),
+    );
+
+    expect(allRows(p).map((row) => row.id)).toEqual(["ws-placed"]);
+    expect(allRows(p)[0]?.kind).toBe("workspace");
   });
 });
 
@@ -171,10 +199,7 @@ describe("buildFleetProjection — needs-you (from sessionStatus)", () => {
             panes: [conversationPane("c-idle", "p1"), conversationPane("c-needs", "p2")],
           }),
         ],
-        conversations: [
-          conv({ id: "c-idle" }),
-          conv({ id: "c-needs" }),
-        ],
+        conversations: [conv({ id: "c-idle" }), conv({ id: "c-needs" })],
         workspaceStatuses: new Map([["ws-1", "needs_you"]]),
         conversationAttention: new Map([
           ["c-idle", "idle"],
@@ -192,10 +217,7 @@ describe("buildFleetProjection — needs-you (from sessionStatus)", () => {
 describe("buildFleetProjection — archived + filters", () => {
   it("archived rows are first-class only under the archived filter", () => {
     const input = baseInput({
-      conversations: [
-        conv({ id: "live", archived: false }),
-        conv({ id: "gone", archived: true }),
-      ],
+      conversations: [conv({ id: "live", archived: false }), conv({ id: "gone", archived: true })],
       conversationAttention: new Map([
         ["live", "idle"],
         ["gone", "done"],
@@ -235,7 +257,9 @@ describe("buildFleetProjection — search / pin", () => {
           conv({
             id: "byMsg",
             title: "Untitled",
-            messages: [{ id: "m", role: "user", content: "please fix the PARSER bug", timestamp: 1 }],
+            messages: [
+              { id: "m", role: "user", content: "please fix the PARSER bug", timestamp: 1 },
+            ],
           }),
           conv({ id: "archived-hit", title: "parser cleanup", archived: true }),
         ],
@@ -270,11 +294,7 @@ describe("buildFleetProjection — counts", () => {
   it("all excludes archived; active + done partition the non-archived set", () => {
     const p = buildFleetProjection(
       baseInput({
-        conversations: [
-          conv({ id: "a1" }),
-          conv({ id: "d1" }),
-          conv({ id: "z1", archived: true }),
-        ],
+        conversations: [conv({ id: "a1" }), conv({ id: "d1" }), conv({ id: "z1", archived: true })],
         conversationAttention: new Map<string, Attention>([
           ["a1", "working"],
           ["d1", "failed"],

@@ -8,6 +8,7 @@ import type { SidecarStatus } from "@/lib/tauri";
 
 const VIEW_LABELS: Partial<Record<AppView, string>> = {
   workspace: "Workspace",
+  agents: "Agents",
   flights: "Flight Deck",
   issues: "Issues",
   github: "GitHub",
@@ -19,15 +20,18 @@ const VIEW_LABELS: Partial<Record<AppView, string>> = {
   welcome: "Welcome",
 };
 
-function StatField({ label, value, mono, accent }: {
+function StatField({
+  label,
+  value,
+  mono,
+  accent,
+}: {
   label: string;
   value: string;
   mono?: boolean;
   accent?: "green" | "blue" | "amber" | "purple";
 }) {
-  const valueClass = accent
-    ? `text-accent-${accent}`
-    : "text-text-secondary";
+  const valueClass = accent ? `text-accent-${accent}` : "text-text-secondary";
   return (
     <span className="flex items-center gap-1.5 text-[10.5px]">
       <span className="text-text-faint">{label}</span>
@@ -78,16 +82,9 @@ function SidecarStatusDot({ status }: { status: SidecarStatus | null }) {
   }
 
   return (
-    <span
-      className="flex items-center"
-      title={tooltip}
-      aria-label={tooltip}
-      role="status"
-    >
+    <span className="flex items-center" title={tooltip} aria-label={tooltip} role="status">
       <span
-        className={`w-[7px] h-[7px] rounded-full ${dotClass} ${
-          pulse ? "animate-pulse" : ""
-        }`}
+        className={`h-[7px] w-[7px] rounded-full ${dotClass} ${pulse ? "animate-pulse" : ""}`}
         aria-hidden
       />
     </span>
@@ -107,19 +104,19 @@ export function StatusStrip() {
   const viewLabel = VIEW_LABELS[activeView] ?? null;
 
   return (
-    <div className="flex items-center h-[26px] px-3 gap-3.5 bg-bg-secondary border-t border-bg-border flex-shrink-0 select-none">
+    <div className="flex h-[26px] flex-shrink-0 select-none items-center gap-3.5 border-t border-bg-border bg-bg-secondary px-3">
       <SidecarStatusDot status={sidecar} />
       {projectName && (
         <span className="flex items-center gap-1.5 text-[10.5px]">
           <FolderGit2 size={10} className="text-text-faint" />
-          <span className="text-text-secondary font-mono">{projectName}</span>
+          <span className="font-mono text-text-secondary">{projectName}</span>
         </span>
       )}
 
       {gitBranch && (
         <span className="flex items-center gap-1.5 text-[10.5px]">
           <GitBranch size={10} className="text-text-faint" />
-          <span className="text-accent-blue font-mono">{gitBranch}</span>
+          <span className="font-mono text-accent-blue">{gitBranch}</span>
         </span>
       )}
 
@@ -146,14 +143,17 @@ export function StatusStrip() {
         </span>
       )}
       {dictationStatus === "error" && !isRecording && !isTranscribing && (
-        <span className="flex items-center gap-1.5 text-[10.5px] text-accent-red" title="Last dictation failed">
+        <span
+          className="flex items-center gap-1.5 text-[10.5px] text-accent-red"
+          title="Last dictation failed"
+        >
           <Mic size={10} />
           <span className="font-mono">Err</span>
         </span>
       )}
 
       <span className="flex items-center gap-1.5 text-[10.5px] text-text-muted">
-        <span className="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse" />
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-green" />
         PacketADE
       </span>
     </div>

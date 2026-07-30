@@ -19,6 +19,7 @@ const mockSetInitialized = vi.hoisted(() => vi.fn());
 const mockSetTheme = vi.hoisted(() => vi.fn());
 const mockSetActiveView = vi.hoisted(() => vi.fn());
 const mockStartBoundedAutonomyRuntime = vi.hoisted(() => vi.fn());
+const mockHydrateConversations = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const mockAppState = vi.hoisted(() => ({
   activeView: "flights",
   theme: "dark" as const,
@@ -53,7 +54,10 @@ vi.mock("@/stores/workspaceStore", () => ({
 }));
 vi.mock("@/stores/agentStore", () => ({
   useAgentStore: {
-    getState: () => ({ hydrateFromBackend: mockAgentHydrate, detectInstalled: mockDetectInstalled }),
+    getState: () => ({
+      hydrateFromBackend: mockAgentHydrate,
+      detectInstalled: mockDetectInstalled,
+    }),
   },
 }));
 vi.mock("@/stores/flightStore", () => ({
@@ -83,6 +87,9 @@ vi.mock("@/stores/issueStore", () => ({
 }));
 vi.mock("@/stores/boundedAutonomyRuntime", () => ({
   startBoundedAutonomyRuntime: mockStartBoundedAutonomyRuntime,
+}));
+vi.mock("@/stores/agentConversationPersistence", () => ({
+  hydrateConversations: mockHydrateConversations,
 }));
 
 import { initializeApp, persistUiState } from "@/lib/bootstrap";
@@ -162,5 +169,24 @@ describe("initializeApp", () => {
     expect(mockOrchestrationSettingsHydrate).toHaveBeenCalledWith(
       expect.objectContaining({ issues: [{ id: "issue-1", ticketId: "PKT-001" }] }),
     );
+  });
+
+  it("waits for conversation-file hydration before publishing initialized", async () => {
+    let resolveConversations!: () => void;
+    mockHydrateConversations.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveConversations = resolve;
+        }),
+    );
+
+    const initialized = initializeApp();
+    await vi.waitFor(() => expect(mockWorkspaceHydrate).toHaveBeenCalled());
+    expect(mockSetInitialized).not.toHaveBeenCalled();
+
+    resolveConversations();
+    await initialized;
+
+    expect(mockSetInitialized).toHaveBeenCalledWith(true);
   });
 });

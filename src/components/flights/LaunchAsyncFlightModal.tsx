@@ -21,7 +21,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
 import { requestConversationSave } from "@/stores/agentConversationPersistence";
-import { focusConversationDeepLink } from "@/stores/sessionGlue";
+import { openConversationInAgents } from "@/stores/sessionGlue";
 import {
   buildFlightPlanningSystemPrompt,
   FLIGHT_PLANNING_ALLOWED_TOOLS,
@@ -38,10 +38,7 @@ import type {
   FlightPriority,
 } from "@/types/flight";
 import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
-import {
-  pathWithinAllowedRoots,
-  validateAutonomyPolicy,
-} from "@/lib/autonomyPolicy";
+import { pathWithinAllowedRoots, validateAutonomyPolicy } from "@/lib/autonomyPolicy";
 
 interface LaunchAsyncFlightModalProps {
   onClose: () => void;
@@ -216,8 +213,7 @@ export function LaunchAsyncFlightModal({
   const explicitYoloPolicy = useMemo<AutonomyPolicy>(
     () => ({
       ...autonomyDefaultPolicy,
-      autoReviewRemediation:
-        autonomyDefaultPolicy.autoReviewRemediation && reviewerEnabled,
+      autoReviewRemediation: autonomyDefaultPolicy.autoReviewRemediation && reviewerEnabled,
       autoRunTaskGraph:
         autonomyDefaultPolicy.autoRunTaskGraph &&
         existingFlight?.executionMode === "cooperative" &&
@@ -266,7 +262,10 @@ export function LaunchAsyncFlightModal({
         return `${target.label} is outside the autonomy target allowlist.`;
       }
     }
-    if (effectiveAutonomyPolicy.autoRunTaskGraph && existingFlight?.executionMode !== "cooperative") {
+    if (
+      effectiveAutonomyPolicy.autoRunTaskGraph &&
+      existingFlight?.executionMode !== "cooperative"
+    ) {
       return "Auto-run task graph requires a Cooperative Flight.";
     }
     if (effectiveAutonomyPolicy.autoRunTaskGraph && !reviewerEnabled) {
@@ -381,7 +380,7 @@ export function LaunchAsyncFlightModal({
         currentConversationId &&
         useAgentTaskStore.getState().conversations.some((item) => item.id === currentConversationId)
       ) {
-        focusConversationDeepLink(currentConversationId);
+        openConversationInAgents(currentConversationId);
         onClose();
         return;
       }
@@ -438,7 +437,7 @@ export function LaunchAsyncFlightModal({
       });
       await flushFlightPersistence();
       onLaunched?.(flight.id);
-      focusConversationDeepLink(conversationId);
+      openConversationInAgents(conversationId);
       onClose();
     } catch (e) {
       setError(typeof e === "string" ? e : ((e as Error)?.message ?? "Planning failed"));
@@ -612,8 +611,8 @@ export function LaunchAsyncFlightModal({
               </div>
               {effectiveAutonomyPolicy ? (
                 <div className="mt-2 text-[10px] leading-relaxed text-text-muted">
-                  <span className="font-medium text-text-secondary">Effective bounds:</span>{" "}
-                  ${effectiveAutonomyPolicy.maxTotalCost.toFixed(2)} ·{" "}
+                  <span className="font-medium text-text-secondary">Effective bounds:</span> $
+                  {effectiveAutonomyPolicy.maxTotalCost.toFixed(2)} ·{" "}
                   {effectiveAutonomyPolicy.maxDurationMinutes} min ·{" "}
                   {effectiveAutonomyPolicy.maxRetriesPerTask} retries/task ·{" "}
                   {effectiveAutonomyPolicy.maxReviewRounds} review rounds ·{" "}
@@ -637,9 +636,7 @@ export function LaunchAsyncFlightModal({
                 </p>
               )}
               {autonomyConfigurationError && (
-                <p className="mt-1 text-[10px] text-accent-amber">
-                  {autonomyConfigurationError}
-                </p>
+                <p className="mt-1 text-[10px] text-accent-amber">{autonomyConfigurationError}</p>
               )}
             </div>
           </div>

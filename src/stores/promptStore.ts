@@ -3,19 +3,62 @@ import { loadFromStorage, saveToStorage, generateId } from "@/lib/storage";
 import { writePty } from "@/lib/tauri";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import { focusConversationDeepLink } from "@/stores/sessionGlue";
+import { openConversationInAgents } from "@/stores/sessionGlue";
 import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
-import { SCOUT_SYSTEM_PROMPT, SCOUT_ALLOWED_TOOLS, SCOUT_MEMORY_CONTEXT_DEFAULT } from "@/lib/scout-config";
+import {
+  SCOUT_SYSTEM_PROMPT,
+  SCOUT_ALLOWED_TOOLS,
+  SCOUT_MEMORY_CONTEXT_DEFAULT,
+} from "@/lib/scout-config";
 import type { PromptTemplate } from "@/types/prompt";
 
 const STORAGE_KEY = "packetade:prompt-templates";
 
 const BUILTIN_TEMPLATES: PromptTemplate[] = [
-  { id: "builtin-review", name: "Code Review", content: "Review the recent changes in this project. Focus on correctness, performance, and security. Highlight any issues found.", category: "review", createdAt: 0, updatedAt: 0 },
-  { id: "builtin-debug", name: "Debug Issue", content: "Help me debug this issue. Look at the error messages and suggest fixes.", category: "debugging", createdAt: 0, updatedAt: 0 },
-  { id: "builtin-explain", name: "Explain Code", content: "Explain how this codebase works. Start with the entry point and trace through the main flow.", category: "general", createdAt: 0, updatedAt: 0 },
-  { id: "builtin-test", name: "Write Tests", content: "Write comprehensive tests for the recent changes. Cover edge cases and error scenarios.", category: "general", createdAt: 0, updatedAt: 0 },
-  { id: "builtin-refactor", name: "Refactor", content: "Suggest refactoring opportunities in this code. Focus on readability and maintainability.", category: "custom", createdAt: 0, updatedAt: 0 },
+  {
+    id: "builtin-review",
+    name: "Code Review",
+    content:
+      "Review the recent changes in this project. Focus on correctness, performance, and security. Highlight any issues found.",
+    category: "review",
+    createdAt: 0,
+    updatedAt: 0,
+  },
+  {
+    id: "builtin-debug",
+    name: "Debug Issue",
+    content: "Help me debug this issue. Look at the error messages and suggest fixes.",
+    category: "debugging",
+    createdAt: 0,
+    updatedAt: 0,
+  },
+  {
+    id: "builtin-explain",
+    name: "Explain Code",
+    content:
+      "Explain how this codebase works. Start with the entry point and trace through the main flow.",
+    category: "general",
+    createdAt: 0,
+    updatedAt: 0,
+  },
+  {
+    id: "builtin-test",
+    name: "Write Tests",
+    content:
+      "Write comprehensive tests for the recent changes. Cover edge cases and error scenarios.",
+    category: "general",
+    createdAt: 0,
+    updatedAt: 0,
+  },
+  {
+    id: "builtin-refactor",
+    name: "Refactor",
+    content:
+      "Suggest refactoring opportunities in this code. Focus on readability and maintainability.",
+    category: "custom",
+    createdAt: 0,
+    updatedAt: 0,
+  },
 ];
 
 function loadTemplates(): PromptTemplate[] {
@@ -30,7 +73,10 @@ function loadTemplates(): PromptTemplate[] {
 interface PromptStore {
   templates: PromptTemplate[];
   addTemplate: (name: string, content: string, category: PromptTemplate["category"]) => void;
-  updateTemplate: (id: string, updates: Partial<Pick<PromptTemplate, "name" | "content" | "category">>) => void;
+  updateTemplate: (
+    id: string,
+    updates: Partial<Pick<PromptTemplate, "name" | "content" | "category">>,
+  ) => void;
   deleteTemplate: (id: string) => void;
   sendToTerminal: (templateId: string) => void;
   sendToAgentChat: (templateId: string) => Promise<void>;
@@ -56,7 +102,7 @@ export const usePromptStore = create<PromptStore>((set, get) => ({
 
   updateTemplate: (id, updates) => {
     const updated = get().templates.map((t) =>
-      t.id === id ? { ...t, ...updates, updatedAt: Date.now() } : t
+      t.id === id ? { ...t, ...updates, updatedAt: Date.now() } : t,
     );
     set({ templates: updated });
     saveToStorage(STORAGE_KEY, updated);
@@ -83,7 +129,9 @@ export const usePromptStore = create<PromptStore>((set, get) => ({
     const projectPath = useLayoutStore.getState().projectPath;
     if (!projectPath) return;
     const agentState = useAgentTaskStore.getState();
-    const selected = agentState.conversations.find((c) => c.id === agentState.selectedConversationId);
+    const selected = agentState.conversations.find(
+      (c) => c.id === agentState.selectedConversationId,
+    );
     const agent =
       selected?.mode === "api" && API_PROVIDERS.some((p) => p.agentCli === selected.agent)
         ? selected.agent
@@ -101,10 +149,9 @@ export const usePromptStore = create<PromptStore>((set, get) => ({
       allowedTools: SCOUT_ALLOWED_TOOLS,
       memoryContextEnabled: SCOUT_MEMORY_CONTEXT_DEFAULT,
     });
-    // Tile program (P5-S1): routes the Scout conversation through the
-    // materializing deep-link path — it lands on a real, focused workspace tile
-    // instead of the retired Agents tab.
+    // Prompt-library launches are durable conversations owned by Agents. Do not
+    // materialize a Workspace pane as a navigation side effect.
     useAgentTaskStore.getState().selectConversation(id);
-    focusConversationDeepLink(id);
+    openConversationInAgents(id);
   },
 }));

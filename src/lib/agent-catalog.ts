@@ -4,8 +4,9 @@
  * A thin static READ-LAYER registry that joins the two existing sources of
  * truth — `lib/api-models.ts` (API "Chat agent" providers) and
  * `lib/cli-catalog.ts` / `types/workspace` (the CLI "Terminal" slots) — under a
- * single capability vocabulary so the `AddAgentPicker` can render one filterable
- * list with two labeled sections. It NEVER mutates either source: `API_PROVIDERS`
+ * single capability vocabulary. WA2's Workspace `AddSessionPicker` consumes
+ * only the terminal half; compatibility draft tiles still use the chat lookup.
+ * It NEVER mutates either source: `API_PROVIDERS`
  * and `CLI_CATALOG` stay the owners of models / install metadata. This module
  * only re-projects them behind the ruled capability flags
  * `{ face, supportsApprovals, supportsSsh, models[] }`.

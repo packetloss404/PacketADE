@@ -236,6 +236,7 @@ function CliCatalogCard({
 
   return (
     <div
+      id={`cli-catalog-${entry.id}`}
       role="button"
       tabIndex={0}
       onClick={() => onSelect(entry.id)}
@@ -411,7 +412,11 @@ function CliCatalogCard({
 
 // === Main card ===
 
-export function CliAgentsCard() {
+interface CliAgentsCardProps {
+  focusedCliId?: string | null;
+}
+
+export function CliAgentsCard({ focusedCliId = null }: CliAgentsCardProps) {
   const agents = useAgentStore((s) => s.agents);
   const storeDetecting = useAgentStore((s) => s.detecting);
   const addAgent = useAgentStore((s) => s.addAgent);
@@ -447,6 +452,22 @@ export function CliAgentsCard() {
     projectPath: string | undefined;
   } | null>(null);
 
+  useEffect(() => {
+    if (
+      !focusedCliId ||
+      !CLI_CATALOG.some((entry) => entry.id === focusedCliId)
+    ) {
+      return;
+    }
+    setSelectedCliId(focusedCliId);
+    const frame = requestAnimationFrame(() => {
+      document
+        .getElementById(`cli-catalog-${focusedCliId}`)
+        ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusedCliId]);
+
   const customAgents = useMemo(
     () => agents.filter((a) => !a.isBuiltin),
     [agents],
@@ -463,7 +484,7 @@ export function CliAgentsCard() {
   }, [overrides]);
 
   /** Reflect a single catalog detection result back into `agentStore` so the
-   *  WorkspaceView Add Agent menu (which reads `agents[].installed`) and PTY
+   *  Workspace Add Session picker (which reads `agents[].installed`) and PTY
    *  launches (which read `agents[].command`) both see the manual-path
    *  override. Without this, Browse-pinning a binary updates only the
    *  override store and the local results map, leaving the menu disabled
@@ -504,7 +525,7 @@ export function CliAgentsCard() {
       for (const r of out) merged[r.id] = r;
       setResults(merged);
       // Sync override-aware results back into agentStore so the
-      // WorkspaceView Add Agent menu and PTY launch path both see the
+      // Workspace Add Session picker and PTY launch path both see the
       // pinned binary. Done per-entry so the agentStore's `command` is
       // updated to the override path when one is set.
       for (const item of items) {
@@ -563,10 +584,10 @@ export function CliAgentsCard() {
       }
       // Update the local results map so the card refreshes immediately.
       setResults((prev) => ({ ...prev, [selectedEntry.id]: result }));
-      // Propagate into agentStore so the WorkspaceView "Add Agent" menu
+      // Propagate into agentStore so the Workspace "Add Session" picker
       // (which gates its button on `agents[].installed`) and PTY launches
       // see this result. Without this, a green Test check never enables the
-      // Add Agent button. No-op for catalog ids without a built-in slot.
+      // Add Session button. No-op for catalog ids without a built-in slot.
       syncAgentFromResult(selectedEntry, result, manualPath ?? null);
       if (!result.installed) {
         return {
@@ -591,7 +612,7 @@ export function CliAgentsCard() {
 
   /** Re-probe a single catalog entry and merge the result into local state.
    *  Used after Browse-for-binary picks a path, and after Reset-override
-   *  clears one. Also syncs `agentStore` so the WorkspaceView Add Agent
+   *  clears one. Also syncs `agentStore` so the Workspace Add Session
    *  menu enables the freshly-pinned binary and PTY launches use the
    *  override path. Keeps the card snappy without forcing a full grid
    *  rescan. */

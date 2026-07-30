@@ -8,11 +8,13 @@ import { renderHook } from "@testing-library/react";
 
 const createWorkspace = vi.fn(() => "ws-new");
 const setActiveView = vi.fn();
+const selectConversation = vi.fn();
 const cycleTranscriptViewMode = vi.fn();
 const sweepAutoArchive = vi.fn();
+let activeView = "workspace";
 
 vi.mock("@/stores/appStore", () => ({
-  useAppStore: { getState: () => ({ setActiveView }) },
+  useAppStore: { getState: () => ({ activeView, setActiveView }) },
 }));
 vi.mock("@/stores/layoutStore", () => ({
   useLayoutStore: { getState: () => ({ projectPath: "/proj" }) },
@@ -22,6 +24,9 @@ vi.mock("@/stores/workspaceStore", () => ({
 }));
 vi.mock("@/stores/agentSettingsStore", () => ({
   useAgentSettingsStore: { getState: () => ({ cycleTranscriptViewMode }) },
+}));
+vi.mock("@/stores/agentTaskStore", () => ({
+  useAgentTaskStore: { getState: () => ({ selectConversation }) },
 }));
 vi.mock("@/stores/agentConversationPersistence", () => ({
   sweepAutoArchive: (...args: unknown[]) => sweepAutoArchive(...args),
@@ -39,6 +44,7 @@ describe("useAgentTabHoists", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    activeView = "workspace";
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -56,6 +62,17 @@ describe("useAgentTabHoists", () => {
     renderHook(() => useAgentTabHoists());
     fireKey({ metaKey: true, key: "n" });
     expect(createWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it("Ctrl+N opens the launcher in Agents without creating a workspace", () => {
+    activeView = "agents";
+    renderHook(() => useAgentTabHoists());
+
+    fireKey({ ctrlKey: true, key: "n" });
+
+    expect(selectConversation).toHaveBeenCalledWith(null);
+    expect(createWorkspace).not.toHaveBeenCalled();
+    expect(setActiveView).not.toHaveBeenCalled();
   });
 
   it("Ctrl+N yields to typing when focus is in an input (guard)", () => {

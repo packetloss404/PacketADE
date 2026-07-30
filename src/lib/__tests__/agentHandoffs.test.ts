@@ -1,0 +1,389 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn().mockResolvedValue(() => {}),
+}));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/agentsMd", () => ({
+  loadAgentsMd: vi.fn().mockResolvedValue(null),
+}));
+vi.mock("@/stores/memoryStore", () => ({
+  useMemoryStore: {
+    getState: vi.fn(() => ({ getContextForSession: vi.fn(() => "") })),
+  },
+}));
+vi.mock("@/lib/tauri", () => ({
+  createPtySession: vi.fn(),
+  writePty: vi.fn(),
+  killPty: vi.fn(),
+  startApiAgentSession: vi.fn().mockResolvedValue(undefined),
+  sendApiAgentMessage: vi.fn(),
+  cancelApiAgentSession: vi.fn().mockResolvedValue(undefined),
+  cancelPendingTools: vi.fn(),
+  closeApiAgentSession: vi.fn().mockResolvedValue(undefined),
+  saveConversation: vi.fn().mockResolvedValue(undefined),
+  loadConversations: vi.fn().mockResolvedValue([]),
+  deleteConversationFile: vi.fn().mockResolvedValue(undefined),
+  changeAgentModel: vi.fn(),
+  setPlanMode: vi.fn(),
+  setPermissionMode: vi.fn(),
+  respondPermission: vi.fn(),
+  setApproveWrites: vi.fn(),
+  respondEdit: vi.fn(),
+  retryLastTurn: vi.fn(),
+  exportConversationMarkdown: vi.fn(),
+  getGitStatus: vi.fn(),
+  removeConversationWorktree: vi.fn(),
+  saveWorkspacesSlice: vi.fn().mockResolvedValue(undefined),
+  saveAgentsSlice: vi.fn().mockResolvedValue(undefined),
+  saveServersSlice: vi.fn().mockResolvedValue(undefined),
+  saveFlightsSlice: vi.fn().mockResolvedValue(undefined),
+  saveUiSlice: vi.fn().mockResolvedValue(undefined),
+  loadPersistedState: vi.fn().mockResolvedValue({
+    agents: [],
+    flights: [],
+    issues: [],
+    ui: {},
+  }),
+}));
+
+import {
+  attachTerminalToConversationProject,
+  buildPacketCodeHandoffPayload,
+  delegateWorkspaceToAgents,
+  formatPacketCodeHandoffPayload,
+  linkConversationToFlight,
+  openConversationGitEnding,
+  openConversationInPacketCode,
+  openConversationProjectInWorkspace,
+  openFlightAttemptInWorkspace,
+} from "@/lib/agentHandoffs";
+import { useAgentStore } from "@/stores/agentStore";
+import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { useAppStore } from "@/stores/appStore";
+import { useFlightStore } from "@/stores/flightStore";
+import { useLayoutStore } from "@/stores/layoutStore";
+import { useServerStore } from "@/stores/serverStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import type { AgentConversation } from "@/types/agent-conversation";
+import { useWorkspaceAgentsDogfoodStore } from "@/stores/workspaceAgentsDogfoodStore";
+
+function conversation(overrides: Partial<AgentConversation> = {}): AgentConversation {
+  return {
+    id: "conv-1",
+    title: "Finish the handoff",
+    agent: "api-openai",
+    projectPath: "D:\\projects\\PacketADE",
+    status: "idle",
+    messages: [],
+    sessionId: "session-1",
+    rawOutput: "",
+    createdAt: 10,
+    updatedAt: 20,
+    mode: "api",
+    permissionMode: "ask_for_risky",
+    approveWrites: true,
+    enabledMcpServerIds: ["trusted-local"],
+    ...overrides,
+  };
+}
+
+describe("WA3 agent handoffs", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    useAgentTaskStore.setState({
+      conversations: [conversation()],
+      selectedConversationId: "conv-1",
+      selectedRepo: null,
+    });
+    useWorkspaceStore.setState({
+      workspaces: [],
+      activeWorkspaceId: null,
+      zoomedPaneId: null,
+      focusPaneRequest: null,
+    });
+    useLayoutStore.setState({ activePaneId: "", projectPath: "" });
+    useAppStore.setState({
+      activeView: "agents",
+      gitPanelOpen: false,
+      gitPanelConversationId: null,
+      gitPanelWorkspaceId: null,
+    });
+    useServerStore.setState({ servers: [] });
+    useFlightStore.setState({ flights: [], activeFlightId: null });
+    useWorkspaceAgentsDogfoodStore.getState().reset();
+    useAgentStore.setState((state) => ({
+      agents: state.agents.map((agent) => ({
+        ...agent,
+        installed: agent.id === "packetcode" || agent.id === "codex",
+      })),
+    }));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("opens the project in a PacketCode-first Workspace without attaching the conversation", () => {
+    const result = openConversationProjectInWorkspace("conv-1");
+
+    expect(result).toMatchObject({ ok: true, created: true });
+    const workspace = useWorkspaceStore.getState().workspaces[0];
+    expect(workspace.agents).toEqual(["packetcode"]);
+    expect(workspace.projectPath).toBe("D:\\projects\\PacketADE");
+    expect(workspace.panes.some((pane) => pane.kind === "conversation")).toBe(false);
+    expect(useAgentTaskStore.getState().selectedConversationId).toBe("conv-1");
+    expect(useAppStore.getState().activeView).toBe("workspace");
+    expect(
+      useWorkspaceAgentsDogfoodStore.getState().evidence.counters.agent_opened_workspace_project,
+    ).toBe(1);
+  });
+
+  it("preserves the SSH server and exact remote worktree when opening Workspace", () => {
+    useServerStore.setState({
+      servers: [
+        {
+          id: "server-1",
+          name: "Build box",
+          host: "example.com",
+          port: 22,
+          username: "ian",
+          authMethod: "agent",
+          installedAgents: ["packetcode"],
+        },
+      ],
+    });
+    useAgentTaskStore.setState({
+      conversations: [
+        conversation({
+          projectPath: "/srv/app",
+          sshTarget: {
+            id: "server-1",
+            name: "Build box",
+            host: "example.com",
+            user: "ian",
+            remotePath: "/srv/app",
+          },
+          worktree: {
+            basePath: "/srv/app",
+            worktreePath: "/srv/app/.pkt-worktrees/conv-1",
+            branch: "pkt/conv-1",
+            baseBranch: "main",
+            createdAt: 1,
+            state: "active",
+          },
+        }),
+      ],
+    });
+
+    const result = openConversationProjectInWorkspace("conv-1");
+
+    expect(result).toMatchObject({ ok: true, created: true });
+    expect(useWorkspaceStore.getState().workspaces[0]).toMatchObject({
+      serverId: "server-1",
+      projectPath: "/srv/app/.pkt-worktrees/conv-1",
+      remoteProjectPath: "/srv/app/.pkt-worktrees/conv-1",
+      agents: ["packetcode"],
+    });
+  });
+
+  it("returns a typed stale-target result without mutating presentation state", () => {
+    const beforeView = useAppStore.getState().activeView;
+
+    expect(openConversationProjectInWorkspace("missing")).toMatchObject({
+      ok: false,
+      code: "conversation_not_found",
+    });
+    expect(useWorkspaceStore.getState().workspaces).toHaveLength(0);
+    expect(useAppStore.getState().activeView).toBe(beforeView);
+  });
+
+  it("adds a separately addressable terminal on the exact project", () => {
+    const result = attachTerminalToConversationProject("conv-1");
+
+    expect(result.ok).toBe(true);
+    const workspace = useWorkspaceStore.getState().workspaces[0];
+    expect(workspace.panes).toHaveLength(1);
+    expect(workspace.panes[0].agentId).toBe("terminal");
+    expect(workspace.panes[0].kind).toBeUndefined();
+    expect(workspace.panes[0].conversationId).toBeUndefined();
+  });
+
+  it("focuses one PacketCode pane and never clones conversation state", () => {
+    const first = openConversationInPacketCode("conv-1");
+    const second = openConversationInPacketCode("conv-1");
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    const packetCodePanes = useWorkspaceStore
+      .getState()
+      .workspaces.flatMap((workspace) => workspace.panes)
+      .filter((pane) => pane.agentId === "packetcode");
+    expect(packetCodePanes).toHaveLength(1);
+    expect(useAgentTaskStore.getState().conversations).toHaveLength(1);
+    expect(
+      useWorkspaceAgentsDogfoodStore.getState().evidence.counters.agent_packetcode_handoff,
+    ).toBe(2);
+  });
+
+  it("opens the authoritative Git ending in the project Workspace without attaching", () => {
+    const result = openConversationGitEnding("conv-1");
+
+    expect(result.ok).toBe(true);
+    const workspaceId = useWorkspaceStore.getState().workspaces[0]?.id;
+    expect(useAppStore.getState()).toMatchObject({
+      activeView: "workspace",
+      gitPanelOpen: true,
+      gitPanelConversationId: "conv-1",
+      gitPanelWorkspaceId: workspaceId,
+    });
+    expect(
+      useWorkspaceStore
+        .getState()
+        .workspaces.flatMap((workspace) => workspace.panes)
+        .filter((pane) => pane.conversationId === "conv-1"),
+    ).toHaveLength(0);
+  });
+
+  it("opens a Flight attempt project in Workspace without attaching its conversation", () => {
+    const result = openFlightAttemptInWorkspace("conv-1");
+
+    expect(result).toMatchObject({ ok: true, conversationId: "conv-1" });
+    expect(
+      useWorkspaceStore
+        .getState()
+        .workspaces.flatMap((workspace) => workspace.panes)
+        .filter((pane) => pane.kind === "conversation"),
+    ).toHaveLength(0);
+    expect(
+      useWorkspaceAgentsDogfoodStore.getState().evidence.counters.flight_attempt_opened_workspace,
+    ).toBe(1);
+  });
+
+  it("refuses PacketCode when it is not detected instead of silently falling back", () => {
+    useAgentStore.setState((state) => ({
+      agents: state.agents.map((agent) => ({
+        ...agent,
+        installed: agent.id === "codex",
+      })),
+    }));
+
+    expect(openConversationInPacketCode("conv-1")).toMatchObject({
+      ok: false,
+      code: "packetcode_unavailable",
+    });
+    expect(useWorkspaceStore.getState().workspaces).toHaveLength(0);
+  });
+
+  it("freezes a visible PacketCode payload without transcript, secrets, or authority transfer", () => {
+    const payload = buildPacketCodeHandoffPayload({
+      conversation: conversation({
+        messages: [
+          {
+            id: "secret-message",
+            role: "user",
+            content: "API_TOKEN=do-not-copy",
+            timestamp: 1,
+          },
+        ],
+      }),
+      objective: "Run the focused checks",
+      references: ["src/app.ts", "src/app.ts", "issue:42"],
+      createdAt: 30,
+    });
+    const formatted = formatPacketCodeHandoffPayload(payload);
+
+    expect(payload.references).toEqual(["src/app.ts", "issue:42"]);
+    expect(payload.constraints).toEqual({
+      transcriptIncluded: false,
+      secretsIncluded: false,
+      hiddenReasoningIncluded: false,
+      authorityTransfer: false,
+    });
+    expect(payload.sourcePermissionPosture).toMatchObject({
+      permissionMode: "ask_for_risky",
+      approveWrites: true,
+      enabledMcpServerIds: ["trusted-local"],
+      mcpTrustSnapshot: null,
+    });
+    expect(formatted).toContain('"objective": "Run the focused checks"');
+    expect(formatted).not.toContain("API_TOKEN");
+    expect(formatted).toContain('"authorityTransfer": false');
+  });
+
+  it("delegates a remote Workspace to the Agents launcher with the same SSH target", () => {
+    useServerStore.setState({
+      servers: [
+        {
+          id: "server-1",
+          name: "Build box",
+          host: "example.com",
+          port: 22,
+          username: "ian",
+          authMethod: "agent",
+          installedAgents: ["packetcode"],
+        },
+      ],
+    });
+    const workspaceId = useWorkspaceStore
+      .getState()
+      .createWorkspace("Remote app", ["packetcode"], "/srv/app", {
+        serverId: "server-1",
+        remoteProjectPath: "/srv/app",
+      });
+
+    const result = delegateWorkspaceToAgents(workspaceId);
+
+    expect(result).toMatchObject({ ok: true, workspaceId });
+    expect(useAgentTaskStore.getState().selectedRepo).toContain("server-1");
+    expect(useAgentTaskStore.getState().selectedConversationId).toBeNull();
+    expect(useAppStore.getState().activeView).toBe("agents");
+  });
+
+  it("reports a removed SSH target instead of throwing or creating a local fallback", () => {
+    useAgentTaskStore.setState({
+      conversations: [
+        conversation({
+          projectPath: "/srv/app",
+          sshTarget: {
+            id: "removed-server",
+            name: "Removed",
+            host: "example.com",
+            user: "ian",
+            remotePath: "/srv/app",
+          },
+        }),
+      ],
+    });
+
+    expect(openConversationProjectInWorkspace("conv-1")).toMatchObject({
+      ok: false,
+      code: "workspace_not_found",
+    });
+    expect(useWorkspaceStore.getState().workspaces).toHaveLength(0);
+  });
+
+  it("links one durable conversation reference to a Flight idempotently", () => {
+    const flight = useFlightStore.getState().addFlight({
+      title: "WA3",
+      objective: "Ship handoffs",
+      priority: "high",
+      projectPath: "D:\\projects\\PacketADE",
+    });
+
+    const first = linkConversationToFlight("conv-1", flight.id);
+    const second = linkConversationToFlight("conv-1", flight.id, {
+      openFlight: true,
+    });
+
+    expect(first).toMatchObject({ ok: true, alreadyLinked: false });
+    expect(second).toMatchObject({ ok: true, alreadyLinked: true });
+    expect(
+      useFlightStore.getState().flights.find((item) => item.id === flight.id)?.linkedSessionIds,
+    ).toEqual(["conv-1"]);
+    expect(useFlightStore.getState().activeFlightId).toBe(flight.id);
+    expect(useAppStore.getState().activeView).toBe("flights");
+  });
+});

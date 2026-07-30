@@ -1,18 +1,19 @@
 /**
- * Tile program (P4-S2) — fleetRows: the PURE unified-row projection for the
- * FleetSidebar.
+ * Tile program (P4-S2) — fleetRows: the PURE workspace/compatibility
+ * projection used by FleetSidebar.
  *
  * The row unit is the workspace (ruled). This module folds two independent
- * engines into ONE list of rows:
+ * engines into a configurable list of rows:
  *   - a `workspace` row for every workspace (its rolled-up status from
  *     `sessionStatus`, its member tiles as agent-colored chips);
- *   - a `virtual` row for every conversation that has NO tile anywhere
+ *   - optionally, a `virtual` row for every conversation that has NO tile anywhere
  *     (unplaced) — the derived-projection "no bulk migration" model: a legacy
  *     conversation appears as a first-class row and materializes a wrapper
  *     workspace only when clicked (`sessionGlue.openSession`).
  *
  * A placed conversation is represented by the workspace row holding its tile,
- * never by a second virtual row — there is exactly ONE render path per session.
+ * never by a second virtual row. WA1's Workspace surface disables virtual rows
+ * so Agents owns unplaced conversations while compatibility panes remain.
  *
  * Pure and total: it takes fully-materialized inputs (no stores) so it is
  * trivially testable and re-runs cheaply from memoized store slices. The status
@@ -106,6 +107,12 @@ export interface BuildFleetInput {
   filter: FleetFilter;
   /** Raw search text (trimmed by the caller is fine — trimmed again here). */
   query: string;
+  /**
+   * Compatibility switch. Defaults true for persisted projection callers and
+   * pure tests. Workspace passes false under the WA1 split because unplaced
+   * conversations now belong to the Agents sidebar.
+   */
+  includeVirtualConversations?: boolean;
 }
 
 // ─── Labels ─────────────────────────────────────────────────────────────────
@@ -237,6 +244,7 @@ export function buildFleetProjection(input: BuildFleetInput): FleetProjection {
     prefs,
     filter,
     query,
+    includeVirtualConversations = true,
   } = input;
 
   const convById = new Map<string, AgentConversation>();
@@ -259,12 +267,8 @@ export function buildFleetProjection(input: BuildFleetInput): FleetProjection {
         if (c) memberConvs.push(c);
       }
     }
-    const searchText = [w.name, ...memberConvs.map((c) => c.title ?? "")]
-      .join(" ")
-      .toLowerCase();
-    const worktreePending = memberConvs.some(
-      (c) => c.worktree?.state === "active",
-    );
+    const searchText = [w.name, ...memberConvs.map((c) => c.title ?? "")].join(" ").toLowerCase();
+    const worktreePending = memberConvs.some((c) => c.worktree?.state === "active");
     const row: WorkspaceFleetRow = {
       kind: "workspace",
       id: w.id,
@@ -299,7 +303,7 @@ export function buildFleetProjection(input: BuildFleetInput): FleetProjection {
   }
 
   // Virtual rows — one per UNPLACED, non-flight conversation.
-  for (const c of conversations) {
+  for (const c of includeVirtualConversations ? conversations : []) {
     if (attemptSessionIds.has(c.id)) continue;
     if (placed.has(c.id)) continue;
     const attention = conversationAttention.get(c.id) ?? "idle";
@@ -403,7 +407,10 @@ export function buildFleetProjection(input: BuildFleetInput): FleetProjection {
   needsYouMetas.sort(sortByPinThenRecent);
 
   // ── Project groups over the rest ──
-  const groupMap = new Map<string, { meta: RowMeta[]; projectPath: string; isSsh: boolean; sshName?: string }>();
+  const groupMap = new Map<
+    string,
+    { meta: RowMeta[]; projectPath: string; isSsh: boolean; sshName?: string }
+  >();
   for (const m of restMetas) {
     let g = groupMap.get(m.groupKey);
     if (!g) {

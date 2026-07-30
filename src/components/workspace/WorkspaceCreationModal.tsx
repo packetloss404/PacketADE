@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { LayoutGrid, Check, FileText, ShieldOff, Loader2, FolderOpen, ChevronDown, Zap, Server, AlertTriangle, CheckCircle2, XCircle, GitBranch } from "lucide-react";
+import { LayoutGrid, Check, FileText, ShieldOff, Loader2, FolderOpen, ChevronDown, Zap, Server, AlertTriangle, CheckCircle2, XCircle, GitBranch, Settings2 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Modal } from "@/components/ui/Modal";
 import { useAgentStore } from "@/stores/agentStore";
@@ -17,6 +17,7 @@ import { buildRemoteCloneArgs, shouldOfferRemoteClone } from "@/lib/remoteClone"
 import { parseGithubRemote } from "@/lib/git";
 import { storageKey } from "@/lib/brand";
 import { AdvancedAccordion } from "@/components/agents/composer/AdvancedAccordion";
+import { getPreferredWorkspaceCli } from "@/lib/workspaceCliDefaults";
 import type { WorkspaceAgentSlot } from "@/types/workspace";
 
 type LocationMode = "local" | "remote";
@@ -29,24 +30,24 @@ type PathProbeState =
 
 type AgentChoice = "claude-code" | "codex" | "gemini" | "opencode" | "packetcode";
 
-/** Agents that support the --effort flag */
+/** CLI sessions that support the --effort flag. */
 const EFFORT_SUPPORTED = new Set<string>(["claude-code"]);
 
 const AGENT_SLOTS: { id: WorkspaceAgentSlot; cliId: AgentChoice | null; label: string; cliCommand: string }[] = [
+  { id: "packetcode", cliId: "packetcode", label: "PacketCode", cliCommand: "packetcode" },
   { id: "terminal", cliId: null, label: "Terminal", cliCommand: "bash" },
   { id: "claude-code", cliId: "claude-code", label: "Claude Code", cliCommand: "claude" },
   { id: "codex", cliId: "codex", label: "Codex CLI", cliCommand: "codex" },
   { id: "gemini", cliId: "gemini", label: "Gemini CLI", cliCommand: "gemini" },
   { id: "opencode", cliId: "opencode", label: "OpenCode", cliCommand: "opencode" },
-  { id: "packetcode", cliId: "packetcode", label: "PacketCode", cliCommand: "packetcode" },
 ];
 
 const WORKSPACE_TEMPLATES = [
-  { id: "solo", label: "Solo", description: "One AI agent", agents: ["claude-code"] as WorkspaceAgentSlot[] },
-  { id: "duo", label: "Duo", description: "Two AI agents side-by-side", agents: ["claude-code", "codex"] as WorkspaceAgentSlot[] },
-  { id: "review-trio", label: "Review Trio", description: "Builder + reviewer + terminal", agents: ["claude-code", "codex", "terminal"] as WorkspaceAgentSlot[] },
-  { id: "research", label: "Research", description: "Claude + Gemini for research", agents: ["claude-code", "gemini"] as WorkspaceAgentSlot[] },
-  { id: "full-stack", label: "Full Stack", description: "All available agents", agents: ["claude-code", "codex", "gemini", "terminal"] as WorkspaceAgentSlot[] },
+  { id: "packetcode", label: "PacketCode", description: "Recommended terminal coding loop", sessions: ["packetcode"] as WorkspaceAgentSlot[] },
+  { id: "cli-pair", label: "CLI Pair", description: "PacketCode + Codex side-by-side", sessions: ["packetcode", "codex"] as WorkspaceAgentSlot[] },
+  { id: "review-pair", label: "Review Pair", description: "Claude Code + Codex CLI", sessions: ["claude-code", "codex"] as WorkspaceAgentSlot[] },
+  { id: "research", label: "Research", description: "Claude Code + Gemini CLI", sessions: ["claude-code", "gemini"] as WorkspaceAgentSlot[] },
+  { id: "shell", label: "Shell", description: "One plain terminal", sessions: ["terminal"] as WorkspaceAgentSlot[] },
 ];
 
 const CLI_MODEL_MAP: Record<AgentChoice, typeof CLAUDE_MODELS> = {
@@ -66,15 +67,21 @@ interface WorkspaceCreationModalProps {
 
 export function WorkspaceCreationModal({ onClose, initialSelected, serverId: initialServerId, remoteProjectPath: initialRemoteProjectPath }: WorkspaceCreationModalProps) {
   const [name, setName] = useState("");
-  // Templates are the front door: default-select "solo" so a bare launch is
-  // a three-field flow (name, project, template) with a sane starting point.
-  // Callers that pass an explicit `initialSelected` (OnboardingPane,
-  // ServersView) keep full control instead.
+  const preferredDefaultSlot = getPreferredWorkspaceCli(initialServerId);
+  // PacketCode is the creation-time default when detected. Existing
+  // Workspaces are never rewritten when detection changes.
   const [selected, setSelected] = useState<Set<WorkspaceAgentSlot>>(
-    () => initialSelected ?? new Set(["claude-code"]),
+    () => initialSelected ?? new Set([preferredDefaultSlot]),
   );
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
-    () => (initialSelected ? null : "solo"),
+    () =>
+      initialSelected
+        ? null
+        : preferredDefaultSlot === "packetcode"
+          ? "packetcode"
+          : preferredDefaultSlot === "terminal"
+            ? "shell"
+            : null,
   );
   const [modelOverrides, setModelOverrides] = useState<Record<string, string | null>>({});
   const [effortOverrides, setEffortOverrides] = useState<Record<string, EffortLevel | null>>({ "claude-code": "medium" });
@@ -128,6 +135,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   );
   const createWorkspace = useWorkspaceStore((s) => s.createWorkspace);
   const setActiveView = useAppStore((s) => s.setActiveView);
+  const openSettings = useAppStore((s) => s.openSettings);
 
   // If the user picks a server and the path field is empty, seed it from
   // the server's default remotePath (matches the legacy
@@ -284,18 +292,18 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
     return computeGridLayout(selected.size);
   }, [selected.size]);
 
-  // Get the AI agents that are selected (not terminal)
-  const selectedAiAgents = AGENT_SLOTS.filter((s) => selected.has(s.id) && s.cliId);
+  // CLI sessions with model/permission configuration (not a plain shell).
+  const selectedCliAgents = AGENT_SLOTS.filter((s) => selected.has(s.id) && s.cliId);
 
   // Count of non-default per-agent model overrides — feeds the Advanced
   // section's collapsed summary so an active override stays visible.
   const nOverrides = Object.values(modelOverrides).filter((v) => v != null).length;
 
   function applyTemplate(template: typeof WORKSPACE_TEMPLATES[number]) {
-    const availableAgents = template.agents.filter((agent) => isAgentInstalled(agent));
-    if (availableAgents.length === 0) return;
+    const availableSessions = template.sessions.filter((session) => isAgentInstalled(session));
+    if (availableSessions.length === 0) return;
     setSelectedTemplateId(template.id);
-    setSelected(new Set(availableAgents));
+    setSelected(new Set(availableSessions));
     if (!name.trim()) {
       setName(template.label);
     }
@@ -320,7 +328,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   // can both gate the button and short-circuit handleCreate.
   const saveBlockedReason = useMemo<string | null>(() => {
     if (!name.trim()) return "Workspace name is required";
-    if (selected.size === 0) return "Select at least one agent";
+    if (selected.size === 0) return "Select at least one CLI session";
     if (locationMode === "local") {
       // v0.8.8 (edge case): zero-workspaces + no fallback = empty
       // `selectedProjectPath`. Block submit so we never persist a
@@ -428,6 +436,11 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
     onClose();
   }
 
+  function handleOpenPacketCodeSettings() {
+    openSettings({ section: "agents", cliId: "packetcode" });
+    onClose();
+  }
+
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.ctrlKey && e.key === "Enter") {
       e.preventDefault();
@@ -462,7 +475,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
       }
     >
       <div className="px-5 py-4 flex flex-col gap-4 max-h-[70vh] overflow-y-auto" onKeyDown={handleKeyDown}>
-        {/* Templates — the front door. Picking one seeds the agent
+        {/* Templates — the front door. Picking one seeds the CLI-session
             selection and (if empty) the name, so most launches never touch
             anything below. */}
         <div>
@@ -473,12 +486,12 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
           <div className="flex flex-wrap gap-1.5">
             {WORKSPACE_TEMPLATES.map((tpl) => {
               const isActive = selectedTemplateId === tpl.id;
-              const agentLabels = tpl.agents.map((a) => AGENT_SLOTS.find((s) => s.id === a)?.label ?? a);
-              const availableAgents = tpl.agents.filter((agent) => isAgentInstalled(agent));
-              const disabled = availableAgents.length === 0;
-              const unavailableLabels = tpl.agents
-                .filter((agent) => !isAgentInstalled(agent))
-                .map((agent) => AGENT_SLOTS.find((s) => s.id === agent)?.label ?? agent);
+              const sessionLabels = tpl.sessions.map((session) => AGENT_SLOTS.find((slot) => slot.id === session)?.label ?? session);
+              const availableSessions = tpl.sessions.filter((session) => isAgentInstalled(session));
+              const disabled = availableSessions.length === 0;
+              const unavailableLabels = tpl.sessions
+                .filter((session) => !isAgentInstalled(session))
+                .map((session) => AGENT_SLOTS.find((slot) => slot.id === session)?.label ?? session);
               return (
                 <button
                   key={tpl.id}
@@ -496,7 +509,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                   </span>
                   <span className="text-meta text-text-muted mt-0.5">{tpl.description}</span>
                   <span className="text-meta text-text-muted mt-1 opacity-70">
-                    {agentLabels.join(" + ")}
+                    {sessionLabels.join(" + ")}
                   </span>
                 </button>
               );
@@ -799,9 +812,9 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
               </div>
             )}
 
-            {/* Agent Selection — multi-toggle buttons */}
+            {/* CLI session selection — multi-toggle buttons */}
             <div>
-              <label className="text-meta text-text-muted block mb-2 uppercase tracking-wider">Agents</label>
+              <label className="text-meta text-text-muted block mb-2 uppercase tracking-wider">CLI Sessions</label>
               {detecting && (
                 <p className="flex items-center gap-1 text-meta text-text-muted italic mb-2">
                   <Loader2 size={10} className="animate-spin" />
@@ -833,7 +846,18 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                         </div>
                         {slot.label}
                       </button>
-                      {!installed && hint && !detecting && (
+                      {!installed && slot.id === "packetcode" && !detecting && (
+                        <button
+                          type="button"
+                          onClick={handleOpenPacketCodeSettings}
+                          className="inline-flex items-center gap-1 text-meta text-accent-amber underline opacity-80 hover:opacity-100"
+                          title="Install, locate, and configure PacketCode"
+                        >
+                          <Settings2 size={10} />
+                          set up
+                        </button>
+                      )}
+                      {!installed && slot.id !== "packetcode" && hint && !detecting && (
                         <a
                           href={hint.url}
                           target="_blank"
@@ -852,7 +876,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
             </div>
 
             {/* Bypass permissions toggle */}
-            {selectedAiAgents.length > 0 && (
+            {selectedCliAgents.length > 0 && (
               <div className="flex flex-col gap-1">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -874,8 +898,8 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
               </div>
             )}
 
-            {/* Model selection per selected AI agent */}
-            {selectedAiAgents.map((slot) => {
+            {/* Model selection per selected coding CLI. */}
+            {selectedCliAgents.map((slot) => {
               const models = CLI_MODEL_MAP[slot.cliId!];
 
               // OpenCode manages its own models internally
@@ -915,8 +939,8 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
               );
             })}
 
-            {/* Effort level per selected AI agent */}
-            {selectedAiAgents.map((slot) => {
+            {/* Effort level per selected coding CLI. */}
+            {selectedCliAgents.map((slot) => {
               if (!EFFORT_SUPPORTED.has(slot.id)) {
                 return null;
               }
@@ -946,12 +970,12 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
             })}
 
             {/* Prompt Template Picker */}
-            {selectedAiAgents.length > 0 && (
+            {selectedCliAgents.length > 0 && (
               <TemplatePicker onSelect={(content) => setPrompt(content)} />
             )}
 
             {/* Prompt */}
-            {selectedAiAgents.length > 0 && (
+            {selectedCliAgents.length > 0 && (
               <div>
                 <label className="block text-meta text-text-muted mb-1.5 uppercase tracking-wider">
                   Initial Prompt
@@ -960,7 +984,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   rows={3}
-                  placeholder="Describe the task for all agents..."
+                  placeholder="Describe the task for all CLI sessions..."
                   className="w-full bg-bg-primary border border-bg-border rounded px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-amber resize-none"
                 />
                 <p className="text-meta text-text-muted mt-1">

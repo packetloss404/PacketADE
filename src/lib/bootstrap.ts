@@ -1,4 +1,10 @@
-import { loadPersistedState, getCwd, pathIsDir, saveUiSlice, getAppKnownHostsPath } from "@/lib/tauri";
+import {
+  loadPersistedState,
+  getCwd,
+  pathIsDir,
+  saveUiSlice,
+  getAppKnownHostsPath,
+} from "@/lib/tauri";
 import { logSwallowed } from "@/lib/logSwallowed";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore } from "@/stores/appStore";
@@ -11,6 +17,8 @@ import { useServerStore } from "@/stores/serverStore";
 import { useIssueStore } from "@/stores/issueStore";
 import { migrateSshTargetsToServers } from "@/lib/sshTargetMigration";
 import { startBoundedAutonomyRuntime } from "@/stores/boundedAutonomyRuntime";
+import { sampleWorkspaceAgentsDisplayTopology } from "@/stores/workspaceAgentsDogfoodStore";
+import { hydrateConversations } from "@/stores/agentConversationPersistence";
 
 const PROJECT_PATH_KEY = "packetade:project-path";
 
@@ -55,6 +63,10 @@ async function resolveValidProjectPath(
  * Loads persisted state from the Rust backend and hydrates all stores.
  */
 export async function initializeApp(): Promise<void> {
+  // Conversation files are a separate persistence source from state.v1.json.
+  // Start that read concurrently, but do not publish `initialized` until it has
+  // completed; sessionGlue relies on both halves being authoritative.
+  const conversationsReady = hydrateConversations();
   try {
     const state = await loadPersistedState();
 
@@ -111,7 +123,10 @@ export async function initializeApp(): Promise<void> {
       // localStorage unavailable — fine.
     }
 
-    // Mark app as initialized so UI persistence can begin.
+    await conversationsReady;
+
+    // Mark app as initialized so UI persistence and cross-store
+    // reconciliation can begin.
     useAppStore.getState().setInitialized(true);
 
     // Heavy stores hydrate in the background — welcome doesn't need them,
@@ -142,10 +157,12 @@ export async function initializeApp(): Promise<void> {
     if (projectPath) {
       useLayoutStore.getState().setProjectPath(projectPath);
     }
+    await conversationsReady;
     useAppStore.getState().setInitialized(true);
   }
 
   startBoundedAutonomyRuntime();
+  void sampleWorkspaceAgentsDisplayTopology();
 
   // Kick CLI detection in the background — surfaces installed status to the
   // onboarding flow and the workspace creation modal. Must not block startup.

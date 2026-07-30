@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bot, Loader2, Square } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import { focusConversationDeepLink } from "@/stores/sessionGlue";
+import { openConversationInAgents } from "@/stores/sessionGlue";
 import { aggregateConversationCost } from "@/lib/conversationCost";
 import { useConversationAttention } from "@/lib/sessionStatus";
 
@@ -21,9 +21,7 @@ function fmtTokens(n: number): string {
  */
 export function RunningAgentsChip() {
   const conversations = useAgentTaskStore((s) => s.conversations);
-  const cancelActiveConversation = useAgentTaskStore(
-    (s) => s.cancelActiveConversation,
-  );
+  const cancelActiveConversation = useAgentTaskStore((s) => s.cancelActiveConversation);
 
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -33,10 +31,7 @@ export function RunningAgentsChip() {
   // the chip, the tab-strip dot, and the sidebar can never disagree.
   const attention = useConversationAttention();
   const running = useMemo(
-    () =>
-      conversations.filter(
-        (c) => c.mode === "api" && attention.get(c.id) === "working",
-      ),
+    () => conversations.filter((c) => c.mode === "api" && attention.get(c.id) === "working"),
     [conversations, attention],
   );
 
@@ -44,10 +39,7 @@ export function RunningAgentsChip() {
   useEffect(() => {
     if (!open) return;
     function onClick(e: MouseEvent) {
-      if (
-        wrapperRef.current &&
-        !wrapperRef.current.contains(e.target as Node)
-      ) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
         setOpen(false);
       }
     }
@@ -61,7 +53,7 @@ export function RunningAgentsChip() {
     <div className="relative" ref={wrapperRef}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-accent-green/15 text-accent-green hover:bg-accent-green/25 transition-colors"
+        className="bg-accent-green/15 hover:bg-accent-green/25 flex items-center gap-1.5 rounded px-2 py-0.5 text-xs text-accent-green transition-colors"
         title={`${running.length} agent${running.length === 1 ? "" : "s"} running — click to inspect`}
       >
         <Loader2 size={11} className="animate-spin" />
@@ -69,7 +61,7 @@ export function RunningAgentsChip() {
       </button>
 
       {open && (
-        <div className="absolute top-full right-0 mt-1 w-72 bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1">
+        <div className="absolute right-0 top-full z-50 mt-1 w-72 rounded-lg border border-bg-border bg-bg-secondary py-1 shadow-xl">
           <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-text-muted">
             Running agents
           </div>
@@ -78,24 +70,19 @@ export function RunningAgentsChip() {
             return (
               <div
                 key={conv.id}
-                className="flex items-center gap-2 px-2 py-1.5 hover:bg-bg-hover transition-colors"
+                className="flex items-center gap-2 px-2 py-1.5 transition-colors hover:bg-bg-hover"
               >
-                <Bot size={11} className="text-accent-green shrink-0" />
+                <Bot size={11} className="shrink-0 text-accent-green" />
                 <button
                   type="button"
                   onClick={() => {
-                    // Tile program (P5-S1): retargeted to the materializing
-                    // deep-link path — lands on the focused+flashed workspace
-                    // tile instead of the retired Agents tab.
-                    focusConversationDeepLink(conv.id);
+                    openConversationInAgents(conv.id);
                     setOpen(false);
                   }}
-                  className="flex flex-col flex-1 min-w-0 text-left"
-                  title={`Open "${conv.title}" in its workspace`}
+                  className="flex min-w-0 flex-1 flex-col text-left"
+                  title={`Open "${conv.title}" in Agents`}
                 >
-                  <span className="text-[11px] text-text-primary truncate">
-                    {conv.title}
-                  </span>
+                  <span className="truncate text-[11px] text-text-primary">{conv.title}</span>
                   <span className="text-[9px] text-text-muted">
                     {conv.model ?? "?"} · {fmtTokens(totalTokens)} tok
                   </span>
@@ -103,7 +90,7 @@ export function RunningAgentsChip() {
                 <button
                   type="button"
                   onClick={() => void cancelActiveConversation(conv.id)}
-                  className="p-1 rounded text-text-muted hover:text-accent-red hover:bg-bg-hover"
+                  className="rounded p-1 text-text-muted hover:bg-bg-hover hover:text-accent-red"
                   title="Stop this agent"
                 >
                   <Square size={10} />

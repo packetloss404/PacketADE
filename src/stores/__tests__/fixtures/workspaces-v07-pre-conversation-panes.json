@@ -1,0 +1,24 @@
+[
+  {
+    "id": "ws-v07",
+    "name": "Pre-tile CLI workspace",
+    "agents": ["codex", "terminal"],
+    "panes": [
+      {
+        "id": "pane-codex",
+        "agentId": "codex",
+        "sessionId": "pty-codex"
+      },
+      {
+        "id": "pane-shell",
+        "agentId": "terminal",
+        "sessionId": null,
+        "legacyLayoutHint": "right"
+      }
+    ],
+    "projectPath": "C:\\fixture\\project",
+    "createdAt": 1,
+    "updatedAt": 2,
+    "status": "active"
+  }
+]

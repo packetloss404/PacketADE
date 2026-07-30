@@ -10,32 +10,29 @@
  *   (b) Idempotent startup reconciliation sweep — self-heals a wrapper whose
  *       conversation pane was stripped by an old-binary re-save. No localStorage
  *       guard key: reconciliation IS the repair, so re-runs are safe no-ops.
- *   (c) `openSession(ref)` — idempotently materialize a conversation's wrapper
- *       workspace (deterministic id `ws-wrap-<convId>`, `origin:"conversation"`)
- *       and activate it.
+ *   (c) `openConversationInAgents(id)` — the default conversation navigation
+ *       path. It selects the conversation and opens the first-class Agents
+ *       view without touching Workspace state.
+ *   (d) Existing persisted conversation panes remain reference-compatible,
+ *       but this bridge exposes no operation that can create a new attachment.
  *
- * This sprint dark-ships: the mechanisms + their tests land now, full sidebar
- * consumption arrives in Phase 4 (which wires {@link initSessionGlue} into the
- * app shell AFTER `hydrateConversations` resolves — P1 blast radius forbids
- * touching the bootstrap here).
+ * {@link initSessionGlue} is installed by the app bootstrap after conversation
+ * hydration so reconciliation and garbage collection see authoritative state.
  */
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useWorkspaceStore, conversationWrapperId } from "@/stores/workspaceStore";
 import { useAppStore } from "@/stores/appStore";
-import {
-  killPty,
-  getGitStatus,
-  removeConversationWorktree,
-} from "@/lib/tauri";
+import { killPty, getGitStatus, removeConversationWorktree } from "@/lib/tauri";
 import {
   isWorktreeSafeToCleanup,
   isWorktreeDirty,
   type WorktreeCleanupFacts,
 } from "@/lib/worktreeLifecycle";
+import { getWorktreeCleanupPolicy, type WorktreeCleanupPolicy } from "@/stores/agentSettingsStore";
 import {
-  getWorktreeCleanupPolicy,
-  type WorktreeCleanupPolicy,
-} from "@/stores/agentSettingsStore";
+  recordConversationOpenedInAgents,
+  useWorkspaceAgentsDogfoodStore,
+} from "@/stores/workspaceAgentsDogfoodStore";
 
 // ─── (a) One-directional GC ─────────────────────────────────────────────────
 
@@ -50,9 +47,7 @@ import {
  * concern ({@link initSessionGlue} installs exactly once).
  */
 export function installConversationGc(): () => void {
-  let previousIds = new Set(
-    useAgentTaskStore.getState().conversations.map((c) => c.id),
-  );
+  let previousIds = new Set(useAgentTaskStore.getState().conversations.map((c) => c.id));
   return useAgentTaskStore.subscribe((state) => {
     const nextIds = new Set(state.conversations.map((c) => c.id));
     if (nextIds.size >= previousIds.size) {
@@ -106,72 +101,32 @@ export function runReconciliationSweep(): void {
   }
 }
 
-// ─── (c) openSession materializer ───────────────────────────────────────────
-
-/** Reference handed to {@link openSession}. A conversation with no tile is a
- *  first-class citizen (the Remote Agents R0 shape); opening one materializes a
- *  wrapper on demand. */
-export interface OpenSessionRef {
-  conversationId: string;
-}
+// ─── (c) Agents navigation ──────────────────────────────────────────────────
 
 /**
- * Idempotently materialize + activate the wrapper workspace for a conversation.
- * Called by the sidebar click, the needs-you click, and the retirement redirect
- * shim (Phase 4/5). Deterministic id `ws-wrap-<convId>` means calling twice
- * yields exactly one workspace. The title seeds from the conversation's
- * auto-title (live-follow-until-first-rename is a Phase 4 concern).
+ * Open a durable conversation in the first-class Agents view.
  *
- * Returns the wrapper workspace id.
+ * Returns false for a stale id and leaves the current view/selection untouched.
+ * Ordinary notification, Flight, Memory, prompt, and approval links use this
+ * path so viewing a conversation never creates a wrapper Workspace.
  */
-export function openSession(ref: OpenSessionRef): string {
-  const { conversationId } = ref;
-  const conversation = useAgentTaskStore
-    .getState()
-    .conversations.find((c) => c.id === conversationId);
-  const workspaceId = useWorkspaceStore.getState().ensureConversationWorkspace({
-    conversationId,
-    name: conversation?.title ?? conversationId,
-    projectPath: conversation?.projectPath ?? "",
-  });
-  useWorkspaceStore.getState().setActiveWorkspace(workspaceId);
-  return workspaceId;
+export function openConversationInAgents(conversationId: string): boolean {
+  const store = useAgentTaskStore.getState();
+  if (!store.conversations.some((conversation) => conversation.id === conversationId)) {
+    return false;
+  }
+  store.selectConversation(conversationId);
+  useAppStore.getState().setActiveView("agents");
+  recordConversationOpenedInAgents(conversationId);
+  return true;
 }
 
 /**
- * Deep-link into a conversation from a producer surface (P5-S1). The single
- * navigation path for the notification/deep-link producers (RunningAgentsChip,
- * PinnedApprovalBanner, the Scout template send), replacing the Agents-tab
- * navigation those producers used before the single-surface cutover.
- *
- * Semantics:
- *   1. Materialize the conversation's wrapper workspace via {@link openSession}
- *      (idempotent `ws-wrap-<convId>`) and focus+flash its conversation tile
- *      through the EXISTING `requestPaneFocus` mechanism — so a notification
- *      deep link lands on the offending tile with its pending approval visible.
- *   2. Switch the shell to the Workspace surface.
- *
- * If the conversation vanished between index and click, NO wrapper is
- * materialized for the dead ref (features.md edge case) — the shell still lands
- * on the Workspace surface (never blank, never a crash).
+ * @deprecated WA1 default links must call {@link openConversationInAgents}.
+ * Kept for one compatibility release so external imports cannot strand users.
  */
 export function focusConversationDeepLink(conversationId: string): void {
-  const exists = useAgentTaskStore
-    .getState()
-    .conversations.some((c) => c.id === conversationId);
-  if (exists) {
-    const workspaceId = openSession({ conversationId });
-    const ws = useWorkspaceStore
-      .getState()
-      .workspaces.find((w) => w.id === workspaceId);
-    const pane = ws?.panes.find(
-      (p) => p.kind === "conversation" && p.conversationId === conversationId,
-    );
-    if (pane) {
-      useWorkspaceStore.getState().requestPaneFocus(workspaceId, pane.id);
-    }
-  }
-  useAppStore.getState().setActiveView("workspace");
+  openConversationInAgents(conversationId);
 }
 
 /** Re-export so consumers/tests can assert the deterministic wrapper id without
@@ -270,9 +225,7 @@ export async function archiveWorkspaceWithFanout(
   workspaceId: string,
   deps: ArchiveFanoutDeps = {},
 ): Promise<ArchiveFanoutResult | null> {
-  const workspace = useWorkspaceStore
-    .getState()
-    .workspaces.find((w) => w.id === workspaceId);
+  const workspace = useWorkspaceStore.getState().workspaces.find((w) => w.id === workspaceId);
   if (!workspace) return null;
 
   const auto = deps.auto ?? false;
@@ -282,7 +235,7 @@ export async function archiveWorkspaceWithFanout(
   // Auto-archive can never clean (ruled): force the Keep-everything policy.
   const policy: WorktreeCleanupPolicy = auto
     ? "never"
-    : deps.policy ?? getWorktreeCleanupPolicy();
+    : (deps.policy ?? getWorktreeCleanupPolicy());
 
   // 1. Kill member PTYs (terminal tiles carry the PTY sessionId). Best-effort —
   //    a PTY that already exited is fine. This is the archive-only kill gate.
@@ -309,9 +262,7 @@ export async function archiveWorkspaceWithFanout(
   const cleanedWorktreeConversationIds: string[] = [];
   const keptWorktreeConversationIds: string[] = [];
   for (const convId of memberConversationIds) {
-    const conv = useAgentTaskStore
-      .getState()
-      .conversations.find((c) => c.id === convId);
+    const conv = useAgentTaskStore.getState().conversations.find((c) => c.id === convId);
     const wt = conv?.worktree;
     // Only an ACTIVE local worktree is a cleanup candidate. SSH worktrees live
     // on the remote host — never touched here. No worktree ⇒ nothing to keep.
@@ -337,8 +288,7 @@ export async function archiveWorkspaceWithFanout(
     // `always` removes a CLEAN tree unconditionally; a DIRTY tree is never
     // removed by any non-Discard path (Phase 2 gate). `only-when-safe` defers
     // entirely to the ruled predicate.
-    const safe =
-      policy === "always" ? !facts.dirty : isWorktreeSafeToCleanup(facts);
+    const safe = policy === "always" ? !facts.dirty : isWorktreeSafeToCleanup(facts);
     if (!safe) {
       keptWorktreeConversationIds.push(convId);
       continue;
@@ -349,11 +299,8 @@ export async function archiveWorkspaceWithFanout(
       // Flip lifecycle so the pending chip clears. "landed" when the work
       // actually merged; "discarded" when `always` tore down a clean-but-
       // unmerged tree.
-      const terminal =
-        facts.ancestryMerged || facts.recordedPrMerged ? "landed" : "discarded";
-      useAgentTaskStore
-        .getState()
-        .setConversationWorktreeState(convId, terminal);
+      const terminal = facts.ancestryMerged || facts.recordedPrMerged ? "landed" : "discarded";
+      useAgentTaskStore.getState().setConversationWorktreeState(convId, terminal);
       cleanedWorktreeConversationIds.push(convId);
     } catch {
       // Removal failed — Keep so the chip surfaces the still-present tree.
@@ -391,6 +338,24 @@ let gcUnsubscribe: (() => void) | null = null;
  */
 export function initSessionGlue(): void {
   if (!gcUnsubscribe) gcUnsubscribe = installConversationGc();
+  const conversations = new Set(
+    useAgentTaskStore.getState().conversations.map((conversation) => conversation.id),
+  );
+  const workspaces = useWorkspaceStore.getState().workspaces;
+  const conversationPanes = workspaces.flatMap((workspace) =>
+    workspace.panes.filter((pane) => pane.kind === "conversation"),
+  );
+  useWorkspaceAgentsDogfoodStore.getState().recordMigrationAudit({
+    conversationPanes: conversationPanes.length,
+    missingConversationReferences: conversationPanes.filter(
+      (pane) => !pane.conversationId || !conversations.has(pane.conversationId),
+    ).length,
+    orphanConversationWrappers: workspaces.filter(
+      (workspace) =>
+        workspace.origin === "conversation" &&
+        !workspace.panes.some((pane) => pane.kind === "conversation"),
+    ).length,
+  });
   runReconciliationSweep();
 }
 

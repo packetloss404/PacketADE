@@ -1,23 +1,25 @@
 /**
- * Tile program (P5-S1): focusConversationDeepLink — the shared landing used by
- * the retargeted deep-link producers (RunningAgentsChip, PinnedApprovalBanner,
- * the Scout template send) and the "agents" redirect shim.
+ * WA1 conversation navigation.
  *
- * Proves that a deep link:
- *   - materializes the conversation's wrapper workspace (idempotent openSession);
- *   - focus+flashes the conversation's tile (requestPaneFocus) so a notification
- *     deep link lands on the offending tile with its pending approval visible;
- *   - switches the shell to the Workspace surface;
- *   - and, for a vanished conversation, lands on the Workspace surface WITHOUT
- *     materializing a dead wrapper (never blank, never a crash).
+ * Ordinary links open Agents without mutating Workspace state. Saved Workspace
+ * conversation panes remain migration-compatible, but no new attachment API
+ * exists.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("@/lib/agentsMd", () => ({ loadAgentsMd: vi.fn().mockResolvedValue(null) }));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn().mockResolvedValue(() => {}),
+}));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/agentsMd", () => ({
+  loadAgentsMd: vi.fn().mockResolvedValue(null),
+}));
 vi.mock("@/stores/memoryStore", () => ({
-  useMemoryStore: { getState: vi.fn(() => ({ getContextForSession: vi.fn(() => "") })) },
+  useMemoryStore: {
+    getState: vi.fn(() => ({ getContextForSession: vi.fn(() => "") })),
+  },
 }));
 vi.mock("@/lib/tauri", () => ({
   createPtySession: vi.fn(),
@@ -44,14 +46,20 @@ vi.mock("@/lib/tauri", () => ({
   saveWorkspacesSlice: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { focusConversationDeepLink, conversationWrapperId } from "@/stores/sessionGlue";
+import {
+  focusConversationDeepLink,
+  initSessionGlue,
+  openConversationInAgents,
+  teardownSessionGlue,
+} from "@/stores/sessionGlue";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore } from "@/stores/appStore";
 import type { AgentConversation } from "@/types/agent-conversation";
+import { useWorkspaceAgentsDogfoodStore } from "@/stores/workspaceAgentsDogfoodStore";
 
-function conv(overrides: Partial<AgentConversation> = {}): AgentConversation {
+function conversation(overrides: Partial<AgentConversation> = {}): AgentConversation {
   return {
     id: "conv-1",
     title: "Fix bug",
@@ -68,10 +76,13 @@ function conv(overrides: Partial<AgentConversation> = {}): AgentConversation {
   };
 }
 
-describe("focusConversationDeepLink", () => {
+describe("WA1 conversation navigation", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    useAgentTaskStore.setState({ conversations: [], selectedConversationId: null });
+    useAgentTaskStore.setState({
+      conversations: [],
+      selectedConversationId: null,
+    });
     useWorkspaceStore.setState({
       workspaces: [],
       activeWorkspaceId: null,
@@ -80,50 +91,69 @@ describe("focusConversationDeepLink", () => {
     });
     useLayoutStore.setState({ activePaneId: "", projectPath: "" });
     useAppStore.setState({ activeView: "welcome" });
+    useWorkspaceAgentsDogfoodStore.getState().reset();
   });
+
   afterEach(() => {
+    teardownSessionGlue();
     vi.useRealTimers();
   });
 
-  it("materializes the wrapper, focus+flashes its tile, and lands on Workspace", () => {
-    useAgentTaskStore.setState({ conversations: [conv({ id: "conv-1" })] });
+  it("opens an existing conversation in Agents without creating a Workspace", () => {
+    useAgentTaskStore.setState({
+      conversations: [conversation()],
+      selectedConversationId: null,
+    });
+
+    expect(openConversationInAgents("conv-1")).toBe(true);
+
+    expect(useAgentTaskStore.getState().selectedConversationId).toBe("conv-1");
+    expect(useAppStore.getState().activeView).toBe("agents");
+    expect(useWorkspaceStore.getState().workspaces).toHaveLength(0);
+    expect(useWorkspaceStore.getState().focusPaneRequest).toBeNull();
+  });
+
+  it("leaves view, selection, and Workspaces untouched for a stale id", () => {
+    useAppStore.setState({ activeView: "memory" });
+
+    expect(openConversationInAgents("ghost")).toBe(false);
+
+    expect(useAgentTaskStore.getState().selectedConversationId).toBeNull();
+    expect(useAppStore.getState().activeView).toBe("memory");
+    expect(useWorkspaceStore.getState().workspaces).toHaveLength(0);
+  });
+
+  it("keeps the deprecated deep-link alias on the non-materializing Agents path", () => {
+    useAgentTaskStore.setState({ conversations: [conversation()] });
 
     focusConversationDeepLink("conv-1");
 
-    const wrapId = conversationWrapperId("conv-1");
-    const ws = useWorkspaceStore.getState().workspaces.find((w) => w.id === wrapId);
-    expect(ws).toBeDefined();
-    expect(useWorkspaceStore.getState().activeWorkspaceId).toBe(wrapId);
-
-    // Flash targets the conversation pane inside the wrapper.
-    const convPane = ws!.panes.find((p) => p.kind === "conversation");
-    const req = useWorkspaceStore.getState().focusPaneRequest;
-    expect(req).toMatchObject({ workspaceId: wrapId, paneId: convPane!.id });
-
-    // Shell landed on the Workspace surface — never the retired Agents tab.
-    expect(useAppStore.getState().activeView).toBe("workspace");
+    expect(useAppStore.getState().activeView).toBe("agents");
+    expect(useWorkspaceStore.getState().workspaces).toHaveLength(0);
   });
 
-  it("reuses an existing NON-wrapper placement instead of forking a duplicate wrapper", () => {
-    // Regression (final-gate MUST-FIX): a conversation drafted directly into a
-    // normal workspace (AddAgentPicker → DraftTile → addConversationPane) has a
-    // tile whose workspace id is NOT ws-wrap-<convId>. A subsequent deep link
-    // must land on THAT placement, never mint a second wrapper with a duplicate
-    // tile ("exactly ONE render path per session", fleetRows.ts).
-    useAgentTaskStore.setState({ conversations: [conv({ id: "conv-1" })] });
+  it("audits old-layout compatibility before reconciling an orphan wrapper", () => {
+    useAgentTaskStore.setState({ conversations: [conversation()] });
     useWorkspaceStore.setState({
       workspaces: [
         {
-          id: "ws-normal",
-          name: "My workspace",
+          id: "ws-modern",
+          name: "Modern",
           agents: [],
           panes: [
             {
-              id: "ws-pane-1",
+              id: "pane-valid",
               agentId: "terminal",
               sessionId: null,
               kind: "conversation",
               conversationId: "conv-1",
+            },
+            {
+              id: "pane-missing",
+              agentId: "terminal",
+              sessionId: null,
+              kind: "conversation",
+              conversationId: "missing-conversation",
             },
           ],
           projectPath: "/proj",
@@ -131,49 +161,40 @@ describe("focusConversationDeepLink", () => {
           updatedAt: 1,
           status: "active",
         },
+        {
+          id: "ws-orphan",
+          name: "Old binary wrapper",
+          agents: ["terminal"],
+          panes: [
+            {
+              id: "pane-downgraded",
+              agentId: "terminal",
+              sessionId: null,
+              kind: "terminal",
+            },
+          ],
+          projectPath: "/proj",
+          createdAt: 1,
+          updatedAt: 1,
+          status: "active",
+          origin: "conversation",
+        },
       ],
-      activeWorkspaceId: null,
-      zoomedPaneId: null,
-      focusPaneRequest: null,
     });
 
-    focusConversationDeepLink("conv-1");
+    initSessionGlue();
 
-    const wrapId = conversationWrapperId("conv-1");
-    const workspaces = useWorkspaceStore.getState().workspaces;
-    // No duplicate wrapper minted.
-    expect(workspaces.find((w) => w.id === wrapId)).toBeUndefined();
-    // Still exactly one placement holding exactly one conversation pane.
-    const placements = workspaces.filter((w) =>
-      w.panes.some(
-        (p) => p.kind === "conversation" && p.conversationId === "conv-1",
-      ),
-    );
-    expect(placements).toHaveLength(1);
-    expect(placements[0].panes).toHaveLength(1);
-    // Landed on the EXISTING workspace and flashed its existing pane.
-    expect(useWorkspaceStore.getState().activeWorkspaceId).toBe("ws-normal");
-    expect(useWorkspaceStore.getState().focusPaneRequest).toMatchObject({
-      workspaceId: "ws-normal",
-      paneId: "ws-pane-1",
+    expect(useWorkspaceAgentsDogfoodStore.getState().evidence.migration).toEqual({
+      audits: 1,
+      conversationPanes: 2,
+      missingConversationReferences: 1,
+      orphanConversationWrappers: 1,
     });
-  });
-
-  it("is idempotent — a second deep link reuses the one wrapper", () => {
-    useAgentTaskStore.setState({ conversations: [conv({ id: "conv-1" })] });
-    focusConversationDeepLink("conv-1");
-    focusConversationDeepLink("conv-1");
-    const wrapId = conversationWrapperId("conv-1");
-    const wrappers = useWorkspaceStore.getState().workspaces.filter((w) => w.id === wrapId);
-    expect(wrappers).toHaveLength(1);
-  });
-
-  it("a vanished conversation lands on Workspace without a dead wrapper", () => {
-    // No such conversation in the store.
-    focusConversationDeepLink("ghost");
-
-    expect(useWorkspaceStore.getState().workspaces).toHaveLength(0);
-    expect(useWorkspaceStore.getState().focusPaneRequest).toBeNull();
-    expect(useAppStore.getState().activeView).toBe("workspace");
+    expect(
+      useWorkspaceStore.getState().workspaces.some((workspace) => workspace.id === "ws-orphan"),
+    ).toBe(false);
+    expect(
+      useWorkspaceStore.getState().workspaces.some((workspace) => workspace.id === "ws-modern"),
+    ).toBe(true);
   });
 });

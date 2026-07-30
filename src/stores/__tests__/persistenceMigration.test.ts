@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { Flight } from "@/types/flight";
 import type { PersistedState } from "@/lib/tauri";
+import type { AgentConversation } from "@/types/agent-conversation";
 
 // === Mocks ===
 
@@ -19,9 +20,7 @@ vi.mock("@/lib/tauri", () => ({
 vi.mock("@/stores/routingStore", () => ({
   useRoutingStore: {
     getState: vi.fn().mockReturnValue({
-      resolveForTask: vi
-        .fn()
-        .mockReturnValue({ agentConfigId: "claude-code", model: undefined }),
+      resolveForTask: vi.fn().mockReturnValue({ agentConfigId: "claude-code", model: undefined }),
     }),
   },
 }));
@@ -286,7 +285,7 @@ describe("orphaned localStorage keys from cut stores are silently ignored", () =
     expect(Object.keys(states).sort()).toEqual(registryIds);
     expect(states).not.toHaveProperty("ideation");
     expect(states.quality?.enabled).toBe(true);
-  });
+  }, 15_000);
 });
 
 describe("legacy conversation hydration strips mirror fields and canonicalizes agent ids", () => {
@@ -352,14 +351,17 @@ describe("legacy conversation hydration strips mirror fields and canonicalizes a
       saveWorkspacesSlice: vi.fn().mockResolvedValue(undefined),
     }));
 
-    const { useAgentTaskStore, canonicalizeAgentCli } = await import(
-      "@/stores/agentTaskStore"
-    );
+    const { useAgentTaskStore, canonicalizeAgentCli } = await import("@/stores/agentTaskStore");
     const { useAgentPlanStore } = await import("@/stores/agentPlanStore");
-    const { hydrateConversations } = await import(
-      "@/stores/agentConversationPersistence"
-    );
-    return { useAgentTaskStore, useAgentPlanStore, hydrateConversations, canonicalizeAgentCli };
+    const { hydrateConversations, refreshConversationProjection } =
+      await import("@/stores/agentConversationPersistence");
+    return {
+      useAgentTaskStore,
+      useAgentPlanStore,
+      hydrateConversations,
+      refreshConversationProjection,
+      canonicalizeAgentCli,
+    };
   }
 
   it("hydrates a legacy conversation file, strips mirror keys, and canonicalizes api-minimax-api", async () => {
@@ -382,14 +384,22 @@ describe("legacy conversation hydration strips mirror fields and canonicalizes a
       pendingPermissions: [{ id: "perm-1", name: "bash", arguments: "{}" }],
       pendingEdits: [{ id: "edit-1", path: "src/a.ts", content: "x" }],
       thinkingStream: "some partial thinking...",
-      subAgentTokens: { "/root/agent_a": { inputTokens: 1, outputTokens: 1, reasoningTokens: 0, cacheReadTokens: 0 } },
+      subAgentTokens: {
+        "/root/agent_a": {
+          inputTokens: 1,
+          outputTokens: 1,
+          reasoningTokens: 0,
+          cacheReadTokens: 0,
+        },
+      },
       workspaceId: "workspace-legacy-1",
       spec: { title: "old spec fsm" },
       specStage: "planning",
     };
 
-    const { useAgentTaskStore, useAgentPlanStore, hydrateConversations } =
-      await setupHydration([JSON.stringify(legacyConversation)]);
+    const { useAgentTaskStore, useAgentPlanStore, hydrateConversations } = await setupHydration([
+      JSON.stringify(legacyConversation),
+    ]);
 
     hydrateConversations();
     // Let the loadConversations().then(...) microtask chain settle.
@@ -422,16 +432,139 @@ describe("legacy conversation hydration strips mirror fields and canonicalizes a
 
     // The plan substore — not the conversation record — is the ONE
     // persistence mechanism for plan/planApproved (P1-11).
-    expect(useAgentPlanStore.getState().getPlan("conv-legacy-1")).toEqual(
-      legacyConversation.plan,
-    );
+    expect(useAgentPlanStore.getState().getPlan("conv-legacy-1")).toEqual(legacyConversation.plan);
     expect(useAgentPlanStore.getState().getPlanApproved("conv-legacy-1")).toBe(true);
   });
 
-  it("skips malformed conversation JSON without throwing", async () => {
-    const { useAgentTaskStore, hydrateConversations } = await setupHydration([
-      "{not valid json",
+  it("hydrates a Monitor projection without persisting cold-start auto-archive changes", async () => {
+    const oldDoneConversation = {
+      id: "conv-monitor-readonly",
+      title: "Old completed conversation",
+      agent: "api-openai",
+      projectPath: "/repo",
+      status: "done",
+      messages: [],
+      sessionId: "conv-monitor-readonly",
+      rawOutput: "",
+      createdAt: Date.now() - 30 * 86_400_000,
+      updatedAt: Date.now() - 20 * 86_400_000,
+      mode: "api",
+    };
+    const { useAgentTaskStore, refreshConversationProjection } = await setupHydration([
+      JSON.stringify(oldDoneConversation),
     ]);
+
+    await refreshConversationProjection();
+
+    expect(saveConversationMockLocal).not.toHaveBeenCalled();
+    expect(
+      useAgentTaskStore
+        .getState()
+        .conversations.find((conversation) => conversation.id === oldDoneConversation.id)?.archived,
+    ).toBe(true);
+  });
+
+  it("atomically replaces the Monitor projection on every refresh without writing", async () => {
+    const firstConversation = {
+      id: "conv-monitor-first",
+      title: "First projection",
+      agent: "api-openai",
+      projectPath: "/repo",
+      status: "done",
+      messages: [],
+      sessionId: null,
+      rawOutput: "",
+      createdAt: 1,
+      updatedAt: 2,
+      mode: "api",
+    };
+    const secondConversation = {
+      ...firstConversation,
+      id: "conv-monitor-second",
+      title: "Second projection",
+      updatedAt: 3,
+    };
+    const { useAgentTaskStore, refreshConversationProjection } = await setupHydration([]);
+    loadConversationsMockLocal.mockReset();
+    loadConversationsMockLocal
+      .mockResolvedValueOnce([JSON.stringify(firstConversation)])
+      .mockResolvedValueOnce([JSON.stringify(secondConversation)]);
+
+    await refreshConversationProjection();
+    expect(useAgentTaskStore.getState().conversations.map(({ id }) => id)).toEqual([
+      firstConversation.id,
+    ]);
+
+    await refreshConversationProjection();
+    expect(useAgentTaskStore.getState().conversations.map(({ id }) => id)).toEqual([
+      secondConversation.id,
+    ]);
+    expect(loadConversationsMockLocal).toHaveBeenCalledTimes(2);
+    expect(saveConversationMockLocal).not.toHaveBeenCalled();
+  });
+
+  it("preserves the Monitor projection when a refresh read fails", async () => {
+    const existingConversation: AgentConversation = {
+      id: "conv-monitor-existing",
+      title: "Last safe projection",
+      agent: "api-openai",
+      projectPath: "/repo",
+      status: "idle",
+      messages: [],
+      sessionId: null,
+      rawOutput: "",
+      createdAt: 1,
+      updatedAt: 2,
+      mode: "api",
+      queuedMessages: [],
+    };
+    const { useAgentTaskStore, refreshConversationProjection } = await setupHydration([]);
+    useAgentTaskStore.setState({ conversations: [existingConversation] });
+    loadConversationsMockLocal.mockRejectedValueOnce(new Error("backend busy"));
+
+    await expect(refreshConversationProjection()).rejects.toThrow("backend busy");
+
+    expect(useAgentTaskStore.getState().conversations).toEqual([existingConversation]);
+    expect(saveConversationMockLocal).not.toHaveBeenCalled();
+  });
+
+  it("allows main-window hydration to retry after a failed first read", async () => {
+    const recoveredConversation = {
+      id: "conv-hydration-recovered",
+      title: "Recovered",
+      agent: "api-openai",
+      projectPath: "/repo",
+      status: "done",
+      messages: [],
+      sessionId: null,
+      rawOutput: "",
+      createdAt: 1,
+      updatedAt: Date.now(),
+      mode: "api",
+    };
+    const { useAgentTaskStore, hydrateConversations } = await setupHydration([]);
+    loadConversationsMockLocal.mockReset();
+    loadConversationsMockLocal
+      .mockRejectedValueOnce(new Error("backend starting"))
+      .mockResolvedValueOnce([JSON.stringify(recoveredConversation)]);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      await hydrateConversations();
+      expect(useAgentTaskStore.getState().conversations).toHaveLength(0);
+
+      await hydrateConversations();
+      expect(useAgentTaskStore.getState().conversations.map(({ id }) => id)).toEqual([
+        recoveredConversation.id,
+      ]);
+      expect(loadConversationsMockLocal).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("skips malformed conversation JSON without throwing", async () => {
+    const { useAgentTaskStore, hydrateConversations } = await setupHydration(["{not valid json"]);
 
     expect(() => hydrateConversations()).not.toThrow();
     await new Promise((resolve) => setTimeout(resolve, 0));

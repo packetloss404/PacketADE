@@ -1,0 +1,26 @@
+[
+  {
+    "id": "ws-v09",
+    "name": "Mixed saved layout",
+    "agents": ["packetcode"],
+    "panes": [
+      {
+        "id": "pane-packetcode",
+        "agentId": "packetcode",
+        "sessionId": "pty-packetcode",
+        "kind": "terminal"
+      },
+      {
+        "id": "pane-conversation",
+        "agentId": "terminal",
+        "sessionId": null,
+        "kind": "conversation",
+        "conversationId": "conv-durable"
+      }
+    ],
+    "projectPath": "C:\\fixture\\project",
+    "createdAt": 3,
+    "updatedAt": 4,
+    "status": "active"
+  }
+]

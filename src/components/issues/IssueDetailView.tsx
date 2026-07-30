@@ -21,6 +21,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { writePty } from "@/lib/tauri";
 import { getLabelColor, getPriorityColor } from "@/lib/colors";
+import { getPreferredWorkspaceCli } from "@/lib/workspaceCliDefaults";
 import { IssueDependencyList } from "./IssueDependencyList";
 
 interface IssueDetailViewProps {
@@ -165,10 +166,10 @@ export function IssueDetailView({ issueId, onClose }: IssueDetailViewProps) {
     const projectPath = useLayoutStore.getState().projectPath;
     const projectName = projectPath.split(/[/\\]/).pop() || "Workspace";
 
-    // Create workspace with Claude Code agent
+    // Create a CLI-first workspace, preferring PacketCode when detected.
     const wsId = useWorkspaceStore.getState().createWorkspace(
       projectName,
-      ["claude-code"],
+      [getPreferredWorkspaceCli()],
       projectPath,
       { prompt: buildIssuePrompt() },
     );

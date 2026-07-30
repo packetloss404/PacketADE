@@ -1,9 +1,10 @@
 # Deferred work — tile composer / conversation tiles
 
 Backlog of things intentionally **not** done during the Waves 1–4 modernization +
-the Codex/PTY/harness fixes, with enough detail to resume each cold. The work
-now lives on the single-surface tile composer (conversations are workspace
-tiles; the standalone Agents tab was removed). Ordered roughly by value. The
+the Codex/PTY/harness fixes, with enough detail to resume each cold. This file
+predates the 2026-07-29 Workspace/Agents restructuring: new GUI-agent work now
+starts in the first-class Agents view, while existing and explicitly attached
+Workspace conversation tiles remain compatible. Ordered roughly by value. The
 full 314-finding review that seeded the waves is archived in
 [`agents-tab-modernization-plan.md`](../dev/archive/agents-tab-modernization-plan.md).
 
@@ -32,10 +33,11 @@ so, run Codex through that persistent mode instead of one-shot `exec` and wire
 already exists (`enabledMcpServerIds` on `createApiConversation`, now in its
 options object after Wave 4).
 
-**Resume:** add an MCP multi-select to `src/components/agents/AgentInputArea.tsx`
-(reuse `mcpStore` + the `Popover` primitive), pass `enabledMcpServerIds` through
-the `createApiConversation` options object, and confirm the Rust/sidecar honor it
-at `start_api_agent_session`.
+**Resume:** add an MCP multi-select to
+`src/components/agents/composer/Composer.tsx` (reuse `mcpStore` + the `Popover`
+primitive), pass `enabledMcpServerIds` through the `createApiConversation`
+options object, and confirm the Rust/sidecar honor it at
+`start_api_agent_session`.
 
 ## 3. Per-run cost cap — mid-run cancel
 **Status:** **Partial.** Cost guardrails shipped (per-run cost is tracked and

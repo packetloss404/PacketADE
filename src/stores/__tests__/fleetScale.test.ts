@@ -1,13 +1,11 @@
 /**
- * Tile program (P4-S2) — fleet scale + materialization invariants.
+ * Tile program (P4-S2) — fleet scale + projection invariants.
  *
  * Asserts the ruled "no bulk migration" model holds at scale:
  *   - 200+ conversations project to 200+ virtual rows with ZERO
  *     conversation-file mutation (no `saveConversation`);
  *   - virtual-row identity is stable across a simulated restart (row id ===
- *     conversationId, deterministic order);
- *   - `openSession` materialization is idempotent at scale (opening every row
- *     twice yields exactly one wrapper each, still zero conversation mutation).
+ *     conversationId, deterministic order).
  */
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
@@ -20,7 +18,9 @@ vi.mock("@/stores/memoryStore", () => ({
   useMemoryStore: { getState: vi.fn(() => ({ getContextForSession: vi.fn(() => "") })) },
 }));
 vi.mock("@/stores/layoutStore", () => ({
-  useLayoutStore: { getState: vi.fn(() => ({ setProjectPath: vi.fn(), setActivePaneId: vi.fn() })) },
+  useLayoutStore: {
+    getState: vi.fn(() => ({ setProjectPath: vi.fn(), setActivePaneId: vi.fn() })),
+  },
 }));
 vi.mock("@/lib/tauri", () => ({
   createPtySession: vi.fn(),
@@ -45,11 +45,8 @@ vi.mock("@/lib/tauri", () => ({
   saveWorkspacesSlice: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { openSession, runReconciliationSweep, conversationWrapperId, teardownSessionGlue } from "@/stores/sessionGlue";
-import {
-  selectConversationAttention,
-  selectWorkspaceStatuses,
-} from "@/lib/sessionStatus";
+import { runReconciliationSweep, teardownSessionGlue } from "@/stores/sessionGlue";
+import { selectConversationAttention, selectWorkspaceStatuses } from "@/lib/sessionStatus";
 import { flightAttemptSessionIds } from "@/lib/sessionIndex";
 import { buildFleetProjection } from "@/lib/fleetRows";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
@@ -138,30 +135,5 @@ describe("fleet scale — 200+ conversations", () => {
     const second = orderedIds(project());
 
     expect(second).toEqual(first);
-  });
-
-  it("openSession materialization is idempotent at scale (open twice ⇒ one wrapper each)", () => {
-    useAgentTaskStore.setState({ conversations: makeConversations(N) });
-    saveConversationMock.mockClear();
-
-    for (let pass = 0; pass < 2; pass++) {
-      for (let i = 0; i < N; i++) openSession({ conversationId: `conv-${i}` });
-    }
-
-    const wrappers = useWorkspaceStore.getState().workspaces;
-    expect(wrappers).toHaveLength(N);
-    for (let i = 0; i < N; i++) {
-      const id = conversationWrapperId(`conv-${i}`);
-      expect(wrappers.filter((w) => w.id === id)).toHaveLength(1);
-    }
-    // Materialization never mutates the conversation record on disk.
-    expect(saveConversationMock).not.toHaveBeenCalled();
-
-    // Once every conversation is placed, the fleet shows only workspace rows —
-    // no synthetic duplicates.
-    const p = project();
-    const rows = [...p.needsYou, ...p.groups.flatMap((g) => g.rows)];
-    expect(rows).toHaveLength(N);
-    expect(rows.every((r) => r.kind === "workspace")).toBe(true);
   });
 });

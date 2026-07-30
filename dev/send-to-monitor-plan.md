@@ -24,11 +24,16 @@ Implemented v1 footprint:
 - `capabilities/monitor.json` grants window chrome/events only; it grants no
   shell, filesystem, process, PTY, agent, approval, deploy, settings, or keyring
   plugin permission.
+- The app invoke dispatcher additionally allowlists Monitor WebViews to
+  route/focus/close and persisted reads. Tauri application commands for PTY,
+  API-agent, approval/edit response, writes, deploy, secrets, and secondary
+  Monitor creation are rejected before dispatch.
 - `main.tsx` selects `MonitorApp` through the branded monitor query key without
   mounting the full main shell.
 - `MonitorApp` renders persisted AgentConversation or Flight projections,
-  refreshes them read-only, and routes `Focus in Main Window` through a backend
-  event.
+  refreshes conversations through an awaited, repeatable, atomic read-only
+  snapshot, retains the last safe projection after a failed poll, and routes
+  `Focus in Main Window` through a backend event.
 - Agent header and Flight header actions open or reroute the Monitor.
 
 The feature is useful for multi-display setups while reinforcing PacketADE's
@@ -40,10 +45,10 @@ chat panel.
 | Decision                                    | Current answer                                           |
 | ------------------------------------------- | -------------------------------------------------------- |
 | Should the Agents pane pop out?             | No. Keep the left rail anchored as the dispatch surface. |
-| Should PacketADE support multiple monitors? | Later; v1 reuses one `monitor-main` window.               |
+| Should PacketADE support multiple monitors? | Later; v1 reuses one `monitor-main` window.              |
 | Should Monitor windows be writable?         | Not in v1. Start read-only / control-lite.               |
 | Should v1 support arbitrary pane detach?    | No. Only approved monitor surfaces.                      |
-| Should this be implemented now?             | V1 is implemented; later surfaces remain gated.           |
+| Should this be implemented now?             | V1 is implemented; later surfaces remain gated.          |
 
 ## Product Positioning
 
@@ -240,20 +245,36 @@ Route rules:
 
 ## Security Model
 
-Monitor windows must have narrower permissions than `main`.
+Monitor windows have narrower permissions than `main`.
 
-Current `default.json` is scoped to `main`. Add a separate capability for
-Monitor labels before shipping:
+`default.json` is scoped to `main`; Monitor labels use the separate:
 
 ```text
 src-tauri/capabilities/monitor.json
 ```
 
-Monitor capability should include only the permissions needed for window
+The Monitor capability includes only the permissions needed for window
 chrome, event listening, route hydration, and safe read APIs. Do not grant
 shell, process, global shortcut, PTY write/kill, agent start/send/cancel,
 approval response, GitHub mutation, deploy mutation, settings, keyring, or file
 write permissions to Monitor windows.
+
+Tauri plugin capabilities do not by themselves restrict PacketADE's registered
+application commands. `lib.rs` therefore checks every application invoke from a
+non-main label before the generated handler runs. Unreviewed secondary windows
+are denied all application commands; the v1 `monitor-*` allowlist is:
+
+```text
+get_monitor_window_route
+close_monitor_window
+focus_monitor_route_in_main
+load_persisted_state
+load_conversations
+```
+
+`MonitorApp` calls `hydrateConversations({ readOnly: true })`, so even the
+normal cold-start auto-archive migration does not write a conversation file
+from the projection WebView.
 
 Tauri capability docs:
 
@@ -598,9 +619,13 @@ Frontend unit/component:
 
 Security/regression:
 
-- Monitor window cannot call PTY write/kill commands.
-- Monitor window cannot call API-agent start/send/cancel commands.
-- Monitor window cannot respond to pending permissions/edits.
+- **Implemented:** Monitor application-command allowlist rejects PTY
+  write/kill, API-agent start/send/cancel, approval/edit responses, state and
+  conversation writes, and secondary Monitor creation.
+- **Implemented:** Monitor conversation hydration does not persist cold-start
+  auto-archive changes.
+- **Implemented:** source-contract tests reject unreviewed secondary windows or
+  broadened Monitor plugin capability.
 - malformed IDs cannot hydrate arbitrary files or sessions.
 - deleted entity revokes/invalidates the Monitor view.
 
@@ -631,9 +656,10 @@ Manual:
 ## Recommendation When Resumed
 
 Agent Monitor + Flight Monitor are implemented with one backend-leased window,
-a separate frontend boot shell, and a narrow Tauri capability. The app polls
-persisted read projections without mounting the full App or PTY-owning
-components, and routes actions back to the main window.
+a separate frontend boot shell, a narrow Tauri capability, and a Rust-enforced
+application-command allowlist. The app polls persisted read projections without
+mounting the full App or PTY-owning components, and routes actions back to the
+main window.
 
 Next proof is the packaged manual matrix above. Do not start terminal/workspace
 monitors until a separate session-attachment design makes them safe.

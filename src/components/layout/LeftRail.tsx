@@ -1,4 +1,4 @@
-import { Terminal, Plane, KanbanSquare, Brain, Github, Settings } from "lucide-react";
+import { Bot, Terminal, Plane, KanbanSquare, Brain, Github, Settings } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAppStore, type AppView } from "@/stores/appStore";
 
@@ -9,11 +9,9 @@ type RailItem = {
   matches?: AppView[];
 };
 
-// Tile program (P5-S1): the "Agents" rail item was removed — the Agents tab is
-// retired and reachable only through the one-release redirect shim, never a
-// visible entry point. Workspace is now the primary surface.
 const ITEMS: RailItem[] = [
   { id: "workspace", icon: Terminal, label: "Workspace" },
+  { id: "agents", icon: Bot, label: "Agents" },
   { id: "flights", icon: Plane, label: "Flight Deck" },
   { id: "issues", icon: KanbanSquare, label: "Issues" },
   { id: "memory", icon: Brain, label: "Memory" },
@@ -25,26 +23,24 @@ export function LeftRail() {
   const setActiveView = useAppStore((s) => s.setActiveView);
 
   return (
-    <div className="flex flex-col items-center w-11 bg-bg-secondary border-r border-bg-border py-2 gap-0.5 flex-shrink-0">
+    <div className="flex w-11 flex-shrink-0 flex-col items-center gap-0.5 border-r border-bg-border bg-bg-secondary py-2">
       {ITEMS.map((it) => {
-        const isActive = it.matches
-          ? it.matches.includes(activeView)
-          : activeView === it.id;
+        const isActive = it.matches ? it.matches.includes(activeView) : activeView === it.id;
         const Icon = it.icon;
         return (
           <button
             key={it.id}
             onClick={() => setActiveView(it.id)}
             title={it.label}
-            className={`relative w-8 h-8 grid place-items-center rounded-md transition-colors ${
+            className={`relative grid h-8 w-8 place-items-center rounded-md transition-colors ${
               isActive
                 ? "bg-bg-elevated text-text-primary"
-                : "text-text-muted hover:text-text-primary hover:bg-bg-tertiary"
+                : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
             }`}
           >
             {isActive && (
               <span
-                className="absolute -left-2 top-1.5 bottom-1.5 w-0.5 rounded-sm"
+                className="absolute -left-2 bottom-1.5 top-1.5 w-0.5 rounded-sm"
                 style={{ background: "var(--color-accent-green)" }}
               />
             )}
@@ -58,10 +54,10 @@ export function LeftRail() {
       <button
         onClick={() => setActiveView("tools")}
         title="Settings"
-        className={`w-8 h-8 grid place-items-center rounded-md transition-colors ${
+        className={`grid h-8 w-8 place-items-center rounded-md transition-colors ${
           activeView === "tools"
             ? "bg-bg-elevated text-text-primary"
-            : "text-text-muted hover:text-text-primary hover:bg-bg-tertiary"
+            : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
         }`}
       >
         <Settings size={15} />

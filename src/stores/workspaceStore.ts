@@ -5,7 +5,6 @@ import { logSwallowed } from "@/lib/logSwallowed";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useServerStore } from "@/stores/serverStore";
 
-
 export interface WorkspaceSessionConfig {
   prompt?: string;
   modelOverrides?: Record<string, string | null>;
@@ -66,8 +65,14 @@ interface WorkspaceStore {
   autoBindGithubRepo: boolean;
   zoomedPaneId: string | null;
 
-  createWorkspace: (name: string, agents: WorkspaceAgentSlot[], projectPath: string, sessionConfig?: WorkspaceSessionConfig) => string;
+  createWorkspace: (
+    name: string,
+    agents: WorkspaceAgentSlot[],
+    projectPath: string,
+    sessionConfig?: WorkspaceSessionConfig,
+  ) => string;
   archiveWorkspace: (id: string) => void;
+  restoreWorkspace: (id: string) => void;
   deleteWorkspace: (id: string) => void;
   setActiveWorkspace: (id: string | null) => void;
   getActiveWorkspace: () => Workspace | undefined;
@@ -78,17 +83,6 @@ interface WorkspaceStore {
   setModelOverride: (workspaceId: string, agentId: string, model: string | null) => void;
   removePinnedCommand: (workspaceId: string, paneId: string, index: number) => void;
   addPane: (workspaceId: string, agentId: WorkspaceAgentSlot) => string | null;
-  /**
-   * Tile program (P3-S2): insert a conversation pane into `workspaceId`.
-   * Ordering law (spec): the conversation MUST already exist in `agentTaskStore`
-   * (created via `launchConversation`) BEFORE this call — no half-born tile. The
-   * pane carries the inert carrier `agentId: "terminal"` and `kind:
-   * "conversation"`, and is NEVER pushed into `agents` (P1-S1 ruling; the store
-   * isolation rule forbids reaching into agentTaskStore to validate, so the
-   * caller owns the ordering guarantee). Returns the new pane id, or `null` when
-   * the workspace does not exist.
-   */
-  addConversationPane: (workspaceId: string, conversationId: string) => string | null;
   removePane: (workspaceId: string, paneId: string) => void;
   /**
    * Tile program (P1-S2): prune every conversation pane referencing
@@ -98,20 +92,6 @@ interface WorkspaceStore {
    * pane→conversationId only.
    */
   removeConversationPanes: (conversationId: string) => void;
-  /**
-   * Tile program (P1-S2): idempotently materialize the conversation wrapper
-   * workspace for `conversationId`. Uses the deterministic id
-   * `ws-wrap-<convId>` and stamps `origin: "conversation"`, so calling twice
-   * yields exactly one workspace. Returns the wrapper id. Does NOT activate the
-   * workspace — `sessionGlue.openSession` orchestrates activation. Conversation
-   * panes carry the inert carrier `agentId: "terminal"` and are never pushed
-   * into `agents`.
-   */
-  ensureConversationWorkspace: (opts: {
-    conversationId: string;
-    name: string;
-    projectPath: string;
-  }) => string;
   setDefaultBypassPermissions: (value: boolean) => void;
   setAutoBindGithubRepo: (value: boolean) => void;
   setZoomedPane: (paneId: string | null) => void;
@@ -158,9 +138,8 @@ function writeBooleanFlag(key: string, value: boolean) {
  * a persisted pane that had claimed the same low number in an earlier session
  * (duplicate keys → React reconciliation clobbering the wrong pane). Minting
  * from `crypto.randomUUID()` — the same source the workspace id uses — makes the
- * id unique across reloads. The `ws-pane-` prefix is retained so
- * `draftTileStore`'s "never collides with `ws-pane-*`" invariant still holds and
- * old persisted ids (opaque strings) keep working untouched.
+ * id unique across reloads. The `ws-pane-` prefix is retained so old persisted
+ * ids (opaque strings) keep working untouched.
  */
 function mintPaneId(): string {
   return `ws-pane-${crypto.randomUUID()}`;
@@ -184,10 +163,9 @@ function buildPanes(agents: WorkspaceAgentSlot[]): WorkspacePane[] {
 const WORKSPACES_CACHE_KEY = "packetade:workspaces-cache";
 
 /**
- * Tile program (P1-S2): deterministic wrapper-workspace id for a conversation.
- * The `openSession` materialization and the reconciliation sweep both key off
- * this exact shape (`ws-wrap-<convId>`) so a conversation maps to at most one
- * wrapper and repeated opens are idempotent.
+ * Historical deterministic wrapper-workspace id for a conversation. New
+ * attachments are retired, but migration and cleanup tests still recognize
+ * this shape so saved `ws-wrap-<convId>` layouts remain safe.
  */
 export function conversationWrapperId(conversationId: string): string {
   return `ws-wrap-${conversationId}`;
@@ -216,12 +194,14 @@ function normalizePane(raw: unknown): WorkspacePane | null {
   const pane = raw as Record<string, unknown>;
   if (typeof pane.id !== "string") return null;
 
-  const isConversation =
-    pane.kind === "conversation" && typeof pane.conversationId === "string";
+  const isConversation = pane.kind === "conversation" && typeof pane.conversationId === "string";
 
   // Preserve unknown fields, then override the discriminant pair so the
-  // invariant always holds regardless of what was on disk.
+  // invariant always holds regardless of what was on disk. PTY ids are
+  // runtime-only: the owning OS processes died with the previous app process,
+  // so hydrating a persisted id would expose a stale write/kill target.
   const normalized = { ...pane } as Record<string, unknown>;
+  normalized.sessionId = null;
   if (isConversation) {
     normalized.kind = "conversation";
     normalized.conversationId = pane.conversationId;
@@ -281,7 +261,9 @@ function syncToBackend(workspaces: Workspace[]) {
 }
 
 function commitWorkspaces(
-  updater: (state: Pick<WorkspaceStore, "workspaces" | "activeWorkspaceId">) => Partial<WorkspaceStore>,
+  updater: (
+    state: Pick<WorkspaceStore, "workspaces" | "activeWorkspaceId">,
+  ) => Partial<WorkspaceStore>,
 ) {
   return (state: WorkspaceStore): Partial<WorkspaceStore> => {
     const next = updater(state);
@@ -321,7 +303,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       // we need it stored on the workspace itself.
       const server = useServerStore.getState().getServer(serverId);
       if (!server) {
-        throw new Error(`createWorkspace: serverId "${serverId}" does not match any registered server`);
+        throw new Error(
+          `createWorkspace: serverId "${serverId}" does not match any registered server`,
+        );
       }
       if (!remoteProjectPath || !remoteProjectPath.trim()) {
         throw new Error("createWorkspace: remoteProjectPath is required when serverId is set");
@@ -356,29 +340,48 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       remoteProjectPath,
       githubRepo: sessionConfig?.githubRepo,
     };
-    set(commitWorkspaces((s) => {
-      const workspaces = [...s.workspaces, workspace];
-      return { workspaces, activeWorkspaceId: id };
-    }));
+    set(
+      commitWorkspaces((s) => {
+        const workspaces = [...s.workspaces, workspace];
+        return { workspaces, activeWorkspaceId: id };
+      }),
+    );
     return id;
   },
 
   archiveWorkspace: (id) => {
-    set(commitWorkspaces((s) => {
-      const workspaces = s.workspaces.map((w) =>
-        w.id === id ? { ...w, status: "archived" as const, updatedAt: Date.now() } : w
-      );
-      const activeWorkspaceId = s.activeWorkspaceId === id ? null : s.activeWorkspaceId;
-      return { workspaces, activeWorkspaceId };
-    }));
+    set(
+      commitWorkspaces((s) => {
+        const workspaces = s.workspaces.map((w) =>
+          w.id === id ? { ...w, status: "archived" as const, updatedAt: Date.now() } : w,
+        );
+        const activeWorkspaceId = s.activeWorkspaceId === id ? null : s.activeWorkspaceId;
+        return { workspaces, activeWorkspaceId };
+      }),
+    );
+  },
+
+  restoreWorkspace: (id) => {
+    set(
+      commitWorkspaces((s) => {
+        const workspaces = s.workspaces.map((workspace) =>
+          workspace.id === id
+            ? { ...workspace, status: "active" as const, updatedAt: Date.now() }
+            : workspace,
+        );
+        return { workspaces, activeWorkspaceId: id };
+      }),
+    );
   },
 
   deleteWorkspace: (id) => {
-    set(commitWorkspaces((s) => {
-      const workspaces = s.workspaces.filter((w) => w.id !== id);
-      const activeWorkspaceId = s.activeWorkspaceId === id ? null : s.activeWorkspaceId;
-      return { workspaces, activeWorkspaceId };
-    }));
+    set(
+      commitWorkspaces((s) => {
+        const workspaces = s.workspaces.filter((w) => w.id !== id);
+        const activeWorkspaceId = s.activeWorkspaceId === id ? null : s.activeWorkspaceId;
+        return { workspaces, activeWorkspaceId };
+      }),
+    );
   },
 
   setActiveWorkspace: (id) => {
@@ -400,182 +403,163 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   setBypassPermissions: (workspaceId, bypass) => {
-    set(commitWorkspaces((s) => {
-      const workspaces = s.workspaces.map((w) =>
-        w.id === workspaceId
-          ? { ...w, bypassPermissions: bypass, updatedAt: Date.now() }
-          : w
-      );
-      return { workspaces };
-    }));
+    set(
+      commitWorkspaces((s) => {
+        const workspaces = s.workspaces.map((w) =>
+          w.id === workspaceId ? { ...w, bypassPermissions: bypass, updatedAt: Date.now() } : w,
+        );
+        return { workspaces };
+      }),
+    );
   },
 
   setPaneSession: (workspaceId, paneId, sessionId) => {
-    set(commitWorkspaces((s) => {
-      const workspaces = s.workspaces.map((w) => {
-        if (w.id !== workspaceId) return w;
-        return {
-          ...w,
-          panes: w.panes.map((p) =>
-            p.id === paneId ? { ...p, sessionId } : p
-          ),
-          updatedAt: Date.now(),
-        };
-      });
-      return { workspaces };
-    }));
+    set(
+      commitWorkspaces((s) => {
+        const workspaces = s.workspaces.map((w) => {
+          if (w.id !== workspaceId) return w;
+          return {
+            ...w,
+            panes: w.panes.map((p) => (p.id === paneId ? { ...p, sessionId } : p)),
+            updatedAt: Date.now(),
+          };
+        });
+        return { workspaces };
+      }),
+    );
   },
 
   updatePane: (workspaceId, paneId, updates) => {
-    set(commitWorkspaces((s) => {
-      const workspaces = s.workspaces.map((w) => {
-        if (w.id !== workspaceId) return w;
-        return {
-          ...w,
-          panes: w.panes.map((p) =>
-            p.id === paneId ? { ...p, ...updates } : p
-          ),
-          updatedAt: Date.now(),
-        };
-      });
-      return { workspaces };
-    }));
+    set(
+      commitWorkspaces((s) => {
+        const workspaces = s.workspaces.map((w) => {
+          if (w.id !== workspaceId) return w;
+          return {
+            ...w,
+            panes: w.panes.map((p) => (p.id === paneId ? { ...p, ...updates } : p)),
+            updatedAt: Date.now(),
+          };
+        });
+        return { workspaces };
+      }),
+    );
   },
 
   setModelOverride: (workspaceId, agentId, model) => {
-    set(commitWorkspaces((s) => {
-      const workspaces = s.workspaces.map((w) => {
-        if (w.id !== workspaceId) return w;
-        const overrides = { ...(w.modelOverrides ?? {}) };
-        if (model === null) {
-          delete overrides[agentId];
-        } else {
-          overrides[agentId] = model;
-        }
-        return { ...w, modelOverrides: overrides, updatedAt: Date.now() };
-      });
-      return { workspaces };
-    }));
+    set(
+      commitWorkspaces((s) => {
+        const workspaces = s.workspaces.map((w) => {
+          if (w.id !== workspaceId) return w;
+          const overrides = { ...(w.modelOverrides ?? {}) };
+          if (model === null) {
+            delete overrides[agentId];
+          } else {
+            overrides[agentId] = model;
+          }
+          return { ...w, modelOverrides: overrides, updatedAt: Date.now() };
+        });
+        return { workspaces };
+      }),
+    );
   },
 
   addPinnedCommand: (workspaceId, paneId, command) => {
     const trimmed = command.trim();
     if (!trimmed) return;
-    set(commitWorkspaces((s) => {
-      const workspaces = s.workspaces.map((w) => {
-        if (w.id !== workspaceId) return w;
-        return {
-          ...w,
-          panes: w.panes.map((p) => {
-            if (p.id !== paneId) return p;
-            const existing = p.pinnedCommands ?? [];
-            if (existing.includes(trimmed)) return p;
-            if (existing.length >= 5) return p;
-            return { ...p, pinnedCommands: [...existing, trimmed] };
-          }),
-          updatedAt: Date.now(),
-        };
-      });
-      return { workspaces };
-    }));
+    set(
+      commitWorkspaces((s) => {
+        const workspaces = s.workspaces.map((w) => {
+          if (w.id !== workspaceId) return w;
+          return {
+            ...w,
+            panes: w.panes.map((p) => {
+              if (p.id !== paneId) return p;
+              const existing = p.pinnedCommands ?? [];
+              if (existing.includes(trimmed)) return p;
+              if (existing.length >= 5) return p;
+              return { ...p, pinnedCommands: [...existing, trimmed] };
+            }),
+            updatedAt: Date.now(),
+          };
+        });
+        return { workspaces };
+      }),
+    );
   },
 
   removePinnedCommand: (workspaceId, paneId, index) => {
-    set(commitWorkspaces((s) => {
-      const workspaces = s.workspaces.map((w) => {
-        if (w.id !== workspaceId) return w;
-        return {
-          ...w,
-          panes: w.panes.map((p) => {
-            if (p.id !== paneId) return p;
-            const existing = p.pinnedCommands ?? [];
-            return { ...p, pinnedCommands: existing.filter((_, i) => i !== index) };
-          }),
-          updatedAt: Date.now(),
-        };
-      });
-      return { workspaces };
-    }));
+    set(
+      commitWorkspaces((s) => {
+        const workspaces = s.workspaces.map((w) => {
+          if (w.id !== workspaceId) return w;
+          return {
+            ...w,
+            panes: w.panes.map((p) => {
+              if (p.id !== paneId) return p;
+              const existing = p.pinnedCommands ?? [];
+              return { ...p, pinnedCommands: existing.filter((_, i) => i !== index) };
+            }),
+            updatedAt: Date.now(),
+          };
+        });
+        return { workspaces };
+      }),
+    );
   },
 
   addPane: (workspaceId, agentId) => {
     const newPaneId = mintPaneId();
-    set(commitWorkspaces((s) => {
-      const workspaces = s.workspaces.map((w) => {
-        if (w.id !== workspaceId) return w;
-        const newPane: WorkspacePane = {
-          id: newPaneId,
-          agentId,
-          sessionId: null,
-        };
-        return {
-          ...w,
-          agents: [...w.agents, agentId],
-          panes: [...w.panes, newPane],
-          updatedAt: Date.now(),
-        };
-      });
-      return { workspaces };
-    }));
+    set(
+      commitWorkspaces((s) => {
+        const workspaces = s.workspaces.map((w) => {
+          if (w.id !== workspaceId) return w;
+          const newPane: WorkspacePane = {
+            id: newPaneId,
+            agentId,
+            sessionId: null,
+          };
+          return {
+            ...w,
+            agents: [...w.agents, agentId],
+            panes: [...w.panes, newPane],
+            updatedAt: Date.now(),
+          };
+        });
+        return { workspaces };
+      }),
+    );
     return newPaneId;
   },
 
-  addConversationPane: (workspaceId, conversationId) => {
-    const newPaneId = mintPaneId();
-    let inserted = false;
-    set(commitWorkspaces((s) => {
-      const workspaces = s.workspaces.map((w) => {
-        if (w.id !== workspaceId) return w;
-        inserted = true;
-        const newPane: WorkspacePane = {
-          id: newPaneId,
-          // Inert carrier — conversation panes persist agentId "terminal" so a
-          // downgraded binary renders a harmless terminal pane; `kind` is the
-          // sole discriminant (P1-S1 ruling).
-          agentId: "terminal",
-          sessionId: null,
-          kind: "conversation",
-          conversationId,
-        };
-        return {
-          ...w,
-          // Conversation panes are never pushed into `agents` (P1-S1 ruling).
-          panes: [...w.panes, newPane],
-          updatedAt: Date.now(),
-        };
-      });
-      return { workspaces };
-    }));
-    return inserted ? newPaneId : null;
-  },
-
   removePane: (workspaceId, paneId) => {
-    set(commitWorkspaces((s) => {
-      const workspaces = s.workspaces.map((w) => {
-        if (w.id !== workspaceId) return w;
-        const pane = w.panes.find((p) => p.id === paneId);
-        if (!pane) return w;
-        return {
-          ...w,
-          panes: w.panes.filter((p) => p.id !== paneId),
-          agents: (() => {
-            // Tile program (P1-S1): `agents` is keyed on `kind`, not agentId.
-            // Conversation panes were never pushed into `agents` (they carry the
-            // inert carrier agentId "terminal"), so removing one must NOT splice
-            // a real terminal out of the agents list. Skip the mutation.
-            if (pane.kind === "conversation") return w.agents;
-            // Remove one occurrence of this agent from the agents list
-            const idx = w.agents.indexOf(pane.agentId);
-            if (idx === -1) return w.agents;
-            const copy = [...w.agents];
-            copy.splice(idx, 1);
-            return copy;
-          })(),
-          updatedAt: Date.now(),
-        };
-      });
-      return { workspaces };
-    }));
+    set(
+      commitWorkspaces((s) => {
+        const workspaces = s.workspaces.map((w) => {
+          if (w.id !== workspaceId) return w;
+          const pane = w.panes.find((p) => p.id === paneId);
+          if (!pane) return w;
+          return {
+            ...w,
+            panes: w.panes.filter((p) => p.id !== paneId),
+            agents: (() => {
+              // Tile program (P1-S1): `agents` is keyed on `kind`, not agentId.
+              // Conversation panes were never pushed into `agents` (they carry the
+              // inert carrier agentId "terminal"), so removing one must NOT splice
+              // a real terminal out of the agents list. Skip the mutation.
+              if (pane.kind === "conversation") return w.agents;
+              // Remove one occurrence of this agent from the agents list
+              const idx = w.agents.indexOf(pane.agentId);
+              if (idx === -1) return w.agents;
+              const copy = [...w.agents];
+              copy.splice(idx, 1);
+              return copy;
+            })(),
+            updatedAt: Date.now(),
+          };
+        });
+        return { workspaces };
+      }),
+    );
     // Clear zoom if the zoomed pane was removed
     if (get().zoomedPaneId === paneId) {
       set({ zoomedPaneId: null });
@@ -584,76 +568,28 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   removeConversationPanes: (conversationId) => {
     const removedPaneIds: string[] = [];
-    set(commitWorkspaces((s) => {
-      let changed = false;
-      const workspaces = s.workspaces.map((w) => {
-        const kept = w.panes.filter((p) => {
-          const match = p.kind === "conversation" && p.conversationId === conversationId;
-          if (match) removedPaneIds.push(p.id);
-          return !match;
+    set(
+      commitWorkspaces((s) => {
+        let changed = false;
+        const workspaces = s.workspaces.map((w) => {
+          const kept = w.panes.filter((p) => {
+            const match = p.kind === "conversation" && p.conversationId === conversationId;
+            if (match) removedPaneIds.push(p.id);
+            return !match;
+          });
+          if (kept.length === w.panes.length) return w;
+          changed = true;
+          return { ...w, panes: kept, updatedAt: Date.now() };
         });
-        if (kept.length === w.panes.length) return w;
-        changed = true;
-        return { ...w, panes: kept, updatedAt: Date.now() };
-      });
-      // No referencing pane anywhere — skip the backend write entirely.
-      if (!changed) return {};
-      return { workspaces };
-    }));
+        // No referencing pane anywhere — skip the backend write entirely.
+        if (!changed) return {};
+        return { workspaces };
+      }),
+    );
     // Clear zoom if the zoomed pane was one of the pruned conversation panes.
     if (get().zoomedPaneId && removedPaneIds.includes(get().zoomedPaneId as string)) {
       set({ zoomedPaneId: null });
     }
-  },
-
-  ensureConversationWorkspace: ({ conversationId, name, projectPath }) => {
-    // Single-instance placement (the "exactly ONE render path per session"
-    // invariant, fleetRows.ts): if this conversation ALREADY has a tile in any
-    // workspace — a prior wrapper OR a normal workspace it was drafted into via
-    // addConversationPane (DraftTile) — reuse that placement instead of minting
-    // a duplicate wrapper. Without this, an openSession / deep-link on an
-    // already-placed conversation would fork a SECOND tile in a fresh wrapper
-    // and land the user on the wrong (empty) workspace.
-    const placed = get().workspaces.find((w) =>
-      w.panes.some(
-        (p) => p.kind === "conversation" && p.conversationId === conversationId,
-      ),
-    );
-    if (placed) return placed.id;
-    const id = conversationWrapperId(conversationId);
-    // Idempotent on the deterministic wrapper id too — guards the rare case of
-    // an orphaned wrapper whose conversation pane was stripped by an old-binary
-    // re-save (the reconciliation sweep hasn't repaired it yet): never create a
-    // second workspace with the same id. Never overwrite the existing name (the
-    // user may have renamed it — live-follow freezes on first manual rename, a
-    // Phase 4 concern) or duplicate the workspace.
-    if (get().workspaces.some((w) => w.id === id)) return id;
-    const now = Date.now();
-    const pane: WorkspacePane = {
-      id: mintPaneId(),
-      // Inert carrier — conversation panes persist agentId "terminal" so a
-      // downgraded binary renders a harmless terminal pane; `kind` is the sole
-      // discriminant.
-      agentId: "terminal",
-      sessionId: null,
-      kind: "conversation",
-      conversationId,
-    };
-    const workspace: Workspace = {
-      id,
-      name,
-      // Conversation panes are never pushed into `agents` (P1-S1 ruling) — a
-      // pure conversation wrapper starts with an empty agents list.
-      agents: [],
-      panes: [pane],
-      projectPath,
-      createdAt: now,
-      updatedAt: now,
-      status: "active",
-      origin: "conversation",
-    };
-    set(commitWorkspaces((s) => ({ workspaces: [...s.workspaces, workspace] })));
-    return id;
   },
 
   setZoomedPane: (paneId) => {

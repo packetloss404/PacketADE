@@ -107,9 +107,55 @@ fn neutral_scratch_cwd() -> Option<String> {
     Some(dir.to_string_lossy().into_owned())
 }
 
+/// Select a spawnable Windows command candidate from `where.exe` output.
+///
+/// Codex is the exceptional case: installing the Codex desktop app adds a
+/// WindowsApps `Codex.exe` ahead of (or alongside) the npm CLI's `codex.cmd`.
+/// That packaged GUI executable is not a PTY CLI and cannot be spawned through
+/// this process (`Access is denied`). Prefer the npm wrapper for bare `codex`;
+/// a non-Store native `codex.exe` remains a valid fallback.
+#[cfg(windows)]
+fn select_windows_command_candidate(command: &str, lines: &[&str]) -> Option<String> {
+    let requested = command.to_ascii_lowercase();
+    let is_codex = std::path::Path::new(&requested)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        == Some("codex");
+    let lower = |line: &&str| line.to_ascii_lowercase();
+
+    if is_codex {
+        if let Some(cmd_file) = lines.iter().find(|line| lower(line).ends_with(".cmd")) {
+            return Some((*cmd_file).to_string());
+        }
+        if let Some(exe) = lines.iter().find(|line| {
+            let candidate = lower(line);
+            candidate.ends_with(".exe") && !candidate.contains("\\windowsapps\\openai.codex_")
+        }) {
+            return Some((*exe).to_string());
+        }
+        return None;
+    }
+
+    if let Some(exe) = lines.iter().find(|line| lower(line).ends_with(".exe")) {
+        return Some((*exe).to_string());
+    }
+    if let Some(cmd_file) = lines.iter().find(|line| lower(line).ends_with(".cmd")) {
+        return Some((*cmd_file).to_string());
+    }
+    lines
+        .iter()
+        .find(|line| {
+            line.rsplit('\\')
+                .next()
+                .map(|file| file.contains('.'))
+                .unwrap_or(false)
+        })
+        .or_else(|| lines.first())
+        .map(|line| (*line).to_string())
+}
+
 /// Resolve a command name to its actual path on Windows.
-/// Uses `where` to find the binary — returns the first match.
-/// Prefers .exe over .cmd when both exist.
+/// Uses `where` to find a spawnable CLI binary or wrapper.
 #[cfg(windows)]
 fn resolve_windows_command(command: &str) -> String {
     use super::shared::hide_window;
@@ -137,28 +183,14 @@ fn resolve_windows_command(command: &str) -> String {
                 .filter(|l| !l.is_empty())
                 .collect();
 
-            // Prefer .exe over .cmd; skip extensionless entries (npm shell stubs)
-            if let Some(exe) = lines.iter().find(|l| l.ends_with(".exe")) {
-                return exe.to_string();
+            if let Some(candidate) = select_windows_command_candidate(command, &lines) {
+                return candidate;
             }
-            if let Some(cmd_file) = lines.iter().find(|l| l.ends_with(".cmd")) {
-                return cmd_file.to_string();
-            }
-            // Last resort: any entry with a file extension
-            if let Some(with_ext) = lines.iter().find(|l| {
-                l.rsplit('\\')
-                    .next()
-                    .map(|f| f.contains('.'))
-                    .unwrap_or_else(|| {
-                        // `where` output should always be \-delimited on Windows; log if not.
-                        warn!(line = %l, "where output line had no \\ separator; treating as no extension");
-                        false
-                    })
-            }) {
-                return with_ext.to_string();
-            }
-            if let Some(first) = lines.first() {
-                return first.to_string();
+            if command.eq_ignore_ascii_case("codex") {
+                warn!(
+                    "Ignoring Windows Store Codex desktop executable; Codex CLI wrapper not found"
+                );
+                return "codex.cmd".to_string();
             }
         }
     }
@@ -394,13 +426,13 @@ pub fn create_pty_session(
         .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
     // Build the command: launch the specified CLI interactively.
-    // On Windows, CLIs may be installed as .exe (e.g. claude.exe) or .cmd wrappers
-    // (e.g. codex.cmd). We use `where` to resolve the actual binary path and choose
-    // the right spawn strategy.
+    // On Windows, CLIs may be installed as .exe (e.g. claude.exe) or .cmd
+    // wrappers (e.g. codex.cmd). Resolution filters GUI app aliases before
+    // choosing the matching spawn strategy.
     #[cfg(windows)]
     let mut cmd = {
         let resolved = resolve_windows_command(&command);
-        if resolved.ends_with(".cmd") {
+        if resolved.to_ascii_lowercase().ends_with(".cmd") {
             // .cmd batch scripts must go through cmd.exe /c
             let mut c = CommandBuilder::new("cmd.exe");
             c.arg("/c");
@@ -1109,6 +1141,41 @@ mod tests {
     use super::*;
     use portable_pty::ExitStatus;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    #[cfg(windows)]
+    #[test]
+    fn codex_resolution_prefers_cli_wrapper_over_windows_store_desktop_app() {
+        let lines = [
+            r"C:\Users\ian\AppData\Roaming\npm\codex",
+            r"C:\Users\ian\AppData\Roaming\npm\codex.cmd",
+            r"C:\Program Files\WindowsApps\OpenAI.Codex_1.0_x64__id\app\resources\codex.exe",
+        ];
+
+        assert_eq!(
+            select_windows_command_candidate("codex", &lines).as_deref(),
+            Some(r"C:\Users\ian\AppData\Roaming\npm\codex.cmd"),
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn codex_resolution_accepts_a_non_store_native_cli() {
+        let lines = [r"C:\tools\codex.exe"];
+
+        assert_eq!(
+            select_windows_command_candidate("codex", &lines).as_deref(),
+            Some(r"C:\tools\codex.exe"),
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn codex_resolution_rejects_a_store_only_desktop_candidate() {
+        let lines =
+            [r"C:\Program Files\WindowsApps\OpenAI.Codex_1.0_x64__id\app\resources\codex.exe"];
+
+        assert_eq!(select_windows_command_candidate("codex", &lines), None);
+    }
 
     #[derive(Debug)]
     struct FakeKiller {

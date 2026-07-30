@@ -5,6 +5,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore } from "@/stores/appStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { createIssueWorktree } from "@/lib/tauri";
+import { getPreferredWorkspaceCli } from "@/lib/workspaceCliDefaults";
 import { QualityAIExplanation, type QualityErrorRef } from "./QualityAIExplanation";
 import {
   buildQualityIssueBody,
@@ -22,7 +23,7 @@ import {
  *
  *   1. ✨ Explain   — toggle a streaming AI explanation popover below
  *      the row (delegates to `QualityAIExplanation`).
- *   2. 🔧 Fix in Workspace — spin up a worktree-bound `claude-code`
+ *   2. 🔧 Fix in Workspace — spin up a worktree-bound preferred CLI
  *      workspace pane seeded with the error context + the originating
  *      check command. Mirrors `sendIssueToWorkspace` so commits get the
  *      auto-trailer treatment.
@@ -192,7 +193,7 @@ export function QualityAIErrorActions({
 
       const workspaceId = useWorkspaceStore.getState().createWorkspace(
         wsName,
-        ["claude-code"],
+        [getPreferredWorkspaceCli()],
         worktreePath,
         { prompt: initialPrompt },
       );
@@ -247,7 +248,7 @@ export function QualityAIErrorActions({
           onClick={handleFixInWorkspace}
           disabled={sending}
           className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded border bg-bg-secondary border-bg-border text-text-muted hover:text-accent-green hover:border-accent-green/30 transition-colors disabled:opacity-50"
-          title="Open a Claude workspace pane seeded with this error"
+          title="Open a CLI workspace pane seeded with this error"
         >
           <Wrench size={10} />
           {sending ? "Sending…" : "Fix in Workspace"}

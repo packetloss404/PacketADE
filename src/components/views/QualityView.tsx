@@ -31,6 +31,7 @@ import {
 } from "@/components/quality/codeQualityHistory";
 import { CodeQualityHistoryDropdown } from "@/components/quality/CodeQualityHistoryDropdown";
 import { readAutoFixPref, writeAutoFixPref } from "@/components/quality/autoFixPrefs";
+import { getPreferredWorkspaceCli } from "@/lib/workspaceCliDefaults";
 
 type TabKey = "overview" | "languages" | "complexity" | "tests";
 
@@ -263,7 +264,7 @@ export function QualityView() {
     const projectName = projectPath.split(/[/\\]/).pop() || "Workspace";
     const wsId = useWorkspaceStore
       .getState()
-      .createWorkspace(projectName, ["claude-code"], projectPath, { prompt: buildInsightPrompt() });
+      .createWorkspace(projectName, [getPreferredWorkspaceCli()], projectPath, { prompt: buildInsightPrompt() });
     useWorkspaceStore.getState().setActiveWorkspace(wsId);
     useAppStore.getState().setActiveView("workspace");
   }

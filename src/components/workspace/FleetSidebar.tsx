@@ -1,29 +1,22 @@
 /**
  * Tile program (P4-S2) — FleetSidebar: the fleet list.
  *
- * Replaces `WorkspaceSidebar` in the app shell. Built from `AgentSidebar`'s
+ * Replaces `WorkspaceSidebar` in the Workspace shell. Built from the original
  * machinery (needs-you pinned pseudo-group, All/Active/Done/Archived filter
  * chips, /-search with message scan, pins, archive, relative time, project
- * groups + rename via the shared `agentSidebarPrefsStore`), but its rows are
- * the UNIFIED fleet: a row for every workspace AND a virtual row for every
- * unplaced legacy conversation (`buildFleetProjection`). Status on every row is
- * the single truth from `sessionStatus` — never re-derived here.
+ * groups + rename via the shared `agentSidebarPrefsStore`). Under the WA1
+ * split, its visible rows are Workspaces only; unplaced conversations live in
+ * AgentSidebar. Existing placed conversation panes still roll up into their
+ * Workspace rows. Status remains the single truth from `sessionStatus`.
  *
- * Opening a virtual row is a materializing mutation through ONE shared function
- * (`sessionGlue.openSession`): it idempotently creates `ws-wrap-<convId>` and
- * activates it. WorkspaceView never renders synthetic records.
+ * The virtual-row handler remains as compatibility scaffolding for callers that
+ * explicitly opt into that projection, but this component passes
+ * `includeVirtualConversations: false`.
  *
  * Subscriptions are per-slice (via the `sessionStatus` hooks and narrow store
  * selectors) so a streaming frame never forces a full-list re-render.
  */
-import {
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   Server,
   FolderOpen,
@@ -41,20 +34,14 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAgentSidebarPrefsStore } from "@/stores/agentSidebarPrefsStore";
-import { openSession, archiveWorkspaceWithFanout } from "@/stores/sessionGlue";
+import {
+  archiveWorkspaceWithFanout,
+  openConversationInAgents,
+} from "@/stores/sessionGlue";
 import { useToast } from "@/components/ui/Toast";
-import {
-  useConversationAttention,
-  useWorkspaceStatuses,
-  attentionDot,
-} from "@/lib/sessionStatus";
+import { useConversationAttention, useWorkspaceStatuses, attentionDot } from "@/lib/sessionStatus";
 import { flightAttemptSessionIds } from "@/lib/sessionIndex";
-import {
-  buildFleetProjection,
-  basenameOf,
-  type FleetFilter,
-  type FleetRow,
-} from "@/lib/fleetRows";
+import { buildFleetProjection, basenameOf, type FleetFilter, type FleetRow } from "@/lib/fleetRows";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { Modal } from "@/components/ui/Modal";
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -82,6 +69,7 @@ export function FleetSidebar() {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
+  const restoreWorkspace = useWorkspaceStore((s) => s.restoreWorkspace);
   const deleteWorkspace = useWorkspaceStore((s) => s.deleteWorkspace);
   const requestPaneFocus = useWorkspaceStore((s) => s.requestPaneFocus);
 
@@ -111,8 +99,7 @@ export function FleetSidebar() {
   const [renameValue, setRenameValue] = useState("");
 
   // New session = the same ruled flow as Ctrl+N: a fresh workspace whose
-  // zero-state hosts the inline AddAgentPicker (templates stay one click away
-  // via the picker's "Workspace templates…" footer row).
+  // zero-state hosts the CLI-only AddSessionPicker.
   const handleNewSession = () => {
     const projectPath = useLayoutStore.getState().projectPath ?? "";
     useWorkspaceStore.getState().createWorkspace("New Session", [], projectPath);
@@ -134,10 +121,7 @@ export function FleetSidebar() {
     if (renamingPath !== null) renameInputRef.current?.focus();
   }, [renamingPath]);
 
-  const attemptSessionIds = useMemo(
-    () => flightAttemptSessionIds(flights),
-    [flights],
-  );
+  const attemptSessionIds = useMemo(() => flightAttemptSessionIds(flights), [flights]);
 
   const projection = useMemo(
     () =>
@@ -150,6 +134,10 @@ export function FleetSidebar() {
         prefs,
         filter,
         query: isSearching ? deferredQuery : "",
+        // WA1: unplaced conversations live in the first-class Agents surface.
+        // Existing placed conversation panes still contribute to their
+        // Workspace row for compatibility.
+        includeVirtualConversations: false,
       }),
     [
       workspaces,
@@ -166,9 +154,8 @@ export function FleetSidebar() {
 
   const { needsYou, groups, searchRows, snippets, counts } = projection;
   const needsYouCount = needsYou.length;
-  const totalCount =
-    filter === "archived" ? counts.archived : counts.all;
-  const hasAnyRows = workspaces.length > 0 || conversations.length > 0;
+  const totalCount = filter === "archived" ? counts.archived : counts.all;
+  const hasAnyRows = workspaces.length > 0;
   const hasVisibleRows = isSearching
     ? searchRows.length > 0
     : needsYou.length > 0 || groups.length > 0;
@@ -199,19 +186,18 @@ export function FleetSidebar() {
       }
       return;
     }
-    // Virtual row → materialize the wrapper (idempotent) and activate.
-    const wsId = openSession({ conversationId: row.conversationId });
-    if (row.attention === "needs_you") {
-      const ws = useWorkspaceStore.getState().workspaces.find((w) => w.id === wsId);
-      const pane = ws?.panes.find(
-        (p) => p.kind === "conversation" && p.conversationId === row.conversationId,
-      );
-      if (pane) requestPaneFocus(wsId, pane.id);
-    }
+    // Defensive fallback: Workspace no longer projects virtual rows, but a
+    // stale render must still open the durable conversation in Agents rather
+    // than silently materializing a wrapper Workspace.
+    openConversationInAgents(row.conversationId);
   };
 
   const handleArchiveToggle = (row: FleetRow) => {
     if (row.kind === "workspace") {
+      if (row.archived) {
+        restoreWorkspace(row.workspaceId);
+        return;
+      }
       // P4-S3 ruled fan-out: kill member PTYs (on archive only), apply the
       // worktree cleanup policy, archive member conversations (transcripts
       // kept), archive the workspace. Explicit archive of unlanded work raises
@@ -219,23 +205,23 @@ export function FleetSidebar() {
       // layer as a consumer — no modal, no second codepath).
       void archiveWorkspaceWithFanout(row.workspaceId)
         .then((result) => {
-        if (!result || result.auto) return;
-        const kept = result.keptWorktreeConversationIds;
-        if (kept.length === 0) return;
-        toast.show(
-          kept.length === 1
-            ? "Archived with an unlanded worktree kept for later."
-            : `Archived with ${kept.length} unlanded worktrees kept for later.`,
-          {
-            duration: 8000,
-            action: {
-              label: "Review worktree",
-              // Materialize + activate the first kept conversation so its tile
-              // (and worktree) is reachable for land/discard.
-              onClick: () => openSession({ conversationId: kept[0] }),
+          if (!result || result.auto) return;
+          const kept = result.keptWorktreeConversationIds;
+          if (kept.length === 0) return;
+          toast.show(
+            kept.length === 1
+              ? "Archived with an unlanded worktree kept for later."
+              : `Archived with ${kept.length} unlanded worktrees kept for later.`,
+            {
+              duration: 8000,
+              action: {
+                label: "Review worktree",
+                // The agent-owned Git ending is reachable from Agents. Do not
+                // create a compatibility wrapper from a notification action.
+                onClick: () => openConversationInAgents(kept[0]),
+              },
             },
-          },
-        );
+          );
         })
         .catch(() => {
           // Fan-out swallows its own IO failures; guard the outer promise too so
@@ -254,9 +240,7 @@ export function FleetSidebar() {
       if (ws) {
         // Kill any running PTY sessions before deleting — best-effort.
         await Promise.all(
-          ws.panes
-            .filter((p) => p.sessionId)
-            .map((p) => killPty(p.sessionId!).catch(() => {})),
+          ws.panes.filter((p) => p.sessionId).map((p) => killPty(p.sessionId!).catch(() => {})),
         );
       }
       deleteWorkspace(row.workspaceId);
@@ -280,30 +264,30 @@ export function FleetSidebar() {
       <div
         key={row.id}
         className={`group relative border-l-2 transition-colors ${
-          selected ? "border-accent-purple bg-accent-purple/15" : "border-transparent"
+          selected ? "bg-accent-purple/15 border-accent-purple" : "border-transparent"
         } border-b border-line-soft`}
       >
         <button
           onClick={() => handleOpen(row)}
           title={row.title}
-          className={`flex flex-col w-full px-3 py-2 text-left gap-0.5 transition-colors ${
+          className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors ${
             selected ? "" : "hover:bg-bg-hover"
           }`}
         >
           <div className="flex items-center gap-1.5">
-            {isPinned && <Pin size={9} className="text-accent-amber fill-accent-amber shrink-0" />}
+            {isPinned && <Pin size={9} className="shrink-0 fill-accent-amber text-accent-amber" />}
             {row.attention === "needs_you" ? (
-              <BellRing size={10} className="text-accent-amber shrink-0" />
+              <BellRing size={10} className="shrink-0 text-accent-amber" />
             ) : (
               <span
-                className={`h-2 w-2 rounded-full shrink-0 ${dot.className} ${
+                className={`h-2 w-2 shrink-0 rounded-full ${dot.className} ${
                   dot.pulse ? "animate-pulse" : ""
                 }`}
               />
             )}
             <span
-              className={`text-ui leading-tight truncate ${
-                selected ? "text-text-primary font-medium" : "text-text-secondary"
+              className={`truncate text-ui leading-tight ${
+                selected ? "font-medium text-text-primary" : "text-text-secondary"
               }`}
             >
               {snippet ?? titleText}
@@ -311,12 +295,12 @@ export function FleetSidebar() {
             <span className="flex-1" />
             {row.worktreePending && (
               <Tooltip content="Worktree pending — unlanded work kept">
-                <span className="flex items-center gap-0.5 shrink-0 text-accent-amber">
+                <span className="flex shrink-0 items-center gap-0.5 text-accent-amber">
                   <GitBranch size={9} />
                 </span>
               </Tooltip>
             )}
-            <span className="text-meta text-text-muted shrink-0">
+            <span className="shrink-0 text-meta text-text-muted">
               {formatRelativeTime(row.updatedAt)}
             </span>
           </div>
@@ -331,10 +315,12 @@ export function FleetSidebar() {
             <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
               {row.chips.map((chip, i) => (
                 <span key={chip.label} className="flex items-center gap-1">
-                  {i > 0 && <span className="text-text-faint text-meta">·</span>}
-                  <span className={`text-meta font-medium ${chip.colorClass} flex items-center gap-0.5`}>
+                  {i > 0 && <span className="text-meta text-text-faint">·</span>}
+                  <span
+                    className={`text-meta font-medium ${chip.colorClass} flex items-center gap-0.5`}
+                  >
                     {chip.needsYou && (
-                      <span className="h-1.5 w-1.5 rounded-full bg-accent-amber animate-pulse" />
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-amber" />
                     )}
                     {chip.label}
                     {chip.count > 1 && ` ×${chip.count}`}
@@ -349,7 +335,7 @@ export function FleetSidebar() {
             e.stopPropagation();
             handleArchiveToggle(row);
           }}
-          className="absolute right-6 top-1.5 p-0.5 text-text-muted hover:text-accent-green opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity rounded"
+          className="absolute right-6 top-1.5 rounded p-0.5 text-text-muted opacity-0 transition-opacity hover:text-accent-green focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
           title={row.archived ? "Unarchive" : "Archive"}
         >
           {row.archived ? <ArchiveRestore size={10} /> : <Archive size={10} />}
@@ -359,7 +345,7 @@ export function FleetSidebar() {
             e.stopPropagation();
             setPendingDelete({ row });
           }}
-          className="absolute right-1 top-1.5 p-0.5 text-text-muted hover:text-accent-red opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity rounded"
+          className="absolute right-1 top-1.5 rounded p-0.5 text-text-muted opacity-0 transition-opacity hover:text-accent-red focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
           title="Delete"
         >
           <Trash2 size={10} />
@@ -369,7 +355,7 @@ export function FleetSidebar() {
             e.stopPropagation();
             togglePinned(row.id);
           }}
-          className={`absolute right-11 top-1.5 p-0.5 rounded opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity ${
+          className={`absolute right-11 top-1.5 rounded p-0.5 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 ${
             isPinned ? "text-accent-amber" : "text-text-muted hover:text-accent-amber"
           }`}
           title={isPinned ? "Unpin" : "Pin to top"}
@@ -385,10 +371,10 @@ export function FleetSidebar() {
       ref={sidebarRef}
       tabIndex={-1}
       onKeyDown={handleSidebarKeyDown}
-      className="w-[240px] flex-shrink-0 flex flex-col bg-bg-secondary border-r border-bg-border overflow-hidden focus:outline-none"
+      className="flex w-[240px] flex-shrink-0 flex-col overflow-hidden border-r border-bg-border bg-bg-secondary focus:outline-none"
     >
       {/* Header */}
-      <div className="px-3 py-2 flex items-center gap-1.5 border-b border-line-soft">
+      <div className="flex items-center gap-1.5 border-b border-line-soft px-3 py-2">
         <span className="text-ui font-semibold text-text-primary">Fleet</span>
         {hasAnyRows && <Badge>{totalCount}</Badge>}
         {needsYouCount > 0 && <Badge tone="amber">{needsYouCount}</Badge>}
@@ -397,10 +383,10 @@ export function FleetSidebar() {
           <button
             aria-label="Search sessions"
             onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
-            className={`p-1 rounded transition-colors ${
+            className={`rounded p-1 transition-colors ${
               searchOpen
-                ? "text-accent-green bg-accent-green/10"
-                : "text-text-muted hover:text-text-secondary hover:bg-bg-hover"
+                ? "bg-accent-green/10 text-accent-green"
+                : "text-text-muted hover:bg-bg-hover hover:text-text-secondary"
             }`}
           >
             <Search size={11} />
@@ -409,7 +395,7 @@ export function FleetSidebar() {
         <Tooltip content="New session">
           <button
             onClick={handleNewSession}
-            className="p-1 rounded text-text-muted hover:text-accent-green hover:bg-bg-hover transition-colors"
+            className="rounded p-1 text-text-muted transition-colors hover:bg-bg-hover hover:text-accent-green"
           >
             <Plus size={11} />
           </button>
@@ -428,7 +414,7 @@ export function FleetSidebar() {
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`flex-1 text-ui py-0.5 rounded transition-colors ${
+                className={`flex-1 rounded py-0.5 text-ui transition-colors ${
                   active
                     ? "bg-accent-green/20 text-accent-green"
                     : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
@@ -446,7 +432,10 @@ export function FleetSidebar() {
       {searchOpen && (
         <div className="px-3 pb-1.5 pt-1.5">
           <div className="relative">
-            <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted" />
+            <Search
+              size={10}
+              className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted"
+            />
             <input
               ref={searchInputRef}
               type="text"
@@ -459,12 +448,12 @@ export function FleetSidebar() {
                 }
               }}
               placeholder="Search messages, titles…"
-              className="w-full pl-6 pr-6 py-1 text-ui bg-bg-primary border border-bg-border rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/50"
+              className="focus:border-accent-green/50 w-full rounded border border-bg-border bg-bg-primary py-1 pl-6 pr-6 text-ui text-text-primary placeholder:text-text-muted focus:outline-none"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery("")}
-                className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-text-secondary rounded"
+                className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-0.5 text-text-muted hover:text-text-secondary"
                 title="Clear"
               >
                 <X size={10} />
@@ -485,7 +474,7 @@ export function FleetSidebar() {
               action={
                 <button
                   onClick={closeSearch}
-                  className="text-ui text-text-muted hover:text-text-secondary transition-colors"
+                  className="text-ui text-text-muted transition-colors hover:text-text-secondary"
                 >
                   Clear search
                 </button>
@@ -499,7 +488,11 @@ export function FleetSidebar() {
               description="Start one with New session"
             />
           ) : filter === "archived" ? (
-            <EmptyState className="py-16" icon={<Archive size={24} />} title="No archived sessions" />
+            <EmptyState
+              className="py-16"
+              icon={<Archive size={24} />}
+              title="No archived sessions"
+            />
           ) : (
             <EmptyState
               className="py-16"
@@ -510,9 +503,9 @@ export function FleetSidebar() {
           )
         ) : isSearching ? (
           <div>
-            <div className="px-3 py-1.5 flex items-center gap-1.5 bg-bg-tertiary border-y border-line-soft">
-              <Search size={10} className="text-accent-green shrink-0" />
-              <span className="text-meta font-semibold text-text-secondary truncate uppercase tracking-wide">
+            <div className="flex items-center gap-1.5 border-y border-line-soft bg-bg-tertiary px-3 py-1.5">
+              <Search size={10} className="shrink-0 text-accent-green" />
+              <span className="truncate text-meta font-semibold uppercase tracking-wide text-text-secondary">
                 Search results ({searchRows.length})
               </span>
             </div>
@@ -522,12 +515,12 @@ export function FleetSidebar() {
           <>
             {needsYou.length > 0 && (
               <div>
-                <div className="px-3 py-1.5 flex items-center gap-1.5 bg-accent-amber/10 border-y border-accent-amber/30">
-                  <BellRing size={10} className="text-accent-amber shrink-0" />
-                  <span className="text-meta font-semibold text-accent-amber truncate uppercase tracking-wide">
+                <div className="bg-accent-amber/10 border-accent-amber/30 flex items-center gap-1.5 border-y px-3 py-1.5">
+                  <BellRing size={10} className="shrink-0 text-accent-amber" />
+                  <span className="truncate text-meta font-semibold uppercase tracking-wide text-accent-amber">
                     Needs you
                   </span>
-                  <span className="text-meta text-accent-amber shrink-0 ml-auto">
+                  <span className="ml-auto shrink-0 text-meta text-accent-amber">
                     {needsYou.length}
                   </span>
                 </div>
@@ -553,11 +546,9 @@ export function FleetSidebar() {
               return (
                 <div key={group.key}>
                   <div
-                    className="px-3 py-1.5 flex items-center gap-1.5 bg-bg-tertiary border-y border-line-soft"
+                    className="flex items-center gap-1.5 border-y border-line-soft bg-bg-tertiary px-3 py-1.5"
                     title={
-                      canRename
-                        ? `${group.projectPath} — right-click to rename`
-                        : group.projectPath
+                      canRename ? `${group.projectPath} — right-click to rename` : group.projectPath
                     }
                     onContextMenu={(e) => {
                       if (!canRename) return;
@@ -567,9 +558,9 @@ export function FleetSidebar() {
                     }}
                   >
                     {group.isSsh ? (
-                      <Server size={10} className="text-accent-green shrink-0" />
+                      <Server size={10} className="shrink-0 text-accent-green" />
                     ) : (
-                      <FolderOpen size={10} className="text-text-muted shrink-0" />
+                      <FolderOpen size={10} className="shrink-0 text-text-muted" />
                     )}
                     {isRenaming ? (
                       <input
@@ -587,14 +578,14 @@ export function FleetSidebar() {
                             setRenameValue("");
                           }
                         }}
-                        className="text-meta font-semibold bg-bg-primary border border-accent-green/50 rounded px-1 py-px text-text-primary uppercase tracking-wide focus:outline-none flex-1 min-w-0"
+                        className="border-accent-green/50 min-w-0 flex-1 rounded border bg-bg-primary px-1 py-px text-meta font-semibold uppercase tracking-wide text-text-primary focus:outline-none"
                       />
                     ) : (
-                      <span className="text-meta font-semibold text-text-secondary truncate uppercase tracking-wide">
+                      <span className="truncate text-meta font-semibold uppercase tracking-wide text-text-secondary">
                         {headerLabel}
                       </span>
                     )}
-                    <span className="text-meta text-text-muted shrink-0 ml-auto">
+                    <span className="ml-auto shrink-0 text-meta text-text-muted">
                       {group.rows.length}
                     </span>
                   </div>
@@ -607,10 +598,10 @@ export function FleetSidebar() {
       </div>
 
       {/* Footer CTA */}
-      <div className="border-t border-line-strong bg-bg-tertiary px-2.5 py-2 flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 border-t border-line-strong bg-bg-tertiary px-2.5 py-2">
         <button
           onClick={handleNewSession}
-          className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-ui font-medium bg-accent-green/15 text-accent-green hover:bg-accent-green/25 border border-accent-line rounded transition-colors"
+          className="bg-accent-green/15 hover:bg-accent-green/25 flex flex-1 items-center justify-center gap-1.5 rounded border border-accent-line px-2 py-1.5 text-ui font-medium text-accent-green transition-colors"
         >
           <Plus size={11} />
           New session
@@ -627,7 +618,7 @@ export function FleetSidebar() {
             <div className="flex items-center justify-end gap-2">
               <button
                 onClick={() => setPendingDelete(null)}
-                className="px-3 py-1.5 rounded text-ui text-text-secondary hover:bg-bg-hover transition-colors"
+                className="rounded px-3 py-1.5 text-ui text-text-secondary transition-colors hover:bg-bg-hover"
               >
                 Cancel
               </button>
@@ -636,7 +627,7 @@ export function FleetSidebar() {
                   void confirmDelete(pendingDelete.row);
                   setPendingDelete(null);
                 }}
-                className="px-3 py-1.5 rounded text-ui font-medium bg-accent-red/15 text-accent-red hover:bg-accent-red/25 transition-colors"
+                className="bg-accent-red/15 hover:bg-accent-red/25 rounded px-3 py-1.5 text-ui font-medium text-accent-red transition-colors"
               >
                 Delete
               </button>
@@ -645,17 +636,13 @@ export function FleetSidebar() {
         >
           <div className="px-5 py-4">
             <p className="text-ui text-text-secondary">
-              {pendingDelete.row.kind === "workspace"
-                ? "Delete workspace "
-                : "Permanently delete "}
-              <span className="text-text-primary">
-                “{pendingDelete.row.title || "(untitled)"}”
-              </span>
+              {pendingDelete.row.kind === "workspace" ? "Delete workspace " : "Permanently delete "}
+              <span className="text-text-primary">“{pendingDelete.row.title || "(untitled)"}”</span>
               {pendingDelete.row.kind === "workspace"
                 ? "? Member conversations are detached, not destroyed."
                 : "? This closes the session and removes its history."}
             </p>
-            <p className="text-meta text-text-muted mt-2">This can’t be undone.</p>
+            <p className="mt-2 text-meta text-text-muted">This can’t be undone.</p>
           </div>
         </Modal>
       )}

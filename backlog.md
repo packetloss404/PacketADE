@@ -31,19 +31,20 @@ Composer/store convergence.
   acceleration only after the repaired CPU path has packaged latency/quality
   measurements; do not add a cloud dependency by default.
 
-## Remote Agents (current flagship)
+## Remote Agents (preserved; currently paused)
 
 Canonical plan: [`dev/remoteagents/README.md`](./dev/remoteagents/README.md).
-This is the next major product bet: PWA first, Packet account sign-in, Packet
-Cloud relay, desktop-owned providers/secrets/tools, and no generic remote Tauri
-bridge.
+This remains the next major networked product bet: PWA first, Packet account
+sign-in, Packet Cloud relay, desktop-owned providers/secrets/tools, and no
+generic remote Tauri bridge.
 
-**Sequencing note.** Remote Agents (ROADMAP R0, P0) is the headline direction.
-Its relay reuses the same `api-agent:*` event contract that tile conversations
+**Sequencing note.** The
+[`Workspace/Agents restructuring`](./dev/workspace-agents-restructuring-goal.md)
+is the active product goal. Remote Agents is preserved at its current Sprint-0
+decision gate and resumes after that goal or explicit owner reprioritization.
+Its relay reuses the same `api-agent:*` event contract that conversations
 already emit, so the "stream `api-agent:*` / respond to prompts / cancel"
-envelope should treat that event shape as a stable input. The removed autonomous
-Flight Planner does not gate this work; the smaller Flight Deck product decision
-below is independent.
+envelope remains a stable future input.
 
 **Blocked on Sprint-0 decisions.** [`dev/remoteagents/09-open-decisions.md`](./dev/remoteagents/09-open-decisions.md)
 records three Sprint-0 BLOCKING decisions — auth provider choice,
@@ -374,6 +375,7 @@ source of truth is
   and packaged provider smoke. Streamable HTTP/SSE config is preserved but the
   local doctor probes stdio only; stdio child-process network access is not an
   OS sandbox.
+
 ## Trust and provenance
 
 - **P2 — packaged provenance parity proof.** TP1–TP7 source work is complete:
@@ -400,29 +402,65 @@ Only unresolved follow-ups remain here; shipped audit work is in `CHANGELOG.md`.
 - **P2 — packaged/manual Monitor proof.** The read-only v1 source is complete:
   one reusable backend-leased `monitor-main`, narrow Tauri capability, separate
   boot shell, Agent and Flight projections, source-surface actions, safe stale
-  states, and focus-back-to-main routing. Run the packaged multi-display matrix,
-  verify the Monitor window closes with the main process on each platform, and
-  add frontend capability-denial integration proof. Approval/Cost monitors,
+  states, focus-back-to-main routing, read-only conversation hydration, and a
+  deny-by-default secondary-window application-command boundary that rejects
+  PTY/API-agent/approval/write/deploy/secret mutation. Run the packaged
+  multi-display matrix, verify the Monitor window closes with the main process
+  on each platform, and add packaged WebView-to-Rust denial integration proof.
+  Approval/Cost monitors,
   saved bounds, multiple simultaneous Monitor windows, and PTY attachment stay
   later; terminal mirroring must not mount or own the live PTY.
 
-## Workspace, Agents, and Settings decision
+## Workspace/Agents restructuring (current product goal)
 
-Canonical evidence:
+Canonical goal:
+[`dev/workspace-agents-restructuring-goal.md`](./dev/workspace-agents-restructuring-goal.md).
+Locked WA0 implementation contract:
+[`dev/workspace-agents-wa0-route-contract.md`](./dev/workspace-agents-wa0-route-contract.md).
+Supporting evidence and the separate Settings audit:
 [`dev/workspace-agent-settings-decision-2026-07-29.md`](./dev/workspace-agent-settings-decision-2026-07-29.md).
-The report is advisory until the owner approves the surface and Settings
-decisions. Do not delete the current conversation engine or persisted
+WA3 implementation evidence:
+[`dev/workspace-agents-wa3-handoff-evidence.md`](./dev/workspace-agents-wa3-handoff-evidence.md).
+WA4 evidence gate:
+[`dev/workspace-agents-wa4-dogfood-gate.md`](./dev/workspace-agents-wa4-dogfood-gate.md).
+
+The Workspace/Agents direction is approved. Settings reorganization remains a
+separate decision. Do not delete the current conversation engine or persisted
 conversation panes as cleanup.
 
-- **P1 — decide the Workspace/Agents split.** Recommended target: CLI-first
-  Workspaces with PacketCode first when installed, plus a first-class Agents
-  surface for API/subscription conversations. Implement the Agents surface in
-  the main window first. Preserve old conversation-pane read compatibility and
-  an explicit attach/open handoff during dogfood.
+- **P0 — WA0: route/ownership contract. COMPLETE.** Every
+  entry/deep-link/wrapper/creation path, persistence carrier, compatibility
+  rule, handoff boundary, multi-window gate, and WA1–WA4 proof slice is
+  inventoried in the canonical WA0 contract.
+- **P0 — WA1: same-window Agents source + local packaged slice COMPLETE; manual
+  product sign-off remains.** The `agents` route, cross-project conversation/attention sidebar,
+  headless launcher, selected chat/inspector, contextual shortcuts, and normal
+  deep-link cutover are implemented. Normal navigation creates no wrapper
+  Workspace; all new attachment/materialization APIs are removed; old placed
+  panes still render. Full frontend tests, targeted lint, and production build pass.
+  Run manual UX/dogfood review before declaring the product slice signed off.
+- **P0 — WA2: source + local Windows hydration/CLI proof COMPLETE; SSH and
+  published PacketCode proof open.** New Workspace creation and Add Session are CLI-only, detected PacketCode is
+  recommended/default, missing PacketCode opens typed Settings recovery, and
+  old conversation panes remain readable. Cold start launches no hidden PTYs;
+  selecting a Workspace starts only its panes; navigation preserves live PTYs;
+  Codex resolves to its CLI wrapper rather than the Store desktop app.
+- **P0 — WA3: source COMPLETE; manual local/SSH and external-runtime proof
+  open.** Typed handoffs now connect Workspace, Agents, PacketCode, Flight
+  Deck, PacketAgent, Git endings, terminal attach, and Monitor without cloning
+  conversations, worktrees, approvals, reviews, or history.
+- **WA4: COMPLETE — owner retired new Workspace conversation attachments.**
+  **Open alongside Workspace**, its handoff/session-glue/store materializers,
+  dormant draft tile, and advisory evaluator are removed. Git-ending and
+  Flight-attempt handoffs now open the exact CLI-first project Workspace
+  without attaching. Existing saved conversation panes remain readable,
+  closable, and garbage-collected; see the
+  [`decision record`](./dev/workspace-agents-wa4-dogfood-gate.md) and
+  [`completion audit`](./dev/workspace-agents-completion-audit-2026-07-29.md).
 - **P2 — detachable interactive Agents window prerequisite.** Move canonical
   conversation/approval/persistence ownership behind a single-writer broker or
   versioned Rust state before allowing a second interactive WebView. The
-  current read-only Monitor does not prove multi-writer safety.
+  current Rust-restricted read-only Monitor does not prove multi-writer safety.
 - **P1 — enforce or remove placebo Settings controls.** AI Provider Routing
   has no production consumer; Agent launch-location and rail-collapse defaults
   are unused; PacketADE MCP-provider scope/tool checkboxes are not passed to or

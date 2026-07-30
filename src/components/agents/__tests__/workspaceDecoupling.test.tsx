@@ -90,20 +90,22 @@ describe("Agents pane workspace decoupling", () => {
     agentStore.state.setProjectLabel = vi.fn();
   });
 
-  // The AgentSidebar project-grouping assertions moved to FleetSidebar coverage
-  // (FleetSidebar.test.tsx + dualRunParity.test.ts) when AgentSidebar was
-  // retired in P5-S2; the surviving ContinueInMenu decoupling checks remain.
-  it("keeps continue actions for folder, CLI, and editors without an Open in workspace item", () => {
+  it("offers project and execution handoffs without Workspace conversation attachment", () => {
     // ContinueInMenu is now a section component (P1-10) — no Dropdown/trigger
     // of its own, so it renders its content bare with no click needed.
     render(<ContinueInMenu conversation={conversation()} onFeedback={vi.fn()} />);
 
     expect(screen.getByText("Open project folder in OS")).toBeInTheDocument();
+    expect(screen.getByText("Open project in Workspace")).toBeInTheDocument();
+    expect(screen.queryByText("Open alongside Workspace")).not.toBeInTheDocument();
+    expect(screen.getByText("Attach terminal")).toBeInTheDocument();
+    expect(screen.getByText("Continue in PacketCode…")).toBeInTheDocument();
+    expect(screen.getByText("Open Git ending")).toBeInTheDocument();
+    expect(screen.getByText("Add to Flight…")).toBeInTheDocument();
     expect(screen.getByText("Continue in CLI")).toBeInTheDocument();
     expect(screen.getByText("No local CLI handoff for this provider")).toBeInTheDocument();
     expect(screen.getByText("Open in VS Code")).toBeInTheDocument();
     expect(screen.getByText("Open in Cursor")).toBeInTheDocument();
-    expect(screen.queryByText("Open in workspace")).not.toBeInTheDocument();
     expect(screen.queryByText("Continue in CLI (claude)")).not.toBeInTheDocument();
   });
 
@@ -123,8 +125,6 @@ describe("Agents pane workspace decoupling", () => {
         'cd "D:\\projects\\PacketADE" && codex',
       );
     });
-    expect(onFeedback).toHaveBeenCalledWith(
-      "Command copied - paste into your terminal",
-    );
+    expect(onFeedback).toHaveBeenCalledWith("Command copied - paste into your terminal");
   });
 });

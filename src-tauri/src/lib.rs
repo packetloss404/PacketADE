@@ -107,6 +107,33 @@ pub fn pty_spawn_helper(args: &[std::ffi::OsString]) -> ! {
     std::process::exit(127);
 }
 
+fn typed_application_invoke_handler<F>(handler: F) -> F
+where
+    F: Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool,
+{
+    handler
+}
+
+macro_rules! guarded_invoke_handler {
+    ($($command:path),* $(,)?) => {{
+        let handler =
+            typed_application_invoke_handler(tauri::generate_handler![$($command),*]);
+        move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
+            let command_allowed = commands::monitor_windows::command_allowed_for_window(
+                invoke.message.webview_ref().label(),
+                invoke.message.command(),
+            );
+            if !command_allowed {
+                invoke
+                    .resolver
+                    .reject("This read-only Monitor cannot invoke that application command.");
+                return true;
+            }
+            handler(invoke)
+        }
+    }};
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Repair PATH for GUI launches (Finder/Dock/Spotlight give us only the
@@ -201,7 +228,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(guarded_invoke_handler![
             // PTY-based sessions (primary)
             commands::pty::create_pty_session,
             commands::pty::write_pty,

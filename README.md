@@ -17,8 +17,12 @@ Current source release: **v0.10.2** (2026-07-28).
 
 ## What It Does
 
-- Chat with eight coding-agent providers as **conversation tiles in the Workspace** — Claude Code subscription, Codex subscription, OpenAI Agents SDK, four API-key providers, and local Ollama all normalize into one event contract
-- Run agent chat tiles and PTY-backed terminal sessions side-by-side in one draggable mosaic — the **Workspace** is the single surface
+- Create and supervise structured conversations with eight coding-agent providers
+  in the first-class **Agents** surface — Claude Code subscription, Codex
+  subscription, OpenAI Agents SDK, four API-key providers, and local Ollama all
+  normalize into one event contract
+- Run PacketCode, Claude Code, Codex CLI, Gemini, OpenCode, and plain shells in
+  CLI-first **Workspaces** with persistent draggable mosaics
 - Launch and supervise larger units of work from the **Flight Deck** — a single-screen master-detail flight control surface
 - Track issues on a kanban board and send them directly to workspace sessions
 - Connect to remote servers via SSH and run agent sessions over the wire
@@ -27,7 +31,7 @@ Current source release: **v0.10.2** (2026-07-28).
 
 ## Supported Agents
 
-PacketADE runs two kinds of agents side-by-side.
+PacketADE connects two complementary execution styles.
 
 **PTY-backed CLI sessions** — launched in a workspace pane and driven by the CLI's own UI:
 
@@ -35,8 +39,12 @@ PacketADE runs two kinds of agents side-by-side.
 - OpenAI Codex CLI
 - Gemini CLI
 - OpenCode
+- PacketCode
+- Plain terminal
 
-**API agents as conversation tiles** — structured conversations with streaming, tool calls, and permission gating, added from the Workspace's grouped Add-agent picker:
+**GUI/API agents in the Agents view** — durable structured conversations with
+streaming, tool calls, permission gating, plans, review, Memory, and worktree
+endings:
 
 | Row                       | Internal id         | Auth                                                                |
 | ------------------------- | ------------------- | ------------------------------------------------------------------- |
@@ -53,13 +61,24 @@ Auth status is probed live and shown as a badge next to each row (`ready` / `log
 
 ## Main Features
 
-### Conversation Tiles — Unified Chat for Every Provider
+### Agents — Unified Delegated Work
 
-The **Workspace is the single surface**: every agent — chat or terminal — is a tile in a draggable mosaic, and the **FleetSidebar** on the left is the one session list (running and idle rows, with a _needs-you_ group pinned to the top for conversations waiting on an approval or answer). Add a session from the **AddAgentPicker** (`+`), which splits into a **Chat agents** section (the eight API providers) and a **Terminals** section (the PTY CLIs); a chat provider opens as a **ConversationTile** sitting beside the terminal tiles. Every tile shares one composer, two backends (in-process Rust + Node sidecar), and one event contract, so the chat UI is identical across all eight providers. When a conversation stacks up pending writes, the tile's **ReviewBar** opens the canonical **ReviewSurface** (one hunk engine, one apply pipeline); when the work is done, the **GitDashboard** is the single git home and its **WorktreeLifecycleBar** carries the conversation's branch to merge, PR, or discard.
+**Agents** owns new GUI-agent creation, the cross-project conversation and
+attention list, one large active conversation, and its inspector. Every
+provider shares one composer, two interchangeable backends (in-process Rust +
+Node sidecar), and one event contract. When writes stack up, the
+**ReviewBar** opens the canonical **ReviewSurface**; when work settles, the
+explicit Git handoff opens the authoritative **WorktreeLifecycleBar** for the
+same conversation and worktree.
+
+Workspace conversation panes remain load-compatible for saved layouts. They
+reference the same durable conversation ID, but PacketADE no longer exposes any
+action or API that creates a new one. Normal creation, project/Git/Flight
+handoffs, and deep links never materialize wrapper Workspaces.
 
 - **Live status in the tile header**: model · context % gauge · cumulative tokens · session $ · git branch
 - **Drag-drop and clipboard-paste images** into the launcher (5 MB cap, removable thumbnail chips); image blocks land in the SDK content array on send
-- **Keyboard**: `Shift+Tab` cycles a single mode chip (`default | plan | manual | yolo`); `Ctrl/Cmd+N` starts a new session; `Ctrl+Shift+1` jumps to the Workspace. Bare `Tab` is unbound in the composer (it only picks a highlighted popover row when one is open)
+- **Keyboard**: `Shift+Tab` cycles a single mode chip (`default | plan | manual | yolo`); `Ctrl/Cmd+N` starts a new Agent while in Agents and a new empty Workspace elsewhere; `Ctrl+Shift+1` jumps to Agents and `Ctrl+Shift+W` jumps to Workspace. Bare `Tab` is unbound in the composer (it only picks a highlighted popover row when one is open)
 - **Slash commands**: `/plan /permissions /model /compact /review /usage /history /clear /new /help` plus saved prompt templates as native `/<slug>` commands and project skills
 - **`@`-mention files and sources** in the composer via a file-mention popover, so you can pull specific files into a turn without pasting paths
 - **Header context badges**: provider auth (live `provider-auth:changed`), linked Flight with click-to-jump, and an MCP `N/M` server toggle dropdown. A separate **memory toggle** in the header overflow menu carries a tooltip previewing the actual injected memory context
@@ -70,9 +89,14 @@ The **Workspace is the single surface**: every agent — chat or terminal — is
 - **Plan-first mode**: launching with the Plan posture keeps the model read-only until it proposes a plan; the plan is approved inline in the transcript (structured `TodoWrite`) and approving lifts plan-mode so execution runs
 - **Inline Restore**: rewind the thread to an earlier point directly from the transcript (Claude-Code-style rewind), with no separate checkpoint panel
 - **Side Chat overlay**: a floating ask-a-side-question panel that streams an answer without disturbing the main thread
-- **Continue-in menu**: hand a conversation off to an external editor or terminal
-- **Send to Monitor**: route a conversation to a separate read-only operations
-  window without duplicating its session or exposing composer/approval controls
+- **Explicit handoffs**: open the same project in Workspace, show the same
+  conversation alongside CLI sessions, attach a separate terminal, review a
+  bounded PacketCode payload before copying it, open the authoritative Git
+  ending, link one durable conversation reference to a Flight, or continue in
+  an external editor/CLI
+- **Send to Monitor**: route a conversation to a separate Rust-restricted
+  read-only operations window without duplicating its session or exposing
+  composer/approval controls
 - **Durable agent profiles** (Default, Scout, Reviewer built-ins, plus user-created): bundle system prompt + allowed tools + memory + permission posture; pick from the launcher dropdown or edit in `Settings → Agents`
 - **AGENTS.md / CLAUDE.md auto-injection** from project root into the system prompt at session start
 - **Auto-failover on rate-limit**: 429 / quota / overload errors trigger a same-provider fallback (Opus → Sonnet → Haiku, o3 → gpt-5.5 → o4-mini, MiniMax → highspeed) before surfacing the failure
@@ -99,13 +123,21 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 ### Workspaces — Terminal CLI Command Center
 
 - Multi-pane terminal workflow built on `xterm.js` and `portable-pty` with a draggable mosaic tiling layout
+- New Workspace templates and **Add Session** expose terminal/CLI sessions
+  only; detected PacketCode is the recommended/default session, with a typed
+  Settings recovery path when it is missing
+- Saved layouts hydrate dormant: Welcome launches no hidden CLIs, and only the
+  selected Workspace starts its panes. Once running, those PTYs survive normal
+  navigation to Agents, Flights, and other views
 - Live status bars for supported agent CLIs
 - Per-pane model and effort overrides, bypass-permissions toggles
-- Agent profile system for reusable agent configurations
 - PacketCode integration with strict version detection, bounded `doctor --json`
   health, separate executable/developer-checkout/data-home settings, explicit
   stable/preview install actions, and isolated local/SSH `PACKETCODE_HOME`
 - Pane layout presets (1×1, 1×2, 2×1, 2×2, 2×3, 3×2) live in the main toolbar when a workspace is active
+- **Delegate** opens the Agents launcher on the exact local or SSH project;
+  explicit Agent handoffs can return to the same target without cloning a
+  conversation, approval queue, review, or worktree
 
 ### Flight Deck — Flight Control
 
@@ -123,7 +155,10 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 - **YOLO Mode** is an explicit bounded overlay—not the default—with independent
   recovery/review/graph/routing switches, cost/time/retry/concurrency/root
   limits, action history, and Pause/Resume/Stop
-- Each Attempt tile streams the agent conversation, accepts follow-up turns, and exposes review/complete/reject/cancel controls; terminal status, tokens, cost, and coordination events persist on the Flight
+- Each Attempt tile streams the agent conversation, accepts follow-up turns,
+  exposes review/complete/reject/cancel controls, and can open that same
+  attempt in Workspace or a read-only Monitor; terminal status, tokens, cost,
+  and coordination events persist on the Flight
 - Optional local draft-PR publishing pushes the Attempt branch before worktree cleanup, while SSH worktree cleanup is resolved through the saved Server configuration
 - Optional **Issue ↔ Flight mirroring** publishes one host issue per task under
   a Flight-named GitHub/Gitea milestone, then reconciles title/state/milestone
@@ -397,10 +432,10 @@ PacketADE/
       session/                 # Terminal panes, session modals, status bars, inspect UI
       issues/                  # Kanban issue board and issue detail UI
       flights/                 # Flight Deck attempts (LaunchAsyncFlightModal, AsyncFlightGrid, AttemptTile)
-      views/                   # First-class application views (FlightsView, WorkspaceView, GitHubView, …)
+      views/                   # First-class views (AgentsView, WorkspaceView, FlightsView, GitHubView, …)
       editor/                  # Lightweight editor/diff support
-      workspace/               # Single-surface Workspace: ConversationTile, FleetSidebar, AddAgentPicker, GitDashboard, WorktreeLifecycleBar, pane container
-      agents/                  # Conversation chat internals (composer, chat header, review/ — ReviewBar + ReviewSurface)
+      workspace/               # CLI-first Workspace: AddSessionPicker, mosaic, compatibility ConversationTile, GitDashboard
+      agents/                  # Agent-first conversation UI, handoffs, composer, inspector, review and diff surfaces
       servers/                 # SSH server form modal
       common/                  # Shared presentation components
       ui/                      # Shared UI primitives

@@ -48,6 +48,13 @@ export interface LaunchConversationParams {
    */
   postureOverride?: ModeFlags;
   /**
+   * Called after the durable conversation record exists. Unlike
+   * `onLaunched`, this callback is presentation-neutral and must not place a
+   * pane; the first-class Agents surface uses it only for content-free WA4
+   * dogfood evidence.
+   */
+  onCreated?: (conversationId: string) => void;
+  /**
    * Tile program (P3-S4): invoked with the new conversation id the moment
    * `createApiConversation` resolves — i.e. after the conversation exists in
    * agentTaskStore but as the async backend start settles. The draft tile uses
@@ -80,6 +87,7 @@ export function launchConversation({
   profile,
   setLaunchError,
   postureOverride,
+  onCreated,
   onLaunched,
 }: LaunchConversationParams): boolean {
   const text = rawText.trim();
@@ -186,6 +194,7 @@ export function launchConversation({
           permissionMode: launchPermissionMode,
           approveWrites: launchApproveWrites,
         });
+        onCreated?.(convId);
         // P3-S4: materialize the draft's pane now that the conversation exists.
         onLaunched?.(convId);
       } else {
@@ -260,6 +269,7 @@ export function launchConversation({
           }));
           requestConversationSave(convId);
         }
+        onCreated?.(convId);
         // P3-S4: materialize the draft's pane now that the conversation exists.
         onLaunched?.(convId);
       }

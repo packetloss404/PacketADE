@@ -1,7 +1,7 @@
 # PacketADE Workspace, Agents, and Settings Decision Report
 
 Date: 2026-07-29
-Status: recommendation for review - no Workspace/Agents IA decision has been implemented
+Status: Workspace/Agents recommendation implemented; Settings IA remains for review
 Scope: PacketADE Workspaces, GUI agent placement, PacketCode positioning, and Settings
 
 ## Executive answer
@@ -11,14 +11,14 @@ equal default tile inside every Workspace.
 
 The strongest product model is:
 
-| Surface | Primary job |
-| --- | --- |
-| PacketCode | Best terminal-native coding agent and automation-friendly inner loop |
-| PacketADE Workspace | High-density professional workroom for PacketCode, Claude Code, Codex CLI, Gemini, OpenCode, shells, files, and Git |
-| PacketADE Agents | Agent-first command center for API/subscription conversations, approvals, plans, visual diffs, and cross-project attention |
-| Flight Deck | Structured delivery: plans, tasks, attempts, reviewers, integration, and publish decisions |
-| Monitor | Read-only operational visibility on another display |
-| PacketAgent | Durable bounded execution after PacketADE closes |
+| Surface             | Primary job                                                                                                                |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| PacketCode          | Best terminal-native coding agent and automation-friendly inner loop                                                       |
+| PacketADE Workspace | High-density professional workroom for PacketCode, Claude Code, Codex CLI, Gemini, OpenCode, shells, files, and Git        |
+| PacketADE Agents    | Agent-first command center for API/subscription conversations, approvals, plans, visual diffs, and cross-project attention |
+| Flight Deck         | Structured delivery: plans, tasks, attempts, reviewers, integration, and publish decisions                                 |
+| Monitor             | Read-only operational visibility on another display                                                                        |
+| PacketAgent         | Durable bounded execution after PacketADE closes                                                                           |
 
 This is the pro-user version of the BridgeSpace idea: keep the excellent CLI
 workroom, but do not force CLI operation, asynchronous agent supervision, and
@@ -30,13 +30,12 @@ The recommendation is a staged Option B:
    backed by the current conversation engine.
 2. Make new Workspaces CLI/PTY-first and put PacketCode first when it is
    installed.
-3. Preserve existing conversation panes and an explicit **Open in Workspace**
-   compatibility path during the transition.
+3. Preserve existing conversation panes during the transition without
+   retaining a producer for new attachments.
 4. Add a detachable native Agents window only after agent state has an explicit
    single-writer/backend-authoritative contract.
-5. Decide whether to remove new GUI-agent attachment from Workspaces only after
-   dogfood evidence. There is no reason to delete compatibility for existing
-   attached conversations.
+5. Final owner decision: remove new GUI-agent attachment from Workspaces while
+   retaining read/close compatibility for existing attached conversations.
 
 The Settings surface should remain, but its current 16-section information
 architecture should not. It mixes preferences, credentials, operational tools,
@@ -45,12 +44,12 @@ not govern runtime behavior and reorganize Settings into six coherent groups.
 
 ## The decision in one table
 
-| Option | Product clarity | Pro workflow | Near-term engineering risk | Decision |
-| --- | ---: | ---: | ---: | --- |
-| A. Keep the current mixed Workspace | Medium-low | Good for two to four adjacent actors | Low | Do not choose as the north star |
-| B. CLI-first Workspace plus Agents surface | High | Best balance across foreground CLI and delegated work | Medium and controllable | **Recommended** |
-| C. Interactive native Agent window now | High visually | Excellent for multiple monitors | High with current frontend ownership | Target later, not first |
-| D. Delete PacketADE GUI agents | Low | Throws away provider, review, and approval advantages | High product loss | Reject |
+| Option                                     | Product clarity |                                          Pro workflow |           Near-term engineering risk | Decision                        |
+| ------------------------------------------ | --------------: | ----------------------------------------------------: | -----------------------------------: | ------------------------------- |
+| A. Keep the current mixed Workspace        |      Medium-low |                  Good for two to four adjacent actors |                                  Low | Do not choose as the north star |
+| B. CLI-first Workspace plus Agents surface |            High | Best balance across foreground CLI and delegated work |              Medium and controllable | **Recommended**                 |
+| C. Interactive native Agent window now     |   High visually |                       Excellent for multiple monitors | High with current frontend ownership | Target later, not first         |
+| D. Delete PacketADE GUI agents             |             Low | Throws away provider, review, and approval advantages |                    High product loss | Reject                          |
 
 ## Why the pro user still uses agents
 
@@ -313,7 +312,7 @@ surface redesign.
 - Make it interactive only after a single-writer contract and multi-window
   approval/persistence tests.
 
-### Phase 5 - decide from dogfood evidence
+### Phase 5 - owner decision recorded
 
 Track:
 
@@ -324,7 +323,9 @@ Track:
 - single-project foreground versus cross-project background work;
 - single-monitor versus multi-monitor usage.
 
-Only then decide whether new GUI-agent attachment should disappear completely.
+The owner retired new GUI-agent attachment after reviewing the product
+responsibility split. The incomplete sample is retained as history but is not
+claimed as the basis for the decision.
 
 ## Settings audit: bottom line
 
@@ -523,8 +524,8 @@ changes:
 
 1. Approve CLI-first Workspaces as the north star.
 2. Approve a same-main-window Agents surface as the first implementation.
-3. Preserve optional/read-compatible Workspace agent attachment during
-   migration.
+3. **Approved with amendment:** preserve read-compatible saved panes, but
+   remove every producer for new Workspace agent attachments.
 4. Defer interactive native Agent windows until single-writer state exists.
 5. Approve the six-group Settings IA.
 6. Approve immediate removal/disablement of placebo settings before adding new

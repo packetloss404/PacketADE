@@ -11,7 +11,7 @@ import {
   monitorLabelFromLocation,
 } from "@/lib/monitorWindows";
 import { loadPersistedState } from "@/lib/tauri";
-import { hydrateConversations } from "@/stores/agentConversationPersistence";
+import { refreshConversationProjection } from "@/stores/agentConversationPersistence";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
 import type { MonitorLease } from "@/types/monitor";
@@ -51,8 +51,7 @@ export function MonitorApp() {
       try {
         const state = await loadPersistedState();
         await useFlightStore.getState().hydrateFromBackend(state);
-        useAgentTaskStore.setState({ conversations: [] });
-        hydrateConversations();
+        await refreshConversationProjection();
         setLastUpdated(Date.now());
       } catch {
         // Keep the last safe projection while the main process is busy.
