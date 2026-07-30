@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckSquare,
-  ChevronRight,
   File as FileIcon,
+  FileText,
   Eye,
   PanelLeft,
   FileDiff,
@@ -21,14 +21,16 @@ import { AgentPreviewPane } from "./AgentPreviewPane";
 import { ReviewSurface } from "./review/ReviewSurface";
 import { AgentFilePane } from "./AgentFilePane";
 import { PlanPanel } from "./PlanPanel";
+import { EditorDockPanel } from "@/components/editor/EditorDockPanel";
+import { RightDock, type RightDockPanel } from "@/components/layout/RightDock";
+import { useRightDockStore } from "@/stores/rightDockStore";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
+import { openInEditor } from "@/lib/openInEditor";
 import {
   isRemoteConversation,
   REMOTE_UNSUPPORTED_TOOLTIP,
 } from "@/lib/remoteConversation";
-import { logSwallowed } from "@/lib/logSwallowed";
 import { useUnviewedCount } from "./review/useUnviewedCount";
-import { Tooltip } from "@/components/ui/Tooltip";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { getAgentColor } from "@/lib/agentColors";
@@ -37,314 +39,148 @@ interface AgentInspectorPaneProps {
   conversationId: string;
 }
 
-type Tab = "inspector" | "plan" | "preview" | "diff" | "files";
-
-const TAB_DEFS: { id: Tab; icon: typeof PanelLeft; label: string }[] = [
-  { id: "inspector", icon: PanelLeft, label: "Inspector" },
-  { id: "plan", icon: CheckSquare, label: "Plan" },
-  { id: "preview", icon: Eye, label: "Preview" },
-  { id: "diff", icon: FileDiff, label: "Diff" },
-  { id: "files", icon: FolderTree, label: "Files" },
-];
-
-const WIDTH_STORAGE_KEY = "packetade:agent-inspector-width-v1";
-const MIN_WIDTH = 280;
-const MAX_WIDTH = 720;
-const DEFAULT_WIDTH = 340;
-
-function readPersistedWidth(): number {
-  try {
-    const raw = localStorage.getItem(WIDTH_STORAGE_KEY);
-    if (!raw) return DEFAULT_WIDTH;
-    const n = Number.parseInt(raw, 10);
-    if (!Number.isFinite(n)) return DEFAULT_WIDTH;
-    return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, n));
-  } catch {
-    return DEFAULT_WIDTH;
-  }
-}
-
-function persistWidth(w: number) {
-  try {
-    localStorage.setItem(WIDTH_STORAGE_KEY, String(w));
-  } catch (err) {
-    logSwallowed("AgentInspectorPane.persistWidth")(err);
-  }
-}
-
+/**
+ * D2 — the Agents surface's `RightDock` host.
+ *
+ * The five inspector "tabs" are now dock panels (plus the reconnected Editor
+ * from D5), so mutual exclusion, width arbitration and collapse are the dock's
+ * job rather than five pieces of local component state. Preview in particular
+ * is a real dock panel now instead of a free-floating global (P0-3).
+ */
 export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) {
   const conversation = useAgentTaskStore((s) =>
     s.conversations.find((c) => c.id === conversationId),
   );
-  const [open, setOpen] = useState(true);
-  const [tab, setTab] = useState<Tab>("inspector");
-  const [width, setWidth] = useState<number>(() => readPersistedWidth());
-  const [isDragging, setIsDragging] = useState(false);
   const unreviewedCount = useUnviewedCount(conversationId);
-  // D3 / P0-4: Preview reads LOCAL disk, so it is disabled (not hidden) for
-  // SSH-backed conversations until a remote file contract exists.
+  const openPanel = useRightDockStore((s) => s.openPanel);
+  // D3 / P0-4: Preview + Editor read LOCAL disk, so they are disabled (not
+  // hidden) for SSH-backed conversations until a remote file contract exists.
   const remote = isRemoteConversation(conversation);
 
-  // Auto-switch to the Preview tab when the preview store flips to open
-  // (e.g. clicking a .md link in chat or detecting a plan response).
-  const previewOpen = usePreviewPaneStore((s) => s.open);
-  const prevPreviewOpenRef = useRef(previewOpen);
+  // Auto-reveal the Preview panel when a NEW preview target lands for THIS
+  // conversation (a .md click in chat, a plan-shaped response). Scoped by
+  // conversation id, so conversation B never steals conversation A's preview.
+  const previewTarget = usePreviewPaneStore((s) => s.target);
+  const previewSignature =
+    previewTarget && previewTarget.conversationId === conversationId
+      ? `${previewTarget.activeTab}:${previewTarget.markdownPath ?? ""}:${previewTarget.planContent.length}`
+      : null;
+  const prevPreviewSignatureRef = useRef(previewSignature);
   useEffect(() => {
-    if (previewOpen && !prevPreviewOpenRef.current && !remote) {
-      setTab("preview");
-      setOpen(true);
+    if (
+      previewSignature &&
+      previewSignature !== prevPreviewSignatureRef.current &&
+      !remote
+    ) {
+      openPanel("agents", "preview");
     }
-    prevPreviewOpenRef.current = previewOpen;
-  }, [previewOpen, remote]);
+    prevPreviewSignatureRef.current = previewSignature;
+  }, [previewSignature, remote, openPanel]);
 
-  // Auto-switch to the Plan tab on the rising edge of "plan arrives".
-  // Peer effect to the Preview auto-switch above; uses the same rising-edge
-  // pattern so we never steal focus from a tab the user manually picked
-  // while the plan was already populated.
+  // Peer effect: reveal the Plan panel on the rising edge of "plan arrives",
+  // so we never steal a panel the user picked while a plan already existed.
   const planCount = useAgentPlanStore(
     (s) => s.plan.get(conversationId)?.length ?? 0,
   );
   const prevPlanCountRef = useRef(planCount);
   useEffect(() => {
     if (planCount > 0 && prevPlanCountRef.current === 0) {
-      setTab("plan");
-      setOpen(true);
+      openPanel("agents", "plan");
     }
     prevPlanCountRef.current = planCount;
-  }, [planCount]);
+  }, [planCount, openPanel]);
 
-  // Never leave a disabled tab selected (e.g. a conversation that resolves as
-  // remote after the pane already sat on Preview).
-  useEffect(() => {
-    if (remote && tab === "preview") setTab("inspector");
-  }, [remote, tab]);
-
-  // Global pointer-move / up listeners while dragging.
-  useEffect(() => {
-    if (!isDragging) return;
-    const handleMove = (e: PointerEvent) => {
-      const next = window.innerWidth - e.clientX;
-      const clamped = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, next));
-      setWidth(clamped);
-    };
-    const handleUp = () => {
-      setIsDragging(false);
-    };
-    window.addEventListener("pointermove", handleMove);
-    window.addEventListener("pointerup", handleUp);
-    window.addEventListener("pointercancel", handleUp);
-    return () => {
-      window.removeEventListener("pointermove", handleMove);
-      window.removeEventListener("pointerup", handleUp);
-      window.removeEventListener("pointercancel", handleUp);
-    };
-  }, [isDragging]);
-
-  // Persist on drag-end (not on every pointermove).
-  useEffect(() => {
-    if (!isDragging) {
-      persistWidth(width);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDragging]);
-
-  if (!conversation) return null;
-
-  if (!open) {
-    return (
-      <div className="w-[30px] shrink-0 bg-bg-secondary border-l border-bg-border flex flex-col items-center py-2 gap-1">
-        <Tooltip content="Show right pane" side="left">
-          <button
-            aria-label="Show right pane"
-            onClick={() => setOpen(true)}
-            className="w-6 h-6 grid place-items-center text-text-muted hover:text-text-primary rounded transition-colors"
-          >
-            <ChevronRight size={12} className="rotate-180" />
-          </button>
-        </Tooltip>
-        <div className="w-px h-2 bg-line-soft" />
-        <div role="tablist" aria-label="Inspector views" className="contents">
-        {TAB_DEFS.map((t) => {
-          const Icon = t.icon;
-          const showBadge = t.id === "diff" && unreviewedCount > 0;
-          const disabled = remote && t.id === "preview";
-          return (
-            <Tooltip
-              key={t.id}
-              side="left"
-              content={
-                disabled
-                  ? `${t.label} — ${REMOTE_UNSUPPORTED_TOOLTIP}`
-                  : showBadge
-                    ? `${t.label} (${unreviewedCount} unreviewed)`
-                    : t.label
-              }
-            >
-              <button
-                role="tab"
-                aria-selected={tab === t.id}
-                aria-label={t.label}
-                aria-disabled={disabled}
-                disabled={disabled}
-                onClick={() => {
-                  if (disabled) return;
-                  setTab(t.id);
-                  setOpen(true);
-                }}
-                className={`relative w-6 h-6 grid place-items-center rounded transition-colors ${
-                  disabled
-                    ? "cursor-not-allowed text-text-muted opacity-40"
-                    : tab === t.id
-                      ? "bg-bg-elevated text-text-primary"
-                      : "text-text-muted hover:text-text-secondary"
-                }`}
-              >
-                <Icon size={12} />
-                {showBadge && <UnreviewedBadge count={unreviewedCount} compact />}
-              </button>
-            </Tooltip>
-          );
-        })}
-        </div>
-        <div className="flex-1" />
-      </div>
-    );
-  }
-
-  return (
-    <aside
-      className="relative shrink-0 bg-bg-secondary border-l border-bg-border flex flex-col min-h-0"
-      style={{ width }}
-    >
-      {/* Drag handle on the left edge. Sits above the border so it picks up
-          pointer events first. */}
-      <div
-        onPointerDown={(e) => {
-          e.preventDefault();
-          setIsDragging(true);
-        }}
-        onKeyDown={(e) => {
-          const step = e.shiftKey ? 32 : 8;
-          if (e.key === "ArrowLeft") {
-            e.preventDefault();
-            setWidth((w) => {
-              const next = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, w + step));
-              persistWidth(next);
-              return next;
-            });
-          } else if (e.key === "ArrowRight") {
-            e.preventDefault();
-            setWidth((w) => {
-              const next = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, w - step));
-              persistWidth(next);
-              return next;
-            });
-          }
-        }}
-        className={`absolute top-0 left-0 h-full w-1 cursor-col-resize z-10 transition-colors ${
-          isDragging ? "bg-accent-line" : "bg-transparent hover:bg-accent-line/60"
-        }`}
-        title="Drag to resize"
-        aria-label="Resize right pane"
-        role="separator"
-        aria-orientation="vertical"
-        aria-valuenow={Math.round(width)}
-        aria-valuemin={MIN_WIDTH}
-        aria-valuemax={MAX_WIDTH}
-        tabIndex={0}
-      />
-      <div
-        role="tablist"
-        aria-label="Inspector views"
-        className="flex items-stretch h-[33px] border-b border-bg-border px-1"
-      >
-        {TAB_DEFS.map((t) => {
-          const Icon = t.icon;
-          const active = tab === t.id;
-          const showBadge = t.id === "diff" && unreviewedCount > 0;
-          const disabled = remote && t.id === "preview";
-          return (
-            <button
-              key={t.id}
-              role="tab"
-              aria-selected={active}
-              aria-disabled={disabled}
-              disabled={disabled}
-              onClick={() => {
-                if (disabled) return;
-                setTab(t.id);
-              }}
-              className={`relative flex items-center gap-1.5 px-2.5 text-ui border-b-2 transition-colors ${
-                disabled
-                  ? "cursor-not-allowed border-transparent text-text-muted opacity-40"
-                  : active
-                    ? "border-accent-green text-text-primary"
-                    : "border-transparent text-text-muted hover:text-text-secondary"
-              }`}
-              title={
-                disabled
-                  ? `${t.label} — ${REMOTE_UNSUPPORTED_TOOLTIP}`
-                  : showBadge
-                    ? `${t.label} (${unreviewedCount} unreviewed)`
-                    : undefined
-              }
-            >
-              <Icon size={11} />
-              <span>{t.label}</span>
-              {showBadge && <UnreviewedBadge count={unreviewedCount} />}
-            </button>
-          );
-        })}
-        <div className="flex-1" />
-        <button
-          onClick={() => setOpen(false)}
-          title="Collapse pane"
-          className="self-center w-6 h-[22px] grid place-items-center text-text-muted hover:text-text-primary rounded transition-colors"
-        >
-          <ChevronRight size={12} />
-        </button>
-      </div>
-      <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-        {tab === "inspector" && (
-          <div className="flex-1 overflow-auto flex flex-col min-h-0">
+  const panels = useMemo<RightDockPanel[]>(() => {
+    if (!conversation) return [];
+    return [
+      {
+        id: "inspector",
+        label: "Inspector",
+        icon: PanelLeft,
+        render: () => (
+          <div className="flex min-h-0 flex-1 flex-col overflow-auto">
             <InspectorContent conversationId={conversationId} />
           </div>
-        )}
-        {tab === "plan" && (
-          <div className="flex-1 overflow-auto min-h-0">
+        ),
+      },
+      {
+        id: "plan",
+        label: "Plan",
+        icon: CheckSquare,
+        render: () => (
+          <div className="min-h-0 flex-1 overflow-auto">
             <PlanPanel conversation={conversation} />
           </div>
-        )}
-        {tab === "preview" && (
+        ),
+      },
+      {
+        id: "preview",
+        label: "Preview",
+        icon: Eye,
+        disabled: remote,
+        disabledReason: REMOTE_UNSUPPORTED_TOOLTIP,
+        render: () => (
           <AgentPreviewPane
+            conversationId={conversationId}
             projectPath={conversation.projectPath}
             remote={remote}
             embedded
-            onRequestClose={() => setTab("inspector")}
           />
-        )}
-        {tab === "diff" && (
+        ),
+      },
+      {
+        id: "diff",
+        label: "Diff",
+        icon: FileDiff,
+        badge: unreviewedCount,
+        render: () =>
           conversation.mode === "api" ? (
             <ReviewSurface conversationId={conversationId} embedded />
           ) : (
-            <div className="flex-1 flex items-center justify-center bg-bg-primary">
+            <div className="flex flex-1 items-center justify-center bg-bg-primary">
               <EmptyState
                 icon={<FileDiff size={24} />}
                 title="Diffs are only tracked for API-mode conversations."
               />
             </div>
-          )
-        )}
-        {tab === "files" && (
+          ),
+      },
+      {
+        id: "files",
+        label: "Files",
+        icon: FolderTree,
+        render: () => (
           <AgentFilePane
             conversationId={conversationId}
             projectPath={conversation.projectPath}
             sshTarget={conversation.sshTarget ?? null}
+            // D5 / P1-5: Files advertised a preview path that was never wired
+            // — `onSelectFile` had no producer. Rows now open the file in the
+            // dock Editor, which renders `.md` through MarkdownRenderer.
+            onSelectFile={(absolutePath) =>
+              openInEditor(absolutePath, {
+                projectPath: conversation.projectPath,
+                remote,
+                surface: "agents",
+              })
+            }
           />
-        )}
-      </div>
-    </aside>
-  );
+        ),
+      },
+      {
+        id: "editor",
+        label: "Editor",
+        icon: FileText,
+        disabled: remote,
+        disabledReason: REMOTE_UNSUPPORTED_TOOLTIP,
+        render: () => <EditorDockPanel />,
+      },
+    ];
+  }, [conversation, conversationId, remote, unreviewedCount]);
+
+  if (!conversation) return null;
+
+  return <RightDock surface="agents" panels={panels} ariaLabel="Inspector views" />;
 }
 
 /* ------------------------------------------------------------------ */
@@ -613,39 +449,4 @@ function agentDisplayName(agent: string): string {
     packetcode: "PacketCode",
   };
   return labels[agent] ?? agent;
-}
-
-/**
- * Small accent-green pill rendered on the Diff tab when the review surface
- * has files not yet marked Viewed (or gated edits awaiting a decision).
- * Caps display at "9+" so the badge stays compact. `compact=true` is used
- * in the mini-icon strip (collapsed sidebar) where the host button is only
- * 24px wide.
- */
-function UnreviewedBadge({
-  count,
-  compact = false,
-}: {
-  count: number;
-  compact?: boolean;
-}) {
-  const label = count > 9 ? "9+" : String(count);
-  if (compact) {
-    return (
-      <span
-        className="absolute -top-0.5 -right-0.5 min-w-[12px] h-[12px] px-[3px] grid place-items-center rounded-full bg-accent-green text-meta font-mono font-semibold text-bg-primary leading-none pointer-events-none"
-        aria-label={`${count} unreviewed`}
-      >
-        {label}
-      </span>
-    );
-  }
-  return (
-    <span
-      className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 grid place-items-center rounded-full bg-accent-green text-meta font-mono font-semibold text-bg-primary leading-none pointer-events-none"
-      aria-label={`${count} unreviewed`}
-    >
-      {label}
-    </span>
-  );
 }

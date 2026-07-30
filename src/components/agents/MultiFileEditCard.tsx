@@ -8,7 +8,7 @@ import {
   Folder,
 } from "lucide-react";
 import { useReviewStore } from "@/stores/reviewStore";
-import { usePreviewPaneStore } from "@/stores/previewPaneStore";
+import { openMarkdownPreview } from "@/lib/previewDock";
 import { useEditBaselineStore } from "@/stores/editBaselineStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import {
@@ -213,7 +213,7 @@ function MultiFileEditCardImpl({
     // Markdown preview reads local disk; on SSH conversations fall back to the
     // review surface (which is itself remote-gated) instead.
     if (!remote && /\.mdx?$/i.test(path)) {
-      usePreviewPaneStore.getState().openMarkdown(path);
+      openMarkdownPreview(conversationId, path);
       return;
     }
     useReviewStore.getState().openForConversation(conversationId, path);

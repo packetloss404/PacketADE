@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useRef } from "react";
 import { looksLikePlan } from "../planDetection";
+import { openPlanPreview } from "@/lib/previewDock";
 import type { AgentConversation } from "@/types/agent-conversation";
 
 /**
  * When plan mode is active and the agent has emitted a plan-shaped assistant
- * message, push it into the shared preview pane exactly once per message id.
+ * message, push it into the preview dock exactly once per message id.
+ *
+ * P0-3: the target is stamped with `conversationId`, so a plan detected for
+ * conversation A can never be resolved against conversation B's project.
  */
 export function useLatestPlanPreview(
   conversation: AgentConversation | undefined,
-  openPlanPreview: (content: string, title: string) => void,
+  conversationId: string,
 ) {
   const lastPreviewedPlanRef = useRef<string | null>(null);
 
@@ -32,8 +36,8 @@ export function useLatestPlanPreview(
     if (!latestPlanMessage) return;
     if (lastPreviewedPlanRef.current === latestPlanMessage.id) return;
     lastPreviewedPlanRef.current = latestPlanMessage.id;
-    openPlanPreview(latestPlanMessage.content, "Agent plan");
-  }, [latestPlanMessage, openPlanPreview]);
+    openPlanPreview(conversationId, latestPlanMessage.content, "Agent plan");
+  }, [latestPlanMessage, conversationId]);
 
   return latestPlanMessage;
 }

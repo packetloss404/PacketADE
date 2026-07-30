@@ -9,7 +9,10 @@ import {
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { readFileContents } from "@/lib/tauri";
 import { REMOTE_UNSUPPORTED_TOOLTIP } from "@/lib/remoteConversation";
+import { resolveProjectPath } from "@/lib/resolveProjectPath";
+import { hidePreview, setPreviewTab } from "@/lib/previewDock";
 import {
+  previewTargetFor,
   usePreviewPaneStore,
   type PreviewPaneTab,
 } from "@/stores/previewPaneStore";
@@ -18,30 +21,18 @@ import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 
 interface AgentPreviewPaneProps {
+  /** P0-3: the pane renders ONLY previews opened by this conversation, so a
+   * relative path opened for conversation A is never resolved against
+   * conversation B's project after the selection changes. */
+  conversationId: string;
   projectPath: string;
   /** D3 / P0-4: the owning conversation runs on an SSH host, so `projectPath`
    * is a REMOTE path. Markdown preview reads LOCAL disk, so it is refused
    * (with an explicit notice) instead of reading an unrelated local path. */
   remote?: boolean;
-  /** When true, the pane is rendered inside the InspectorPane's tab and drops
-   *  the standalone aside chrome (fixed width, close button). */
+  /** When true, the pane is rendered inside the dock and drops the standalone
+   *  aside chrome (fixed width, close button). */
   embedded?: boolean;
-  /** Called when the header close button is clicked. Used in embedded mode to
-   *  switch the parent tab back to Inspector instead of closing the global
-   *  preview-pane store. Ignored when `embedded` is false. */
-  onRequestClose?: () => void;
-}
-
-function isAbsolutePath(path: string): boolean {
-  return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("/") || path.startsWith("\\\\");
-}
-
-function resolveProjectPath(projectPath: string, path: string): string {
-  if (isAbsolutePath(path)) return path;
-  const sep = projectPath.includes("\\") && !projectPath.includes("/") ? "\\" : "/";
-  const root = projectPath.replace(/[\\/]+$/, "");
-  const rel = path.replace(/^[\\/]+/, "");
-  return `${root}${sep}${sep === "\\" ? rel.replace(/\//g, "\\") : rel.replace(/\\/g, "/")}`;
 }
 
 function fileLabel(path: string | null): string {
@@ -55,21 +46,21 @@ const TAB_META: Record<PreviewPaneTab, { label: string; icon: typeof BookOpen }>
 };
 
 export function AgentPreviewPane({
+  conversationId,
   projectPath,
   remote = false,
   embedded = false,
-  onRequestClose,
 }: AgentPreviewPaneProps) {
-  const { activeTab, markdownPath, planTitle, planContent, close, setActiveTab } =
-    usePreviewPaneStore();
+  const target = usePreviewPaneStore((s) => previewTargetFor(s.target, conversationId));
+  const activeTab: PreviewPaneTab = target?.activeTab ?? "markdown";
+  const markdownPath = target?.markdownPath ?? null;
+  const planTitle = target?.planTitle ?? "Agent plan";
+  const planContent = target?.planContent ?? "";
 
-  const handleClose = () => {
-    if (embedded) {
-      onRequestClose?.();
-    } else {
-      close();
-    }
-  };
+  // P0-3: Hide (header overflow menu) and Close (this button) are the SAME
+  // verb now — both call `hidePreview`, which returns the dock to Inspector.
+  const handleClose = hidePreview;
+  const setActiveTab = (tab: PreviewPaneTab) => setPreviewTab(conversationId, tab);
 
   const [markdownContent, setMarkdownContent] = useState("");
   const [markdownLoading, setMarkdownLoading] = useState(false);
@@ -172,6 +163,19 @@ export function AgentPreviewPane({
             </button>
           );
         })}
+        <div className="flex-1" />
+        {/* P0-3: identical behaviour to the header menu's "Hide preview" —
+            both call `hidePreview`. One verb, one behaviour. */}
+        <Tooltip content="Hide preview">
+          <button
+            type="button"
+            onClick={handleClose}
+            className="rounded p-1 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
+            aria-label="Hide preview"
+          >
+            <PanelRightClose size={12} />
+          </button>
+        </Tooltip>
       </div>
 
       <div className="flex-1 min-h-0 overflow-hidden">
@@ -192,7 +196,8 @@ export function AgentPreviewPane({
               <EmptyState
                 className="h-full"
                 icon={<BookOpen size={24} />}
-                title="Open a Markdown file from the file pane or click a .md path in chat."
+                title="Click a .md path in chat to preview it here."
+                description="Files opened from the Files tab go to the Editor panel, which renders Markdown too."
               />
             )}
             {markdownLoading && (

@@ -2,6 +2,7 @@ import { useAgentStore } from "@/stores/agentStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useAppStore } from "@/stores/appStore";
 import { useFlightStore } from "@/stores/flightStore";
+import { useRightDockStore } from "@/stores/rightDockStore";
 import { useServerStore } from "@/stores/serverStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { makeSshUri } from "@/lib/ssh-uri";
@@ -349,6 +350,9 @@ export function openConversationGitEnding(conversationId: string): AgentHandoffR
   const project = openConversationProjectInWorkspace(conversationId);
   if (!project.ok) return project;
   useAppStore.getState().openGitPanelForConversation(conversationId, project.workspaceId);
+  // D2: the panel itself is a RightDock panel now — scope in appStore,
+  // visibility in the dock.
+  useRightDockStore.getState().openPanel("workspace", "git");
   recordWorkspaceAgentsEvent("agent_opened_git_ending");
   return project;
 }

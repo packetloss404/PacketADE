@@ -1,12 +1,14 @@
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore } from "@/stores/appStore";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useEditorStore } from "@/stores/editorStore";
 import { WorkspaceMosaicContainer } from "@/components/workspace/WorkspaceMosaicContainer";
 import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
 import { AddSessionPicker } from "@/components/workspace/AddSessionPicker";
 import { OnboardingPane } from "@/components/onboarding/OnboardingPane";
-import { EditorPane } from "@/components/editor/EditorPane";
+import { EditorDockPanel } from "@/components/editor/EditorDockPanel";
+import { RightDock, type RightDockPanel } from "@/components/layout/RightDock";
+import { isPanelVisible, useRightDockStore } from "@/stores/rightDockStore";
+import { REMOTE_UNSUPPORTED_TOOLTIP } from "@/lib/remoteConversation";
 import { isOnboardingComplete } from "@/lib/onboarding";
 import { useEffect, useState } from "react";
 import { Bot, LayoutGrid, GitBranch, FileText, Plus, Zap } from "lucide-react";
@@ -42,25 +44,20 @@ export function WorkspaceView({ surfaceActive = true }: WorkspaceViewProps) {
   const initialized = useAppStore((s) => s.initialized);
   const projectPath = useLayoutStore((s) => s.projectPath);
   const [onboardingDone, setOnboardingDone] = useState<boolean>(() => isOnboardingComplete());
-  // Git panel open-state lives in appStore so the in-tile ReviewBar "Finish →
-  // Commit…" CTA can open the endings surface (openGitPanelForConversation).
-  const gitPanelOpen = useAppStore((s) => s.gitPanelOpen);
-  const setGitPanelOpen = useAppStore((s) => s.setGitPanelOpen);
+  // D2: the Git panel's VISIBILITY belongs to the RightDock. appStore keeps
+  // only the deep-link scope written by the in-tile ReviewBar "Finish →
+  // Commit…" CTA (openGitPanelForConversation).
   const gitPanelConversationId = useAppStore((s) => s.gitPanelConversationId);
   const gitPanelWorkspaceId = useAppStore((s) => s.gitPanelWorkspaceId);
+  const gitPanelVisible = useRightDockStore((s) =>
+    isPanelVisible(s.surfaces, "workspace", "git"),
+  );
+  const toggleDockPanel = useRightDockStore((s) => s.togglePanel);
   const [showCreate, setShowCreate] = useState(false);
   // Tile program (P4-S1): the tab-strip dot reads the SINGLE status truth
   // (sessionStatus rollup — max severity across member tiles), not a local
   // liveness heuristic.
   const workspaceStatuses = useWorkspaceStatuses();
-
-  const openFiles = useEditorStore((s) => s.openFiles);
-  const activeFileId = useEditorStore((s) => s.activeFileId);
-  const closeFile = useEditorStore((s) => s.closeFile);
-  const setActiveFile = useEditorStore((s) => s.setActiveFile);
-
-  const activeOpenFile = openFiles.find((f) => f.id === activeFileId) ?? null;
-  const editorVisible = openFiles.length > 0;
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const activeNonArchived = workspaces.filter((w) => w.status === "active");
@@ -97,6 +94,41 @@ export function WorkspaceView({ surfaceActive = true }: WorkspaceViewProps) {
       agentCounts[pane.agentId] = (agentCounts[pane.agentId] || 0) + 1;
     }
   }
+
+  // D2 — the Workspace surface registers its right-side panels with the ONE
+  // dock instead of rendering competing fixed-width columns (P0-2). D3 stays
+  // honoured: the local-FS editor is disabled (not hidden) on SSH workspaces.
+  const workspaceRemote = Boolean(activeWorkspace?.serverId);
+  const gitProjectPath = activeWorkspace
+    ? workspaceRemote
+      ? (activeWorkspace.remoteProjectPath ?? activeWorkspace.projectPath)
+      : activeWorkspace.projectPath
+    : "";
+  const dockPanels: RightDockPanel[] = !activeWorkspace
+    ? []
+    : [
+        {
+          id: "editor",
+          label: "Editor",
+          icon: FileText,
+          disabled: workspaceRemote,
+          disabledReason: REMOTE_UNSUPPORTED_TOOLTIP,
+          render: () => <EditorDockPanel />,
+        },
+        {
+          id: "git",
+          label: "Git",
+          icon: GitBranch,
+          render: () => (
+            <GitDashboard
+              projectPath={gitProjectPath}
+              workspaceId={activeWorkspace.id}
+              serverId={activeWorkspace.serverId}
+              conversationId={scopedGitConversationId}
+            />
+          ),
+        },
+      ];
 
   return (
     <div className="flex flex-1 overflow-hidden">
@@ -174,9 +206,9 @@ export function WorkspaceView({ surfaceActive = true }: WorkspaceViewProps) {
               )}
               {activeWorkspace && (
                 <button
-                  onClick={() => setGitPanelOpen(!gitPanelOpen)}
+                  onClick={() => toggleDockPanel("workspace", "git")}
                   className={`rounded p-1 transition-colors ${
-                    gitPanelOpen
+                    gitPanelVisible
                       ? "bg-accent-green/20 text-accent-green"
                       : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
                   }`}
@@ -205,8 +237,9 @@ export function WorkspaceView({ surfaceActive = true }: WorkspaceViewProps) {
         )}
         {showCreate && <WorkspaceCreationModal onClose={() => setShowCreate(false)} />}
 
-        {/* Main content area: workspace panes + optional git panel */}
-        <div className="flex flex-1 overflow-hidden">
+        {/* Main content area: workspace panes + the ONE right dock (D2).
+            `relative` anchors the dock's overlay mode at narrow widths. */}
+        <div className="relative flex flex-1 overflow-hidden">
           {/* Workspace panes */}
           <div className="flex flex-1 flex-col overflow-hidden">
             {/* All active workspaces stay mounted so PTY sessions persist */}
@@ -241,75 +274,14 @@ export function WorkspaceView({ surfaceActive = true }: WorkspaceViewProps) {
               })}
           </div>
 
-          {/* Editor panel.
-              Phase 3.1: EditorPane uses local-FS Tauri commands
-              (`read_file_contents` / `write_file_contents`) and isn't
-              wired for remote workspaces yet, so we render a
-              placeholder instead. Phase 3.2/3.3 will add a remote-aware
-              editor path. */}
-          {editorVisible && activeWorkspace && activeOpenFile && (
-            <div className="flex w-[480px] shrink-0 flex-col overflow-hidden border-l border-bg-border bg-bg-primary">
-              {/* File tabs */}
-              {openFiles.length > 1 && (
-                <div className="flex shrink-0 items-center overflow-x-auto border-b border-bg-border bg-bg-secondary">
-                  {openFiles.map((f) => {
-                    const name = f.path.replace(/\\/g, "/").split("/").pop() || f.path;
-                    const isActive = f.id === activeFileId;
-                    return (
-                      <button
-                        key={f.id}
-                        onClick={() => setActiveFile(f.id)}
-                        className={`flex items-center gap-1 whitespace-nowrap border-r border-bg-border px-2 py-1 text-[11px] transition-colors ${
-                          isActive
-                            ? "bg-bg-primary text-text-primary"
-                            : "text-text-muted hover:bg-bg-tertiary hover:text-text-secondary"
-                        }`}
-                      >
-                        <FileText size={10} />
-                        {name}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              {activeWorkspace.serverId ? (
-                <div className="flex flex-1 select-none flex-col items-center justify-center px-6 text-center">
-                  <FileText size={20} className="mb-2 text-text-muted opacity-40" />
-                  <p className="mb-1 text-xs text-text-secondary">
-                    Editor not yet available for remote workspaces
-                  </p>
-                  <p className="text-[11px] text-text-muted">
-                    Open the workspace locally to edit files.
-                  </p>
-                </div>
-              ) : (
-                <EditorPane
-                  key={activeOpenFile.id}
-                  filePath={activeOpenFile.path}
-                  workspace={activeWorkspace.projectPath}
-                  onClose={() => closeFile(activeOpenFile.id)}
-                />
-              )}
-            </div>
-          )}
-
-          {/* Git Dashboard slide-out panel.
-              Phase 3.3: for remote workspaces the dashboard reads via SSH
-              using the workspace's `serverId` + `remoteProjectPath`. */}
-          {gitPanelOpen && activeWorkspace && (
-            <div className="flex w-[280px] shrink-0 flex-col overflow-hidden border-l border-bg-border bg-bg-primary">
-              <GitDashboard
-                projectPath={
-                  activeWorkspace.serverId
-                    ? (activeWorkspace.remoteProjectPath ?? activeWorkspace.projectPath)
-                    : activeWorkspace.projectPath
-                }
-                workspaceId={activeWorkspace.id}
-                serverId={activeWorkspace.serverId}
-                conversationId={scopedGitConversationId}
-              />
-            </div>
-          )}
+          {/* D2 — one dock, one visible panel, one resizer, one width budget.
+              The Editor and the Git Dashboard used to render as independent
+              480px + 280px columns that could stack (P0-2). */}
+          <RightDock
+            surface="workspace"
+            panels={dockPanels}
+            ariaLabel="Workspace panels"
+          />
         </div>
 
         {/* No workspace selected */}

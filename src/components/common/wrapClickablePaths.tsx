@@ -111,6 +111,7 @@ function extractPathAt(
 export function ClickablePathsRoot({
   children,
   className,
+  projectPath,
   onOpenMarkdown,
   remote = false,
 }: ClickablePathsRootProps) {
@@ -201,6 +202,7 @@ export function ClickablePathsRoot({
           line={menu.line}
           onClose={() => setMenu(null)}
           onAttach={handleAttach}
+          projectPath={projectPath}
           remote={remote}
         />
       )}

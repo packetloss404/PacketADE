@@ -72,12 +72,6 @@ interface AppStore {
    * Consumed by `MemoryView` on mount and cleared after read. */
   memoryViewFilter: MemoryViewFilter | null;
   /**
-   * Tile program: WorkspaceView's GitDashboard slide-out open-state, lifted out
-   * of local component state so the ReviewBar "Finish → Commit…" CTA (deep in
-   * the tile tree) can open the ONE endings surface for a conversation.
-   */
-  gitPanelOpen: boolean;
-  /**
    * When set, the open GitDashboard mounts the WorktreeLifecycleBar scoped to
    * this conversation's worktree (Merge back / Create PR / Discard / Keep).
    * `null` ⇒ the plain workspace git view (opened via the header toggle).
@@ -95,11 +89,12 @@ interface AppStore {
   openSettings: (target?: SettingsTarget) => void;
   clearSettingsTarget: () => void;
   setTheme: (theme: "dark" | "light") => void;
-  /** Header git toggle: open the plain workspace git view (no lifecycle bar) or
-   *  close the panel. Always clears any conversation scope. */
-  setGitPanelOpen: (open: boolean) => void;
-  /** ReviewBar "Finish → Commit…": open the git panel scoped to a conversation
-   *  so its WorktreeLifecycleBar (the endings loop) is directly visible. */
+  /** Drop any conversation scope so the Git panel shows the plain workspace
+   *  view (no lifecycle bar). */
+  clearGitPanelScope: () => void;
+  /** ReviewBar "Finish → Commit…": scope the git panel to a conversation so its
+   *  WorktreeLifecycleBar (the endings loop) renders. D2: the panel's
+   *  VISIBILITY is the RightDock's — see `lib/agentHandoffs`. */
   openGitPanelForConversation: (conversationId: string, workspaceId: string) => void;
   /** v0.8-H: switch to MemoryView with an optional filter. The filter
    * lives in store state so the receiving view can react to it without
@@ -118,7 +113,6 @@ export const useAppStore = create<AppStore>((set) => ({
   settingsTarget: null,
   theme: "dark",
   memoryViewFilter: null,
-  gitPanelOpen: false,
   gitPanelConversationId: null,
   gitPanelWorkspaceId: null,
   setInitialized: (initialized) => set({ initialized }),
@@ -130,15 +124,13 @@ export const useAppStore = create<AppStore>((set) => ({
   openSettings: (target) => set({ activeView: "tools", settingsTarget: target ?? null }),
   clearSettingsTarget: () => set({ settingsTarget: null }),
   setTheme: (theme) => set({ theme }),
-  setGitPanelOpen: (open) =>
+  clearGitPanelScope: () =>
     set({
-      gitPanelOpen: open,
       gitPanelConversationId: null,
       gitPanelWorkspaceId: null,
     }),
   openGitPanelForConversation: (conversationId, workspaceId) =>
     set({
-      gitPanelOpen: true,
       gitPanelConversationId: conversationId,
       gitPanelWorkspaceId: workspaceId,
     }),

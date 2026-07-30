@@ -1,17 +1,17 @@
 /**
- * AgentInspectorPane — behavior tests for the consolidated four-tab pane.
+ * AgentInspectorPane — behavior tests for the Agents-surface `RightDock` host.
  *
- * Covers: tab switching, collapse/expand, resize-handle clamping and
- * persistence, auto-switch to Preview when the preview store flips, the
- * Diff tab's empty-state for PTY conversations, and the Files tab's SSH
- * guard. Child panes (AgentPreviewPane, ReviewSurface) are stubbed
- * with test-id sentinels; AgentFilePane renders its real SSH branch so
- * the guard copy is verified against the live component.
+ * D2 moved the pane's five tabs (plus the D5 Editor) onto the shared dock, so
+ * these tests now cover: panel switching, one-panel-at-a-time, collapse/expand,
+ * the shared resizer's viewport-aware clamping and per-surface persistence,
+ * auto-reveal of Preview when a target lands for THIS conversation, the Diff
+ * panel's empty-state for PTY conversations, and the SSH guards (D3).
  */
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentConversation } from "@/types/agent-conversation";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
+import { useRightDockStore } from "@/stores/rightDockStore";
 
 const agentStore = vi.hoisted(() => ({
   state: {
@@ -31,6 +31,7 @@ vi.mock("@/lib/tauri", () => ({
   readFileForDiff: vi.fn().mockResolvedValue(""),
   listDirectory: vi.fn().mockResolvedValue({ entries: [], path: "" }),
   readFileContents: vi.fn().mockResolvedValue(""),
+  writeFileContents: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/components/agents/AgentPreviewPane", () => ({
@@ -43,7 +44,7 @@ vi.mock("@/components/agents/review/ReviewSurface", () => ({
 
 import { AgentInspectorPane } from "@/components/agents/AgentInspectorPane";
 
-const WIDTH_STORAGE_KEY = "packetade:agent-inspector-width-v1";
+const DOCK_STORAGE_KEY = "packetade:right-dock-v1";
 
 function makeConversation(overrides: Partial<AgentConversation> = {}): AgentConversation {
   const now = new Date("2026-05-17T12:00:00Z").getTime();
@@ -65,88 +66,81 @@ function makeConversation(overrides: Partial<AgentConversation> = {}): AgentConv
   };
 }
 
-function resetPreviewStore() {
-  usePreviewPaneStore.setState({
-    open: false,
-    activeTab: "markdown",
-    markdownPath: null,
-    planTitle: "Agent plan",
-    planContent: "",
-  });
+function persistedAgentsDock(): { width?: number; expanded?: boolean; activePanel?: string } {
+  const raw = localStorage.getItem(DOCK_STORAGE_KEY);
+  return raw ? JSON.parse(raw).agents : {};
 }
 
 describe("AgentInspectorPane", () => {
   beforeEach(() => {
     localStorage.clear();
-    resetPreviewStore();
+    usePreviewPaneStore.getState().clear();
+    useRightDockStore.getState().reset();
     agentStore.state.conversations = [makeConversation()];
   });
 
   afterEach(() => {
-    resetPreviewStore();
+    usePreviewPaneStore.getState().clear();
   });
 
-  it("switches the rendered child when each tab button is clicked", () => {
+  it("shows exactly one panel at a time as each tab is clicked", () => {
     render(<AgentInspectorPane conversationId="conv-1" />);
 
-    // Inspector tab is active on first mount — its content renders the
+    // Inspector panel is active on first mount — its content renders the
     // "Files changed" section header.
     expect(screen.getByText("Files changed")).toBeInTheDocument();
     expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: /preview/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /^preview$/i }));
     expect(screen.getByTestId("preview-pane")).toBeInTheDocument();
     expect(screen.queryByText("Files changed")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: /diff/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /^diff$/i }));
     expect(screen.getByTestId("diff-pane")).toBeInTheDocument();
     expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: /files/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /^files$/i }));
     // No SSH target on the default fixture → AgentFilePane mounts its
-    // local-FS branch; the SSH "not supported" copy is asserted in a
-    // dedicated test below. Confirm the diff stub unmounted.
+    // local-FS branch; confirm the diff stub unmounted.
     expect(screen.queryByTestId("diff-pane")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: /inspector/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /^editor$/i }));
+    expect(screen.getByText("No file open.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /^inspector$/i }));
     expect(screen.getByText("Files changed")).toBeInTheDocument();
+    expect(screen.queryByText("No file open.")).not.toBeInTheDocument();
   });
 
   it("collapses to an icon strip and expands back via the chevron", () => {
     const { container } = render(<AgentInspectorPane conversationId="conv-1" />);
 
-    // Expanded: the wide tab bar is rendered as an <aside> with a width
-    // style; the "Collapse pane" chevron is the right-aligned action.
     expect(container.querySelector("aside")).not.toBeNull();
     expect(screen.getByTitle("Collapse pane")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Show right pane" }),
     ).not.toBeInTheDocument();
-    // Inspector content (only rendered when the pane is expanded AND the
-    // inspector tab is active) is visible.
     expect(screen.getByText("Files changed")).toBeInTheDocument();
 
     fireEvent.click(screen.getByTitle("Collapse pane"));
 
-    // Collapsed: the <aside> is gone, replaced by the thin icon strip;
-    // the chevron flips to "Show right pane"; inspector content is no
-    // longer rendered because the body div is gone.
     expect(container.querySelector("aside")).toBeNull();
     expect(screen.getByRole("button", { name: "Show right pane" })).toBeInTheDocument();
     expect(screen.queryByTitle("Collapse pane")).not.toBeInTheDocument();
     expect(screen.queryByText("Files changed")).not.toBeInTheDocument();
-    // Icon-strip buttons (identified by their accessible tab names) are present.
+    // Icon-strip buttons keep their accessible names.
     expect(screen.getByRole("tab", { name: "Inspector" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Preview" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Diff" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Files" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Editor" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Show right pane" }));
     expect(container.querySelector("aside")).not.toBeNull();
     expect(screen.getByTitle("Collapse pane")).toBeInTheDocument();
   });
 
-  it("clamps drag-resize to [280, 720] and persists the width on drag end", async () => {
+  it("clamps drag-resize to the viewport width contract and persists per surface", async () => {
     const { unmount } = render(<AgentInspectorPane conversationId="conv-1" />);
     // Let InspectorContent's async diff-aggregation effect settle so
     // its setState calls don't bleed across `act` boundaries.
@@ -154,52 +148,60 @@ describe("AgentInspectorPane", () => {
     const handle = screen.getByRole("separator", { name: /resize right pane/i });
 
     // jsdom innerWidth defaults to 1024. The handler computes
-    // `innerWidth - clientX`, so clientX=200 → 824 (above max 720 → clamps
-    // to 720). clientX=900 → 124 (below min 280 → clamps to 280).
+    // `innerWidth - clientX`; the store clamps to [260, 720] and the dock
+    // then clamps again to the width the agents surface can actually afford
+    // (1024 − 44 rail − 252 sidebar − 320 min centre = 408).
     expect(window.innerWidth).toBe(1024);
-
-    // The mount-time effect persists the default width; clear it so the
-    // assertions below speak only to drag-end writes.
-    localStorage.removeItem(WIDTH_STORAGE_KEY);
 
     fireEvent.pointerDown(handle);
     fireEvent.pointerMove(window, { clientX: 200 });
     fireEvent.pointerUp(window);
-    expect(localStorage.getItem(WIDTH_STORAGE_KEY)).toBe("720");
+    // Stored preference honours the hard max…
+    expect(persistedAgentsDock().width).toBe(720);
+    // …but the rendered dock never starves the centre canvas.
+    expect(document.querySelector("aside")!.getAttribute("style")).toContain("408px");
 
-    // Second drag — over-minimum clientX should clamp to 280.
     fireEvent.pointerDown(handle);
     fireEvent.pointerMove(window, { clientX: 900 });
     fireEvent.pointerUp(window);
-    expect(localStorage.getItem(WIDTH_STORAGE_KEY)).toBe("280");
+    expect(persistedAgentsDock().width).toBe(260);
 
-    // Remount — persisted width is restored. Width is inline-styled on
-    // the <aside> root.
+    // Remount — persisted width is restored (and re-clamped).
     unmount();
-    localStorage.setItem(WIDTH_STORAGE_KEY, "456");
+    useRightDockStore.getState().setWidth("agents", 380);
     const { container } = render(<AgentInspectorPane conversationId="conv-1" />);
     await act(async () => {});
-    const aside = container.querySelector("aside");
-    expect(aside).not.toBeNull();
-    expect(aside!.style.width).toBe("456px");
+    expect(container.querySelector("aside")!.style.width).toBe("380px");
   });
 
-  it("auto-switches to Preview (and re-expands) when the preview store opens", () => {
+  it("auto-reveals Preview (and re-expands) when a target lands for this conversation", () => {
     render(<AgentInspectorPane conversationId="conv-1" />);
 
-    // Start collapsed on Inspector to prove BOTH effects (tab switch +
-    // expand) fire from a single store flip.
+    // Start collapsed on Inspector to prove BOTH effects (panel switch +
+    // expand) fire from a single store change.
     fireEvent.click(screen.getByTitle("Collapse pane"));
     expect(screen.getByRole("button", { name: "Show right pane" })).toBeInTheDocument();
     expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
 
     act(() => {
-      usePreviewPaneStore.getState().openPlan("# plan body");
+      usePreviewPaneStore.getState().openPlan("conv-1", "# plan body");
     });
 
-    // Pane re-expanded → Collapse chevron is back; Preview tab is active.
     expect(screen.getByTitle("Collapse pane")).toBeInTheDocument();
     expect(screen.getByTestId("preview-pane")).toBeInTheDocument();
+  });
+
+  it("ignores a preview target that belongs to a different conversation (P0-3)", () => {
+    render(<AgentInspectorPane conversationId="conv-1" />);
+    expect(screen.getByText("Files changed")).toBeInTheDocument();
+
+    act(() => {
+      usePreviewPaneStore.getState().openMarkdown("conv-OTHER", "README.md");
+    });
+
+    // Conversation A's dock must not be hijacked by conversation B's preview.
+    expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
+    expect(screen.getByText("Files changed")).toBeInTheDocument();
   });
 
   it("renders the Diff empty-state for PTY-mode conversations", () => {
@@ -208,16 +210,15 @@ describe("AgentInspectorPane", () => {
     ];
     render(<AgentInspectorPane conversationId="conv-pty" />);
 
-    fireEvent.click(screen.getByRole("tab", { name: /diff/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /^diff$/i }));
 
-    // The review surface is NOT mounted for pty conversations.
     expect(screen.queryByTestId("diff-pane")).not.toBeInTheDocument();
     expect(
       screen.getByText(/diffs are only tracked for api-mode conversations/i),
     ).toBeInTheDocument();
   });
 
-  it("disables (does not hide) the Preview tab on SSH conversations and refuses the auto-switch (D3 / P0-4)", () => {
+  it("disables (does not hide) Preview and Editor on SSH conversations and refuses the auto-reveal (D3 / P0-4)", () => {
     agentStore.state.conversations = [
       makeConversation({
         id: "conv-ssh",
@@ -232,21 +233,21 @@ describe("AgentInspectorPane", () => {
     ];
     render(<AgentInspectorPane conversationId="conv-ssh" />);
 
-    const previewTab = screen.getByRole("tab", { name: /preview/i });
-    // Discoverable, not hidden: still rendered, disabled, and explains why.
-    expect(previewTab).toBeInTheDocument();
-    expect(previewTab).toBeDisabled();
-    expect(previewTab.getAttribute("title")).toMatch(
-      /not yet available for ssh workspaces/i,
-    );
-
-    fireEvent.click(previewTab);
+    for (const name of [/^preview$/i, /^editor$/i]) {
+      const tab = screen.getByRole("tab", { name });
+      // Discoverable, not hidden: still rendered, disabled, and explains why.
+      expect(tab).toBeInTheDocument();
+      expect(tab).toBeDisabled();
+      expect(tab.getAttribute("title")).toMatch(/not yet available for ssh workspaces/i);
+      fireEvent.click(tab);
+    }
     expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
+    expect(screen.queryByText("No file open.")).not.toBeInTheDocument();
 
-    // A plan landing in the preview store must not force the pane onto a
-    // tab that cannot work for this conversation.
+    // A plan landing in the preview store must not force the dock onto a
+    // panel that cannot work for this conversation.
     act(() => {
-      usePreviewPaneStore.getState().openPlan("# plan body");
+      usePreviewPaneStore.getState().openPlan("conv-ssh", "# plan body");
     });
     expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
     expect(screen.getByText("Files changed")).toBeInTheDocument();
@@ -267,7 +268,7 @@ describe("AgentInspectorPane", () => {
     ];
     render(<AgentInspectorPane conversationId="conv-ssh" />);
 
-    fireEvent.click(screen.getByRole("tab", { name: /files/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /^files$/i }));
 
     expect(
       screen.getByText(/file browsing on ssh targets is not yet supported/i),

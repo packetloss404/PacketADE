@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { ArrowDown, ArrowLeft, MessageSquareOff, Server, Sparkles } from "lucide-react";
 import { MemoryInjectionCard } from "./MemoryInjectionCard";
@@ -14,7 +14,12 @@ import {
   EMPTY_PENDING_PERMISSIONS,
   useAgentApprovalStore,
 } from "@/stores/agentApprovalStore";
-import { usePreviewPaneStore } from "@/stores/previewPaneStore";
+import {
+  hidePreview,
+  openMarkdownPreview,
+  useIsPreviewVisible,
+} from "@/lib/previewDock";
+import { useRightDockStore } from "@/stores/rightDockStore";
 import { useMemoryStore, type MemoryBrief } from "@/stores/memoryStore";
 import { TileHeaderActions } from "./chat/TileHeaderActions";
 import { handleExport } from "./chat/handleExport";
@@ -128,15 +133,14 @@ export function AgentChatPane({
   );
   const closeReview = useReviewStore((s) => s.close);
 
-  // Preview pane + settings selectors grouped to reduce subscription count.
-  const preview = usePreviewPaneStore(
-    useShallow((s) => ({
-      previewOpen: s.open,
-      togglePreview: s.toggle,
-      openMarkdownPreview: s.openMarkdown,
-      openPlanPreview: s.openPlan,
-    })),
-  );
+  // P0-3: preview visibility is the dock's, the target is conversation-scoped,
+  // and Hide/Show are one verb each (see lib/previewDock).
+  const previewOpen = useIsPreviewVisible();
+  const openPreviewPanel = useRightDockStore((s) => s.openPanel);
+  const togglePreview = useCallback(() => {
+    if (previewOpen) hidePreview();
+    else openPreviewPanel("agents", "preview");
+  }, [previewOpen, openPreviewPanel]);
   const memoryEvents = useMemoryStore((s) => s.events);
   const memoryPatterns = useMemoryStore((s) => s.patterns);
   const composeMemoryBrief = useMemoryStore((s) => s.composeMemoryBrief);
@@ -150,7 +154,7 @@ export function AgentChatPane({
   const { messagesContainerRef, messagesContentRef, messagesEndRef, isAtBottom, unreadCount, jumpToBottom } =
     useScrollState(conversationId, conversation?.messages);
 
-  useLatestPlanPreview(conversation, preview.openPlanPreview);
+  useLatestPlanPreview(conversation, conversationId);
 
   const diffTotals = useDiffTotals(conversation);
   const memoryBrief = useMemo<MemoryBrief>(() => {
@@ -227,7 +231,7 @@ export function AgentChatPane({
   const isRemote = isRemoteConversation(conversation);
   function handleOpenMarkdown(path: string) {
     if (!/\.mdx?$/i.test(path)) return;
-    preview.openMarkdownPreview(path);
+    openMarkdownPreview(conversationId, path);
   }
 
   /* ----------------- render ----------------- */
@@ -293,8 +297,8 @@ export function AgentChatPane({
           conversation={conversation}
           conversationId={conversationId}
           diffTotals={diffTotals}
-          previewOpen={preview.previewOpen}
-          togglePreview={preview.togglePreview}
+          previewOpen={previewOpen}
+          togglePreview={togglePreview}
           onClose={onClose}
           onCycleMode={cycleMode}
           onSelectMode={applyMode}

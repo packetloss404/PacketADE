@@ -148,6 +148,8 @@ vi.mock("@/stores/promptStore", () => ({
 }));
 
 vi.mock("@/stores/editorStore", () => ({
+  isFileDirty: () => false,
+  isMarkdownPath: () => false,
   useEditorStore: vi.fn(
     (selector: (state: {
       openFiles: unknown[];

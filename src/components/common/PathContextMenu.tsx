@@ -7,6 +7,8 @@ import {
   FolderOpen,
 } from "lucide-react";
 import { REMOTE_UNSUPPORTED_TOOLTIP } from "@/lib/remoteConversation";
+import { openInEditor } from "@/lib/openInEditor";
+import { resolveProjectPath } from "@/lib/resolveProjectPath";
 
 export interface PathContextMenuProps {
   /** Viewport x coordinate (px) for the menu anchor */
@@ -21,6 +23,9 @@ export interface PathContextMenuProps {
   onClose: () => void;
   /** Inject `@path` into the agent input via the parent */
   onAttach: (path: string) => void;
+  /** Project root used to resolve a repo-relative path and to scope the
+   *  editor's filesystem read/write. */
+  projectPath?: string;
   /** D3 / P0-4: the surrounding conversation runs on an SSH host, so this path
    * exists on the REMOTE filesystem. "Open in editor" / "Show in Explorer"
    * would act on an unrelated local path — they stay visible but disabled. */
@@ -51,6 +56,7 @@ export function PathContextMenu({
   line,
   onClose,
   onAttach,
+  projectPath = "",
   remote = false,
 }: PathContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -77,16 +83,12 @@ export function PathContextMenu({
     };
   }, [onClose]);
 
-  const handleOpen = async () => {
-    // v1: ask the OS to open the file with its default app. A future
-    // iteration can route this through an in-app editor / FileExplorer
-    // without changing this component's API.
-    try {
-      await open(path);
-    } catch (err) {
-      console.warn("[PathContextMenu] open(file) failed:", err);
-      alert(`Cannot open: ${err}`);
-    }
+  // D5: this used to shell out to the OS default app, leaving the in-app
+  // Editor with no production caller at all (finding P1-7). It now opens the
+  // buffer in the surface-scoped RightDock Editor panel. D3 still holds: the
+  // action is disabled (not hidden) for SSH-backed conversations.
+  const handleOpen = () => {
+    openInEditor(path, { projectPath, remote });
     onClose();
   };
 
@@ -106,7 +108,7 @@ export function PathContextMenu({
 
   const handleShowInExplorer = async () => {
     try {
-      await open(parentDir(path));
+      await open(parentDir(resolveProjectPath(projectPath, path)));
     } catch (err) {
       console.warn("[PathContextMenu] open(parentDir) failed:", err);
     }

@@ -63,6 +63,7 @@ import {
 import { useAgentStore } from "@/stores/agentStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useAppStore } from "@/stores/appStore";
+import { useRightDockStore } from "@/stores/rightDockStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useServerStore } from "@/stores/serverStore";
@@ -107,10 +108,10 @@ describe("WA3 agent handoffs", () => {
     useLayoutStore.setState({ activePaneId: "", projectPath: "" });
     useAppStore.setState({
       activeView: "agents",
-      gitPanelOpen: false,
       gitPanelConversationId: null,
       gitPanelWorkspaceId: null,
     });
+    useRightDockStore.getState().reset();
     useServerStore.setState({ servers: [] });
     useFlightStore.setState({ flights: [], activeFlightId: null });
     useWorkspaceAgentsDogfoodStore.getState().reset();
@@ -235,9 +236,13 @@ describe("WA3 agent handoffs", () => {
     const workspaceId = useWorkspaceStore.getState().workspaces[0]?.id;
     expect(useAppStore.getState()).toMatchObject({
       activeView: "workspace",
-      gitPanelOpen: true,
       gitPanelConversationId: "conv-1",
       gitPanelWorkspaceId: workspaceId,
+    });
+    // D2: the panel's VISIBILITY is the RightDock's, not appStore's.
+    expect(useRightDockStore.getState().surfaces.workspace).toMatchObject({
+      activePanel: "git",
+      expanded: true,
     });
     expect(
       useWorkspaceStore
