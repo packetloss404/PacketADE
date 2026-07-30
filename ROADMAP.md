@@ -1,13 +1,15 @@
 # PacketADE Roadmap
 
-Last updated: 2026-07-29 (Workspace/Agents restructuring is complete; Remote
-Agents remains preserved at its Sprint-0 decision gate)
+Last updated: 2026-07-30 (Workspace/Agents and Settings IA are complete; the
+main-shell/right-dock review is the current owner decision pass; Remote Agents
+remains preserved at its Sprint-0 decision gate)
 
 `ROADMAP.md` is the short product-direction document. It says what matters now
 and why. The task ledger lives in [`backlog.md`](./backlog.md); implementation
 briefs, runbooks, and historical planning live under [`dev/`](./dev/README.md).
 For architectural conventions, see the local generated `AGENTS.md` and
-`CLAUDE.md` files (intentionally gitignored).
+`CLAUDE.md` files (intentionally gitignored). For the exact session restart
+point, see [`HANDOFF.md`](./HANDOFF.md).
 
 ## North Star
 
@@ -29,6 +31,7 @@ surface goal. It is preserved, not canceled, at its three Sprint-0 decisions.
 
 | ID  | Track                                     | Priority | Status                                                                | Canonical Plan                                                                                                                                                                                                                                                                                                                                                                         |
 | --- | ----------------------------------------- | -------: | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R11 | Main shell and right-dock ownership       |       P1 | Review complete; five owner decisions pending                         | [`HANDOFF.md`](./HANDOFF.md), [`dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md)                                                                                                                                                                                                                          |
 | R10 | Workspace/Agents restructuring            |       P0 | Complete; final owner policy implemented and fully verified           | [`dev/workspace-agents-restructuring-goal.md`](./dev/workspace-agents-restructuring-goal.md), [`dev/workspace-agents-wa0-route-contract.md`](./dev/workspace-agents-wa0-route-contract.md), [`dev/workspace-agents-wa3-handoff-evidence.md`](./dev/workspace-agents-wa3-handoff-evidence.md), [`dev/workspace-agents-wa4-dogfood-gate.md`](./dev/workspace-agents-wa4-dogfood-gate.md) |
 | R0  | Remote Agents: PWA + Packet Cloud relay   |       P1 | Preserved; paused at three Sprint-0 product decisions                 | [`dev/remoteagents/README.md`](./dev/remoteagents/README.md)                                                                                                                                                                                                                                                                                                                           |
 | R1  | Docs and planning consolidation           |       P1 | Refreshed; ongoing maintenance                                        | [`dev/README.md`](./dev/README.md)                                                                                                                                                                                                                                                                                                                                                     |
@@ -78,7 +81,7 @@ gate and unsigned-package evidence is in
 
 | ID  | Track                     | Priority | Status                                 | Next action                                                                                                                                                                            |
 | --- | ------------------------- | -------: | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | Remote Agents Sprint 0    |       P1 | Paused at decision gate                | Resume after the Workspace/Agents goal or explicit owner reprioritization; then decide auth provider, E2EE timing, and code location.                                                  |
+| D1  | Remote Agents Sprint 0    |       P1 | Paused at decision gate                | After the current main-shell decision pass or explicit owner reprioritization, decide auth provider, E2EE timing, and code location before writing code.                             |
 | D2  | Flight Deck scope         |       P1 | Complete                               | Option B shipped: upfront conversation-backed planning with explicit apply; attempts remain user-launched.                                                                             |
 | D3  | API-agent concurrency     |       P2 | Complete                               | Turns now have compare-and-remove ownership; sidecar protocol v9 targets edit responses by `toolUseId`.                                                                                |
 | D4  | SSH parity verification   |       P2 | Partially complete / environment-gated | Saved-password path probing is fixed; run the live Codex-over-SSH smoke when a configured remote host is available.                                                                    |
@@ -148,10 +151,9 @@ Run the usual gates before release: `pnpm lint`, `pnpm test`, `pnpm build`,
 
 ## Release Path
 
-1. Execute Workspace/Agents WA0–WA3: route ownership, the same-window Agents
-   surface, CLI-first Workspace defaults, and identity-preserving handoffs.
-2. Preserve the completed WA4 policy: no new Workspace conversation
-   attachments; old panes remain load-compatible.
+1. Preserve the completed Workspace/Agents and Settings IA contracts.
+2. Resolve the five main-shell/right-dock owner decisions, then run only the
+   approved MS1–MS4 implementation slices.
 3. Run the packaged local/SSH/manual Flight supervision matrices and the
    PacketCode clean-machine release matrix.
 4. Resolve the three Remote Agents Sprint-0 decisions, then split work against

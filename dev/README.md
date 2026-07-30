@@ -1,6 +1,6 @@
 # Dev Planning Docs
 
-Last updated: 2026-07-29
+Last updated: 2026-07-30
 
 This directory holds **active** planning docs with outstanding work items plus the engineering reference docs that used to live in `docs/`. Completed docs have been moved to `dev/archive/`.
 
@@ -10,6 +10,7 @@ Use these as the trust anchors before reading older plan files:
 
 | Area                                 | Canonical owner                                                                                                                                                                                                                      | Notes                                                                                                                                                                                                                                                                                |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Session restart point                | [`../HANDOFF.md`](../HANDOFF.md)                                                                                                                                                                                                     | **CURRENT** — completed product decisions, the five pending main-shell/right-dock choices, environment gates, latest Windows build evidence, guardrails, and recommended first prompt.                                                                                               |
 | Live task register                   | [`../backlog.md`](../backlog.md)                                                                                                                                                                                                     | Single source for outstanding work. The July P1/P2 hardening loop is complete.                                                                                                                                                                                                       |
 | Reliability remediation              | [`reliability-low-fix-loop-2026-07-19.md`](./reliability-low-fix-loop-2026-07-19.md)                                                                                                                                                 | Completed 30-finding revalidation, fix, regression, and verification record.                                                                                                                                                                                                         |
 | Release priorities                   | [`../ROADMAP.md`](../ROADMAP.md)                                                                                                                                                                                                     | Short current summary; detailed plans stay in this folder.                                                                                                                                                                                                                           |
@@ -45,21 +46,20 @@ Use these as the trust anchors before reading older plan files:
 | v0.10.2 release record               | [`release-v0.10.2.md`](./release-v0.10.2.md)                                                                                                                                                                                         | Windows x64 build gates, artifact sizes/hashes, unsigned status, and known non-failing warnings.                                                                                                                                                                                     |
 | Historical plans                     | [`archive/`](./archive/)                                                                                                                                                                                                             | Cold storage; do not treat as current unless an active doc links to a specific artifact as background.                                                                                                                                                                               |
 
-### Verification checkpoint — 2026-07-28
+### Verification checkpoint — 2026-07-30
 
-The converged pre-Remote source passes `pnpm format:check`, `pnpm lint` (zero
-errors; nine existing Fast Refresh warnings), all 1,207 Vitest tests,
-`pnpm build`, all seven Playwright web-mode smokes, the full deterministic
-sidecar suite, `cargo fmt --check`, `cargo check`, and `cargo test --no-run`.
-`pnpm tauri build` produced unsigned v0.10.2 Windows EXE/MSI/NSIS artifacts,
-and the fixed readiness reporter finds them with zero failures and six expected
-signing/updater warnings. The Windows loader failure was subsequently fixed
-with a linker-level Common Controls v6 dependency; both the schema integration
-executable and Rust library unit-test harness now launch normally. Live
-microphone/SSH/provider/external-editor, real Codex MCP, PacketAgent,
-other-platform, signing, updater, and manual packaged proof remain open exactly
-where the loop ledgers say they do. Full baseline evidence:
+The Settings/main-shell source passes `pnpm format:check`, `pnpm lint` (zero
+errors; nine existing Fast Refresh warnings), all 1,261 Vitest tests,
+`pnpm build`, and all eight Playwright web-mode smokes. The earlier full
+deterministic sidecar and Rust gates remain recorded in
 [`bridgemind/pre-remote-convergence-2026-07-28.md`](./bridgemind/pre-remote-convergence-2026-07-28.md).
+On 2026-07-30, `pnpm tauri build` from functional commit `a7feb4a` produced
+fresh unsigned v0.10.2 Windows EXE/MSI/NSIS artifacts and
+`pnpm sidecar:install` restored development dependencies. Exact hashes and the
+post-tag-build distinction are in [`../HANDOFF.md`](../HANDOFF.md#latest-windows-build).
+Live microphone/SSH/provider/external-editor, real Codex MCP, PacketAgent,
+other-platform, signing, updater, and manual packaged proof remain open exactly
+where the loop ledgers say they do.
 
 ## Reference
 
@@ -81,17 +81,16 @@ Technical runbooks and how-tos. Not backlog items themselves (those live in [`/b
 
 ### Current goal and decision gates
 
-- Workspace/Agents restructuring is the active approved product goal. Its
-  canonical contract and WA0–WA5 sequence are in
-  [`workspace-agents-restructuring-goal.md`](./workspace-agents-restructuring-goal.md).
-- WA0 is complete and locked in
-  [`workspace-agents-wa0-route-contract.md`](./workspace-agents-wa0-route-contract.md).
-  WA1–WA3 are source-complete: Agents is first-class, new Workspaces are
-  CLI/PacketCode-first, and explicit identity-preserving handoffs connect the
-  surfaces. The local packaged Windows startup/hydration/Claude+Codex gate
-  passes and the dated completion audit found no remaining source-structure
-  gap. WA4 is complete by explicit owner decision: no new Workspace
-  conversation attachment can be created, while saved panes remain compatible.
+- The current owner conversation is the five-decision main-shell/right-dock
+  review in [`../HANDOFF.md`](../HANDOFF.md) and
+  [`main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./main-shell-navigation-and-right-panel-audit-2026-07-29.md).
+  Do not start its implementation loop until those choices are confirmed.
+- Workspace/Agents restructuring is complete. The canonical contract and
+  evidence are in
+  [`workspace-agents-restructuring-goal.md`](./workspace-agents-restructuring-goal.md),
+  [`workspace-agents-wa0-route-contract.md`](./workspace-agents-wa0-route-contract.md),
+  and
+  [`workspace-agents-completion-audit-2026-07-29.md`](./workspace-agents-completion-audit-2026-07-29.md).
   SSH and external-runtime sign-off remain separate release gates.
 - Remote Agents remains preserved and paused on its three Sprint-0 choices:
   auth provider, E2EE timing, and code location.

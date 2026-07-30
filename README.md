@@ -4,16 +4,26 @@
 
 PacketADE is a Tauri v2 desktop app that brings AI coding agents, planning, issue tracking, memory, and workspace management into a single native environment. It is built for running real development workflows across multiple agent CLIs without leaving the app.
 
-Current source release: **v0.10.2** (2026-07-28).
+Current source release: **v0.10.2** (2026-07-28). A fresh unsigned Windows
+development build was compiled from `main` on 2026-07-30; see
+[`HANDOFF.md`](./HANDOFF.md#latest-windows-build) for the exact artifacts and
+hashes.
 
 ## Documentation Map
 
+- [`HANDOFF.md`](./HANDOFF.md) — exact restart point, completed decisions,
+  current owner questions, build evidence, and guardrails.
 - [`ROADMAP.md`](./ROADMAP.md) — current product direction and release path.
 - [`backlog.md`](./backlog.md) — master ledger for outstanding work.
 - [`dev/README.md`](./dev/README.md) — planning index, active implementation briefs, runbooks, and archive.
 - [`dev/remoteagents/README.md`](./dev/remoteagents/README.md) — canonical Remote Agents plan.
 - [`CHANGELOG.md`](./CHANGELOG.md) — shipped history only.
 - `AGENTS.md` / `CLAUDE.md` — local agent-facing repository instructions (generated and intentionally gitignored).
+
+The current product conversation is the reviewed—but not yet
+implemented—main-shell/right-dock decision pass. Workspace/Agents restructuring
+and the six-group Settings information architecture are complete; Remote Agents
+remains paused at its three Sprint-0 decisions.
 
 ## What It Does
 

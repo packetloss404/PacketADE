@@ -38,13 +38,14 @@ This remains the next major networked product bet: PWA first, Packet account
 sign-in, Packet Cloud relay, desktop-owned providers/secrets/tools, and no
 generic remote Tauri bridge.
 
-**Sequencing note.** The
-[`Workspace/Agents restructuring`](./dev/workspace-agents-restructuring-goal.md)
-is the active product goal. Remote Agents is preserved at its current Sprint-0
-decision gate and resumes after that goal or explicit owner reprioritization.
-Its relay reuses the same `api-agent:*` event contract that conversations
-already emit, so the "stream `api-agent:*` / respond to prompts / cancel"
-envelope remains a stable future input.
+**Sequencing note.** Workspace/Agents restructuring and the six-group Settings
+information architecture are complete. The current owner decision pass is the
+[`main-shell/right-panel audit`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md).
+Remote Agents is preserved at its current Sprint-0 decision gate and resumes
+after that pass or explicit owner reprioritization. Its relay reuses the same
+`api-agent:*` event contract that conversations already emit, so the "stream
+`api-agent:*` / respond to prompts / cancel" envelope remains a stable future
+input.
 
 **Blocked on Sprint-0 decisions.** [`dev/remoteagents/09-open-decisions.md`](./dev/remoteagents/09-open-decisions.md)
 records three Sprint-0 BLOCKING decisions — auth provider choice,

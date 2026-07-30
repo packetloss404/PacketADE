@@ -44,3 +44,20 @@ warnings, and existing Vite chunk/dynamic-import notices.
 The standalone executable and NSIS executable both report product version
 `0.10.2`. These artifacts are local build evidence; they are not signed,
 uploaded, or claimed as trusted public distribution.
+
+## Post-tag local development rebuild — 2026-07-30
+
+After the Workspace/Agents completion and six-group Settings implementation,
+`pnpm tauri build` succeeded again from functional commit `a7feb4a`. This build
+still reports `0.10.2`; it is a post-tag development build, not a replacement
+tag or a newly published release.
+
+| Artifact | Size | SHA-256 |
+| --- | ---: | --- |
+| `packetade.exe` | 42.65 MiB | `23E954FDF0C10A1CA2E5CF2198334CB6D268B1925EA155F83EC1C8FCC91FBA1A` |
+| `PacketADE_0.10.2_x64_en-US.msi` | 131.90 MiB | `AB307CFE7BD1FE0149C97FC047F08CB21A61AFBA9611444B98FE84F0C7E30E5D` |
+| `PacketADE_0.10.2_x64-setup.exe` | 84.47 MiB | `E4A1119396EF6E7E9BF4511F8BAFC3E2B076FF37011C8C36101870B959A2BDD6` |
+
+The optimized Rust release compile, MSI, and NSIS packaging passed. Sidecar
+development dependencies were restored afterward. The artifacts remain
+unsigned and local-only.
