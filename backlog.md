@@ -595,6 +595,17 @@ the normal priority scheme.
 - **P2 — adopt midway-review recommendations.** Triage the review's
   recommendations into concrete backlog items (see
   `docs/reports/midway-review-2026-07-30.html`).
+- **✅ Shipped — same-day review expansion into the consolidated 6-month
+  ledger.** The report now carries three new chapters: the reconciled UX
+  Ledger (07-29 main-shell audit + code review + rendered visual audit → five
+  pending owner decisions D1–D5 + 43 deduped findings, none yet resolved), the
+  Visual Audit (14 screenshots in `docs/reports/visual-audit-2026-07-30/`,
+  reproducible via `e2e/visual-audit.spec.ts`), and the Outstanding Audits
+  Ledger (64 docs swept, 218 open items, 182 still-valid, 15 critical).
+- **P0 — answer the five owner decisions (D1–D5).** Now the front of the
+  queue per the expanded report §3/§11: Workspace inspector ownership,
+  RightDock, SSH action gating, route registry, Editor reconnect-or-remove.
+  Then the UX P0 quartet + Ctrl+K guard + close-confirm.
 - **P3 — sweep remaining historical Gemini references.** Comments/aliases kept
   intentionally for load-compat (`agentStore.ts`, `workspaceStore.ts`) stay;
   audit stray descriptive mentions (e.g. `src/agents/packetcode.ts`

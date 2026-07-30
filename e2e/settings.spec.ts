@@ -5,9 +5,16 @@ test.describe("Settings information architecture", () => {
     page,
   }) => {
     await page.goto("/");
+    // Parallel web-mode workers (incl. the heavy visual-audit captures) can
+    // push the initial render past the five-second assertion default.
+    await expect(page.getByRole("heading", { name: "PacketADE" })).toBeVisible({
+      timeout: 15_000,
+    });
     await page.getByRole("button", { name: "Settings", exact: true }).click();
 
-    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible({
+      timeout: 15_000,
+    });
     for (const label of [
       "General",
       "Workspaces & Terminal",
