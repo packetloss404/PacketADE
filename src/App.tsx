@@ -15,8 +15,6 @@ import { useMonitorMainRouter } from "@/hooks/useMonitorMainRouter";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { ToastProvider } from "@/components/ui/Toast";
 import { FleetSidebar } from "@/components/workspace/FleetSidebar";
-import { AgentInspectorPane } from "@/components/agents/AgentInspectorPane";
-import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useAgentTabHoists } from "@/hooks/useAgentTabHoists";
 import { VIEW_HOTKEY_MAP } from "@/lib/viewHotkeys";
 import { initSessionGlue } from "@/stores/sessionGlue";
@@ -279,8 +277,6 @@ export default function App() {
   useEffect(() => {
     if (activeView === "workspace") setWorkspaceVisited(true);
   }, [activeView]);
-  // Right-side inspector/preview pane follows the selected conversation.
-  const selectedConversationId = useAgentTaskStore((s) => s.selectedConversationId);
 
   return (
     <ErrorBoundary fallbackMessage="PacketADE encountered an error">
@@ -326,17 +322,11 @@ export default function App() {
                 </Suspense>
               </ErrorBoundary>
             </div>
-
-            {/* Right-side inspector/preview pane — Inspector / Plan / Preview
-              (markdown) / Diff / Files for the selected conversation. Mounts as
-              a thin rail and expands "when in use" (a plan arrives, a .md opens,
-              or a tab icon is clicked). Wrapped so a render error can't take
-              down the shell. */}
-            {showWorkspaceSidebar && selectedConversationId && (
-              <ErrorBoundary fallbackMessage="Inspector pane error">
-                <AgentInspectorPane conversationId={selectedConversationId} defaultOpen={false} />
-              </ErrorBoundary>
-            )}
+            {/* The Agent Inspector is owned solely by the Agents view
+              (AgentsView mounts AgentInspectorPane for its selected
+              conversation). Workspace deliberately mounts no inspector: a
+              globally selected conversation may be unrelated to the active
+              Workspace (audit P0-1 / decision D1, 2026-07-30). */}
           </div>
           <StatusStrip />
           {commandPaletteOpen && <CommandPalette />}

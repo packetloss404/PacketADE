@@ -31,9 +31,6 @@ import { getAgentColor } from "@/lib/agentColors";
 
 interface AgentInspectorPaneProps {
   conversationId: string;
-  /** Initial expanded state. Default true (legacy). Pass false to mount as the
-   *  thin "show-only-when-in-use" rail that auto-expands on a plan/.md/preview. */
-  defaultOpen?: boolean;
 }
 
 type Tab = "inspector" | "plan" | "preview" | "diff" | "files";
@@ -71,14 +68,11 @@ function persistWidth(w: number) {
   }
 }
 
-export function AgentInspectorPane({
-  conversationId,
-  defaultOpen = true,
-}: AgentInspectorPaneProps) {
+export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) {
   const conversation = useAgentTaskStore((s) =>
     s.conversations.find((c) => c.id === conversationId),
   );
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useState(true);
   const [tab, setTab] = useState<Tab>("inspector");
   const [width, setWidth] = useState<number>(() => readPersistedWidth());
   const [isDragging, setIsDragging] = useState(false);
