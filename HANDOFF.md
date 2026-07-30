@@ -12,48 +12,51 @@ over the landscape, a bug-fix wave, a full root-documentation overhaul
 (`README.md`, `ROADMAP.md`, `backlog.md`, `CHANGELOG.md`, this file), and the
 removal of Gemini CLI support from the PTY session surface. Its shipped
 outcomes and open recommendations are ledgered in
-[`backlog.md`](./backlog.md#2026-07-30-midway-review); the report placeholder
-is `docs/reports/midway-review-2026-07-30.html`.
+[`backlog.md`](./backlog.md#2026-07-30-midway-review); the full consolidated
+report is `docs/reports/midway-review-2026-07-30.html` (11 chapters, with the
+UX Ledger, Visual Audit, and Outstanding Audits Ledger).
 
-Two threads are open from here:
+One thread is open from here:
 
-1. **Commit and verify the midway-review working tree.** The Gemini removal
-   (~650 net lines across `src/` and `src-tauri/`) and the documentation
-   overhaul are uncommitted on `main` as of this handoff. Run the usual gates
-   (`pnpm lint`, `pnpm test`, `pnpm build`, `cargo check`) before committing.
-2. **The main-shell decision pass** remains the current owner decision target:
-   navigation, menus, tabs, buttons, and right-side panel ownership. The
-   review is complete, but none of its recommendations has been silently
-   approved or implemented.
+1. **Committed and verified.** The midway-review work landed on `main` as
+   `72b2734` (bug fixes + Gemini removal + docs), `580ee80` (build evidence),
+   and `3f8aba1` (consolidated ledger expansion), all pushed; gates were green
+   at each commit (pnpm build, cargo check + test 440/440, vitest 1260/1260,
+   sidecar build).
+2. **The main-shell implementation pass.** The owner made all five main-shell
+   decisions on 2026-07-30; next session's work is implementing them, not
+   re-litigating them.
 
 For thread 2, start with
-[`dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md)
-and step through these five owner decisions before changing code:
+[`dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md).
+The five owner decisions, all made 2026-07-30:
 
-1. Remove the unscoped Workspace-level Agent inspector and keep Inspector owned
-   by Agents. Recommended: **yes**.
-2. Replace competing Inspector, Git, and Editor panels with one
-   surface-scoped `RightDock`. Recommended: **yes**.
-3. Disable unsupported SSH Preview, applied-file Review/Diff, Editor, and
-   local-only handoff actions until remote-aware implementations exist.
-   Recommended: **yes**.
-4. Make one route registry own main rail, command palette, labels, placements,
-   and hotkeys. Recommended: **yes**.
-5. Reconnect the lightweight Editor through the new dock or remove its
-   production-unreachable shell. Decide this after reviewing how much editing
-   should remain in PacketADE versus PacketCode.
+1. **DECIDED: YES.** Remove the unscoped Workspace-level Agent inspector;
+   Inspector is owned solely by the Agents view (resolves P0-1).
+2. **DECIDED: YES.** Build one surface-scoped `RightDock` controller owning
+   width/stacking/visibility of all right-side panels (resolves P0-2, helps
+   P0-3).
+3. **DECIDED: YES.** Gate/disable local-only actions (Preview, applied-Review,
+   Undo, Plan handoff, diff) on SSH conversations now; full remote parity
+   later (resolves P0-4).
+4. **DECIDED: YES.** One route registry owns the main rail, command palette,
+   labels, placements, and hotkeys (resolves UX-14/P1-9; enables the
+   creation-label fixes).
+5. **DECIDED: RECONNECT.** The lightweight Editor becomes a first-class
+   `RightDock` panel — wire `editorStore.openFile` production callers and
+   protect dirty buffers. In-app quick editing IS part of PacketADE's
+   positioning. This folds into decision 2's `RightDock` scope.
 
-Do not start the implementation loop until the owner has confirmed these
-decisions. Once confirmed, use the audit's MS1 through MS4 sequence:
-correctness boundaries, one right dock, one navigation registry, then
-polish/proof.
+Implement in this order: D1 inspector removal first (smallest), then D3 SSH
+gating, then D4 route registry, then D2 `RightDock` including D5's Editor
+panel. That maps onto the audit's MS1 through MS4 sequence: correctness
+boundaries, one right dock, one navigation registry, then polish/proof.
 
 ## Current product state
 
-- The most recent functional source commit before this documentation handoff is
-  `a7feb4a` (`Reorganize Settings and audit main shell`) on `main`. The
-  2026-07-30 midway-review changes (Gemini removal + docs overhaul) sit
-  uncommitted on top of it.
+- `main` is at `3f8aba1` (consolidated 6-month ledger expansion), on top of
+  `72b2734` (midway review: 16 verified bug fixes, Gemini CLI removal, docs
+  overhaul) — all committed and pushed 2026-07-30.
 - Gemini CLI is no longer a supported PTY agent. Supported PTY CLIs are Claude
   Code, Codex CLI, OpenCode, PacketCode, and plain shells; the GUI-agent picker
   keeps its eight chat rows (Anthropic subscription/API, OpenAI
@@ -191,7 +194,7 @@ limited to existing `ts-rs` serde-alias and Vite chunk/dynamic-import warnings.
 2. [`ROADMAP.md`](./ROADMAP.md) for current direction.
 3. [`backlog.md`](./backlog.md) for open work.
 4. [`dev/README.md`](./dev/README.md) for the planning index.
-5. The main-shell audit for the current owner decisions.
+5. The main-shell audit for the decided (2026-07-30) implementation scope.
 6. The Settings decision report for authority cleanup.
 7. The Remote Agents plan only after the current local-shell decisions.
 
@@ -199,7 +202,7 @@ limited to existing `ts-rs` serde-alias and Vite chunk/dynamic-import warnings.
 
 > Read `HANDOFF.md`. First, run the quality gates over the uncommitted
 > midway-review working tree (Gemini CLI removal + docs overhaul) and commit it
-> if they pass. Then read the main-shell navigation/right-panel audit — do not
-> implement yet — and step me through the five owner decisions, beginning with
-> the Workspace Agent inspector and the shared RightDock, explaining what
-> functionality is preserved or lost by each choice.
+> if they pass. Then read the main-shell navigation/right-panel audit and begin
+> implementing the five decided (2026-07-30) items in order: D1 Workspace
+> inspector removal, D3 SSH gating, D4 route registry, then D2 RightDock
+> including the D5 Editor panel.

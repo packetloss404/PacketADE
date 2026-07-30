@@ -2,7 +2,7 @@
 
 Date: 2026-07-29
 
-Status: **REVIEW COMPLETE — OWNER DECISIONS AND IMPLEMENTATION OPEN**
+Status: **REVIEW COMPLETE — DECISIONS MADE 2026-07-30; IMPLEMENTATION OPEN (MS1–MS4)**
 
 Scope: PacketADE's main application shell, not the Settings information
 architecture
@@ -355,7 +355,9 @@ Recommendation: add request IDs to events and a cancellation command.
 2. Make Inspector, Git, and Editor mutually exclusive owners.
 3. Add one shared resizer and minimum-center-width collapse.
 4. Route Files → Markdown Preview and Changes → Review through the dock.
-5. Decide whether the currently unreachable Editor earns reconnection.
+5. Reconnect the lightweight Editor as a first-class dock panel (decided
+   2026-07-30): wire `editorStore.openFile` production callers and protect
+   dirty buffers.
 
 ### MS3 — one navigation registry
 
@@ -375,15 +377,33 @@ Recommendation: add request IDs to events and a cancellation command.
 
 ## Decisions requested from the owner
 
+All five decisions were made by the owner on 2026-07-30.
+
 1. Remove the Workspace-level Agent inspector now, keeping Inspector owned by
    Agents. **Recommended: yes.**
+   — **DECIDED 2026-07-30: YES.** Remove the Workspace-level Agent inspector;
+   Inspector is owned solely by the Agents view (resolves P0-1).
 2. Replace independent right panels with one `RightDock`. **Recommended: yes.**
+   — **DECIDED 2026-07-30: YES.** Build one `RightDock` controller owning
+   width/stacking/visibility of all right-side panels (resolves P0-2, helps
+   P0-3).
 3. Disable unsupported SSH Preview/Diff/Editor actions before adding full remote
    parity. **Recommended: yes.**
+   — **DECIDED 2026-07-30: YES.** Gate/disable local-only actions (Preview,
+   applied-Review, Undo, Plan handoff, diff) on SSH conversations now; full
+   remote parity later (resolves P0-4).
 4. Make one route registry own rail, palette, labels, and hotkeys.
    **Recommended: yes.**
+   — **DECIDED 2026-07-30: YES.** A single route registry owns the left rail,
+   command palette, labels, and hotkeys (resolves UX-14/P1-9; enables the
+   creation-label fixes).
 5. Reconnect the lightweight Editor through the dock or remove its unreachable
    shell. **Decision required after reviewing PacketCode/editor positioning.**
+   — **DECIDED 2026-07-30: RECONNECT.** The lightweight Editor becomes a
+   first-class `RightDock` panel: wire `editorStore.openFile` production
+   callers and protect dirty buffers. In-app quick editing IS part of
+   PacketADE's positioning. This folds into decision 2's `RightDock` scope and
+   lands inside the MS2 milestone.
 
 ## Evidence limits
 

@@ -1,8 +1,9 @@
 # PacketADE Roadmap
 
 Last updated: 2026-07-30 (Workspace/Agents and Settings IA are complete; the
-main-shell/right-dock review is the current owner decision pass; Remote Agents
-remains preserved at its Sprint-0 decision gate)
+five main-shell/right-dock decisions were made 2026-07-30 and their
+implementation is the current pass; Remote Agents remains preserved at its
+Sprint-0 decision gate)
 
 > **2026-07-30 — midway review completed.** The midway project review ran to
 > completion on this date: a research fleet surveyed the landscape, a bug-fix
@@ -38,7 +39,7 @@ surface goal. It is preserved, not canceled, at its three Sprint-0 decisions.
 
 | ID  | Track                                     | Priority | Status                                                                | Canonical Plan                                                                                                                                                                                                                                                                                                                                                                         |
 | --- | ----------------------------------------- | -------: | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R11 | Main shell and right-dock ownership       |       P1 | Review complete; five owner decisions pending                         | [`HANDOFF.md`](./HANDOFF.md), [`dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md)                                                                                                                                                                                                                          |
+| R11 | Main shell and right-dock ownership       |       P1 | Decisions made 2026-07-30; implementation open                        | [`HANDOFF.md`](./HANDOFF.md), [`dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md)                                                                                                                                                                                                                          |
 | R10 | Workspace/Agents restructuring            |       P0 | Complete; final owner policy implemented and fully verified           | [`dev/workspace-agents-restructuring-goal.md`](./dev/workspace-agents-restructuring-goal.md), [`dev/workspace-agents-wa0-route-contract.md`](./dev/workspace-agents-wa0-route-contract.md), [`dev/workspace-agents-wa3-handoff-evidence.md`](./dev/workspace-agents-wa3-handoff-evidence.md), [`dev/workspace-agents-wa4-dogfood-gate.md`](./dev/workspace-agents-wa4-dogfood-gate.md) |
 | R0  | Remote Agents: PWA + Packet Cloud relay   |       P1 | Preserved; paused at three Sprint-0 product decisions                 | [`dev/remoteagents/README.md`](./dev/remoteagents/README.md)                                                                                                                                                                                                                                                                                                                           |
 | R1  | Docs and planning consolidation           |       P1 | Root set overhauled 2026-07-30; ongoing maintenance                   | [`dev/README.md`](./dev/README.md)                                                                                                                                                                                                                                                                                                                                                     |
@@ -101,7 +102,7 @@ gate and unsigned-package evidence is in
 | D11 | Local-first MCP Hub       |       P2 | Source complete / environment-gated    | Run real Codex/local/SSH crash/reload/version-skew, packaged catalog/removal, offline, trust-downgrade, and reconnect smoke.                                                           |
 | D12 | Workspace/Agents surface  |       P0 | Ownership/source complete              | New attachment is retired; preserve saved-pane compatibility. Run remaining SSH/external-runtime release proof separately; interactive native popouts still wait for one-writer state. |
 | D13 | Settings authority and IA |       P1 | Six-group IA complete; authority cleanup open | Remove or enforce remaining placebo controls, make safety saves authoritative, and complete SSH/MCP/provider correctness before adding more preferences.                              |
-| D14 | Main shell and right dock |       P1 | Audit complete / decisions pending     | Decide stale Workspace inspector removal, one shared RightDock, SSH gating, one route registry, and the unreachable Editor's future.                                                   |
+| D14 | Main shell and right dock |       P1 | Decisions made 2026-07-30; implementation open | Implement in order: Workspace inspector removal, SSH gating, one route registry, then the shared RightDock including the reconnected Editor panel.                              |
 
 ## Later
 
@@ -159,8 +160,8 @@ Run the usual gates before release: `pnpm lint`, `pnpm test`, `pnpm build`,
 ## Release Path
 
 1. Preserve the completed Workspace/Agents and Settings IA contracts.
-2. Resolve the five main-shell/right-dock owner decisions, then run only the
-   approved MS1–MS4 implementation slices.
+2. Implement the five main-shell/right-dock decisions (resolved 2026-07-30)
+   through the approved MS1–MS4 implementation slices.
 3. Run the packaged local/SSH/manual Flight supervision matrices and the
    PacketCode clean-machine release matrix.
 4. Resolve the three Remote Agents Sprint-0 decisions, then split work against

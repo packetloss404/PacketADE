@@ -39,7 +39,8 @@ sign-in, Packet Cloud relay, desktop-owned providers/secrets/tools, and no
 generic remote Tauri bridge.
 
 **Sequencing note.** Workspace/Agents restructuring and the six-group Settings
-information architecture are complete. The current owner decision pass is the
+information architecture are complete. The current pass is implementing the
+five decided (2026-07-30) items from the
 [`main-shell/right-panel audit`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md).
 Remote Agents is preserved at its current Sprint-0 decision gate and resumes
 after that pass or explicit owner reprioritization. Its relay reuses the same
@@ -602,10 +603,22 @@ the normal priority scheme.
   Visual Audit (14 screenshots in `docs/reports/visual-audit-2026-07-30/`,
   reproducible via `e2e/visual-audit.spec.ts`), and the Outstanding Audits
   Ledger (64 docs swept, 218 open items, 182 still-valid, 15 critical).
-- **P0 — answer the five owner decisions (D1–D5).** Now the front of the
-  queue per the expanded report §3/§11: Workspace inspector ownership,
-  RightDock, SSH action gating, route registry, Editor reconnect-or-remove.
-  Then the UX P0 quartet + Ctrl+K guard + close-confirm.
+- **✅ Decided 2026-07-30 — the five owner decisions (D1–D5).** All five
+  resolved by the owner: D1 YES — remove the Workspace-level Agent inspector
+  (Inspector owned solely by Agents; resolves P0-1); D2 YES — one RightDock
+  controller owning width/stacking/visibility of all right-side panels
+  (resolves P0-2, helps P0-3); D3 YES — gate/disable local-only actions
+  (Preview, applied-Review, Undo, Plan handoff, diff) on SSH conversations
+  now, full remote parity later (resolves P0-4); D4 YES — single route
+  registry owning left rail, command palette, labels, hotkeys (resolves
+  UX-14/P1-9; enables creation-label fixes); D5 — RECONNECT the lightweight
+  Editor as a first-class RightDock panel (wire `editorStore.openFile`
+  production callers, protect dirty buffers; folds into D2's RightDock scope).
+- **P0 — implement the five decisions.** Sequence: D1 inspector removal first
+  (smallest), then D3 SSH gating, then D4 route registry, then D2 RightDock
+  including D5's Editor panel — mapping onto the audit's MS1–MS4 slices.
+  Attach the UX quick wins to this pass: Ctrl+K guard, close-confirm,
+  Escape-close opt-ins, and the Issues-board grid fix.
 - **P3 — sweep remaining historical Gemini references.** Comments/aliases kept
   intentionally for load-compat (`agentStore.ts`, `workspaceStore.ts`) stay;
   audit stray descriptive mentions (e.g. `src/agents/packetcode.ts`
