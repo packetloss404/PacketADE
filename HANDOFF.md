@@ -18,7 +18,7 @@ consolidated report is `docs/reports/state-of-the-ade-2026-07-30.html`
 (11 chapters, with the
 UX Ledger, Visual Audit, and Outstanding Audits Ledger).
 
-One thread is open from here:
+Both threads from that review are now closed:
 
 1. **Committed and verified.** The State of the ADE review work landed on
    `main` as
@@ -26,43 +26,88 @@ One thread is open from here:
    and `3f8aba1` (consolidated ledger expansion), all pushed; gates were green
    at each commit (pnpm build, cargo check + test 440/440, vitest 1260/1260,
    sidecar build).
-2. **The main-shell implementation pass.** The owner made all five main-shell
-   decisions on 2026-07-30; next session's work is implementing them, not
-   re-litigating them.
+2. **The main-shell implementation pass. COMPLETE.** The owner made all five
+   main-shell decisions on 2026-07-30 and all five were implemented the same
+   day, in the decided order, one commit per step with gates green at each:
+   `e7e7c27` (D1), `33708c0` (D3), `dffbe61` (D4), `93d41af` (D2+D5).
+   `pnpm build` stayed green and lint stayed at zero errors throughout, and
+   the Vitest suite grew 1260 → 1276 → 1320 → 1363 passing across 179 files.
+   Known pre-existing and not caused by this wave: one unhandled rejection in
+   `src/lib/__tests__/bootstrap.test.ts`, reproduced on a clean tree.
 
-For thread 2, start with
-[`dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md).
-The five owner decisions, all made 2026-07-30:
+The five owner decisions, all made 2026-07-30 and all implemented 2026-07-30:
 
-1. **DECIDED: YES.** Remove the unscoped Workspace-level Agent inspector;
-   Inspector is owned solely by the Agents view (resolves P0-1).
-2. **DECIDED: YES.** Build one surface-scoped `RightDock` controller owning
-   width/stacking/visibility of all right-side panels (resolves P0-2, helps
-   P0-3).
-3. **DECIDED: YES.** Gate/disable local-only actions (Preview, applied-Review,
-   Undo, Plan handoff, diff) on SSH conversations now; full remote parity
-   later (resolves P0-4).
-4. **DECIDED: YES.** One route registry owns the main rail, command palette,
-   labels, placements, and hotkeys (resolves UX-14/P1-9; enables the
-   creation-label fixes).
-5. **DECIDED: RECONNECT.** The lightweight Editor becomes a first-class
-   `RightDock` panel — wire `editorStore.openFile` production callers and
-   protect dirty buffers. In-app quick editing IS part of PacketADE's
-   positioning. This folds into decision 2's `RightDock` scope. Amended same
-   day (2026-07-30): D5's scope explicitly includes a wired Markdown viewer —
-   the reconnected Editor panel must open/preview `.md` files, resolving
-   audit finding P1-5 (Files' unwired Markdown-Preview path).
+1. **DECIDED: YES. IMPLEMENTED `e7e7c27`.** Remove the unscoped
+   Workspace-level Agent inspector; Inspector is owned solely by the Agents
+   view (resolves P0-1).
+2. **DECIDED: YES. IMPLEMENTED `93d41af`.** Build one surface-scoped
+   `RightDock` controller owning width/stacking/visibility of all right-side
+   panels (resolves P0-2, P0-3).
+3. **DECIDED: YES. IMPLEMENTED `33708c0`.** Gate/disable local-only actions
+   (Preview, applied-Review, Undo, Plan handoff, diff) on SSH conversations
+   now; full remote parity later (resolves P0-4). The same commit also fixed
+   the identical silent SSH→local conversion in the `/new` and `/review` slash
+   commands, and diff failures that had been rendering as `+0/−0`.
+4. **DECIDED: YES. IMPLEMENTED `dffbe61`.** One route registry owns the main
+   rail, command palette, labels, placements, and hotkeys (resolves
+   UX-14/P1-9; enables the creation-label fixes). Hotkeys now match the
+   physical `KeyboardEvent.code`, so the Ctrl+Shift chords work on AZERTY,
+   QWERTZ, and Dvorak layouts.
+5. **DECIDED: RECONNECT. IMPLEMENTED `93d41af`.** The lightweight Editor is
+   now a first-class `RightDock` panel — `editorStore.openFile` has production
+   callers and dirty buffers are protected. In-app quick editing IS part of
+   PacketADE's positioning. Per the same-day amendment, the panel's wired
+   Markdown viewer opens/previews `.md` files, resolving audit finding P1-5
+   (Files' unwired Markdown-Preview path). P1-7 closes with it.
 
-Implement in this order: D1 inspector removal first (smallest), then D3 SSH
-gating, then D4 route registry, then D2 `RightDock` including D5's Editor
-panel. That maps onto the audit's MS1 through MS4 sequence: correctness
-boundaries, one right dock, one navigation registry, then polish/proof.
+That delivered the audit's MS1 through MS3 slices — correctness boundaries,
+one right dock, one navigation registry. **MS4 (product polish and proof) is
+what remains** of that sequence: responsive/accessibility semantics, the
+Gitea capability and repo-switch tests, and the packaged local/SSH and
+800px-to-ultrawide visual matrix.
+
+## Start here next session
+
+The restart point is no longer the five decisions. It is the follow-up work
+they deliberately left out, in two groups.
+
+**Group A — standalone UX quick wins** (explicitly scoped out of D1–D5):
+
+- guard Ctrl+K so it does not steal keystrokes from a focused terminal;
+- confirm before closing the app when live sessions would be destroyed;
+- opt Escape-to-close into the New Flight and New Issue modals;
+- fix the Issues board grid wrap, where the sixth column ("Done") drops onto
+  a second row with a dead right half at both 1280 and 1920.
+
+**Group B — top creation-flow fixes** from the report's new Creation, Opening
+& Deletion Flows chapter (`docs/reports/state-of-the-ade-2026-07-30.html`,
+§5 — 65 findings across five flows, 124 controls inventoried):
+
+- **Critical: unconfirmed live SSH-server delete.** The Settings card's delete
+  fires immediately, and the component that does carry a confirmation
+  (`ServersView.tsx`) is unrouted dead code. Deleting a server also silently
+  breaks every workspace and flight attempt bound to it.
+- unify the two workspace-creation flows: the full `WorkspaceCreationModal`
+  requires a name, a CLI session, and a non-empty project path, while Ctrl+N
+  and the Fleet sidebar instantly create a zero-pane workspace hard-named
+  "New Session" using whatever `layoutStore.projectPath` happens to hold —
+  including the empty string the modal explicitly blocks;
+- de-duplicate the `FleetSidebar` top "+" and bottom "New session" buttons,
+  which are bound to the identical handler inside one 240px sidebar (the
+  `AgentSidebar` "New agent" pair is the same shape);
+- add workspace creation to the global "+ New" menu and the Ctrl+K command
+  palette — today the two most discoverable surfaces are the only places the
+  primary object cannot be made.
 
 ## Current product state
 
-- `main` is at `3f8aba1` (consolidated 6-month ledger expansion), on top of
-  `72b2734` (State of the ADE review: 16 verified bug fixes, Gemini CLI
-  removal, docs overhaul) — all committed and pushed 2026-07-30.
+- `main` is at `93d41af` (D2+D5 RightDock and reconnected Editor), on top of
+  `dffbe61` (D4), `33708c0` (D3), `e7e7c27` (D1), and the State of the ADE
+  review commits `3f8aba1` / `580ee80` / `72b2734` — all committed 2026-07-30.
+- The main shell now has one surface-scoped `RightDock`, one route registry
+  behind the rail/palette/labels/hotkeys, SSH-gated local-only actions, an
+  Agents-owned Inspector, and a reconnected Editor panel with a wired Markdown
+  viewer.
 - Gemini CLI is no longer a supported PTY agent. Supported PTY CLIs are Claude
   Code, Codex CLI, OpenCode, PacketCode, and plain shells; the GUI-agent picker
   keeps its eight chat rows (Anthropic subscription/API, OpenAI
@@ -168,13 +213,21 @@ All three artifacts are unsigned.
 
 ## Last verified gates
 
-The Settings/main-shell documentation commit was preceded by:
+The four main-shell implementation commits each ran the frontend gates before
+landing:
 
-- 167 Vitest files and 1,261 tests passed;
-- ESLint passed with zero errors and nine existing Fast Refresh warnings;
-- TypeScript/Vite production build passed;
-- all eight Playwright web-mode tests passed;
-- formatting and diff checks passed.
+- Vitest grew 1260 → 1276 (`e7e7c27`) → 1320 (`33708c0`, cumulative through
+  `dffbe61`) → 1363 passing across 179 files (`93d41af`);
+- ESLint passed with zero errors at every step;
+- the TypeScript/Vite production build passed at every step;
+- one pre-existing unhandled rejection in
+  `src/lib/__tests__/bootstrap.test.ts` reproduces on a clean tree and is not
+  attributable to this wave.
+
+The preceding Settings/main-shell documentation commit was verified against
+167 Vitest files and 1,261 tests, zero ESLint errors with nine existing Fast
+Refresh warnings, a passing production build, all eight Playwright web-mode
+tests, and passing formatting/diff checks.
 
 The subsequent full Tauri build completed the optimized Rust release compile
 and produced both Windows installer formats. Its known non-failing output was
@@ -200,16 +253,24 @@ limited to existing `ts-rs` serde-alias and Vite chunk/dynamic-import warnings.
 2. [`ROADMAP.md`](./ROADMAP.md) for current direction.
 3. [`backlog.md`](./backlog.md) for open work.
 4. [`dev/README.md`](./dev/README.md) for the planning index.
-5. The main-shell audit for the decided (2026-07-30) implementation scope.
+5. The main-shell audit for what the 2026-07-30 implementation closed and what
+   is still open in it.
 6. The Settings decision report for authority cleanup.
 7. The Remote Agents plan only after the current local-shell decisions.
 
 ## Suggested first prompt
 
-> Read `HANDOFF.md`. First, run the quality gates over the uncommitted
-> State of the ADE review working tree (Gemini CLI removal + docs overhaul)
-> and commit it
-> if they pass. Then read the main-shell navigation/right-panel audit and begin
-> implementing the five decided (2026-07-30) items in order: D1 Workspace
-> inspector removal, D3 SSH gating, D4 route registry, then D2 RightDock
-> including the D5 Editor panel.
+> Read `HANDOFF.md`. The five decided main-shell items are implemented and
+> committed (`e7e7c27`, `33708c0`, `dffbe61`, `93d41af`) — do not re-open
+> them. Pick up the follow-ups instead. Start with the deletion critical: the
+> live SSH-server delete in Settings has no confirmation while the component
+> that has one (`ServersView.tsx`) is unrouted dead code. Then do the
+> standalone UX quick wins (Ctrl+K terminal guard, close-confirm on app exit,
+> Escape-close on the New Flight/New Issue modals, Issues-board grid wrap) and
+> the top creation-flow fixes from §5 of
+> `docs/reports/state-of-the-ade-2026-07-30.html`: unify the two
+> workspace-creation flows and stop the empty-`projectPath` instant create,
+> de-duplicate the FleetSidebar top/bottom "New session" buttons, and add
+> workspace creation to the "+ New" menu and the Ctrl+K palette. Keep gates
+> green at each step (`pnpm build`, `pnpm lint`, Vitest, currently 1363
+> passing across 179 files).

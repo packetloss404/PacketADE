@@ -39,9 +39,11 @@ sign-in, Packet Cloud relay, desktop-owned providers/secrets/tools, and no
 generic remote Tauri bridge.
 
 **Sequencing note.** Workspace/Agents restructuring and the six-group Settings
-information architecture are complete. The current pass is implementing the
-five decided (2026-07-30) items from the
-[`main-shell/right-panel audit`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md).
+information architecture are complete. The five decided (2026-07-30) items
+from the
+[`main-shell/right-panel audit`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md)
+were implemented the same day; the current pass is their follow-ups (UX quick
+wins and the creation/opening/deletion flow fixes).
 Remote Agents is preserved at its current Sprint-0 decision gate and resumes
 after that pass or explicit owner reprioritization. Its relay reuses the same
 `api-agent:*` event contract that conversations already emit, so the "stream
@@ -499,24 +501,18 @@ Canonical review:
 This was an independent read-only audit; no finding below is silently approved
 for implementation.
 
-- **P0 — remove or explicitly scope the Workspace Agent inspector.** `App`
-  currently mounts an inspector beside Workspace for any globally selected
-  Agent conversation. The final CLI-first Workspace boundary favors keeping
-  Inspector in Agents; legacy panes would require an explicit focused-pane
-  exception.
-- **P0 — establish one right-dock owner.** Editor, Git, and Agent Inspector can
-  compete for fixed width and collapse the main canvas at the supported 800px
-  minimum. Decide one surface-scoped dock with mutual exclusion, shared resize,
-  width clamping, and automatic collapse.
-- **P0 — repair Preview and SSH boundaries.** Preview open/tab/target state is
-  global and not conversation-scoped; Hide/Close disagree; Files does not wire
-  its promised Markdown preview; Preview and applied Review expose local-only
-  disk operations for SSH conversations. Disable unsupported remote actions
-  until a single remote-aware file contract exists.
-- **P1 — unify main navigation metadata.** Left Rail, command palette, Status
-  Strip, hotkeys, and modules maintain separate route identities. Add one view
-  registry, make Dictation canonical, expose missing Agents/Flights/Cost
-  destinations, and make the global New menu truthful.
+- **✅ Resolved 2026-07-30 — the three P0s.** The Workspace-level Agent
+  inspector is removed (`e7e7c27`), one surface-scoped `RightDock` owns every
+  right-side panel with conversation-scoped Preview and authoritative
+  Hide/Close plus the wired Markdown viewer (`93d41af`), and local-only
+  actions are gated on SSH conversations (`33708c0`). See the shipped entry in
+  the 2026-07-30 State of the ADE section below.
+- **P1 — make the global New menu truthful.** The route registry landed in
+  `dffbe61` and unified Left Rail, command palette, Status Strip labels,
+  hotkeys, and Dictation's route identity, so the remaining piece is the
+  creation surface itself: the "+ New" menu still offers only Flight and
+  Issue, and the Ctrl+K palette still offers no creation at all. Tracked with
+  the creation-flow follow-ups.
 - **P1 — correct shell project and Git-host context.** SSH can show or mutate a
   stale local project/branch; Gitea capability flags do not gate every
   GitHub-only action; repo/host switches can retain old PR detail. Use typed
@@ -603,6 +599,16 @@ the normal priority scheme.
   Visual Audit (14 screenshots in `docs/reports/visual-audit-2026-07-30/`,
   reproducible via `e2e/visual-audit.spec.ts`), and the Outstanding Audits
   Ledger (64 docs swept, 218 open items, 182 still-valid, 15 critical).
+- **✅ Shipped — creation/opening/deletion flows review.** A five-reviewer
+  fleet walked every creation, opening, and deletion path and inventoried
+  every button on every list surface: **65 findings across five flows**
+  (workspace creation 12, sessions/panes 11, agent conversations 16, deletion
+  13 including the review's only Critical, and a global button-redundancy
+  audit 13) with **124 controls inventoried** (15 + 21 + 20 + 33 + 35). It is
+  the Creation, Opening & Deletion Flows chapter (§5) of
+  `docs/reports/state-of-the-ade-2026-07-30.html`. Nothing in it was fixed by
+  the bug loop or the five decision implementations; its top items are carried
+  as the P0 main-shell follow-ups above.
 - **✅ Decided 2026-07-30 — the five owner decisions (D1–D5).** All five
   resolved by the owner: D1 YES — remove the Workspace-level Agent inspector
   (Inspector owned solely by Agents; resolves P0-1); D2 YES — one RightDock
@@ -614,12 +620,42 @@ the normal priority scheme.
   UX-14/P1-9; enables creation-label fixes); D5 — RECONNECT the lightweight
   Editor as a first-class RightDock panel (wire `editorStore.openFile`
   production callers, protect dirty buffers; folds into D2's RightDock scope).
-- **P0 — implement the five decisions.** Sequence: D1 inspector removal first
-  (smallest), then D3 SSH gating, then D4 route registry, then D2 RightDock
-  including D5's Editor panel (incl. wired MD viewer, resolves P1-5) — mapping
-  onto the audit's MS1–MS4 slices.
-  Attach the UX quick wins to this pass: Ctrl+K guard, close-confirm,
-  Escape-close opt-ins, and the Issues-board grid fix.
+- **✅ Shipped 2026-07-30 — the five decisions are implemented.** Four commits
+  in the decided order: `e7e7c27` (D1 — remove the Workspace-level Agent
+  inspector; resolves P0-1), `33708c0` (D3 — gate local-only actions on SSH
+  conversations; resolves P0-4, and also fixes the same silent SSH→local
+  conversion in the `/new` and `/review` slash commands plus diff failures
+  that rendered as `+0/−0`), `dffbe61` (D4 — single route registry owning
+  rail, palette, labels, placements, hotkeys; resolves P1-9/UX-14, with
+  hotkeys now matching the physical `KeyboardEvent.code` so the Ctrl+Shift
+  chords work on AZERTY/QWERTZ/Dvorak), and `93d41af` (D2 + D5 — one
+  surface-scoped `RightDock` controller plus the reconnected Editor panel with
+  a wired Markdown viewer; resolves P0-2, P0-3, P1-5/UX-10, P1-7). This
+  delivered the audit's MS1–MS3 slices. Gates green at each step: `pnpm build`
+  passing, ESLint at zero errors, Vitest 1260 → 1276 → 1320 → 1363 passing
+  across 179 files. Known pre-existing and not caused by this wave: one
+  unhandled rejection in `src/lib/__tests__/bootstrap.test.ts`, reproduced on
+  a clean tree.
+- **P0 — main-shell follow-ups.** What the five decisions deliberately left
+  out. Standalone UX quick wins: guard Ctrl+K so it does not steal keystrokes
+  from a focused terminal; confirm before closing the app when live sessions
+  would be destroyed; opt Escape-to-close into the New Flight and New Issue
+  modals; fix the Issues-board grid wrap where the sixth column drops onto a
+  second row with a dead right half. Then the top creation-flow fixes from the
+  report's Creation, Opening & Deletion Flows chapter
+  (`docs/reports/state-of-the-ade-2026-07-30.html`, §5): **the deletion
+  critical first** — live SSH-server delete has no confirmation while the
+  component that carries one (`ServersView.tsx`) is unrouted dead code, and
+  deleting a server silently breaks every workspace and flight attempt bound
+  to it; then unify the two workspace-creation flows and stop the
+  empty-`projectPath` instant create; de-duplicate the `FleetSidebar` top "+"
+  and bottom "New session" buttons bound to the identical handler; and add
+  workspace creation to the global "+ New" menu and the Ctrl+K command
+  palette. MS4 (responsive/accessibility semantics, Gitea capability and
+  repo-switch tests, packaged local/SSH and 800px-to-ultrawide visual matrix)
+  and the two unaddressed MS1 items (Running Agents / Side Chat cancellation
+  acknowledgment, clearing repo/PR detail across repo and host switches)
+  remain open alongside these.
 - **P3 — sweep remaining historical Gemini references.** Comments/aliases kept
   intentionally for load-compat (`agentStore.ts`, `workspaceStore.ts`) stay;
   audit stray descriptive mentions (e.g. `src/agents/packetcode.ts`

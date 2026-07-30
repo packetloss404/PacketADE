@@ -9,6 +9,35 @@ task list.
 
 ## [Unreleased]
 
+### Changed — main shell and right-dock ownership (2026-07-30)
+
+- Added one surface-scoped `RightDock` controller that owns the width,
+  stacking, and visibility of every right-side panel. Inspector, Git, and
+  Editor are mutually exclusive owners behind a single resizer with
+  available-width clamping and automatic collapse below a minimum center
+  width, so they can no longer collapse the main canvas at the supported 800px
+  minimum. Preview state is conversation-scoped, and Hide/Close are
+  authoritative rather than disagreeing with the visible tab.
+- Added a single route registry that owns the left rail, command palette,
+  Status Strip labels, placements, and hotkeys. Dictation collapses to one
+  route identity, and the previously missing Agents, Flight Deck, and Costs
+  destinations are reachable from the palette. Hotkeys now match the physical
+  `KeyboardEvent.code`, so the Ctrl+Shift chords work on AZERTY, QWERTZ, and
+  Dvorak layouts.
+- Gated local-only actions — Preview, applied Review, Undo, Plan handoff, and
+  diff — on SSH conversations instead of calling local filesystem operations
+  for a remote workspace. The `/new` and `/review` slash commands no longer
+  silently convert an SSH conversation to local, and diff failures surface
+  instead of rendering as `+0/−0`.
+- Inspector is owned solely by the Agents view. The App-level Workspace
+  inspector, which mounted beside a CLI-first Workspace for any globally
+  selected Agent conversation, is removed.
+- Reconnected the lightweight Editor as a first-class `RightDock` panel:
+  `editorStore.openFile` has production callers, dirty buffers are protected
+  against pane/tab/Workspace changes, and the panel's wired Markdown viewer
+  fulfils the Files → Preview path that Files had been advertising without
+  wiring.
+
 ### Removed — Gemini CLI (2026-07-30)
 
 - Removed Gemini CLI as a supported PTY agent: the agent definition, statusline
