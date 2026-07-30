@@ -135,18 +135,19 @@ runbooks and record evidence when the required environment exists.
 
 ## Latest Windows build
 
-On 2026-07-30, `pnpm tauri build` succeeded from functional commit `a7feb4a`.
-It compiled PacketADE `0.10.2`, restored sidecar development dependencies after
-the production prune, and left the repository clean.
+On 2026-07-30, `pnpm tauri build` succeeded from the midway-review commit
+`72b2734` (16 verified bug fixes, Gemini CLI removal, docs overhaul). Sidecar
+development dependencies were restored after the production prune and the
+repository was left clean.
 
 This is a post-tag local development rebuild that still uses version `0.10.2`;
 it is not a newly tagged public release.
 
 | Artifact | Size | SHA-256 |
 | --- | ---: | --- |
-| `packetade.exe` | 42.65 MiB | `23E954FDF0C10A1CA2E5CF2198334CB6D268B1925EA155F83EC1C8FCC91FBA1A` |
-| `PacketADE_0.10.2_x64-setup.exe` | 84.47 MiB | `E4A1119396EF6E7E9BF4511F8BAFC3E2B076FF37011C8C36101870B959A2BDD6` |
-| `PacketADE_0.10.2_x64_en-US.msi` | 131.90 MiB | `AB307CFE7BD1FE0149C97FC047F08CB21A61AFBA9611444B98FE84F0C7E30E5D` |
+| `packetade.exe` | 42.63 MiB | `D28FFCD355933F280A4C348DB26C77C53D61C9983B07858DBFA79DDD0E84E7E8` |
+| `PacketADE_0.10.2_x64-setup.exe` | 84.47 MiB | `F1B19D36B84338FC495EC1591EC3E66437A118C87617A4EFC27239C68B3BF0E7` |
+| `PacketADE_0.10.2_x64_en-US.msi` | 131.90 MiB | `A79B995A927AF4D91E74BD682122C32ED27CF8CBAE99779312EBF11D654A09C8` |
 
 Local paths:
 
