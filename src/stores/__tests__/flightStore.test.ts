@@ -42,6 +42,8 @@ function makePersistedState(
     memoryEvents: [],
     memoryPatterns: [],
     servers: [],
+    cliAccounts: [],
+    cliAccountDefaults: {},
   };
 }
 

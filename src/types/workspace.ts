@@ -22,6 +22,15 @@ export interface WorkspacePane {
    * terminal pane.
    */
   conversationId?: string;
+  /**
+   * Multi-account CLI support: the `CliAccount.id` this pane launches under.
+   * Absent ⇒ ambient login — exactly today's behaviour, and what an old cache
+   * or an old binary that never wrote the field degrades to. Only meaningful
+   * for the `claude-code` / `codex` slots; the runtime translates it into
+   * `CLAUDE_CONFIG_DIR` / `CODEX_HOME`. Same inert `#[serde(default)]`
+   * round-trip pattern as `kind`/`conversationId`.
+   */
+  accountId?: string;
 }
 
 export interface Workspace {

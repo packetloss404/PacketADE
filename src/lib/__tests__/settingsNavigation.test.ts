@@ -15,6 +15,7 @@ describe("Settings navigation", () => {
       "general",
       "workspace",
       "cli-clients",
+      "cli-accounts",
       "servers",
       "project-rules",
       "agents",

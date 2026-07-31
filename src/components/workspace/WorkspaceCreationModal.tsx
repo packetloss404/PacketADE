@@ -18,6 +18,8 @@ import { parseGithubRemote } from "@/lib/git";
 import { storageKey } from "@/lib/brand";
 import { AdvancedAccordion } from "@/components/agents/composer/AdvancedAccordion";
 import { getPreferredWorkspaceCli } from "@/lib/workspaceCliDefaults";
+import { isAccountAwareSlot, resolveAccountId } from "@/lib/sessionAccountDefaults";
+import { SessionAccountPicker } from "@/components/workspace/SessionAccountPicker";
 import type { WorkspaceAgentSlot } from "@/types/workspace";
 
 type LocationMode = "local" | "remote";
@@ -104,6 +106,16 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
     () => useWorkspaceStore.getState().defaultBypassPermissions,
   );
   const [prompt, setPrompt] = useState("");
+  /**
+   * Multi-account CLI support: explicit per-slot account choices. A slot absent
+   * from this map has NOT been touched — `SessionAccountPicker` then displays
+   * (and `createWorkspace` applies) the sticky default resolved for the CURRENT
+   * project path. Cleared whenever that path changes, which is what makes the
+   * pre-fill re-resolve while the modal is open.
+   */
+  const [accountSelections, setAccountSelections] = useState<
+    Partial<Record<WorkspaceAgentSlot, string | null>>
+  >({});
   const projectPath = useLayoutStore((s) => s.projectPath);
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
@@ -313,6 +325,39 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
     return computeGridLayout(selected.size);
   }, [selected.size]);
 
+  // The path the workspace will actually be created at — local folder, or the
+  // remote path for an SSH workspace. Sticky account defaults key off this, so
+  // it is hoisted out of `handleCreate` and shared with the account pickers.
+  const effectivePath = locationMode === "remote" ? remoteProjectPath.trim() : selectedProjectPath;
+
+  // Multi-account CLI support: the project path can change while the modal is
+  // open (folder picker, recent-path dropdown, Local↔Remote, remote path edit).
+  // Drop explicit picks so every account selector re-resolves the sticky
+  // default for the NEW path instead of carrying the old project's account.
+  useEffect(() => {
+    setAccountSelections({});
+  }, [effectivePath]);
+
+  // Slots that can carry an account, in the order they appear below.
+  const accountAwareSlots = useMemo(
+    () => AGENT_SLOTS.filter((slot) => selected.has(slot.id) && isAccountAwareSlot(slot.id)),
+    [selected],
+  );
+
+  // Collapsed-Advanced summary: surface a non-default account so it is never
+  // silently applied from behind a closed accordion.
+  const accountSummary = useMemo(() => {
+    const labels = accountAwareSlots
+      .map((slot) => {
+        const explicit = slot.id in accountSelections ? accountSelections[slot.id] : undefined;
+        const resolved = explicit !== undefined ? explicit : resolveAccountId(effectivePath, slot.id);
+        return resolved ? slot.label : null;
+      })
+      .filter((label): label is string => label !== null);
+    if (labels.length === 0) return null;
+    return `${labels.length} account${labels.length > 1 ? "s" : ""}`;
+  }, [accountAwareSlots, accountSelections, effectivePath]);
+
   // CLI sessions with model/permission configuration (not a plain shell).
   const selectedCliAgents = AGENT_SLOTS.filter((s) => selected.has(s.id) && s.cliId);
 
@@ -406,11 +451,6 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
 
     const finalPrompt = prompt.trim();
 
-    // For remote workspaces, the "root path" we store is the remote path
-    // (workspaceStore will use it as `projectPath`). For local workspaces
-    // we keep using the user-selected local directory.
-    const effectivePath = locationMode === "remote" ? remoteProjectPath.trim() : selectedProjectPath;
-
     // S6: if the user asked to clone a repo into the remote path, do it first.
     // A clone failure aborts creation (we don't want a workspace pointing at a
     // half-cloned / empty directory). Reviewer fix: only clone when the affordance
@@ -448,6 +488,11 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
       // so downstream surfaces (sidebar badge, GitHub pane) can render
       // the binding without re-probing.
       githubRepo: locationMode === "local" ? detectedGithubRepo ?? undefined : undefined,
+      // Multi-account CLI support: only slots the user actually touched travel
+      // as explicit choices (and become the project's sticky default).
+      // Untouched slots are absent, so `createWorkspace` resolves the sticky
+      // default itself — the same path the modal-free call sites take.
+      accountIds: accountSelections,
     });
 
     useAppStore.getState().setActiveView("workspace");
@@ -649,6 +694,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
             { label: locationMode === "remote" ? "Remote" : null },
             { label: bypassPermissions ? "Bypass perms" : null },
             { label: nOverrides > 0 ? `${nOverrides} model override${nOverrides > 1 ? "s" : ""}` : null },
+            { label: accountSummary },
           ]}
         >
           <div className="flex w-full flex-col gap-4">
@@ -928,6 +974,25 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                 )}
               </div>
             )}
+
+            {/* Multi-account CLI support: account per selected claude-code /
+                codex session. Pre-filled from the sticky default for the
+                CURRENT project path and re-resolved when that path changes.
+                Renders nothing until the user registers an account for that
+                CLI, so a zero-config install sees the modal it saw before. */}
+            {accountAwareSlots.map((slot) => (
+              <SessionAccountPicker
+                key={`account-${slot.id}`}
+                cli={slot.id as "claude-code" | "codex"}
+                projectPath={effectivePath}
+                value={slot.id in accountSelections ? accountSelections[slot.id] : undefined}
+                onChange={(accountId) =>
+                  setAccountSelections((prev) => ({ ...prev, [slot.id]: accountId }))
+                }
+                variant="field"
+                label={`${slot.label} Account`}
+              />
+            ))}
 
             {/* Model selection per selected coding CLI. */}
             {selectedCliAgents.map((slot) => {

@@ -6,6 +6,7 @@ pub mod api_agent;
 pub mod api_keys;
 pub mod auth_watcher;
 pub mod checkpoints;
+pub mod cli_account;
 pub mod code_quality;
 // v0.8.8 quality autofix
 pub mod code_quality_autofix;

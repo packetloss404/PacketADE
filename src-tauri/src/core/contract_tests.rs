@@ -104,6 +104,8 @@ mod tests {
             memory_events: vec![],
             memory_patterns: vec![],
             servers: vec![],
+            cli_accounts: vec![],
+            cli_account_defaults: Default::default(),
             flight_approvals: vec![],
         }
     }

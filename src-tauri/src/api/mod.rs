@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -76,6 +76,12 @@ pub struct WorkspacePaneDto {
     #[serde(default)]
     #[ts(optional)]
     pub conversation_id: Option<String>,
+    /// Multi-account CLI support: the `CliAccount.id` this pane launches
+    /// under. Absent ⇒ ambient login (today's behaviour). Inert
+    /// `#[serde(default)]` mirror of core `WorkspacePane.account_id`.
+    #[serde(default)]
+    #[ts(optional)]
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -1069,6 +1075,56 @@ impl From<ServerConfigDto> for core_storage::ServerConfig {
     }
 }
 
+/// A named CLI login. See `core::storage::CliAccount` — the record holds no
+/// secrets, only the config directory the CLI is pointed at.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CliAccountDto {
+    pub id: String,
+    pub label: String,
+    /// "claude-code" | "codex"
+    pub cli: String,
+    pub config_dir: String,
+    #[serde(default)]
+    pub email: Option<String>,
+    /// Millisecond epoch. Typed as `number` (not ts-rs' default `bigint`)
+    /// because these are `Date.now()` values, which are exactly
+    /// representable as f64 and are far friendlier to the store code.
+    #[ts(type = "number")]
+    pub created_at: u64,
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub last_used_at: Option<u64>,
+}
+
+impl From<core_storage::CliAccount> for CliAccountDto {
+    fn from(a: core_storage::CliAccount) -> Self {
+        Self {
+            id: a.id,
+            label: a.label,
+            cli: a.cli,
+            config_dir: a.config_dir,
+            email: a.email,
+            created_at: a.created_at,
+            last_used_at: a.last_used_at,
+        }
+    }
+}
+
+impl From<CliAccountDto> for core_storage::CliAccount {
+    fn from(a: CliAccountDto) -> Self {
+        Self {
+            id: a.id,
+            label: a.label,
+            cli: a.cli,
+            config_dir: a.config_dir,
+            email: a.email,
+            created_at: a.created_at,
+            last_used_at: a.last_used_at,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PersistedStateDto {
@@ -1090,6 +1146,12 @@ pub struct PersistedStateDto {
     pub memory_patterns: Vec<serde_json::Value>,
     #[serde(default)]
     pub servers: Vec<ServerConfigDto>,
+    #[serde(default)]
+    pub cli_accounts: Vec<CliAccountDto>,
+    /// `project path -> cli -> account id`. See
+    /// `core::storage::PersistedState::cli_account_defaults`.
+    #[serde(default)]
+    pub cli_account_defaults: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 impl From<core_workspace::GridPosition> for GridPositionDto {
@@ -1172,6 +1234,7 @@ impl From<core_workspace::WorkspacePane> for WorkspacePaneDto {
             override_args: value.override_args,
             kind: value.kind,
             conversation_id: value.conversation_id,
+            account_id: value.account_id,
         }
     }
 }
@@ -1193,6 +1256,7 @@ impl From<WorkspacePaneDto> for core_workspace::WorkspacePane {
             override_args: value.override_args,
             kind: value.kind,
             conversation_id: value.conversation_id,
+            account_id: value.account_id,
         }
     }
 }
@@ -2640,6 +2704,8 @@ impl From<core_storage::PersistedState> for PersistedStateDto {
             memory_events: value.memory_events,
             memory_patterns: value.memory_patterns,
             servers: value.servers.into_iter().map(Into::into).collect(),
+            cli_accounts: value.cli_accounts.into_iter().map(Into::into).collect(),
+            cli_account_defaults: value.cli_account_defaults,
         }
     }
 }
@@ -2658,6 +2724,8 @@ impl From<PersistedStateDto> for core_storage::PersistedState {
             memory_events: value.memory_events,
             memory_patterns: value.memory_patterns,
             servers: value.servers.into_iter().map(Into::into).collect(),
+            cli_accounts: value.cli_accounts.into_iter().map(Into::into).collect(),
+            cli_account_defaults: value.cli_account_defaults,
             // Flight approvals only travel as part of the planner state
             // surface; the legacy DTO→core round-trip used by the
             // settings save path does not carry them, so we drop them
@@ -2695,6 +2763,7 @@ pub fn generated_typescript_schema() -> String {
     push_decl!(GithubRepoDto);
     push_decl!(WorkspaceDto);
     push_decl!(ServerConfigDto);
+    push_decl!(CliAccountDto);
     push_decl!(PersistedUiStateDto);
     push_decl!(OrchestratorSettingsDto);
     push_decl!(AgentCapabilityDto);
@@ -2857,6 +2926,8 @@ mod tests {
             memory_events: Vec::new(),
             memory_patterns: Vec::new(),
             servers: Vec::new(),
+            cli_accounts: Vec::new(),
+            cli_account_defaults: BTreeMap::new(),
         };
 
         let value = serde_json::to_value(dto).unwrap();

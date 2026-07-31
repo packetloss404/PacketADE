@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useShallow } from "zustand/react/shallow";
 import {
   Check,
   CircleAlert,
@@ -9,11 +9,8 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
-import {
-  getProviderAuthStatus,
-  signOutProvider,
-  type ProviderAuthStatus,
-} from "@/lib/tauri";
+import { signOutProvider, type ProviderAuthStatus } from "@/lib/tauri";
+import { authStatusKey, useAuthStatusStore } from "@/stores/authStatusStore";
 
 type ProviderId = "claude-oauth" | "openai-codex";
 
@@ -62,59 +59,37 @@ type StatusEntry = ProviderAuthStatus | "loading";
  * auth watcher emits the change event so the badge updates).
  */
 export function SubscriptionsCard() {
-  const [status, setStatus] = useState<Record<ProviderId, StatusEntry>>({
-    "claude-oauth": "loading",
-    "openai-codex": "loading",
-  });
   const [signingOut, setSigningOut] = useState<ProviderId | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const fetchStatus = useAuthStatusStore((s) => s.fetchStatus);
+  const ensureListener = useAuthStatusStore((s) => s.ensureListener);
+
+  // This card is the ambient/default login surface — signing in and out here
+  // targets `~/.claude` / `~/.codex`, so it reads the account-less slice of
+  // the shared cache.
+  const status = useAuthStatusStore(
+    useShallow((s) => {
+      const out = {} as Record<ProviderId, StatusEntry>;
+      for (const p of PROVIDERS) {
+        out[p.id] = s.entries[authStatusKey(p.id)]?.value ?? "loading";
+      }
+      return out;
+    }),
+  );
+
   const refresh = useCallback(() => {
-    for (const p of PROVIDERS) {
-      setStatus((prev) => ({ ...prev, [p.id]: "loading" }));
-      getProviderAuthStatus(p.id)
-        .then((res) => {
-          setStatus((prev) => ({ ...prev, [p.id]: res }));
-        })
-        .catch((err) => {
-          console.warn(`getProviderAuthStatus(${p.id}) failed`, err);
-          setStatus((prev) => ({
-            ...prev,
-            [p.id]: { status: "service_down", hint: "Status unavailable" },
-          }));
-        });
-    }
-  }, []);
+    for (const p of PROVIDERS) void fetchStatus(p.id, null, { force: true });
+  }, [fetchStatus]);
 
-  // Initial probe on mount.
+  // Initial probe on mount + live updates from the auth watcher
+  // (~/.claude, ~/.codex). Both are shared with every other consumer of the
+  // store, so opening Settings while conversation tiles are mounted no
+  // longer re-probes or re-subscribes.
   useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  // Live updates from the auth watcher (~/.claude, ~/.codex).
-  useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
-    let cancelled = false;
-    listen<{ provider: string; status: ProviderAuthStatus }>(
-      "provider-auth:changed",
-      (event) => {
-        const { provider, status: next } = event.payload;
-        if (provider !== "claude-oauth" && provider !== "openai-codex") return;
-        setStatus((prev) => ({ ...prev, [provider as ProviderId]: next }));
-      },
-    )
-      .then((fn) => {
-        if (cancelled) fn();
-        else unlisten = fn;
-      })
-      .catch((err) => {
-        console.warn("listen(provider-auth:changed) failed", err);
-      });
-    return () => {
-      cancelled = true;
-      if (unlisten) unlisten();
-    };
-  }, []);
+    ensureListener();
+    for (const p of PROVIDERS) void fetchStatus(p.id);
+  }, [ensureListener, fetchStatus]);
 
   function handleSignIn(p: ProviderEntry) {
     window.dispatchEvent(new CustomEvent(p.loginEvent));
@@ -259,6 +234,10 @@ function StatusBadge({ entry }: { entry: StatusEntry }) {
     },
     coming_soon: {
       label: "Coming soon",
+      className: "bg-bg-elevated text-text-muted",
+    },
+    unknown: {
+      label: "Unverifiable",
       className: "bg-bg-elevated text-text-muted",
     },
   };

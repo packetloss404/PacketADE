@@ -1,6 +1,8 @@
+use std::collections::BTreeMap;
+
 use crate::api::{
-    AgentConfigDto, FlightDto, OrchestratorSettingsDto, PersistedStateDto, PersistedUiStateDto,
-    ServerConfigDto, WorkspaceDto,
+    AgentConfigDto, CliAccountDto, FlightDto, OrchestratorSettingsDto, PersistedStateDto,
+    PersistedUiStateDto, ServerConfigDto, WorkspaceDto,
 };
 use crate::core::flight::Issue;
 use crate::core::orchestrator::OrchestratorSettings;
@@ -83,4 +85,19 @@ pub fn save_memory_slice(
 #[tauri::command]
 pub fn save_servers_slice(servers: Vec<ServerConfigDto>) -> Result<(), String> {
     storage::save_servers(servers.into_iter().map(Into::into).collect())
+}
+
+/// Persist the CLI-account slice (records + sticky per-project defaults).
+///
+/// Mirrors [`save_servers_slice`]: the frontend store owns the list and
+/// re-sends the whole slice on every mutation, so the backend never has to
+/// merge. `defaults` maps `project path -> cli -> account id`; entries whose
+/// account no longer exists are the store's responsibility to prune before
+/// calling.
+#[tauri::command]
+pub fn save_cli_accounts_slice(
+    accounts: Vec<CliAccountDto>,
+    defaults: BTreeMap<String, BTreeMap<String, String>>,
+) -> Result<(), String> {
+    storage::save_cli_accounts(accounts.into_iter().map(Into::into).collect(), defaults)
 }

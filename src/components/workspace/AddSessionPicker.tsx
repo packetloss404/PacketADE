@@ -7,6 +7,8 @@ import { useAppStore } from "@/stores/appStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { useServerStore } from "@/stores/serverStore";
+import { isAccountAwareSlot } from "@/lib/sessionAccountDefaults";
+import { SessionAccountPicker } from "@/components/workspace/SessionAccountPicker";
 import type { Workspace, WorkspaceAgentSlot } from "@/types/workspace";
 
 interface AddSessionPickerProps {
@@ -94,6 +96,16 @@ function PickerContent({
   onOpenTemplates,
 }: PickerContentProps) {
   const [filter, setFilter] = useState("");
+  /**
+   * Multi-account CLI support: per-row explicit account choices. A slot absent
+   * from this map has NOT been touched, so clicking its row stays the one-click
+   * fast path — `addPane` resolves the sticky per-project default itself. A
+   * present entry (an id, or `null` for the ambient login) is passed through as
+   * an explicit choice and becomes the project's new sticky default.
+   */
+  const [accountChoices, setAccountChoices] = useState<
+    Partial<Record<WorkspaceAgentSlot, string | null>>
+  >({});
   const agents = useAgentStore((state) => state.agents);
   const servers = useServerStore((state) => state.servers);
   const addPane = useWorkspaceStore((state) => state.addPane);
@@ -125,7 +137,15 @@ function PickerContent({
 
   const pickSession = (slot: WorkspaceAgentSlot) => {
     if (!isInstalled(slot)) return;
-    addPane(workspace.id, slot);
+    // One-click fast path: when the user never touched the account chip we pass
+    // NO `accountId` at all, and `addPane` resolves the sticky per-project
+    // default. Only a deliberate switch travels as an explicit choice.
+    const touched = slot in accountChoices;
+    addPane(
+      workspace.id,
+      slot,
+      touched ? { accountId: accountChoices[slot] ?? null } : undefined,
+    );
     onClose();
   };
 
@@ -191,6 +211,25 @@ function PickerContent({
                   </span>
                 )}
               </button>
+
+              {/* Multi-account CLI support: claude-code / codex only. Renders
+                  nothing until the user registers an account, so the row is
+                  untouched on a zero-config install. Switching here does NOT
+                  add the pane — the row click still does, now with the chosen
+                  account. */}
+              {installed && isAccountAwareSlot(entry.slot) && (
+                <SessionAccountPicker
+                  cli={entry.slot}
+                  projectPath={workspace.projectPath}
+                  value={
+                    entry.slot in accountChoices ? accountChoices[entry.slot] : undefined
+                  }
+                  onChange={(accountId) =>
+                    setAccountChoices((prev) => ({ ...prev, [entry.slot]: accountId }))
+                  }
+                  variant="chip"
+                />
+              )}
 
               {!installed && entry.slot === "packetcode" && (
                 <button

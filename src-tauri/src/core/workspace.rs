@@ -38,6 +38,14 @@ pub struct WorkspacePane {
     /// Set iff `kind == Some("conversation")` — the owning conversation id.
     #[serde(default)]
     pub conversation_id: Option<String>,
+    /// Multi-account CLI support: the `CliAccount.id` this pane launches under,
+    /// or `None` ⇒ ambient login (today's behaviour, and what an old binary
+    /// that never wrote this field degrades to). Only meaningful for the
+    /// `claude-code` / `codex` slots; the runtime translates it into
+    /// `CLAUDE_CONFIG_DIR` / `CODEX_HOME`. Precedent: `task_id`/`flight_id`
+    /// above — an inert `#[serde(default)]` mirror.
+    #[serde(default)]
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,6 +106,7 @@ mod tests {
             override_args: None,
             kind: Some("conversation".to_string()),
             conversation_id: Some("conv-123".to_string()),
+            account_id: None,
         }
     }
 
@@ -127,6 +136,32 @@ mod tests {
         assert_eq!(pane.agent_id, "terminal");
         assert!(pane.kind.is_none());
         assert!(pane.conversation_id.is_none());
+        // Multi-account: absent ⇒ ambient login, exactly today's behaviour.
+        assert!(pane.account_id.is_none());
+    }
+
+    #[test]
+    fn pane_account_id_round_trips() {
+        let pane = WorkspacePane {
+            id: "pane-cli".to_string(),
+            agent_id: "claude-code".to_string(),
+            session_id: None,
+            grid_position: GridPosition { row: 0, col: 0 },
+            accent_color: None,
+            pinned_commands: None,
+            task_id: None,
+            flight_id: None,
+            agent_config_id: None,
+            initial_prompt: None,
+            override_command: None,
+            override_args: None,
+            kind: None,
+            conversation_id: None,
+            account_id: Some("acct-personal".to_string()),
+        };
+        let json = serde_json::to_string(&pane).unwrap();
+        let back: WorkspacePane = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.account_id.as_deref(), Some("acct-personal"));
     }
 
     fn wrapper_workspace() -> Workspace {
@@ -208,5 +243,6 @@ mod tests {
         assert_eq!(reloaded.agent_id, "terminal");
         assert!(reloaded.kind.is_none());
         assert!(reloaded.conversation_id.is_none());
+        assert!(reloaded.account_id.is_none());
     }
 }

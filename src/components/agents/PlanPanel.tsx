@@ -17,11 +17,7 @@ import {
   REMOTE_UNSUPPORTED_TOOLTIP,
 } from "@/lib/remoteConversation";
 import { parseToolInput } from "@/lib/parseToolInput";
-import {
-  getProviderAuthStatus,
-  type ProviderAuthStatus,
-} from "@/lib/tauri";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { authStatusKey, useAuthStatusStore } from "@/stores/authStatusStore";
 import type {
   AgentConversation,
   AgentPlanItem,
@@ -186,41 +182,20 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
   const isClaudeParent =
     conversation.agent === "api-claude" ||
     conversation.agent === "api-claude-oauth";
-  const [codexReady, setCodexReady] = useState(false);
   const [handingOff, setHandingOff] = useState(false);
+  const fetchAuthStatus = useAuthStatusStore((s) => s.fetchStatus);
+  const ensureAuthListener = useAuthStatusStore((s) => s.ensureListener);
+  const codexAuth = useAuthStatusStore(
+    (s) => s.entries[authStatusKey("openai-codex")]?.value,
+  );
+  const codexReady = codexAuth !== undefined && codexAuth !== "loading"
+    ? codexAuth.status === "ready"
+    : false;
   useEffect(() => {
     if (!isClaudeParent) return;
-    let cancelled = false;
-    let unlisten: UnlistenFn | undefined;
-    const refresh = () => {
-      getProviderAuthStatus("openai-codex")
-        .then((s) => {
-          if (!cancelled) setCodexReady(s.status === "ready");
-        })
-        .catch(() => {
-          if (!cancelled) setCodexReady(false);
-        });
-    };
-    refresh();
-    listen<{ provider: string; status: ProviderAuthStatus }>(
-      "provider-auth:changed",
-      (event) => {
-        if (event.payload.provider !== "openai-codex") return;
-        setCodexReady(event.payload.status.status === "ready");
-      },
-    )
-      .then((fn) => {
-        if (cancelled) fn();
-        else unlisten = fn;
-      })
-      .catch((err) =>
-        console.warn("[PlanPanel.listenSidecarStatus] subscribe failed:", err),
-      );
-    return () => {
-      cancelled = true;
-      if (unlisten) unlisten();
-    };
-  }, [isClaudeParent]);
+    ensureAuthListener();
+    void fetchAuthStatus("openai-codex");
+  }, [isClaudeParent, fetchAuthStatus, ensureAuthListener]);
 
   if (!items) return null;
 

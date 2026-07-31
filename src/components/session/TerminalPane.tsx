@@ -27,6 +27,9 @@ interface TerminalPaneProps {
   cliCommand?: string;
   cliArgs?: string[];
   env?: Record<string, string>;
+  /** Multi-account: forwarded to the default header's account chip. Callers
+   *  supplying `renderHeader` render their own chip. */
+  accountId?: string | null;
   initialPrompt?: string;
   projectPath?: string;
   issueId?: string;
@@ -44,6 +47,7 @@ export function TerminalPane({
   cliCommand = "claude",
   cliArgs,
   env,
+  accountId,
   initialPrompt,
   projectPath: paneProjectPath,
   issueId,
@@ -124,6 +128,7 @@ export function TerminalPane({
           error={error}
           showApproval={showApproval}
           cliCommand={cliCommand}
+          accountId={accountId}
           onRestart={handleRestart}
           onKill={handleKill}
           onClose={onClose}

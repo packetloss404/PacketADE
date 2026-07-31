@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AddSessionPicker } from "@/components/workspace/AddSessionPicker";
+import { useCliAccountStore } from "@/stores/cliAccountStore";
+import type { CliAccount } from "@/types/cliAccount";
 import type { Workspace } from "@/types/workspace";
 
 const addPane = vi.hoisted(() => vi.fn());
@@ -48,9 +50,19 @@ const localWorkspace: Workspace = {
   status: "active",
 };
 
+/**
+ * Multi-account CLI support: the real `cliAccountStore` is used with
+ * `setState` (which bypasses its backend sync), so these tests exercise the
+ * same resolution path the app does.
+ */
+function account(id: string, label: string, cli: CliAccount["cli"]): CliAccount {
+  return { id, label, cli, configDir: `C:\\cfg\\${id}`, createdAt: 1 };
+}
+
 describe("AddSessionPicker", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useCliAccountStore.setState({ accounts: [], stickyDefaults: {} });
     agentState.agents = [
       { id: "claude-code", installed: true },
       { id: "codex", installed: true },
@@ -90,7 +102,9 @@ describe("AddSessionPicker", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /PacketCode/ }));
 
-    expect(addPane).toHaveBeenCalledWith("ws-local", "packetcode");
+    // Multi-account: an untouched row passes NO account option at all, so
+    // `addPane` resolves the sticky per-project default itself.
+    expect(addPane).toHaveBeenCalledWith("ws-local", "packetcode", undefined);
   });
 
   it("routes missing PacketCode to its Settings recovery panel", () => {
@@ -120,5 +134,92 @@ describe("AddSessionPicker", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText("PacketCode")).toBeNull();
     expect(screen.queryByText("Claude API")).toBeNull();
+  });
+
+  describe("account affordance", () => {
+    it("shows no account chip when the user has registered no accounts", () => {
+      openPopover();
+
+      expect(screen.queryByText("Default login")).toBeNull();
+      // The one-click path is untouched on a zero-config install.
+      fireEvent.click(screen.getByRole("button", { name: "Claude Code" }));
+      expect(addPane).toHaveBeenCalledWith("ws-local", "claude-code", undefined);
+    });
+
+    it("shows the resolved sticky default on the claude-code and codex rows only", () => {
+      useCliAccountStore.setState({
+        accounts: [
+          account("acct-personal", "Personal", "claude-code"),
+          account("acct-client", "Client work", "claude-code"),
+          account("acct-codex", "Codex login", "codex"),
+        ],
+        stickyDefaults: { "/tmp/project": { "claude-code": "acct-client" } },
+      });
+
+      openPopover();
+
+      // claude-code resolves the sticky default; codex has an account but no
+      // sticky entry, so it shows the ambient caption.
+      expect(screen.getByText("Client work")).toBeInTheDocument();
+      expect(screen.getByText("Default login")).toBeInTheDocument();
+      // terminal / opencode / packetcode are unaffected — one chip per
+      // account-aware row and no more.
+      expect(screen.getAllByTitle(/click to switch before adding/i)).toHaveLength(2);
+    });
+
+    it("keeps the one-click fast path: clicking the row adds with the resolved default", () => {
+      useCliAccountStore.setState({
+        accounts: [account("acct-client", "Client work", "claude-code")],
+        stickyDefaults: { "/tmp/project": { "claude-code": "acct-client" } },
+      });
+
+      openPopover();
+      fireEvent.click(screen.getByRole("button", { name: "Claude Code" }));
+
+      // No explicit option: `addPane` re-resolves the very default the chip
+      // displayed, so the common case stays a single click.
+      expect(addPane).toHaveBeenCalledWith("ws-local", "claude-code", undefined);
+    });
+
+    it("lets the user switch account before adding, and passes it as an explicit choice", () => {
+      useCliAccountStore.setState({
+        accounts: [
+          account("acct-personal", "Personal", "claude-code"),
+          account("acct-client", "Client work", "claude-code"),
+        ],
+        stickyDefaults: { "/tmp/project": { "claude-code": "acct-client" } },
+      });
+
+      openPopover();
+
+      // Opening the chip must NOT add a pane.
+      fireEvent.click(screen.getAllByTitle(/click to switch before adding/i)[0]);
+      expect(addPane).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("option", { name: /Personal/ }));
+      expect(addPane).not.toHaveBeenCalled();
+      expect(screen.getByText("Personal")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Claude Code" }));
+      expect(addPane).toHaveBeenCalledWith("ws-local", "claude-code", {
+        accountId: "acct-personal",
+      });
+    });
+
+    it("switching to the ambient login travels as an explicit null", () => {
+      useCliAccountStore.setState({
+        accounts: [account("acct-client", "Client work", "claude-code")],
+        stickyDefaults: { "/tmp/project": { "claude-code": "acct-client" } },
+      });
+
+      openPopover();
+      fireEvent.click(screen.getAllByTitle(/click to switch before adding/i)[0]);
+      fireEvent.click(screen.getByRole("option", { name: /Default login/ }));
+      fireEvent.click(screen.getByRole("button", { name: "Claude Code" }));
+
+      expect(addPane).toHaveBeenCalledWith("ws-local", "claude-code", {
+        accountId: null,
+      });
+    });
   });
 });

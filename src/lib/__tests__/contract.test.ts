@@ -151,6 +151,8 @@ describe("TS/Rust contract tests", () => {
       memoryEvents: [],
       memoryPatterns: [],
       servers: [],
+      cliAccounts: [],
+      cliAccountDefaults: {},
     };
 
     expect(state.settings.maxParallelSessions).toBe(3);

@@ -18,7 +18,13 @@ kind?: string,
 /**
  * Set iff `kind == Some("conversation")`.
  */
-conversationId?: string, };
+conversationId?: string,
+/**
+ * Multi-account CLI support: the `CliAccount.id` this pane launches
+ * under. Absent ⇒ ambient login (today's behaviour). Inert
+ * `#[serde(default)]` mirror of core `WorkspacePane.account_id`.
+ */
+accountId?: string, };
 
 export type GithubRepoDto = { owner: string, repo: string, };
 
@@ -31,6 +37,18 @@ export type WorkspaceDto = { id: string, name: string, agents: Array<WorkspaceAg
 origin?: string, };
 
 export type ServerConfigDto = { id: string, name: string, host: string, port: number, username: string, authMethod: string, keyPath: string | null, remotePath: string | null, lastConnectedAt: bigint | null, installedAgents: Array<string>, hostFingerprint: string | null, };
+
+export type CliAccountDto = { id: string, label: string,
+/**
+ * "claude-code" | "codex"
+ */
+cli: string, configDir: string, email: string | null,
+/**
+ * Millisecond epoch. Typed as `number` (not ts-rs' default `bigint`)
+ * because these are `Date.now()` values, which are exactly
+ * representable as f64 and are far friendlier to the store code.
+ */
+createdAt: number, lastUsedAt: number | null, };
 
 export type PersistedUiStateDto = { selectedFlightId?: string, selectedView?: string, theme?: ThemeDto, };
 
@@ -204,4 +222,9 @@ publishAttemptsAsPrs: boolean,
  */
 coordinationLog: any[], };
 
-export type PersistedStateDto = { version: number, flights: Array<FlightDto>, agents: Array<AgentConfigDto>, issues: any[], settings: OrchestratorSettingsDto, ui: PersistedUiStateDto, workspaces: Array<WorkspaceDto>, memoryEvents: any[], memoryPatterns: any[], servers: Array<ServerConfigDto>, };
+export type PersistedStateDto = { version: number, flights: Array<FlightDto>, agents: Array<AgentConfigDto>, issues: any[], settings: OrchestratorSettingsDto, ui: PersistedUiStateDto, workspaces: Array<WorkspaceDto>, memoryEvents: any[], memoryPatterns: any[], servers: Array<ServerConfigDto>, cliAccounts: Array<CliAccountDto>,
+/**
+ * `project path -> cli -> account id`. See
+ * `core::storage::PersistedState::cli_account_defaults`.
+ */
+cliAccountDefaults: { [key in string]?: { [key in string]?: string } }, };

@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { AlertCircle, Clock, Loader2 } from "lucide-react";
+import { AlertCircle, Clock, HelpCircle, Loader2 } from "lucide-react";
 
 export type AuthStatus =
   | "ready"
@@ -7,6 +7,8 @@ export type AuthStatus =
   | "missing_key"
   | "service_down"
   | "coming_soon"
+  /** Indeterminate — see `ProviderAuthStatus["unknown"]` in lib/tauri.ts. */
+  | "unknown"
   | "loading";
 
 type Props = {
@@ -35,6 +37,12 @@ export function AuthBadge({ status, hint, className = "" }: Props): JSX.Element 
     case "coming_soon":
       icon = <Clock size={10} className="text-text-muted" />;
       if (!effectiveHint) effectiveHint = "Coming soon";
+      break;
+    case "unknown":
+      // Neutral, not alarming: we couldn't verify, which is not the same as
+      // "logged out". Never render this as a failure.
+      icon = <HelpCircle size={10} className="text-text-muted" />;
+      if (!effectiveHint) effectiveHint = "Status unverifiable";
       break;
     case "loading":
       icon = <Loader2 size={10} className="text-text-muted animate-spin" />;

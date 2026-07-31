@@ -23,6 +23,11 @@ export interface UseTransientPtyOptions {
   /** Sent (with a trailing CR) after the PTY spawns. Useful for one-shot
    *  commands that need to be typed into a shell pane. */
   initialInput?: string;
+  /** Extra environment for the spawned process. The multi-account CLI flow
+   *  relies on this to run `claude login` / `codex login` against a specific
+   *  account's config dir (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`) instead of the
+   *  ambient one — without it, a second account could never be authenticated. */
+  env?: Record<string, string>;
   /** Default xterm-ish geometry; callers rendering into a real xterm
    *  container should overwrite via `resizePty` after mounting. */
   cols?: number;
@@ -98,6 +103,7 @@ export function useTransientPty(opts: UseTransientPtyOptions): UseTransientPtyRe
           current.rows ?? 40,
           current.command,
           current.args ?? null,
+          current.env ?? null,
         );
         if (!mountedRef.current) {
           void killPty(sid).catch(() => {});
@@ -210,6 +216,8 @@ export interface RunTransientPtyOptions {
   args?: string[] | null;
   projectPath?: string;
   initialInput?: string;
+  /** Extra environment for the spawned process — see `UseTransientPtyOptions.env`. */
+  env?: Record<string, string>;
   cols?: number;
   rows?: number;
   timeoutMs?: number;
@@ -231,6 +239,7 @@ export async function runTransientPty(
     opts.rows ?? 40,
     opts.command,
     opts.args ?? null,
+    opts.env ?? null,
   );
 
   let output = "";

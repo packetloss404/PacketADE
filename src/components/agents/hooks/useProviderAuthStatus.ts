@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useCallback, useEffect, useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { apiAgentProvider } from "@/stores/agentTaskStore";
 import type { AgentCli } from "@/stores/agentTaskStore";
 import {
-  getProviderAuthStatus,
-  type ProviderAuthStatus,
-} from "@/lib/tauri";
+  authStatusKey,
+  useAuthStatusStore,
+  type AuthEntry,
+} from "@/stores/authStatusStore";
 import { PROVIDER_GROUPS } from "../composer/utils";
 
-export type AuthEntry = ProviderAuthStatus | "loading";
+export type { AuthEntry } from "@/stores/authStatusStore";
 
 export interface UseProviderAuthStatusResult {
   authStatus: Record<string, AuthEntry>;
@@ -21,95 +22,52 @@ export interface UseProviderAuthStatusResult {
  *
  * Pass `enabled: false` to skip all probing/subscribing (the unified
  * composer's chat variant has no provider picker, so probing ~9 providers
- * per conversation mount would be wasted IPC). */
+ * per conversation mount would be wasted IPC).
+ *
+ * State lives in `authStatusStore`, keyed by `(provider, accountId)`. This
+ * hook reads the ambient (`accountId === undefined`) slice, because the
+ * provider picker is the Agents surface, which stays single-account by
+ * design. Sharing the store means N mounted tiles issue one probe per
+ * provider between them and share a single `provider-auth:changed`
+ * subscription, instead of N of each.
+ */
 export function useProviderAuthStatus(enabled = true): UseProviderAuthStatusResult {
-  const [authStatus, setAuthStatus] = useState<Record<string, AuthEntry>>({});
-
   const groupAgents = useMemo<AgentCli[]>(
     () => PROVIDER_GROUPS.flatMap((g) => g.agents),
     [],
   );
 
-  // Per-invocation epoch so overlapping refreshes (e.g. a manual refresh racing
-  // a `provider-auth:changed`-triggered one) can't resolve out of order — an
-  // older per-agent response must not overwrite a newer one. Bumped again on
-  // unmount so late resolutions become no-ops.
-  const refreshEpochRef = useRef(0);
+  const fetchStatus = useAuthStatusStore((s) => s.fetchStatus);
+  const ensureListener = useAuthStatusStore((s) => s.ensureListener);
+
+  // Project the shared cache back onto the agent-keyed shape this hook has
+  // always returned. `useShallow` keeps the identity stable so consumers
+  // don't re-render on unrelated keys landing in the cache.
+  const authStatus = useAuthStatusStore(
+    useShallow((s) => {
+      const out: Record<string, AuthEntry> = {};
+      for (const agent of groupAgents) {
+        const entry = s.entries[authStatusKey(apiAgentProvider(agent))];
+        if (entry) out[agent] = entry.value;
+      }
+      return out;
+    }),
+  );
 
   const refreshAuthStatuses = useCallback(() => {
     if (!enabled) return;
-    const epoch = ++refreshEpochRef.current;
-    setAuthStatus((prev) => {
-      const next: Record<string, AuthEntry> = { ...prev };
-      for (const a of groupAgents) next[a] = "loading";
-      return next;
-    });
     for (const agent of groupAgents) {
-      const provider = apiAgentProvider(agent);
-      getProviderAuthStatus(provider)
-        .then((res) => {
-          if (refreshEpochRef.current !== epoch) return;
-          setAuthStatus((prev) => ({ ...prev, [agent]: res }));
-        })
-        .catch((err) => {
-          if (refreshEpochRef.current !== epoch) return;
-          // On failure, show as service_down with the error hint — better
-          // than leaving the row stuck in a spinner.
-          console.warn(`getProviderAuthStatus(${provider}) failed`, err);
-          setAuthStatus((prev) => ({
-            ...prev,
-            [agent]: { status: "service_down", hint: "Status unavailable" },
-          }));
-        });
+      void fetchStatus(apiAgentProvider(agent), null, { force: true });
     }
-  }, [groupAgents, enabled]);
-
-  useEffect(() => {
-    return () => {
-      // Invalidate any in-flight refresh so it can't setState after unmount.
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: this epoch counter is deliberately bumped in cleanup; it is not a stale DOM ref.
-      refreshEpochRef.current++;
-    };
-  }, []);
-
-  useEffect(() => {
-    refreshAuthStatuses();
-  }, [refreshAuthStatuses]);
+  }, [groupAgents, enabled, fetchStatus]);
 
   useEffect(() => {
     if (!enabled) return;
-    let unlisten: UnlistenFn | undefined;
-    let cancelled = false;
-    listen<{ provider: string; status: ProviderAuthStatus }>(
-      "provider-auth:changed",
-      (event) => {
-        const { provider, status } = event.payload;
-        const affected = groupAgents.filter(
-          (agent) => apiAgentProvider(agent) === provider,
-        );
-        if (affected.length === 0) return;
-        setAuthStatus((prev) => {
-          const next = { ...prev };
-          for (const agent of affected) next[agent] = status;
-          return next;
-        });
-      },
-    )
-      .then((fn) => {
-        if (cancelled) {
-          fn();
-        } else {
-          unlisten = fn;
-        }
-      })
-      .catch((err) => {
-        console.warn("listen(provider-auth:changed) failed", err);
-      });
-    return () => {
-      cancelled = true;
-      if (unlisten) unlisten();
-    };
-  }, [groupAgents, enabled]);
+    ensureListener();
+    for (const agent of groupAgents) {
+      void fetchStatus(apiAgentProvider(agent));
+    }
+  }, [groupAgents, enabled, fetchStatus, ensureListener]);
 
   return { authStatus, refreshAuthStatuses };
 }

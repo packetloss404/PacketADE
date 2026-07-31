@@ -15,6 +15,11 @@ import { buildSshArgs } from "@/lib/ssh";
 import { writePty } from "@/lib/tauri";
 import { getModelsForAgent } from "@/lib/models";
 import { getAgentColor } from "@/lib/agentColors";
+import { accountEnvForSlot } from "@/lib/cliAccountEnv";
+import { AccountChip } from "@/components/session/AccountChip";
+import { AccountBlockedPane } from "@/components/workspace/AccountBlockedPane";
+import { LoginPtyModal } from "@/components/auth/LoginPtyModal";
+import { accountLoginCliForSlot, useAccountLaunchGate } from "@/hooks/useAccountLaunchGate";
 import type { WorkspacePane as WorkspacePaneType } from "@/types/workspace";
 
 /** Per-agent CLI flag to bypass all permission prompts.
@@ -166,13 +171,53 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
         ? packetCodeRemoteDataHomes[server.id]?.trim()
         : packetCodeLocalDataHome.trim()
       : "";
-  const packetCodeEnv = useMemo<Record<string, string> | undefined>(() => {
-    if (!packetCodeHome) return undefined;
-    const platform = isRemote ? "posix" : localPlatform;
-    return isAbsolutePacketCodePath(packetCodeHome, platform)
-      ? { PACKETCODE_HOME: packetCodeHome }
-      : undefined;
-  }, [isRemote, localPlatform, packetCodeHome]);
+  // Multi-account CLI binding. `pane.accountId` is absent for ambient panes,
+  // in which case `accountEnvForSlot` returns `{}` and this whole feature is
+  // inert — the env object below is byte-identical to what it was before.
+  const accountId = pane.accountId ?? null;
+  const accountEnv = useMemo(
+    () => accountEnvForSlot(pane.agentId, accountId),
+    [pane.agentId, accountId],
+  );
+
+  // REFUSE-TO-LAUNCH. `gate.state === "ambient"` for every pane without an
+  // explicit accountId, and the hook short-circuits before any IPC in that
+  // case — existing panes gain no probe and no new failure mode.
+  const { gate, recheck } = useAccountLaunchGate(pane.agentId, accountId);
+  const gateHolds = gate.state === "probing" || gate.state === "blocked";
+  const accountCaveat = gate.state === "ready" ? gate.caveat : undefined;
+  const [showAccountLogin, setShowAccountLogin] = useState(false);
+  const loginCli = accountLoginCliForSlot(pane.agentId);
+
+  /**
+   * The ONE env object for this pane. It reaches both spawn paths:
+   *   - local: `<TerminalPane env={…}>` → `useTerminalSession` → `create_pty_session`
+   *   - SSH:   `buildSshArgs(…, paneEnv)` → remote `env K=V …` prefix
+   * so a pane's account binding cannot be honoured on one transport and
+   * dropped on the other.
+   *
+   * PACKETCODE_HOME and the account vars compose rather than compete: they are
+   * disjoint keys, the PACKETCODE_HOME branch only ever fires for the
+   * `packetcode` slot, and the account branch only ever fires for
+   * `claude-code`/`codex`. In practice at most one of the two contributes, but
+   * the merge is written so both could without either clobbering the other.
+   *
+   * Caveat (documented, not solved here): for SSH workspaces the account's
+   * `configDir` is a path on the *local* machine. Remote account config dirs
+   * are a separate problem; the binding is still forwarded so the remote CLI
+   * cannot silently pick up the remote ambient login without a trace.
+   */
+  const paneEnv = useMemo<Record<string, string> | undefined>(() => {
+    const merged: Record<string, string> = {};
+    if (packetCodeHome) {
+      const platform = isRemote ? "posix" : localPlatform;
+      if (isAbsolutePacketCodePath(packetCodeHome, platform)) {
+        merged.PACKETCODE_HOME = packetCodeHome;
+      }
+    }
+    Object.assign(merged, accountEnv);
+    return Object.keys(merged).length > 0 ? merged : undefined;
+  }, [isRemote, localPlatform, packetCodeHome, accountEnv]);
   const effectiveCommand = isRemote ? "ssh" : command;
   const remoteCommand = isRemote && pane.agentId === "packetcode" ? "packetcode" : command;
   const effectiveArgs = useMemo(() => {
@@ -183,7 +228,7 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
       remoteCommand,
       cliArgs,
       knownHostsPath ?? undefined,
-      packetCodeEnv,
+      paneEnv,
     );
   }, [
     isRemote,
@@ -192,7 +237,7 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
     cliArgs,
     workspace?.remoteProjectPath,
     knownHostsPath,
-    packetCodeEnv,
+    paneEnv,
   ]);
 
   // Render the unified header bar — combines drag handle, agent identity,
@@ -230,6 +275,14 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
             className={`h-2 w-2 shrink-0 rounded-full ${c.text} bg-current ${state.alive ? "animate-pulse" : ""}`}
           />
           <span className={`truncate text-ui font-semibold ${c.text}`}>{agentName}</span>
+          {/* Right next to the agent identity: two tiles running the same CLI
+              under two logins are otherwise identical. Ambient panes render
+              nothing here. */}
+          <AccountChip
+            accountId={accountId}
+            caveat={accountCaveat}
+            className="max-w-[130px]"
+          />
           <div className="flex-1" />
           <span
             className={`shrink-0 rounded-full px-1.5 py-0.5 font-mono text-meta ${statusPillClass}`}
@@ -546,6 +599,8 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
       showOverflow,
       overflowView,
       workspaceId,
+      accountId,
+      accountCaveat,
       pinnedCommands,
       newPinCmd,
       runCommand,
@@ -562,6 +617,55 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
     ? "ring-2 ring-accent-amber animate-pulse motion-reduce:animate-none"
     : "";
 
+  // While the gate holds we mount NO TerminalPane. Disabling `autoStart` alone
+  // would not be enough: the header's "Start session" item calls straight into
+  // `useTerminalSession`, so an unmounted terminal is the only way to be sure
+  // the CLI cannot be spawned with the wrong (or missing) account env.
+  if (gateHolds) {
+    return (
+      <div
+        data-pane-zoomed={isZoomed || undefined}
+        className={`flex h-full flex-col overflow-hidden rounded-md ${wrapperBorderClass} ${flashClass}`}
+      >
+        {renderHeader({
+          alive: false,
+          error: null,
+          showApproval: false,
+          cliCommand: effectiveCommand,
+          // "Start session" in the overflow menu re-probes instead of spawning.
+          onRestart: recheck,
+          onKill: () => {},
+        })}
+        <AccountBlockedPane
+          accountId={accountId ?? ""}
+          label={gate.label}
+          reason={gate.state === "blocked" ? gate.reason : ""}
+          probing={gate.state === "probing"}
+          onLogin={
+            gate.state === "blocked" && gate.loginCli
+              ? () => setShowAccountLogin(true)
+              : undefined
+          }
+          onRecheck={recheck}
+        />
+        {showAccountLogin && loginCli && (
+          <LoginPtyModal
+            cli={loginCli}
+            projectPath={workspace?.projectPath}
+            // The whole point: the login writes credentials into THIS
+            // account's config dir, not the ambient one.
+            env={accountEnv}
+            accountLabel={gate.label}
+            onClose={() => {
+              setShowAccountLogin(false);
+              recheck();
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     // data-pane-zoomed lets mosaic-overrides.css maximize this pane's
     // already-mounted mosaic tile when zoomed (.mosaic-zoom-active) instead
@@ -575,7 +679,7 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
         autoStart={autoStart}
         cliCommand={effectiveCommand}
         cliArgs={effectiveArgs}
-        env={isRemote ? undefined : packetCodeEnv}
+        env={isRemote ? undefined : paneEnv}
         projectPath={workspace?.projectPath}
         initialPrompt={initialPrompt}
         renderHeader={renderHeader}

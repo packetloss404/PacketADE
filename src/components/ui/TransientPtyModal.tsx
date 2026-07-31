@@ -16,6 +16,10 @@ interface TransientPtyModalProps {
   /** Sent (with trailing CR) after spawn. Useful for shells that need a
    *  pre-typed install command. */
   initialInput?: string;
+  /** Extra environment for the spawned process. Multi-account CLI login flows
+   *  pass the target account's `CLAUDE_CONFIG_DIR` / `CODEX_HOME` here so the
+   *  credentials land in that account's config dir, not the ambient one. */
+  env?: Record<string, string>;
   /** When true, user keystrokes are forwarded into the PTY. When false the
    *  xterm is a read-only output viewer (good for install flows). */
   interactive?: boolean;
@@ -43,6 +47,7 @@ export function TransientPtyModal({
   args,
   projectPath,
   initialInput,
+  env,
   interactive = true,
   timeoutMs,
   onClose,
@@ -62,6 +67,7 @@ export function TransientPtyModal({
     args,
     projectPath,
     initialInput,
+    env,
     timeoutMs,
     onOutput: (chunk) => {
       xtermRef.current?.write(chunk);

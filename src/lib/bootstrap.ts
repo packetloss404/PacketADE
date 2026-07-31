@@ -16,6 +16,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useOrchestrationSettingsStore } from "@/stores/orchestrationSettingsStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useServerStore } from "@/stores/serverStore";
+import { useCliAccountStore } from "@/stores/cliAccountStore";
 import { useIssueStore } from "@/stores/issueStore";
 import { migrateSshTargetsToServers } from "@/lib/sshTargetMigration";
 import { startBoundedAutonomyRuntime } from "@/stores/boundedAutonomyRuntime";
@@ -99,6 +100,11 @@ export async function initializeApp(): Promise<void> {
     useWorkspaceStore.getState().hydrateFromBackend(state.workspaces);
     useMemoryStore.getState().hydrateFromBackend(state);
     useServerStore.getState().hydrateFromBackend(state.servers);
+    // Synchronous: the account list gates PTY launches, so it must be
+    // authoritative before the first session picker can be opened.
+    useCliAccountStore
+      .getState()
+      .hydrateFromBackend(state.cliAccounts, state.cliAccountDefaults);
     useIssueStore.getState().hydrateFromBackend(state.issues);
 
     // Phase 2: one-time migration of legacy SshTarget records from

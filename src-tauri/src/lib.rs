@@ -329,6 +329,7 @@ pub fn run() {
             // v0.8-H memory inline
             commands::memory::toggle_pinned_pattern,
             commands::state::save_servers_slice,
+            commands::state::save_cli_accounts_slice,
             // Agent detection
             commands::agent::detect_agent,
             // v0.8.3 cli detection
@@ -466,6 +467,8 @@ pub fn run() {
             commands::monitor_windows::focus_monitor_route_in_main,
             // Provider auth status probe
             commands::provider_auth::get_provider_auth_status,
+            commands::provider_auth::get_provider_auth_status_for_dir,
+            commands::cli_account::seed_cli_account_config_dir,
             commands::provider_auth::sign_out_provider,
             // Local-only per-provider launch counter (Tier 4 slice B)
             commands::provider_stats::get_provider_launch_stats,

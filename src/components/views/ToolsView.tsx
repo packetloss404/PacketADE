@@ -45,6 +45,9 @@ import { ServersSettingsCard } from "./tools/ServersSettingsCard";
 import { AgentProfilesCard } from "./tools/AgentProfilesCard";
 import { AgentSettingsCard } from "./tools/AgentSettingsCard";
 import { CliAgentsCard } from "./tools/CliAgentsCard";
+import { CliAccountsCard } from "./tools/CliAccountsCard";
+import { AccountLoginModal } from "@/components/auth/AccountLoginModal";
+import type { CliAccount } from "@/types/cliAccount";
 import { ProjectRulesCard } from "./tools/ProjectRulesCard";
 import { OrchestrationSettingsCard } from "./tools/OrchestrationSettingsCard";
 import { ProviderEndpointsCard } from "./tools/ProviderEndpointsCard";
@@ -93,6 +96,9 @@ export function ToolsView() {
   );
   const [focusedCliId, setFocusedCliId] = useState<string | null>(initialTarget?.cliId ?? null);
   const [searchQuery, setSearchQuery] = useState("");
+  // Multi-account: the account whose "Log in" button was pressed in the
+  // accounts card. Null = no login flow open.
+  const [loginAccount, setLoginAccount] = useState<CliAccount | null>(null);
   const settingsTarget = useAppStore((s) => s.settingsTarget);
   const clearSettingsTarget = useAppStore((s) => s.clearSettingsTarget);
   const setActiveView = useAppStore((s) => s.setActiveView);
@@ -251,6 +257,23 @@ export function ToolsView() {
           {activeSection === "cli-clients" && (
             <div className="max-w-3xl">
               <CliAgentsCard focusedCliId={focusedCliId} />
+            </div>
+          )}
+
+          {activeSection === "cli-accounts" && (
+            <div className="max-w-3xl">
+              {/* The card owns the record; the interactive login PTY is the
+                  shared `AccountLoginModal`, which runs `claude login` /
+                  `codex login` with this account's own CLAUDE_CONFIG_DIR /
+                  CODEX_HOME. Same component the blocked-pane "Log in to
+                  <label>" action uses, so there is one login path. */}
+              <CliAccountsCard onRequestLogin={setLoginAccount} />
+              {loginAccount && (
+                <AccountLoginModal
+                  account={loginAccount}
+                  onClose={() => setLoginAccount(null)}
+                />
+              )}
             </div>
           )}
 

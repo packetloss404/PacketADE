@@ -1,11 +1,15 @@
 import { X, RotateCcw, Plus } from "lucide-react";
 import { getAgentColor } from "@/lib/agentColors";
+import { AccountChip } from "@/components/session/AccountChip";
 
 interface TerminalHeaderProps {
   alive: boolean;
   error: string | null;
   showApproval: boolean;
   cliCommand: string;
+  /** Multi-account: the CLI account this session is bound to. Undefined =
+   *  ambient login, and nothing extra is rendered. */
+  accountId?: string | null;
   onRestart: () => void;
   onKill: () => void;
   onClose?: () => void;
@@ -17,6 +21,7 @@ export function TerminalHeader({
   error,
   showApproval,
   cliCommand,
+  accountId,
   onRestart,
   onKill,
   onClose,
@@ -45,6 +50,9 @@ export function TerminalHeader({
             : cliCommand === "packetcode" ? "PacketCode"
             : "Codex"}
         </span>
+        {/* Sits immediately beside the agent identity so "which CLI" and
+            "which login" read as one unit. Renders nothing when ambient. */}
+        <AccountChip accountId={accountId} className="max-w-[140px]" />
       </div>
       <div className="flex items-center gap-1">
         {!alive && (

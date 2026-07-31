@@ -1,17 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { Plane } from "lucide-react";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { AuthBadge, type AuthStatus } from "@/components/ui/AuthBadge";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { apiAgentProvider, type AgentCli } from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAppStore } from "@/stores/appStore";
-import {
-  getProviderAuthStatus,
-  type ProviderAuthStatus,
-} from "@/lib/tauri";
-
-type AuthEntry = ProviderAuthStatus | "loading";
+import { authStatusKey, useAuthStatusStore } from "@/stores/authStatusStore";
 
 interface AgentHeaderBadgesProps {
   conversationId: string;
@@ -49,55 +43,23 @@ export function AgentHeaderBadges({
   const isApi = agent.startsWith("api-");
   const provider = isApi ? apiAgentProvider(agent) : null;
 
-  const [auth, setAuth] = useState<AuthEntry>("loading");
+  // Shared cache: N mounted panes on the same provider share one probe and
+  // one `provider-auth:changed` subscription. The Agents surface is
+  // single-account by design, so this reads the ambient slice.
+  const fetchStatus = useAuthStatusStore((s) => s.fetchStatus);
+  const ensureListener = useAuthStatusStore((s) => s.ensureListener);
+  const auth = useAuthStatusStore((s) =>
+    provider ? s.entries[authStatusKey(provider)]?.value : undefined,
+  );
 
   useEffect(() => {
     if (!provider) return;
-    let cancelled = false;
-    setAuth("loading");
-    getProviderAuthStatus(provider)
-      .then((res) => {
-        if (!cancelled) setAuth(res);
-      })
-      .catch(() => {
-        if (!cancelled)
-          setAuth({ status: "service_down", hint: "Status unavailable" });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [provider]);
-
-  // Live updates from the auth-watcher (claude/codex credential file changes).
-  useEffect(() => {
-    if (!provider) return;
-    let unlisten: UnlistenFn | undefined;
-    let cancelled = false;
-    listen<{ provider: string; status: ProviderAuthStatus }>(
-      "provider-auth:changed",
-      (event) => {
-        if (event.payload.provider !== provider) return;
-        setAuth(event.payload.status);
-      },
-    )
-      .then((fn) => {
-        if (cancelled) fn();
-        else unlisten = fn;
-      })
-      .catch((err) =>
-        console.warn(
-          "[AgentHeaderBadges.listenProviderAuth] subscribe failed:",
-          err,
-        ),
-      );
-    return () => {
-      cancelled = true;
-      if (unlisten) unlisten();
-    };
-  }, [provider]);
+    ensureListener();
+    void fetchStatus(provider);
+  }, [provider, fetchStatus, ensureListener]);
 
   const authStatus: AuthStatus =
-    auth === "loading" || !auth ? "loading" : auth.status;
+    !auth || auth === "loading" ? "loading" : auth.status;
   const authHint = auth && auth !== "loading" ? auth.hint : "";
 
   return (

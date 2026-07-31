@@ -1,4 +1,5 @@
 use crate::commands::api_keys::get_api_key_exists;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Unix timestamp (seconds since epoch) for "now", or 0 if the system clock
@@ -198,29 +199,47 @@ fn parse_codex_has_refresh_token(bytes: &[u8]) -> bool {
         .unwrap_or(false)
 }
 
-/// Probe whether the user has logged into Claude Code (`claude login`).
+/// The credential files Claude Code may write inside its state root.
 ///
-/// Claude Code stores OAuth credentials in `~/.claude/credentials` on some
-/// platforms/versions and `~/.claude/.credentials.json` on others, so we
-/// check both paths. If the file parses as JSON and has a usable
-/// `claudeAiOauth.expiresAt` field, we surface expiry information; otherwise
-/// we fall back to the legacy "non-empty file = ready" behavior.
-pub(crate) fn probe_claude_oauth() -> ProviderAuthStatus {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => {
-            return ProviderAuthStatus {
-                status: "login_required".to_string(),
-                hint: "Run `claude login` in a terminal".to_string(),
-            };
-        }
+/// `root` is the equivalent of `~/.claude` — for a multi-account launch it is
+/// whatever `CLAUDE_CONFIG_DIR` points at, because that env var relocates the
+/// **whole** state root (credentials included) rather than just the config.
+fn claude_credential_candidates(root: &Path) -> [PathBuf; 2] {
+    [root.join("credentials"), root.join(".credentials.json")]
+}
+
+/// The credential files Codex may write inside its state root (`CODEX_HOME`,
+/// default `~/.codex`).
+fn codex_credential_candidates(root: &Path) -> [PathBuf; 2] {
+    [root.join("auth.json"), root.join("credentials")]
+}
+
+/// Shared file-probe loop behind every OAuth-CLI status check.
+///
+/// Extracted verbatim from the original `probe_claude_oauth` /
+/// `probe_codex_oauth` bodies (which were byte-for-byte identical apart from
+/// their candidate paths and hint strings) so the ambient `~/.claude` probe and
+/// the per-account `CLAUDE_CONFIG_DIR` probe cannot drift apart. The expiry and
+/// refresh-token parsing is passed in as the *existing* helpers, unchanged.
+///
+/// `missing` is the status returned when none of the candidate paths exist at
+/// all. It's a parameter rather than a constant because the honest answer
+/// differs between the ambient case and a per-account config dir on macOS —
+/// see [`claude_config_dir_missing_status`].
+fn probe_oauth_credentials(
+    candidates: &[PathBuf],
+    parse_expiry: fn(&[u8]) -> Option<i64>,
+    parse_has_refresh_token: fn(&[u8]) -> bool,
+    expired_hint: &str,
+    unreadable_hint: &str,
+    missing: ProviderAuthStatus,
+) -> ProviderAuthStatus {
+    let unreadable = || ProviderAuthStatus {
+        status: "login_required".to_string(),
+        hint: unreadable_hint.to_string(),
     };
-    let candidates = [
-        home.join(".claude").join("credentials"),
-        home.join(".claude").join(".credentials.json"),
-    ];
     let mut any_found = false;
-    for path in &candidates {
+    for path in candidates {
         match std::fs::metadata(path) {
             Ok(meta) if meta.is_file() => {
                 any_found = true;
@@ -233,11 +252,11 @@ pub(crate) fn probe_claude_oauth() -> ProviderAuthStatus {
                 // status indicator.
                 match std::fs::read(path) {
                     Ok(bytes) => {
-                        if let Some(exp_secs) = parse_claude_expiry_secs(&bytes) {
+                        if let Some(exp_secs) = parse_expiry(&bytes) {
                             return expiry_to_status(
                                 exp_secs,
-                                parse_claude_has_refresh_token(&bytes),
-                                "Token expired — run `claude login` again",
+                                parse_has_refresh_token(&bytes),
+                                expired_hint,
                             );
                         }
                         return ProviderAuthStatus {
@@ -245,12 +264,7 @@ pub(crate) fn probe_claude_oauth() -> ProviderAuthStatus {
                             hint: String::new(),
                         };
                     }
-                    Err(_) => {
-                        return ProviderAuthStatus {
-                            status: "login_required".to_string(),
-                            hint: "Claude credentials unreadable".to_string(),
-                        };
-                    }
+                    Err(_) => return unreadable(),
                 }
             }
             Ok(_) => {
@@ -258,30 +272,122 @@ pub(crate) fn probe_claude_oauth() -> ProviderAuthStatus {
                 any_found = true;
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => {
-                return ProviderAuthStatus {
-                    status: "login_required".to_string(),
-                    hint: "Claude credentials unreadable".to_string(),
-                };
-            }
+            Err(_) => return unreadable(),
         }
     }
     if any_found {
         // Found but empty / not a regular file.
-        ProviderAuthStatus {
-            status: "login_required".to_string(),
-            hint: "Claude credentials unreadable".to_string(),
-        }
+        unreadable()
     } else {
-        ProviderAuthStatus {
-            status: "login_required".to_string(),
-            hint: "Run `claude login` in a terminal".to_string(),
-        }
+        missing
     }
 }
 
+const CLAUDE_EXPIRED_HINT: &str = "Token expired — run `claude login` again";
+const CLAUDE_UNREADABLE_HINT: &str = "Claude credentials unreadable";
+const CLAUDE_LOGIN_HINT: &str = "Run `claude login` in a terminal";
+const CODEX_EXPIRED_HINT: &str = "Token expired — run `codex login` again";
+const CODEX_UNREADABLE_HINT: &str = "Codex credentials unreadable";
+const CODEX_LOGIN_HINT: &str = "Run `codex login` in a terminal";
+
+/// What to report when a **per-account** Claude config dir contains no
+/// credential file at all.
+///
+/// On Linux/Windows, Claude Code always writes `.credentials.json` inside its
+/// state root, so "no file" genuinely means "not logged in".
+///
+/// On macOS it does not: credentials go to the login Keychain instead, and
+/// whether that Keychain item is namespaced per `CLAUDE_CONFIG_DIR` is
+/// *unconfirmed* (binary analysis suggests a `sha256(configDir)` suffix;
+/// anthropics/claude-code#20553 says otherwise). We deliberately do **not**
+/// read the Keychain here — a probe that guesses at an unverified namespacing
+/// scheme would be worse than one that admits it doesn't know. So macOS gets
+/// an explicit `unknown`: callers must treat it as "may well be logged in"
+/// (i.e. still launchable) rather than as a negative result.
+///
+/// The ambient (`~/.claude`) probe keeps returning `login_required` here so
+/// that existing badges/consumers of the zero-arg command see byte-identical
+/// behaviour; only the new per-dir command can surface `unknown`.
+#[cfg(target_os = "macos")]
+fn claude_config_dir_missing_status() -> ProviderAuthStatus {
+    ProviderAuthStatus {
+        status: "unknown".to_string(),
+        hint: "No credential file in this config dir — macOS stores Claude credentials in the Keychain, which we can't attribute to an account".to_string(),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn claude_config_dir_missing_status() -> ProviderAuthStatus {
+    ProviderAuthStatus {
+        status: "login_required".to_string(),
+        hint: "Run `claude login` with CLAUDE_CONFIG_DIR set to this account".to_string(),
+    }
+}
+
+/// Probe a specific Claude Code state root (`CLAUDE_CONFIG_DIR`).
+pub(crate) fn probe_claude_oauth_in_dir(root: &Path) -> ProviderAuthStatus {
+    probe_oauth_credentials(
+        &claude_credential_candidates(root),
+        parse_claude_expiry_secs,
+        parse_claude_has_refresh_token,
+        CLAUDE_EXPIRED_HINT,
+        CLAUDE_UNREADABLE_HINT,
+        claude_config_dir_missing_status(),
+    )
+}
+
+/// Probe a specific Codex state root (`CODEX_HOME`).
+///
+/// Unlike Claude, Codex writes `auth.json` on disk on every platform (and its
+/// `CODEX_HOME` relocation is confirmed to carry the credentials with it), so
+/// "no file" is an honest `login_required` everywhere.
+pub(crate) fn probe_codex_oauth_in_dir(root: &Path) -> ProviderAuthStatus {
+    probe_oauth_credentials(
+        &codex_credential_candidates(root),
+        parse_codex_expiry_secs,
+        parse_codex_has_refresh_token,
+        CODEX_EXPIRED_HINT,
+        CODEX_UNREADABLE_HINT,
+        ProviderAuthStatus {
+            status: "login_required".to_string(),
+            hint: "Run `codex login` with CODEX_HOME set to this account".to_string(),
+        },
+    )
+}
+
+/// Probe whether the user has logged into Claude Code (`claude login`) with the
+/// **ambient** default config dir (`~/.claude`).
+///
+/// Claude Code stores OAuth credentials in `~/.claude/credentials` on some
+/// platforms/versions and `~/.claude/.credentials.json` on others, so we
+/// check both paths. If the file parses as JSON and has a usable
+/// `claudeAiOauth.expiresAt` field, we surface expiry information; otherwise
+/// we fall back to the legacy "non-empty file = ready" behavior.
+pub(crate) fn probe_claude_oauth() -> ProviderAuthStatus {
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => {
+            return ProviderAuthStatus {
+                status: "login_required".to_string(),
+                hint: CLAUDE_LOGIN_HINT.to_string(),
+            };
+        }
+    };
+    probe_oauth_credentials(
+        &claude_credential_candidates(&home.join(".claude")),
+        parse_claude_expiry_secs,
+        parse_claude_has_refresh_token,
+        CLAUDE_EXPIRED_HINT,
+        CLAUDE_UNREADABLE_HINT,
+        ProviderAuthStatus {
+            status: "login_required".to_string(),
+            hint: CLAUDE_LOGIN_HINT.to_string(),
+        },
+    )
+}
+
 /// Probe whether the user has logged into Codex CLI (`codex login` /
-/// `codex auth login`).
+/// `codex auth login`) with the **ambient** default `~/.codex`.
 ///
 /// Codex stores OAuth credentials under `~/.codex/` — depending on CLI
 /// version, the token file may be `auth.json` or `credentials`, so we
@@ -294,72 +400,24 @@ pub(crate) fn probe_codex_oauth() -> ProviderAuthStatus {
         None => {
             return ProviderAuthStatus {
                 status: "login_required".to_string(),
-                hint: "Run `codex login` in a terminal".to_string(),
+                hint: CODEX_LOGIN_HINT.to_string(),
             };
         }
     };
-    let candidates = [
-        home.join(".codex").join("auth.json"),
-        home.join(".codex").join("credentials"),
-    ];
-    let mut any_found = false;
-    for path in &candidates {
-        match std::fs::metadata(path) {
-            Ok(meta) if meta.is_file() => {
-                any_found = true;
-                if meta.len() == 0 {
-                    continue;
-                }
-                match std::fs::read(path) {
-                    Ok(bytes) => {
-                        if let Some(exp_secs) = parse_codex_expiry_secs(&bytes) {
-                            return expiry_to_status(
-                                exp_secs,
-                                parse_codex_has_refresh_token(&bytes),
-                                "Token expired — run `codex login` again",
-                            );
-                        }
-                        return ProviderAuthStatus {
-                            status: "ready".to_string(),
-                            hint: String::new(),
-                        };
-                    }
-                    Err(_) => {
-                        return ProviderAuthStatus {
-                            status: "login_required".to_string(),
-                            hint: "Codex credentials unreadable".to_string(),
-                        };
-                    }
-                }
-            }
-            Ok(_) => {
-                // Exists but isn't a regular file — treat as unreadable.
-                any_found = true;
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => {
-                return ProviderAuthStatus {
-                    status: "login_required".to_string(),
-                    hint: "Codex credentials unreadable".to_string(),
-                };
-            }
-        }
-    }
-    if any_found {
-        // Found but empty / not a regular file.
+    probe_oauth_credentials(
+        &codex_credential_candidates(&home.join(".codex")),
+        parse_codex_expiry_secs,
+        parse_codex_has_refresh_token,
+        CODEX_EXPIRED_HINT,
+        CODEX_UNREADABLE_HINT,
         ProviderAuthStatus {
             status: "login_required".to_string(),
-            hint: "Codex credentials unreadable".to_string(),
-        }
-    } else {
-        ProviderAuthStatus {
-            status: "login_required".to_string(),
-            hint: "Run `codex login` in a terminal".to_string(),
-        }
-    }
+            hint: CODEX_LOGIN_HINT.to_string(),
+        },
+    )
 }
 
-#[derive(serde::Serialize, Clone)]
+#[derive(serde::Serialize, Clone, Debug)]
 pub struct ProviderAuthStatus {
     pub status: String,
     pub hint: String,
@@ -452,6 +510,45 @@ pub async fn get_provider_auth_status(provider: String) -> Result<ProviderAuthSt
         "claude-oauth" => Ok(probe_claude_oauth()),
         "openai-codex" => Ok(probe_codex_oauth()),
         other => Err(format!("Unknown provider '{}'", other)),
+    }
+}
+
+/// Per-account sibling of [`get_provider_auth_status`].
+///
+/// Multi-account CLI support relocates a CLI's entire state root via env var
+/// (`CLAUDE_CONFIG_DIR` for claude-code, `CODEX_HOME` for codex), so a status
+/// probe for a given account is the same probe pointed at that account's
+/// `configDir`.
+///
+/// An empty/whitespace `config_dir` means "no account selected" and delegates
+/// to the ambient zero-arg probe, so callers can pass the selected account's
+/// dir (or `""`) unconditionally and always get the right answer — including
+/// for the API-key providers, which have no per-dir notion at all.
+///
+/// A non-empty dir is only meaningful for the two OAuth CLIs; anything else is
+/// a caller bug and errors loudly rather than silently ignoring the dir.
+///
+/// macOS caveat: see [`claude_config_dir_missing_status`] — a claude account
+/// dir with no credential file on macOS returns `unknown`, not
+/// `login_required`, because the credentials may be Keychain-resident.
+/// Treat `unknown` as launchable.
+#[tauri::command]
+pub async fn get_provider_auth_status_for_dir(
+    provider: String,
+    config_dir: String,
+) -> Result<ProviderAuthStatus, String> {
+    let trimmed = config_dir.trim();
+    if trimmed.is_empty() {
+        return get_provider_auth_status(provider).await;
+    }
+    let root = Path::new(trimmed);
+    match provider.as_str() {
+        "claude-oauth" => Ok(probe_claude_oauth_in_dir(root)),
+        "openai-codex" => Ok(probe_codex_oauth_in_dir(root)),
+        other => Err(format!(
+            "get_provider_auth_status_for_dir does not support '{}' — per-account config dirs apply to claude-oauth and openai-codex only",
+            other
+        )),
     }
 }
 
@@ -663,5 +760,211 @@ mod tests {
     #[test]
     fn parse_codex_expiry_invalid_json_returns_none() {
         assert!(parse_codex_expiry_secs(b"garbage").is_none());
+    }
+
+    // ----------------------------------------------------------------
+    // Per-account (parameterised config dir) probes.
+    //
+    // These use real temp dirs with fixture credential files so they
+    // exercise the same filesystem path the ambient probes take, without
+    // touching the developer's real `~/.claude` / `~/.codex`.
+    // ----------------------------------------------------------------
+
+    fn claude_creds_json(expires_in_secs: i64, refresh_token: Option<&str>) -> String {
+        let millis = (now_unix_secs() + expires_in_secs) * 1000;
+        match refresh_token {
+            Some(rt) => format!(
+                r#"{{"claudeAiOauth":{{"expiresAt":{},"accessToken":"at","refreshToken":"{}"}}}}"#,
+                millis, rt
+            ),
+            None => format!(
+                r#"{{"claudeAiOauth":{{"expiresAt":{},"accessToken":"at"}}}}"#,
+                millis
+            ),
+        }
+    }
+
+    fn codex_auth_json(expires_in_secs: i64, refresh_token: Option<&str>) -> String {
+        let exp = now_unix_secs() + expires_in_secs;
+        let header = encode_base64url(br#"{"alg":"none","typ":"JWT"}"#);
+        let payload = encode_base64url(format!(r#"{{"exp":{}}}"#, exp).as_bytes());
+        let sig = encode_base64url(b"sig");
+        let jwt = format!("{}.{}.{}", header, payload, sig);
+        match refresh_token {
+            Some(rt) => format!(
+                r#"{{"tokens":{{"access_token":"{}","refresh_token":"{}"}}}}"#,
+                jwt, rt
+            ),
+            None => format!(r#"{{"tokens":{{"access_token":"{}"}}}}"#, jwt),
+        }
+    }
+
+    #[test]
+    fn probe_claude_in_dir_ready_for_valid_credentials() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join(".credentials.json"),
+            claude_creds_json(30 * 86_400, Some("rt")),
+        )
+        .expect("write");
+        let s = probe_claude_oauth_in_dir(dir.path());
+        assert_eq!(s.status, "ready", "hint: {}", s.hint);
+        assert_eq!(s.hint, "");
+    }
+
+    #[test]
+    fn probe_claude_in_dir_expired_without_refresh_is_login_required() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join(".credentials.json"),
+            claude_creds_json(-3600, None),
+        )
+        .expect("write");
+        let s = probe_claude_oauth_in_dir(dir.path());
+        assert_eq!(s.status, "login_required");
+        assert_eq!(s.hint, CLAUDE_EXPIRED_HINT);
+    }
+
+    #[test]
+    fn probe_claude_in_dir_expired_with_refresh_is_ready() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join(".credentials.json"),
+            claude_creds_json(-3600, Some("rt")),
+        )
+        .expect("write");
+        let s = probe_claude_oauth_in_dir(dir.path());
+        assert_eq!(s.status, "ready");
+        assert_eq!(s.hint, "Session will auto-refresh on next use");
+    }
+
+    #[test]
+    fn probe_claude_in_dir_reads_legacy_credentials_filename() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("credentials"),
+            claude_creds_json(30 * 86_400, None),
+        )
+        .expect("write");
+        assert_eq!(probe_claude_oauth_in_dir(dir.path()).status, "ready");
+    }
+
+    #[test]
+    fn probe_claude_in_dir_empty_file_is_login_required() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join(".credentials.json"), b"").expect("write");
+        let s = probe_claude_oauth_in_dir(dir.path());
+        assert_eq!(s.status, "login_required");
+        assert_eq!(s.hint, CLAUDE_UNREADABLE_HINT);
+    }
+
+    /// Non-macOS: an empty config dir means genuinely not logged in.
+    /// macOS is covered by `probe_claude_in_dir_missing_is_unknown_on_macos`.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn probe_claude_in_dir_missing_is_login_required_off_macos() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert_eq!(probe_claude_oauth_in_dir(dir.path()).status, "login_required");
+    }
+
+    /// macOS: credentials may live in the Keychain, so absence on disk is
+    /// indeterminate, not negative. We never fabricate a Keychain read.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn probe_claude_in_dir_missing_is_unknown_on_macos() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert_eq!(probe_claude_oauth_in_dir(dir.path()).status, "unknown");
+    }
+
+    #[test]
+    fn probe_claude_in_dir_nonexistent_dir_does_not_panic() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let missing = dir.path().join("no-such-account");
+        let s = probe_claude_oauth_in_dir(&missing);
+        assert!(s.status == "login_required" || s.status == "unknown");
+    }
+
+    #[test]
+    fn probe_codex_in_dir_ready_for_valid_credentials() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("auth.json"),
+            codex_auth_json(30 * 86_400, Some("rt")),
+        )
+        .expect("write");
+        let s = probe_codex_oauth_in_dir(dir.path());
+        assert_eq!(s.status, "ready", "hint: {}", s.hint);
+    }
+
+    #[test]
+    fn probe_codex_in_dir_expired_without_refresh_is_login_required() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("auth.json"), codex_auth_json(-60, None)).expect("write");
+        let s = probe_codex_oauth_in_dir(dir.path());
+        assert_eq!(s.status, "login_required");
+        assert_eq!(s.hint, CODEX_EXPIRED_HINT);
+    }
+
+    #[test]
+    fn probe_codex_in_dir_missing_is_login_required_on_every_platform() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let s = probe_codex_oauth_in_dir(dir.path());
+        assert_eq!(s.status, "login_required");
+        assert!(s.hint.contains("CODEX_HOME"), "hint: {}", s.hint);
+    }
+
+    /// Two accounts with different credential state must not bleed into
+    /// each other — the whole point of the per-dir probe.
+    #[test]
+    fn probe_in_dir_isolates_two_accounts() {
+        let good = tempfile::tempdir().expect("tempdir");
+        let bad = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            good.path().join("auth.json"),
+            codex_auth_json(30 * 86_400, Some("rt")),
+        )
+        .expect("write");
+        std::fs::write(bad.path().join("auth.json"), codex_auth_json(-60, None)).expect("write");
+        assert_eq!(probe_codex_oauth_in_dir(good.path()).status, "ready");
+        assert_eq!(probe_codex_oauth_in_dir(bad.path()).status, "login_required");
+    }
+
+    #[tokio::test]
+    async fn for_dir_command_probes_the_given_dir() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("auth.json"),
+            codex_auth_json(30 * 86_400, Some("rt")),
+        )
+        .expect("write");
+        let s = get_provider_auth_status_for_dir(
+            "openai-codex".to_string(),
+            dir.path().display().to_string(),
+        )
+        .await
+        .expect("command should succeed");
+        assert_eq!(s.status, "ready");
+    }
+
+    #[tokio::test]
+    async fn for_dir_command_rejects_non_cli_providers() {
+        let err = get_provider_auth_status_for_dir("anthropic".to_string(), "/tmp/whatever".into())
+            .await
+            .expect_err("api-key providers have no per-dir notion");
+        assert!(err.contains("does not support"), "err: {}", err);
+    }
+
+    #[tokio::test]
+    async fn for_dir_command_with_blank_dir_delegates_to_ambient() {
+        // Blank dir == "no account selected". We can't assert the ambient
+        // status (it depends on the dev machine), only that it resolves the
+        // same way the zero-arg command does rather than erroring.
+        let ambient = get_provider_auth_status("openai-codex".to_string())
+            .await
+            .expect("ambient probe");
+        let delegated = get_provider_auth_status_for_dir("openai-codex".to_string(), "  ".into())
+            .await
+            .expect("blank dir should delegate");
+        assert_eq!(ambient.status, delegated.status);
     }
 }

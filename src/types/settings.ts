@@ -2,6 +2,7 @@ export type SettingsSection =
   | "general"
   | "workspace"
   | "cli-clients"
+  | "cli-accounts"
   | "agents"
   | "packet-agent"
   | "providers"

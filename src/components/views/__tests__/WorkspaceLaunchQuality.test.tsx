@@ -297,8 +297,18 @@ describe("workspace launch installed-agent checks", () => {
     expect(screen.getByRole("button", { name: "Codex CLI" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Claude Code" }));
 
-    expect(mocks.workspaceState.addPane).toHaveBeenCalledWith("ws-remote", "claude-code");
-    expect(mocks.workspaceState.addPane).not.toHaveBeenCalledWith("ws-remote", "codex");
+    // Multi-account CLI support: an untouched row passes no account option, so
+    // `addPane` re-resolves the sticky per-project default itself.
+    expect(mocks.workspaceState.addPane).toHaveBeenCalledWith(
+      "ws-remote",
+      "claude-code",
+      undefined,
+    );
+    expect(mocks.workspaceState.addPane).not.toHaveBeenCalledWith(
+      "ws-remote",
+      "codex",
+      undefined,
+    );
   });
 
   it("opens the creation form for a global creation request (Toolbar / Ctrl+K)", () => {

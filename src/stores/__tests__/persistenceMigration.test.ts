@@ -76,6 +76,8 @@ function makePersistedState(flights: Flight[]): PersistedState {
     memoryEvents: [],
     memoryPatterns: [],
     servers: [],
+    cliAccounts: [],
+    cliAccountDefaults: {},
   };
 }
 

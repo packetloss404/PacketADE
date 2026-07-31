@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::fs;
 use std::future::Future;
 use std::io::Write;
@@ -64,6 +65,32 @@ fn default_ssh_port() -> u16 {
     22
 }
 
+/// A named CLI login, identified purely by the config directory the CLI is
+/// pointed at (`CLAUDE_CONFIG_DIR` for claude-code, `CODEX_HOME` for codex).
+///
+/// **No secrets live here.** The record is a pointer: credentials, settings,
+/// MCP config, and session history all live inside `config_dir` where the CLI
+/// itself writes them. Deleting a record therefore never deletes a login —
+/// the directory on disk is left untouched.
+///
+/// Absence of a selected account means "ambient login" (the CLI's own default
+/// `~/.claude` / `~/.codex`), which is the pre-multi-account behaviour.
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+pub struct CliAccount {
+    pub id: String,
+    pub label: String,
+    /// "claude-code" | "codex" — kept as a string for the same
+    /// forward-compatibility reason `ServerConfig::auth_method` is.
+    pub cli: String,
+    pub config_dir: String,
+    /// Display only. NEVER used for authentication or account matching.
+    #[serde(default)]
+    pub email: Option<String>,
+    pub created_at: u64,
+    #[serde(default)]
+    pub last_used_at: Option<u64>,
+}
+
 pub const STATE_FILENAME: &str = "state.v1.json";
 const PROVIDER_SETTINGS_FILENAME: &str = "provider-settings.v1.json";
 pub const DEFAULT_OLLAMA_ROOT_BASE_URL: &str = "http://localhost:11434";
@@ -115,6 +142,14 @@ pub struct PersistedState {
     pub memory_patterns: Vec<serde_json::Value>,
     #[serde(default)]
     pub servers: Vec<ServerConfig>,
+    /// Named per-CLI logins (multi-account support for PTY/CLI sessions).
+    #[serde(default)]
+    pub cli_accounts: Vec<CliAccount>,
+    /// Sticky per-project account choice: `project path -> cli -> account id`.
+    /// `BTreeMap` (not `HashMap`) so the on-disk JSON has a stable key order
+    /// and repeated saves do not churn the file.
+    #[serde(default)]
+    pub cli_account_defaults: BTreeMap<String, BTreeMap<String, String>>,
     /// Legacy autonomous-Planner approval records. Read-compatible only.
     #[serde(default)]
     pub flight_approvals: Vec<FlightApprovalRequest>,
@@ -134,6 +169,8 @@ impl Default for PersistedState {
             memory_events: Vec::new(),
             memory_patterns: Vec::new(),
             servers: Vec::new(),
+            cli_accounts: Vec::new(),
+            cli_account_defaults: BTreeMap::new(),
             flight_approvals: Vec::new(),
         }
     }
@@ -591,6 +628,25 @@ pub fn save_servers(servers: Vec<ServerConfig>) -> Result<(), String> {
         .map_err(|e| format!("Lock poisoned: {}", e))?;
     let mut state = load_state();
     state.servers = servers;
+    state.version += 1;
+    save_state_inner(&state)
+}
+
+/// Persist the CLI-account slice: the account records *and* the sticky
+/// per-project defaults that point at them. They travel together because a
+/// default is meaningless without the account it names, and writing them in
+/// one locked pass keeps the two from disagreeing on disk.
+pub fn save_cli_accounts(
+    accounts: Vec<CliAccount>,
+    defaults: BTreeMap<String, BTreeMap<String, String>>,
+) -> Result<(), String> {
+    let _async_lock = lock_state_gate_blocking();
+    let _lock = STATE_LOCK
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
+    let mut state = load_state();
+    state.cli_accounts = accounts;
+    state.cli_account_defaults = defaults;
     state.version += 1;
     save_state_inner(&state)
 }
@@ -1216,5 +1272,76 @@ mod tests {
         assert_marker(&bak_after, 123, "protected-bak");
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The whole point of the slice: a CLI account survives an app restart.
+    /// Also pins that the sticky per-project defaults travel with it — a
+    /// default naming an account that did not come back would silently send
+    /// the next session to the ambient login.
+    #[test]
+    fn cli_accounts_slice_round_trips_with_sticky_defaults() {
+        let dir = unique_temp_dir("cli-accounts");
+        let _guard = redirect_data_dir_for_test(dir.clone());
+
+        let mut defaults = BTreeMap::new();
+        let mut per_cli = BTreeMap::new();
+        per_cli.insert("claude-code".to_string(), "acct_1".to_string());
+        defaults.insert("D:/projects/PacketADE".to_string(), per_cli);
+
+        save_cli_accounts(
+            vec![CliAccount {
+                id: "acct_1".to_string(),
+                label: "Client work".to_string(),
+                cli: "claude-code".to_string(),
+                config_dir: "/home/tester/.claude-client".to_string(),
+                email: Some("tester@example.test".to_string()),
+                created_at: 1_700_000_000_000,
+                last_used_at: None,
+            }],
+            defaults,
+        )
+        .expect("save_cli_accounts should succeed");
+
+        let loaded = load_state();
+        assert_eq!(loaded.cli_accounts.len(), 1);
+        assert_eq!(loaded.cli_accounts[0].label, "Client work");
+        assert_eq!(
+            loaded.cli_accounts[0].config_dir,
+            "/home/tester/.claude-client"
+        );
+        assert_eq!(
+            loaded.cli_account_defaults["D:/projects/PacketADE"]["claude-code"],
+            "acct_1"
+        );
+
+        // Writing an unrelated slice must not drop the accounts.
+        save_servers(Vec::new()).expect("save_servers should succeed");
+        let after = load_state();
+        assert_eq!(
+            after.cli_accounts.len(),
+            1,
+            "an unrelated slice write must not clobber cli_accounts"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Pre-multi-account state files have neither field. They must load as
+    /// empty rather than failing the whole state read.
+    #[test]
+    fn legacy_state_without_cli_accounts_loads_empty() {
+        // Build a real state file, then delete the two new keys — exactly what
+        // a pre-multi-account `state.v1.json` looks like on an upgrade.
+        let mut value =
+            serde_json::to_value(PersistedState::default()).expect("serialize default state");
+        let object = value.as_object_mut().expect("state is a json object");
+        object.remove("cli_accounts");
+        object.remove("cli_account_defaults");
+        assert!(!object.contains_key("cli_accounts"));
+
+        let state: PersistedState =
+            serde_json::from_value(value).expect("legacy state should still deserialize");
+        assert!(state.cli_accounts.is_empty());
+        assert!(state.cli_account_defaults.is_empty());
     }
 }

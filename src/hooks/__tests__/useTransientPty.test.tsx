@@ -94,4 +94,34 @@ describe("runTransientPty", () => {
     listeners[ptyExitEvent("pty-x")]?.({ payload: "0" });
     await run;
   });
+
+  // Multi-account: without env forwarding, `claude login` always writes to the
+  // ambient config dir and a second account can never be authenticated.
+  it("forwards env to createPtySession", async () => {
+    const run = runTransientPty({
+      command: "claude",
+      args: ["login"],
+      env: { CLAUDE_CONFIG_DIR: "D:/accts/client" },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+
+    expect(mockCreatePtySession).toHaveBeenCalledWith("", 120, 40, "claude", ["login"], {
+      CLAUDE_CONFIG_DIR: "D:/accts/client",
+    });
+
+    listeners[ptyExitEvent("pty-x")]?.({ payload: "0" });
+    await run;
+  });
+
+  it("passes null env when the caller supplies none (ambient — unchanged)", async () => {
+    const run = runTransientPty({ command: "bash" });
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+
+    expect(mockCreatePtySession).toHaveBeenCalledWith("", 120, 40, "bash", null, null);
+
+    listeners[ptyExitEvent("pty-x")]?.({ payload: "0" });
+    await run;
+  });
 });

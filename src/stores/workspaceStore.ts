@@ -4,6 +4,7 @@ import { saveWorkspacesSlice } from "@/lib/tauri";
 import { logSwallowed } from "@/lib/logSwallowed";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useServerStore } from "@/stores/serverStore";
+import { rememberAccountChoice, resolveAccountId } from "@/lib/sessionAccountDefaults";
 
 export interface WorkspaceSessionConfig {
   prompt?: string;
@@ -17,6 +18,21 @@ export interface WorkspaceSessionConfig {
    * origin` at workspace-creation time. Stamped onto `Workspace.githubRepo`.
    */
   githubRepo?: { owner: string; repo: string };
+  /**
+   * Multi-account CLI support: explicit per-slot account choices made at
+   * session-creation time (the New Workspace modal), keyed by
+   * {@link WorkspaceAgentSlot}.
+   *
+   * Tri-state on purpose:
+   * - key present with an id ⇒ launch under that account
+   * - key present and `null`  ⇒ the user explicitly chose the ambient login
+   * - key ABSENT              ⇒ fall back to the sticky per-project default
+   *
+   * Every present key is also written back as the project's sticky default,
+   * so the next launch — including the programmatic ones that never open a
+   * modal — remembers it.
+   */
+  accountIds?: Partial<Record<WorkspaceAgentSlot, string | null>>;
 }
 
 /**
@@ -93,7 +109,22 @@ interface WorkspaceStore {
   addPinnedCommand: (workspaceId: string, paneId: string, command: string) => void;
   setModelOverride: (workspaceId: string, agentId: string, model: string | null) => void;
   removePinnedCommand: (workspaceId: string, paneId: string, index: number) => void;
-  addPane: (workspaceId: string, agentId: WorkspaceAgentSlot) => string | null;
+  /**
+   * Append a pane to a workspace.
+   *
+   * `options.accountId` (multi-account CLI support) is tri-state, matching
+   * {@link WorkspaceSessionConfig.accountIds}: an id launches under that
+   * account, `null` is an explicit ambient login, and omitting it entirely
+   * falls back to the sticky per-project default — which is what keeps the
+   * programmatic call sites (agent hand-offs, Toolbar quick-launch) from
+   * silently launching ambient in a project that has a remembered account.
+   * An explicit value is written back as the new sticky default.
+   */
+  addPane: (
+    workspaceId: string,
+    agentId: WorkspaceAgentSlot,
+    options?: { accountId?: string | null },
+  ) => string | null;
   removePane: (workspaceId: string, paneId: string) => void;
   /**
    * Tile program (P1-S2): prune every conversation pane referencing
@@ -167,12 +198,43 @@ function mintPaneId(): string {
  */
 let focusToken = 0;
 
-function buildPanes(agents: WorkspaceAgentSlot[]): WorkspacePane[] {
-  return agents.map((agent) => ({
-    id: mintPaneId(),
-    agentId: agent,
-    sessionId: null,
-  }));
+/**
+ * Multi-account CLI support: settle the account a brand-new pane launches
+ * under, and record the choice when it was explicit.
+ *
+ * `explicit === undefined` means "the caller never expressed an opinion" — the
+ * seven-odd programmatic `createWorkspace`/`addPane` call sites that bypass the
+ * modals — so we fall back to the sticky per-project default rather than
+ * silently launching ambient. An explicit value (including `null` for "use the
+ * ambient login") wins AND becomes the new sticky default.
+ */
+function settleAccountId(
+  projectPath: string,
+  agent: WorkspaceAgentSlot,
+  explicit: string | null | undefined,
+): string | undefined {
+  if (explicit === undefined) return resolveAccountId(projectPath, agent);
+  rememberAccountChoice(projectPath, agent, explicit);
+  return explicit ?? undefined;
+}
+
+function buildPanes(
+  agents: WorkspaceAgentSlot[],
+  projectPath: string,
+  accountIds?: Partial<Record<WorkspaceAgentSlot, string | null>>,
+): WorkspacePane[] {
+  return agents.map((agent) => {
+    // `undefined` (absent, or an explicitly-undefined value) ⇒ sticky default;
+    // `null` ⇒ the user deliberately chose the ambient login.
+    const accountId = settleAccountId(projectPath, agent, accountIds?.[agent]);
+    return {
+      id: mintPaneId(),
+      agentId: agent,
+      sessionId: null,
+      // Ambient panes stay byte-identical to the pre-multi-account shape.
+      ...(accountId ? { accountId } : {}),
+    };
+  });
 }
 
 const WORKSPACES_CACHE_KEY = "packetade:workspaces-cache";
@@ -227,6 +289,12 @@ function normalizePane(raw: unknown): WorkspacePane | null {
   } else {
     normalized.kind = "terminal";
     delete normalized.conversationId;
+  }
+  // Multi-account CLI support: a non-string / blank `accountId` from an
+  // untrusted cache degrades to ambient rather than reaching the runtime as a
+  // bogus config-dir lookup.
+  if (typeof normalized.accountId !== "string" || !normalized.accountId.trim()) {
+    delete normalized.accountId;
   }
   return normalized as unknown as WorkspacePane;
 }
@@ -377,7 +445,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       id,
       name,
       agents,
-      panes: buildPanes(agents),
+      // Multi-account CLI support: panes resolve their account from the
+      // caller's explicit choice, else the sticky per-project default. Keyed
+      // on `effectiveProjectPath` so remote workspaces stick per remote path.
+      panes: buildPanes(agents, effectiveProjectPath, sessionConfig?.accountIds),
       projectPath: effectiveProjectPath,
       prompt: sessionConfig?.prompt,
       createdAt: now,
@@ -557,8 +628,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     );
   },
 
-  addPane: (workspaceId, agentId) => {
+  addPane: (workspaceId, agentId, options) => {
     const newPaneId = mintPaneId();
+    // Resolved once, outside the (potentially re-run) updater, so the sticky
+    // default is written exactly once per add.
+    const target = get().workspaces.find((w) => w.id === workspaceId);
+    const accountId = target
+      ? settleAccountId(target.projectPath, agentId, options?.accountId)
+      : undefined;
     set(
       commitWorkspaces((s) => {
         const workspaces = s.workspaces.map((w) => {
@@ -567,6 +644,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
             id: newPaneId,
             agentId,
             sessionId: null,
+            // Ambient panes stay byte-identical to the pre-multi-account shape.
+            ...(accountId ? { accountId } : {}),
           };
           return {
             ...w,

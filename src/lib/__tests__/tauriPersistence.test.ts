@@ -54,6 +54,8 @@ function makePersistedStateDto(overrides: Partial<PersistedStateDto> = {}): Pers
     memoryEvents: [],
     memoryPatterns: [],
     servers: [],
+    cliAccounts: [],
+    cliAccountDefaults: {},
     ...overrides,
   };
 }
@@ -554,6 +556,73 @@ describe("Tauri persistence DTO mapping", () => {
       .panes[0];
     expect(pane).not.toHaveProperty("kind");
     expect(pane).not.toHaveProperty("conversationId");
+    // Multi-account CLI support: an ambient pane must stay byte-identical too.
+    expect(pane).not.toHaveProperty("accountId");
+  });
+
+  it("round-trips a pane's accountId through toDto/fromDto", async () => {
+    // Multi-account CLI support: the pane-level `accountId` chosen at
+    // session-creation time is what the runtime turns into CLAUDE_CONFIG_DIR /
+    // CODEX_HOME. The pane whitelist in toDtoWorkspace/fromDtoWorkspace would
+    // silently drop it on the next save unless it is threaded through BOTH.
+    const workspace: Workspace = {
+      id: "workspace-acct",
+      name: "Workspace",
+      agents: ["claude-code"],
+      panes: [
+        {
+          id: "pane-acct",
+          agentId: "claude-code",
+          sessionId: null,
+          gridPosition: { row: 0, col: 0 },
+          accountId: "acct-client",
+        },
+      ],
+      projectPath: "/repo",
+      createdAt: 1,
+      updatedAt: 2,
+      status: "active",
+    };
+
+    await saveWorkspacesSlice([workspace]);
+
+    expect(mockInvoke).toHaveBeenCalledWith("save_workspaces_slice", {
+      workspaces: [
+        expect.objectContaining({
+          panes: [expect.objectContaining({ accountId: "acct-client" })],
+        }),
+      ],
+    });
+
+    mockInvoke.mockResolvedValue(
+      makePersistedStateDto({
+        workspaces: [
+          {
+            id: "workspace-acct",
+            name: "Workspace",
+            agents: ["claude-code"],
+            panes: [
+              {
+                id: "pane-acct",
+                agentId: "claude-code",
+                sessionId: null,
+                gridPosition: { row: 0, col: 0 },
+                accountId: "acct-client",
+              },
+            ],
+            projectPath: "/repo",
+            createdAt: 1,
+            updatedAt: 2,
+            status: "active",
+          } as unknown as PersistedStateDto["workspaces"][number],
+        ],
+      }),
+    );
+
+    const state = await loadPersistedState();
+    expect(state.workspaces[0].panes[0]).toEqual(
+      expect.objectContaining({ agentId: "claude-code", accountId: "acct-client" }),
+    );
   });
 
   it("omits undefined ui fields for partial ui slice saves", async () => {

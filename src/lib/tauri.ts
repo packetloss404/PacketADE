@@ -23,6 +23,7 @@ import type {
   UpdateProjectMemoryInput,
 } from "@/types/project-memory";
 import type { ServerConfig } from "@/types/server";
+import type { CliAccount, CliAccountCli } from "@/types/cliAccount";
 import type { PacketAgentRequest, PacketAgentResponse } from "@/types/packet-agent";
 
 type WorkspacePaneDtoWithFrontendMetadata = WorkspaceDto["panes"][number] &
@@ -400,6 +401,31 @@ export async function cancelQualityFix(runId: string): Promise<boolean> {
 
 export async function saveServersSlice(servers: ServerConfig[]): Promise<void> {
   return invoke("save_servers_slice", { servers });
+}
+
+/**
+ * Sticky per-project CLI-account choice: `project path -> cli -> account id`.
+ * A `Partial` inner record because a project may have picked an account for
+ * one CLI and not the other.
+ */
+export type CliAccountDefaults = Record<string, Partial<Record<CliAccountCli, string>>>;
+
+/**
+ * Persist the CLI-account slice. Accounts and their sticky defaults travel
+ * together — a default naming an account that did not survive the same write
+ * would silently route the next session to the ambient login.
+ *
+ * Mirrors `saveServersSlice`: the store owns the list and re-sends the whole
+ * slice on every mutation, so the backend never merges.
+ */
+export async function saveCliAccountsSlice(
+  accounts: CliAccount[],
+  defaults: CliAccountDefaults,
+): Promise<void> {
+  return invoke("save_cli_accounts_slice", {
+    accounts: accounts.map(toDtoCliAccount),
+    defaults,
+  });
 }
 
 export async function saveMemorySlice(
@@ -1340,6 +1366,10 @@ export type PersistedState = {
   memoryEvents: MemoryEvent[];
   memoryPatterns: LearnedPattern[];
   servers: ServerConfig[];
+  /** Named per-CLI logins — see `src/types/cliAccount.ts`. */
+  cliAccounts: CliAccount[];
+  /** Sticky per-project account choice: `project path -> cli -> account id`. */
+  cliAccountDefaults: CliAccountDefaults;
 };
 
 function normalizeOptionalRecord(record?: {
@@ -1834,6 +1864,9 @@ function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
       // hydrated result.
       kind: pane.kind === "conversation" ? "conversation" : undefined,
       conversationId: pane.conversationId,
+      // Multi-account CLI support: thread the selected account id through
+      // hydration or it silently drops on the next save. Absent ⇒ ambient.
+      accountId: pane.accountId,
     })),
     projectPath: workspace.projectPath,
     prompt: workspace.prompt,
@@ -1872,6 +1905,10 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDtoWithFrontendMetadata 
       ...(pane.kind === "conversation"
         ? { kind: "conversation" as const, conversationId: pane.conversationId }
         : {}),
+      // Multi-account CLI support: only panes bound to an explicit account
+      // carry the field — an ambient pane stays byte-identical to the
+      // pre-multi-account shape, so an old binary round-trip is unaffected.
+      ...(pane.accountId ? { accountId: pane.accountId } : {}),
     })),
     projectPath: workspace.projectPath,
     prompt: workspace.prompt,
@@ -1914,7 +1951,51 @@ function fromDtoPersistedState(state: PersistedStateDto): PersistedState {
     memoryEvents: (state.memoryEvents ?? []) as MemoryEvent[],
     memoryPatterns: (state.memoryPatterns ?? []) as LearnedPattern[],
     servers: (state.servers ?? []).map(fromDtoServer),
+    cliAccounts: (state.cliAccounts ?? []).map(fromDtoCliAccount),
+    cliAccountDefaults: fromDtoCliAccountDefaults(state.cliAccountDefaults),
   };
+}
+
+function fromDtoCliAccount(a: PersistedStateDto["cliAccounts"][number]): CliAccount {
+  return {
+    id: a.id,
+    label: a.label,
+    // The DTO carries `cli` as a plain string for forward compatibility.
+    // Anything unrecognized is coerced to claude-code rather than dropped so
+    // a stale record stays visible (and deletable) in Settings.
+    cli: a.cli === "codex" ? "codex" : "claude-code",
+    configDir: a.configDir,
+    email: a.email ?? undefined,
+    createdAt: Number(a.createdAt),
+    lastUsedAt: a.lastUsedAt != null ? Number(a.lastUsedAt) : undefined,
+  };
+}
+
+function toDtoCliAccount(a: CliAccount): PersistedStateDto["cliAccounts"][number] {
+  return {
+    id: a.id,
+    label: a.label,
+    cli: a.cli,
+    configDir: a.configDir,
+    email: a.email ?? null,
+    createdAt: a.createdAt,
+    lastUsedAt: a.lastUsedAt ?? null,
+  };
+}
+
+/** ts-rs types map values as optional; normalize to a dense record. */
+function fromDtoCliAccountDefaults(
+  defaults: PersistedStateDto["cliAccountDefaults"] | undefined,
+): CliAccountDefaults {
+  const out: CliAccountDefaults = {};
+  for (const [projectPath, perCli] of Object.entries(defaults ?? {})) {
+    if (!perCli) continue;
+    const entry: Partial<Record<CliAccountCli, string>> = {};
+    if (typeof perCli["claude-code"] === "string") entry["claude-code"] = perCli["claude-code"];
+    if (typeof perCli.codex === "string") entry.codex = perCli.codex;
+    if (Object.keys(entry).length > 0) out[projectPath] = entry;
+  }
+  return out;
 }
 
 function fromDtoServer(s: PersistedStateDto["servers"][number]): ServerConfig {
@@ -1989,6 +2070,8 @@ function toDtoPersistedState(state: PersistedState): PersistedStateDto {
     memoryEvents: state.memoryEvents,
     memoryPatterns: state.memoryPatterns,
     servers: state.servers.map(toDtoServer),
+    cliAccounts: state.cliAccounts.map(toDtoCliAccount),
+    cliAccountDefaults: state.cliAccountDefaults,
   };
 }
 
@@ -2900,12 +2983,69 @@ export async function deleteApiKey(provider: string): Promise<void> {
 }
 
 export type ProviderAuthStatus = {
-  status: "ready" | "login_required" | "missing_key" | "service_down" | "coming_soon";
+  status:
+    | "ready"
+    | "login_required"
+    | "missing_key"
+    | "service_down"
+    | "coming_soon"
+    /**
+     * Indeterminate — we could not prove either way. Emitted only by
+     * `getProviderAuthStatusForDir` for a claude account dir on macOS, where
+     * credentials live in the login Keychain and we deliberately do not
+     * guess at the (unconfirmed) per-config-dir namespacing. Treat as
+     * "probably fine": show a caveat, do NOT block a launch on it.
+     */
+    | "unknown";
   hint: string; // short CTA/explanation, e.g. "Run claude login" or "Ollama not reachable"
 };
 
 export async function getProviderAuthStatus(provider: string): Promise<ProviderAuthStatus> {
   return invoke("get_provider_auth_status", { provider });
+}
+
+/**
+ * Per-account sibling of {@link getProviderAuthStatus}: probes the credential
+ * state of one CLI account's `configDir` (what a launch points
+ * `CLAUDE_CONFIG_DIR` / `CODEX_HOME` at).
+ *
+ * Pass `""` for `configDir` to mean "no account selected" — the backend then
+ * delegates to the ambient zero-arg probe, so this is safe to call
+ * unconditionally, including for API-key providers. A non-empty `configDir`
+ * is only supported for `claude-oauth` and `openai-codex` and rejects
+ * otherwise.
+ */
+export async function getProviderAuthStatusForDir(
+  provider: string,
+  configDir: string,
+): Promise<ProviderAuthStatus> {
+  return invoke("get_provider_auth_status_for_dir", { provider, configDir });
+}
+
+export type CliAccountSeedResult = {
+  createdDir: boolean;
+  copied: string[];
+  skippedExisting: string[];
+};
+
+/**
+ * Create a CLI account's config dir and carry the NON-SECRET configuration
+ * (`settings.json` / `config.toml`) over from the ambient dir.
+ *
+ * `CLAUDE_CONFIG_DIR` / `CODEX_HOME` relocate the CLI's whole state root, so a
+ * fresh account dir would otherwise start with no statusline hook and none of
+ * the MCP servers PacketADE writes into `~/.claude/settings.json` — a blank
+ * status bar and missing tools with nothing on screen to explain it.
+ *
+ * Credential files are never copied (the allowlist is hard-coded in Rust):
+ * cloning the login would defeat the entire point of a second account.
+ * Existing files in the target are never overwritten.
+ */
+export async function seedCliAccountConfigDir(
+  sourceDir: string,
+  targetDir: string,
+): Promise<CliAccountSeedResult> {
+  return invoke("seed_cli_account_config_dir", { sourceDir, targetDir });
 }
 
 /**
