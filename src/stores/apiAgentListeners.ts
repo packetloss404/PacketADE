@@ -661,10 +661,10 @@ export async function installApiAgentListeners(conversationId: string): Promise<
   );
 
   // F6: live token totals between turns. Update the streaming assistant
-  // message's tokens so SessionMetaLine / cost pills reflect mid-stream
-  // usage instead of waiting for the final `done` payload. A2: also
-  // forward `reasoning_tokens` (Codex 0.125+) so CostDashboard accounts
-  // for GPT-5.5's reasoning slice. A3: when `address` is set (Codex
+  // message's tokens so the per-turn token pill reflects mid-stream usage
+  // instead of waiting for the final `done` payload. A2: also forward
+  // `reasoning_tokens` (Codex 0.125+) so the guardrail rollup accounts for
+  // GPT-5.5's reasoning slice. A3: when `address` is set (Codex
   // MultiAgentV2 sub-agent), accumulate into a per-address bucket on
   // the conversation INSTEAD of mutating the streaming message — the
   // root thread's tokens belong to the user-visible turn; sub-agent

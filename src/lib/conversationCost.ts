@@ -5,6 +5,13 @@ import { calculateCostUsd, ratesForModel, type PricedAt } from "@/lib/modelPrici
 /**
  * Conversation cost estimation.
  *
+ * NOTE (2026-07-31): the user-facing cost REPORTING surface was removed. What
+ * remains here is measurement, not display — `estimateTurnCostUsd` stamps
+ * `costUsd` on assistant messages at receipt time and `aggregateConversationCost`
+ * still supplies token totals. The dollar figures feed the budget guardrails
+ * (`lib/costGuardrails.ts`), which stop runaway agents. Do not add formatting
+ * helpers here; there is no dashboard to format for any more.
+ *
  * Rates come from `shared/model-pricing.json` via `lib/modelPricing.ts` — the
  * same file the Rust engine compiles in. This module used to carry its own
  * `COST_PER_MTOK` table that disagreed with Rust's on three shipped models;
@@ -117,18 +124,4 @@ export function aggregateConversationCost(
   }
 
   return { totalTokens, estCost: priced ? estCost : null };
-}
-
-/**
- * Format a USD cost for a compact sidebar pill.
- * - `null`/`0` (or no tokens) -> `null` (caller hides the pill)
- * - `< $0.01` -> `"$<0.01"`
- * - otherwise -> `"$0.04"` (2 decimals)
- */
-export function formatCostPill(estCost: number | null, totalTokens: number): string | null {
-  if (estCost === null) return null;
-  if (totalTokens <= 0) return null;
-  if (estCost <= 0) return null;
-  if (estCost < 0.01) return "$<0.01";
-  return `$${estCost.toFixed(2)}`;
 }

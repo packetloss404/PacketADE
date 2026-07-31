@@ -1,13 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowDownToLine,
-  Coins,
   FolderOpen,
   GitBranch as GitBranchIcon,
   Plug,
   Server,
 } from "lucide-react";
-import { estimateTurnCostUsd } from "@/lib/conversationCost";
 import { gitSafetyCheck, type GitSafetyReport } from "@/lib/tauri";
 import { useAgentSidebarPrefsStore } from "@/stores/agentSidebarPrefsStore";
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -21,11 +19,6 @@ function basenameOf(path: string): string {
   return segs[segs.length - 1] ?? path;
 }
 
-function formatCost(usd: number): string {
-  if (usd < 0.01) return "$<0.01";
-  return `$${usd.toFixed(2)}`;
-}
-
 interface SessionMetaLineProps {
   conversation: AgentConversation;
 }
@@ -35,13 +28,14 @@ interface SessionMetaLineProps {
  * token count, and turn/tool-call/pending counts all died with that
  * component (vanity — the model picker and ContextUsageRing already show
  * model/context once each, and pending-approval count lives in
- * PendingApprovalsSection). This line owns exactly three facts:
+ * PendingApprovalsSection). This line owns exactly two facts:
  *
  * - project pill (custom label or basename, full path on hover)
  * - git branch/dirty/behind-upstream (ported verbatim from SessionHealthBar)
- * - session cost, api-mode only, summed from the P0-5 stamped `costUsd` on
- *   each assistant message (falling back to the same frontend estimate
- *   MessageList's per-turn pill uses for older persisted messages)
+ *
+ * A right-aligned session-cost readout used to live here too; it went with the
+ * rest of the cost reporting surface on 2026-07-31. Cost is still measured and
+ * still drives the budget guardrails — it is just no longer displayed.
  */
 export function SessionMetaLine({ conversation }: SessionMetaLineProps) {
   const projectLabels = useAgentSidebarPrefsStore((s) => s.projectLabels);
@@ -84,8 +78,6 @@ export function SessionMetaLine({ conversation }: SessionMetaLineProps) {
     };
   }, [projectPath, isSsh]);
 
-  const isApi = conversation.mode === "api";
-
   // S8-Phase-B (Slice B): MCP servers the sidecar sourced from its own FS for
   // this session (remote sessions), plus any read/parse errors. Shown for all
   // sessions — it's a free signal for local stdio too — with amber styling
@@ -94,18 +86,6 @@ export function SessionMetaLine({ conversation }: SessionMetaLineProps) {
   const mcpCount = mcpSources?.sources.length ?? 0;
   const mcpErrorCount = mcpSources?.readErrors.length ?? 0;
   const showMcpPill = !!mcpSources && (mcpCount > 0 || mcpErrorCount > 0);
-
-  const sessionCost = useMemo(() => {
-    if (!isApi) return null;
-    let total = 0;
-    for (const m of conversation.messages ?? []) {
-      if (m.role !== "assistant") continue;
-      // Fallback estimate prices at the message's OWN timestamp so a
-      // published rate change never reprices an old turn.
-      total += m.costUsd ?? estimateTurnCostUsd(conversation.model, m, m.timestamp) ?? 0;
-    }
-    return total;
-  }, [isApi, conversation.messages, conversation.model]);
 
   return (
     <div className="flex items-center gap-3 px-3 py-1 bg-bg-primary border-b border-line-soft text-meta text-text-muted shrink-0 overflow-hidden">
@@ -198,16 +178,6 @@ export function SessionMetaLine({ conversation }: SessionMetaLineProps) {
               MCP {mcpCount}
               {mcpErrorCount > 0 ? ` (!${mcpErrorCount})` : ""}
             </span>
-          </span>
-        </Tooltip>
-      )}
-
-      {/* Right-aligned session cost (api-only) */}
-      {isApi && sessionCost != null && sessionCost > 0 && (
-        <Tooltip content="Estimated session cost" side="bottom">
-          <span className="ml-auto flex items-center gap-1 shrink-0">
-            <Coins size={10} />
-            <span>{formatCost(sessionCost)}</span>
           </span>
         </Tooltip>
       )}

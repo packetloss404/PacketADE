@@ -38,7 +38,6 @@ const EXHAUSTIVE = [
   "tools",
   "github",
   "memory",
-  "cost_dashboard",
   "dictation",
 ] as const satisfies readonly CoreView[];
 
@@ -128,7 +127,7 @@ describe("Left Rail placement", () => {
 describe("command-palette coverage (audit P1-9)", () => {
   const paletteIds = paletteRoutes().map((r) => r.id);
 
-  it.each(["agents", "flights", "cost_dashboard", "dictation"] as const)(
+  it.each(["agents", "flights", "dictation"] as const)(
     "exposes the previously missing %s destination",
     (id) => {
       expect(paletteIds).toContain(id);
@@ -166,11 +165,27 @@ describe("Dictation route identity", () => {
   });
 });
 
+describe("removed Cost Dashboard route (2026-07-31)", () => {
+  it("has no registry row, so it is absent from rail, palette, hotkeys and status strip", () => {
+    expect(Object.keys(ROUTE_REGISTRY)).not.toContain("cost_dashboard");
+    expect(ALL_ROUTES.map((r) => r.id)).not.toContain("cost_dashboard");
+    expect(paletteRoutes().map((r) => r.id)).not.toContain("cost_dashboard");
+    expect(railPrimaryRoutes().map((r) => r.id)).not.toContain("cost_dashboard");
+    expect(railFooterRoutes().map((r) => r.id)).not.toContain("cost_dashboard");
+    expect(hotkeyRoutes().map((r) => r.id)).not.toContain("cost_dashboard");
+  });
+
+  it("no longer resolves as a view, so a persisted selection cannot strand the shell", () => {
+    expect(resolveViewRouteId("cost_dashboard" as CoreView)).toBeNull();
+    expect(getRoute("cost_dashboard" as CoreView)).toBeNull();
+    expect(routeStatusLabel("cost_dashboard" as CoreView)).toBeNull();
+  });
+});
+
 describe("status labels", () => {
   it("keeps the shipped Status Strip wording", () => {
     expect(routeStatusLabel("workspace")).toBe("Workspace");
     expect(routeStatusLabel("flights")).toBe("Flight Deck");
-    expect(routeStatusLabel("cost_dashboard")).toBe("Costs");
     // Pre-existing P2 wording mismatch, now visible in one place.
     expect(routeStatusLabel("tools")).toBe("Tools");
     expect(routeStatusLabel("welcome")).toBe("Welcome");

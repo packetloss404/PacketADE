@@ -3,7 +3,6 @@ import { FolderOpen, Wrench, Mic, Search, Plus, ChevronDown, Target, Ticket, Lay
 import { DropdownItem } from "./DropdownItem";
 import { SidecarStatusChip } from "./SidecarStatusChip";
 import { RunningAgentsChip } from "./RunningAgentsChip";
-import { LiveSpendChip } from "./LiveSpendChip";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, isModuleView, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
@@ -210,10 +209,6 @@ export function Toolbar() {
         {/* Running agents tray — only renders when at least one agent is
             mid-stream. Click to inspect / jump / stop. */}
         <RunningAgentsChip />
-
-        {/* B6: live spend HUD — today's persisted total + in-flight session
-            spend. Auto-refreshes; click jumps to the Cost Dashboard. */}
-        <LiveSpendChip />
 
         <div className="w-px h-4 bg-bg-border self-center" />
 

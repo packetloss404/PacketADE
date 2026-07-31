@@ -15,7 +15,7 @@ import {
   aggregateConversationDiffs,
   type PerFileDiffStat,
 } from "@/lib/aggregateConversationDiffs";
-import { aggregateConversationCost, formatCostPill } from "@/lib/conversationCost";
+import { aggregateConversationCost } from "@/lib/conversationCost";
 import { API_PROVIDERS } from "@/lib/api-models";
 import { AgentPreviewPane } from "./AgentPreviewPane";
 import { ReviewSurface } from "./review/ReviewSurface";
@@ -252,10 +252,12 @@ function InspectorContent({ conversationId }: { conversationId: string }) {
     conversation?.model ??
     "—";
   const startedRel = conversation ? relTime(Date.now() - conversation.createdAt) : "—";
-  const { totalTokens, estCost } = conversation
+  // Tokens only. The dollar figure that used to sit next to this was part of
+  // the cost reporting surface removed on 2026-07-31; token counts stay because
+  // they are the measurement the prompt-caching work depends on.
+  const { totalTokens } = conversation
     ? aggregateConversationCost(conversation)
-    : { totalTokens: 0, estCost: 0 };
-  const costLabel = formatCostPill(estCost, totalTokens) ?? "$0.00";
+    : { totalTokens: 0 };
 
   return (
     <>
@@ -335,7 +337,6 @@ function InspectorContent({ conversationId }: { conversationId: string }) {
             }
           />
           <KvRow k="Started" v={startedRel} />
-          <KvRow k="Cost" v={<span className="font-mono">{costLabel}</span>} />
           <KvRow
             k="Tokens"
             v={<span className="font-mono">{totalTokens.toLocaleString()}</span>}

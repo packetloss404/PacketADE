@@ -20,6 +20,7 @@ import { useCliAccountStore } from "@/stores/cliAccountStore";
 import { useIssueStore } from "@/stores/issueStore";
 import { migrateSshTargetsToServers } from "@/lib/sshTargetMigration";
 import { startBoundedAutonomyRuntime } from "@/stores/boundedAutonomyRuntime";
+import { startCostGuardrailMonitor } from "@/stores/analyticsStore";
 import { sampleWorkspaceAgentsDisplayTopology } from "@/stores/workspaceAgentsDogfoodStore";
 import { hydrateConversations } from "@/stores/agentConversationPersistence";
 
@@ -215,6 +216,10 @@ export async function initializeApp(): Promise<void> {
 
   startBoundedAutonomyRuntime();
   registerFlightCostListener();
+  // Cost guardrails are a control input, not reporting: this poll refreshes
+  // the spend figures the caps are evaluated against and fires threshold
+  // notifications. It used to hang off the (now removed) LiveSpendChip.
+  startCostGuardrailMonitor();
   void sampleWorkspaceAgentsDisplayTopology();
 
   // Kick CLI detection in the background — surfaces installed status to the

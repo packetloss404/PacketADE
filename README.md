@@ -117,7 +117,6 @@ handoffs, and deep links never materialize wrapper Workspaces.
 - **Auto-failover on rate-limit**: 429 / quota / overload errors trigger a same-provider fallback (Opus → Sonnet → Haiku, o3 → gpt-5.5 → o4-mini, MiniMax → highspeed) before surfacing the failure
 - **Worktree-per-conversation** (opt-in toggle, local projects): provisions `.pkt-worktrees/<convId>` on a fresh `pkt/<convId>` branch so the conversation's tool calls don't touch the main checkout
 - **Backgroundable agent tray** in the toolbar showing a live count of streaming agents with click-to-jump and stop
-- **Live spend HUD chip** in the toolbar combining today's persisted total + in-memory session $ across every open API conversation; click jumps to the Cost Dashboard
 - **Hover-`+` Codex-App-style diff comments**: per-line `+` button in the diff view opens an inline composer; queued comments fold into the next user turn as a `File comments:` preamble
 - **Composer-mode segmented control** (Local / Worktree) at "send" time picks where the conversation runs — Local edits the project tree, Worktree runs on a fresh branch in `.pkt-worktrees/`; the choice also sets the global default
 - **Right-rail tabbed mode** with Inspector / Plan / Preview / Diff / Files tabs in a single 340 px column — lighter alternative to the full mosaic split for smaller screens; persisted toggle
@@ -265,10 +264,18 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 - Releases view and a notifications inbox (with background polling for a live badge)
 - AI investigation of issues via Claude (GitHub only)
 
-### Cost Dashboard & History
+### Budget guardrails & History
 
-- A first-class Cost Dashboard view aggregating today's persisted spend plus live in-memory session costs (also surfaced by the toolbar LiveSpendChip)
+- Spend caps that actually stop work: daily, monthly, per-session, per-provider,
+  and per-Flight limits with a warning threshold and a hard stop that blocks a
+  launch over budget, configured in `Settings → Automation → Flights & Autonomy`
+- Bounded-autonomy Flights carry their own cost ceiling and halt when they reach it
 - A History view for browsing prior session activity
+
+> PacketADE deliberately ships **no cost reporting surface** — no dashboard, no
+> spend chip, no per-turn dollar figures. Cost is measured and used to enforce
+> budgets; it is not reported back to you. Token counts are still shown per turn
+> and per session.
 
 ### Project Operations
 
@@ -379,7 +386,7 @@ The sidecar work is complete across the original four v2 tiers and the v3–v11 
   migration and non-overridable denial floors. Anthropic Subscription, OpenAI
   Agents SDK, and in-process providers enforce it directly. Codex CLI receives
   the same authority through a generated local MCP trust proxy.
-- **Codex absorption:** Codex `todo_list` items map to the existing `plan_block` event; `reasoning_tokens` + `cached_input_tokens` flow into `turn_summary` so CostDashboard reports GPT-5.5 spend correctly; `turn_summary.address` carries the MultiAgentV2 sub-agent path (`/root/agent_a` etc.) so child token totals attribute to a per-address bucket on the conversation instead of the root.
+- **Codex absorption:** Codex `todo_list` items map to the existing `plan_block` event; `reasoning_tokens` + `cached_input_tokens` flow into `turn_summary` so GPT-5.5 spend is accounted for correctly against the budget guardrails; `turn_summary.address` carries the MultiAgentV2 sub-agent path (`/root/agent_a` etc.) so child token totals attribute to a per-address bucket on the conversation instead of the root.
 - **OpenAI Agents SDK provider:** `api-openai-agents` runs in the sidecar with the same OpenAI API key as `api-openai`, preserving the existing Agents pane event contract while leaving the stable Rust OpenAI API provider and Codex subscription provider untouched. The default `auto` mode requires approval before `bash` / `write_file`.
 - **Standalone exe sidecar fix:** the Tauri shell plugin on Windows resolves `app.shell().sidecar("node")` to `<exe_dir>/node-<target-triple>.exe`, and the call is gated by an explicit `shell:allow-execute` capability entry. `build.rs` now copies `binaries/node-<triple>.<ext>` into the cargo output directory at compile time, and `capabilities/default.json` grants the `node` sidecar entry — so running `target/<profile>/packetade.exe` directly (without installing the MSI/NSIS) no longer reports the sidecar as down.
 - See [`agent-sidecar/README.md`](./agent-sidecar/README.md) for sidecar internals and [`dev/updater-setup.md`](./dev/updater-setup.md) for signing / release channel configuration.

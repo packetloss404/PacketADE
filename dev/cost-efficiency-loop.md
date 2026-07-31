@@ -9,9 +9,64 @@ Progress:
 - **SPIKE-1 — RESOLVED 2026-07-31** (Anthropic half; OpenAI half still open).
 - **CE2 — DONE 2026-07-31.** One shared rate table, corrected Anthropic and
   MiniMax rows, cache-aware and date-aware pricing. See below.
+- **CE5 — CUT 2026-07-31** (owner decision, see next block).
+- **CE3 / CE4 — RE-SCOPED 2026-07-31** to temporary instrumentation.
 
 Related: [`local-model-routing.md`](./local-model-routing.md) (LM1–LM7 — the
 auxiliary-surface routing plan this doc deliberately does **not** duplicate).
+
+---
+
+## 0. Owner decision, 2026-07-31 — the Cost Dashboard is removed
+
+**What happened.** The user-facing cost *reporting* surface was deleted: the
+`cost_dashboard` route and `CostDashboardView`, the always-mounted `LiveSpendChip`
+in the toolbar, the Settings "Usage Analytics" `CostCard`, the per-conversation
+cost line in `SessionMetaLine`, the inspector's Cost row, the per-turn USD
+tooltip on the message token pill, and the `/usage` slash command. The owner's
+reasoning: a reporting surface is not worth its maintenance cost.
+
+**What survives, and why.** Cost did not stop being a *control input*:
+
+- **Budget guardrails** (`lib/costGuardrails.ts`, `stores/costGuardrailStore.ts`,
+  `stores/analyticsStore.ts`) still hard-stop a launch over a cap and still fire
+  threshold notifications. Their caps are now edited in
+  Settings → Flights & Autonomy (`BudgetGuardrailsCard`), and the poll that
+  refreshes their data source moved from `LiveSpendChip` into
+  `startCostGuardrailMonitor()`, started once from `bootstrap`.
+- **The bounded-autonomy cost hard-stop** (`lib/autonomyPolicy.ts`
+  `maxTotalCost` vs `Flight.totalCost`) and the Rust rollup that feeds it
+  (`commands/flight_cost.rs`, the `flight:cost-updated` event) are untouched.
+- **The shared pricing table** — `shared/model-pricing.json`,
+  `src/lib/modelPricing.ts`, `src-tauri/src/commands/pricing.rs`, and the
+  golden fixture `shared/model-pricing-cases.json` — is untouched. The rates
+  corrected in CE2 are still load-bearing *for the guardrails*.
+- **All token accounting plumbing** — `cache_read_input_tokens` /
+  `cache_creation_input_tokens` parsing, the `turn_summary` path,
+  `estimateTurnCostUsd` stamping `costUsd` on messages, and
+  `~/.packetade/usage.jsonl` — is untouched. Token counts are still displayed
+  per turn and per session (`N tok`); only the dollars are gone.
+
+**What this changes about this plan.**
+
+1. **CE5 (self-owned ledger with attribution) is CUT.** It existed to make a
+   permanent reporting surface complete and trustworthy. There is no reporting
+   surface, so the coverage work is not worth its cost.
+2. **CE3 and CE4 are RE-SCOPED** from "make the dashboard correct" / "add a
+   dashboard cache-hit tile" to **enough token measurement to prove caching
+   worked, as temporary instrumentation** — a script or dev-only readout over
+   `usage.jsonl`, deleted or left dormant once CE6 is verified. Neither is a
+   product feature any more.
+3. **The CE5-before-OAuth-removal constraint is DISSOLVED.** That constraint
+   existed because removing subscription OAuth would freeze roughly half the
+   *dashboard's* history with no PacketADE-side replacement. With no dashboard,
+   there is no history to freeze and no user-visible gap. OAuth removal is no
+   longer gated on ledger coverage. (SPIKE-2 still matters for a different
+   reason: we would be comparing a possibly-cached sidecar path against an
+   uncached in-process one.)
+4. **Nothing about Phase 1 changes.** CE6–CE11 and the context-discipline work
+   in Phase 2 are unaffected — they were always about request bytes, never
+   about the dashboard.
 
 ---
 
@@ -67,9 +122,11 @@ baseline**, so nothing in this plan may claim a saving until Phase 0 lands.
    while ignoring cache writes would have been a worse meter than before.
    `estimateTurnCostUsd` now takes `cacheWriteTokens`, both listener sites pass
    `cache_creation_input_tokens`, and read / 5-minute-write / 1-hour-write each
-   bill at their own published rate. CE3's remaining half is the
-   live/persisted de-dup in `CostDashboardView` and the `cacheWriteTokens`
-   field on the Codex sub-agent bucket (`SubAgentTokenBucket` still has none).
+   bill at their own published rate. CE3's remaining half was the
+   live/persisted de-dup in `CostDashboardView` — **moot since the dashboard
+   was removed (§0)** — plus the `cacheWriteTokens` field on the Codex
+   sub-agent bucket (`SubAgentTokenBucket` still has none), which is the only
+   part still worth doing.
 4. **Two contradictory definitions of `inputTokens` in the same codebase.**
    `conversationCost.ts` used to do `Math.max(0, input - cached)`
    unconditionally (assumes input *includes* cached); `modelContext.ts:91-105`
@@ -92,12 +149,17 @@ baseline**, so nothing in this plan may claim a saving until Phase 0 lands.
 7. **Cache tokens are recorded then thrown away.** `UsageEntry` carries
    `cache_read`/`cache_write`; the `analytics.rs` ingest loop reads only
    `cost_usd`/`input_tokens`/`output_tokens`. `AnalyticsData`/`ModelUsage` have
-   no cache fields; the dashboard has no cache column and no hit-rate anywhere.
-8. **The dashboard's "today" number double-counts in-process turns.**
-   `todayCostUsd = todayPersisted + liveSummary.costUsd`, where `liveSummary`
-   iterates every `mode === "api"` conversation in a *persisted* store — i.e.
-   including conversations from previous app runs already in `usage.jsonl`
-   (`CostDashboardView.tsx:537-551`). This number feeds the guardrails.
+   no cache fields, so there is no hit-rate figure anywhere in the product.
+   This is the one gap CE4 still has to close, now as temporary
+   instrumentation rather than a dashboard column.
+8. ~~**The dashboard's "today" number double-counts in-process turns.**~~
+   **MOOT since 2026-07-31 (§0).** The double-count lived in
+   `CostDashboardView`'s `todayPersisted + liveSummary.costUsd`, which iterated
+   a *persisted* conversation store and therefore re-added turns already in
+   `usage.jsonl`. The dashboard is gone and the chip that reproduced the same
+   sum is gone with it. The guardrails now evaluate the backend
+   `read_usage_analytics` figures directly, with no live re-add — which also
+   removes the risk that the double-count made a cap fire early.
 
 **Where the researchers disagreed — stated, not papered over:**
 
@@ -205,9 +267,11 @@ and saves nothing; it makes the meter honest. Phase 1 is the actual win.
 > overstate Anthropic cache reads by 2.5x, hiding the real saving.~~
 > **Largely closed by CE2 (2026-07-31):** cache writes and cache reads now bill
 > at their own published per-model rates in both engines, and the 0.25 constant
-> is gone. What remains of CE3 — the dashboard live/persisted de-dup and the
-> missing `cacheWriteTokens` on the Codex sub-agent bucket — is still a
-> prerequisite of CE6.
+> is gone. **Narrowed further by the dashboard removal (§0):** there are no
+> message, sidebar, or dashboard dollar figures left to render wrong. What the
+> warning still applies to is the **guardrails**, which do consume these
+> numbers — so the remaining half of CE3 (the missing `cacheWriteTokens` on the
+> Codex sub-agent bucket) stays a prerequisite of CE6.
 
 ### Phase 0 — Make the meter honest (no behaviour change)
 
@@ -292,60 +356,74 @@ and saves nothing; it makes the meter honest. Phase 1 is the actual win.
   understated ~20%. Repricing them is a product decision (it visibly rewrites
   history), not a refactor, so it is left to CE5's one-time-import work.
 
-#### CE3 — Cache-write term in the frontend estimator + live/persisted de-dup
-- **Changes:** `cacheWriteTokens` parameter on `estimateTurnCostUsd`;
-  `totalCacheWrite` accumulator in `aggregateConversationCost`; pass
-  `cache_creation_input_tokens` at both listener call sites; add the field to
-  the `agentStreamingStore` sub-agent bucket. Scope `liveSummary` to
-  conversations with an in-flight turn so it stops re-adding turns already in
-  `usage.jsonl`.
-- **Files:** `src/lib/conversationCost.ts`, `src/stores/apiAgentListeners.ts`,
-  `src/stores/agentStreamingStore.ts`,
-  `src/components/views/CostDashboardView.tsx`
+#### CE3 — Cache-write term in the token accounting — **RE-SCOPED 2026-07-31**
+- **Re-scope.** Originally "make the estimator and the dashboard correct". The
+  dashboard is gone (§0), so the live/persisted de-dup is deleted from scope
+  and what remains is a narrow correctness fix in the numbers the **guardrails**
+  consume. Most of the original scope already shipped inside CE2.
+- **Remaining changes:** add `cacheWriteTokens` to the `agentStreamingStore`
+  Codex sub-agent bucket (`SubAgentTokenBucket` has no such field, so a
+  multi-agent Codex turn under-reports the most expensive token class once CE6
+  makes it non-zero). ~~Scope `liveSummary` to in-flight conversations~~ —
+  dropped with `CostDashboardView`.
+- **Already done in CE2:** `cacheWriteTokens` on `estimateTurnCostUsd`, both
+  listener call sites passing `cache_creation_input_tokens`, per-class rates.
+- **Files:** `src/stores/agentStreamingStore.ts`, `src/lib/conversationCost.ts`
 - **Effort:** small
-- **Expected saving:** $0 — but without it CE6 makes the UI actively wrong.
-- **Verify:** synthetic turn with known cache-write tokens shows non-zero cost;
-  guardrail fires at the right threshold.
+- **Expected saving:** $0 — without it CE6 makes the **guardrails** under-trigger
+  during cache thrash. No longer a UI-correctness item; there is no UI.
+- **Verify:** synthetic multi-agent turn with known cache-write tokens; guardrail
+  fires at the right threshold.
 - **Depends on:** CE1, CE2. **Blocks CE6.**
 
-#### CE4 — Surface cache tokens end-to-end (the proof artifact)
-- **Changes:** Add `cache_read_tokens`/`cache_write_tokens` to `ModelUsage` and
-  `AnalyticsData`; populate from the `usage.jsonl` ingest loop (which already
-  deserialises and discards them) and the Codex scrape; mirror in
-  `analyticsStore`; add three columns to the model table and a headline
-  **cache hit rate** tile = `cache_read / (input + cache_read + cache_write)`.
-- **Files:** `src-tauri/src/commands/analytics.rs`,
-  `src/stores/analyticsStore.ts`,
-  `src/components/views/CostDashboardView.tsx`
+#### CE4 — Measure the cache hit rate (temporary instrumentation) — **RE-SCOPED 2026-07-31**
+- **Re-scope.** Originally "add three columns and a hit-rate tile to the Cost
+  Dashboard". There is no dashboard (§0) and no appetite for building one, so
+  this becomes **temporary instrumentation whose only job is to prove CE6
+  worked**, then go dormant. Explicitly NOT a product feature: no view, no
+  route, no always-mounted chip.
+- **Changes:** a script (or dev-only command) that reads `~/.packetade/usage.jsonl`
+  — where `cache_read`/`cache_write` are *already* recorded and then discarded by
+  the ingest loop — and prints input / cache_read / cache_write / output and
+  **cache hit rate** = `cache_read / (input + cache_read + cache_write)`, broken
+  down by model. Extending `ModelUsage`/`AnalyticsData` is only warranted if the
+  guardrails end up needing the fields; they do not today.
+- **Files:** `scripts/`, optionally `src-tauri/src/commands/usage.rs`
 - **Effort:** small
-- **Expected saving:** $0 — this is *the* before/after artifact. Report hit
-  rate alongside dollars: the ratio is rate-independent and therefore survives
-  the stale-pricing-table problem entirely.
-- **Verify:** tile reads ~0% today (correct — caching is off) and jumps after CE6.
+- **Expected saving:** $0 — this is *the* before/after artifact. Hit rate is
+  rate-independent and therefore survives the stale-pricing-table problem
+  entirely, which is exactly why it is the acceptance signal rather than dollars.
+- **Verify:** reads ~0% today (correct — caching is off) and jumps after CE6.
 - **Depends on:** CE1.
+- **Retire when:** CE6 is verified across the CE6-PRE benchmark. Do not let it
+  grow into a reporting surface; that is the thing that was just deleted.
 
-#### CE5 — Self-owned ledger from every path, with attribution
-- **Changes:** Call `append_usage_entry` from the sidecar `turn_summary`/`done`
-  handler using the deltas it already computes, and from the auxiliary call
-  sites. Extend `UsageEntry` with `task_class: Option<String>` and
-  `run_id: Option<String>` (serde-default so old lines parse). Actually populate
-  `agent_id`. Demote `~/.codex/sessions` and `~/.claude/cost-tally.json` to a
-  one-time historical import rather than a live primary source; drop the
-  `stats-cache.json` max() override.
-- **Files:** `src-tauri/src/commands/usage.rs`,
-  `src-tauri/src/commands/agent_sidecar/handler.rs`,
-  `src-tauri/src/commands/api_agent.rs`, `src-tauri/src/commands/side_chat.rs`,
-  `src-tauri/src/core/tool_subagent.rs`,
-  `src-tauri/src/core/tool_custom_agent.rs`,
-  `src-tauri/src/commands/analytics.rs`
-- **Effort:** medium
-- **Expected saving:** $0 — coverage. **This is the item most tightly coupled
-  to the OAuth decision:** if subscription OAuth is removed before this lands,
-  the vendor CLI files stop accruing and roughly half the dashboard's history
-  freezes with no PacketADE-side replacement, creating a blind window across
-  exactly the transition we want to measure. **Ledger first, OAuth removal
-  second is the only safe order.**
-- **Depends on:** CE1.
+#### CE5 — ~~Self-owned ledger from every path, with attribution~~ — **CUT 2026-07-31**
+
+**Cut by owner decision (§0).** Full per-path ledger coverage — calling
+`append_usage_entry` from the sidecar handler and the ~15 auxiliary call sites,
+adding `task_class`/`run_id`/`agent_id` attribution, and demoting the vendor CLI
+files to a one-time historical import — existed to make a permanent reporting
+surface complete and trustworthy. With the reporting surface deleted, the
+coverage is not worth its cost.
+
+Consequences, stated so they are not rediscovered later:
+
+- **The OAuth-removal ordering constraint is dissolved.** The "ledger first,
+  OAuth removal second" rule was entirely about not freezing half the
+  dashboard's history mid-transition. No dashboard, no constraint. See
+  Sequencing.
+- **Guardrails are unaffected.** They read `read_usage_analytics`, which keeps
+  ingesting `~/.packetade/usage.jsonl` plus the vendor CLI files exactly as
+  today. Subscription providers were never in the PacketADE-owned ledger and
+  still are not; that gap is now permanent and accepted.
+- **CE6-PRE loses its `run_id`.** It needs a way to select one benchmark run out
+  of the ledger. Add `run_id` alone, as CE6-PRE's own temporary instrumentation
+  (serde-default, so old lines parse) — not as the first slice of a revived CE5.
+- **LM7 loses `task_class`.** The local-routing plan's headline claim about the
+  ~15 auxiliary call sites cannot be substantiated from the ledger. LM7 must
+  either carry its own measurement or state its saving as modelled, not
+  measured. Recorded in `backlog.md`.
 
 #### CE6-PRE — Frozen replayable benchmark
 - **Changes:** Fixture of N scripted conversations (fixed prompts, repo pinned
@@ -359,7 +437,9 @@ and saves nothing; it makes the meter honest. Phase 1 is the actual win.
   *across turns*, which is a property of the workload. Without a pinned
   workload, a month-over-month drop is indistinguishable from "I asked shorter
   questions this week."
-- **Depends on:** CE5 (`run_id`).
+- **Depends on:** ~~CE5~~ — CE5 is CUT (§0), so CE6-PRE now carries the single
+  `run_id` field on `UsageEntry` itself, serde-default, as its own temporary
+  instrumentation. Do not treat that as a first slice of a revived CE5.
 
 ### Phase 1 — Caching (the win)
 
@@ -695,9 +775,10 @@ The Claude Agent SDK's request assembly happens inside the downloaded native
 
 Owned by [`local-model-routing.md`](./local-model-routing.md) (LM1–LM7). This
 doc contributes only the prerequisites LM7 needs to prove its value: CE1/CE2
-(a trustworthy rate table), CE5 (`task_class` on the ledger — without it the ~15
-auxiliary calls the routing work targets are unmeasured and its headline claim
-cannot be substantiated), CE18, CE19, and CE20.
+(a trustworthy rate table), CE18, CE19, and CE20. ~~CE5 (`task_class` on the
+ledger)~~ is **CUT** (§0) — so the ~15 auxiliary call sites the routing work
+targets stay unmeasured, and LM7 must either carry its own measurement or state
+its saving as modelled rather than measured.
 
 ---
 
@@ -709,8 +790,8 @@ cannot be substantiated), CE18, CE19, and CE20.
 | **Savings only materialise on active loops.** An idle session past the TTL pays a full write on its next turn. A user who asks one question, walks away for 20 minutes, and asks another pays two writes and gets one read. | Report hit rate (CE4) rather than assumed savings. If the measured one-shot/idle share is high, CE6's real-world benefit is materially below the modelled 60–80% — accept that finding rather than defending the estimate. |
 | **Minimum cacheable prefix is model-dependent and fails SILENTLY.** 1,024 tokens (opus-4-8, sonnet-4-6), 2,048 (opus-4-7), 4,096 (opus-4-6, haiku-4-5). Our static prefix is ~2–5k tokens (researchers disagreed). Anthropic returns **no error** — you only find out by reading usage. | Acceptance test is per-model non-zero `cache_read_input_tokens`, not "it compiled". A message-level rolling breakpoint carries opus-4-6/haiku-4-5 because history exceeds 4,096 quickly; a tools-only breakpoint would be a silent no-op on a bare project. This is a direct argument for CE6 (automatic) over CE11 (explicit) as the first cut. |
 | **Prefix drift is invisible.** `build_anthropic_messages` reconstructs JSON from Rust structs every call; any conditional that changes shape costs a full-price re-read with no error and no log. | Add a debug hash-of-serialised-prefix log line (part of CE6/CE7 verification) so drift is observable. Treat non-zero cache reads as the acceptance test, never assume. |
-| **Enabling caching breaks current cost reporting** (restated because it is the highest-probability own-goal). Cache writes render as $0.00 everywhere; guardrails under-trigger during thrash; the 0.25 read ratio hides 2.5x of the Anthropic saving. | **Mostly mitigated by CE2 (2026-07-31)**: both engines now bill cache read / 5m write / 1h write at published per-model rates. CE3's remainder (dashboard de-dup, sub-agent cache-write bucket) is still a hard prerequisite of CE6, enforced by dependency, not by discipline. |
-| **The Codex fix will look like data loss.** Historical dashboard totals drop ~half on Codex rows overnight. | Its own commit, its own CHANGELOG entry, and a before/after capture on identical data. Otherwise it contaminates the very measurement it enables. |
+| **Enabling caching breaks the guardrails' view of cost** (restated because it is the highest-probability own-goal). Cache writes priced at $0.00 make budget caps under-trigger during thrash — the failure mode caching itself introduces. | **Mostly mitigated by CE2 (2026-07-31)**: both engines now bill cache read / 5m write / 1h write at published per-model rates. The *reporting* half of this risk evaporated with the dashboard (§0); the *control* half did not. CE3's remainder (sub-agent cache-write bucket) is still a hard prerequisite of CE6, enforced by dependency, not by discipline. |
+| **The Codex fix will look like data loss.** Historical Codex totals drop ~half overnight. | Much reduced by the dashboard removal (§0) — no user sees a total halve. It still matters for any before/after capture and for guardrail caps tuned against the old inflated figures, so CE1 keeps its own commit and CHANGELOG note. |
 | **Compaction and caching pull against each other.** Rewriting history invalidates the messages cache and forces one full-price re-read. | Design CE15 against the cache: threshold-driven, infrequent, rolling breakpoint placed *after* the compaction boundary. Never per-turn. |
 | **Truncating tool results is not free.** Aggressive caps cause the model to re-run the command or re-read the file — costing more than the tokens saved, plus latency. | CE13 uses head+tail with an explicit elision marker, not a hard tail cut. CE12 gives a discoverable `offset` continuation affordance, without which the model fails rather than paginates. |
 | **Quality regression from cheaper models.** `structured-extract` outputs feed strict parsers (`issues.rs:81-98` `strip_json_fences`, `src/lib/flightPlanning.ts`), so a model that emits prose around its JSON produces a user-visible failure, not graceful degradation. | Frontier-default, local opt-in — matching the LM plan's own leaning. **Fail loudly** when a cheap route is unavailable; silent escalation to a frontier model recreates the invisible-spend problem precisely when the user believes they are running free. |
@@ -720,9 +801,9 @@ cannot be substantiated), CE18, CE19, and CE20.
 | **Unknown models price at $0.00 rather than erroring** (`pricing.rs:222-224`). A model-id change silently zeroes a provider's cost and looks exactly like a spectacular caching win. | Make a nonzero-token/zero-cost row a loud warning during measurement runs, not just a `PricingStatus::Unknown` advisory. |
 | ~~**The rate table is self-described as stale**~~ **Fixed by CE2**: `shared/model-pricing.json` records a per-vendor source URL, fetch date, and a `verified` flag, so an unverified row is visible rather than implied. The Anthropic rows are first-party as of 2026-07-31; OpenAI / Google / MiniMax / Meta rows are explicitly `verified: false`. | Still report savings primarily as a rate-independent token-mix ratio (cache-read share / hit rate); treat dollars as a derived illustration — and note the Claude 4.7+ tokenizer break (SPIKE-1) makes even token counts non-comparable across that model boundary. |
 | **`usage.jsonl` is append-only and unversioned.** New fields (`task_class`, `run_id`, TTL) are absent on every historical line. | Any before/after comparison runs only over post-instrumentation data. Phase 0 must land at least one real usage period *ahead* of Phase 1, not in the same release. |
-| **`analytics.rs` recomputes Codex cost from the LATEST model in each session file**, so a session that switched models mid-way prices its entire cumulative total at the last model's rates — figures are not stable across dashboard loads. | Fold into CE5 when demoting the vendor-file scrape to a one-time import. |
-| **The sidecar delta accounting re-baselines to zero whenever any cumulative component shrinks** (`handler.rs:571-618`), interpreting it as a process restart. A legitimate decrease (e.g. cache eviction reducing cumulative cached tokens) would re-count the whole session. | Add a guard before this path becomes the primary ledger writer in CE5. |
-| **MCP tool lists are user-controlled.** Enabling/disabling servers mid-session resets the cache. | Expected behaviour, not a bug — but it makes measured hit rates noisy in MCP-heavy projects. Note it on the CE4 tile so it is not misread. |
+| **`analytics.rs` recomputes Codex cost from the LATEST model in each session file**, so a session that switched models mid-way prices its entire cumulative total at the last model's rates — figures are not stable across reloads. | ~~Fold into CE5~~ — CE5 is CUT (§0) and the vendor-file scrape stays a live primary source. **Accepted, unfixed.** It now only perturbs guardrail inputs, not a displayed total; revisit only if a cap is observed mis-firing because of it. |
+| **The sidecar delta accounting re-baselines to zero whenever any cumulative component shrinks** (`handler.rs:571-618`), interpreting it as a process restart. A legitimate decrease (e.g. cache eviction reducing cumulative cached tokens) would re-count the whole session. | ~~Guard it in CE5~~ — CE5 is CUT (§0), but this path still feeds `flight:cost-updated` and therefore the **autonomy cost hard-stop**, so over-counting can stop a flight early. Guard it as part of CE6, when cache eviction first makes the decrease realistic. |
+| **MCP tool lists are user-controlled.** Enabling/disabling servers mid-session resets the cache. | Expected behaviour, not a bug — but it makes measured hit rates noisy in MCP-heavy projects. Note it in CE4's instrumentation output so it is not misread. |
 
 ---
 
@@ -809,7 +890,7 @@ verification rather than before it.
 
 ## Sequencing
 
-**CE1 → ~~CE2~~ → CE3 → CE4 → CE5 → CE6-PRE → CE6 → CE7 → CE8 → CE9 → CE12 →
+**CE1 → ~~CE2~~ → CE3 → CE4 → ~~CE5~~ → CE6-PRE → CE6 → CE7 → CE8 → CE9 → CE12 →
 CE13 → CE10 → CE14 → CE16 → CE11 → CE15 → CE17 → CE18 → CE19 → CE20.**
 
 **CE2 shipped first, ahead of CE1.** The ordering assumed CE1's token-semantics
@@ -826,7 +907,17 @@ independently useful and can be pulled forward at any time — none of them depe
 on caching. CE11 and CE15 are the two items that should not start until SPIKE-3
 says they are worth it.
 
-The one ordering constraint that is not negotiable: **CE5 (self-owned ledger)
-must land before subscription OAuth is removed from the API-agent surface**, or
-roughly half the dashboard's history freezes with no PacketADE-side replacement
-across exactly the transition being measured.
+~~The one ordering constraint that is not negotiable: **CE5 (self-owned ledger)
+must land before subscription OAuth is removed from the API-agent surface**.~~
+**DISSOLVED 2026-07-31 (§0).** That constraint existed solely because removing
+subscription OAuth would freeze roughly half the *dashboard's* history with no
+PacketADE-side replacement. The dashboard is gone and CE5 is cut, so there is no
+history to freeze and no user-visible blind window. **OAuth removal is no longer
+gated on any item in this plan.**
+
+What is left of the original worry is smaller and worth naming: after OAuth
+removal, the vendor CLI files (`~/.claude/cost-tally.json`, `~/.codex/sessions`)
+stop accruing, so the **guardrails** see less spend from those paths — but the
+migrated traffic lands on `api-claude` / `api-openai`, which *do* write
+`~/.packetade/usage.jsonl`, so coverage moves rather than disappears. See
+[`oauth-removal-plan.md`](./oauth-removal-plan.md).

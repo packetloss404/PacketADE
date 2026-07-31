@@ -22,9 +22,9 @@ interface AgentStreamingState {
    * or when the turn completes. */
   thinkingStream: Map<string, string>;
   /** A3: Codex MultiAgentV2 sub-agent token totals, keyed by
-   * conversationId → address (`/root/agent_a` etc). CostDashboard rolls
-   * these into the conversation total so multi-agent flights don't
-   * under-count. */
+   * conversationId → address (`/root/agent_a` etc). `aggregateConversationCost`
+   * rolls these into the conversation total so multi-agent flights don't
+   * under-count against the budget guardrails. */
   subAgentTokens: Map<string, Record<string, SubAgentTokenBucket>>;
 
   /** Append reasoning delta. Called from the `api-agent:thinking` listener. */

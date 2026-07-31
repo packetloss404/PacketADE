@@ -62,7 +62,6 @@ describe("CommandPalette route coverage", () => {
   it.each([
     ["Agents", "agents"],
     ["Flight Deck", "flights"],
-    ["Cost Dashboard", "cost_dashboard"],
     ["Dictation", "dictation"],
   ] as const)("navigates to the previously missing %s destination", (label, view) => {
     render(<CommandPalette />);
@@ -107,15 +106,16 @@ describe("CommandPalette route coverage", () => {
     expect(screen.queryByText("Dictation")).not.toBeInTheDocument();
   });
 
-  it("finds Costs by keyword search", () => {
+  // The Cost Dashboard route was removed on 2026-07-31 along with the rest of
+  // the cost reporting surface; its keywords must not resurrect a destination.
+  it("has no cost destination left to find", () => {
     render(<CommandPalette />);
 
     fireEvent.change(screen.getByPlaceholderText("Type a command..."), {
       target: { value: "spend" },
     });
 
-    expect(screen.getByText("Cost Dashboard")).toBeInTheDocument();
-    expect(screen.queryByText("Memory")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cost Dashboard")).not.toBeInTheDocument();
   });
 
   it("finds Flight Deck by keyword search", () => {

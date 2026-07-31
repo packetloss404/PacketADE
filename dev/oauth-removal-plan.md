@@ -5,10 +5,25 @@ Created: 2026-07-31
 Owner decision (2026-07-31): *"let's not use OAuth with agents."*
 Repo state at analysis time: `main` @ `4d3df4f`.
 
+> **UPDATE 2026-07-31 — WI-0 is no longer a blocker.** The owner removed the
+> cost reporting surface (Cost Dashboard, live-spend chip, per-conversation
+> dollar readouts) and **cut CE5** with it; see
+> [`cost-efficiency-loop.md`](./cost-efficiency-loop.md) §0. The CE5-first rule
+> existed solely to avoid freezing half the *dashboard's* history mid-transition.
+> There is no dashboard, so **OAuth removal is not gated on any item in the cost
+> plan.** Everything below that reads "HARD BLOCKER: WI-0" is now advisory: the
+> only surviving concern is that the budget **guardrails** see less spend from
+> the vendor-CLI files afterwards, and migrated traffic on `api-claude` /
+> `api-openai` does write `~/.packetade/usage.jsonl`, so coverage moves rather
+> than disappears. `CostDashboardView.tsx` references below are dead file paths;
+> the `SOURCE_LABELS` / `SOURCE_PILL_CLASSES` maps they point at were deleted
+> with the view. `costGuardrails.ts` read-compat (WI-7) still matters.
+
 Related:
 
-- [`cost-efficiency-loop.md`](./cost-efficiency-loop.md) — **CE5 is a hard
-  prerequisite of shipping this** (`cost-efficiency-loop.md:268-289`, `:728-731`).
+- [`cost-efficiency-loop.md`](./cost-efficiency-loop.md) — ~~CE5 is a hard
+  prerequisite of shipping this~~ **CE5 is CUT; the constraint is dissolved**
+  (see the update box above and `cost-efficiency-loop.md` §0).
 - [`local-model-routing.md`](./local-model-routing.md) — LM4/LM5 currently assume
   the opposite policy; see §7.4.
 - [`sidecar-over-ssh-verification.md`](./sidecar-over-ssh-verification.md) — its
@@ -548,10 +563,11 @@ Effort scale: **S** ≈ half a day, **M** ≈ 1–2 days, **L** ≈ 3+ days.
 
 ### Prerequisite
 
-**WI-0 — CE5 (self-owned usage ledger) ships and runs for one real usage
-period.** *Not part of this plan; owned by
-[`cost-efficiency-loop.md`](./cost-efficiency-loop.md) CE5 (`:268-289`).*
-**HARD BLOCKER for WI-6 onward.** Today `api-claude-oauth`, `api-openai-codex`,
+**WI-0 — ~~CE5 (self-owned usage ledger) ships and runs for one real usage
+period~~ — DROPPED 2026-07-31.** CE5 is cut and the dashboard it protected is
+deleted (`cost-efficiency-loop.md` §0), so this is **no longer a blocker for
+anything**. The paragraph below is retained as the record of what the concern
+was; read "dashboard" as "guardrail inputs". Today `api-claude-oauth`, `api-openai-codex`,
 and `api-openai-agents` write **zero** rows to `~/.packetade/usage.jsonl`
 (`append_usage_entry` is called only from `api_agent.rs:1649,1944,2528`); their
 spend is reconstructed by scraping `~/.claude/cost-tally.json` and

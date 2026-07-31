@@ -63,9 +63,6 @@ const FlightsView = lazy(() =>
   import("@/components/views/FlightsView").then((m) => ({ default: m.FlightsView })),
 );
 
-const CostDashboardView = lazy(() =>
-  import("@/components/views/CostDashboardView").then((m) => ({ default: m.CostDashboardView })),
-);
 const DictationView = lazy(() =>
   import("@/components/views/DictationView").then((m) => ({ default: m.DictationView })),
 );
@@ -329,8 +326,6 @@ function OtherViewContent({ activeView }: { activeView: AppView }) {
       return <MemoryView />;
     case "agents":
       return <AgentsView />;
-    case "cost_dashboard":
-      return <CostDashboardView />;
     case "dictation":
       return <DictationView />;
     case "workspace":

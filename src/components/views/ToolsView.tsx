@@ -8,7 +8,6 @@ import {
   Route,
   Plug,
   Clock,
-  DollarSign,
   ShieldCheck,
   AlertTriangle,
   ExternalLink,
@@ -37,7 +36,7 @@ import { NotificationSettingsCard } from "./tools/NotificationSettingsCard";
 import { ThemeSettingsCard } from "./tools/ThemeSettingsCard";
 import { CrashViewerCard } from "./tools/CrashViewerCard";
 import { McpHubCard } from "./tools/McpHubCard";
-import { CostCard } from "./tools/CostCard";
+import { BudgetGuardrailsCard } from "./tools/BudgetGuardrailsCard";
 import { DictationSettingsCard } from "./tools/DictationSettingsCard";
 import { KeyboardShortcutsCard } from "./tools/KeyboardShortcutsCard";
 import { ApiKeysCard } from "./tools/ApiKeysCard";
@@ -327,8 +326,9 @@ export function ToolsView() {
           )}
 
           {activeSection === "flights" && (
-            <div className="max-w-2xl">
+            <div className="max-w-2xl space-y-4">
               <OrchestrationSettingsCard />
+              <BudgetGuardrailsCard />
             </div>
           )}
 
@@ -391,10 +391,7 @@ export function ToolsView() {
           {activeSection === "advanced" && (
             <div className="max-w-3xl space-y-4">
               <WorkspaceAgentsDogfoodCard />
-              <AdvancedSection
-                onOpenHistory={() => setActiveView("history")}
-                onOpenCost={() => setActiveView("cost_dashboard")}
-              />
+              <AdvancedSection onOpenHistory={() => setActiveView("history")} />
             </div>
           )}
         </div>
@@ -407,20 +404,14 @@ export function ToolsView() {
  * Advanced / Diagnostics tab — the "everything else" parking lot. Houses
  * Crash Reports (operational debugging) and jump-links to the full-page
  * views that used to be embedded directly in Settings (History,
- * Cost Dashboard, Prompt Library).
+ * Prompt Library).
  *
  * Each jump-link gracefully falls back to inline mounting when the target
  * top-level view isn't registered (so existing setActiveView("tools")
  * deep-links keep working in case a view key changes).
  */
-function AdvancedSection({
-  onOpenHistory,
-  onOpenCost,
-}: {
-  onOpenHistory: () => void;
-  onOpenCost: () => void;
-}) {
-  const [inlineView, setInlineView] = useState<null | "history" | "cost" | "prompts">(null);
+function AdvancedSection({ onOpenHistory }: { onOpenHistory: () => void }) {
+  const [inlineView, setInlineView] = useState<null | "history" | "prompts">(null);
 
   return (
     <div className="space-y-4">
@@ -448,14 +439,6 @@ function AdvancedSection({
             inlineOpen={inlineView === "history"}
           />
           <JumpLink
-            label="Cost Dashboard"
-            icon={DollarSign}
-            description="Per-provider spend and analytics (also in the toolbar)"
-            onJump={onOpenCost}
-            onInline={() => setInlineView((v) => (v === "cost" ? null : "cost"))}
-            inlineOpen={inlineView === "cost"}
-          />
-          <JumpLink
             label="Prompt Templates"
             icon={FileText}
             description="Authoring and editing prompt templates (type / in the agent chat to expand one)"
@@ -471,11 +454,6 @@ function AdvancedSection({
           <Suspense fallback={<div className="p-4 text-xs text-text-muted">Loading...</div>}>
             <HistoryView />
           </Suspense>
-        </div>
-      )}
-      {inlineView === "cost" && (
-        <div className="grid grid-cols-2 gap-4">
-          <CostCard />
         </div>
       )}
       {inlineView === "prompts" && <PromptTemplatesCard />}

@@ -74,9 +74,9 @@ export const useAnalyticsStore = create<AnalyticsStore>((set, get) => ({
         guardrailStatus,
         loading: false,
       });
-      // Proactive cost-threshold notifications: fired here (on the poll
-      // cadence, not the LiveSpendChip render path) so alerts still surface
-      // when the chip is hidden or shows nothing (spend <= 0).
+      // Proactive cost-threshold notifications: fired here (on the
+      // `startCostGuardrailMonitor` poll cadence, not a render path) so alerts
+      // surface regardless of which view is mounted.
       void fireGuardrailTransitions(guardrailStatus, settings);
     } catch (err) {
       set({
@@ -104,6 +104,32 @@ export const useAnalyticsStore = create<AnalyticsStore>((set, get) => ({
     });
   },
 }));
+
+/**
+ * Background refresh cadence for the guardrail data source.
+ *
+ * This poll used to be owned by `LiveSpendChip`, which was removed with the
+ * rest of the cost REPORTING surface on 2026-07-31. The guardrails are a
+ * safety mechanism, not reporting, so the poll moved here and is started once
+ * from `bootstrap` — otherwise threshold notifications would silently stop
+ * firing and only the pre-launch hard-stop would remain.
+ */
+const GUARDRAIL_POLL_MS = 60_000;
+
+let guardrailMonitorStarted = false;
+
+/**
+ * Start the app-lifetime guardrail poll. Idempotent: a re-entrant
+ * `initializeApp` (StrictMode double-mount) will not stack intervals.
+ */
+export function startCostGuardrailMonitor(): void {
+  if (guardrailMonitorStarted) return;
+  guardrailMonitorStarted = true;
+  void useAnalyticsStore.getState().load();
+  setInterval(() => {
+    void useAnalyticsStore.getState().load();
+  }, GUARDRAIL_POLL_MS);
+}
 
 function loadGuardrailSettings(): CostGuardrailSettings {
   const storage = getLocalStorage();

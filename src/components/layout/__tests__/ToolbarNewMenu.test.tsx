@@ -20,7 +20,6 @@ vi.mock("@/lib/tauri", async () => {
 // act() noise.
 vi.mock("@/components/layout/SidecarStatusChip", () => ({ SidecarStatusChip: () => null }));
 vi.mock("@/components/layout/RunningAgentsChip", () => ({ RunningAgentsChip: () => null }));
-vi.mock("@/components/layout/LiveSpendChip", () => ({ LiveSpendChip: () => null }));
 
 import { Toolbar } from "@/components/layout/Toolbar";
 import { useAppStore } from "@/stores/appStore";

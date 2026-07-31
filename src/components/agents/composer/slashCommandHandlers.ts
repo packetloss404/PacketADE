@@ -24,7 +24,7 @@ const HELP_CHEATSHEET =
   "- Ctrl+Enter — also sends\n" +
   "- Shift+Tab — cycle mode (default → plan → manual → deny → yolo)\n" +
   "- @ — mention a file\n" +
-  "- / — run a slash command (try /usage, /history, /review)\n" +
+  "- / — run a slash command (try /history, /review)\n" +
   "- Stop button — cancels mid-stream";
 
 export interface SlashCommandContext {
@@ -161,10 +161,6 @@ export const slashCommandHandlers: Record<
       }),
     }));
     requestConversationSave(conversationId);
-  },
-
-  usage: ({ setActiveView }) => {
-    setActiveView("cost_dashboard");
   },
 
   history: ({ setActiveView }) => {

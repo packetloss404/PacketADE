@@ -518,9 +518,12 @@ for implementation.
   GitHub-only action; repo/host switches can retain old PR detail. Use typed
   local/SSH context and clear/capability-gate every dependent surface.
 - **P1 — make operational controls honest.** Agent Stop can report idle before
-  cancellation succeeds; today's spend includes old hydrated conversations;
-  Git says review is required without enforcing it; Flight Monitor failure can
-  be silent; Side Chat requests lack request identity/cancel.
+  cancellation succeeds; Git says review is required without enforcing it;
+  Flight Monitor failure can be silent; Side Chat requests lack request
+  identity/cancel. (The "today's spend includes old hydrated conversations"
+  finding is resolved by deletion — the live-spend chip and Cost Dashboard that
+  computed that sum were removed on 2026-07-31; the budget guardrails now read
+  the backend spend figures with no live re-add.)
 - **P2 — align labels and accessibility.** Rename shell GitHub to Git Hosts,
   Fleet to Workspaces, VT to Dictation, and misleading handoff actions; remove
   the two-ellipsis Agent header; add navigation/tab/menu ARIA and responsive
@@ -557,8 +560,39 @@ frontier models.
   operation stays the default.
 - **P3 — LM6/LM7: routing settings and cost proof.** New `modelRoutingStore`
   plus settings slice mapping task class → provider/model (not
-  `orchestrationSettingsStore`, which is flight-scoped), and a local-vs-metered
-  split in `CostDashboardView` to make the saving visible.
+  `orchestrationSettingsStore`, which is flight-scoped). **The cost-proof half
+  needs a new plan:** it assumed a local-vs-metered split in
+  `CostDashboardView`, which no longer exists, and CE5's `task_class` ledger
+  attribution is cut (2026-07-31). LM7 must either carry its own temporary
+  measurement or state its saving as modelled rather than measured.
+
+## Cost efficiency loop
+
+Canonical plan: [`dev/cost-efficiency-loop.md`](./dev/cost-efficiency-loop.md).
+**Owner decision 2026-07-31: the cost reporting surface is removed** (Cost
+Dashboard view and route, toolbar live-spend chip, Settings usage-analytics
+card, per-conversation and per-turn dollar readouts, `/usage`). Cost remains a
+control input only: budget guardrails, the bounded-autonomy cost hard-stop, the
+shared pricing table, and all token accounting are untouched.
+
+- **P2 — CE3 remainder: cache-write tokens on the Codex sub-agent bucket.**
+  `SubAgentTokenBucket` has no `cacheWriteTokens`, so a multi-agent Codex turn
+  under-reports the most expensive token class to the guardrails once caching
+  makes it non-zero. Hard prerequisite of CE6.
+- **P2 — CE1: Codex cached-token double-count.** Rust passes `input` and
+  `cached` as separate additive arguments; OpenAI's `cached_tokens` is a subset
+  of prompt tokens, so Codex rows are overstated ~2–2.6x at typical hit rates.
+  Its own commit with a CHANGELOG note.
+- **P3 — CE4 re-scoped: temporary cache-hit-rate instrumentation.** A script
+  over `~/.packetade/usage.jsonl` (which already records `cache_read`/
+  `cache_write` and discards them) that prints the hit rate per model. Exists
+  only to prove CE6 worked, then goes dormant — **not** a new reporting surface.
+- **~~CE5 — self-owned ledger with attribution~~ CUT 2026-07-31.** It existed
+  to make a permanent reporting surface complete. Consequences: subscription
+  providers stay outside the PacketADE-owned ledger permanently; CE6-PRE
+  carries its own `run_id`; LM7 loses `task_class`.
+- **Constraint dissolved:** OAuth removal is no longer gated on CE5 or on any
+  other item in the cost plan.
 
 ## Reliability audit follow-ups
 

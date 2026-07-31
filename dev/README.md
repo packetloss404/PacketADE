@@ -193,7 +193,7 @@ remain user-launched. Do not restore archived Planner v1.
 - `archive/flight-planner-plan.md`, `archive/flight-planner-spike-retro.md`, `archive/flight-planner-v1-acceptance-runbook.md`, `archive/flight-planner-reliability-continuity-pack.md` — Flight Planner v1 design/reference/runbooks (backend amputated 2026-07-11, see `/backlog.md`)
 - `archive/v0.8-github-and-memory.md` — locked v0.8 GitHub + Memory design/scope
 - `archive/sprints-2026-06-15.md` — post-rename sprint plan; residual open items folded into `/backlog.md`
-- `archive/moat/` — memory layer, insights, deploy, scaffold, analytics, cost unification specs
+- `archive/moat/` — memory layer, insights, deploy, scaffold, analytics, cost unification specs, and the retired Cost Dashboard plan (surface removed 2026-07-31)
 - `archive/bridgemind/` — gap analysis, workspace editor scale, positioning notes
 - `archive/quadcode/` — gap analysis, terminal features, AI platform features
 - `archive/zen-workspace/` — workspace model plan, gap analysis, research, project-workspaces feature spec

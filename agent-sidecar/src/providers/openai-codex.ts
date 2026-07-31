@@ -378,7 +378,7 @@ export class OpenAICodexProvider implements ProviderHandler {
   private lastReq: StartSessionRequest | null = null;
   /** Last-seen token counts from the most recent token_count event.
    * `reasoning` and `cachedInput` were added in Codex CLI 0.125 (Apr 2026)
-   * — capturing them lets PacketADE's CostDashboard report GPT-5.5 spend
+   * — capturing them lets PacketADE account for GPT-5.5 spend
    * accurately (otherwise we under-report by the reasoning slice).
    * A3 keyed-by-address: empty string = root thread, `/root/agent_a` =
    * MultiAgentV2 sub-agent. Without per-address tracking we'd inflate the
@@ -1133,7 +1133,7 @@ export class OpenAICodexProvider implements ProviderHandler {
       }
 
       // Live mid-stream HUD: emit a turn_summary every time tokens update so
-      // SessionHealthBar / CostDashboard reflect Codex spend in real time
+      // the budget guardrails see Codex spend in real time
       // (matching what the Anthropic provider does). Per-address, so the
       // frontend can attribute correctly.
       emit({

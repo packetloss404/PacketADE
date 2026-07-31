@@ -199,20 +199,6 @@ for (const vp of VIEWPORTS) {
         await snap(page, dir, "17-settings-cli-clients");
       });
 
-      // ---- Cost Dashboard via Settings > Trust & Diagnostics jump link ----
-      await auditStep(info, "cost dashboard", async () => {
-        await robustClick(
-          page,
-          page.getByRole("button", { name: "Security & Diagnostics", exact: true }),
-        );
-        const row = page
-          .locator("div.justify-between")
-          .filter({ hasText: "Cost Dashboard" })
-          .last();
-        await robustClick(page, row.getByRole("button", { name: "Open" }));
-        await snap(page, dir, "18-cost-dashboard");
-      });
-
       // ---- Modals ---------------------------------------------------------
       await auditStep(info, "new flight modal", async () => {
         await robustClick(page, page.getByRole("button", { name: "New", exact: true }));

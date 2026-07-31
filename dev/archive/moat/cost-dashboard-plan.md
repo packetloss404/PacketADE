@@ -1,4 +1,14 @@
-# Cost Dashboard Plan
+# Cost Dashboard Plan — ARCHIVED 2026-07-31
+
+> **ARCHIVED. The Cost Dashboard was removed on 2026-07-31** by owner decision:
+> the reporting surface is not worth its maintenance cost. `CostDashboardView`,
+> the `cost_dashboard` route, `LiveSpendChip`, and the Settings usage-analytics
+> card are all deleted. What this plan called "cost alerts" survives as the
+> **budget guardrails** — `lib/costGuardrails.ts`, `stores/costGuardrailStore.ts`,
+> `stores/analyticsStore.ts`, and the caps UI in
+> Settings → Flights & Autonomy — and the per-flight rollup survives in
+> `src-tauri/src/commands/flight_cost.rs`. Read everything below as history.
+> Current cost work lives in [`../../cost-efficiency-loop.md`](../../cost-efficiency-loop.md).
 
 ## Implementation Status — 2026-06-15
 

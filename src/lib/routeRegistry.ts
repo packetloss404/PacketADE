@@ -5,8 +5,8 @@
  * route labels, icons, ordering, palette visibility and hotkeys used to be
  * duplicated across `LeftRail`, `StatusStrip`, `CommandPalette`,
  * `lib/viewHotkeys` and the modules registry, and had drifted (the palette
- * omitted Agents, Flight Deck, Costs and the canonical Dictation entry, and
- * Dictation had two route identities).
+ * omitted Agents, Flight Deck and the canonical Dictation entry, and Dictation
+ * had two route identities).
  *
  * This module is now the ONE place a shell route's presentation is declared.
  * Adding a `CoreView` without a registry row is a compile error, and every
@@ -20,7 +20,6 @@ import {
   Bot,
   Brain,
   Clock,
-  DollarSign,
   Github,
   Home,
   KanbanSquare,
@@ -206,19 +205,10 @@ export const ROUTE_REGISTRY: Record<CoreView, RouteMeta> = {
     },
     hotkey: { code: "Digit4", legacyKey: "$", display: "Ctrl+Shift+4" },
   },
-  cost_dashboard: {
-    id: "cost_dashboard",
-    label: "Cost Dashboard",
-    icon: DollarSign,
-    rail: { placement: "none", order: 0 },
-    palette: {
-      visible: true,
-      description: "Token spend and cost analytics",
-      iconColor: "text-accent-green",
-      keywords: ["cost", "costs", "spend", "usage", "tokens", "budget", "analytics"],
-    },
-    statusLabel: "Costs",
-  },
+  // NOTE: there is deliberately no `cost_dashboard` row. The cost REPORTING
+  // surface (Cost Dashboard view + toolbar spend chip) was removed on
+  // 2026-07-31 — see dev/cost-efficiency-loop.md. Cost data still exists and
+  // still drives the budget guardrails; only the dollars-on-screen UI is gone.
   dictation: {
     id: "dictation",
     label: "Dictation",

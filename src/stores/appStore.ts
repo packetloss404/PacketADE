@@ -12,7 +12,6 @@ export type CoreView =
   | "tools"
   | "github"
   | "memory"
-  | "cost_dashboard"
   | "dictation";
 export type AppView = CoreView | `mod:${string}`;
 
@@ -68,8 +67,9 @@ export function moduleViewId(id: string): AppView {
  *  - a core view survives only if {@link ROUTE_REGISTRY} still declares it, and
  *    — for routes backed by a module, like Dictation — only while that module
  *    is enabled;
- *  - anything else (a retired route id such as the legacy `"dashboard"`,
- *    junk, a future id from a newer build) ⇒ `"welcome"`.
+ *  - anything else (a retired route id such as the legacy `"dashboard"` or the
+ *    removed `"cost_dashboard"`, junk, a future id from a newer build) ⇒
+ *    `"welcome"`.
  *
  * The module-enabled check is injected rather than imported so this stays a
  * pure function and `appStore` keeps no dependency on `moduleStore`.

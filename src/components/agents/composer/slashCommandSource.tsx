@@ -2,7 +2,6 @@ import {
   BookOpen,
   BookText,
   Cpu,
-  DollarSign,
   FileCode,
   HelpCircle,
   History,
@@ -36,7 +35,6 @@ export type BuiltinSlashCommand =
   | "plan"
   | "permissions"
   | "compact"
-  | "usage"
   | "history"
   | "review";
 
@@ -94,12 +92,6 @@ const BUILTINS: BuiltinDef[] = [
     label: "/review",
     description: "Spawn a Reviewer subagent on the current staged diff",
     icon: <ShieldCheck size={12} />,
-  },
-  {
-    cmd: "usage",
-    label: "/usage",
-    description: "Open the cost dashboard",
-    icon: <DollarSign size={12} />,
   },
   {
     cmd: "history",

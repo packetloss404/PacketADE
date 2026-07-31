@@ -11,7 +11,6 @@ import { BookmarkPlus, Pencil, RotateCcw, RotateCw } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { Spinner } from "@/components/ui/Spinner";
 import { Tooltip } from "@/components/ui/Tooltip";
-import { estimateTurnCostUsd } from "@/lib/conversationCost";
 import { buildTranscriptMemoryInput } from "@/lib/memoryCapture";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { useMemoryStore } from "@/stores/memoryStore";
@@ -486,10 +485,7 @@ function MessageBubble({
         )}
 
         <div className="flex items-center gap-2">
-          <AssistantCostPill
-            message={message}
-            model={conversation.model ?? ""}
-          />
+          <AssistantTokenPill message={message} />
           {isLastAssistant && !message.isStreaming && onRetry && (
             <Tooltip content="Retry this turn">
               <button
@@ -522,27 +518,13 @@ function MessageBubble({
   );
 }
 
-// Per-turn token count with the USD cost revealed on hover. Cost comes from
-// the `costUsd` stamped on the message at receipt time (apiAgentListeners),
-// falling back to the same frontend estimate for older persisted messages —
-// no per-message IPC. The session aggregate stays in aggregateConversationCost.
-function AssistantCostPill({
-  message,
-  model,
-}: {
-  message: AgentMessage;
-  model: string;
-}) {
+// Per-turn token count. This used to reveal the turn's USD cost on hover; that
+// went with the rest of the cost reporting surface on 2026-07-31. The token
+// count stays — it is the measurement the prompt-caching work needs, and it
+// costs nothing (the numbers are already on the message).
+function AssistantTokenPill({ message }: { message: AgentMessage }) {
   const { inputTokens, outputTokens } = message;
   if (inputTokens == null || outputTokens == null) return null;
-  const totalTokens = inputTokens + outputTokens;
-  const cost = message.costUsd ?? estimateTurnCostUsd(model, message, message.timestamp);
-  const pill = (
-    <div className="text-meta text-text-muted font-mono">
-      {totalTokens} tok
-    </div>
-  );
-  if (cost == null) return pill;
-  return <Tooltip content={`~$${cost.toFixed(4)} this turn`}>{pill}</Tooltip>;
+  return <div className="text-meta text-text-muted font-mono">{inputTokens + outputTokens} tok</div>;
 }
 

@@ -126,9 +126,24 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
       {
         key: "flights",
         label: "Flights & Autonomy",
-        description: "Commit attribution and bounded autonomy defaults for new Flights.",
+        description:
+          "Commit attribution, bounded autonomy defaults, and spend guardrails for new Flights.",
         scopes: ["New Flights"],
-        keywords: ["flight", "yolo", "autonomy", "commit", "trailer", "policy", "approval"],
+        keywords: [
+          "flight",
+          "yolo",
+          "autonomy",
+          "commit",
+          "trailer",
+          "policy",
+          "approval",
+          "budget",
+          "cost",
+          "spend",
+          "guardrail",
+          "limit",
+          "cap",
+        ],
       },
       {
         key: "routing",
@@ -203,19 +218,9 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
       {
         key: "advanced",
         label: "Trust & Diagnostics",
-        description:
-          "Runtime evidence, trust, crashes, release status, history, cost, and prompts.",
+        description: "Runtime evidence, trust, crashes, release status, history, and prompts.",
         scopes: ["App"],
-        keywords: [
-          "security",
-          "trust",
-          "provenance",
-          "crash",
-          "history",
-          "cost",
-          "release",
-          "prompt",
-        ],
+        keywords: ["security", "trust", "provenance", "crash", "history", "release", "prompt"],
       },
     ],
   },

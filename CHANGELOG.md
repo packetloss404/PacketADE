@@ -9,6 +9,31 @@ task list.
 
 ## [Unreleased]
 
+### Removed — cost reporting surface (2026-07-31)
+
+- The Cost Dashboard is gone. Its view, its command-palette and Status Strip
+  entries, the Settings jump link and usage-analytics card, and the `/usage`
+  slash command were all removed. Reopening the app on that view lands on
+  Welcome instead of an empty shell.
+- The toolbar's live spend chip is gone with it. Alongside the dashboard it was
+  the reason a running dollar total was recomputed across every message of every
+  open conversation on each streaming frame, so removing it makes long
+  conversations noticeably cheaper to stream.
+- Smaller dollar readouts went too: the session cost on the conversation meta
+  line, the Cost row in the Agent inspector, and the per-turn cost revealed on
+  hovering a message's token count. Token counts themselves stay exactly where
+  they were.
+- **Budgets still work, and they are still enforced.** Daily, monthly, and
+  per-session spend caps, provider and flight caps, the warning threshold, and
+  the hard stop that blocks a launch over budget are unchanged — they moved to
+  Settings → Flights & Autonomy, under "Budget guardrails". Threshold
+  notifications still fire on a background refresh that no longer depends on any
+  view being open, and the bounded-autonomy cost limit that stops a runaway
+  flight is untouched.
+- The reason for the change: a reporting surface has to be maintained, verified
+  against changing vendor rates, and trusted. Spend control is worth that; a
+  spend report was not.
+
 ### Changed — main shell and right-dock ownership (2026-07-30)
 
 - Added one surface-scoped `RightDock` controller that owns the width,
@@ -20,8 +45,12 @@ task list.
   authoritative rather than disagreeing with the visible tab.
 - Added a single route registry that owns the left rail, command palette,
   Status Strip labels, placements, and hotkeys. Dictation collapses to one
-  route identity, and the previously missing Agents, Flight Deck, and Costs
-  destinations are reachable from the palette. Hotkeys now match the physical
+  route identity, and the previously missing Agents and Flight Deck
+  destinations are reachable from the palette. (Costs was reachable too, until
+  the cost reporting surface was removed the following day — removing its one
+  registry row took it out of the rail, palette, hotkeys, and Status Strip
+  together, which is what the registry was built to do.) Hotkeys now match the
+  physical
   `KeyboardEvent.code`, so the Ctrl+Shift chords work on AZERTY, QWERTZ, and
   Dvorak layouts.
 - Gated local-only actions — Preview, applied Review, Undo, Plan handoff, and
