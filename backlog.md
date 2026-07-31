@@ -591,7 +591,9 @@ the normal priority scheme.
   not lose cross-repo work.
 - **P2 — adopt State of the ADE review recommendations.** Triage the review's
   recommendations into concrete backlog items (see
-  `docs/reports/state-of-the-ade-2026-07-30.html`).
+  `docs/reports/state-of-the-ade-2026-07-30.md` — the agent-facing edition and
+  the source of truth; `…-2026-07-30.pdf` is the human edition with the same
+  content. The HTML edition was retired 2026-07-30).
 - **✅ Shipped — same-day review expansion into the consolidated 6-month
   ledger.** The report now carries three new chapters: the reconciled UX
   Ledger (07-29 main-shell audit + code review + rendered visual audit → five
@@ -606,7 +608,7 @@ the normal priority scheme.
   13 including the review's only Critical, and a global button-redundancy
   audit 13) with **124 controls inventoried** (15 + 21 + 20 + 33 + 35). It is
   the Creation, Opening & Deletion Flows chapter (§5) of
-  `docs/reports/state-of-the-ade-2026-07-30.html`. Nothing in it was fixed by
+  `docs/reports/state-of-the-ade-2026-07-30.md`. Nothing in it was fixed by
   the bug loop or the five decision implementations. Its top items — including
   the chapter's only Critical — were then shipped in `f405ea1`; the residue is
   tracked as the P1 deletion and shell follow-ups above.
@@ -728,31 +730,101 @@ the normal priority scheme.
   `ConfirmDeleteModal` copy no longer claims the password stays behind.
   Gates: `pnpm build` green, Vitest 1523/1523 across 199 files (up from 1466),
   `cargo test` 444/444 (up from 440), ESLint at zero errors.
-- **P1 — deletion and shell follow-ups.** What `f405ea1` and `d94cca4`
-  deliberately left out; each needs behaviour or a design decision rather than a
-  confirm dialog.
-  - No undo for destructive actions anywhere; confirmation is currently the
-    only safety net.
-  - Rust swallows git worktree-removal errors — `cancel_flight_attempt` only
-    `warn!`s — so a genuine removal failure logs instead of surfacing. Fixing it
-    needs a Rust signature change, not a frontend change.
-  - Cooperative `integrationBranch` worktrees are still abandoned on Flight
-    delete: there is no exposed command for them and they are not attempt-id
-    keyed, so the attempt fan-out cannot reach them.
-  - Issues have no delete path at all, and `IssueCommentList` comment delete is
-    missing.
-  - `ConversationTile` has a double kebab and an X whose tooltip does not match
-    what it does.
-  - `bootstrap.ts` still force-routes to Welcome instead of restoring the
-    persisted `selectedView`.
+- **✅ Shipped 2026-07-30 — the remaining cleanup holes (`6847e5c`).** Six
+  groups; everything the previous two loops recorded as still open except undo,
+  which needs an owner decision first.
+  **(1) Rust worktree failures now surface.** New `WorktreeCleanupOutcome`
+  (`worktreePath`, `removed`, `branch`, `branchDeleted`, `branchRetained`,
+  `dirtyPaths`, `error`, `deferred`) is returned by `cancel_flight_attempt` and
+  `mark_attempt_status` instead of swallowing a failed `git worktree remove`
+  behind `warn!`. Failures are **data, not `Err`** — the attempt is still
+  cancelled — so the frontend's existing `FlightCleanupFailure[]` toast path
+  finally covers them. Discovery: `mark_attempt_status`'s SSH arm was doing
+  **nothing but logging**; it now resolves the saved `ServerConfig` with
+  fingerprint pinning exactly as `cancel` does.
+  **(2) Cooperative integration worktrees are no longer abandoned.** New
+  `cleanup_flight_integration_worktree` (registered + TS binding) removes the
+  `.pkt-flight-integrations/<flightId>` tree local or remote and is called from
+  the flight-delete fan-out; its dirty state is probed and named in the confirm
+  **separately** from the attempt counts. Deliberate conservatism: the
+  integration branch is removed with safe `git branch -d`, never `-D`, because
+  it can be the only ref to merged-but-unlanded attempt work — a refusal is
+  reported in `branchRetained` and the branch survives.
+  **(3) Startup restores the last view.** `bootstrap.ts` no longer force-routes
+  to Welcome. New pure `resolveStartupView(persisted, isModuleEnabled)` in
+  `appStore` validates against `ROUTE_REGISTRY` + module-enabled state; retired
+  ids, unknown ids, and disabled-module routes fall back to Welcome, and first
+  run is Welcome. The restore runs after conversation hydration but before
+  `setInitialized(true)` — no Welcome flash, no view mounting against a
+  half-built graph. No "always start on Welcome" preference existed anywhere;
+  none was invented.
+  **(4) Issues are deletable.** `issueStore.deleteIssue` already existed with
+  **zero UI callers**; it is now reachable from an `IssueCard` hover affordance
+  and an `IssueDetail` footer action, both behind the shared confirm via new
+  `ConfirmDeleteIssueModal`, which names the live consequences: the flight it
+  unlinks, the workspace session that **keeps running**, and the counts of
+  comments, acceptance criteria, and dependency links deleted with it. Real bug
+  fixed: the flight unlink previously fired only when the deleted issue itself
+  carried a `flightId`, so a flight holding a drifted id kept it forever — now
+  every flight naming the issue is cleaned, with `reconcileIssueLinks` as
+  backstop. Comment deletion added with the same confirm idiom.
+  **(5) Chrome de-duplicated.** `AgentSidebar` drops its header "+" and keeps
+  the labelled footer CTA (matching the `FleetSidebar` resolution from
+  `f405ea1`), so the report's "Partly resolved" duplicate-sidebar-CTA finding
+  now fully closes. `ConversationTile` had **three** kebabs — tile chrome, a
+  "More controls" toggle, and the overflow menu's own trigger — merged into
+  **one** menu with every action preserved and the lazy-mount economy intact.
+  The close (X) tooltip was lying because the same component mounts in two
+  places where closing means different things; labels are now per-mount-site
+  and state the real consequence (a tile close removes the pane while the
+  conversation keeps running). No confirm added there — closing destroys
+  nothing and is one click to reverse.
+  **(6) Confirm-idiom fence tightened.** `scripts/confirm-idiom.test.mjs` no
+  longer trips on a test **name** containing `confirm (`. While fixing it, a
+  CRLF bug surfaced: the repo checks out CRLF and `.` won't match a trailing
+  `\r`, so `$` never anchored and comments were never stripped — which had
+  produced a false positive on a real file. Both directions are pinned with
+  fixtures and proven end-to-end with a planted `window.confirm` probe.
+  Gates: `pnpm build` green, Vitest 1581/1581 across 200 files (up from 1523),
+  `cargo test` 452/452 with 2 ignored (up from 444), ESLint at zero errors.
+- **P1 — deletion and shell follow-ups.** What `f405ea1`, `d94cca4`, and
+  `6847e5c` deliberately left out; each needs behaviour or a design decision
+  rather than a confirm dialog.
+  - **Undo — the owner decision that blocks the rest.** No undo exists for any
+    destructive action; confirmation is still the only safety net. Deferred
+    again in `6847e5c` because it would touch every store. Two options, pick
+    one: **(a) soft-delete + restore** — every store gains a tombstone and a
+    restore path, persistence changes, recovery survives an app restart; or
+    **(b) a time-boxed undo toast** — the commit is deferred for N seconds,
+    nothing in persistence changes, and there is no recovery once the window
+    closes. (a) is the durable answer and the larger build; (b) is an afternoon
+    and covers the common misclick.
+  - **NEW — `WorkspacePane`'s terminal tile "Close pane" kills the PTY with no
+    confirmation.** A destructive-without-confirm path not previously
+    catalogued in this backlog entry; re-confirmed open after the chrome loop
+    rebuilt the tile menus around that control. It is the last such path left
+    after the confirm sweep. (Report §5.3 P-04 / D-09.)
+  - **NEW — `src/components/views/IssueDetailView.tsx` is dead code:** an
+    unmounted duplicate superseded by `IssueDetail`, with only self-references.
+    The issue-deletion work went into `IssueDetail` and left this file
+    untouched. Needs a delete-or-keep decision. (Report §5.3 B-11.)
+  - **NEW — no Rust test for `remove_remote_integration_worktree`.** It needs a
+    live SSH host, matching the existing gap for every remote worktree
+    function. Recorded so it is not mistaken for an oversight in the new code.
+  - **NEW — two pre-existing `cargo fmt` drifts** in
+    `src-tauri/src/commands/agent_sidecar/supervisor.rs` and
+    `src-tauri/src/commands/mod.rs`. They predate `6847e5c` and were left
+    untouched so its diff stayed reviewable. `cargo fmt` is still not gated.
+  - The duplicate `CancelPendingButton` rendered twice at once in
+    `PendingApprovalsSection` and the composer row, plus a third count badge.
+  - The four-controls-one-action finding's remaining legs: `Ctrl+N` and the
+    `/new` slash command still reach conversation creation by separate routes
+    with different semantics. Both sidebar legs are now de-duplicated.
   - No "don't ask again" preference for the app-close confirmation.
   - The six-spellings label sweep across `WelcomeScreen`, `ProjectInfoCard`,
     and `OnboardingPane`.
   - `useServerConnection` and `ConnectionProgress` are now unreferenced; kept
     deliberately, but they need a keep-or-delete decision.
-  - Sharp edge in the fence itself: `scripts/confirm-idiom.test.mjs` greps
-    broadly enough that a **test name** containing `confirm (` trips it. Narrow
-    the pattern before it blocks an unrelated test.
   MS4 (responsive/accessibility semantics, Gitea capability and repo-switch
   tests, packaged local/SSH and 800px-to-ultrawide visual matrix) and the two
   unaddressed MS1 items (Running Agents / Side Chat cancellation

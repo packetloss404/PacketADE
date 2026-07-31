@@ -2,8 +2,9 @@
 
 Last updated: 2026-07-30 (Workspace/Agents and Settings IA are complete; the
 five main-shell/right-dock decisions were made *and implemented* 2026-07-30,
-delivering MS1–MS3, and the current pass is their follow-up polish; Remote
-Agents remains preserved at its Sprint-0 decision gate)
+delivering MS1–MS3, and their follow-up loops closed every cleanup hole except
+undo; `main` is at `6847e5c`; Remote Agents remains preserved at its Sprint-0
+decision gate)
 
 > **2026-07-30 — State of the ADE review completed.** The State of the ADE
 > review ran to
@@ -18,10 +19,14 @@ Agents remains preserved at its Sprint-0 decision gate)
 > `dffbe61` D4, `93d41af` D2+D5), delivering the audit's MS1–MS3 slices with
 > gates green at each step (build passing, lint at zero errors, Vitest
 > 1260 → 1363 across 179 files). The UX quick wins and creation-flow fixes then
-> shipped in `f405ea1`, and the three deferred delete-cleanup decisions in
-> `d94cca4` (Vitest 1523 across 199 files, `cargo test` 444). Remaining: MS4
-> polish/proof, Rust-side worktree-error surfacing, cooperative integration
-> worktrees, and undo.
+> shipped in `f405ea1`, the three deferred delete-cleanup decisions in
+> `d94cca4`, and the remaining cleanup holes in `6847e5c` — typed
+> worktree-cleanup outcomes, cooperative integration worktrees, startup view
+> restore, issue and comment deletion, chrome de-duplication (Vitest 1581
+> across 200 files, `cargo test` 452 with 2 ignored). Remaining: MS4
+> polish/proof, **undo** (an owner design decision: soft-delete + restore vs a
+> time-boxed undo toast), and the un-confirmed PTY kill in `WorkspacePane`'s
+> "Close pane".
 
 `ROADMAP.md` is the short product-direction document. It says what matters now
 and why. The task ledger lives in [`backlog.md`](./backlog.md); implementation
@@ -50,7 +55,7 @@ surface goal. It is preserved, not canceled, at its three Sprint-0 decisions.
 
 | ID  | Track                                     | Priority | Status                                                                | Canonical Plan                                                                                                                                                                                                                                                                                                                                                                         |
 | --- | ----------------------------------------- | -------: | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R11 | Main shell and right-dock ownership       |       P1 | Decisions (MS1–MS3), follow-up polish (`f405ea1`), and delete cleanup (`d94cca4`) all shipped 2026-07-30; MS4 packaged proof, Rust worktree-error surfacing, cooperative integration worktrees, and undo remain | [`HANDOFF.md`](./HANDOFF.md), [`dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md)                                                                                                                                                                                                                          |
+| R11 | Main shell and right-dock ownership       |       P1 | Decisions (MS1–MS3), follow-up polish (`f405ea1`), delete cleanup (`d94cca4`), and cleanup holes (`6847e5c`) all shipped 2026-07-30; MS4 packaged proof, **undo** (owner decision pending), and `WorkspacePane`'s un-confirmed PTY kill remain | [`HANDOFF.md`](./HANDOFF.md), [`dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md)                                                                                                                                                                                                                          |
 | R10 | Workspace/Agents restructuring            |       P0 | Complete; final owner policy implemented and fully verified           | [`dev/workspace-agents-restructuring-goal.md`](./dev/workspace-agents-restructuring-goal.md), [`dev/workspace-agents-wa0-route-contract.md`](./dev/workspace-agents-wa0-route-contract.md), [`dev/workspace-agents-wa3-handoff-evidence.md`](./dev/workspace-agents-wa3-handoff-evidence.md), [`dev/workspace-agents-wa4-dogfood-gate.md`](./dev/workspace-agents-wa4-dogfood-gate.md) |
 | R0  | Remote Agents: PWA + Packet Cloud relay   |       P1 | Preserved; paused at three Sprint-0 product decisions                 | [`dev/remoteagents/README.md`](./dev/remoteagents/README.md)                                                                                                                                                                                                                                                                                                                           |
 | R1  | Docs and planning consolidation           |       P1 | Root set overhauled 2026-07-30; ongoing maintenance                   | [`dev/README.md`](./dev/README.md)                                                                                                                                                                                                                                                                                                                                                     |

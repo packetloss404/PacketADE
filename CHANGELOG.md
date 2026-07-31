@@ -108,6 +108,50 @@ task list.
   authentication delete cleanly, and a keyring problem can never block the
   delete itself. The confirmation no longer claims the password is left behind.
 
+### Changed — cleanup that reports the truth, and the last missing deletes (2026-07-30)
+
+- Cleaning up a flight attempt's worktree no longer claims success it did not
+  have. If the working tree cannot be removed — it is dirty, locked, or the
+  remote host is unreachable — the failure is now reported back to the app with
+  the path, the branch, whether the branch survived, and which files were dirty,
+  instead of being written to a log nobody reads. The attempt is still
+  cancelled either way: a cleanup problem is information, never a reason to
+  leave an attempt half-cancelled. Attempts that end on their own — failed,
+  rejected, or completed — now clean up their remote worktrees over SSH the
+  same way a cancelled attempt always did; that path had previously done
+  nothing but log.
+- Deleting a Flight now also removes the shared integration worktree that
+  cooperative flights build in, rather than leaving it behind on disk or on the
+  remote host. If that worktree has uncommitted changes, the confirmation says
+  so separately from the attempt list, so a shared workspace and a per-attempt
+  workspace are never confused for each other. The integration branch is only
+  deleted when Git agrees it is safe to delete — it can be the only remaining
+  reference to work that was merged but never landed — and if Git refuses, the
+  branch is kept and you are told.
+- The app opens where you left it. The view you were last on is restored on
+  launch instead of always dropping you on Welcome, with Welcome kept as the
+  fallback for a first run or for a view that no longer exists or belongs to a
+  disabled module. The restore happens after your conversations have loaded, so
+  there is no flash of the Welcome screen and no view rendering against a
+  half-loaded workspace.
+- Issues can be deleted. There had been no way to delete an issue anywhere in
+  the app; now there is one on the issue card and one in the issue detail
+  panel, both behind a confirmation that names the real consequences — the
+  flight it will be unlinked from, the workspace session that will keep running
+  without it, and how many comments, acceptance criteria and dependency links
+  go with it. Individual comments can be deleted too, with the same
+  confirmation. Deleting an issue now also cleans it out of every flight that
+  referenced it, not just the one the issue itself pointed at.
+- Conversation tiles have one menu instead of three. The tile stacked a chrome
+  menu, a "more controls" toggle, and a second overflow menu whose icon was
+  identical to the first; they are now a single menu with every action still
+  present. The close button's tooltip used to be wrong in one of the two places
+  the tile appears, because closing means different things in each; it now says
+  what will actually happen — in a workspace, closing removes the pane and
+  leaves the conversation running. The Agents sidebar also drops the duplicate
+  "+" from its header and keeps its labelled button at the bottom, matching the
+  Fleet sidebar.
+
 ### Removed — Gemini CLI (2026-07-30)
 
 - Removed Gemini CLI as a supported PTY agent: the agent definition, statusline
