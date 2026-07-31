@@ -38,6 +38,46 @@ task list.
   fulfils the Files → Preview path that Files had been advertising without
   wiring.
 
+### Changed — deletion, keyboard, and creation safety (2026-07-30)
+
+- Every destructive action now asks first, through one shared confirmation
+  dialog. Deleting an SSH server previously fired immediately — the only
+  component that carried a confirmation was never imported and could not be
+  reached — and the new dialog names the real consequences by cross-referencing
+  connection state, conversations running on that host (including mid-turn
+  ones), running flight attempts, and bound workspaces. The sweep also replaced
+  every remaining native browser confirmation and added confirmations to
+  fifteen destructive paths that had none: API-key, GitHub-token and
+  PacketAgent-token deletion, crash files, the trust audit, prompt templates,
+  memory patterns and clear-all, CLI-agent delete and built-in reset, MCP
+  servers, code-quality history, and project-notes archiving. Anonymous trash
+  icons gained accessible labels, and a repository test now fences the idiom.
+- Ctrl+K no longer steals keystrokes from a focused terminal, text field, or
+  editable region: the shortcut yields, and the keypress reaches the shell as
+  its normal kill-line. Escape still dismisses modals everywhere, but no longer
+  takes the key away from a terminal to cancel dictation.
+- Closing the app now confirms only when live work would actually be destroyed
+  — running terminals, mid-turn conversations, or queued/provisioning/running
+  flight attempts — and lists what would be terminated. Closing an idle app
+  stays instant.
+- Modals close on Escape by default. Every modal's close button already
+  advertised "Close (Esc)", so the previous default made that promise untrue
+  app-wide; the transient PTY modal keeps an explicit opt-out because the
+  terminal owns Escape there. The New Issue form was a hand-rolled overlay and
+  is now a real modal, gaining Escape and a labelled close button.
+- Fixed the Issues board dropping its sixth column ("Done") onto a second row
+  with a dead right half at every viewport, a regression from when "Needs
+  Attention" was added.
+- Unified workspace creation. A workspace can no longer be created without a
+  project path — the instant paths (Ctrl+N and the sidebar) open the OS folder
+  picker when no path is known and create nothing if it is cancelled, instead
+  of silently making a zero-pane workspace at an empty path. New workspaces
+  auto-name Workspace, Workspace 2, and so on rather than the hardcoded "New
+  Session", drifting labels and tooltips were corrected to one noun, the Fleet
+  sidebar's duplicate top and bottom create buttons are now a single labelled
+  action, and workspace creation is reachable from the global "+ New" menu and
+  the Ctrl+K command palette.
+
 ### Removed — Gemini CLI (2026-07-30)
 
 - Removed Gemini CLI as a supported PTY agent: the agent definition, statusline

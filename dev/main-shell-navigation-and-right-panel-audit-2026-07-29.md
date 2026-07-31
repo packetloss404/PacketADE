@@ -11,16 +11,21 @@ That delivered **MS1, MS2, and MS3**. Gates were green at every step —
 1363 passing across 179 files. (One pre-existing unhandled rejection in
 `src/lib/__tests__/bootstrap.test.ts` reproduces on a clean tree.)
 
-Findings **P0-1, P0-2, P0-3, P0-4, P1-5, P1-7, and P1-9 are RESOLVED**. The
+A follow-up loop then landed as `f405ea1` (deletion safety, keyboard/exit
+safety, modal/board fixes, and unified creation flows), with gates at `pnpm
+build` green, ESLint at zero errors, and Vitest 1466 passing across 194 files.
+Within this document it resolves **finding 10** and **MS3 step 4**; the rest of
+that loop addressed findings from the State of the ADE report's Creation,
+Opening & Deletion Flows chapter, which this audit does not cover.
+
+Findings **P0-1, P0-2, P0-3, P0-4, P1-5, P1-7, P1-9, and 10 are RESOLVED**. The
 remaining P1 and P2 findings below are untouched and still open.
 
 **MS4 (product polish and proof) remains**, plus the MS1 items that were not
 part of the five decisions: cancellation acknowledgment for Running Agents and
 Side Chat (finding 12/13), and clearing repository/PR detail state across repo
-and host switches (finding 11). MS3's truthful New menu and Git Hosts renaming
-are enabled by the registry but not yet done — those now sit with the
-creation-flow work in the State of the ADE report's Creation, Opening &
-Deletion Flows chapter.
+and host switches (finding 11). MS3's Git Hosts renaming and action-label
+corrections are enabled by the registry but still not done.
 
 Scope: PacketADE's main application shell, not the Settings information
 architecture
@@ -262,10 +267,10 @@ Resolution: implemented as D4 in `dffbe61`. A single route registry owns the
 left rail, command palette, Status Strip labels, placements, and hotkeys, and
 Dictation has one route identity. Hotkeys now match the physical
 `KeyboardEvent.code`, so the Ctrl+Shift chords work on AZERTY, QWERTZ, and
-Dvorak layouts. The registry enables the creation-label fixes in finding 10,
-which remain open.
+Dvorak layouts. The registry enabled the creation-label fixes in finding 10,
+which shipped in `f405ea1`.
 
-### 10. Creation labels do not match their actions
+### 10. Creation labels do not match their actions — RESOLVED (`f405ea1`)
 
 The global New button claims it creates a session, Flight, or Issue, but its
 menu contains only Flight and Issue. Fleet's **New session** creates an empty
@@ -282,6 +287,20 @@ Evidence:
 Recommendation: make New a truthful creation hub for Workspace, CLI Session,
 Agent, Flight, and Issue. Rename Fleet's action **New Workspace** unless it is
 changed to add a session to the active Workspace.
+
+Resolution: implemented in `f405ea1`. The global New menu now carries **New
+Workspace** alongside New Flight and New Issue, and its tooltip matches its
+contents; workspace creation is also reachable from the Ctrl+K palette as an
+actions entry rather than a faked route. Fleet's duplicate top "+" and bottom
+create controls collapse to the single labelled footer action, and the
+surrounding labels/tooltips were corrected to one noun. Ctrl/Cmd+N no longer
+produces a workspace hard-named **New Session**: names auto-increment
+(Workspace, Workspace 2, …), and both instant paths route through
+`src/lib/workspaceCreation.ts`, which opens the OS folder picker when no
+project path is known and creates nothing on cancel —
+`workspaceStore.createWorkspace` now throws on a blank local `projectPath`, so
+no caller can bypass it. Dedicated **CLI Session** and **Agent** entries were
+not added to the New menu; the menu no longer claims them either.
 
 ### 11. Git-host capability gating is incomplete
 
@@ -425,8 +444,10 @@ for width. The Plan and Diff/Review duplication in finding 6 is unchanged.
    from it.~~ Done — hotkeys match the physical `KeyboardEvent.code`, so the
    Ctrl+Shift chords work on AZERTY, QWERTZ, and Dvorak.
 3. ~~Collapse Dictation to one route identity.~~ Done.
-4. Make the global New menu truthful. **Open** — enabled by the registry; now
-   grouped with the creation-flow work.
+4. ~~Make the global New menu truthful.~~ Done — `f405ea1`. New Workspace joins
+   New Flight and New Issue, the tooltip matches the contents, workspace
+   creation is in the Ctrl+K palette, and the Fleet duplicate create controls
+   are collapsed to one labelled action.
 5. Rename GitHub shell language to Git Hosts and correct action labels.
    **Open.**
 
@@ -468,7 +489,8 @@ implemented the same day.
    creation-label fixes).
    — **IMPLEMENTED 2026-07-30: `dffbe61`.** P1-9/UX-14 resolved. Hotkeys match
    the physical `KeyboardEvent.code`, so the Ctrl+Shift chords work on AZERTY,
-   QWERTZ, and Dvorak layouts. The enabled creation-label fixes remain open.
+   QWERTZ, and Dvorak layouts. The creation-label fixes it enabled shipped in
+   `f405ea1` (finding 10).
 5. Reconnect the lightweight Editor through the dock or remove its unreachable
    shell. **Decision required after reviewing PacketCode/editor positioning.**
    — **DECIDED 2026-07-30: RECONNECT.** The lightweight Editor becomes a

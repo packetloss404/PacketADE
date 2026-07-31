@@ -607,8 +607,9 @@ the normal priority scheme.
   audit 13) with **124 controls inventoried** (15 + 21 + 20 + 33 + 35). It is
   the Creation, Opening & Deletion Flows chapter (§5) of
   `docs/reports/state-of-the-ade-2026-07-30.html`. Nothing in it was fixed by
-  the bug loop or the five decision implementations; its top items are carried
-  as the P0 main-shell follow-ups above.
+  the bug loop or the five decision implementations. Its top items — including
+  the chapter's only Critical — were then shipped in `f405ea1`; the residue is
+  tracked as the P1 deletion and shell follow-ups above.
 - **✅ Decided 2026-07-30 — the five owner decisions (D1–D5).** All five
   resolved by the owner: D1 YES — remove the Workspace-level Agent inspector
   (Inspector owned solely by Agents; resolves P0-1); D2 YES — one RightDock
@@ -636,26 +637,80 @@ the normal priority scheme.
   across 179 files. Known pre-existing and not caused by this wave: one
   unhandled rejection in `src/lib/__tests__/bootstrap.test.ts`, reproduced on
   a clean tree.
-- **P0 — main-shell follow-ups.** What the five decisions deliberately left
-  out. Standalone UX quick wins: guard Ctrl+K so it does not steal keystrokes
-  from a focused terminal; confirm before closing the app when live sessions
-  would be destroyed; opt Escape-to-close into the New Flight and New Issue
-  modals; fix the Issues-board grid wrap where the sixth column drops onto a
-  second row with a dead right half. Then the top creation-flow fixes from the
-  report's Creation, Opening & Deletion Flows chapter
-  (`docs/reports/state-of-the-ade-2026-07-30.html`, §5): **the deletion
-  critical first** — live SSH-server delete has no confirmation while the
-  component that carries one (`ServersView.tsx`) is unrouted dead code, and
-  deleting a server silently breaks every workspace and flight attempt bound
-  to it; then unify the two workspace-creation flows and stop the
-  empty-`projectPath` instant create; de-duplicate the `FleetSidebar` top "+"
-  and bottom "New session" buttons bound to the identical handler; and add
-  workspace creation to the global "+ New" menu and the Ctrl+K command
-  palette. MS4 (responsive/accessibility semantics, Gitea capability and
-  repo-switch tests, packaged local/SSH and 800px-to-ultrawide visual matrix)
-  and the two unaddressed MS1 items (Running Agents / Side Chat cancellation
-  acknowledgment, clearing repo/PR detail across repo and host switches)
-  remain open alongside these.
+- **✅ Shipped 2026-07-30 — main-shell follow-ups (`f405ea1`).** Everything the
+  five decisions deliberately left out, in four groups.
+  **(A) Deletion safety.** The report's §5 Critical is closed: the SSH-server
+  delete had no confirmation and the only component that carried one
+  (`src/components/views/ServersView.tsx`) was never imported and unroutable —
+  it was deleted. New shared `src/components/ui/ConfirmDeleteModal.tsx` plus
+  `src/lib/serverUsage.ts`, which cross-references connection state,
+  conversations with a matching `sshTarget`, running flight attempts, and bound
+  workspaces so the dialog names real consequences ("1 conversation runs on
+  this host (1 mid-turn)"). A full sweep followed: all 7 native
+  `window.confirm` call sites eliminated and 15 destructive paths that had no
+  confirmation at all gained one (API-key, GitHub-token and PacketAgent-token
+  deletion, crash files, trust audit, prompt templates, memory patterns and
+  clear-all, CLI-agent delete and built-in reset, MCP servers, code-quality
+  history, project-notes archive). Anonymous trash icons gained `aria-label`s,
+  and `scripts/confirm-idiom.test.mjs` is a regression fence (no native
+  `confirm(` in source; swept files import the shared component).
+  **(B) Keyboard and exit safety.** New `src/lib/keyboardTarget.ts` and
+  `src/hooks/useGlobalShortcuts.ts`: Ctrl+K no longer opens the palette when
+  focus is in an xterm terminal, input, textarea, select, or contenteditable,
+  and it leaves `defaultPrevented` false so the keypress reaches the shell as
+  readline kill-line. Escape still always dismisses modals but no longer steals
+  the key from terminals for dictation-cancel. New `src/hooks/useCloseConfirm.ts`,
+  `src/lib/liveWork.ts`, and `src/components/common/CloseConfirmDialog.tsx`:
+  closing the app confirms **only** when live work exists (alive PTYs, mid-turn
+  conversations, queued/provisioning/running attempts), lists what would be
+  terminated, and uses `destroy()` to avoid re-emitting `close-requested`.
+  **(C) Modals and board.** `Modal` now defaults to `closeOnEscape=true` —
+  every modal's X already advertised "Close (Esc)", so the old default made
+  that tooltip lie app-wide; `TransientPtyModal` keeps an explicit opt-out
+  because xterm owns Escape. `NewIssueForm` was a hand-rolled overlay and is
+  migrated onto the shared `Modal`, gaining Escape and a labelled close button.
+  `IssueBoard` had `grid-cols-5` while `BOARD_COLUMNS` has had six entries
+  since "Needs Attention" was added, orphaning "Done" onto a second row at
+  every viewport; it is now a non-wrapping flex row, verified against the e2e
+  visual-audit screenshots.
+  **(D) Creation flows.** `workspaceStore.createWorkspace` now throws on a
+  blank local `projectPath`, making the modal's own warning a store invariant
+  no caller can bypass; the instant paths (Ctrl+N, sidebar) route through new
+  `src/lib/workspaceCreation.ts`, which opens the OS folder picker when no path
+  is known and creates nothing on cancel. Workspaces auto-name
+  Workspace/Workspace 2/… (the hardcoded "New Session" is gone) and drifting
+  labels/tooltips were corrected to one noun. `FleetSidebar`'s duplicate
+  top+bottom create controls are de-duplicated (the labelled footer CTA
+  stays). Workspace creation is now reachable from the "+ New" menu and the
+  Ctrl+K palette (as an actions section, not a faked route).
+  Gates: `pnpm build` green, Vitest 1466/1466 across 194 files (up from 1363),
+  ESLint at zero errors.
+- **P1 — deletion and shell follow-ups.** Deliberately left out of `f405ea1`;
+  each needs behaviour or a design decision rather than a confirm dialog.
+  - No undo for destructive actions anywhere; confirmation is currently the
+    only safety net.
+  - Deleting a Flight has a confirmation but abandons running attempts — it
+    needs a behavioural fan-out to `cancelAttempt` plus worktree cleanup.
+  - Deleting a conversation orphans its worktree/branch. Needs a design
+    decision (delete, keep, or prompt) before implementation.
+  - Deleting an SSH server orphans its keyring secret; needs a new
+    `delete_ssh_password` Rust command.
+  - Issues have no delete path at all, and `IssueCommentList` comment delete is
+    missing.
+  - `ConversationTile` has a double kebab and an X whose tooltip does not match
+    what it does.
+  - `bootstrap.ts` still force-routes to Welcome instead of restoring the
+    persisted `selectedView`.
+  - No "don't ask again" preference for the app-close confirmation.
+  - The six-spellings label sweep across `WelcomeScreen`, `ProjectInfoCard`,
+    and `OnboardingPane`.
+  - `useServerConnection` and `ConnectionProgress` are now unreferenced; kept
+    deliberately, but they need a keep-or-delete decision.
+  MS4 (responsive/accessibility semantics, Gitea capability and repo-switch
+  tests, packaged local/SSH and 800px-to-ultrawide visual matrix) and the two
+  unaddressed MS1 items (Running Agents / Side Chat cancellation
+  acknowledgment, clearing repo/PR detail across repo and host switches) remain
+  open alongside these.
 - **P3 — sweep remaining historical Gemini references.** Comments/aliases kept
   intentionally for load-compat (`agentStore.ts`, `workspaceStore.ts`) stay;
   audit stray descriptive mentions (e.g. `src/agents/packetcode.ts`

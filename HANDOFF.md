@@ -18,7 +18,7 @@ consolidated report is `docs/reports/state-of-the-ade-2026-07-30.html`
 (11 chapters, with the
 UX Ledger, Visual Audit, and Outstanding Audits Ledger).
 
-Both threads from that review are now closed:
+All three threads from that review are now closed. The first two:
 
 1. **Committed and verified.** The State of the ADE review work landed on
    `main` as
@@ -66,48 +66,93 @@ what remains** of that sequence: responsive/accessibility semantics, the
 Gitea capability and repo-switch tests, and the packaged local/SSH and
 800px-to-ultrawide visual matrix.
 
+The third thread closed on top of that sequence:
+
+3. **The main-shell follow-up loop. COMPLETE — `f405ea1`.** The Group A UX
+   quick wins and the Group B creation-flow fixes that D1–D5 deliberately left
+   out are all shipped, committed, and pushed. Gates at that commit: `pnpm
+   build` green, Vitest 1466/1466 across 194 files (up from 1363), ESLint at
+   zero errors. What landed:
+   - **Deletion safety.** The §5 Critical is closed: the unrouted dead-code
+     `ServersView.tsx` was deleted and a shared `ConfirmDeleteModal` plus
+     `src/lib/serverUsage.ts` now name real consequences (connection state,
+     conversations on that `sshTarget`, running attempts, bound workspaces).
+     All 7 native `window.confirm` sites were eliminated and 15 destructive
+     paths that had no confirmation gained one; `scripts/confirm-idiom.test.mjs`
+     fences the idiom.
+   - **Keyboard and exit safety.** `src/lib/keyboardTarget.ts` +
+     `useGlobalShortcuts` stop Ctrl+K from stealing keystrokes from a focused
+     terminal/input (and leave `defaultPrevented` false so the shell gets its
+     kill-line); Escape no longer steals from terminals for dictation-cancel.
+     `useCloseConfirm` + `src/lib/liveWork.ts` + `CloseConfirmDialog` confirm
+     app close **only** when live work exists, listing what dies.
+   - **Modals and board.** `Modal` now defaults to `closeOnEscape=true` (every
+     X already advertised "Close (Esc)"); `TransientPtyModal` opts out because
+     xterm owns Escape; `NewIssueForm` migrated off its hand-rolled overlay;
+     `IssueBoard`'s `grid-cols-5`-vs-six-columns wrap is fixed.
+   - **Creation flows.** `createWorkspace` throws on a blank local
+     `projectPath`; instant paths go through `src/lib/workspaceCreation.ts`
+     (OS folder picker, nothing created on cancel); workspaces auto-name
+     Workspace/Workspace 2/…; `FleetSidebar`'s duplicate create controls are
+     de-duplicated; workspace creation is now in the "+ New" menu and the
+     Ctrl+K palette.
+
 ## Start here next session
 
-The restart point is no longer the five decisions. It is the follow-up work
-they deliberately left out, in two groups.
+The restart point is the work `f405ea1` deliberately did **not** do. It is all
+behaviour or design decisions, not more confirm dialogs. Full list in
+[`backlog.md`](./backlog.md) under "P1 — deletion and shell follow-ups".
 
-**Group A — standalone UX quick wins** (explicitly scoped out of D1–D5):
+**Lead with the delete-cleanup decisions:**
 
-- guard Ctrl+K so it does not steal keystrokes from a focused terminal;
-- confirm before closing the app when live sessions would be destroyed;
-- opt Escape-to-close into the New Flight and New Issue modals;
-- fix the Issues board grid wrap, where the sixth column ("Done") drops onto
-  a second row with a dead right half at both 1280 and 1920.
+- **Flight delete abandons running attempts.** It has a confirmation, but it
+  needs a behavioural fan-out to `cancelAttempt` plus worktree cleanup.
+- **Conversation delete orphans its worktree/branch.** Needs an owner decision
+  (delete it, keep it, or prompt) before any code.
+- **SSH server delete orphans its keyring secret.** Needs a new
+  `delete_ssh_password` Rust command.
 
-**Group B — top creation-flow fixes** from the report's new Creation, Opening
-& Deletion Flows chapter (`docs/reports/state-of-the-ade-2026-07-30.html`,
-§5 — 65 findings across five flows, 124 controls inventoried):
+**Then the persisted-view restore:** `bootstrap.ts` still force-routes to
+Welcome instead of restoring the persisted `selectedView`.
 
-- **Critical: unconfirmed live SSH-server delete.** The Settings card's delete
-  fires immediately, and the component that does carry a confirmation
-  (`ServersView.tsx`) is unrouted dead code. Deleting a server also silently
-  breaks every workspace and flight attempt bound to it.
-- unify the two workspace-creation flows: the full `WorkspaceCreationModal`
-  requires a name, a CLI session, and a non-empty project path, while Ctrl+N
-  and the Fleet sidebar instantly create a zero-pane workspace hard-named
-  "New Session" using whatever `layoutStore.projectPath` happens to hold —
-  including the empty string the modal explicitly blocks;
-- de-duplicate the `FleetSidebar` top "+" and bottom "New session" buttons,
-  which are bound to the identical handler inside one 240px sidebar (the
-  `AgentSidebar` "New agent" pair is the same shape);
-- add workspace creation to the global "+ New" menu and the Ctrl+K command
-  palette — today the two most discoverable surfaces are the only places the
-  primary object cannot be made.
+**Then the smaller residue:**
+
+- no undo for destructive actions anywhere;
+- Issues have no delete path at all, and `IssueCommentList` comment delete is
+  missing;
+- `ConversationTile`'s double kebab and its X whose tooltip does not match what
+  it does;
+- a "don't ask again" preference for the app-close confirmation;
+- the six-spellings label sweep across `WelcomeScreen`, `ProjectInfoCard`, and
+  `OnboardingPane`;
+- `useServerConnection` and `ConnectionProgress` are now unreferenced — kept
+  deliberately, but they need a keep-or-delete decision.
+
+MS4 (responsive/accessibility semantics, Gitea capability and repo-switch
+tests, packaged local/SSH and 800px-to-ultrawide visual matrix) and the two
+unaddressed MS1 items remain open alongside these.
 
 ## Current product state
 
-- `main` is at `93d41af` (D2+D5 RightDock and reconnected Editor), on top of
-  `dffbe61` (D4), `33708c0` (D3), `e7e7c27` (D1), and the State of the ADE
-  review commits `3f8aba1` / `580ee80` / `72b2734` — all committed 2026-07-30.
+- `main` is at `f405ea1` (main-shell follow-ups: deletion safety,
+  keyboard/exit safety, creation flows), on top of `93d41af` (D2+D5 RightDock
+  and reconnected Editor), `dffbe61` (D4), `33708c0` (D3), `e7e7c27` (D1), and
+  the State of the ADE review commits `3f8aba1` / `580ee80` / `72b2734` — all
+  committed 2026-07-30.
 - The main shell now has one surface-scoped `RightDock`, one route registry
   behind the rail/palette/labels/hotkeys, SSH-gated local-only actions, an
   Agents-owned Inspector, and a reconnected Editor panel with a wired Markdown
   viewer.
+- Destructive actions are confirmed through one shared `ConfirmDeleteModal`.
+  There are no native `window.confirm` calls left in source, and
+  `scripts/confirm-idiom.test.mjs` enforces that. What confirmation still does
+  **not** do is clean up: Flight delete abandons running attempts and
+  conversation delete orphans its worktree — see the restart list above.
+- Ctrl+K and Escape yield to focused terminals and text inputs, and closing the
+  app confirms only when live work would be destroyed.
+- Workspace creation has one contract: no workspace is created without a
+  project path, instant paths open the OS folder picker, names auto-increment,
+  and creation is reachable from the "+ New" menu and the Ctrl+K palette.
 - Gemini CLI is no longer a supported PTY agent. Supported PTY CLIs are Claude
   Code, Codex CLI, OpenCode, PacketCode, and plain shells; the GUI-agent picker
   keeps its eight chat rows (Anthropic subscription/API, OpenAI
@@ -213,11 +258,11 @@ All three artifacts are unsigned.
 
 ## Last verified gates
 
-The four main-shell implementation commits each ran the frontend gates before
-landing:
+The five main-shell commits each ran the frontend gates before landing:
 
 - Vitest grew 1260 → 1276 (`e7e7c27`) → 1320 (`33708c0`, cumulative through
-  `dffbe61`) → 1363 passing across 179 files (`93d41af`);
+  `dffbe61`) → 1363 across 179 files (`93d41af`) → **1466 passing across 194
+  files** (`f405ea1`);
 - ESLint passed with zero errors at every step;
 - the TypeScript/Vite production build passed at every step;
 - one pre-existing unhandled rejection in
@@ -260,17 +305,22 @@ limited to existing `ts-rs` serde-alias and Vite chunk/dynamic-import warnings.
 
 ## Suggested first prompt
 
-> Read `HANDOFF.md`. The five decided main-shell items are implemented and
-> committed (`e7e7c27`, `33708c0`, `dffbe61`, `93d41af`) — do not re-open
-> them. Pick up the follow-ups instead. Start with the deletion critical: the
-> live SSH-server delete in Settings has no confirmation while the component
-> that has one (`ServersView.tsx`) is unrouted dead code. Then do the
-> standalone UX quick wins (Ctrl+K terminal guard, close-confirm on app exit,
-> Escape-close on the New Flight/New Issue modals, Issues-board grid wrap) and
-> the top creation-flow fixes from §5 of
-> `docs/reports/state-of-the-ade-2026-07-30.html`: unify the two
-> workspace-creation flows and stop the empty-`projectPath` instant create,
-> de-duplicate the FleetSidebar top/bottom "New session" buttons, and add
-> workspace creation to the "+ New" menu and the Ctrl+K palette. Keep gates
-> green at each step (`pnpm build`, `pnpm lint`, Vitest, currently 1363
-> passing across 179 files).
+> Read `HANDOFF.md`. The five decided main-shell items (`e7e7c27`, `33708c0`,
+> `dffbe61`, `93d41af`) and the whole main-shell follow-up loop (`f405ea1` —
+> deletion-confirm sweep, Ctrl+K/Escape terminal guards, app-close confirm,
+> Modal Escape default, Issues-board wrap, unified workspace creation) are
+> implemented and committed — do not re-open them. Pick up what `f405ea1`
+> deliberately left out, in `backlog.md` under "P1 — deletion and shell
+> follow-ups". Lead with the delete-cleanup work: Flight delete needs a
+> behavioural fan-out to `cancelAttempt` plus worktree cleanup; conversation
+> delete orphans its worktree/branch and needs an owner decision first; SSH
+> server delete orphans its keyring secret and needs a new
+> `delete_ssh_password` Rust command. Then restore the persisted `selectedView`
+> in `bootstrap.ts` instead of force-routing to Welcome. Then the residue:
+> undo for destructive actions, Issue delete and `IssueCommentList` comment
+> delete, the `ConversationTile` double kebab and lying X tooltip, a "don't
+> ask again" close preference, the six-spellings label sweep
+> (`WelcomeScreen`/`ProjectInfoCard`/`OnboardingPane`), and a keep-or-delete
+> decision on the now-unreferenced `useServerConnection` /
+> `ConnectionProgress`. Keep gates green at each step (`pnpm build`,
+> `pnpm lint`, Vitest, currently 1466 passing across 194 files).
