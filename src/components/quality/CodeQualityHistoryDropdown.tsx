@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, History, Trash2 } from "lucide-react";
 import { formatScoreDelta, type CodeQualityHistoryEntry } from "./codeQualityHistory";
 import { getLetterGrade } from "./codeQualityUtils";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 
 interface Props {
   entries: CodeQualityHistoryEntry[];
@@ -22,6 +23,7 @@ interface Props {
  */
 export function CodeQualityHistoryDropdown({ entries, selectedIndex, onSelect, onClear }: Props) {
   const [open, setOpen] = useState(false);
+  const [pendingClear, setPendingClear] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -60,11 +62,12 @@ export function CodeQualityHistoryDropdown({ entries, selectedIndex, onSelect, o
             <button
               type="button"
               onClick={() => {
-                onClear();
+                setPendingClear(true);
                 setOpen(false);
               }}
               className="inline-flex items-center gap-1 text-[10px] text-text-muted hover:text-accent-red transition-colors"
               title="Clear run history"
+              aria-label="Clear run history"
             >
               <Trash2 size={10} /> Clear
             </button>
@@ -115,6 +118,19 @@ export function CodeQualityHistoryDropdown({ entries, selectedIndex, onSelect, o
             </div>
           )}
         </div>
+      )}
+
+      {pendingClear && (
+        <ConfirmDeleteModal
+          title="Clear run history?"
+          description={`All ${entries.length} saved quality runs for this project are removed, along with their score deltas.`}
+          confirmLabel="Clear history"
+          onConfirm={() => {
+            onClear();
+            setPendingClear(false);
+          }}
+          onClose={() => setPendingClear(false)}
+        />
       )}
     </div>
   );

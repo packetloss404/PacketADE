@@ -10,6 +10,7 @@ import {
   Star,
 } from "lucide-react";
 import { useProfileStore } from "@/stores/profileStore";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import type { AgentProfile } from "@/types/profiles";
 import type { PermissionMode } from "@/types/agent-conversation";
 import { CardHeader } from "./CardHeader";
@@ -102,6 +103,7 @@ export function AgentProfilesCard() {
   const cloneProfile = useProfileStore((s) => s.cloneProfile);
 
   const [draft, setDraft] = useState<DraftState | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<AgentProfile | null>(null);
 
   function startCreate() {
     setDraft(emptyDraft({ kind: "create" }));
@@ -146,13 +148,9 @@ export function AgentProfilesCard() {
     }
   }
 
-  function confirmDelete(p: AgentProfile) {
+  function requestDelete(p: AgentProfile) {
     if (p.isBuiltin) return;
-    if (
-      window.confirm(`Delete profile "${p.name}"? This cannot be undone.`)
-    ) {
-      deleteProfile(p.id);
-    }
+    setPendingDelete(p);
   }
 
   return (
@@ -265,9 +263,10 @@ export function AgentProfilesCard() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => confirmDelete(p)}
+                      onClick={() => requestDelete(p)}
                       className="p-1 text-text-faint hover:text-accent-red rounded"
-                      title="Delete"
+                      title={`Delete profile “${p.name}”`}
+                      aria-label={`Delete profile ${p.name}`}
                     >
                       <Trash2 size={11} />
                     </button>
@@ -428,6 +427,19 @@ export function AgentProfilesCard() {
             </label>
           </div>
         </div>
+      )}
+
+      {pendingDelete && (
+        <ConfirmDeleteModal
+          title="Delete profile?"
+          entityName={pendingDelete.name}
+          description="is removed from the Agents launcher. Conversations already started with it keep their settings."
+          onConfirm={() => {
+            deleteProfile(pendingDelete.id);
+            setPendingDelete(null);
+          }}
+          onClose={() => setPendingDelete(null)}
+        />
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { BookOpen, Terminal, MessageSquare, Copy, Pencil, Trash2, Plus, Check, X, Search } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { usePromptStore } from "@/stores/promptStore";
 import type { PromptTemplate } from "@/types/prompt";
@@ -70,6 +71,7 @@ export function PromptLibrary({ onClose }: PromptLibraryProps) {
   const [editContent, setEditContent] = useState("");
   const [editCategory, setEditCategory] = useState<PromptTemplate["category"]>("general");
   const [isCreating, setIsCreating] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<PromptTemplate | null>(null);
 
   const filtered = templates.filter((t) => {
     if (activeCategory !== "all" && t.category !== activeCategory) return false;
@@ -287,9 +289,10 @@ export function PromptLibrary({ onClose }: PromptLibraryProps) {
                       <Pencil size={11} />
                     </button>
                     <button
-                      onClick={() => deleteTemplate(t.id)}
+                      onClick={() => setPendingDelete(t)}
                       className="p-1 text-text-muted hover:text-accent-red transition-colors"
-                      title="Delete template"
+                      title={`Delete template “${t.name}”`}
+                      aria-label={`Delete template ${t.name}`}
                     >
                       <Trash2 size={11} />
                     </button>
@@ -306,6 +309,19 @@ export function PromptLibrary({ onClose }: PromptLibraryProps) {
           )}
         </div>
       </div>
+
+      {pendingDelete && (
+        <ConfirmDeleteModal
+          title="Delete prompt template?"
+          entityName={pendingDelete.name}
+          description="is removed from the prompt library."
+          onConfirm={() => {
+            deleteTemplate(pendingDelete.id);
+            setPendingDelete(null);
+          }}
+          onClose={() => setPendingDelete(null)}
+        />
+      )}
     </Modal>
   );
 }

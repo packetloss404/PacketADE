@@ -64,6 +64,17 @@ interface WorkspaceStore {
    */
   autoBindGithubRepo: boolean;
   zoomedPaneId: string | null;
+  /**
+   * Transient "open the New Workspace modal" request, or null.
+   *
+   * The full creation form is owned by `WorkspaceView` (it is the surface the
+   * new workspace lands on), but the two most discoverable creation entry
+   * points are global — the Toolbar "+ New" menu and the Ctrl+K palette. They
+   * publish a token here instead of each mounting a competing modal instance.
+   * The value is a monotonically increasing token so two consecutive requests
+   * are distinguishable; `WorkspaceView` clears it once it has opened.
+   */
+  creationRequest: number | null;
 
   createWorkspace: (
     name: string,
@@ -110,6 +121,10 @@ interface WorkspaceStore {
    * request; omit to clear unconditionally.
    */
   clearPaneFocusRequest: (token?: number) => void;
+  /** Ask the Workspace surface to open the New Workspace modal. */
+  requestWorkspaceCreation: () => void;
+  /** Clear a pending {@link WorkspaceStore.creationRequest}. */
+  clearWorkspaceCreationRequest: () => void;
   hydrateFromBackend: (workspaces?: Workspace[]) => void;
 }
 
@@ -292,6 +307,15 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   defaultBypassPermissions: readBooleanFlag(DEFAULT_BYPASS_KEY, false),
   autoBindGithubRepo: readBooleanFlag(AUTO_BIND_GITHUB_KEY, true),
   zoomedPaneId: null,
+  creationRequest: null,
+
+  requestWorkspaceCreation: () => {
+    set((s) => ({ creationRequest: (s.creationRequest ?? 0) + 1 }));
+  },
+
+  clearWorkspaceCreationRequest: () => {
+    set({ creationRequest: null });
+  },
 
   setDefaultBypassPermissions: (value) => {
     writeBooleanFlag(DEFAULT_BYPASS_KEY, value);
@@ -306,6 +330,21 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   createWorkspace: (name, agents, projectPath, sessionConfig) => {
     const serverId = sessionConfig?.serverId;
     const remoteProjectPath = sessionConfig?.remoteProjectPath;
+
+    // Creation invariant — the empty-path guard lives HERE, not in the modal.
+    // `WorkspaceCreationModal` used to be the only place that blocked
+    // `projectPath === ""` (persisting one breaks the Toolbar folder picker,
+    // git pollers, MCP and deploy), while the instant paths (Fleet sidebar,
+    // Ctrl+N) passed `layoutStore.projectPath ?? ""` straight through and
+    // silently produced exactly that broken workspace on a fresh install.
+    // Callers with no known path must route the user through the folder
+    // picker first — see `lib/workspaceCreation.createInstantWorkspace`.
+    if (!serverId && !projectPath.trim()) {
+      throw new Error(
+        "createWorkspace: a local workspace requires a non-empty projectPath — " +
+          "route the user through the folder picker (lib/workspaceCreation) instead",
+      );
+    }
 
     if (serverId) {
       // Remote workspace: serverId must point to a real registered server

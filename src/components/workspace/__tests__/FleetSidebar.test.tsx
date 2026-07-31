@@ -109,7 +109,28 @@ describe("FleetSidebar", () => {
     render(<FleetSidebar />, { wrapper: ToastProvider });
 
     expect(screen.queryByText("Legacy Task A")).not.toBeInTheDocument();
-    expect(screen.getByText("No sessions yet")).toBeInTheDocument();
+    expect(screen.getByText("No workspaces yet")).toBeInTheDocument();
+  });
+
+  it("offers exactly ONE create control, and it creates a real workspace", async () => {
+    // The sidebar used to ship a header "+" AND a footer CTA bound to the
+    // identical handler inside one 240px column. Only the labelled footer CTA
+    // survives.
+    useLayoutStore.setState({ projectPath: "/proj", fallbackProjectPath: "/proj" });
+    render(<FleetSidebar />, { wrapper: ToastProvider });
+
+    const creators = screen.getAllByRole("button", { name: /new workspace/i });
+    expect(creators).toHaveLength(1);
+
+    await act(async () => {
+      fireEvent.click(creators[0]);
+    });
+
+    const created = useWorkspaceStore.getState().workspaces;
+    expect(created).toHaveLength(1);
+    // Auto-named under the one noun, and never path-less.
+    expect(created[0].name).toBe("Workspace");
+    expect(created[0].projectPath).toBe("/proj");
   });
 
   it("keeps an existing conversation pane visible in its Workspace row", () => {
@@ -191,7 +212,7 @@ describe("FleetSidebar", () => {
     });
     render(<FleetSidebar />, { wrapper: ToastProvider });
 
-    fireEvent.click(screen.getByRole("button", { name: /search sessions/i }));
+    fireEvent.click(screen.getByRole("button", { name: /search workspaces/i }));
     const input = screen.getByPlaceholderText("Search messages, titles…");
     act(() => {
       fireEvent.change(input, { target: { value: "parser" } });

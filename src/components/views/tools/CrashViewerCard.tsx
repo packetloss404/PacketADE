@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, RefreshCw, Trash2, Eye, X } from "lucide-react";
 import { listCrashes, readCrash, deleteCrash, type CrashEntry } from "@/lib/tauri";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 
 export function CrashViewerCard() {
   const [crashes, setCrashes] = useState<CrashEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewing, setViewing] = useState<{ path: string; content: string } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -97,9 +99,10 @@ export function CrashViewerCard() {
                 <Eye size={11} />
               </button>
               <button
-                onClick={() => handleDelete(c.path)}
+                onClick={() => setPendingDelete(c.path)}
                 className="p-1 text-text-muted hover:text-accent-red transition-colors flex-shrink-0"
-                title="Delete"
+                title="Delete crash report"
+                aria-label={`Delete crash report ${c.path}`}
               >
                 <Trash2 size={11} />
               </button>
@@ -123,6 +126,19 @@ export function CrashViewerCard() {
             {viewing.content}
           </pre>
         </div>
+      )}
+
+      {pendingDelete && (
+        <ConfirmDeleteModal
+          title="Delete crash report?"
+          entityName={pendingDelete}
+          description="is deleted from disk. Copy anything you still need out of it first."
+          onConfirm={() => {
+            void handleDelete(pendingDelete);
+            setPendingDelete(null);
+          }}
+          onClose={() => setPendingDelete(null)}
+        />
       )}
     </div>
   );

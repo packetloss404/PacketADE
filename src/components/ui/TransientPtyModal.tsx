@@ -197,6 +197,9 @@ export function TransientPtyModal({
       title={title}
       icon={icon}
       width="w-[760px]"
+      // Deliberate opt-out of the app-wide Escape-to-close default: the
+      // embedded xterm forwards Escape to the running PTY (vim, a prompt,
+      // an interactive installer), so the dialog must not eat it.
       closeOnEscape={false}
     >
       <div className="flex flex-col gap-2 p-4">

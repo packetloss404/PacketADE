@@ -219,8 +219,8 @@ for (const vp of VIEWPORTS) {
         await robustClick(page, page.getByText("New Flight", { exact: true }));
         await page.waitForTimeout(800); // lazy chunk
         await snap(page, dir, "19-modal-new-flight");
-        // The Launch modal does not opt into closeOnEscape — use the X button.
-        await robustClick(page, page.getByRole("button", { name: "Close" }).last());
+        // Modal defaults to Escape-to-close, so dismissal is keyboard-only.
+        await page.keyboard.press("Escape");
         await page.waitForTimeout(200);
       });
 
@@ -229,7 +229,7 @@ for (const vp of VIEWPORTS) {
         await robustClick(page, page.getByText("New Issue", { exact: true }));
         await page.waitForTimeout(400);
         await snap(page, dir, "20-modal-new-issue");
-        await robustClick(page, page.getByRole("button", { name: "Close" }).last());
+        await page.keyboard.press("Escape");
         await page.waitForTimeout(200);
       });
 

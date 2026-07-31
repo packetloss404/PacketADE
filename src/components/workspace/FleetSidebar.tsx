@@ -42,7 +42,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useConversationAttention, useWorkspaceStatuses, attentionDot } from "@/lib/sessionStatus";
 import { flightAttemptSessionIds } from "@/lib/sessionIndex";
 import { buildFleetProjection, basenameOf, type FleetFilter, type FleetRow } from "@/lib/fleetRows";
-import { useLayoutStore } from "@/stores/layoutStore";
+import { createInstantWorkspace } from "@/lib/workspaceCreation";
 import { Modal } from "@/components/ui/Modal";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { Badge } from "@/components/ui/Badge";
@@ -98,11 +98,13 @@ export function FleetSidebar() {
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
-  // New session = the same ruled flow as Ctrl+N: a fresh workspace whose
-  // zero-state hosts the CLI-only AddSessionPicker.
-  const handleNewSession = () => {
-    const projectPath = useLayoutStore.getState().projectPath ?? "";
-    useWorkspaceStore.getState().createWorkspace("New Session", [], projectPath);
+  // New workspace = the same ruled flow as Ctrl+N: a uniquely auto-named
+  // workspace whose zero-state hosts the CLI-only AddSessionPicker. The path
+  // rules (folder picker when none is known) live in `lib/workspaceCreation`,
+  // so this button can no longer create the path-less workspace the creation
+  // modal spends validation code preventing.
+  const handleNewWorkspace = () => {
+    void createInstantWorkspace();
   };
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -379,9 +381,9 @@ export function FleetSidebar() {
         {hasAnyRows && <Badge>{totalCount}</Badge>}
         {needsYouCount > 0 && <Badge tone="amber">{needsYouCount}</Badge>}
         <span className="flex-1" />
-        <Tooltip content="Search sessions (/)">
+        <Tooltip content="Search workspaces (/)">
           <button
-            aria-label="Search sessions"
+            aria-label="Search workspaces"
             onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
             className={`rounded p-1 transition-colors ${
               searchOpen
@@ -392,14 +394,11 @@ export function FleetSidebar() {
             <Search size={11} />
           </button>
         </Tooltip>
-        <Tooltip content="New session">
-          <button
-            onClick={handleNewSession}
-            className="rounded p-1 text-text-muted transition-colors hover:bg-bg-hover hover:text-accent-green"
-          >
-            <Plus size={11} />
-          </button>
-        </Tooltip>
+        {/* No second "+" here on purpose. The header icon and the footer CTA
+            used to call the identical handler inside one 240px sidebar; the
+            labelled footer CTA is the discoverable one, and dropping the icon
+            also removes the near-duplicate of the tab-strip "+" (which opens
+            the full creation form, not the instant path). */}
       </div>
 
       {/* Status filter (hidden when search is open) */}
@@ -484,20 +483,20 @@ export function FleetSidebar() {
             <EmptyState
               className="py-16"
               icon={<FolderOpen size={24} />}
-              title="No sessions yet"
-              description="Start one with New session"
+              title="No workspaces yet"
+              description="Start one with New workspace"
             />
           ) : filter === "archived" ? (
             <EmptyState
               className="py-16"
               icon={<Archive size={24} />}
-              title="No archived sessions"
+              title="No archived workspaces"
             />
           ) : (
             <EmptyState
               className="py-16"
               icon={<FolderOpen size={24} />}
-              title="No matching sessions"
+              title="No matching workspaces"
               description="Try a different filter"
             />
           )
@@ -597,14 +596,15 @@ export function FleetSidebar() {
         )}
       </div>
 
-      {/* Footer CTA */}
+      {/* Footer CTA — the ONE create control in this sidebar. */}
       <div className="flex items-center gap-1.5 border-t border-line-strong bg-bg-tertiary px-2.5 py-2">
         <button
-          onClick={handleNewSession}
+          onClick={handleNewWorkspace}
+          title="New workspace — adds an empty workspace you fill with CLI sessions"
           className="bg-accent-green/15 hover:bg-accent-green/25 flex flex-1 items-center justify-center gap-1.5 rounded border border-accent-line px-2 py-1.5 text-ui font-medium text-accent-green transition-colors"
         >
           <Plus size={11} />
-          New session
+          New workspace
         </button>
       </div>
 

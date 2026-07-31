@@ -2,8 +2,21 @@ import { useState } from "react";
 import { Server, Plus, Pencil, Trash2 } from "lucide-react";
 import { useServerStore } from "@/stores/serverStore";
 import { ServerFormModal } from "@/components/servers/ServerFormModal";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
+import { summarizeServerUsage, serverUsageWarnings } from "@/lib/serverUsage";
+import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { useFlightStore } from "@/stores/flightStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type { ServerConfig } from "@/types/server";
 
+/**
+ * The ONLY reachable remote-host manager. `ServersView.tsx` used to hold a
+ * `window.confirm` here, but nothing ever routed to it (every "open servers"
+ * handler navigates to Settings), so in practice a 10px hover trash icon
+ * destroyed a live SSH host record with no confirmation at all. The confirm
+ * now lives here, on the shared styled idiom, and names both the host and the
+ * work currently riding on it.
+ */
 export function ServersSettingsCard() {
   const servers = useServerStore((s) => s.servers);
   const addServer = useServerStore((s) => s.addServer);
@@ -12,6 +25,12 @@ export function ServersSettingsCard() {
 
   const [showForm, setShowForm] = useState(false);
   const [editingServer, setEditingServer] = useState<ServerConfig | null>(null);
+  // Usage is snapshotted when the confirm opens, so the warning text the user
+  // agreed to is the text that was on screen.
+  const [pendingDelete, setPendingDelete] = useState<{
+    server: ServerConfig;
+    warnings: string[];
+  } | null>(null);
 
   function handleAdd(config: Omit<ServerConfig, "id" | "installedAgents">) {
     addServer(config);
@@ -25,8 +44,20 @@ export function ServersSettingsCard() {
     }
   }
 
-  function handleDelete(id: string) {
-    deleteServer(id);
+  function requestDelete(server: ServerConfig) {
+    const usage = summarizeServerUsage(server.id, {
+      connectionStates: useServerStore.getState().connectionStates,
+      conversations: useAgentTaskStore.getState().conversations,
+      flights: useFlightStore.getState().flights,
+      workspaces: useWorkspaceStore.getState().workspaces,
+    });
+    setPendingDelete({ server, warnings: serverUsageWarnings(usage) });
+  }
+
+  function confirmDelete() {
+    if (!pendingDelete) return;
+    deleteServer(pendingDelete.server.id);
+    setPendingDelete(null);
   }
 
   return (
@@ -93,9 +124,10 @@ export function ServersSettingsCard() {
                         <Pencil size={10} />
                       </button>
                       <button
-                        onClick={() => handleDelete(server.id)}
+                        onClick={() => requestDelete(server)}
                         className="p-1 text-text-muted hover:text-accent-red transition-colors"
-                        title="Delete"
+                        title={`Delete ${server.name}`}
+                        aria-label={`Delete ${server.name}`}
                       >
                         <Trash2 size={10} />
                       </button>
@@ -114,6 +146,18 @@ export function ServersSettingsCard() {
           onClose={() => { setShowForm(false); setEditingServer(null); }}
           onSubmit={editingServer ? handleEdit : handleAdd}
           initial={editingServer ?? undefined}
+        />
+      )}
+
+      {pendingDelete && (
+        <ConfirmDeleteModal
+          title="Delete remote host?"
+          entityName={`${pendingDelete.server.name} (${pendingDelete.server.username}@${pendingDelete.server.host}:${pendingDelete.server.port})`}
+          description="is removed from this app. Nothing on the remote machine is deleted, and its stored SSH password stays in the OS credential store."
+          warnings={pendingDelete.warnings}
+          confirmLabel="Delete host"
+          onConfirm={confirmDelete}
+          onClose={() => setPendingDelete(null)}
         />
       )}
     </div>

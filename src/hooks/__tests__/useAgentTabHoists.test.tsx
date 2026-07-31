@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 
-const createWorkspace = vi.fn(() => "ws-new");
+const createInstantWorkspace = vi.fn(async () => "ws-new");
 const setActiveView = vi.fn();
 const selectConversation = vi.fn();
 const cycleTranscriptViewMode = vi.fn();
@@ -16,11 +16,10 @@ let activeView = "workspace";
 vi.mock("@/stores/appStore", () => ({
   useAppStore: { getState: () => ({ activeView, setActiveView }) },
 }));
-vi.mock("@/stores/layoutStore", () => ({
-  useLayoutStore: { getState: () => ({ projectPath: "/proj" }) },
-}));
-vi.mock("@/stores/workspaceStore", () => ({
-  useWorkspaceStore: { getState: () => ({ createWorkspace }) },
+// Ctrl+N delegates to the ONE instant-creation front door, which owns the
+// naming + empty-path rules (covered by workspaceCreation.test.ts).
+vi.mock("@/lib/workspaceCreation", () => ({
+  createInstantWorkspace: () => createInstantWorkspace(),
 }));
 vi.mock("@/stores/agentSettingsStore", () => ({
   useAgentSettingsStore: { getState: () => ({ cycleTranscriptViewMode }) },
@@ -50,18 +49,17 @@ describe("useAgentTabHoists", () => {
     vi.useRealTimers();
   });
 
-  it("Ctrl+N starts a new session (empty workspace + Workspace surface)", () => {
+  it("Ctrl+N creates a workspace via the shared instant-creation front door", () => {
     renderHook(() => useAgentTabHoists());
     const e = fireKey({ ctrlKey: true, key: "n" });
-    expect(createWorkspace).toHaveBeenCalledWith("New Session", [], "/proj");
-    expect(setActiveView).toHaveBeenCalledWith("workspace");
+    expect(createInstantWorkspace).toHaveBeenCalledTimes(1);
     expect(e.defaultPrevented).toBe(true);
   });
 
-  it("Cmd+N also starts a new session", () => {
+  it("Cmd+N also creates a workspace", () => {
     renderHook(() => useAgentTabHoists());
     fireKey({ metaKey: true, key: "n" });
-    expect(createWorkspace).toHaveBeenCalledTimes(1);
+    expect(createInstantWorkspace).toHaveBeenCalledTimes(1);
   });
 
   it("Ctrl+N opens the launcher in Agents without creating a workspace", () => {
@@ -71,7 +69,7 @@ describe("useAgentTabHoists", () => {
     fireKey({ ctrlKey: true, key: "n" });
 
     expect(selectConversation).toHaveBeenCalledWith(null);
-    expect(createWorkspace).not.toHaveBeenCalled();
+    expect(createInstantWorkspace).not.toHaveBeenCalled();
     expect(setActiveView).not.toHaveBeenCalled();
   });
 
@@ -80,14 +78,14 @@ describe("useAgentTabHoists", () => {
     const input = document.createElement("input");
     document.body.appendChild(input);
     fireKey({ ctrlKey: true, key: "n" }, input);
-    expect(createWorkspace).not.toHaveBeenCalled();
+    expect(createInstantWorkspace).not.toHaveBeenCalled();
     input.remove();
   });
 
   it("Ctrl+Shift+N does NOT start a new session (shift excluded)", () => {
     renderHook(() => useAgentTabHoists());
     fireKey({ ctrlKey: true, shiftKey: true, key: "N" });
-    expect(createWorkspace).not.toHaveBeenCalled();
+    expect(createInstantWorkspace).not.toHaveBeenCalled();
   });
 
   it("Ctrl+Shift+O cycles the transcript view mode", () => {
@@ -128,6 +126,6 @@ describe("useAgentTabHoists", () => {
     vi.advanceTimersByTime(60 * 60 * 1000);
     expect(sweepAutoArchive).not.toHaveBeenCalled();
     fireKey({ ctrlKey: true, key: "n" });
-    expect(createWorkspace).not.toHaveBeenCalled();
+    expect(createInstantWorkspace).not.toHaveBeenCalled();
   });
 });

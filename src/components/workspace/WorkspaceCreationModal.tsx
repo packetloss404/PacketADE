@@ -62,8 +62,23 @@ interface WorkspaceCreationModalProps {
   remoteProjectPath?: string;
 }
 
+/** Last path segment, OS-agnostic. Seeds the workspace name from the folder. */
+function basenameOfPath(p: string): string {
+  const trimmed = p.trim().replace(/[\\/]+$/, "");
+  if (!trimmed) return "";
+  return trimmed.split(/[\\/]/).pop() ?? "";
+}
+
 export function WorkspaceCreationModal({ onClose, initialSelected, serverId: initialServerId, remoteProjectPath: initialRemoteProjectPath }: WorkspaceCreationModalProps) {
+  // The name is auto-seeded from the project folder (matching every instant
+  // path, which auto-names) and stays auto until the user types. `nameEdited`
+  // is what makes template clicks non-sticky: picking "PacketCode" and then
+  // "Review Pair" used to keep the FIRST template's name because the seed only
+  // ran while the field was empty.
+  // (The seed itself is applied by the `selectedProjectPath` effect below,
+  // which also keeps it in step when the folder changes.)
   const [name, setName] = useState("");
+  const [nameEdited, setNameEdited] = useState(false);
   const preferredDefaultSlot = getPreferredWorkspaceCli(initialServerId);
   // PacketCode is the creation-time default when detected. Existing
   // Workspaces are never rewritten when detection changes.
@@ -113,6 +128,15 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
 
   // Local project path (only used when locationMode === "local").
   const [selectedProjectPath, setSelectedProjectPath] = useState(projectPath);
+
+  // Keep the auto-seeded name in step with the chosen folder, so the happy
+  // path (pick a folder → Create) never trips the "Workspace name is
+  // required" block. A user-typed name is never overwritten.
+  useEffect(() => {
+    if (nameEdited || locationMode !== "local") return;
+    const seed = basenameOfPath(selectedProjectPath);
+    if (seed) setName(seed);
+  }, [selectedProjectPath, nameEdited, locationMode]);
 
   // v0.8-15: auto-bind to GitHub repo via `git remote get-url origin`.
   // Probe runs against the local project path whenever it changes. We
@@ -301,7 +325,9 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
     if (availableSessions.length === 0) return;
     setSelectedTemplateId(template.id);
     setSelected(new Set(availableSessions));
-    if (!name.trim()) {
+    // Overwrite auto-seeded names (empty or folder/template derived); never
+    // overwrite a name the user typed.
+    if (!nameEdited) {
       setName(template.label);
     }
   }
@@ -451,6 +477,10 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
       title="New Workspace"
       icon={<LayoutGrid size={16} className="text-accent-green" />}
       width="w-[480px]"
+      // The shared Modal's X button always advertises "Close (Esc)"; sibling
+      // creation dialogs (FolderPickerFollowUp, the Fleet delete confirm) opt
+      // in, so this one did nothing but make the tooltip lie.
+      closeOnEscape
       footer={
         <div className="flex justify-end gap-2">
           <button
@@ -520,7 +550,11 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
           <input
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              // Clearing the field hands the name back to auto-seeding.
+              setNameEdited(e.target.value.trim().length > 0);
+            }}
             placeholder="My Workspace"
             className="w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
             autoFocus

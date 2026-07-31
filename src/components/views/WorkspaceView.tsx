@@ -54,6 +54,16 @@ export function WorkspaceView({ surfaceActive = true }: WorkspaceViewProps) {
   );
   const toggleDockPanel = useRightDockStore((s) => s.togglePanel);
   const [showCreate, setShowCreate] = useState(false);
+  // Global creation entry points (Toolbar "+ New", Ctrl+K palette) publish a
+  // token instead of mounting their own modal — this surface owns the one
+  // creation form, and the new workspace lands here anyway.
+  const creationRequest = useWorkspaceStore((s) => s.creationRequest);
+  const clearWorkspaceCreationRequest = useWorkspaceStore((s) => s.clearWorkspaceCreationRequest);
+  useEffect(() => {
+    if (creationRequest == null) return;
+    setShowCreate(true);
+    clearWorkspaceCreationRequest?.();
+  }, [creationRequest, clearWorkspaceCreationRequest]);
   // Tile program (P4-S1): the tab-strip dot reads the SINGLE status truth
   // (sessionStatus rollup — max severity across member tiles), not a local
   // liveness heuristic.
@@ -166,7 +176,9 @@ export function WorkspaceView({ surfaceActive = true }: WorkspaceViewProps) {
               <button
                 onClick={() => setShowCreate(true)}
                 className="flex items-center px-2 text-text-muted transition-colors hover:text-text-primary"
-                title="New workspace"
+                // Differentiated from the Fleet sidebar's "New workspace" CTA,
+                // which is the instant path. Same noun, explicit about the fork.
+                title="New workspace (choose template)…"
               >
                 <Plus size={12} />
               </button>

@@ -18,6 +18,7 @@ import {
   type GitHubMergeStrategy,
 } from "@/stores/githubStore";
 import { normalizeGiteaBaseUrl } from "@/lib/git-hosts";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import {
   githubDeviceFlowStart,
   githubDeviceFlowPoll,
@@ -84,6 +85,11 @@ export function GitHubSettingsCard() {
   const [giteaToken, setGiteaToken] = useState("");
   const [giteaError, setGiteaError] = useState<string | null>(null);
   const [giteaBusy, setGiteaBusy] = useState(false);
+  const [pendingHostRemoval, setPendingHostRemoval] = useState<{
+    id: string;
+    label: string;
+    baseUrl: string;
+  } | null>(null);
 
   useEffect(() => {
     void loadConnections();
@@ -481,8 +487,11 @@ export function GitHubSettingsCard() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => void removeGitHostConnection(c.id)}
-                  title="Remove host"
+                  onClick={() =>
+                    setPendingHostRemoval({ id: c.id, label: c.label, baseUrl: c.baseUrl })
+                  }
+                  title={`Remove ${c.label}`}
+                  aria-label={`Remove ${c.label}`}
                   className="text-text-muted hover:text-accent-red p-1 rounded"
                 >
                   <Trash2 size={12} />
@@ -541,6 +550,20 @@ export function GitHubSettingsCard() {
           </div>
         )}
       </div>
+
+      {pendingHostRemoval && (
+        <ConfirmDeleteModal
+          title="Remove git host?"
+          entityName={`${pendingHostRemoval.label} (${pendingHostRemoval.baseUrl})`}
+          description="is disconnected and its stored token is removed. Repo browsing and PR actions against this host stop working."
+          confirmLabel="Remove host"
+          onConfirm={() => {
+            void removeGitHostConnection(pendingHostRemoval.id);
+            setPendingHostRemoval(null);
+          }}
+          onClose={() => setPendingHostRemoval(null)}
+        />
+      )}
     </div>
   );
 }

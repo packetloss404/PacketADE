@@ -9,7 +9,7 @@
  * project). These tests pin the truthful behavior: an empty brief reads as
  * ~0 tok, and a matching brief surfaces its real text + a nonzero estimate.
  */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LearnedPattern } from "@/types/memory";
 
@@ -78,5 +78,51 @@ describe("MemoryView preview truth", () => {
     // Nonzero, budget-derived estimate — not the ~0 of an empty brief.
     expect(document.body.textContent).not.toContain("~0 tok");
     expect(document.body.textContent).toMatch(/~[1-9]\d* tok/);
+  });
+});
+
+/**
+ * Memory deletes used to be confirm-inverted: clear-all asked (via
+ * `window.confirm`), while the IRREVERSIBLE per-pattern and per-event deletes
+ * fired instantly from a 9-10px hover trash icon. All three now go through the
+ * shared styled confirm.
+ */
+describe("MemoryView delete confirmations", () => {
+  it("clear-all opens the styled confirm, not window.confirm, and cancel keeps memory", () => {
+    const nativeConfirm = vi.spyOn(window, "confirm");
+    useMemoryStore.setState({ patterns: [pattern()] });
+
+    render(<MemoryView />);
+    fireEvent.click(screen.getByTitle("Clear all memory"));
+
+    expect(nativeConfirm).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Clear all memory?" })).toBeInTheDocument();
+    expect(useMemoryStore.getState().patterns).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(useMemoryStore.getState().patterns).toHaveLength(1);
+
+    fireEvent.click(screen.getByTitle("Clear all memory"));
+    fireEvent.click(screen.getByRole("button", { name: "Clear memory" }));
+    expect(useMemoryStore.getState().patterns).toHaveLength(0);
+    nativeConfirm.mockRestore();
+  });
+
+  it("per-pattern delete confirms and names the pattern; cancel keeps it", () => {
+    useMemoryStore.setState({ patterns: [pattern()] });
+
+    render(<MemoryView />);
+    fireEvent.click(screen.getByTitle("Delete pattern"));
+
+    expect(useMemoryStore.getState().patterns).toHaveLength(1);
+    expect(screen.getByRole("heading", { name: "Delete learned pattern?" })).toBeInTheDocument();
+    expect(screen.getAllByText(/Prefer lucide icons/).length).toBeGreaterThan(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(useMemoryStore.getState().patterns).toHaveLength(1);
+
+    fireEvent.click(screen.getByTitle("Delete pattern"));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(useMemoryStore.getState().patterns).toHaveLength(0);
   });
 });

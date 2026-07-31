@@ -1,10 +1,11 @@
-import { useEffect, useCallback, useState, lazy, Suspense } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { Toolbar } from "@/components/layout/Toolbar";
 import { LeftRail } from "@/components/layout/LeftRail";
 import { StatusStrip } from "@/components/layout/StatusStrip";
 import { WelcomeScreen } from "@/components/views/WelcomeScreen";
 import { CommandPalette } from "@/components/common/CommandPalette";
+import { CloseConfirmDialog } from "@/components/common/CloseConfirmDialog";
 import { SideChatOverlay } from "@/components/agents/SideChatOverlay";
 import { PinnedApprovalBanner } from "@/components/agents/PinnedApprovalBanner";
 import { useSideChatHotkey } from "@/hooks/useSideChatHotkey";
@@ -16,7 +17,8 @@ import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { ToastProvider } from "@/components/ui/Toast";
 import { FleetSidebar } from "@/components/workspace/FleetSidebar";
 import { useAgentTabHoists } from "@/hooks/useAgentTabHoists";
-import { resolveViewHotkey } from "@/lib/viewHotkeys";
+import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
+import { useCloseConfirm } from "@/hooks/useCloseConfirm";
 import { initSessionGlue } from "@/stores/sessionGlue";
 import { startMcpWriteBridge } from "@/lib/mcpWriteBridge";
 import { startStallSweep } from "@/lib/flightCoordination";
@@ -24,7 +26,6 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, getModuleId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
-import { useDictationStore } from "@/stores/dictationStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { getModule } from "@/modules/registry";
 import {
@@ -88,6 +89,11 @@ export default function App() {
   const theme = useAppStore((s) => s.theme);
   // Poll status line data for all agents
   useStatusLinePoller();
+  // Ctrl+K palette, Escape, and the Ctrl+Shift view chords — with the UX-08
+  // focus guards so a terminal or text field keeps its own keystrokes.
+  useGlobalShortcuts();
+  // UX-09: window close is confirmed when live work would be destroyed.
+  const closeConfirm = useCloseConfirm();
   // Cmd/Ctrl+; opens the side chat overlay
   useSideChatHotkey();
   // Tracks the last-focused text input and inserts dictated transcripts at its cursor
@@ -190,49 +196,6 @@ export default function App() {
 
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
 
-  // Global keyboard shortcuts
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      // Ctrl+K to open command palette
-      if (e.ctrlKey && e.key === "k") {
-        e.preventDefault();
-        useAppStore.getState().setCommandPaletteOpen(!useAppStore.getState().commandPaletteOpen);
-        return;
-      }
-      // Escape to close command palette
-      if (e.key === "Escape" && useAppStore.getState().commandPaletteOpen) {
-        e.preventDefault();
-        useAppStore.getState().setCommandPaletteOpen(false);
-        return;
-      }
-      // Escape to cancel an active dictation recording (when palette is closed)
-      if (e.key === "Escape") {
-        const ds = useDictationStore.getState();
-        if (ds.isStarting || ds.isRecording) {
-          e.preventDefault();
-          void ds.cancelRecording();
-          return;
-        }
-      }
-      // Ctrl+Shift+<chord> view switching. D4: every binding is declared once
-      // in the route registry and matched on the PHYSICAL key, so the chords
-      // work on non-US keyboard layouts.
-      if (e.ctrlKey && e.shiftKey) {
-        const target = resolveViewHotkey(e);
-        if (target) {
-          e.preventDefault();
-          setActiveView(target);
-        }
-      }
-    },
-    [setActiveView],
-  );
-
-  useEffect(() => {
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleKeyDown]);
-
   // Global listeners for agent-login requests dispatched from the Agents pane.
   // AgentInputArea dispatches `packetade:open-claude-login` /
   // `packetade:open-codex-login` when the user clicks "Log in" on an
@@ -319,6 +282,13 @@ export default function App() {
           </div>
           <StatusStrip />
           {commandPaletteOpen && <CommandPalette />}
+          {closeConfirm.pending && (
+            <CloseConfirmDialog
+              summary={closeConfirm.pending}
+              onCancel={closeConfirm.cancel}
+              onConfirm={closeConfirm.confirm}
+            />
+          )}
           <SideChatOverlay />
           {/* P1-9: blocking approvals in conversations that aren't on screen
             stay pinned at the viewport edge until answered. */}

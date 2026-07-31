@@ -15,6 +15,8 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { NewIssueForm } from "@/components/issues/NewIssueForm";
 import { Modal } from "@/components/ui/Modal";
 import { getPreferredWorkspaceCli } from "@/lib/workspaceCliDefaults";
+import { openWorkspaceCreationModal } from "@/lib/workspaceCreation";
+import { TERMINAL_AGENTS } from "@/lib/agent-catalog";
 
 // Lazy-loaded so the markdown vendor chunk leaves the entry chunk; only
 // fetched when the New Flight modal opens.
@@ -23,6 +25,17 @@ const LaunchAsyncFlightModal = lazy(() =>
     default: m.LaunchAsyncFlightModal,
   }))
 );
+
+/**
+ * Human label for the CLI this picker will actually seed, e.g. "a PacketCode".
+ * The copy used to hardcode "a Claude Code pane" while the code has always
+ * used `getPreferredWorkspaceCli()` (packetcode > claude-code > codex > …).
+ */
+function preferredCliLabel(): string {
+  const slot = getPreferredWorkspaceCli();
+  const face = TERMINAL_AGENTS.find((entry) => entry.slot === slot)?.face ?? "a default CLI";
+  return /^[aeiou]/i.test(face) ? `an ${face}` : `a ${face}`;
+}
 
 /** Last path segment, OS-agnostic. Used to seed the new workspace name. */
 function basenameOfPath(p: string): string {
@@ -155,7 +168,7 @@ export function Toolbar() {
                 ? "bg-bg-elevated text-text-primary"
                 : "bg-bg-secondary text-text-secondary hover:bg-bg-elevated hover:text-text-primary"
             }`}
-            title="Create a new session, flight, or issue"
+            title="Create a new workspace, flight, or issue"
           >
             <Plus size={12} />
             <span>New</span>
@@ -164,6 +177,14 @@ export function Toolbar() {
 
           {showNewMenu && (
             <div className="absolute top-full left-0 mt-1 w-52 bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1">
+              {/* The app's top-level object belongs in the app's top-level
+                  create menu. Opens the full creation form on the Workspace
+                  surface (one modal owner — see workspaceStore.creationRequest). */}
+              <DropdownItem
+                icon={<LayoutGrid size={12} className="text-accent-green" />}
+                label="New Workspace"
+                onClick={() => { openWorkspaceCreationModal(); setShowNewMenu(false); }}
+              />
               <DropdownItem
                 icon={<Target size={12} className="text-accent-green" />}
                 label="New Flight"
@@ -347,7 +368,7 @@ function FolderPickerFollowUp({
             <span className="flex flex-col">
               <span className="text-[12px] font-medium text-text-primary">Create new workspace</span>
               <span className="text-[10px] text-text-muted mt-0.5">
-                Open a workspace here with a Claude Code pane. You can adjust agents later.
+                Open a workspace here with {preferredCliLabel()} pane. You can adjust agents later.
               </span>
             </span>
           </button>

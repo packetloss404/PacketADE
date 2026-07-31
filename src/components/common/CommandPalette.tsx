@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Search, FileText } from "lucide-react";
+import { Search, FileText, LayoutGrid } from "lucide-react";
 import { useAppStore, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { getModulesSorted } from "@/modules/registry";
@@ -10,6 +10,7 @@ import {
   routePaletteIcon,
   routePaletteLabel,
 } from "@/lib/routeRegistry";
+import { createInstantWorkspace, openWorkspaceCreationModal } from "@/lib/workspaceCreation";
 
 interface PaletteAction {
   id: string;
@@ -33,10 +34,34 @@ export function CommandPalette() {
   const sendPromptToAgent = usePromptStore((s) => s.sendToAgentChat);
 
   const actions = useMemo<PaletteAction[]>(() => {
+    // Creation commands. The route registry describes NAVIGATION only, so
+    // these are a separate section rather than a faked route — Ctrl+K used to
+    // be navigation-only, which left the palette (promoted on the Welcome
+    // screen) unable to create the app's top-level object.
+    const items: PaletteAction[] = [
+      {
+        id: "action-new-workspace",
+        label: "New Workspace",
+        description: "Choose templates, CLI sessions, models and location",
+        icon: <LayoutGrid size={14} className="text-accent-green" />,
+        action: () => openWorkspaceCreationModal(),
+        keywords: ["new", "create", "workspace", "project", "template"],
+      },
+      {
+        id: "action-new-workspace-instant",
+        label: "New Workspace (empty)",
+        description: "Create an empty workspace in the current project folder",
+        icon: <LayoutGrid size={14} className="text-text-secondary" />,
+        action: () => void createInstantWorkspace(),
+        keywords: ["new", "create", "workspace", "empty", "blank", "quick"],
+      },
+    ];
+
     // D4: every navigation destination comes from the one route registry, so
     // the palette can no longer drift from the rail (audit P1-9 — it used to
     // omit Agents, Flight Deck, Costs and Dictation).
-    const items: PaletteAction[] = paletteRoutes()
+    items.push(
+      ...paletteRoutes()
       // A route backed by an optional module is only offered while that module
       // is enabled (preserves the old module-gated Dictation entry).
       .filter((route) => !route.moduleId || (moduleStates[route.moduleId]?.enabled ?? false))
@@ -50,7 +75,8 @@ export function CommandPalette() {
           action: () => setActiveView(route.id),
           keywords: route.palette.keywords,
         };
-      });
+      }),
+    );
 
     for (const template of promptTemplates) {
       items.push({

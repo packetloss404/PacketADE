@@ -39,6 +39,7 @@ vi.mock("@/stores/promptStore", () => ({
 
 import { CommandPalette } from "@/components/common/CommandPalette";
 import { useAppStore } from "@/stores/appStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 function rows(): HTMLElement[] {
   // Every result is a button; the search input is not.
@@ -125,6 +126,28 @@ describe("CommandPalette route coverage", () => {
     });
 
     expect(screen.getByText("Flight Deck")).toBeInTheDocument();
+  });
+
+  it("can create a workspace — the palette is no longer navigation-only", () => {
+    useWorkspaceStore.setState({ creationRequest: null });
+    render(<CommandPalette />);
+
+    fireEvent.click(screen.getByText("New Workspace"));
+
+    expect(useWorkspaceStore.getState().creationRequest).not.toBeNull();
+    expect(useAppStore.getState().activeView).toBe("workspace");
+    expect(useAppStore.getState().commandPaletteOpen).toBe(false);
+  });
+
+  it("finds the creation commands by keyword", () => {
+    render(<CommandPalette />);
+
+    fireEvent.change(screen.getByPlaceholderText("Type a command..."), {
+      target: { value: "create" },
+    });
+
+    expect(screen.getByText("New Workspace")).toBeInTheDocument();
+    expect(screen.queryByText("Memory")).not.toBeInTheDocument();
   });
 
   it("closes after executing a route action", () => {

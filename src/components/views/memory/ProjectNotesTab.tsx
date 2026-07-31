@@ -18,6 +18,7 @@ import {
   captureFromGlobalMemoryEvent,
 } from "@/lib/projectMemoryCapture";
 import { useProjectMemoryStore } from "@/stores/projectMemoryStore";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import type { MemoryEvent } from "@/types/memory";
 import type {
   ProjectMemoryChangedEvent,
@@ -56,6 +57,7 @@ export function ProjectNotesTab({
   const [body, setBody] = useState("");
   const [tags, setTags] = useState("");
   const [editingRevision, setEditingRevision] = useState("");
+  const [pendingArchive, setPendingArchive] = useState<ProjectMemoryNote | null>(null);
 
   const selected =
     snapshot.notes.find((note) => note.metadata.id === selectedId) ?? null;
@@ -442,14 +444,7 @@ export function ProjectNotesTab({
               {!selected.metadata.archived && (
                 <button
                   type="button"
-                  onClick={() => {
-                    if (window.confirm("Archive this project-memory note?")) {
-                      void archiveNote(
-                        selected.metadata.id,
-                        selected.revision,
-                      );
-                    }
-                  }}
+                  onClick={() => setPendingArchive(selected)}
                   className="rounded p-1 text-text-muted hover:text-accent-amber"
                   title="Archive note"
                 >
@@ -539,6 +534,21 @@ export function ProjectNotesTab({
             broken links
           </div>
         </aside>
+      )}
+
+      {pendingArchive && (
+        <ConfirmDeleteModal
+          title="Archive note?"
+          entityName={pendingArchive.metadata.title || pendingArchive.relativePath}
+          description="is hidden from the notes list. Turn on “Archived” to bring it back."
+          confirmLabel="Archive"
+          undoNote={null}
+          onConfirm={() => {
+            void archiveNote(pendingArchive.metadata.id, pendingArchive.revision);
+            setPendingArchive(null);
+          }}
+          onClose={() => setPendingArchive(null)}
+        />
       )}
     </div>
   );

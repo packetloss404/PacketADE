@@ -520,6 +520,10 @@ export function LaunchAsyncFlightModal({
   return (
     <Modal
       onClose={launching || planning ? () => {} : onClose}
+      // While a launch or a planning turn is in flight the dialog is
+      // uncloseable — `closeDisabled` dims the X and also suppresses the
+      // Escape-to-close default, matching PacketCodeHandoffModal.
+      closeDisabled={launching || planning}
       title={
         existingFlight
           ? `Launch attempt — ${existingFlight.title || "Untitled flight"}`

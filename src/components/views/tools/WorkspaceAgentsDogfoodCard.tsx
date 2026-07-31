@@ -5,6 +5,7 @@ import {
   useWorkspaceAgentsDogfoodStore,
   type WorkspaceAgentsDogfoodEvent,
 } from "@/stores/workspaceAgentsDogfoodStore";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 
 const HANDOFF_ROWS: Array<{
   event: WorkspaceAgentsDogfoodEvent;
@@ -39,6 +40,7 @@ export function WorkspaceAgentsDogfoodCard() {
   const evidence = useWorkspaceAgentsDogfoodStore((state) => state.evidence);
   const reset = useWorkspaceAgentsDogfoodStore((state) => state.reset);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pendingReset, setPendingReset] = useState(false);
   const averageAttentionMs =
     evidence.attention.samples > 0
       ? Math.round(evidence.attention.totalResponseMs / evidence.attention.samples)
@@ -52,14 +54,10 @@ export function WorkspaceAgentsDogfoodCard() {
     }
   }
 
-  function handleReset() {
-    if (
-      !window.confirm("Reset the local Workspace/Agents dogfood counters? This cannot be undone.")
-    ) {
-      return;
-    }
+  function performReset() {
     reset();
     setNotice("Local evidence reset");
+    setPendingReset(false);
   }
 
   return (
@@ -144,7 +142,7 @@ export function WorkspaceAgentsDogfoodCard() {
         </button>
         <button
           type="button"
-          onClick={handleReset}
+          onClick={() => setPendingReset(true)}
           className="flex items-center gap-1.5 rounded border border-bg-border px-2.5 py-1.5 text-ui text-text-muted hover:bg-bg-hover hover:text-accent-red"
         >
           <RotateCcw size={11} />
@@ -152,6 +150,16 @@ export function WorkspaceAgentsDogfoodCard() {
         </button>
         {notice && <span className="text-meta text-text-muted">{notice}</span>}
       </div>
+
+      {pendingReset && (
+        <ConfirmDeleteModal
+          title="Reset dogfood counters?"
+          description="The local Workspace/Agents migration counters go back to zero. Copy the evidence JSON first if you still need it."
+          confirmLabel="Reset counters"
+          onConfirm={performReset}
+          onClose={() => setPendingReset(false)}
+        />
+      )}
     </div>
   );
 }

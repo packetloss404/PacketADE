@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Clipboard, ShieldQuestion, Trash2 } from "lucide-react";
 import { useProvenanceAuditStore } from "@/stores/provenanceAuditStore";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 
 export function TrustProvenanceCard() {
   const entries = useProvenanceAuditStore((state) => state.entries);
@@ -14,6 +15,7 @@ export function TrustProvenanceCard() {
   const clear = useProvenanceAuditStore((state) => state.clear);
   const exportJson = useProvenanceAuditStore((state) => state.exportJson);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pendingClear, setPendingClear] = useState(false);
 
   const copyExport = async () => {
     try {
@@ -45,9 +47,10 @@ export function TrustProvenanceCard() {
           </button>
           <button
             type="button"
-            onClick={clear}
+            onClick={() => setPendingClear(true)}
             className="rounded p-1.5 text-text-muted hover:bg-bg-hover hover:text-accent-red"
             title="Clear local trust audit"
+            aria-label="Clear local trust audit"
           >
             <Trash2 size={11} />
           </button>
@@ -133,6 +136,19 @@ export function TrustProvenanceCard() {
         )}
       </div>
       {notice && <p className="mt-2 text-[9px] text-text-muted">{notice}</p>}
+
+      {pendingClear && (
+        <ConfirmDeleteModal
+          title="Clear trust audit?"
+          description={`All ${entries.length} recorded trust decisions are erased. Copy the redacted export first if you need the record.`}
+          confirmLabel="Clear audit"
+          onConfirm={() => {
+            clear();
+            setPendingClear(false);
+          }}
+          onClose={() => setPendingClear(false)}
+        />
+      )}
     </div>
   );
 }

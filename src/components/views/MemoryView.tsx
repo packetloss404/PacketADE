@@ -33,6 +33,7 @@ import { computeMemoryDigest, type MemoryDigest } from "@/lib/memoryDigest";
 import { useMemorySettingsStore } from "@/stores/memorySettingsStore";
 import { useAppStore } from "@/stores/appStore";
 import { MemoryEventCard } from "./memory/MemoryEventCard";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { ProjectNotesTab } from "./memory/ProjectNotesTab";
 import { useProjectMemoryStore } from "@/stores/projectMemoryStore";
 import {
@@ -142,6 +143,7 @@ export function MemoryView() {
   const composeMemoryBrief = useMemoryStore((s) => s.composeMemoryBrief);
   const captureSessions = useMemorySettingsStore((s) => s.captureSessions);
   const captureFlights = useMemorySettingsStore((s) => s.captureFlights);
+  const [pendingDelete, setPendingDelete] = useState<PendingMemoryDelete | null>(null);
   const projectMemoryNotes = useProjectMemoryStore(
     (state) => state.snapshot.notes,
   );
@@ -251,10 +253,15 @@ export function MemoryView() {
     if (projectPath) void refreshPatterns(projectPath);
   }
 
-  function handleClear() {
-    if (window.confirm("Clear all memory? This removes all events and learned patterns.")) {
-      clearMemory();
-    }
+  // Confirm-gating for the three destructive memory actions. Before this the
+  // irreversible ones (per-pattern, per-event) fired instantly from a 9-10px
+  // hover trash icon while only clear-all asked — via `window.confirm`.
+  function confirmPendingDelete() {
+    if (!pendingDelete) return;
+    if (pendingDelete.kind === "all") clearMemory();
+    else if (pendingDelete.kind === "pattern") deletePattern(pendingDelete.id);
+    else deleteEvent(pendingDelete.id);
+    setPendingDelete(null);
   }
 
   // M3: download a Blob from the webview (no backend round-trip needed).
@@ -366,7 +373,7 @@ export function MemoryView() {
         </label>
         {(events.length > 0 || patterns.length > 0) && (
           <button
-            onClick={handleClear}
+            onClick={() => setPendingDelete({ kind: "all" })}
             className="rounded p-1 text-text-muted transition-colors hover:bg-bg-elevated hover:text-accent-red"
             title="Clear all memory"
           >
@@ -456,7 +463,13 @@ export function MemoryView() {
           learningStatus={learningStatus}
           injectedPreview={injectedPreview}
           tokenEstimate={tokenEstimate}
-          onDeletePattern={deletePattern}
+          onDeletePattern={(id) =>
+            setPendingDelete({
+              kind: "pattern",
+              id,
+              label: patterns.find((p) => p.id === id)?.pattern ?? id,
+            })
+          }
           onUpdatePattern={updatePattern}
           onTogglePinPattern={togglePinPattern}
         />
@@ -472,7 +485,13 @@ export function MemoryView() {
           events={filtered}
           totalEvents={events.length}
           captureEnabled={captureEnabled}
-          onDeleteEvent={deleteEvent}
+          onDeleteEvent={(id) =>
+            setPendingDelete({
+              kind: "event",
+              id,
+              label: memoryEventLabel(events.find((e) => e.id === id)) ?? id,
+            })
+          }
           dateRange={dateRange}
           onDateRangeChange={setDateRange}
           projectFilter={projectFilter}
@@ -493,8 +512,47 @@ export function MemoryView() {
           projectNotes={projectMemoryNotes}
         />
       )}
+
+      {pendingDelete && (
+        <ConfirmDeleteModal
+          title={
+            pendingDelete.kind === "all"
+              ? "Clear all memory?"
+              : pendingDelete.kind === "pattern"
+                ? "Delete learned pattern?"
+                : "Delete memory event?"
+          }
+          entityName={pendingDelete.kind === "all" ? undefined : truncateLabel(pendingDelete.label)}
+          description={
+            pendingDelete.kind === "all"
+              ? "Every captured event and learned pattern is removed. Export first if you want a copy."
+              : pendingDelete.kind === "pattern"
+                ? "stops being injected into future agent sessions."
+                : "is removed from the timeline and from any brief built from it."
+          }
+          confirmLabel={pendingDelete.kind === "all" ? "Clear memory" : "Delete"}
+          onConfirm={confirmPendingDelete}
+          onClose={() => setPendingDelete(null)}
+        />
+      )}
     </div>
   );
+}
+
+type PendingMemoryDelete =
+  | { kind: "all" }
+  | { kind: "pattern"; id: string; label: string }
+  | { kind: "event"; id: string; label: string };
+
+function memoryEventLabel(event: MemoryEvent | undefined): string | null {
+  if (!event) return null;
+  const kind = event.type.replace(/_/g, " ");
+  const summary = typeof event.payload.summary === "string" ? event.payload.summary : "";
+  return summary ? `${kind} — ${summary}` : kind;
+}
+
+function truncateLabel(label: string): string {
+  return label.length > 90 ? `${label.slice(0, 90)}…` : label;
 }
 
 interface MemTabProps {

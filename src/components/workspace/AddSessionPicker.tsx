@@ -250,10 +250,11 @@ function PickerContent({
               onOpenTemplates();
               onClose();
             }}
+            title="Opens the New Workspace form — this creates a separate workspace, it does not template the current one"
             className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
           >
             <LayoutTemplate size={12} />
-            Workspace templates…
+            New workspace from template…
           </button>
         </>
       )}

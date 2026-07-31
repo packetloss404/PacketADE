@@ -19,11 +19,15 @@ interface ModalProps {
    *  (callers should also pass a no-op `onClose`). Useful while a modal is in
    *  the middle of an unbreakable operation. */
   closeDisabled?: boolean;
-  /** When true, pressing Escape closes the modal unless `closeDisabled` is
-   *  set. Defaults to false to preserve existing modal behavior — callers
-   *  with inline inputs that handle Escape themselves should leave this off.
-   *  Modals like `CodeQualityModal` that want OS-standard close-on-Escape
-   *  pass `closeOnEscape` explicitly. */
+  /** Escape-to-close. **Defaults to true** — the header's X button advertises
+   *  "Close (Esc)", so every modal honours it unless it has a reason not to.
+   *  Pass `closeOnEscape={false}` only when the modal's body legitimately owns
+   *  the Escape key (e.g. `TransientPtyModal`, where xterm forwards Escape to
+   *  the PTY). Modals in the middle of an unbreakable operation should use
+   *  `closeDisabled` (and/or a no-op `onClose`) instead — that already
+   *  suppresses Escape. Inner controls that handle Escape themselves
+   *  (Dropdown search, inline field editors) call `preventDefault()`, and a
+   *  `defaultPrevented` Escape never reaches this handler. */
   closeOnEscape?: boolean;
 }
 
@@ -37,17 +41,24 @@ export function Modal({
   footer,
   headerExtra,
   closeDisabled = false,
-  closeOnEscape = false,
+  closeOnEscape = true,
 }: ModalProps) {
   // Escape-to-close. Skipped when an unbreakable op is in flight or when the
   // caller opts out. Listens on the window so it works regardless of focus
-  // target inside the modal.
+  // target inside the modal — including text inputs, which is what users
+  // expect from an OS-standard dialog.
   useEffect(() => {
     if (!closeOnEscape || closeDisabled) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       // Don't intercept if the user is mid-IME composition.
       if (e.isComposing) return;
+      // Escape layering (matches ReviewSurface): an inner layer that already
+      // handled this keypress — an open Dropdown's search box, an inline
+      // field editor, the command palette, a live dictation capture — marks
+      // it handled. One Escape must only unwind one layer.
+      if (e.defaultPrevented) return;
+      e.preventDefault();
       e.stopPropagation();
       onClose();
     };

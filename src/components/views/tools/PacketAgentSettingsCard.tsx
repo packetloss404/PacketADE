@@ -7,6 +7,7 @@ import {
 } from "@/lib/tauri";
 import { usePacketAgentStore } from "@/stores/packetAgentStore";
 import { PACKET_AGENT_CONTRACT_COMMIT } from "@/types/packet-agent";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 
 export function PacketAgentSettingsCard() {
   const endpoint = usePacketAgentStore((state) => state.endpoint);
@@ -20,6 +21,7 @@ export function PacketAgentSettingsCard() {
   const [hasToken, setHasToken] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pendingRemoveToken, setPendingRemoveToken] = useState(false);
 
   useEffect(() => {
     void getPacketAgentTokenExists()
@@ -126,7 +128,7 @@ export function PacketAgentSettingsCard() {
         {hasToken && (
           <button
             type="button"
-            onClick={() => void removeToken()}
+            onClick={() => setPendingRemoveToken(true)}
             disabled={busy}
             className="border-accent-red/30 hover:bg-accent-red/10 rounded border px-2 text-accent-red disabled:opacity-50"
             title="Remove stored token"
@@ -158,6 +160,19 @@ export function PacketAgentSettingsCard() {
       <p className="mt-3 font-mono text-[9px] text-text-muted">
         W9 contract {PACKET_AGENT_CONTRACT_COMMIT.slice(0, 8)} · HTTPS required outside loopback
       </p>
+
+      {pendingRemoveToken && (
+        <ConfirmDeleteModal
+          title="Remove PacketAgent token?"
+          description="The stored token is deleted from the OS credential store. PacketAgent requests will fail until a new token is saved."
+          confirmLabel="Remove token"
+          onConfirm={() => {
+            void removeToken();
+            setPendingRemoveToken(false);
+          }}
+          onClose={() => setPendingRemoveToken(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,10 +1,9 @@
 import { useEffect } from "react";
 import { useAppStore } from "@/stores/appStore";
-import { useLayoutStore } from "@/stores/layoutStore";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { sweepAutoArchive } from "@/stores/agentConversationPersistence";
+import { createInstantWorkspace } from "@/lib/workspaceCreation";
 
 /**
  * Returns true when a keydown originated inside an editable element, so a
@@ -45,11 +44,12 @@ export function useAgentTabHoists(): void {
         useAgentTaskStore.getState().selectConversation(null);
         return;
       }
-      const projectPath = useLayoutStore.getState().projectPath ?? "";
-      // createWorkspace auto-activates the new workspace; its empty zero-state
-      // hosts the CLI-only AddSessionPicker.
-      useWorkspaceStore.getState().createWorkspace("New Session", [], projectPath);
-      useAppStore.getState().setActiveView("workspace");
+      // The shared instant-creation front door: uniquely auto-named
+      // ("Workspace", "Workspace 2", …), never path-less (it falls into the OS
+      // folder picker when no project path is known), and it activates both the
+      // new workspace and the Workspace surface. Its empty zero-state hosts the
+      // CLI-only AddSessionPicker.
+      void createInstantWorkspace();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

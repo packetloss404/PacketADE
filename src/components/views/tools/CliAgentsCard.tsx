@@ -42,6 +42,7 @@ import {
   packetCodeInstallCommand,
 } from "@/lib/cli-catalog";
 import { detectCliCatalog, type DetectCatalogResult } from "@/lib/tauri";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import type { AgentConfig } from "@/types/agent";
 import { TransientPtyModal } from "@/components/ui/TransientPtyModal";
 import { CliCatalogHeader } from "./CliCatalogHeader";
@@ -438,6 +439,8 @@ export function CliAgentsCard({ focusedCliId = null }: CliAgentsCardProps) {
   const [selectedCliId, setSelectedCliId] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [draft, setDraft] = useState<DraftState | null>(null);
+  const [pendingRemove, setPendingRemove] = useState<AgentConfig | null>(null);
+  const [pendingResetBuiltins, setPendingResetBuiltins] = useState(false);
   // v0.8.8+ peer-review fix: a Set keyed by entry id, not a single string.
   // Two installs clicked in quick succession used to overwrite each other —
   // the second `setInstallingId` would clear the first install's spinner
@@ -768,23 +771,20 @@ export function CliAgentsCard({ focusedCliId = null }: CliAgentsCardProps) {
     }
     setDraft(null);
   }
-  function confirmRemove(agent: AgentConfig) {
+  function requestRemove(agent: AgentConfig) {
     if (agent.isBuiltin) return;
-    if (window.confirm(`Delete CLI agent "${agent.name}"? This cannot be undone.`)) {
-      removeAgent(agent.id);
-      if (draft?.id === agent.id) setDraft(null);
-    }
+    setPendingRemove(agent);
   }
-  function handleResetBuiltins() {
-    if (
-      window.confirm(
-        "Reset built-in CLI agents to their default commands and args? Custom CLI agents will be kept.",
-      )
-    ) {
-      resetBuiltins();
-      void detectInstalled();
-      if (draft?.isBuiltin) setDraft(null);
-    }
+  function performRemove(agent: AgentConfig) {
+    removeAgent(agent.id);
+    if (draft?.id === agent.id) setDraft(null);
+    setPendingRemove(null);
+  }
+  function performResetBuiltins() {
+    resetBuiltins();
+    void detectInstalled();
+    if (draft?.isBuiltin) setDraft(null);
+    setPendingResetBuiltins(false);
   }
 
   return (
@@ -860,7 +860,7 @@ export function CliAgentsCard({ focusedCliId = null }: CliAgentsCardProps) {
             <div className="flex items-center justify-end gap-1 mb-2">
               <button
                 type="button"
-                onClick={handleResetBuiltins}
+                onClick={() => setPendingResetBuiltins(true)}
                 className="flex items-center gap-1 px-2 py-1 text-[10px] text-text-muted hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
                 title="Reset built-in command overrides"
               >
@@ -934,9 +934,10 @@ export function CliAgentsCard({ focusedCliId = null }: CliAgentsCardProps) {
                       </button>
                       <button
                         type="button"
-                        onClick={() => confirmRemove(agent)}
+                        onClick={() => requestRemove(agent)}
                         className="p-1 text-text-faint hover:text-accent-red rounded"
-                        title="Delete custom CLI agent"
+                        title={`Delete custom CLI agent “${agent.name}”`}
+                        aria-label={`Delete custom CLI agent ${agent.name}`}
                       >
                         <Trash2 size={11} />
                       </button>
@@ -1059,6 +1060,27 @@ export function CliAgentsCard({ focusedCliId = null }: CliAgentsCardProps) {
           runningMessage={`Installing ${installTarget.name}…`}
           doneMessage="Install completed — close to refresh status."
           errorMessage="Install ended with an error."
+        />
+      )}
+
+      {pendingRemove && (
+        <ConfirmDeleteModal
+          title="Delete CLI agent?"
+          entityName={pendingRemove.name}
+          description="is removed from the session launcher. The CLI itself stays installed on this machine."
+          onConfirm={() => performRemove(pendingRemove)}
+          onClose={() => setPendingRemove(null)}
+        />
+      )}
+
+      {pendingResetBuiltins && (
+        <ConfirmDeleteModal
+          title="Reset built-in CLI agents?"
+          description="Built-in CLI agents go back to their default commands and args. Custom CLI agents are kept."
+          confirmLabel="Reset to defaults"
+          undoNote="Your edits to built-in commands, args, and manual paths are lost."
+          onConfirm={performResetBuiltins}
+          onClose={() => setPendingResetBuiltins(false)}
         />
       )}
     </div>

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { X, Plus, Trash2 } from "lucide-react";
+import { X, Plus, Trash2, CircleDot } from "lucide-react";
+import { Modal } from "@/components/ui/Modal";
 import {
   useIssueStore,
   type IssueStatus,
@@ -42,8 +43,8 @@ export function NewIssueForm({ defaultStatus, onClose }: NewIssueFormProps) {
   const [blockedByIds, setBlockedByIds] = useState<string[]>([]);
   const [blocksIds, setBlocksIds] = useState<string[]>([]);
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function handleSubmit(e?: React.FormEvent) {
+    e?.preventDefault();
     if (!title.trim()) return;
 
     const newIssue = addIssue({
@@ -95,26 +96,38 @@ export function NewIssueForm({ defaultStatus, onClose }: NewIssueFormProps) {
     setCriteria((prev) => prev.filter((_, i) => i !== index));
   }
 
+  // Rendered through the shared `Modal` wrapper so this dialog inherits the
+  // app's chrome and Escape-to-close behaviour (the header X advertises
+  // "Close (Esc)"). Escape discards the draft without a confirm prompt —
+  // that's the convention every other Modal in the app follows.
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <form
-        onSubmit={handleSubmit}
-        className="bg-bg-secondary border border-bg-border rounded-lg w-[480px] max-h-[85vh] overflow-y-auto"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-bg-border">
-          <h3 className="text-sm font-semibold text-text-primary">
-            New Issue
-          </h3>
+    <Modal
+      onClose={onClose}
+      title="New Issue"
+      icon={<CircleDot size={14} className="text-accent-green" />}
+      width="w-[480px]"
+      footer={
+        <div className="flex items-center justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="p-1 text-text-muted hover:text-text-primary transition-colors"
+            className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
           >
-            <X size={14} />
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSubmit()}
+            disabled={!title.trim()}
+            className="px-3 py-1.5 text-xs bg-accent-green/15 text-accent-green border border-accent-green/30 rounded hover:bg-accent-green/25 transition-colors disabled:opacity-30"
+          >
+            Create Issue
           </button>
         </div>
-
+      }
+    >
+      {/* The <form> stays so Enter in a text field still submits. */}
+      <form onSubmit={handleSubmit}>
         <div className="p-4 flex flex-col gap-3">
           {/* Title */}
           <div>
@@ -380,25 +393,10 @@ export function NewIssueForm({ defaultStatus, onClose }: NewIssueFormProps) {
             </div>
           )}
         </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-bg-border">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={!title.trim()}
-            className="px-3 py-1.5 text-xs bg-accent-green/15 text-accent-green border border-accent-green/30 rounded hover:bg-accent-green/25 transition-colors disabled:opacity-30"
-          >
-            Create Issue
-          </button>
-        </div>
+        {/* Hidden submit keeps implicit form submission (Enter) working now
+            that the visible Create button lives in the Modal footer. */}
+        <button type="submit" className="hidden" tabIndex={-1} aria-hidden="true" />
       </form>
-    </div>
+    </Modal>
   );
 }

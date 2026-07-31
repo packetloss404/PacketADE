@@ -114,6 +114,46 @@ describe("workspaceStore.createWorkspace", () => {
     ).toThrow(/remoteProjectPath is required/i);
   });
 
+  it("refuses to persist a local workspace with an empty project path", () => {
+    // The empty-path rule used to live only in WorkspaceCreationModal, so the
+    // instant paths (Ctrl+N, Fleet sidebar) could bypass it. It is a store
+    // invariant now — no caller can create the broken workspace.
+    expect(() =>
+      useWorkspaceStore.getState().createWorkspace("Path-less", [], ""),
+    ).toThrow(/non-empty projectPath/i);
+    expect(() =>
+      useWorkspaceStore.getState().createWorkspace("Path-less", [], "   "),
+    ).toThrow(/non-empty projectPath/i);
+    expect(useWorkspaceStore.getState().workspaces).toHaveLength(0);
+  });
+
+  it("still allows a remote workspace whose local path is empty", () => {
+    useServerStore.setState({
+      servers: [
+        {
+          id: "srv-1",
+          name: "Demo",
+          host: "example.com",
+          port: 22,
+          username: "ian",
+          authMethod: "agent",
+          remotePath: "/srv/app",
+          installedAgents: [],
+          hostFingerprint: "SHA256:dummy",
+        },
+      ],
+    });
+
+    const id = useWorkspaceStore.getState().createWorkspace("Remote WS", ["claude-code"], "", {
+      serverId: "srv-1",
+      remoteProjectPath: "/srv/app",
+    });
+
+    expect(useWorkspaceStore.getState().workspaces.find((w) => w.id === id)?.projectPath).toBe(
+      "/srv/app",
+    );
+  });
+
   it("does not push the remote workspace path into layoutStore.projectPath", () => {
     useServerStore.setState({
       servers: [

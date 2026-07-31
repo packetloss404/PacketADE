@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Key, Check, X, Eye, EyeOff, Trash2 } from "lucide-react";
 import { setApiKey, getApiKeyExists, deleteApiKey } from "@/lib/tauri";
 import { CardHeader } from "./CardHeader";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 
 interface ProviderEntry {
   id: string;
@@ -24,6 +25,7 @@ export function ApiKeysCard() {
   const [inputValue, setInputValue] = useState("");
   const [showValue, setShowValue] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<ProviderEntry | null>(null);
 
   useEffect(() => {
     void loadStatus();
@@ -154,8 +156,10 @@ export function ApiKeysCard() {
                 </button>
                 {keyStatus[provider.id] && (
                   <button
-                    onClick={() => void handleDelete(provider.id)}
+                    onClick={() => setPendingDelete(provider)}
                     className="p-1 text-text-muted hover:text-accent-red transition-colors"
+                    title={`Delete ${provider.name} API key`}
+                    aria-label={`Delete ${provider.name} API key`}
                   >
                     <Trash2 size={10} />
                   </button>
@@ -167,6 +171,19 @@ export function ApiKeysCard() {
           </div>
         ))}
       </div>
+
+      {pendingDelete && (
+        <ConfirmDeleteModal
+          title="Delete API key?"
+          entityName={`${pendingDelete.name} API key`}
+          description="is removed from the OS credential store. Sessions using this provider will fail to start until a new key is set."
+          onConfirm={() => {
+            void handleDelete(pendingDelete.id);
+            setPendingDelete(null);
+          }}
+          onClose={() => setPendingDelete(null)}
+        />
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useMcpStore } from "@/stores/mcpStore";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { McpServerModal } from "../McpServerModal";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import type { McpServerEntry } from "@/types/mcp";
 
 export function McpServersCard() {
@@ -17,7 +18,9 @@ export function McpServersCard() {
   );
   const [showModal, setShowModal] = useState(false);
   const [editEntry, setEditEntry] = useState<McpServerEntry | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  // Was an in-place "Confirm" button swap with no cancel affordance and no
+  // timeout — a mis-click armed it and the next click destroyed the server.
+  const [pendingDelete, setPendingDelete] = useState<McpServerEntry | null>(null);
 
   useEffect(() => {
     fetchServers();
@@ -77,9 +80,9 @@ export function McpServersCard() {
     }
   }
 
-  async function handleDelete(name: string, scope: "global" | "project") {
-    await removeServer(name, scope);
-    setDeleteConfirm(null);
+  async function handleDelete(entry: McpServerEntry) {
+    setPendingDelete(null);
+    await removeServer(entry.name, entry.scope as "global" | "project");
   }
 
   return (
@@ -139,9 +142,7 @@ export function McpServersCard() {
           icon={<Globe size={11} className="text-accent-green" />}
           servers={globalServers}
           onEdit={handleEdit}
-          onDelete={handleDelete}
-          deleteConfirm={deleteConfirm}
-          setDeleteConfirm={setDeleteConfirm}
+          onRequestDelete={setPendingDelete}
           activeNames={activeNames}
           onToggleDefault={toggleDefaultServer}
         />
@@ -150,9 +151,7 @@ export function McpServersCard() {
           icon={<FolderOpen size={11} className="text-accent-blue" />}
           servers={projectServers}
           onEdit={handleEdit}
-          onDelete={handleDelete}
-          deleteConfirm={deleteConfirm}
-          setDeleteConfirm={setDeleteConfirm}
+          onRequestDelete={setPendingDelete}
           activeNames={activeNames}
           onToggleDefault={toggleDefaultServer}
         />
@@ -186,6 +185,16 @@ export function McpServersCard() {
           }
         />
       )}
+
+      {pendingDelete && (
+        <ConfirmDeleteModal
+          title="Delete MCP server?"
+          entityName={`${pendingDelete.name} (${pendingDelete.scope})`}
+          description="is removed from the MCP config. Agent sessions lose the tools it provides."
+          onConfirm={() => void handleDelete(pendingDelete)}
+          onClose={() => setPendingDelete(null)}
+        />
+      )}
     </div>
   );
 }
@@ -195,9 +204,7 @@ function ServerGroup({
   icon,
   servers,
   onEdit,
-  onDelete,
-  deleteConfirm,
-  setDeleteConfirm,
+  onRequestDelete,
   activeNames,
   onToggleDefault,
 }: {
@@ -205,9 +212,7 @@ function ServerGroup({
   icon: React.ReactNode;
   servers: McpServerEntry[];
   onEdit: (entry: McpServerEntry) => void;
-  onDelete: (name: string, scope: "global" | "project") => void;
-  deleteConfirm: string | null;
-  setDeleteConfirm: (key: string | null) => void;
+  onRequestDelete: (entry: McpServerEntry) => void;
   activeNames: Set<string>;
   onToggleDefault: (name: string) => void;
 }) {
@@ -260,22 +265,14 @@ function ServerGroup({
                 >
                   <Pencil size={11} />
                 </button>
-                {deleteConfirm === key ? (
-                  <button
-                    onClick={() => onDelete(entry.name, entry.scope as "global" | "project")}
-                    className="px-2 py-0.5 text-[10px] bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors"
-                  >
-                    Confirm
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setDeleteConfirm(key)}
-                    className="p-1 text-text-muted hover:text-red-400 transition-colors"
-                    title="Delete"
-                  >
-                    <Trash2 size={11} />
-                  </button>
-                )}
+                <button
+                  onClick={() => onRequestDelete(entry)}
+                  className="p-1 text-text-muted hover:text-accent-red transition-colors"
+                  title={`Delete ${entry.name}`}
+                  aria-label={`Delete ${entry.name}`}
+                >
+                  <Trash2 size={11} />
+                </button>
               </div>
             </div>
           );

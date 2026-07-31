@@ -23,7 +23,7 @@ import { SpecImportModal } from "./SpecImportModal";
 /**
  * v0.8.5: Kanban columns.
  *
- * Five user-facing columns, each backed by one or more `IssueStatus` values:
+ * Six user-facing columns, each backed by one or more `IssueStatus` values:
  *
  *   Backlog     — `backlog`
  *   Up Next     — `up_next` + legacy `todo`
@@ -322,11 +322,17 @@ export function IssueBoard() {
         onChange={setChipFilters}
       />
 
-      {/* v0.8.5: five Kanban columns (Backlog / Up Next / In Progress /
-          In Review / Done). Statuses that aren't first-class columns
-          (qa/blocked/needs_human) roll up into the nearest column so
-          nothing falls off the board. */}
-      <div className="grid flex-1 grid-cols-5 gap-2.5 min-h-0">
+      {/* Six Kanban columns (Backlog / Up Next / In Progress / Needs
+          Attention / In Review / Done). Statuses that aren't first-class
+          columns (qa/todo) roll up into the nearest column so nothing falls
+          off the board.
+
+          Layout: a single flex row, never a wrapping grid. `grid-cols-5` used
+          to orphan the sixth column onto a second row with a dead right half.
+          Columns share the width evenly (`flex-1 basis-0`) down to
+          `min-w-[180px]`, below which the row scrolls horizontally instead of
+          wrapping. At 1280px the six columns still fit without a scrollbar. */}
+      <div className="flex flex-1 gap-2.5 min-h-0 overflow-x-auto">
         {BOARD_COLUMNS.map((col) => {
           const columnIssues = getIssuesForColumn(col.key);
           const isDragOver = dragOverColumn === col.key;
@@ -334,7 +340,8 @@ export function IssueBoard() {
           return (
             <div
               key={col.key}
-              className={`flex min-h-0 flex-col overflow-hidden rounded-md border bg-bg-secondary transition-colors ${
+              data-testid="issue-board-column"
+              className={`flex min-h-0 flex-1 basis-0 min-w-[180px] flex-col overflow-hidden rounded-md border bg-bg-secondary transition-colors ${
                 isDragOver ? "border-accent-line" : "border-bg-border"
               }`}
               onDragOver={(e) => handleDragOver(e, col.key)}

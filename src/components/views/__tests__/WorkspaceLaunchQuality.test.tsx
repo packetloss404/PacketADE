@@ -54,6 +54,8 @@ const mocks = vi.hoisted(() => {
       createWorkspace: vi.fn(() => "ws-new"),
       addPane: vi.fn(() => "pane-new"),
       setBypassPermissions: vi.fn(),
+      creationRequest: null as number | null,
+      clearWorkspaceCreationRequest: vi.fn(),
     },
     agentState: {
       agents: [
@@ -200,6 +202,7 @@ describe("workspace launch installed-agent checks", () => {
     // clear it so the remote-launch test's forceOpenOnFirstMount doesn't
     // leak into the local three-field test's "collapsed by default" check.
     localStorage.clear();
+    mocks.workspaceState.creationRequest = null;
   });
 
   it("filters remote workspace templates through server installedAgents", async () => {
@@ -264,6 +267,26 @@ describe("workspace launch installed-agent checks", () => {
     );
   });
 
+  it("template name-seeding is not sticky, and never overwrites a typed name", () => {
+    render(<WorkspaceCreationModal onClose={vi.fn()} />);
+
+    const nameInput = screen.getByPlaceholderText("My Workspace") as HTMLInputElement;
+    // Seeded from the project folder, so a bare launch needs no typing.
+    expect(nameInput.value).toBe("PacketADE");
+
+    fireEvent.click(screen.getByRole("button", { name: /cli pair/i }));
+    expect(nameInput.value).toBe("CLI Pair");
+
+    // The second template used to be ignored because the seed only ran while
+    // the field was empty.
+    fireEvent.click(screen.getByRole("button", { name: /review pair/i }));
+    expect(nameInput.value).toBe("Review Pair");
+
+    fireEvent.change(nameInput, { target: { value: "Mine" } });
+    fireEvent.click(screen.getByRole("button", { name: /cli pair/i }));
+    expect(nameInput.value).toBe("Mine");
+  });
+
   it("disables CLI sessions that are unavailable on the active remote server", () => {
     render(<WorkspaceView />);
 
@@ -276,6 +299,18 @@ describe("workspace launch installed-agent checks", () => {
 
     expect(mocks.workspaceState.addPane).toHaveBeenCalledWith("ws-remote", "claude-code");
     expect(mocks.workspaceState.addPane).not.toHaveBeenCalledWith("ws-remote", "codex");
+  });
+
+  it("opens the creation form for a global creation request (Toolbar / Ctrl+K)", () => {
+    // The Toolbar "+ New" menu and the command palette are mounted outside
+    // this surface; they publish a token rather than each rendering their own
+    // modal instance.
+    mocks.workspaceState.creationRequest = 1;
+
+    render(<WorkspaceView />);
+
+    expect(screen.getByText("New Workspace")).toBeInTheDocument();
+    expect(mocks.workspaceState.clearWorkspaceCreationRequest).toHaveBeenCalled();
   });
 
   it("delegates the active Workspace target to the Agents launcher", () => {
