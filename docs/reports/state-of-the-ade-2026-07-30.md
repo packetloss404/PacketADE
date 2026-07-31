@@ -658,7 +658,7 @@ Substantially better than typical for a solo-developed desktop agent tool. Crede
 - Permission-mode unification with truthful labels — one documented vocabulary mapped consistently across all three runtimes; remove the Codex auto→bypass mapping. Required before handing the app to anyone but the author.
 - Visible SSH trust state per server with one-click re-pin; hard-require pinning for password-auth hosts.
 - A written threat model in `dev/` so capability/IPC decisions are made against an explicit boundary rather than accretion.
-- PTY transcript lifecycle management and secret redaction before IPC — both relevant to the enterprise enterprise pitch.
+- PTY transcript lifecycle management and secret redaction before IPC — both relevant to any enterprise deployment.
 - An in-app "security posture" panel showing the effective sandbox/approval flags actually passed to each provider.
 
 ### 2.6 Daily-Driver UX — shell, navigation, keyboard, lifecycle
@@ -1457,7 +1457,7 @@ The entire market moved to parallel, background, and cloud agent execution in H1
 
 #### Strategic implications
 
-- **Ship the Remote Agents plan with urgency** — the market moved to background execution with remote oversight. PacketADE's differentiated angle: "your own SSH boxes as the fleet" — self-hosted-first, no cloud bill, directly reusable in the enterprise enterprise pitch.
+- **Ship the Remote Agents plan with urgency** — the market moved to background execution with remote oversight. PacketADE's differentiated angle: "your own SSH boxes as the fleet" — self-hosted-first, no cloud bill, directly reusable for enterprise deployment.
 - **Adopt ACP as a second agent transport** alongside PTY and the sidecar: one integration buys Devin Local, Junie, Goose, Cline, Auggie and future agents; map ACP sessions onto the existing `api-agent:*` contract so tiles stay transport-agnostic.
 - **Make PRs the first-class output of attempts** with inline line-comment review in the diff viewer — Conductor and Vibe Kanban set this expectation; Cursor agents emit PRs by default.
 - **Add an agent-verified-outcome step** (browser/UI verification pass, "verified" badge on AttemptTile) — computer-use self-checking became a 2026 differentiator.
@@ -2197,4 +2197,4 @@ The data supports a clear order: **implement the five decided decisions (D1→D3
 - **Standards spikes, timeboxed:** MCP 2026-07-28 revision support (Tasks extension mapped onto Flights; auth updates), an ACP transport spike mapped onto the `api-agent:*` contract, and an OS-sandbox spike (srt/Landlock; Windows options) for agent tools. Watch the Codex app-server migration; adopt the Responses API in `llm_openai.rs`.
 - **Defer deliberately:** Rollback Contracts until auto-integration actually ships; the Adversarial Lane until risk routing exists; SQLite migration until per-slice files prove insufficient; full mobile until the inbox proves the supervision loop.
 
-**The through-line:** PacketADE's differentiators — provider breadth, SSH fleets, cost truth, and soon the trust economy no competitor is building — all depend on the same foundation: sessions that survive their own lifecycle, releases that update themselves, and gates that run without willpower. Ninety days of the sequence above turns a formidable solo tool into something that can be handed to a second person without apology — which is precisely the bar the enterprise opportunity and any public beta will demand.
+**The through-line:** PacketADE's differentiators — provider breadth, SSH fleets, cost truth, and soon the trust economy no competitor is building — all depend on the same foundation: sessions that survive their own lifecycle, releases that update themselves, and gates that run without willpower. Ninety days of the sequence above turns a formidable solo tool into something that can be handed to a second person without apology — which is precisely the bar any enterprise deployment or public beta will demand.

@@ -47,9 +47,3 @@ still fails in the loader before the harness with `STATUS_ENTRYPOINT_NOT_FOUND`.
   see one-time churn on pull.
 - Full codebase survey (8 readers) produced `dev/codebase-state-2026-07-16.md`
   — accurate architecture map of main @ ca2e248, feeds R1 docs work.
-- enterprise enterprise exploration: strategy brief produced (research + 5-persona focus
-  group). Kept OUT of the repo deliberately (negotiation-sensitive); stored in the
-  Claude memory dir. Headlines: pitch as agentic runbook-automation console (not an
-  IDE); 4 pilot-gating builds = managed policy file, persisted audit log,
-  proxy/custom-CA, signed MSI; resolve IP ownership in writing BEFORE showing code;
-  dual-license/open-core is legally clean (sole copyright holder, verified).
