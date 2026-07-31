@@ -3,6 +3,8 @@ import {
   launchFlightAsync,
   cancelFlightAttempt,
   cleanupAttemptWorktreeSsh,
+  getGitStatus,
+  getGitStatusRemote,
   markAttemptStatus,
   setAttemptDraftPr,
   summarizeFlight,
@@ -13,6 +15,7 @@ import {
   toGitServerConfigInput,
   type AttemptTargetSpec,
 } from "@/lib/tauri";
+import { isWorktreeDirty } from "@/lib/worktreeLifecycle";
 import {
   buildFlightSummaryInput,
   buildAttemptSessionLogs,
@@ -81,6 +84,61 @@ export type AsyncLaunchPathCollision =
       otherTaskId: string;
     };
 
+// === Flight deletion fan-out ===
+//
+// Deleting a Flight used to abandon its attempts: the API sessions kept
+// running and their git worktrees stayed on disk (or on the SSH host) with
+// nothing left in the UI pointing at them. Delete now cancels that work
+// first, and the confirm names what is about to be destroyed.
+
+/** Attempt statuses that already released their session and worktree. */
+const TERMINAL_ATTEMPT_STATUSES: ReadonlySet<AttemptStatus> = new Set([
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+/**
+ * Attempts that still own live resources. `reviewing` counts: the agent has
+ * stopped, but the backend only tears the worktree down on a *terminal*
+ * transition, so a reviewing attempt's worktree is still on disk.
+ */
+export function attemptsNeedingCleanup(flight: Flight | undefined): Attempt[] {
+  return (flight?.attempts ?? []).filter(
+    (attempt) => !TERMINAL_ATTEMPT_STATUSES.has(attempt.status),
+  );
+}
+
+/** `unknown` = the probe could not run (worktree not provisioned yet, host
+ *  unreachable, server record gone). Treated as "may hold uncommitted work". */
+export type AttemptWorktreeCleanliness = "clean" | "dirty" | "unknown";
+
+export interface FlightDeleteImpactEntry {
+  attemptId: string;
+  branch: string;
+  status: AttemptStatus;
+  worktreePath: string;
+  cleanliness: AttemptWorktreeCleanliness;
+}
+
+export interface FlightDeleteImpact {
+  entries: FlightDeleteImpactEntry[];
+  /** Non-terminal attempts that will be cancelled. */
+  attemptCount: number;
+  /** Worktrees that will be removed — one per cancelled attempt. */
+  worktreeCount: number;
+  dirtyCount: number;
+  unknownCount: number;
+}
+
+/** One attempt whose teardown did not fully succeed. The Flight is deleted
+ *  regardless; this is what the UI reports so nothing is lost silently. */
+export interface FlightCleanupFailure {
+  attemptId: string;
+  branch: string;
+  message: string;
+}
+
 interface AsyncFlightStore {
   /** Launch N parallel attempts on a Flight. Persists Attempts on the Flight. */
   launchAsync: (
@@ -92,6 +150,17 @@ interface AsyncFlightStore {
 
   /** Cancel a single attempt: closes the API session, removes worktree, marks Cancelled. */
   cancelAttempt: (flightId: string, attemptId: string) => Promise<void>;
+
+  /**
+   * Delete a Flight and take its live work down with it: every non-terminal
+   * attempt is cancelled through the normal cancel path (session closed,
+   * worktree removed) before the Flight record is dropped.
+   *
+   * Best-effort by contract — the delete ALWAYS happens. Per-attempt cleanup
+   * failures are collected and returned so the caller can surface them
+   * instead of the app silently leaking a session or a worktree.
+   */
+  deleteFlightWithAttemptCleanup: (flightId: string) => Promise<FlightCleanupFailure[]>;
 
   /** Set an attempt's status from the UI (e.g. user clicks Accept/Reject). */
   setAttemptStatus: (
@@ -772,7 +841,13 @@ function buildFlightCompletedPayload(flight: Flight): FlightCompletedPayload {
 // terminal sets); `paused` = every attempt cancelled.
 const TERMINAL_FLIGHT_STATUSES = new Set(["done", "failed", "paused"]);
 
+/** Flights whose attempts are being cancelled as part of a delete. Their
+ *  cancels must not be read as the Flight *finishing* — no memory capture, no
+ *  retrospective, no confidence rerating for a record the user is discarding. */
+const flightsBeingDeleted = new Set<string>();
+
 function captureFlightCompletionOnTransition(flightId: string, statusBefore: string): void {
+  if (flightsBeingDeleted.has(flightId)) return;
   // Fire once, on the transition from a non-terminal status into any terminal
   // one — not just `done`, so the M5 decay path is reachable and provenance is
   // always cleaned up.
@@ -857,6 +932,109 @@ async function cleanupSshAttemptWorktree(flightId: string, attempt: Attempt): Pr
   } catch (err) {
     console.warn("SSH worktree cleanup failed:", err);
   }
+}
+
+/** Probe one attempt's worktree for uncommitted work. Never throws: an
+ *  unreadable tree reports `unknown`, which the confirm words as "could not be
+ *  checked" rather than pretending it was clean. */
+async function inspectAttemptWorktree(attempt: Attempt): Promise<AttemptWorktreeCleanliness> {
+  try {
+    if (attempt.target.kind === "local") {
+      const status = await getGitStatus(attempt.target.worktreePath);
+      return isWorktreeDirty(status) ? "dirty" : "clean";
+    }
+    const server = useServerStore.getState().getServer(attempt.target.serverId);
+    if (!server) return "unknown";
+    const status = await getGitStatusRemote(
+      toGitServerConfigInput(server),
+      attempt.target.worktreePath,
+    );
+    return isWorktreeDirty(status) ? "dirty" : "clean";
+  } catch (err) {
+    console.warn("[flight delete] worktree dirty-check failed for", attempt.id, err);
+    return "unknown";
+  }
+}
+
+/** Pure: roll a set of probed attempts up into the counts the confirm shows. */
+export function summarizeFlightDeleteImpact(
+  entries: FlightDeleteImpactEntry[],
+): FlightDeleteImpact {
+  return {
+    entries,
+    attemptCount: entries.length,
+    worktreeCount: entries.length,
+    dirtyCount: entries.filter((entry) => entry.cleanliness === "dirty").length,
+    unknownCount: entries.filter((entry) => entry.cleanliness === "unknown").length,
+  };
+}
+
+/**
+ * What deleting this Flight will actually destroy. Runs the dirty-check per
+ * attempt in parallel so the confirm can name uncommitted work before the
+ * user commits to losing it.
+ */
+export async function inspectFlightDeleteImpact(flightId: string): Promise<FlightDeleteImpact> {
+  const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
+  const attempts = attemptsNeedingCleanup(flight);
+  const entries = await Promise.all(
+    attempts.map(async (attempt) => ({
+      attemptId: attempt.id,
+      branch: attempt.branch,
+      status: attempt.status,
+      worktreePath: attempt.target.worktreePath,
+      cleanliness: await inspectAttemptWorktree(attempt),
+    })),
+  );
+  return summarizeFlightDeleteImpact(entries);
+}
+
+function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
+  return count === 1 ? singular : pluralForm;
+}
+
+/**
+ * Pure: the `warnings[]` lines for the delete confirm. `null` means the probe
+ * is still running, which the confirm says out loud rather than showing a
+ * reassuring empty callout.
+ */
+export function describeFlightDeleteImpact(impact: FlightDeleteImpact | null): string[] {
+  if (!impact) return ["Checking this flight's attempts for uncommitted work…"];
+  if (impact.attemptCount === 0) return [];
+
+  const byStatus = new Map<AttemptStatus, number>();
+  for (const entry of impact.entries) {
+    byStatus.set(entry.status, (byStatus.get(entry.status) ?? 0) + 1);
+  }
+  const statusSummary = Array.from(byStatus.entries())
+    .map(([status, count]) => `${count} ${status}`)
+    .join(", ");
+
+  const lines = [
+    `${impact.attemptCount} ${plural(impact.attemptCount, "attempt")} will be cancelled (${statusSummary}).`,
+    `${impact.worktreeCount} git ${plural(impact.worktreeCount, "worktree")} will be removed.`,
+  ];
+
+  const dirty = impact.entries.filter((entry) => entry.cleanliness === "dirty");
+  if (dirty.length > 0) {
+    lines.push(
+      `${dirty.length} ${plural(dirty.length, "worktree has", "worktrees have")} uncommitted changes that will be lost: ${dirty
+        .map((entry) => entry.branch)
+        .join(", ")}.`,
+    );
+  }
+  if (impact.unknownCount > 0) {
+    lines.push(
+      `${impact.unknownCount} ${plural(impact.unknownCount, "worktree")} could not be checked for uncommitted changes.`,
+    );
+  }
+  return lines;
+}
+
+function cleanupErrorMessage(err: unknown): string {
+  if (typeof err === "string") return err;
+  if (err instanceof Error) return err.message;
+  return String(err);
 }
 
 export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
@@ -969,6 +1147,71 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     // SSH cleanup needs connection details that the backend Attempt record
     // intentionally does not persist, so finish it from the saved Server.
     if (attempt) await cleanupSshAttemptWorktree(flightId, attempt);
+  },
+
+  deleteFlightWithAttemptCleanup: async (flightId) => {
+    const failures: FlightCleanupFailure[] = [];
+    const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
+    const pending = attemptsNeedingCleanup(flight);
+
+    // Suppress the flight-completed memory capture (and its fire-and-forget
+    // LLM retrospective) for the cancels below: the user is deleting this
+    // Flight, not settling it, so it must not mint memory on its way out.
+    flightsBeingDeleted.add(flightId);
+    try {
+      for (const attempt of pending) {
+        let cancelled = true;
+        try {
+          // The normal cancel path: closes the API session, marks the attempt
+          // Cancelled, and removes the local/remote worktree.
+          await useAsyncFlightStore.getState().cancelAttempt(flightId, attempt.id);
+        } catch (err) {
+          cancelled = false;
+          failures.push({
+            attemptId: attempt.id,
+            branch: attempt.branch,
+            message: `Cancel failed — the session and its worktree at ${attempt.target.worktreePath} may still be live: ${cleanupErrorMessage(err)}`,
+          });
+        }
+        try {
+          // Whatever happened above, never leave a terminal listener bound to
+          // a Flight that is about to stop existing.
+          detachAttemptTerminalListeners(attempt.sessionId);
+          // Neither the Rust cancel nor the frontend SSH fallback can reach a
+          // remote worktree whose server record is gone — say so instead of
+          // letting it rot on the host.
+          if (
+            cancelled &&
+            attempt.target.kind === "ssh" &&
+            !useServerStore.getState().getServer(attempt.target.serverId)
+          ) {
+            failures.push({
+              attemptId: attempt.id,
+              branch: attempt.branch,
+              message: `Remote worktree ${attempt.target.worktreePath} was left in place — SSH server '${attempt.target.serverId}' is no longer configured.`,
+            });
+          }
+        } catch (err) {
+          failures.push({
+            attemptId: attempt.id,
+            branch: attempt.branch,
+            message: cleanupErrorMessage(err),
+          });
+        }
+      }
+    } catch (err) {
+      // Belt and braces: cleanup must never take the delete down with it.
+      failures.push({
+        attemptId: "",
+        branch: "",
+        message: `Attempt cleanup stopped early: ${cleanupErrorMessage(err)}`,
+      });
+    } finally {
+      flightsBeingDeleted.delete(flightId);
+    }
+
+    useFlightStore.getState().deleteFlight(flightId);
+    return failures;
   },
 
   setAttemptStatus: async (flightId, attemptId, status) => {

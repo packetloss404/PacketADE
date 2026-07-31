@@ -165,6 +165,17 @@ interface FlightStore {
     flightId: string,
     event: Omit<CoordinationEvent, "id" | "flightId" | "timestamp">,
   ) => void;
+  /**
+   * Drop the Flight record and unlink its issues. This is the *record*
+   * delete only — it does not touch running attempts.
+   *
+   * UI delete paths must go through
+   * `useAsyncFlightStore.getState().deleteFlightWithAttemptCleanup(id)`,
+   * which cancels non-terminal attempts (closing their sessions and removing
+   * their worktrees) and then calls this. Calling this directly abandons that
+   * work; it stays separate so the cleanup fan-out can live next to the
+   * attempt lifecycle without a circular store import.
+   */
   deleteFlight: (id: string) => void;
   setActiveFlight: (id: string | null) => void;
 

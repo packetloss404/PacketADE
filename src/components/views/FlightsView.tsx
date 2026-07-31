@@ -8,7 +8,6 @@ import {
   Sparkles,
   Brain,
   Trash2,
-  X,
   FileCheck2,
   GitCommit,
   ShieldCheck,
@@ -16,7 +15,15 @@ import {
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useFlightStore } from "@/stores/flightStore";
-import { useAsyncFlightStore } from "@/stores/asyncFlightStore";
+import {
+  describeFlightDeleteImpact,
+  inspectFlightDeleteImpact,
+  summarizeFlightDeleteImpact,
+  useAsyncFlightStore,
+  type FlightDeleteImpact,
+} from "@/stores/asyncFlightStore";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
+import { useToast } from "@/components/ui/Toast";
 import { reassignTargetFromEscalation } from "@/lib/flightCoordination";
 import { buildCoordinationMemoryInput } from "@/lib/memoryCapture";
 import { getProviderForAgent } from "@/lib/api-models";
@@ -466,40 +473,98 @@ function FlightRow({
   const cost = formatCost(flight.totalCost);
   const priorityClass = FLIGHT_PRIORITY_COLORS[flight.priority];
   const statusLabel = STATUS_LABEL[status];
-  const deleteFlight = useFlightStore((s) => s.deleteFlight);
+  const toast = useToast();
 
-  // Inline two-step confirm: first trash click flips this to true and we
-  // show a small Confirm? row with check / cancel buttons. Auto-reverts
-  // after 3s if the user does nothing — matches the destructive-action
-  // pattern used elsewhere in this codebase (e.g. GitDashboard).
+  // Delete confirm. The old idiom here was a 3-second armed inline button;
+  // it is now the shared ConfirmDeleteModal, because the delete no longer
+  // just drops a row — it cancels the flight's running attempts and removes
+  // their worktrees, and the user is owed those consequences up front.
   const [confirming, setConfirming] = useState(false);
+  const [impact, setImpact] = useState<FlightDeleteImpact | null>(null);
+
+  // Probe the live attempts (and their worktrees) only while the confirm is
+  // open. `impact === null` renders as "checking…" rather than as "nothing
+  // will be lost".
   useEffect(() => {
     if (!confirming) return;
-    const timer = window.setTimeout(() => setConfirming(false), 3000);
-    return () => window.clearTimeout(timer);
-  }, [confirming]);
+    let stale = false;
+    setImpact(null);
+    void inspectFlightDeleteImpact(flight.id)
+      .then((next) => {
+        if (!stale) setImpact(next);
+      })
+      .catch((err) => {
+        console.warn("[FlightsView] delete impact probe failed", err);
+        if (!stale) setImpact(summarizeFlightDeleteImpact([]));
+      });
+    return () => {
+      stale = true;
+    };
+  }, [confirming, flight.id]);
 
-  // Surface a warning if this flight has live work — active attempts or
-  // any task in a non-terminal running/queued state. We still allow the
-  // delete; we just nudge the user that they're abandoning in-flight work.
-  const hasActiveWork = useMemo(() => {
-    const liveAttempt = (flight.attempts ?? []).some(
-      (a) =>
-        a.status === "running" ||
-        a.status === "provisioning" ||
-        a.status === "queued" ||
-        a.status === "reviewing",
-    );
-    if (liveAttempt) return true;
+  // Tasks aren't cancelled by the delete (they have no worktree of their
+  // own), but live ones are still work the user is throwing away.
+  const liveTaskCount = useMemo(() => {
+    let count = 0;
     for (const m of flight.milestones) {
       for (const t of m.tasks) {
         if (t.status === "running" || t.status === "queued" || t.status === "approval_needed") {
-          return true;
+          count += 1;
         }
       }
     }
-    return false;
-  }, [flight.attempts, flight.milestones]);
+    return count;
+  }, [flight.milestones]);
+
+  const hasActiveWork = useMemo(
+    () =>
+      liveTaskCount > 0 ||
+      (flight.attempts ?? []).some(
+        (a) =>
+          a.status === "running" ||
+          a.status === "provisioning" ||
+          a.status === "queued" ||
+          a.status === "reviewing",
+      ),
+    [flight.attempts, liveTaskCount],
+  );
+
+  const deleteWarnings = useMemo(() => {
+    const warnings = describeFlightDeleteImpact(impact);
+    if (liveTaskCount > 0) {
+      warnings.push(
+        `${liveTaskCount} task${liveTaskCount === 1 ? "" : "s"} ${liveTaskCount === 1 ? "is" : "are"} still running or awaiting approval.`,
+      );
+    }
+    return warnings;
+  }, [impact, liveTaskCount]);
+
+  const runDelete = () => {
+    const flightName = flight.title || "Untitled";
+    const cancelling = impact?.attemptCount ?? 0;
+    setConfirming(false);
+    if (cancelling > 0) {
+      toast.show(
+        `Cancelling ${cancelling} attempt${cancelling === 1 ? "" : "s"} and removing ${cancelling === 1 ? "its worktree" : "their worktrees"}…`,
+      );
+    }
+    void useAsyncFlightStore
+      .getState()
+      .deleteFlightWithAttemptCleanup(flight.id)
+      .then((failures) => {
+        if (failures.length === 0) return;
+        toast.error(
+          `Deleted “${flightName}”, but ${failures.length} attempt cleanup${
+            failures.length === 1 ? "" : "s"
+          } failed: ${failures.map((f) => `${f.branch || f.attemptId || "flight"} — ${f.message}`).join(" | ")}`,
+        );
+      })
+      .catch((err) => {
+        toast.error(
+          `Failed to delete “${flightName}”: ${err instanceof Error ? err.message : err}`,
+        );
+      });
+  };
   // v0.8-H — "N patterns extracted" chip on completed flights. We
   // count every `flight_completed` / `task_completed` event tied to
   // this flight (by flightId) and the lessonsLearned bullets they
@@ -522,78 +587,41 @@ function FlightRow({
   const openMemoryView = useAppStore((s) => s.openMemoryView);
 
   const deleteTitle = hasActiveWork
-    ? `Delete "${flight.title || "Untitled"}"? This flight has active work. Cancel attempts first or proceed anyway.`
+    ? `Delete "${flight.title || "Untitled"}"? This flight has active work — its attempts will be cancelled and their worktrees removed.`
     : `Delete "${flight.title || "Untitled"}"`;
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onSelect}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onSelect();
-        }
-      }}
-      className={`group flex w-full cursor-pointer flex-col gap-1 border-b border-l-2 border-line-soft px-2.5 py-2 text-left transition-colors ${
-        selected
-          ? "border-l-accent-green bg-bg-elevated"
-          : "border-l-transparent hover:bg-bg-tertiary"
-      }`}
-    >
-      <div className="flex items-center gap-1.5">
-        <span className="relative flex h-2 w-2 shrink-0 items-center justify-center">
-          {pulse && (
-            <span
-              className={`absolute inset-0 rounded-full ${DOT_BG[dot]} animate-ping opacity-60`}
-            />
-          )}
-          <span className={`relative h-1.5 w-1.5 rounded-full ${DOT_BG[dot]}`} />
-        </span>
-        <span className="font-mono text-[10px] text-text-muted">{shortId(flight.id)}</span>
-        <span className="flex-1" />
-        <span className={`font-mono text-[10px] font-semibold ${priorityClass}`}>
-          {PRIORITY_LABEL[flight.priority]}
-        </span>
-        {confirming ? (
-          <span className="inline-flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-            <span
-              className="text-[10px] font-medium text-accent-red"
-              title={
-                hasActiveWork
-                  ? "This flight has active work — confirm to delete anyway."
-                  : undefined
-              }
-            >
-              {hasActiveWork ? "Active work — delete?" : "Delete?"}
-            </span>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                deleteFlight(flight.id);
-              }}
-              className="hover:bg-accent-red/15 rounded p-0.5 text-accent-red transition-colors"
-              title="Confirm delete"
-              aria-label="Confirm delete flight"
-            >
-              <Check size={11} />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setConfirming(false);
-              }}
-              className="rounded p-0.5 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
-              title="Cancel"
-              aria-label="Cancel delete"
-            >
-              <X size={11} />
-            </button>
+    <>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onSelect}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onSelect();
+          }
+        }}
+        className={`group flex w-full cursor-pointer flex-col gap-1 border-b border-l-2 border-line-soft px-2.5 py-2 text-left transition-colors ${
+          selected
+            ? "border-l-accent-green bg-bg-elevated"
+            : "border-l-transparent hover:bg-bg-tertiary"
+        }`}
+      >
+        <div className="flex items-center gap-1.5">
+          <span className="relative flex h-2 w-2 shrink-0 items-center justify-center">
+            {pulse && (
+              <span
+                className={`absolute inset-0 rounded-full ${DOT_BG[dot]} animate-ping opacity-60`}
+              />
+            )}
+            <span className={`relative h-1.5 w-1.5 rounded-full ${DOT_BG[dot]}`} />
           </span>
-        ) : (
+          <span className="font-mono text-[10px] text-text-muted">{shortId(flight.id)}</span>
+          <span className="flex-1" />
+          <span className={`font-mono text-[10px] font-semibold ${priorityClass}`}>
+            {PRIORITY_LABEL[flight.priority]}
+          </span>
           <button
             type="button"
             onClick={(e) => {
@@ -606,47 +634,59 @@ function FlightRow({
           >
             <Trash2 size={11} />
           </button>
-        )}
-      </div>
-      <span
-        className={`line-clamp-2 text-[12px] leading-snug ${
-          selected ? "font-medium text-text-primary" : "text-text-secondary"
-        }`}
-      >
-        {flight.title || "Untitled"}
-      </span>
-      <div className="flex items-center gap-2 text-[10px] text-text-muted">
-        <span className="inline-flex items-center gap-1">
-          <Users size={9} />
-          <span>{agents}</span>
+        </div>
+        <span
+          className={`line-clamp-2 text-[12px] leading-snug ${
+            selected ? "font-medium text-text-primary" : "text-text-secondary"
+          }`}
+        >
+          {flight.title || "Untitled"}
         </span>
-        {memoryHits > 0 && (
-          <span
-            role="button"
-            tabIndex={0}
-            onClick={(e) => {
-              e.stopPropagation();
-              openMemoryView({ flightId: flight.id });
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
+        <div className="flex items-center gap-2 text-[10px] text-text-muted">
+          <span className="inline-flex items-center gap-1">
+            <Users size={9} />
+            <span>{agents}</span>
+          </span>
+          {memoryHits > 0 && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
                 e.stopPropagation();
                 openMemoryView({ flightId: flight.id });
-              }
-            }}
-            className="hover:text-accent-green/80 hover:bg-accent-green/10 -mx-1 inline-flex cursor-pointer items-center gap-1 rounded px-1 text-accent-green transition-colors"
-            title={`${memoryHits} memory entr${memoryHits === 1 ? "y" : "ies"} extracted from this flight. Click to view in Memory.`}
-          >
-            <Brain size={9} />
-            <span>{memoryHits}</span>
-          </span>
-        )}
-        <span className="font-mono">{cost}</span>
-        <span className="flex-1" />
-        <span className={`capitalize ${DOT_TEXT[dot]}`}>{statusLabel}</span>
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openMemoryView({ flightId: flight.id });
+                }
+              }}
+              className="hover:text-accent-green/80 hover:bg-accent-green/10 -mx-1 inline-flex cursor-pointer items-center gap-1 rounded px-1 text-accent-green transition-colors"
+              title={`${memoryHits} memory entr${memoryHits === 1 ? "y" : "ies"} extracted from this flight. Click to view in Memory.`}
+            >
+              <Brain size={9} />
+              <span>{memoryHits}</span>
+            </span>
+          )}
+          <span className="font-mono">{cost}</span>
+          <span className="flex-1" />
+          <span className={`capitalize ${DOT_TEXT[dot]}`}>{statusLabel}</span>
+        </div>
       </div>
-    </div>
+      {confirming && (
+        <ConfirmDeleteModal
+          title="Delete flight?"
+          entityName={flight.title || "Untitled"}
+          description="is removed along with its attempt history, and any issues linked to it are unassigned. Running attempts are cancelled and their git worktrees removed first."
+          warningTitle="Deleting this also destroys"
+          warnings={deleteWarnings}
+          confirmLabel={impact && impact.attemptCount > 0 ? "Cancel attempts & delete" : "Delete"}
+          onConfirm={runDelete}
+          onClose={() => setConfirming(false)}
+        />
+      )}
+    </>
   );
 }
 

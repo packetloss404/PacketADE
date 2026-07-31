@@ -153,7 +153,7 @@ export function ServersSettingsCard() {
         <ConfirmDeleteModal
           title="Delete remote host?"
           entityName={`${pendingDelete.server.name} (${pendingDelete.server.username}@${pendingDelete.server.host}:${pendingDelete.server.port})`}
-          description="is removed from this app. Nothing on the remote machine is deleted, and its stored SSH password stays in the OS credential store."
+          description="is removed from this app, and its stored SSH password is removed from the OS credential store. Nothing on the remote machine is deleted."
           warnings={pendingDelete.warnings}
           confirmLabel="Delete host"
           onConfirm={confirmDelete}

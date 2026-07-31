@@ -222,6 +222,30 @@ describe("FleetSidebar", () => {
     expect(screen.queryByText("Write docs")).not.toBeInTheDocument();
   });
 
+  it("calls a workspace a Workspace in its delete dialog, which used to say \"Delete session?\"", () => {
+    useWorkspaceStore.setState({ workspaces: [workspace({ name: "Refactor parser" })] });
+    render(<FleetSidebar />, { wrapper: ToastProvider });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(screen.getByText("Delete workspace?")).toBeInTheDocument();
+    expect(screen.queryByText(/Delete session\?/)).not.toBeInTheDocument();
+    // A workspace owns no worktree — deleting it detaches conversations.
+    expect(screen.getByText(/Member conversations are detached, not destroyed/)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("deletes nothing until the confirm button is clicked", () => {
+    useWorkspaceStore.setState({ workspaces: [workspace({ name: "Refactor parser" })] });
+    render(<FleetSidebar />, { wrapper: ToastProvider });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(useWorkspaceStore.getState().workspaces).toHaveLength(1);
+    expect(screen.queryByText("Delete workspace?")).not.toBeInTheDocument();
+  });
+
   it("does not re-render on an unrelated store update (per-slice subscriptions)", () => {
     useWorkspaceStore.setState({
       workspaces: [workspace({ name: "Stable workspace" })],

@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
 
+import { invoke } from "@tauri-apps/api/core";
 import { ServersSettingsCard } from "@/components/views/tools/ServersSettingsCard";
 import { useServerStore } from "@/stores/serverStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
@@ -39,6 +40,7 @@ function seedServers(servers: ServerConfig[] = [PROD]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(invoke).mockResolvedValue(undefined);
   seedServers();
   useAgentTaskStore.setState({ conversations: [] });
   useFlightStore.setState({ flights: [] });
@@ -79,6 +81,52 @@ describe("ServersSettingsCard delete confirm", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete host" }));
 
     expect(useServerStore.getState().servers).toEqual([]);
+  });
+
+  it("purges the stored SSH password from the OS keyring", () => {
+    render(<ServersSettingsCard />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete prod-box" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete host" }));
+
+    // Without this the `ssh-<id>` secret outlived its record forever with no
+    // in-app path to remove it.
+    expect(invoke).toHaveBeenCalledWith("delete_ssh_password", { serverId: "srv-1" });
+  });
+
+  it("still deletes the host when the credential store rejects", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "delete_ssh_password") throw new Error("credential store locked");
+      return undefined;
+    });
+
+    render(<ServersSettingsCard />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete prod-box" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete host" }));
+
+    // Keyring purge is best-effort: the record the user confirmed is gone.
+    expect(useServerStore.getState().servers).toEqual([]);
+    expect(screen.queryByRole("heading", { name: "Delete remote host?" })).not.toBeInTheDocument();
+
+    // Logged, not silently swallowed.
+    await vi.waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("serverStore.deleteSshPassword"),
+        expect.anything(),
+      ),
+    );
+    warn.mockRestore();
+  });
+
+  it("tells the user the password is removed, not left behind", () => {
+    render(<ServersSettingsCard />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete prod-box" }));
+
+    expect(
+      screen.getByText(/stored SSH password is removed from the OS credential store/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Nothing on the remote machine is deleted/)).toBeInTheDocument();
   });
 
   it("never reaches for the native dialog", () => {

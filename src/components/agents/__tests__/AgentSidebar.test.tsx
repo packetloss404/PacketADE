@@ -2,6 +2,7 @@ import { act } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentSidebar } from "@/components/agents/AgentSidebar";
+import { ToastProvider } from "@/components/ui/Toast";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useAgentSidebarPrefsStore } from "@/stores/agentSidebarPrefsStore";
 import type { AgentConversation } from "@/types/agent-conversation";
@@ -16,8 +17,12 @@ const agentStore = vi.hoisted(() => ({
 }));
 
 vi.mock("@/stores/agentTaskStore", () => ({
-  useAgentTaskStore: (selector: (state: typeof agentStore.state) => unknown) =>
-    selector(agentStore.state),
+  // `getState` is required by the shared delete confirm, which reads the
+  // conversation imperatively to resolve its worktree.
+  useAgentTaskStore: Object.assign(
+    (selector: (state: typeof agentStore.state) => unknown) => selector(agentStore.state),
+    { getState: () => agentStore.state },
+  ),
 }));
 
 function conversation(overrides: Partial<AgentConversation> = {}): AgentConversation {
@@ -92,6 +97,28 @@ describe("AgentSidebar", () => {
 
     expect(screen.getByText("Needs you")).toBeInTheDocument();
     expect(screen.getByText("Investigate agent pane")).toBeInTheDocument();
+  });
+
+  it("confirms a conversation delete by name, and deletes nothing on cancel", () => {
+    // Ran in the project root — no worktree, so no worktree warning either.
+    agentStore.state.conversations = [conversation({ projectPath: "/repo" })];
+    render(
+      <ToastProvider>
+        <AgentSidebar selectedId={null} onSelect={vi.fn()} onNewAgent={vi.fn()} />
+      </ToastProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete conversation" }));
+
+    expect(screen.getByText("Delete conversation?")).toBeInTheDocument();
+    expect(screen.getByText("\u201cInvestigate agent pane\u201d")).toBeInTheDocument();
+    expect(screen.getByText(/will be closed and its history removed/)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(agentStore.state.deleteConversation).not.toHaveBeenCalled();
+    expect(screen.queryByText("Delete conversation?")).not.toBeInTheDocument();
   });
 
   it("sorts pinned conversations ahead of newer unpinned conversations", () => {

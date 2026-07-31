@@ -20,6 +20,7 @@ import {
   type ResumeMessage,
 } from "@/lib/tauri";
 import { isWorktreeDirty } from "@/lib/worktreeLifecycle";
+import { conversationWorktree } from "@/lib/conversationWorktreeDisclosure";
 import { buildResumeSshConfig, type ResumeSshConfig } from "@/lib/resumeSshConfig";
 import { logSwallowed } from "@/lib/logSwallowed";
 /** Phase 2: SSH conversations now reference a `ServerConfig` from
@@ -350,6 +351,21 @@ export interface CreateApiConversationOptions {
   approveWrites?: boolean;
 }
 
+/**
+ * What the delete-time worktree discard did. Returned (never thrown) by
+ * `deleteConversation` so the caller can toast a cleanup failure: the
+ * conversation is gone either way, and a silently orphaned worktree is exactly
+ * the bug this fan-out exists to fix.
+ */
+export interface WorktreeDiscardOutcome {
+  worktreePath: string;
+  branch: string;
+  /** Directory + branch actually removed. */
+  discarded: boolean;
+  /** Populated when cleanup failed — the delete still happened. */
+  error?: string;
+}
+
 interface AgentTaskStore {
   // --- Composer state ---
   // (Composer draft text lives in agentDraftStore — keyed per conversation,
@@ -376,7 +392,19 @@ interface AgentTaskStore {
   ) => void;
   updateAssistantMessage: (conversationId: string, messageId: string, content: string) => void;
   selectConversation: (id: string | null) => void;
-  deleteConversation: (id: string) => void;
+  /**
+   * Delete the conversation AND discard the worktree it ran in — the directory
+   * plus its `pkt/<id>` branch (owner decision 2026-07-30, "Discard, surface the
+   * confirm"; the confirm dialog states the consequence up front via
+   * `lib/conversationWorktreeDisclosure`).
+   *
+   * The record removal is SYNCHRONOUS and unconditional; the worktree cleanup is
+   * best-effort and cannot take the delete down with it. The returned promise
+   * reports what happened so the caller can surface a cleanup failure instead of
+   * leaving an orphaned directory the user never hears about. It resolves `null`
+   * when there was no local worktree to discard, and NEVER rejects.
+   */
+  deleteConversation: (id: string) => Promise<WorktreeDiscardOutcome | null>;
   archiveConversation: (id: string) => void;
   unarchiveConversation: (id: string) => void;
   /** P2-S2: flip a conversation's worktree lifecycle state (active → landed /
@@ -892,6 +920,11 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
 
   deleteConversation: (id) => {
     const conv = get().conversations.find((c) => c.id === id);
+    // Resolve the worktree BEFORE the record leaves the store — afterwards its
+    // provenance is unrecoverable and the checkout would be orphaned on disk.
+    // Same resolver the confirm dialog quotes, so the warning the user approved
+    // and the directory we remove can never diverge.
+    const worktree = conv ? conversationWorktree(conv) : null;
     if (conv && (conv.status === "active" || conv.status === "idle")) {
       if (conv.mode === "api") {
         // Failure here orphans an API session in the backend (and
@@ -937,6 +970,30 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       conversations: s.conversations.filter((c) => c.id !== id),
       selectedConversationId: s.selectedConversationId === id ? null : s.selectedConversationId,
     }));
+
+    // Worktree discard fan-out. Runs AFTER the record is gone and force-deletes
+    // the branch: the user already confirmed a dialog that named this path, this
+    // branch, and (loudly) any uncommitted changes. No dirty-refusal here — the
+    // record no longer exists, so refusing would strand the tree with nothing in
+    // the UI pointing at it. A failure is caught and REPORTED, never swallowed
+    // and never allowed to undo the delete.
+    if (!worktree) return Promise.resolve(null);
+    return removeConversationWorktree(worktree.basePath, id, true).then(
+      (): WorktreeDiscardOutcome => ({
+        worktreePath: worktree.worktreePath,
+        branch: worktree.branch,
+        discarded: true,
+      }),
+      (e): WorktreeDiscardOutcome => {
+        console.warn("deleteConversation: worktree discard failed for", id, e);
+        return {
+          worktreePath: worktree.worktreePath,
+          branch: worktree.branch,
+          discarded: false,
+          error: e instanceof Error ? e.message : String(e),
+        };
+      },
+    );
   },
 
   archiveConversation: (id) => {

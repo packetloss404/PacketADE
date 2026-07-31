@@ -87,8 +87,19 @@ vi.mock("@/components/flights/LaunchAsyncFlightModal", () => ({
 }));
 
 import { FlightsView } from "@/components/views/FlightsView";
+import { ToastProvider } from "@/components/ui/Toast";
 
 // === Test helpers ===
+
+// FlightRow raises toasts for delete-cleanup failures, so the view needs a
+// live Toast host to mount.
+function renderView() {
+  return render(
+    <ToastProvider>
+      <FlightsView />
+    </ToastProvider>,
+  );
+}
 
 function makeFlight(overrides: Partial<Flight> = {}): Flight {
   return {
@@ -143,7 +154,7 @@ describe("StatGrid cost cell (P2-20 convergence)", () => {
     mocks.flightState.flights = [flight];
     mocks.flightState.activeFlightId = flight.id;
 
-    render(<FlightsView />);
+    renderView();
 
     expect(screen.getByText("Cost")).toBeInTheDocument();
     expect(screen.queryByText("Planner")).not.toBeInTheDocument();
@@ -155,7 +166,7 @@ describe("StatGrid cost cell (P2-20 convergence)", () => {
     mocks.flightState.flights = [flight];
     mocks.flightState.activeFlightId = flight.id;
 
-    render(<FlightsView />);
+    renderView();
 
     expect(valueInCell(statCell("Cost"))).toBe("$1.50");
   });
@@ -166,7 +177,7 @@ describe("StatGrid cost cell (P2-20 convergence)", () => {
     mocks.flightState.flights = [flight];
     mocks.flightState.activeFlightId = flight.id;
 
-    render(<FlightsView />);
+    renderView();
 
     expect(valueInCell(statCell("Cost"))).toBe("$0.00");
   });
@@ -176,7 +187,7 @@ describe("StatGrid cost cell (P2-20 convergence)", () => {
     mocks.flightState.flights = [flight];
     mocks.flightState.activeFlightId = flight.id;
 
-    render(<FlightsView />);
+    renderView();
 
     // formatTokens(50_000) -> "50.0k"
     expect(valueInCell(statCell("Tokens"))).toBe("50.0k");
@@ -191,7 +202,7 @@ describe("StatGrid cost cell (P2-20 convergence)", () => {
     mocks.flightState.activeFlightId = flight.id;
     mocks.flightState.computeFlightStatus = vi.fn(() => "spec" as const);
 
-    render(<FlightsView />);
+    renderView();
 
     expect(screen.getAllByText("spec").length).toBeGreaterThan(0);
     expect(screen.getByText("Cost")).toBeInTheDocument();
@@ -203,7 +214,7 @@ describe("StatGrid cost cell (P2-20 convergence)", () => {
     mocks.flightState.flights = [flight];
     mocks.flightState.activeFlightId = flight.id;
 
-    render(<FlightsView />);
+    renderView();
 
     expect(screen.getByTestId("mock-async-flight-grid")).toBeInTheDocument();
   });
@@ -212,7 +223,7 @@ describe("StatGrid cost cell (P2-20 convergence)", () => {
     mocks.flightState.flights = [];
     mocks.flightState.activeFlightId = null;
 
-    render(<FlightsView />);
+    renderView();
 
     expect(screen.getByText("No flights yet")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /new flight/i })).toBeInTheDocument();

@@ -43,7 +43,8 @@ import { useConversationAttention, useWorkspaceStatuses, attentionDot } from "@/
 import { flightAttemptSessionIds } from "@/lib/sessionIndex";
 import { buildFleetProjection, basenameOf, type FleetFilter, type FleetRow } from "@/lib/fleetRows";
 import { createInstantWorkspace } from "@/lib/workspaceCreation";
-import { Modal } from "@/components/ui/Modal";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
+import { ConfirmDeleteConversationModal } from "@/components/agents/ConfirmDeleteConversationModal";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -74,7 +75,6 @@ export function FleetSidebar() {
   const requestPaneFocus = useWorkspaceStore((s) => s.requestPaneFocus);
 
   const conversations = useAgentTaskStore((s) => s.conversations ?? []);
-  const deleteConversation = useAgentTaskStore((s) => s.deleteConversation);
   const archiveConversation = useAgentTaskStore((s) => s.archiveConversation);
   const unarchiveConversation = useAgentTaskStore((s) => s.unarchiveConversation);
 
@@ -236,20 +236,25 @@ export function FleetSidebar() {
     }
   };
 
-  const confirmDelete = async (row: FleetRow) => {
-    if (row.kind === "workspace") {
-      const ws = workspaces.find((w) => w.id === row.workspaceId);
-      if (ws) {
-        // Kill any running PTY sessions before deleting — best-effort.
-        await Promise.all(
-          ws.panes.filter((p) => p.sessionId).map((p) => killPty(p.sessionId!).catch(() => {})),
-        );
-      }
-      deleteWorkspace(row.workspaceId);
-    } else {
-      deleteConversation(row.conversationId);
+  // Workspace deletion only. Conversation rows go through
+  // `ConfirmDeleteConversationModal`, which owns the worktree disclosure and the
+  // delete itself so both sidebars state the same consequences.
+  const confirmDeleteWorkspace = async (workspaceId: string) => {
+    const ws = workspaces.find((w) => w.id === workspaceId);
+    if (ws) {
+      // Kill any running PTY sessions before deleting — best-effort.
+      await Promise.all(
+        ws.panes.filter((p) => p.sessionId).map((p) => killPty(p.sessionId!).catch(() => {})),
+      );
     }
+    deleteWorkspace(workspaceId);
   };
+
+  // Narrow once so the confirm branches read the right fields.
+  const workspaceRow =
+    pendingDelete && pendingDelete.row.kind === "workspace" ? pendingDelete.row : null;
+  const conversationRow =
+    pendingDelete && pendingDelete.row.kind !== "workspace" ? pendingDelete.row : null;
 
   const isRowSelected = (row: FleetRow): boolean =>
     row.kind === "workspace" && row.workspaceId === activeWorkspaceId;
@@ -608,44 +613,30 @@ export function FleetSidebar() {
         </button>
       </div>
 
-      {pendingDelete && (
-        <Modal
-          title="Delete session?"
-          width="w-[400px]"
-          closeOnEscape
-          onClose={() => setPendingDelete(null)}
-          footer={
-            <div className="flex items-center justify-end gap-2">
-              <button
-                onClick={() => setPendingDelete(null)}
-                className="rounded px-3 py-1.5 text-ui text-text-secondary transition-colors hover:bg-bg-hover"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  void confirmDelete(pendingDelete.row);
-                  setPendingDelete(null);
-                }}
-                className="bg-accent-red/15 hover:bg-accent-red/25 rounded px-3 py-1.5 text-ui font-medium text-accent-red transition-colors"
-              >
-                Delete
-              </button>
-            </div>
-          }
-        >
-          <div className="px-5 py-4">
-            <p className="text-ui text-text-secondary">
-              {pendingDelete.row.kind === "workspace" ? "Delete workspace " : "Permanently delete "}
-              <span className="text-text-primary">“{pendingDelete.row.title || "(untitled)"}”</span>
-              {pendingDelete.row.kind === "workspace"
-                ? "? Member conversations are detached, not destroyed."
-                : "? This closes the session and removes its history."}
-            </p>
-            <p className="mt-2 text-meta text-text-muted">This can’t be undone.</p>
-          </div>
-        </Modal>
-      )}
+      {/* Two different records, two different nouns — this row is never a
+          "session". Conversations additionally lose their worktree, which the
+          shared conversation confirm spells out. */}
+      {pendingDelete &&
+        (workspaceRow ? (
+          <ConfirmDeleteModal
+            title="Delete workspace?"
+            entityName={workspaceRow.title || "(untitled)"}
+            description="will be deleted. Member conversations are detached, not destroyed."
+            onConfirm={() => {
+              void confirmDeleteWorkspace(workspaceRow.workspaceId);
+              setPendingDelete(null);
+            }}
+            onClose={() => setPendingDelete(null)}
+          />
+        ) : (
+          conversationRow && (
+            <ConfirmDeleteConversationModal
+              conversationId={conversationRow.conversationId}
+              title={conversationRow.title}
+              onClose={() => setPendingDelete(null)}
+            />
+          )
+        ))}
     </div>
   );
 }

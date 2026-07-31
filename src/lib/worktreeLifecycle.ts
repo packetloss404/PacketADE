@@ -10,6 +10,8 @@
  * conversation); this module never reads either engine field — it only names the
  * shared shapes and rules. (P2-S2.)
  */
+import type { AgentConversation } from "@/types/agent-conversation";
+
 
 /**
  * Lifecycle of a provisioned worktree branch. `active` until the work is either
@@ -73,4 +75,55 @@ export function isWorktreeSafeToCleanup(facts: WorktreeCleanupFacts): boolean {
  */
 export function isWorktreeDirty(porcelainStatus: string): boolean {
   return porcelainStatus.split("\n").some((line) => line.trim().length > 0);
+}
+
+/** Directory (relative to the base checkout) under which conversation
+ * worktrees live. Mirrors the Rust constant (`src-tauri/src/core/worktree.rs`
+ * `WORKTREES_DIR`); kept in sync by convention, not import (client can't read
+ * Rust consts). */
+const WORKTREES_DIR = ".pkt-worktrees";
+
+/**
+ * tile-program D — READ-LAYER derivation of worktree provenance for LEGACY
+ * conversations that predate the persisted `worktree` field. A legacy worktree
+ * launch stored the worktree path directly as the conversation's `projectPath`
+ * (`<base>/.pkt-worktrees/<convId>`) and DISCARDED its base branch — the
+ * unlandable-work root cause. This reconstructs the derivable parts from the
+ * projectPath shape alone, WITHOUT mutating or persisting anything:
+ *
+ *   - Returns null when the conversation already carries an explicit
+ *     `worktree` (nothing to derive), for SSH conversations (remote worktrees
+ *     live under the remote path, not reconstructable client-side), or when
+ *     `projectPath` doesn't end in `.pkt-worktrees/<id>` (it ran in the root).
+ *   - `baseBranch` is intentionally left undefined — the base was thrown away
+ *     at launch, and Phase 2's land UI requires an explicit base pick for
+ *     these. `state` is "active" (legacy worktrees were never landed by an
+ *     endings flow, which didn't exist yet).
+ *
+ * Consumers call this on demand (e.g. the land/discard UI, the delete confirm);
+ * the derived value is NEVER written back through `scheduleSave`, so legacy
+ * conversation files stay byte-identical.
+ *
+ * Lives here — in the PURE lifecycle module — rather than in the persistence
+ * store it was born in, so the delete-confirm disclosure can resolve a
+ * conversation's worktree without dragging the whole agentTaskStore graph in.
+ * `stores/agentConversationPersistence` re-exports it for existing importers.
+ */
+export function deriveLegacyWorktree(
+  conv: Pick<AgentConversation, "id" | "projectPath" | "createdAt" | "worktree" | "sshTarget">,
+): NonNullable<AgentConversation["worktree"]> | null {
+  if (conv.worktree) return null;
+  if (conv.sshTarget) return null;
+  const marker = `/${WORKTREES_DIR}/${conv.id}`;
+  const normalized = conv.projectPath.replace(/\\/g, "/");
+  if (!normalized.endsWith(marker)) return null;
+  const basePath = conv.projectPath.slice(0, conv.projectPath.length - marker.length);
+  if (basePath.length === 0) return null;
+  return {
+    basePath,
+    worktreePath: conv.projectPath,
+    branch: `pkt/${conv.id}`,
+    createdAt: conv.createdAt,
+    state: "active",
+  };
 }

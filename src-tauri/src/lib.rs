@@ -243,6 +243,7 @@ pub fn run() {
             commands::pty::ssh_check_remote_path,
             commands::pty::get_app_known_hosts_path,
             commands::ssh_keys::get_ssh_password_exists,
+            commands::ssh_keys::delete_ssh_password,
             // Git
             commands::git::get_git_branch,
             commands::git::get_git_status,

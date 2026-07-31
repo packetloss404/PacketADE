@@ -18,7 +18,7 @@ import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useAgentSidebarPrefsStore } from "@/stores/agentSidebarPrefsStore";
 import { API_PROVIDERS } from "@/lib/api-models";
 import { getAgentColor, getStatusColor } from "@/lib/agentColors";
-import { Modal } from "@/components/ui/Modal";
+import { ConfirmDeleteConversationModal } from "@/components/agents/ConfirmDeleteConversationModal";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Spinner } from "@/components/ui/Spinner";
@@ -102,7 +102,6 @@ export function AgentSidebar({ selectedId, onSelect, onNewAgent }: AgentSidebarP
   const conversations = useAgentTaskStore((state) => state.conversations);
   const archiveConversation = useAgentTaskStore((state) => state.archiveConversation);
   const unarchiveConversation = useAgentTaskStore((state) => state.unarchiveConversation);
-  const deleteConversation = useAgentTaskStore((state) => state.deleteConversation);
   const pendingPermissions = useAgentApprovalStore((state) => state.permissions);
   const pendingEdits = useAgentApprovalStore((state) => state.edits);
   const prefs = useAgentSidebarPrefsStore((state) => state.prefs);
@@ -372,43 +371,14 @@ export function AgentSidebar({ selectedId, onSelect, onNewAgent }: AgentSidebarP
         </button>
       </div>
 
+      {/* Delete discards the conversation's worktree + branch; the shared
+          confirm names them (and any uncommitted changes) before the click. */}
       {pendingDelete && (
-        <Modal
-          title="Delete conversation?"
-          width="w-[400px]"
-          closeOnEscape
+        <ConfirmDeleteConversationModal
+          conversationId={pendingDelete.id}
+          title={pendingDelete.title}
           onClose={() => setPendingDelete(null)}
-          footer={
-            <div className="flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setPendingDelete(null)}
-                className="rounded px-3 py-1.5 text-ui text-text-secondary transition-colors hover:bg-bg-hover"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  deleteConversation(pendingDelete.id);
-                  setPendingDelete(null);
-                }}
-                className="bg-accent-red/15 hover:bg-accent-red/25 rounded px-3 py-1.5 text-ui font-medium text-accent-red transition-colors"
-              >
-                Delete
-              </button>
-            </div>
-          }
-        >
-          <div className="px-5 py-4">
-            <p className="text-ui text-text-secondary">
-              Permanently delete{" "}
-              <span className="text-text-primary">“{pendingDelete.title || "(untitled)"}”</span>?
-              This closes the session and removes its history.
-            </p>
-            <p className="mt-2 text-meta text-text-muted">This cannot be undone.</p>
-          </div>
-        </Modal>
+        />
       )}
     </aside>
   );

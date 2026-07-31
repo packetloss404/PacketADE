@@ -1033,6 +1033,16 @@ export async function getSshPasswordExists(targetId: string): Promise<boolean> {
   return invoke<boolean>("get_ssh_password_exists", { targetId });
 }
 
+/**
+ * Purge the OS-keyring password for a server (current + legacy service).
+ * Called when a `ServerConfig` is deleted — otherwise the secret outlives the
+ * record forever. Missing credential = success, so key/agent-auth hosts are a
+ * no-op.
+ */
+export async function deleteSshPassword(serverId: string): Promise<void> {
+  return invoke("delete_ssh_password", { serverId });
+}
+
 // Async parallel agent attempts (Flight Deck "one prompt → N agents")
 export type AttemptTargetSpec =
   | {

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { saveServersSlice } from "@/lib/tauri";
+import { saveServersSlice, deleteSshPassword } from "@/lib/tauri";
 import { generateId } from "@/lib/storage";
 import { logSwallowed } from "@/lib/logSwallowed";
 import type { ServerConfig, ServerConnectionState, ConnectionStep } from "@/types/server";
@@ -72,6 +72,12 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       syncToBackend(servers);
       return { servers, activeServerId };
     });
+    // The keyring secret is not part of the persisted slice, so dropping the
+    // record alone orphaned `ssh-<id>` in the OS credential store forever with
+    // no path in the app to remove it. Best-effort and deliberately not
+    // awaited: a locked or unavailable credential store must never block the
+    // delete the user just confirmed.
+    void deleteSshPassword(id).catch(logSwallowed("serverStore.deleteSshPassword"));
   },
 
   setActiveServer: (id) => set({ activeServerId: id }),
