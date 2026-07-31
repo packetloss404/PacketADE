@@ -1,0 +1,503 @@
+{
+  "schemaVersion": 1,
+  "readme": [
+    "SINGLE SOURCE OF TRUTH for model rates. Consumed at BUILD TIME by both engines:",
+    "  Rust: src-tauri/src/commands/pricing.rs  (include_str! + serde)",
+    "  TS:   src/lib/modelPricing.ts            (JSON import)",
+    "There is no second table. Do not add rate literals to either language.",
+    "",
+    "Matching: entries are evaluated IN ARRAY ORDER, first match wins. Both engines",
+    "build the same candidate list for a model id (lowercased+trimmed, then with a",
+    "known route prefix stripped, then with a trailing -YYYYMMDD date stripped) and",
+    "test each candidate against `equals` / `prefix` / `contains`. List specific",
+    "rows ABOVE generic ones.",
+    "",
+    "Rates are USD per 1M tokens. `cacheRead` / `cacheWrite5m` / `cacheWrite1h` are",
+    "absolute rates, not multipliers, so a vendor changing its multiplier cannot",
+    "silently rewrite every row.",
+    "",
+    "`schedule` replaces `rates` when a published rate changes on a known date.",
+    "Entries are evaluated against the date OF THE PRICED TURN (not today), so a",
+    "turn billed in August stays billed at August's rate forever.",
+    "",
+    "`inputIncludesCacheRead` records the vendor's token semantics: true when the",
+    "reported input/prompt token count is a SUPERSET that already contains the",
+    "cached-read tokens (OpenAI `cached_tokens`), false when the buckets are",
+    "disjoint (Anthropic `input_tokens` excludes cache_read/cache_creation). The",
+    "shared cost primitive in both engines is purely additive over disjoint",
+    "buckets; callers holding superset payloads must normalise before calling.",
+    "See CE1 in dev/cost-efficiency-loop.md."
+  ],
+  "sources": [
+    {
+      "vendor": "anthropic",
+      "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "fetchedAt": "2026-07-31",
+      "verified": true,
+      "note": "SPIKE-1 resolution. First-party. Covers every claude-* row below."
+    },
+    {
+      "vendor": "openai",
+      "url": null,
+      "fetchedAt": null,
+      "verified": false,
+      "note": "Carried over from the pre-CE2 tables; NOT first-party verified. The 0.5x cache-read / 1.0x cache-write multipliers baked into these rows are the pre-CE2 values. SPIKE-1's OpenAI half is still open."
+    },
+    {
+      "vendor": "google",
+      "url": null,
+      "fetchedAt": null,
+      "verified": false,
+      "note": "Unverified. The two pre-CE2 tables disagreed on output (Rust 5.00 / TS 10.00); the TS value is kept as it matches the widely published <=200k-prompt Gemini 2.5 Pro rate."
+    },
+    {
+      "vendor": "minimax",
+      "url": null,
+      "fetchedAt": null,
+      "verified": false,
+      "note": "M2/M2.5/M2.7/M3 rates from MiniMax's published token-plan pricing (0.30/1.20). M1 is carried over unverified."
+    },
+    {
+      "vendor": "meta",
+      "url": null,
+      "fetchedAt": null,
+      "verified": false,
+      "note": "Unverified OpenRouter route. The two pre-CE2 tables disagreed (Rust 0.40/1.20 vs TS 0.20/0.60); the TS value is kept."
+    }
+  ],
+  "models": [
+    {
+      "id": "claude-fable-5",
+      "label": "Claude Fable 5",
+      "vendor": "anthropic",
+      "match": { "prefix": ["claude-fable-5"] },
+      "rates": {
+        "input": 10.0,
+        "output": 50.0,
+        "cacheRead": 1.0,
+        "cacheWrite5m": 12.5,
+        "cacheWrite1h": 20.0
+      }
+    },
+    {
+      "id": "claude-mythos-5",
+      "label": "Claude Mythos 5",
+      "vendor": "anthropic",
+      "match": { "prefix": ["claude-mythos-5"] },
+      "rates": {
+        "input": 10.0,
+        "output": 50.0,
+        "cacheRead": 1.0,
+        "cacheWrite5m": 12.5,
+        "cacheWrite1h": 20.0
+      }
+    },
+    {
+      "id": "claude-opus-5",
+      "label": "Claude Opus 5",
+      "vendor": "anthropic",
+      "match": { "prefix": ["claude-opus-5"] },
+      "rates": {
+        "input": 5.0,
+        "output": 25.0,
+        "cacheRead": 0.5,
+        "cacheWrite5m": 6.25,
+        "cacheWrite1h": 10.0
+      }
+    },
+    {
+      "id": "claude-opus-4-8",
+      "label": "Claude Opus 4.8",
+      "vendor": "anthropic",
+      "match": { "prefix": ["claude-opus-4-8"] },
+      "rates": {
+        "input": 5.0,
+        "output": 25.0,
+        "cacheRead": 0.5,
+        "cacheWrite5m": 6.25,
+        "cacheWrite1h": 10.0
+      }
+    },
+    {
+      "id": "claude-opus-4-7",
+      "label": "Claude Opus 4.7",
+      "vendor": "anthropic",
+      "match": { "prefix": ["claude-opus-4-7"] },
+      "rates": {
+        "input": 5.0,
+        "output": 25.0,
+        "cacheRead": 0.5,
+        "cacheWrite5m": 6.25,
+        "cacheWrite1h": 10.0
+      }
+    },
+    {
+      "id": "claude-opus-4-6",
+      "label": "Claude Opus 4.6",
+      "vendor": "anthropic",
+      "match": { "prefix": ["claude-opus-4-6"] },
+      "rates": {
+        "input": 5.0,
+        "output": 25.0,
+        "cacheRead": 0.5,
+        "cacheWrite5m": 6.25,
+        "cacheWrite1h": 10.0
+      }
+    },
+    {
+      "id": "claude-opus-4-5",
+      "label": "Claude Opus 4.5",
+      "vendor": "anthropic",
+      "match": { "prefix": ["claude-opus-4-5"] },
+      "rates": {
+        "input": 5.0,
+        "output": 25.0,
+        "cacheRead": 0.5,
+        "cacheWrite5m": 6.25,
+        "cacheWrite1h": 10.0
+      }
+    },
+    {
+      "id": "claude-opus-4-1",
+      "label": "Claude Opus 4.1 (deprecated)",
+      "vendor": "anthropic",
+      "note": "Deprecated. Retains the legacy $15/$75 Opus rate.",
+      "match": { "prefix": ["claude-opus-4-1"] },
+      "rates": {
+        "input": 15.0,
+        "output": 75.0,
+        "cacheRead": 1.5,
+        "cacheWrite5m": 18.75,
+        "cacheWrite1h": 30.0
+      }
+    },
+    {
+      "id": "claude-opus-4",
+      "label": "Claude Opus 4 (retired)",
+      "vendor": "anthropic",
+      "note": "Retired. `equals` (not prefix) so it cannot swallow future claude-opus-4-N rows.",
+      "match": { "equals": ["claude-opus-4", "claude-opus-4-0"] },
+      "rates": {
+        "input": 15.0,
+        "output": 75.0,
+        "cacheRead": 1.5,
+        "cacheWrite5m": 18.75,
+        "cacheWrite1h": 30.0
+      }
+    },
+    {
+      "id": "claude-sonnet-5",
+      "label": "Claude Sonnet 5",
+      "vendor": "anthropic",
+      "note": "Introductory pricing through 2026-08-31; standard rate from 2026-09-01.",
+      "match": { "prefix": ["claude-sonnet-5"] },
+      "schedule": [
+        {
+          "until": "2026-08-31",
+          "note": "introductory",
+          "rates": {
+            "input": 2.0,
+            "output": 10.0,
+            "cacheRead": 0.2,
+            "cacheWrite5m": 2.5,
+            "cacheWrite1h": 4.0
+          }
+        },
+        {
+          "from": "2026-09-01",
+          "note": "standard",
+          "rates": {
+            "input": 3.0,
+            "output": 15.0,
+            "cacheRead": 0.3,
+            "cacheWrite5m": 3.75,
+            "cacheWrite1h": 6.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "label": "Claude Sonnet 4.6",
+      "vendor": "anthropic",
+      "match": { "prefix": ["claude-sonnet-4-6"] },
+      "rates": {
+        "input": 3.0,
+        "output": 15.0,
+        "cacheRead": 0.3,
+        "cacheWrite5m": 3.75,
+        "cacheWrite1h": 6.0
+      }
+    },
+    {
+      "id": "claude-sonnet-4-5",
+      "label": "Claude Sonnet 4.5",
+      "vendor": "anthropic",
+      "match": { "prefix": ["claude-sonnet-4-5"] },
+      "rates": {
+        "input": 3.0,
+        "output": 15.0,
+        "cacheRead": 0.3,
+        "cacheWrite5m": 3.75,
+        "cacheWrite1h": 6.0
+      }
+    },
+    {
+      "id": "claude-sonnet-4",
+      "label": "Claude Sonnet 4",
+      "vendor": "anthropic",
+      "note": "`equals` so it cannot swallow future claude-sonnet-4-N rows.",
+      "match": { "equals": ["claude-sonnet-4", "claude-sonnet-4-0"] },
+      "rates": {
+        "input": 3.0,
+        "output": 15.0,
+        "cacheRead": 0.3,
+        "cacheWrite5m": 3.75,
+        "cacheWrite1h": 6.0
+      }
+    },
+    {
+      "id": "claude-haiku-4-5",
+      "label": "Claude Haiku 4.5",
+      "vendor": "anthropic",
+      "match": { "prefix": ["claude-haiku-4-5"] },
+      "rates": {
+        "input": 1.0,
+        "output": 5.0,
+        "cacheRead": 0.1,
+        "cacheWrite5m": 1.25,
+        "cacheWrite1h": 2.0
+      }
+    },
+    {
+      "id": "claude-haiku-3-5",
+      "label": "Claude Haiku 3.5 (retired)",
+      "vendor": "anthropic",
+      "match": { "prefix": ["claude-haiku-3-5", "claude-3-5-haiku"] },
+      "rates": {
+        "input": 0.8,
+        "output": 4.0,
+        "cacheRead": 0.08,
+        "cacheWrite5m": 1.0,
+        "cacheWrite1h": 1.6
+      }
+    },
+    {
+      "id": "gpt-5.5",
+      "label": "GPT-5.5",
+      "vendor": "openai",
+      "inputIncludesCacheRead": true,
+      "match": { "prefix": ["gpt-5.5", "chatgpt-5.5"] },
+      "rates": {
+        "input": 5.0,
+        "output": 15.0,
+        "cacheRead": 2.5,
+        "cacheWrite5m": 5.0,
+        "cacheWrite1h": 5.0
+      }
+    },
+    {
+      "id": "gpt-5.3-codex",
+      "label": "GPT-5.3 Codex",
+      "vendor": "openai",
+      "inputIncludesCacheRead": true,
+      "match": { "prefix": ["gpt-5.3-codex"] },
+      "rates": {
+        "input": 5.0,
+        "output": 15.0,
+        "cacheRead": 2.5,
+        "cacheWrite5m": 5.0,
+        "cacheWrite1h": 5.0
+      }
+    },
+    {
+      "id": "gpt-5.4",
+      "label": "GPT-5.4 / ChatGPT 5.4",
+      "vendor": "openai",
+      "inputIncludesCacheRead": true,
+      "match": { "prefix": ["gpt-5.4", "chatgpt-5.4"] },
+      "rates": {
+        "input": 5.0,
+        "output": 15.0,
+        "cacheRead": 2.5,
+        "cacheWrite5m": 5.0,
+        "cacheWrite1h": 5.0
+      }
+    },
+    {
+      "id": "gpt-4o",
+      "label": "GPT-4o",
+      "vendor": "openai",
+      "inputIncludesCacheRead": true,
+      "match": { "prefix": ["gpt-4o"] },
+      "rates": {
+        "input": 2.5,
+        "output": 10.0,
+        "cacheRead": 1.25,
+        "cacheWrite5m": 2.5,
+        "cacheWrite1h": 2.5
+      }
+    },
+    {
+      "id": "o3",
+      "label": "o3",
+      "vendor": "openai",
+      "inputIncludesCacheRead": true,
+      "match": { "equals": ["o3"], "prefix": ["o3-"] },
+      "rates": {
+        "input": 15.0,
+        "output": 60.0,
+        "cacheRead": 7.5,
+        "cacheWrite5m": 15.0,
+        "cacheWrite1h": 15.0
+      }
+    },
+    {
+      "id": "o4-mini",
+      "label": "o4-mini",
+      "vendor": "openai",
+      "inputIncludesCacheRead": true,
+      "match": { "prefix": ["o4-mini"] },
+      "rates": {
+        "input": 1.1,
+        "output": 4.4,
+        "cacheRead": 0.55,
+        "cacheWrite5m": 1.1,
+        "cacheWrite1h": 1.1
+      }
+    },
+    {
+      "id": "gpt-5",
+      "label": "GPT-5 family",
+      "vendor": "openai",
+      "note": "Generic fallback for the gpt-5 family (incl. gpt-5-codex). Kept BELOW the specific gpt-5.x rows so it cannot shadow them.",
+      "inputIncludesCacheRead": true,
+      "match": {
+        "equals": ["gpt-5", "chatgpt-5"],
+        "prefix": ["gpt-5-", "gpt-5.", "chatgpt-5-", "chatgpt-5."]
+      },
+      "rates": {
+        "input": 5.0,
+        "output": 15.0,
+        "cacheRead": 2.5,
+        "cacheWrite5m": 5.0,
+        "cacheWrite1h": 5.0
+      }
+    },
+    {
+      "id": "gemini-2.5-pro",
+      "label": "Gemini 2.5 Pro",
+      "vendor": "google",
+      "inputIncludesCacheRead": true,
+      "match": { "prefix": ["gemini-2.5-pro"] },
+      "rates": {
+        "input": 1.25,
+        "output": 10.0,
+        "cacheRead": 0.3125,
+        "cacheWrite5m": 1.25,
+        "cacheWrite1h": 1.25
+      }
+    },
+    {
+      "id": "minimax-m3",
+      "label": "MiniMax M3",
+      "vendor": "minimax",
+      "inputIncludesCacheRead": true,
+      "match": { "contains": ["minimax-m3"] },
+      "rates": {
+        "input": 0.3,
+        "output": 1.2,
+        "cacheRead": 0.15,
+        "cacheWrite5m": 0.3,
+        "cacheWrite1h": 0.3
+      }
+    },
+    {
+      "id": "minimax-m2.7",
+      "label": "MiniMax M2.7",
+      "vendor": "minimax",
+      "note": "Explicit row: `contains: minimax-m2` used to swallow every M2.x point release. Each gets its own row so a future divergence is a data edit, not a matching bug.",
+      "inputIncludesCacheRead": true,
+      "match": { "contains": ["minimax-m2.7"] },
+      "rates": {
+        "input": 0.3,
+        "output": 1.2,
+        "cacheRead": 0.15,
+        "cacheWrite5m": 0.3,
+        "cacheWrite1h": 0.3
+      }
+    },
+    {
+      "id": "minimax-m2.5",
+      "label": "MiniMax M2.5",
+      "vendor": "minimax",
+      "inputIncludesCacheRead": true,
+      "match": { "contains": ["minimax-m2.5"] },
+      "rates": {
+        "input": 0.3,
+        "output": 1.2,
+        "cacheRead": 0.15,
+        "cacheWrite5m": 0.3,
+        "cacheWrite1h": 0.3
+      }
+    },
+    {
+      "id": "minimax-m2",
+      "label": "MiniMax M2",
+      "vendor": "minimax",
+      "inputIncludesCacheRead": true,
+      "match": { "contains": ["minimax-m2"] },
+      "rates": {
+        "input": 0.3,
+        "output": 1.2,
+        "cacheRead": 0.15,
+        "cacheWrite5m": 0.3,
+        "cacheWrite1h": 0.3
+      }
+    },
+    {
+      "id": "minimax-m1",
+      "label": "MiniMax M1",
+      "vendor": "minimax",
+      "note": "Unverified legacy rate carried over from pre-CE2 pricing.rs.",
+      "inputIncludesCacheRead": true,
+      "match": { "contains": ["minimax-m1"] },
+      "rates": {
+        "input": 0.4,
+        "output": 2.2,
+        "cacheRead": 0.2,
+        "cacheWrite5m": 0.4,
+        "cacheWrite1h": 0.4
+      }
+    },
+    {
+      "id": "llama-4-maverick",
+      "label": "Llama 4 Maverick (OpenRouter)",
+      "vendor": "meta",
+      "note": "Listed ABOVE the free local families so the meta-llama/ cloud route is billed, not zeroed. No cache discount published for this route: cache rates equal the input rate.",
+      "inputIncludesCacheRead": true,
+      "match": { "contains": ["llama-4-maverick"] },
+      "rates": {
+        "input": 0.2,
+        "output": 0.6,
+        "cacheRead": 0.2,
+        "cacheWrite5m": 0.2,
+        "cacheWrite1h": 0.2
+      }
+    },
+    {
+      "id": "local",
+      "label": "Local / self-hosted (Ollama)",
+      "vendor": "local",
+      "note": "Always $0. Prefix-matched against candidates that already have ollama/, ollama:, and local/ route prefixes stripped. `meta-llama/...` is NOT stripped, so cloud Llama routes never fall in here.",
+      "match": { "prefix": ["llama", "qwen", "deepseek", "codellama"] },
+      "rates": {
+        "input": 0.0,
+        "output": 0.0,
+        "cacheRead": 0.0,
+        "cacheWrite5m": 0.0,
+        "cacheWrite1h": 0.0
+      }
+    }
+  ]
+}

@@ -100,7 +100,9 @@ export function SessionMetaLine({ conversation }: SessionMetaLineProps) {
     let total = 0;
     for (const m of conversation.messages ?? []) {
       if (m.role !== "assistant") continue;
-      total += m.costUsd ?? estimateTurnCostUsd(conversation.model, m) ?? 0;
+      // Fallback estimate prices at the message's OWN timestamp so a
+      // published rate change never reprices an old turn.
+      total += m.costUsd ?? estimateTurnCostUsd(conversation.model, m, m.timestamp) ?? 0;
     }
     return total;
   }, [isApi, conversation.messages, conversation.model]);

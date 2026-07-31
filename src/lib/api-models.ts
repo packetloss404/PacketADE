@@ -13,7 +13,8 @@ export interface ApiModel {
   contextWindow?: number;
   /**
    * USD price per 1M tokens (input / output). Sourced from
-   * conversationCost.ts's `getModelRates` — the ONE pricing table — not
+   * conversationCost.ts's `getModelRates`, which reads the ONE pricing table
+   * (`shared/model-pricing.json`, shared with the Rust engine) — not
    * duplicated here.
    */
   pricing?: { input: number; output: number };
@@ -155,7 +156,8 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
 
 // Populate context-window + pricing metadata for every known model, sourcing
 // context from the shared modelContext helper and price from
-// conversationCost.ts's getModelRates — both imported, neither duplicated.
+// conversationCost.ts's getModelRates (→ shared/model-pricing.json) — both
+// imported, neither duplicated.
 // The zero-rate guard preserves prior behavior: Ollama/free models (rates of
 // 0/0) stay unpriced rather than showing "$0/$0".
 for (const provider of API_PROVIDERS) {

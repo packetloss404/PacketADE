@@ -353,6 +353,7 @@ export async function installApiAgentListeners(conversationId: string): Promise<
                     inputTokens: event.payload.input_tokens,
                     outputTokens: event.payload.output_tokens,
                     cacheReadTokens: event.payload.cache_read_input_tokens,
+                    cacheWriteTokens: event.payload.cache_creation_input_tokens,
                     reasoningTokens: m.reasoningTokens,
                   }) ?? undefined,
               };
@@ -707,6 +708,7 @@ export async function installApiAgentListeners(conversationId: string): Promise<
                     inputTokens: event.payload.input_tokens,
                     outputTokens: event.payload.output_tokens,
                     cacheReadTokens: event.payload.cache_read_input_tokens,
+                    cacheWriteTokens: event.payload.cache_creation_input_tokens,
                     reasoningTokens: event.payload.reasoning_tokens ?? m.reasoningTokens,
                   }) ?? undefined,
               }

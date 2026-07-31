@@ -536,7 +536,7 @@ function AssistantCostPill({
   const { inputTokens, outputTokens } = message;
   if (inputTokens == null || outputTokens == null) return null;
   const totalTokens = inputTokens + outputTokens;
-  const cost = message.costUsd ?? estimateTurnCostUsd(model, message);
+  const cost = message.costUsd ?? estimateTurnCostUsd(model, message, message.timestamp);
   const pill = (
     <div className="text-meta text-text-muted font-mono">
       {totalTokens} tok

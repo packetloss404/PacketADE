@@ -214,11 +214,20 @@ fn read_usage_analytics_blocking() -> String {
             let latest_output = session_usage.output_tokens;
             let latest_cached = session_usage.cached_input_tokens;
             let pricing_status = crate::commands::pricing::pricing_status_for(&model);
-            let cost = crate::commands::pricing::calculate_cost(
+            // Price at the rates in effect on the session's OWN date, not
+            // today's, so a published rate change is never applied
+            // retroactively to a session that already happened.
+            let priced_on = session_usage
+                .date
+                .clone()
+                .unwrap_or_else(today_date_string);
+            let cost = crate::commands::pricing::calculate_cost_at(
                 &model,
+                &priced_on,
                 latest_input,
                 latest_output,
                 latest_cached,
+                0,
                 0,
             );
             let source = "codex".to_string();

@@ -1,169 +1,122 @@
 import type { AgentConversation } from "@/types/agent-conversation";
 import { useAgentStreamingStore } from "@/stores/agentStreamingStore";
+import { calculateCostUsd, ratesForModel, type PricedAt } from "@/lib/modelPricing";
 
 /**
- * USD cost per million tokens, by model identifier.
- * Used for the inline estimates in the sidebar pill and the per-turn
- * `costUsd` stamped on assistant messages at receipt time.
+ * Conversation cost estimation.
+ *
+ * Rates come from `shared/model-pricing.json` via `lib/modelPricing.ts` — the
+ * same file the Rust engine compiles in. This module used to carry its own
+ * `COST_PER_MTOK` table that disagreed with Rust's on three shipped models;
+ * that table is gone and must not come back. Add rates to the shared JSON.
+ *
+ * Every cache class is priced at its own published rate (read / 5-minute write
+ * / 1-hour write) rather than one blended ratio, because cache creation is the
+ * most expensive token class and is about to become non-zero (CE6).
  */
-const COST_PER_MTOK: Record<string, { input: number; output: number }> = {
-  "claude-opus-4-8": { input: 15, output: 75 },
-  "claude-opus-4-7": { input: 15, output: 75 },
-  "claude-opus-4-6": { input: 15, output: 75 },
-  "claude-sonnet-4-6": { input: 3, output: 15 },
-  "claude-haiku-4-5": { input: 1, output: 5 },
-  "gpt-5.5": { input: 5, output: 15 },
-  "gpt-5-codex": { input: 5, output: 15 },
-  "gpt-5": { input: 5, output: 15 },
-  "chatgpt-5.5": { input: 5, output: 15 },
-  "chatgpt-5.4": { input: 5, output: 15 },
-  "openai/gpt-5.5": { input: 5, output: 15 },
-  "openai/chatgpt-5.5": { input: 5, output: 15 },
-  "openai/chatgpt-5.4": { input: 5, output: 15 },
-  "gpt-4o": { input: 2.5, output: 10 },
-  o3: { input: 15, output: 60 },
-  "o4-mini": { input: 1.1, output: 4.4 },
-  "MiniMax-M3": { input: 0.3, output: 1.2 },
-  "MiniMax-M2.5": { input: 0.3, output: 1.2 },
-  "MiniMax-M2": { input: 0.3, output: 1.2 },
-  "google/gemini-2.5-pro": { input: 1.25, output: 10 },
-  "meta-llama/llama-4-maverick": { input: 0.2, output: 0.6 },
-  "llama3.3:70b": { input: 0, output: 0 },
-  "qwen3:32b": { input: 0, output: 0 },
-  "deepseek-coder-v2": { input: 0, output: 0 },
-  "codellama:34b": { input: 0, output: 0 },
-};
 
-/**
- * Look up rates for a model id. Tries exact match first, then strips a
- * trailing date suffix (e.g. "claude-sonnet-4-6-20250414" -> "claude-sonnet-4-6").
- */
-function lookupRates(model: string | undefined): { input: number; output: number } | null {
-  if (!model) return null;
-  for (const key of rateLookupKeys(model)) {
-    const rates = COST_PER_MTOK[key];
-    if (rates) return rates;
-  }
-  return null;
+/** Raw per-turn token counts as the listeners record them. */
+export interface TurnTokens {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
 }
 
 /**
- * Public accessor for this module's rate table — the ONE pricing source.
- * Used by api-models.ts to populate ModelSelector's price display so no
- * second table has to be hand-mirrored.
+ * Public accessor for input/output rates — used by api-models.ts to populate
+ * ModelSelector's price display so no second table has to be hand-mirrored.
  */
 export function getModelRates(model: string | undefined): { input: number; output: number } | null {
-  return lookupRates(model);
-}
-
-function rateLookupKeys(model: string): string[] {
-  const keys = [model];
-  const strippedDate = model.replace(/-\d{8}$/, "");
-  if (strippedDate !== model) keys.push(strippedDate);
-
-  const slashIndex = strippedDate.indexOf("/");
-  if (slashIndex >= 0) {
-    const withoutProvider = strippedDate.slice(slashIndex + 1);
-    keys.push(withoutProvider);
-    const withoutProviderAndDate = withoutProvider.replace(/-\d{8}$/, "");
-    if (withoutProviderAndDate !== withoutProvider) keys.push(withoutProviderAndDate);
-  }
-
-  return [...new Set(keys)];
+  const rates = ratesForModel(model);
+  if (!rates) return null;
+  return { input: rates.input, output: rates.output };
 }
 
 /**
- * Cached input is billed at a discount on every provider that surfaces it —
- * Anthropic ~10% of input, OpenAI ~50%. 0.25 is the conservative midpoint
- * that keeps PacketADE's inline pill from over-stating cost on cache-heavy
- * Codex turns. The Tauri-side `calculate_turn_cost` command does the
- * provider-specific math when accuracy matters.
+ * Price one turn's raw token counts.
+ *
+ * The shared cost primitive is additive over DISJOINT buckets, so vendors that
+ * report prompt tokens as a superset of their cached reads (OpenAI
+ * `cached_tokens`) are normalised here, driven by the table's
+ * `inputIncludesCacheRead` flag. Anthropic's buckets are already disjoint and
+ * are no longer wrongly subtracted. Reasoning tokens bill at the output rate.
+ *
+ * `at` is the moment the turn was billed — pass the message timestamp so a
+ * later published rate change never reprices an old turn.
  */
-const CACHED_INPUT_RATE_RATIO = 0.25;
+function costForTurn(model: string | undefined, tokens: TurnTokens, at?: PricedAt): number | null {
+  const rates = ratesForModel(model, at);
+  if (!rates) return null;
+  const rawInput = tokens.inputTokens ?? 0;
+  const cacheRead = tokens.cacheReadTokens ?? 0;
+  return calculateCostUsd(
+    model,
+    {
+      input: rates.inputIncludesCacheRead ? Math.max(0, rawInput - cacheRead) : rawInput,
+      output: (tokens.outputTokens ?? 0) + (tokens.reasoningTokens ?? 0),
+      cacheRead,
+      cacheWrite5m: tokens.cacheWriteTokens ?? 0,
+    },
+    at,
+  );
+}
 
 /**
- * Estimate the USD cost of a single turn from the lookup-table rates.
- * Same math as `aggregateConversationCost`, scoped to one message's token
- * counts: new input at the input rate, cached input at the discounted
- * rate, output + reasoning at the output rate. Returns `null` when the
- * model is unknown so callers can hide the cost.
+ * Estimate the USD cost of a single turn. Returns `null` when the model is
+ * unknown so callers can hide the cost rather than show a false $0.00.
  *
  * Used to stamp `costUsd` on assistant messages at receipt time
  * (apiAgentListeners) — no per-message IPC.
  */
 export function estimateTurnCostUsd(
   model: string | undefined,
-  tokens: {
-    inputTokens?: number;
-    outputTokens?: number;
-    cacheReadTokens?: number;
-    reasoningTokens?: number;
-  },
+  tokens: TurnTokens,
+  at?: PricedAt,
 ): number | null {
-  const rates = lookupRates(model);
-  if (!rates) return null;
-  const input = tokens.inputTokens ?? 0;
-  const cached = tokens.cacheReadTokens ?? 0;
-  const output = tokens.outputTokens ?? 0;
-  const reasoning = tokens.reasoningTokens ?? 0;
-  const newInputTokens = Math.max(0, input - cached);
-  return (
-    (newInputTokens * rates.input) / 1_000_000 +
-    (cached * rates.input * CACHED_INPUT_RATE_RATIO) / 1_000_000 +
-    (output * rates.output) / 1_000_000 +
-    (reasoning * rates.output) / 1_000_000
-  );
+  return costForTurn(model, tokens, at);
 }
 
 /**
- * Sum input + output (+ reasoning) tokens across all messages in a
- * conversation and estimate the total USD cost from the model's lookup-table
- * rates. Reasoning tokens are billed at the OUTPUT rate by every provider
- * that exposes them (OpenAI o-series, Codex). Cached input is billed at
- * `CACHED_INPUT_RATE_RATIO` × input rate.
+ * Sum tokens across a conversation and estimate total USD cost.
  *
- * Returns `{ totalTokens, estCost }`. `estCost` is `null` when the model
- * is unknown (so callers can hide the pill).
+ * Each message is priced at the rates in effect on ITS OWN timestamp, so a
+ * conversation spanning a published rate change (e.g. Claude Sonnet 5 leaving
+ * introductory pricing on 2026-09-01) is not retroactively repriced.
+ *
+ * Returns `{ totalTokens, estCost }`; `estCost` is `null` when the model is
+ * unknown (so callers can hide the pill).
  */
 export function aggregateConversationCost(
   conv: AgentConversation,
 ): { totalTokens: number; estCost: number | null } {
-  let totalIn = 0;
-  let totalCachedIn = 0;
-  let totalOut = 0;
-  let totalReasoning = 0;
+  let totalTokens = 0;
+  let estCost = 0;
+  const priced = ratesForModel(conv.model) !== null;
+
   for (const m of conv.messages ?? []) {
-    if (m.inputTokens) totalIn += m.inputTokens;
-    if (m.cacheReadTokens) totalCachedIn += m.cacheReadTokens;
-    if (m.outputTokens) totalOut += m.outputTokens;
-    if (m.reasoningTokens) totalReasoning += m.reasoningTokens;
+    totalTokens += (m.inputTokens ?? 0) + (m.outputTokens ?? 0) + (m.reasoningTokens ?? 0);
+    if (!priced) continue;
+    estCost += costForTurn(conv.model, m, m.timestamp) ?? 0;
   }
+
   // A3: roll Codex MultiAgentV2 sub-agent buckets into the totals so
   // multi-agent flights account for their children's spend. Without this
   // the conversation looks artificially cheap (root totals only) while
   // the user actually paid for N sub-agent threads. Buckets live in
-  // agentStreamingStore (ephemeral; reset between sessions).
+  // agentStreamingStore (ephemeral; reset between sessions) and carry no
+  // timestamp, so they price at current rates.
   const buckets = useAgentStreamingStore.getState().getSubAgentTokens(conv.id);
   if (buckets) {
     for (const bucket of Object.values(buckets)) {
-      totalIn += bucket.inputTokens;
-      totalCachedIn += bucket.cacheReadTokens;
-      totalOut += bucket.outputTokens;
-      totalReasoning += bucket.reasoningTokens;
+      totalTokens += bucket.inputTokens + bucket.outputTokens + bucket.reasoningTokens;
+      if (!priced) continue;
+      estCost += costForTurn(conv.model, bucket) ?? 0;
     }
   }
-  // Don't double-count cached: input rate applies only to NEW input tokens
-  // (input − cached), then cached pays its discounted rate on top.
-  const newInputTokens = Math.max(0, totalIn - totalCachedIn);
-  const totalTokens = totalIn + totalOut + totalReasoning;
-  const rates = lookupRates(conv.model);
-  if (!rates) return { totalTokens, estCost: null };
-  const estCost =
-    (newInputTokens * rates.input) / 1_000_000 +
-    (totalCachedIn * rates.input * CACHED_INPUT_RATE_RATIO) / 1_000_000 +
-    (totalOut * rates.output) / 1_000_000 +
-    (totalReasoning * rates.output) / 1_000_000;
-  return { totalTokens, estCost };
+
+  return { totalTokens, estCost: priced ? estCost : null };
 }
 
 /**

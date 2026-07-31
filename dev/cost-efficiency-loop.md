@@ -1,9 +1,14 @@
 # Cost Efficiency Loop (caching + context discipline)
 
-Status: **PLANNED — not started**
+Status: **IN PROGRESS — Phase 0 started**
 Created: 2026-07-30
 Research basis: five independent source audits (prompt caching, context
 discipline, task-class routing, batch APIs, cost measurement), 2026-07-30.
+
+Progress:
+- **SPIKE-1 — RESOLVED 2026-07-31** (Anthropic half; OpenAI half still open).
+- **CE2 — DONE 2026-07-31.** One shared rate table, corrected Anthropic and
+  MiniMax rows, cache-aware and date-aware pricing. See below.
 
 Related: [`local-model-routing.md`](./local-model-routing.md) (LM1–LM7 — the
 auxiliary-surface routing plan this doc deliberately does **not** duplicate).
@@ -41,31 +46,38 @@ Verified against source on 2026-07-30:
 This is the uncomfortable half. **We cannot presently state a trustworthy
 baseline**, so nothing in this plan may claim a saving until Phase 0 lands.
 
-1. **Two disagreeing cost engines.** Rust `pricing.rs` (four token buckets,
-   per-vendor cache multipliers) is registered as `calculate_turn_cost`
-   (`lib.rs:507`) and **the frontend never calls it** — grep for
-   `calculate_turn_cost` in `src/` finds only a comment. Everything the user
-   sees comes from `src/lib/conversationCost.ts`, which carries its own
-   input/output-only table plus one provider-agnostic
-   `CACHED_INPUT_RATE_RATIO = 0.25`. The two tables already disagree on three
-   shipped models (haiku 25%, gemini-2.5-pro 2x, llama-4-maverick 2x).
+1. ~~**Two disagreeing cost engines.**~~ **FIXED by CE2 (2026-07-31).** Rust
+   `pricing.rs` and `src/lib/conversationCost.ts` each carried their own table;
+   they disagreed on three shipped models (haiku 25%, gemini-2.5-pro 2x,
+   llama-4-maverick 2x) and the frontend's single provider-agnostic
+   `CACHED_INPUT_RATE_RATIO = 0.25` was wrong for every vendor. Both tables are
+   deleted. Rates now live in `shared/model-pricing.json`, compiled into Rust
+   with `include_str!` and imported by `src/lib/modelPricing.ts` — one file,
+   two readers, no possible divergence. `calculate_turn_cost` remains
+   registered but is still uncalled by the frontend **by design**: per-message
+   IPC is the wrong shape, and it is no longer a second source of truth.
 2. **Codex cached tokens are double-counted.** `analytics.rs:217-223` and
    `agent_sidecar/handler.rs:627-633` pass `input` **and** `cached` as separate
    arguments into `calculate_cost`, which is purely additive
    (`pricing.rs:227-230`). OpenAI's `cached_tokens` is a *subset* of prompt
    tokens. At a 90% hit rate that is a **2.6x overstatement**. Codex routinely
    runs 90%+ hit rates, so this is the normal case.
-3. **The frontend estimator has no cache-write term at all.**
-   `estimateTurnCostUsd` takes `{inputTokens, outputTokens, cacheReadTokens,
-   reasoningTokens}` — no `cacheWriteTokens` — and `aggregateConversationCost`
-   never reads `m.cacheWriteTokens` even though the listener stores it
-   (`apiAgentListeners.ts:346`, `:703`). Cache creation is the *most* expensive
-   token class (1.25x–2x input).
+3. ~~**The frontend estimator has no cache-write term at all.**~~ **FIXED by
+   CE2 (2026-07-31)** — folded in early because pricing cache reads correctly
+   while ignoring cache writes would have been a worse meter than before.
+   `estimateTurnCostUsd` now takes `cacheWriteTokens`, both listener sites pass
+   `cache_creation_input_tokens`, and read / 5-minute-write / 1-hour-write each
+   bill at their own published rate. CE3's remaining half is the
+   live/persisted de-dup in `CostDashboardView` and the `cacheWriteTokens`
+   field on the Codex sub-agent bucket (`SubAgentTokenBucket` still has none).
 4. **Two contradictory definitions of `inputTokens` in the same codebase.**
-   `conversationCost.ts:109` does `Math.max(0, input - cached)` (assumes input
-   *includes* cached); `modelContext.ts:91-105` documents the opposite and adds
-   them. Neither branches on provider. Each is right for one vendor and wrong
-   for the other.
+   `conversationCost.ts` used to do `Math.max(0, input - cached)`
+   unconditionally (assumes input *includes* cached); `modelContext.ts:91-105`
+   documents the opposite and adds them. **Partly fixed by CE2:** the shared
+   table now carries `inputIncludesCacheRead` per vendor and the frontend
+   estimator branches on it, so Anthropic's disjoint buckets are no longer
+   wrongly subtracted. The Rust call sites (item 2) and `modelContext.ts` are
+   still unbranched — that is CE1's remaining scope.
 5. **Half the provider rows write no PacketADE-owned usage record.**
    `append_usage_entry` is called from exactly three sites, all in
    `api_agent.rs` — the in-process path only. `api-claude-oauth`,
@@ -89,23 +101,24 @@ baseline**, so nothing in this plan may claim a saving until Phase 0 lands.
 
 **Where the researchers disagreed — stated, not papered over:**
 
-- **Anthropic per-MTok rates.** `pricing.rs:106-120` prices opus-4-6/4-7/4-8 at
-  `$15/$75` and haiku-4-5 at `$0.80/$4.00`. One researcher asserted the
-  published table is `$5/$25` for all three Opus rows and `$1/$5` for Haiku
-  (a 3x over-price and a ~20% under-price respectively); others modelled
-  savings using `$15/M` for Opus without challenging it. A fourth noted the
-  Anthropic pricing page they fetched listed model names ("Fable 5", "Mythos 5")
-  that correspond to **nothing PacketADE pins**, which undermines confidence in
-  that fetch. **Unresolved. Blocks CE2 — see SPIKE-1.**
+- ~~**Anthropic per-MTok rates.**~~ **RESOLVED 2026-07-31 — see SPIKE-1 below.**
+  The `$5/$25` audit was right and the shipped table was wrong by 3x on Opus.
+  "Fable 5" and "Mythos 5" are real published models (we simply pin neither),
+  so that fetch was sound after all. Every savings figure in this doc that was
+  modelled at `$15/M` for Opus overstates the dollar saving by 3x; the
+  token-mix ratios are unaffected.
 - **Prefix size.** Estimates for the static tools+system prefix ranged from
   ~2–3k tokens to ~5k tokens. Both are byte-count-derived (~4 B/token), not
   tokenizer output. This matters only for the minimum-cacheable-length question
   on `claude-opus-4-6` / `claude-haiku-4-5` (4,096-token minimum).
-- **Cache multipliers in `pricing.rs`.** All researchers agree
-  `ModelPricing::anthropic` (0.10x read / 1.25x write) is correct *for the
-  5-minute TTL*; there is no TTL dimension in the type. Agreement that
-  `ModelPricing::openai` (0.50x / 1.0x) is stale versus a documented 0.10x read
-  and 1.25x write on GPT-5.6+.
+- **Cache multipliers.** The Anthropic half is **resolved**: 0.1x read, 1.25x
+  5-minute write, 2x 1-hour write, confirmed first-party. CE2 replaced the
+  multipliers with absolute per-row rates *and* added the missing 1-hour-TTL
+  column, so the "no TTL dimension in the type" gap is closed. The OpenAI half
+  is **still open**: the shipped 0.50x read / 1.0x write values were carried
+  over unverified into `shared/model-pricing.json` and are flagged there as
+  such. The claimed 0.10x read / 1.25x write on GPT-5.6+ was not confirmed
+  against a first-party source and was therefore **not** applied.
 - **Everything is static analysis.** No request was executed, no cargo/pnpm run.
   Every savings figure below is *modelled from documented multipliers and
   measured source sizes*, not observed `cache_read_input_tokens`. Treat them as
@@ -183,14 +196,18 @@ Sequencing rule: **measurement lands first.** Phase 0 changes no request bytes
 and saves nothing; it makes the meter honest. Phase 1 is the actual win.
 
 > **Explicit warning — enabling caching breaks current cost reporting.**
-> The moment CE6 ships, `cache_creation_input_tokens` becomes non-zero. The
+> ~~The moment CE6 ships, `cache_creation_input_tokens` becomes non-zero. The
 > frontend estimator has no write term, so the *most expensive* token class
 > renders as **$0.00** in the message pill, the sidebar pill, the dashboard
 > live-spend figure, and the daily/session/flight guardrails — which would
 > therefore under-trigger precisely during cache thrash, the failure mode
 > caching introduces. Simultaneously `CACHED_INPUT_RATE_RATIO = 0.25` would
-> overstate Anthropic cache reads by 2.5x, hiding the real saving. **CE3 is a
-> hard prerequisite of CE6, not a follow-up.**
+> overstate Anthropic cache reads by 2.5x, hiding the real saving.~~
+> **Largely closed by CE2 (2026-07-31):** cache writes and cache reads now bill
+> at their own published per-model rates in both engines, and the 0.25 constant
+> is gone. What remains of CE3 — the dashboard live/persisted de-dup and the
+> missing `cacheWriteTokens` on the Codex sub-agent bucket — is still a
+> prerequisite of CE6.
 
 ### Phase 0 — Make the meter honest (no behaviour change)
 
@@ -198,8 +215,11 @@ and saves nothing; it makes the meter honest. Phase 1 is the actual win.
 - **Changes:** Add `input_includes_cache: bool` to `ModelPricing` and branch
   inside `calculate_cost`, so the subset-vs-disjoint distinction lives with the
   vendor rather than at three call sites. Normalise all OpenAI-family payloads
-  to the disjoint model at the edge. Delete `Math.max(0, input - cached)` from
-  `conversationCost.ts` and make `modelContext.ts` occupancy provider-correct.
+  to the disjoint model at the edge. ~~Delete `Math.max(0, input - cached)` from
+  `conversationCost.ts`~~ (**done in CE2** — the frontend now branches on the
+  shared table's `inputIncludesCacheRead`; CE1 should move that branch into the
+  shared cost primitive and apply it in Rust too) and make `modelContext.ts`
+  occupancy provider-correct.
 - **Files:** `src-tauri/src/commands/pricing.rs`,
   `src-tauri/src/commands/analytics.rs`,
   `src-tauri/src/commands/agent_sidecar/handler.rs`,
@@ -214,24 +234,63 @@ and saves nothing; it makes the meter honest. Phase 1 is the actual win.
   historical Codex totals will visibly halve and will otherwise be misread as
   data loss or as "the caching already worked".
 
-#### CE2 — Collapse to ONE rate table
-- **Changes:** Delete `COST_PER_MTOK` from `conversationCost.ts`. Add a
-  `get_model_pricing_table` command returning full `ModelPricing` (all four
-  rates); hydrate once at app start. Keep the local per-message math (no
-  per-message IPC — that design is right) but source rates from Rust, including
-  per-provider cache read/write rates in place of the single 0.25 constant.
-  Correct `ModelPricing::openai` to 0.10x read / 1.25x write. Correct the
-  Anthropic per-MTok rows **only after SPIKE-1 resolves**.
-- **Files:** `src/lib/conversationCost.ts`, `src/lib/api-models.ts`,
-  `src-tauri/src/commands/pricing.rs`, `src-tauri/src/lib.rs`,
-  `src/lib/tauri.ts`
-- **Effort:** medium
-- **Expected saving:** $0 — correctness. Removes a 2.5x post-caching error and
-  three live rate divergences.
-- **Verify:** TS test asserting `estimateTurnCostUsd` agrees with
-  `calculate_turn_cost` within tolerance for the same inputs.
-- **Depends on:** SPIKE-1 (**blocking** for the Anthropic rate rows only; the
-  table-collapse itself can proceed).
+#### CE2 — Collapse to ONE rate table — **DONE 2026-07-31**
+- **Shipped, and how it differs from the plan above.** The plan proposed a
+  `get_model_pricing_table` command hydrated at app start. That was rejected:
+  it keeps *two* tables (Rust's literal + the frontend's cached copy) and adds
+  a hydration race in which every cost pill renders wrong — or empty — until
+  the IPC lands, on a value that never changes at runtime. Rates are static
+  data, so they ship as static data. `shared/model-pricing.json` is now the
+  single source of truth: Rust compiles it in with `include_str!`
+  (`commands/pricing.rs`), the frontend imports it (`src/lib/modelPricing.ts`).
+  One file, two readers, zero IPC, no hydration state, and drift is not
+  *detected* — it is **impossible**, because there is nothing to drift from.
+- **Rate corrections** (old → new, per MTok in/out):
+  - Opus 5 / 4.8 / 4.7 / 4.6 / 4.5: `$15/$75` → **`$5/$25`** (the old figure was
+    the deprecated Opus 4.1 rate — a 3x overstatement on the default model).
+  - Haiku 4.5: `$0.80/$4.00` → **`$1/$5`** (the old figure was the retired
+    Haiku 3.5 rate).
+  - MiniMax M2 family: `$0.40/$2.20` → **`$0.30/$1.20`**, and M2.5/M2.7 now
+    have their own rows instead of being swallowed by `contains("minimax-m2")`.
+  - gemini-2.5-pro: the two tables disagreed 2x on output (`$5` vs `$10`);
+    `$10` kept. llama-4-maverick: disagreed 2x (`0.40/1.20` vs `0.20/0.60`);
+    `0.20/0.60` kept. Both flagged unverified in the JSON.
+  - Added rows the catalog did not price at all: Fable 5, Mythos 5, Opus 5,
+    Opus 4.5, Opus 4.1 (deprecated), Opus 4 (retired), Sonnet 5, Sonnet 4.5,
+    Sonnet 4, Haiku 3.5 (retired).
+- **Cache-aware.** Every row carries absolute `cacheRead`, `cacheWrite5m`, and
+  `cacheWrite1h` rates (the 1-hour TTL had no representation at all before).
+  Both engines price all five buckets additively; the frontend estimator gained
+  the `cacheWriteTokens` term and both listener sites now pass
+  `cache_creation_input_tokens`. `CACHED_INPUT_RATE_RATIO = 0.25` is deleted.
+- **Date-aware.** Claude Sonnet 5 is `$2/$10` through 2026-08-31 and `$3/$15`
+  from 2026-09-01. A row may carry a `schedule` of dated windows instead of a
+  single `rates` object, and **every lookup takes the date of the priced turn**
+  (`pricing_for_at` / `ratesForModel(model, at)`), defaulting to today only for
+  live turns. The switchover needs no human action and no migration, and
+  historical turns are never repriced: stored `cost_usd` is read, not
+  recomputed, and the two places that do recompute (message-level UI fallback,
+  Codex session scrape) pass the record's own timestamp.
+- **Files:** `shared/model-pricing.json`, `shared/model-pricing-cases.json`,
+  `src-tauri/src/commands/pricing.rs`, `src-tauri/src/commands/analytics.rs`,
+  `src/lib/modelPricing.ts` (new), `src/lib/conversationCost.ts`,
+  `src/lib/api-models.ts`, `src/stores/apiAgentListeners.ts`,
+  `src/components/agents/chat/MessageList.tsx`,
+  `src/components/agents/chat/SessionMetaLine.tsx`,
+  `src/lib/__tests__/modelPricing.test.ts` (new)
+- **Expected saving:** $0 — correctness. Removes a 3x Opus overstatement, a
+  2.5x post-caching cache-read error, and three live rate divergences.
+- **Verify:** `shared/model-pricing-cases.json` is a golden fixture run by
+  **both** languages (`pricing.rs::tests::golden_cases_match` and
+  `modelPricing.test.ts`). The table can't drift; this proves the two
+  *implementations* — matching order, date windows, cost formula — can't
+  either. Rust 499 passed / 2 ignored; Vitest 1761 passed across 212 files.
+- **Not done here (deliberately):** stored historical figures were **not**
+  migrated. Every `cost_usd` already in `~/.packetade/usage.jsonl` and every
+  `costUsd` stamped on a persisted message was computed with the old rates —
+  Anthropic rows are overstated ~3x, MiniMax M2 rows ~1.6x, Haiku 4.5 rows
+  understated ~20%. Repricing them is a product decision (it visibly rewrites
+  history), not a refactor, so it is left to CE5's one-time-import work.
 
 #### CE3 — Cache-write term in the frontend estimator + live/persisted de-dup
 - **Changes:** `cacheWriteTokens` parameter on `estimateTurnCostUsd`;
@@ -650,7 +709,7 @@ cannot be substantiated), CE18, CE19, and CE20.
 | **Savings only materialise on active loops.** An idle session past the TTL pays a full write on its next turn. A user who asks one question, walks away for 20 minutes, and asks another pays two writes and gets one read. | Report hit rate (CE4) rather than assumed savings. If the measured one-shot/idle share is high, CE6's real-world benefit is materially below the modelled 60–80% — accept that finding rather than defending the estimate. |
 | **Minimum cacheable prefix is model-dependent and fails SILENTLY.** 1,024 tokens (opus-4-8, sonnet-4-6), 2,048 (opus-4-7), 4,096 (opus-4-6, haiku-4-5). Our static prefix is ~2–5k tokens (researchers disagreed). Anthropic returns **no error** — you only find out by reading usage. | Acceptance test is per-model non-zero `cache_read_input_tokens`, not "it compiled". A message-level rolling breakpoint carries opus-4-6/haiku-4-5 because history exceeds 4,096 quickly; a tools-only breakpoint would be a silent no-op on a bare project. This is a direct argument for CE6 (automatic) over CE11 (explicit) as the first cut. |
 | **Prefix drift is invisible.** `build_anthropic_messages` reconstructs JSON from Rust structs every call; any conditional that changes shape costs a full-price re-read with no error and no log. | Add a debug hash-of-serialised-prefix log line (part of CE6/CE7 verification) so drift is observable. Treat non-zero cache reads as the acceptance test, never assume. |
-| **Enabling caching breaks current cost reporting** (restated because it is the highest-probability own-goal). Cache writes render as $0.00 everywhere; guardrails under-trigger during thrash; the 0.25 read ratio hides 2.5x of the Anthropic saving. | CE3 is a hard prerequisite of CE6, enforced by dependency, not by discipline. |
+| **Enabling caching breaks current cost reporting** (restated because it is the highest-probability own-goal). Cache writes render as $0.00 everywhere; guardrails under-trigger during thrash; the 0.25 read ratio hides 2.5x of the Anthropic saving. | **Mostly mitigated by CE2 (2026-07-31)**: both engines now bill cache read / 5m write / 1h write at published per-model rates. CE3's remainder (dashboard de-dup, sub-agent cache-write bucket) is still a hard prerequisite of CE6, enforced by dependency, not by discipline. |
 | **The Codex fix will look like data loss.** Historical dashboard totals drop ~half on Codex rows overnight. | Its own commit, its own CHANGELOG entry, and a before/after capture on identical data. Otherwise it contaminates the very measurement it enables. |
 | **Compaction and caching pull against each other.** Rewriting history invalidates the messages cache and forces one full-price re-read. | Design CE15 against the cache: threshold-driven, infrequent, rolling breakpoint placed *after* the compaction boundary. Never per-turn. |
 | **Truncating tool results is not free.** Aggressive caps cause the model to re-run the command or re-read the file — costing more than the tokens saved, plus latency. | CE13 uses head+tail with an explicit elision marker, not a hard tail cut. CE12 gives a discoverable `offset` continuation affordance, without which the model fails rather than paginates. |
@@ -659,7 +718,7 @@ cannot be substantiated), CE18, CE19, and CE20.
 | **Cross-provider `cache_control` is not portable.** OpenRouter proxies Anthropic and requires the *same* explicit `cache_control` (it does not auto-cache Anthropic/Gemini) — but we route OpenRouter through `llm_openai_compat.rs`, which uses the OpenAI chat-completions shape. MiniMax and Ollama must **not** receive it. | Gate every caching change on `config.provider_id`, never on a shared code path. This is a hard requirement of CE9. |
 | **Concurrency: parallel flight attempts each pay a full write.** A cache entry only becomes available after the first response *begins*. Flight Deck launches N worktree attempts in parallel against the same prompt. | Accept for now; measure via CE17. If material, stagger attempt launch so attempt 1 starts streaming before the rest fire. |
 | **Unknown models price at $0.00 rather than erroring** (`pricing.rs:222-224`). A model-id change silently zeroes a provider's cost and looks exactly like a spectacular caching win. | Make a nonzero-token/zero-cost row a loud warning during measurement runs, not just a `PricingStatus::Unknown` advisory. |
-| **The rate table is self-described as stale** ("approximate published values as of April 2026") while carrying newer entries. Every absolute-dollar claim inherits that. | Report savings primarily as a rate-independent token-mix ratio (cache-read share / hit rate); treat dollars as a derived illustration. |
+| ~~**The rate table is self-described as stale**~~ **Fixed by CE2**: `shared/model-pricing.json` records a per-vendor source URL, fetch date, and a `verified` flag, so an unverified row is visible rather than implied. The Anthropic rows are first-party as of 2026-07-31; OpenAI / Google / MiniMax / Meta rows are explicitly `verified: false`. | Still report savings primarily as a rate-independent token-mix ratio (cache-read share / hit rate); treat dollars as a derived illustration — and note the Claude 4.7+ tokenizer break (SPIKE-1) makes even token counts non-comparable across that model boundary. |
 | **`usage.jsonl` is append-only and unversioned.** New fields (`task_class`, `run_id`, TTL) are absent on every historical line. | Any before/after comparison runs only over post-instrumentation data. Phase 0 must land at least one real usage period *ahead* of Phase 1, not in the same release. |
 | **`analytics.rs` recomputes Codex cost from the LATEST model in each session file**, so a session that switched models mid-way prices its entire cumulative total at the last model's rates — figures are not stable across dashboard loads. | Fold into CE5 when demoting the vendor-file scrape to a one-time import. |
 | **The sidecar delta accounting re-baselines to zero whenever any cumulative component shrinks** (`handler.rs:571-618`), interpreting it as a process restart. A legitimate decrease (e.g. cache eviction reducing cumulative cached tokens) would re-count the whole session. | Add a guard before this path becomes the primary ledger writer in CE5. |
@@ -669,18 +728,52 @@ cannot be substantiated), CE18, CE19, and CE20.
 
 ## 6. Spikes needed before committing
 
-**SPIKE-1 — Anthropic pricing ground truth. BLOCKING for CE2.**
-The researchers disagreed and the one live fetch was untrustworthy. `pricing.rs`
-prices opus-4-6/4-7/4-8 at `$15/$75` and haiku-4-5 at `$0.80/$4.00`; one audit
-asserted `$5/$25` and `$1/$5` respectively; another observed the fetched pricing
-page listed model names corresponding to nothing we pin. Resolve against a
-first-party source (or an actual invoice) before touching the rate rows. A 3x
-error on Opus inverts the signal that the entire programme is judged on. Also
-confirm the current OpenAI cache multipliers (0.10x read, 1.25x write on
-GPT-5.6+) and whether newer tokenizers really produce ~30% more tokens for the
-same text — if so, every ROI model built on Sonnet-4.6-era counts understates
-frontier cost.
-*Blocks:* CE2 rate rows. Does not block CE1, CE3, CE4.
+**SPIKE-1 — Anthropic pricing ground truth. ✅ RESOLVED 2026-07-31.**
+Source: <https://platform.claude.com/docs/en/about-claude/pricing> (first-party,
+fetched 2026-07-31). The `$5/$25` audit was correct; the shipped table was
+carrying the deprecated Opus 4.1 rate on every current Opus row. Verified
+figures, USD per MTok — base input / output, then cache write 5m / write 1h /
+read:
+
+| Model | Input | Output | Write 5m | Write 1h | Read |
+| --- | --- | --- | --- | --- | --- |
+| Claude Fable 5 | 10 | 50 | 12.50 | 20 | 1 |
+| Claude Mythos 5 | 10 | 50 | 12.50 | 20 | 1 |
+| Opus 5 / 4.8 / 4.7 / 4.6 / 4.5 | **5** | **25** | 6.25 | 10 | 0.50 |
+| Opus 4.1 (deprecated) / Opus 4 (retired) | 15 | 75 | 18.75 | 30 | 1.50 |
+| Sonnet 5 — through 2026-08-31 | **2** | **10** | 2.50 | 4 | 0.20 |
+| Sonnet 5 — from 2026-09-01 | **3** | **15** | 3.75 | 6 | 0.30 |
+| Sonnet 4.6 / 4.5 / 4 | 3 | 15 | 3.75 | 6 | 0.30 |
+| Haiku 4.5 | **1** | **5** | 1.25 | 2 | 0.10 |
+| Haiku 3.5 (retired) | 0.80 | 4 | 1 | 1.60 | 0.08 |
+
+Multipliers confirmed: cache read = 0.1x base input, 5-minute write = 1.25x,
+1-hour write = 2x. Batch API is 50% off **input and output** and stacks with
+caching (still not being built — see §4).
+
+"Fable 5" and "Mythos 5" are genuine published models; the researcher who
+doubted that fetch was wrong to. We pin neither, but both are now in the table
+so a user typing one into a custom model field is priced rather than silently
+zeroed.
+
+**Two sub-questions remain open** (they did not block CE2 and are not blocking
+anything else):
+1. *OpenAI cache multipliers.* No first-party confirmation of the claimed 0.10x
+   read / 1.25x write on GPT-5.6+. The shipped 0.50x / 1.0x values were carried
+   over into `shared/model-pricing.json` marked `verified: false`. If the claim
+   is right, our OpenAI cache-read cost is overstated 5x — worth confirming
+   before CE9.
+2. *Tokenizer change at Claude 4.7.* **Confirmed enough to act on, and it
+   matters for every before/after in this doc.** Claude 4.7 and later use a
+   different tokenizer that produces roughly **30% more tokens for the same
+   text** than Sonnet 4.6 and earlier. Consequences: (a) any token comparison
+   spanning that model boundary is measuring the tokenizer, not the change —
+   pin the model for the whole comparison (CE6-PRE's fixture must); (b) a
+   per-token rate cut across that boundary is partly given back in token count,
+   so per-MTok rates are not directly comparable across it either; (c) prefix
+   size estimates in this doc derived from ~4 B/token undercount on 4.7+.
+
+*Was blocking:* CE2 rate rows — now unblocked and shipped.
 
 **SPIKE-2 — Sidecar caching reality.**
 Instrument one real `api-claude-oauth` session and read the
@@ -716,8 +809,16 @@ verification rather than before it.
 
 ## Sequencing
 
-**CE1 → CE2 → CE3 → CE4 → CE5 → CE6-PRE → CE6 → CE7 → CE8 → CE9 → CE12 → CE13
-→ CE10 → CE14 → CE16 → CE11 → CE15 → CE17 → CE18 → CE19 → CE20.**
+**CE1 → ~~CE2~~ → CE3 → CE4 → CE5 → CE6-PRE → CE6 → CE7 → CE8 → CE9 → CE12 →
+CE13 → CE10 → CE14 → CE16 → CE11 → CE15 → CE17 → CE18 → CE19 → CE20.**
+
+**CE2 shipped first, ahead of CE1.** The ordering assumed CE1's token-semantics
+contract had to land before the tables could be collapsed; in practice the
+collapse is independent of it. CE2 left the Rust call sites' superset/disjoint
+handling exactly as it found it, so CE1's scope is unchanged apart from the
+frontend `Math.max(0, input - cached)` line, which is already deleted. CE1 must
+still be **its own commit with a CHANGELOG note** — historical Codex totals will
+visibly halve when it lands.
 
 Phase 0 (CE1–CE6-PRE) ships as its own release and must be live for at least one
 real usage period before Phase 1. CE7 and CE12/CE13/CE16/CE18/CE19/CE20 are

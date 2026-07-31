@@ -1,0 +1,215 @@
+{
+  "readme": [
+    "Cross-language golden cases for the shared pricing engine.",
+    "",
+    "Both implementations run these and must agree with `expectedUsd` to 1e-9:",
+    "  Rust: src-tauri/src/commands/pricing.rs  (mod tests::golden_cases_match)",
+    "  TS:   src/lib/__tests__/modelPricing.test.ts",
+    "",
+    "The rate TABLE cannot drift (there is only one, shared/model-pricing.json).",
+    "These cases exist so the two MATCHING + COST implementations cannot drift",
+    "either. A change to lookup order, date-schedule handling, or the cost formula",
+    "in one language fails the other language's test.",
+    "",
+    "`tokens` are DISJOINT buckets (Anthropic semantics): `input` excludes",
+    "cacheRead and cacheWrite. `at` is the date of the priced turn (YYYY-MM-DD)."
+  ],
+  "cases": [
+    {
+      "name": "opus 4.8 is $5/$25 (was wrongly $15/$75 = deprecated Opus 4.1 rate)",
+      "model": "claude-opus-4-8",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 30.0
+    },
+    {
+      "name": "opus 4.7 with date suffix",
+      "model": "claude-opus-4-7-20260101",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000 },
+      "expectedUsd": 5.0
+    },
+    {
+      "name": "opus 4.6",
+      "model": "claude-opus-4-6-20250415",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 30.0
+    },
+    {
+      "name": "opus 5",
+      "model": "claude-opus-5",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 30.0
+    },
+    {
+      "name": "opus 4.1 keeps the deprecated $15/$75 rate",
+      "model": "claude-opus-4-1-20250805",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 90.0
+    },
+    {
+      "name": "retired opus 4 matches by equals after date-strip, not by prefix",
+      "model": "claude-opus-4-20250514",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000 },
+      "expectedUsd": 15.0
+    },
+    {
+      "name": "fable 5",
+      "model": "claude-fable-5",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 60.0
+    },
+    {
+      "name": "mythos 5",
+      "model": "claude-mythos-5",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 60.0
+    },
+    {
+      "name": "haiku 4.5 is $1/$5 (was wrongly $0.80/$4 = retired Haiku 3.5 rate)",
+      "model": "claude-haiku-4-5-20251001",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 6.0
+    },
+    {
+      "name": "retired haiku 3.5 keeps $0.80/$4",
+      "model": "claude-3-5-haiku-20241022",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 4.8
+    },
+    {
+      "name": "sonnet 5 introductory rate on the last intro day",
+      "model": "claude-sonnet-5",
+      "at": "2026-08-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 12.0
+    },
+    {
+      "name": "sonnet 5 standard rate on the first standard day",
+      "model": "claude-sonnet-5",
+      "at": "2026-09-01",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 18.0
+    },
+    {
+      "name": "sonnet 5 introductory cache columns (read / 5m write / 1h write)",
+      "model": "claude-sonnet-5",
+      "at": "2026-08-15",
+      "tokens": { "cacheRead": 100000, "cacheWrite5m": 100000, "cacheWrite1h": 100000 },
+      "expectedUsd": 0.67
+    },
+    {
+      "name": "sonnet 5 standard cache columns",
+      "model": "claude-sonnet-5",
+      "at": "2026-12-01",
+      "tokens": { "cacheRead": 100000, "cacheWrite5m": 100000, "cacheWrite1h": 100000 },
+      "expectedUsd": 1.005
+    },
+    {
+      "name": "sonnet 4.6 unaffected by the sonnet 5 schedule",
+      "model": "claude-sonnet-4-6-20250414",
+      "at": "2026-12-01",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 18.0
+    },
+    {
+      "name": "opus 4.8 cache-heavy turn prices every bucket",
+      "model": "claude-opus-4-8",
+      "at": "2026-07-31",
+      "tokens": { "input": 10000, "output": 20000, "cacheRead": 500000, "cacheWrite5m": 200000 },
+      "expectedUsd": 2.05
+    },
+    {
+      "name": "openrouter anthropic mirror resolves to the same row",
+      "model": "anthropic/claude-sonnet-4-6",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000 },
+      "expectedUsd": 3.0
+    },
+    {
+      "name": "gpt-5.5 with cached prompt tokens",
+      "model": "gpt-5.5",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000, "cacheRead": 500000 },
+      "expectedUsd": 21.25
+    },
+    {
+      "name": "bare gpt-5 falls through to the family row",
+      "model": "gpt-5-codex",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 20.0
+    },
+    {
+      "name": "minimax M2.5 is $0.30/$1.20 (was $0.40/$2.20)",
+      "model": "MiniMax-M2.5",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 1.5
+    },
+    {
+      "name": "minimax M2.7 gets its own row, not the M2 catch-all",
+      "model": "MiniMax-M2.7",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 1.5
+    },
+    {
+      "name": "minimax M2",
+      "model": "MiniMax-M2",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 1.5
+    },
+    {
+      "name": "minimax M1 keeps its legacy rate",
+      "model": "MiniMax-M1",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 2.6
+    },
+    {
+      "name": "gemini 2.5 pro via openrouter",
+      "model": "google/gemini-2.5-pro",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 11.25
+    },
+    {
+      "name": "meta-llama cloud route is billed, not treated as local",
+      "model": "meta-llama/llama-4-maverick",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 0.8
+    },
+    {
+      "name": "local ollama model is free",
+      "model": "llama3.3:70b",
+      "at": "2026-07-31",
+      "tokens": { "input": 5000000, "output": 5000000 },
+      "expectedUsd": 0.0
+    },
+    {
+      "name": "ollama route prefix is stripped before the local match",
+      "model": "ollama/qwen3:32b",
+      "at": "2026-07-31",
+      "tokens": { "input": 5000000, "output": 5000000 },
+      "expectedUsd": 0.0
+    },
+    {
+      "name": "unknown model prices at zero (PricingStatus::Unknown)",
+      "model": "totally-unknown-model-xyz",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 0.0
+    }
+  ]
+}

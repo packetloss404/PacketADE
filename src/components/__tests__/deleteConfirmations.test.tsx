@@ -349,5 +349,7 @@ describe("CliAgentsCard — deleting a custom CLI agent and resetting built-ins"
     fireEvent.click(screen.getByRole("button", { name: /Reset built-ins/ }));
     fireEvent.click(screen.getByRole("button", { name: "Reset to defaults" }));
     expect(resetBuiltins).toHaveBeenCalledTimes(1);
-  });
+    // Renders the whole CliAgentsCard twice and drives two confirm dialogs;
+    // ~1.8s alone, but exceeds the 5s default under full-suite parallel load.
+  }, 20000);
 });
