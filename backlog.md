@@ -685,16 +685,60 @@ the normal priority scheme.
   Ctrl+K palette (as an actions section, not a faked route).
   Gates: `pnpm build` green, Vitest 1466/1466 across 194 files (up from 1363),
   ESLint at zero errors.
-- **P1 — deletion and shell follow-ups.** Deliberately left out of `f405ea1`;
-  each needs behaviour or a design decision rather than a confirm dialog.
+- **✅ Shipped 2026-07-30 — delete cleanup (`d94cca4`).** The three questions
+  the previous loop deferred were all answered by the owner and implemented, so
+  a confirmed delete now actually cleans up after itself.
+  **(1) Flight delete cancels and cleans up.**
+  `asyncFlightStore.deleteFlightWithAttemptCleanup` cancels every non-terminal
+  attempt through the existing cancel path and then deletes the Flight.
+  "Non-terminal" deliberately **includes `reviewing`**, because Rust only tears
+  a worktree down on a terminal transition, so a reviewing attempt's worktree is
+  still on disk — a subtlety the audit had not identified. Cleanup is
+  per-attempt try/caught and the delete runs after the `finally`, so a wedged
+  attempt can never abort it; failures surface as a toast naming the branch and
+  what may survive (including SSH attempts whose `ServerConfig` is gone, where
+  neither Rust nor the frontend fallback can reach the host). The 3-second
+  armed inline button — one of the five confirm idioms — is replaced by the
+  shared `ConfirmDeleteModal`, which now states the attempts to be cancelled by
+  status, the worktrees to be removed, which of those are dirty or uncheckable,
+  and that live tasks are **not** cancelled. Completion capture is suppressed
+  during a delete so cancelling the last attempt cannot mint a
+  `flight_completed` memory event plus LLM retrospective for a record being
+  discarded.
+  **(2) Conversation delete discards the worktree and branch, and says so
+  first.** Owner's instruction was "discard, surface the confirm". Dirty
+  worktrees are **force-discarded** rather than refused, with the reasoning
+  recorded: once the record is deleted no UI names the tree, so refusing would
+  strand a directory nobody can find. The confirm leads with "This worktree has
+  UNCOMMITTED CHANGES. They will be permanently lost." in caps, names the exact
+  worktree path and `pkt/<id>` branch, escalates the button to "Delete and
+  discard changes", and reports an unreadable git status as possibly-dirty
+  rather than clean. Root-run, SSH, and already-discarded worktrees are skipped;
+  landed worktrees are still discarded. New shared
+  `ConfirmDeleteConversationModal` + `src/lib/conversationWorktreeDisclosure.ts`;
+  both sidebars moved onto the shared idiom and `FleetSidebar`'s workspace
+  dialog is no longer titled "Delete session?".
+  **(3) SSH keyring is no longer orphaned.** New Rust `delete_ssh_password`
+  clears **both** the current and the `LEGACY_KEYRING_SERVICE` entry — reads
+  auto-migrate from legacy, so a survivor could resurrect the secret on id
+  reuse — treats a missing entry as success (key-auth servers must not error),
+  is registered in `lib.rs` with a TS binding, and is called from
+  `serverStore.deleteServer` so every delete path is covered. A keyring failure
+  cannot block the delete (logged via `logSwallowed`), and the
+  `ConfirmDeleteModal` copy no longer claims the password stays behind.
+  Gates: `pnpm build` green, Vitest 1523/1523 across 199 files (up from 1466),
+  `cargo test` 444/444 (up from 440), ESLint at zero errors.
+- **P1 — deletion and shell follow-ups.** What `f405ea1` and `d94cca4`
+  deliberately left out; each needs behaviour or a design decision rather than a
+  confirm dialog.
   - No undo for destructive actions anywhere; confirmation is currently the
     only safety net.
-  - Deleting a Flight has a confirmation but abandons running attempts — it
-    needs a behavioural fan-out to `cancelAttempt` plus worktree cleanup.
-  - Deleting a conversation orphans its worktree/branch. Needs a design
-    decision (delete, keep, or prompt) before implementation.
-  - Deleting an SSH server orphans its keyring secret; needs a new
-    `delete_ssh_password` Rust command.
+  - Rust swallows git worktree-removal errors — `cancel_flight_attempt` only
+    `warn!`s — so a genuine removal failure logs instead of surfacing. Fixing it
+    needs a Rust signature change, not a frontend change.
+  - Cooperative `integrationBranch` worktrees are still abandoned on Flight
+    delete: there is no exposed command for them and they are not attempt-id
+    keyed, so the attempt fan-out cannot reach them.
   - Issues have no delete path at all, and `IssueCommentList` comment delete is
     missing.
   - `ConversationTile` has a double kebab and an X whose tooltip does not match
@@ -706,6 +750,9 @@ the normal priority scheme.
     and `OnboardingPane`.
   - `useServerConnection` and `ConnectionProgress` are now unreferenced; kept
     deliberately, but they need a keep-or-delete decision.
+  - Sharp edge in the fence itself: `scripts/confirm-idiom.test.mjs` greps
+    broadly enough that a **test name** containing `confirm (` trips it. Narrow
+    the pattern before it blocks an unrelated test.
   MS4 (responsive/accessibility semantics, Gitea capability and repo-switch
   tests, packaged local/SSH and 800px-to-ultrawide visual matrix) and the two
   unaddressed MS1 items (Running Agents / Side Chat cancellation

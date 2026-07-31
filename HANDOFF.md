@@ -18,7 +18,7 @@ consolidated report is `docs/reports/state-of-the-ade-2026-07-30.html`
 (11 chapters, with the
 UX Ledger, Visual Audit, and Outstanding Audits Ledger).
 
-All three threads from that review are now closed. The first two:
+All four threads from that review are now closed. The first two:
 
 1. **Committed and verified.** The State of the ADE review work landed on
    `main` as
@@ -97,27 +97,73 @@ The third thread closed on top of that sequence:
      de-duplicated; workspace creation is now in the "+ New" menu and the
      Ctrl+K palette.
 
+The fourth thread closed on top of that:
+
+4. **The delete-cleanup loop. COMPLETE — `d94cca4`.** The three questions
+   `f405ea1` deferred were all answered by the owner on 2026-07-30 and
+   implemented the same day, so a confirmed delete now cleans up after itself.
+   Gates at that commit: `pnpm build` green, Vitest 1523/1523 across 199 files
+   (up from 1466), `cargo test` 444/444 (up from 440), ESLint at zero errors.
+   What landed:
+   - **Flight delete cancels and cleans up.**
+     `asyncFlightStore.deleteFlightWithAttemptCleanup` cancels every
+     non-terminal attempt through the existing cancel path, then deletes the
+     Flight. "Non-terminal" deliberately **includes `reviewing`**: Rust only
+     tears a worktree down on a terminal transition, so a reviewing attempt's
+     worktree is still on disk — a subtlety the audit never identified. Cleanup
+     is per-attempt try/caught with the delete after the `finally`, so a wedged
+     attempt cannot abort it; failures toast the branch and what may survive
+     (including SSH attempts whose `ServerConfig` is gone, which neither Rust
+     nor the frontend fallback can reach). The 3-second armed inline button is
+     replaced by the shared `ConfirmDeleteModal`, which states which attempts
+     will be cancelled by status, which worktrees will be removed, which of
+     those are dirty or uncheckable, and that live tasks are **not** cancelled.
+     Completion capture is suppressed during a delete so cancelling the last
+     attempt cannot mint a `flight_completed` memory event and retrospective
+     for a record being thrown away.
+   - **Conversation delete discards the worktree and branch, and says so
+     first.** Owner's call was "discard, surface the confirm". Dirty trees are
+     **force-discarded** rather than refused — once the record is gone no UI
+     names the tree, so refusing would strand a directory nobody can find. The
+     confirm leads with the uncommitted-changes warning in caps, names the exact
+     path and `pkt/<id>` branch, escalates the button to "Delete and discard
+     changes", and treats an unreadable git status as possibly-dirty rather than
+     clean. Root-run, SSH, and already-discarded worktrees are skipped. New
+     `ConfirmDeleteConversationModal` +
+     `src/lib/conversationWorktreeDisclosure.ts`; both sidebars share the idiom
+     and `FleetSidebar`'s workspace dialog is no longer "Delete session?".
+   - **SSH keyring no longer orphaned.** New Rust `delete_ssh_password` clears
+     both the current and the legacy keyring service (reads auto-migrate from
+     legacy, so a survivor could resurrect the secret on id reuse), treats a
+     missing entry as success, is registered in `lib.rs` with a TS binding, and
+     runs from `serverStore.deleteServer` so every delete path is covered. A
+     keyring failure cannot block the delete, and the confirm copy no longer
+     claims the password stays behind.
+
 ## Start here next session
 
-The restart point is the work `f405ea1` deliberately did **not** do. It is all
-behaviour or design decisions, not more confirm dialogs. Full list in
-[`backlog.md`](./backlog.md) under "P1 — deletion and shell follow-ups".
+The restart point is what `f405ea1` and `d94cca4` deliberately did **not** do.
+Full list in [`backlog.md`](./backlog.md) under "P1 — deletion and shell
+follow-ups".
 
-**Lead with the delete-cleanup decisions:**
+**Lead with the two real cleanup holes that remain:**
 
-- **Flight delete abandons running attempts.** It has a confirmation, but it
-  needs a behavioural fan-out to `cancelAttempt` plus worktree cleanup.
-- **Conversation delete orphans its worktree/branch.** Needs an owner decision
-  (delete it, keep it, or prompt) before any code.
-- **SSH server delete orphans its keyring secret.** Needs a new
-  `delete_ssh_password` Rust command.
+- **Rust swallows git worktree-removal errors.** `cancel_flight_attempt` only
+  `warn!`s, so a genuine removal failure logs instead of surfacing — the
+  frontend cleanup path cannot report what it was never told. Fixing this needs
+  a Rust signature change.
+- **Cooperative `integrationBranch` worktrees are still abandoned on Flight
+  delete.** There is no exposed command for them and they are not attempt-id
+  keyed, so `d94cca4`'s attempt fan-out cannot reach them.
 
 **Then the persisted-view restore:** `bootstrap.ts` still force-routes to
 Welcome instead of restoring the persisted `selectedView`.
 
+**Then undo,** which is now the only remaining safety net gap: every
+destructive action is confirmed, but none of them can be taken back.
+
 **Then the smaller residue:**
 
-- no undo for destructive actions anywhere;
 - Issues have no delete path at all, and `IssueCommentList` comment delete is
   missing;
 - `ConversationTile`'s double kebab and its X whose tooltip does not match what
@@ -126,7 +172,9 @@ Welcome instead of restoring the persisted `selectedView`.
 - the six-spellings label sweep across `WelcomeScreen`, `ProjectInfoCard`, and
   `OnboardingPane`;
 - `useServerConnection` and `ConnectionProgress` are now unreferenced — kept
-  deliberately, but they need a keep-or-delete decision.
+  deliberately, but they need a keep-or-delete decision;
+- a sharp edge in the fence itself: `scripts/confirm-idiom.test.mjs` greps
+  broadly enough that a **test name** containing `confirm (` trips it.
 
 MS4 (responsive/accessibility semantics, Gitea capability and repo-switch
 tests, packaged local/SSH and 800px-to-ultrawide visual matrix) and the two
@@ -134,20 +182,26 @@ unaddressed MS1 items remain open alongside these.
 
 ## Current product state
 
-- `main` is at `f405ea1` (main-shell follow-ups: deletion safety,
-  keyboard/exit safety, creation flows), on top of `93d41af` (D2+D5 RightDock
-  and reconnected Editor), `dffbe61` (D4), `33708c0` (D3), `e7e7c27` (D1), and
+- `main` is at `d94cca4` (delete cleanup: flight attempts, conversation
+  worktrees, SSH keyring), on top of `f405ea1` (main-shell follow-ups: deletion
+  safety, keyboard/exit safety, creation flows), `93d41af` (D2+D5 RightDock and
+  reconnected Editor), `dffbe61` (D4), `33708c0` (D3), `e7e7c27` (D1), and
   the State of the ADE review commits `3f8aba1` / `580ee80` / `72b2734` — all
   committed 2026-07-30.
 - The main shell now has one surface-scoped `RightDock`, one route registry
   behind the rail/palette/labels/hotkeys, SSH-gated local-only actions, an
   Agents-owned Inspector, and a reconnected Editor panel with a wired Markdown
   viewer.
-- Destructive actions are confirmed through one shared `ConfirmDeleteModal`.
-  There are no native `window.confirm` calls left in source, and
-  `scripts/confirm-idiom.test.mjs` enforces that. What confirmation still does
-  **not** do is clean up: Flight delete abandons running attempts and
-  conversation delete orphans its worktree — see the restart list above.
+- Destructive actions are confirmed through one shared `ConfirmDeleteModal`
+  (plus `ConfirmDeleteConversationModal` for the worktree-bearing case). There
+  are no native `window.confirm` calls left in source, and
+  `scripts/confirm-idiom.test.mjs` enforces that. Confirmation now also cleans
+  up: Flight delete cancels every non-terminal attempt (including `reviewing`,
+  whose worktree is still on disk) before deleting, conversation delete
+  discards the worktree and `pkt/<id>` branch after disclosing dirtiness, and
+  SSH-server delete clears the keyring secret from both the current and legacy
+  services. What remains is Rust-side error surfacing for worktree removal,
+  cooperative `integrationBranch` worktrees, and undo — see the restart list.
 - Ctrl+K and Escape yield to focused terminals and text inputs, and closing the
   app confirms only when live work would be destroyed.
 - Workspace creation has one contract: no workspace is created without a
@@ -258,11 +312,13 @@ All three artifacts are unsigned.
 
 ## Last verified gates
 
-The five main-shell commits each ran the frontend gates before landing:
+Every commit in this sequence ran the frontend gates before landing:
 
 - Vitest grew 1260 → 1276 (`e7e7c27`) → 1320 (`33708c0`, cumulative through
-  `dffbe61`) → 1363 across 179 files (`93d41af`) → **1466 passing across 194
-  files** (`f405ea1`);
+  `dffbe61`) → 1363 across 179 files (`93d41af`) → 1466 across 194 files
+  (`f405ea1`) → **1523 passing across 199 files** (`d94cca4`);
+- `cargo test` grew 440 → **444** (`d94cca4`, the new `delete_ssh_password`
+  coverage);
 - ESLint passed with zero errors at every step;
 - the TypeScript/Vite production build passed at every step;
 - one pre-existing unhandled rejection in
@@ -306,21 +362,26 @@ limited to existing `ts-rs` serde-alias and Vite chunk/dynamic-import warnings.
 ## Suggested first prompt
 
 > Read `HANDOFF.md`. The five decided main-shell items (`e7e7c27`, `33708c0`,
-> `dffbe61`, `93d41af`) and the whole main-shell follow-up loop (`f405ea1` —
+> `dffbe61`, `93d41af`), the main-shell follow-up loop (`f405ea1` —
 > deletion-confirm sweep, Ctrl+K/Escape terminal guards, app-close confirm,
-> Modal Escape default, Issues-board wrap, unified workspace creation) are
-> implemented and committed — do not re-open them. Pick up what `f405ea1`
+> Modal Escape default, Issues-board wrap, unified workspace creation), and the
+> delete-cleanup loop (`d94cca4` — Flight delete cancels non-terminal attempts
+> and cleans worktrees, conversation delete discards the worktree/branch with a
+> dirty-state confirm, SSH delete clears the keyring on both services) are all
+> implemented and committed — do not re-open them. Pick up what they
 > deliberately left out, in `backlog.md` under "P1 — deletion and shell
-> follow-ups". Lead with the delete-cleanup work: Flight delete needs a
-> behavioural fan-out to `cancelAttempt` plus worktree cleanup; conversation
-> delete orphans its worktree/branch and needs an owner decision first; SSH
-> server delete orphans its keyring secret and needs a new
-> `delete_ssh_password` Rust command. Then restore the persisted `selectedView`
-> in `bootstrap.ts` instead of force-routing to Welcome. Then the residue:
-> undo for destructive actions, Issue delete and `IssueCommentList` comment
-> delete, the `ConversationTile` double kebab and lying X tooltip, a "don't
-> ask again" close preference, the six-spellings label sweep
-> (`WelcomeScreen`/`ProjectInfoCard`/`OnboardingPane`), and a keep-or-delete
-> decision on the now-unreferenced `useServerConnection` /
-> `ConnectionProgress`. Keep gates green at each step (`pnpm build`,
-> `pnpm lint`, Vitest, currently 1466 passing across 194 files).
+> follow-ups". Lead with the two real cleanup holes: Rust swallows git
+> worktree-removal errors (`cancel_flight_attempt` only `warn!`s), which needs a
+> Rust signature change so failures surface; and cooperative
+> `integrationBranch` worktrees are still abandoned on Flight delete because
+> they have no exposed command and are not attempt-id keyed. Then restore the
+> persisted `selectedView` in `bootstrap.ts` instead of force-routing to
+> Welcome. Then undo for destructive actions. Then the residue: Issue delete
+> and `IssueCommentList` comment delete, the `ConversationTile` double kebab and
+> lying X tooltip, a "don't ask again" close preference, the six-spellings label
+> sweep (`WelcomeScreen`/`ProjectInfoCard`/`OnboardingPane`), a keep-or-delete
+> decision on the now-unreferenced `useServerConnection` / `ConnectionProgress`,
+> and narrowing `scripts/confirm-idiom.test.mjs` so a test *name* containing
+> `confirm (` stops tripping the fence. Keep gates green at each step
+> (`pnpm build`, `pnpm lint`, Vitest — currently 1523 passing across 199 files —
+> and `cargo test`, currently 444).

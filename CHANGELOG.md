@@ -78,6 +78,36 @@ task list.
   action, and workspace creation is reachable from the global "+ New" menu and
   the Ctrl+K command palette.
 
+### Changed — deleting something now cleans up after it (2026-07-30)
+
+- Deleting a Flight cancels its work instead of abandoning it. Every attempt
+  that has not reached a terminal state is cancelled through the normal cancel
+  path first — including attempts sitting in review, whose worktree is still on
+  disk — and only then is the Flight removed. The confirmation now says what
+  will actually happen: which attempts will be cancelled and in what state they
+  are, which worktrees will be removed, which of those have uncommitted changes
+  or could not be checked, and that any live tasks are left running. If one
+  attempt refuses to shut down, the rest still get cleaned up and the Flight is
+  still deleted; a message names the branch and what may have survived, so
+  nothing fails silently. Deleting a Flight also no longer records a
+  completion event or generates a retrospective for the record being discarded.
+- Deleting an agent conversation now discards its worktree and `pkt/…` branch
+  rather than leaving them on disk with nothing in the app pointing at them.
+  Because deleting the conversation removes the last reference to that
+  directory, uncommitted work is discarded rather than the delete being refused
+  — so the confirmation says so up front, in plain terms, naming the exact
+  worktree path and branch and changing its button to "Delete and discard
+  changes". A worktree whose status cannot be read is reported as possibly
+  having changes rather than assumed clean. Worktrees that were never created,
+  already discarded, or live on a remote host are left alone. Both places a
+  conversation can be deleted from now show the same dialog, and the workspace
+  delete dialog no longer calls a workspace a "session".
+- Deleting an SSH server now removes its saved password from the OS keyring,
+  including any copy left under the app's previous keyring name, so the secret
+  cannot come back if a server id is later reused. Servers that use key
+  authentication delete cleanly, and a keyring problem can never block the
+  delete itself. The confirmation no longer claims the password is left behind.
+
 ### Removed — Gemini CLI (2026-07-30)
 
 - Removed Gemini CLI as a supported PTY agent: the agent definition, statusline
