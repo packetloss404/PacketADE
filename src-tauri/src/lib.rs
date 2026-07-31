@@ -311,6 +311,7 @@ pub fn run() {
             commands::flight_attempts::launch_flight_async,
             commands::flight_attempts::cancel_flight_attempt,
             commands::flight_attempts::cleanup_attempt_worktree_ssh,
+            commands::flight_attempts::cleanup_flight_integration_worktree,
             commands::flight_attempts::mark_attempt_status,
             // v0.8-G pr modal upgrades — async-Flight draft-PR publish
             commands::flight_attempts::set_attempt_draft_pr,

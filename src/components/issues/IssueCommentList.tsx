@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { MessageSquare, Trash2, Bot, User, Wrench } from "lucide-react";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { relativeTime } from "@/lib/time";
 import {
@@ -9,6 +11,17 @@ import {
 interface IssueCommentListProps {
   issueId: string;
   comments: IssueComment[];
+  /**
+   * Lets the host modal know a confirm is layered on top of it, so it can hand
+   * Escape to that dialog instead of closing out from under it.
+   */
+  onConfirmingChange?: (open: boolean) => void;
+}
+
+/** First line of the body, clipped — enough to identify which comment goes. */
+function commentPreview(body: string): string {
+  const firstLine = body.trim().split("\n")[0] ?? "";
+  return firstLine.length > 60 ? `${firstLine.slice(0, 60)}…` : firstLine || "(empty comment)";
 }
 
 /**
@@ -16,9 +29,22 @@ interface IssueCommentListProps {
  * of the GitHub-side `IssueCommentList` (one card per comment with author,
  * relative timestamp, markdown body), but persists from `issueStore` rather
  * than the GitHub API.
+ *
+ * Comment deletion goes through the shared `ConfirmDeleteModal` like every
+ * other destructive action in the app: the trash icon used to delete on the
+ * first click, with no confirm and no undo, on a 10px hover-only target.
  */
-export function IssueCommentList({ issueId, comments }: IssueCommentListProps) {
+export function IssueCommentList({
+  issueId,
+  comments,
+  onConfirmingChange,
+}: IssueCommentListProps) {
   const deleteIssueComment = useIssueStore((s) => s.deleteIssueComment);
+  const [pendingDelete, setPendingDelete] = useState<IssueComment | null>(null);
+
+  useEffect(() => {
+    onConfirmingChange?.(pendingDelete !== null);
+  }, [pendingDelete, onConfirmingChange]);
 
   if (comments.length === 0) {
     return (
@@ -48,8 +74,9 @@ export function IssueCommentList({ issueId, comments }: IssueCommentListProps) {
             <div className="flex-1" />
             <button
               type="button"
-              onClick={() => deleteIssueComment(issueId, c.id)}
-              className="p-0.5 text-text-muted opacity-0 group-hover:opacity-100 hover:text-accent-red transition-all"
+              onClick={() => setPendingDelete(c)}
+              className="p-0.5 text-text-muted opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-accent-red transition-all"
+              aria-label={`Delete comment by ${c.author}`}
               title="Delete comment"
             >
               <Trash2 size={10} />
@@ -60,6 +87,19 @@ export function IssueCommentList({ issueId, comments }: IssueCommentListProps) {
           </div>
         </article>
       ))}
+
+      {pendingDelete && (
+        <ConfirmDeleteModal
+          title="Delete comment?"
+          entityName={commentPreview(pendingDelete.body)}
+          description="will be removed from this issue."
+          onConfirm={() => {
+            deleteIssueComment(issueId, pendingDelete.id);
+            setPendingDelete(null);
+          }}
+          onClose={() => setPendingDelete(null)}
+        />
+      )}
     </div>
   );
 }

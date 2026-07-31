@@ -16,10 +16,12 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Attempt, Flight } from "@/types/flight";
+import type { WorktreeCleanupOutcome } from "@/lib/tauri";
 
 const mocks = vi.hoisted(() => ({
   cancelFlightAttempt: vi.fn(),
   cleanupAttemptWorktreeSsh: vi.fn(),
+  cleanupFlightIntegrationWorktree: vi.fn(),
   getGitStatus: vi.fn(),
   getGitStatusRemote: vi.fn(),
   getServer: vi.fn(),
@@ -37,6 +39,14 @@ vi.mock("@/lib/tauri", () => ({
   launchFlightAsync: vi.fn(),
   cancelFlightAttempt: mocks.cancelFlightAttempt,
   cleanupAttemptWorktreeSsh: mocks.cleanupAttemptWorktreeSsh,
+  cleanupFlightIntegrationWorktree: mocks.cleanupFlightIntegrationWorktree,
+  // Real implementation — the whole point is that a reported failure is
+  // recognised as one.
+  worktreeCleanupNeedsAttention: (outcome: {
+    error: string | null;
+    removed: boolean;
+    deferred: boolean;
+  }) => Boolean(outcome.error) || outcome.deferred || !outcome.removed,
   getGitStatus: mocks.getGitStatus,
   getGitStatusRemote: mocks.getGitStatusRemote,
   markAttemptStatus: vi.fn().mockResolvedValue(undefined),
@@ -165,10 +175,38 @@ function seed(f: Flight) {
   useFlightStore.setState({ flights: [f], activeFlightId: f.id });
 }
 
+/** A backend `WorktreeCleanupOutcome` — clean unless overridden. */
+function outcome(overrides: Partial<WorktreeCleanupOutcome> = {}): WorktreeCleanupOutcome {
+  return {
+    worktreePath: "D:\\Repo\\.pkt-worktrees\\att-run",
+    removed: true,
+    branch: null,
+    branchDeleted: false,
+    branchRetained: null,
+    dirtyPaths: [],
+    error: null,
+    deferred: false,
+    ...overrides,
+  };
+}
+
+const INTEGRATION: NonNullable<Flight["integrationBranch"]> = {
+  branch: "packetade/flight/flight-1",
+  baseBranch: "main",
+  baseSha: "aaa",
+  headSha: "bbb",
+  worktreePath: "D:\\Repo\\.pkt-flight-integrations\\flight-1",
+  targetKind: "local",
+  status: "ready",
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.cancelFlightAttempt.mockResolvedValue(undefined);
+  mocks.cancelFlightAttempt.mockResolvedValue(outcome());
   mocks.cleanupAttemptWorktreeSsh.mockResolvedValue(undefined);
+  mocks.cleanupFlightIntegrationWorktree.mockResolvedValue(
+    outcome({ worktreePath: INTEGRATION.worktreePath, branch: INTEGRATION.branch }),
+  );
   mocks.getGitStatus.mockResolvedValue("");
   mocks.getGitStatusRemote.mockResolvedValue("");
   mocks.getServer.mockReturnValue({
@@ -296,6 +334,64 @@ describe("deleteFlightWithAttemptCleanup", () => {
     expect(failures[0].message).toContain("packetade-worktrees");
   });
 
+  it("reports a worktree the backend could not remove, instead of a clean delete", async () => {
+    // The hole this closes: cancel_flight_attempt used to warn!-log a failed
+    // `git worktree remove` and return success, so the toast never fired.
+    mocks.cancelFlightAttempt.mockResolvedValue(
+      outcome({
+        worktreePath: "D:\\Repo\\.pkt-worktrees\\att-stuck",
+        removed: false,
+        error: "git worktree remove failed (exit 128): is dirty",
+      }),
+    );
+    seed(flight({ attempts: [attempt({ id: "att-stuck", status: "running" })] }));
+
+    const failures = await useAsyncFlightStore
+      .getState()
+      .deleteFlightWithAttemptCleanup("flight-1");
+
+    expect(useFlightStore.getState().flights).toEqual([]);
+    expect(failures).toHaveLength(1);
+    expect(failures[0].attemptId).toBe("att-stuck");
+    expect(failures[0].branch).toBe("packetade/att-stuck");
+    // Names the path AND the git reason so the user can finish by hand.
+    expect(failures[0].message).toContain("D:\\Repo\\.pkt-worktrees\\att-stuck");
+    expect(failures[0].message).toContain("git worktree remove failed");
+  });
+
+  it("reports a deferred remote teardown returned by the backend", async () => {
+    // Backend could not resolve the saved server; the frontend sweep can't
+    // either, so the remote worktree is still on the host.
+    mocks.getServer.mockReturnValue(undefined);
+    mocks.cancelFlightAttempt.mockResolvedValue(
+      outcome({
+        worktreePath: "/srv/repo/.pkt-worktrees/att-ssh",
+        removed: false,
+        deferred: true,
+      }),
+    );
+    seed(flight({ attempts: [sshAttempt({ status: "running" })] }));
+
+    const failures = await useAsyncFlightStore
+      .getState()
+      .deleteFlightWithAttemptCleanup("flight-1");
+
+    expect(failures).toHaveLength(1);
+    expect(failures[0].message).toContain("/srv/repo/.git/packetade-worktrees/att-ssh");
+    expect(failures[0].message).toContain("no longer configured");
+  });
+
+  it("cancelAttempt resolves the teardown problem so single cancels can report it too", async () => {
+    mocks.cancelFlightAttempt.mockResolvedValue(
+      outcome({ worktreePath: "/w/att-run", removed: false, error: "device busy" }),
+    );
+    seed(flight({ attempts: [attempt({ id: "att-run", status: "running" })] }));
+
+    await expect(
+      useAsyncFlightStore.getState().cancelAttempt("flight-1", "att-run"),
+    ).resolves.toContain("device busy");
+  });
+
   it("reports a remote worktree that cannot be reached because its server is gone", async () => {
     mocks.getServer.mockReturnValue(undefined);
     seed(flight({ attempts: [sshAttempt({ status: "running" })] }));
@@ -327,6 +423,95 @@ describe("deleteFlightWithAttemptCleanup", () => {
 
     expect(mocks.assignToFlight).toHaveBeenCalledWith("issue-1", null);
     expect(mocks.assignToFlight).toHaveBeenCalledWith("issue-2", null);
+  });
+
+  it("removes the cooperative integration worktree, which no attempt cleanup can reach", async () => {
+    seed(
+      flight({
+        executionMode: "cooperative",
+        integrationBranch: INTEGRATION,
+        attempts: [attempt({ id: "a-run", status: "running" })],
+      }),
+    );
+
+    const failures = await useAsyncFlightStore
+      .getState()
+      .deleteFlightWithAttemptCleanup("flight-1");
+
+    expect(failures).toEqual([]);
+    expect(mocks.cleanupFlightIntegrationWorktree).toHaveBeenCalledTimes(1);
+    expect(mocks.cleanupFlightIntegrationWorktree).toHaveBeenCalledWith({
+      flightId: "flight-1",
+      // Derived from the prepared worktree path, not guessed from projectPath.
+      basePath: "D:/Repo",
+      serverId: null,
+      // Safe `-d` on the Rust side: unmerged integration work is kept.
+      deleteBranch: true,
+    });
+  });
+
+  it("passes the saved server id for a remote integration worktree", async () => {
+    seed(
+      flight({
+        executionMode: "cooperative",
+        integrationBranch: {
+          ...INTEGRATION,
+          worktreePath: "/srv/repo/.pkt-flight-integrations/flight-1",
+          targetKind: "ssh",
+          targetId: "server-1",
+        },
+      }),
+    );
+
+    await useAsyncFlightStore.getState().deleteFlightWithAttemptCleanup("flight-1");
+
+    expect(mocks.cleanupFlightIntegrationWorktree).toHaveBeenCalledWith(
+      expect.objectContaining({ basePath: "/srv/repo", serverId: "server-1" }),
+    );
+  });
+
+  it("reports an integration worktree that could not be removed", async () => {
+    mocks.cleanupFlightIntegrationWorktree.mockResolvedValue(
+      outcome({
+        worktreePath: INTEGRATION.worktreePath,
+        branch: INTEGRATION.branch,
+        removed: false,
+        error: "git worktree remove failed (exit 128): locked",
+      }),
+    );
+    seed(flight({ executionMode: "cooperative", integrationBranch: INTEGRATION }));
+
+    const failures = await useAsyncFlightStore
+      .getState()
+      .deleteFlightWithAttemptCleanup("flight-1");
+
+    expect(useFlightStore.getState().flights).toEqual([]);
+    expect(failures).toHaveLength(1);
+    expect(failures[0].branch).toBe("packetade/flight/flight-1");
+    expect(failures[0].attemptId).toBe("");
+    expect(failures[0].message).toContain(INTEGRATION.worktreePath);
+    expect(failures[0].message).toContain("locked");
+  });
+
+  it("still deletes the flight when the integration cleanup command throws", async () => {
+    mocks.cleanupFlightIntegrationWorktree.mockRejectedValue(new Error("ssh down"));
+    seed(flight({ executionMode: "cooperative", integrationBranch: INTEGRATION }));
+
+    const failures = await useAsyncFlightStore
+      .getState()
+      .deleteFlightWithAttemptCleanup("flight-1");
+
+    expect(useFlightStore.getState().flights).toEqual([]);
+    expect(failures).toHaveLength(1);
+    expect(failures[0].message).toContain("ssh down");
+  });
+
+  it("does not call integration cleanup for a flight that never prepared one", async () => {
+    seed(flight({ attempts: [attempt({ status: "running" })] }));
+
+    await useAsyncFlightStore.getState().deleteFlightWithAttemptCleanup("flight-1");
+
+    expect(mocks.cleanupFlightIntegrationWorktree).not.toHaveBeenCalled();
   });
 
   it("does not mint flight-completion memory from a delete", async () => {
@@ -396,6 +581,33 @@ describe("inspectFlightDeleteImpact", () => {
     expect(impact.dirtyCount).toBe(0);
   });
 
+  it("dirty-checks the cooperative integration worktree too", async () => {
+    mocks.getGitStatus.mockImplementation(async (path: string) =>
+      path.includes("flight-integrations") ? " M src/merged.ts" : "",
+    );
+    seed(
+      flight({
+        executionMode: "cooperative",
+        integrationBranch: INTEGRATION,
+        attempts: [attempt({ status: "running" })],
+      }),
+    );
+
+    const impact = await inspectFlightDeleteImpact("flight-1");
+
+    // Counted separately: it is not attempt-keyed.
+    expect(impact.attemptCount).toBe(1);
+    expect(impact.dirtyCount).toBe(0);
+    expect(impact.integration).toEqual({
+      branch: "packetade/flight/flight-1",
+      worktreePath: INTEGRATION.worktreePath,
+      cleanliness: "dirty",
+    });
+    const lines = describeFlightDeleteImpact(impact);
+    expect(lines.some((line) => line.includes("cooperative integration worktree"))).toBe(true);
+    expect(lines.some((line) => line.includes("uncommitted changes that will be lost"))).toBe(true);
+  });
+
   it("returns an empty impact for an unknown flight", async () => {
     await expect(inspectFlightDeleteImpact("nope")).resolves.toEqual(
       summarizeFlightDeleteImpact([]),
@@ -445,6 +657,20 @@ describe("describeFlightDeleteImpact", () => {
     expect(lines[1]).toBe("3 git worktrees will be removed.");
     expect(lines[2]).toBe("1 worktree has uncommitted changes that will be lost: packetade/a1.");
     expect(lines[3]).toBe("1 worktree could not be checked for uncommitted changes.");
+  });
+
+  it("names the integration worktree even when no attempt is live", () => {
+    const lines = describeFlightDeleteImpact(
+      summarizeFlightDeleteImpact([], {
+        branch: "packetade/flight/flight-1",
+        worktreePath: "/repo/.pkt-flight-integrations/flight-1",
+        cleanliness: "clean",
+      }),
+    );
+
+    expect(lines).toEqual([
+      "The cooperative integration worktree (packetade/flight/flight-1) will be removed; the branch is kept if it still holds unlanded work.",
+    ]);
   });
 
   it("reads correctly for a single attempt", () => {

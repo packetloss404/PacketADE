@@ -75,11 +75,17 @@ describe("AgentSidebar", () => {
     expect(screen.getByText("PacketADE")).toBeInTheDocument();
   });
 
-  it("offers a first-class New agent action", () => {
+  it("offers exactly ONE New agent control (the labelled footer CTA) and it works", () => {
     const onNewAgent = vi.fn();
     render(<AgentSidebar selectedId={null} onSelect={vi.fn()} onNewAgent={onNewAgent} />);
 
-    fireEvent.click(screen.getAllByRole("button", { name: /new agent/i })[0]);
+    // The header "+" that called this identical handler is gone — top+bottom
+    // duplication inside one 252px sidebar was the owner's complaint.
+    const createControls = screen.getAllByRole("button", { name: /new agent/i });
+    expect(createControls).toHaveLength(1);
+    expect(createControls[0]).toHaveTextContent("New agent");
+
+    fireEvent.click(createControls[0]);
 
     expect(onNewAgent).toHaveBeenCalledTimes(1);
   });

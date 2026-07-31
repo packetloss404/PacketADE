@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -20,6 +20,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { writePty } from "@/lib/tauri";
 import { getLabelColor, getPriorityColor } from "@/lib/colors";
+import { ConfirmDeleteIssueModal } from "./ConfirmDeleteIssueModal";
 import { IssueDependencyList } from "./IssueDependencyList";
 import { IssueCommentList } from "./IssueCommentList";
 import { IssueCommentComposer } from "./IssueCommentComposer";
@@ -121,8 +122,20 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
   const [showWorkspacePicker, setShowWorkspacePicker] = useState(false);
   const [editingAssignee, setEditingAssignee] = useState(false);
   const [assigneeDraft, setAssigneeDraft] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // A nested confirm (comment delete) owns Escape while it is open — see the
+  // `closeOnEscape` note on the Modal below.
+  const [nestedConfirmOpen, setNestedConfirmOpen] = useState(false);
 
   const foundIssue = issues.find((i) => i.id === issueId);
+
+  // The issue can vanish under us — deleted from this panel's own footer, from
+  // the board's card affordance, or by any other store writer. Navigate away
+  // rather than sitting on a blank detail pane.
+  useEffect(() => {
+    if (!foundIssue) onClose();
+  }, [foundIssue, onClose]);
+
   if (!foundIssue) return null;
   const issue = foundIssue;
 
@@ -279,7 +292,35 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
   );
 
   return (
-    <Modal onClose={onClose} title="" width="w-[600px]">
+    <Modal
+      onClose={onClose}
+      title=""
+      width="w-[600px]"
+      // While a delete confirm is layered on top, that dialog owns Escape:
+      // window listeners fire in mount order, so without this the panel would
+      // close out from under the confirm the user is still reading.
+      closeOnEscape={!confirmingDelete && !nestedConfirmOpen}
+      footer={
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setConfirmingDelete(true)}
+            title={`Delete ${issue.ticketId}`}
+            className="hover:bg-accent-red/10 inline-flex items-center gap-1.5 rounded px-2 py-1 text-[11px] text-text-muted transition-colors hover:text-accent-red"
+          >
+            <Trash2 size={11} />
+            Delete issue
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded px-3 py-1 text-[11px] text-text-secondary transition-colors hover:bg-bg-hover"
+          >
+            Close
+          </button>
+        </div>
+      }
+    >
       <div className="border-b border-bg-border px-5 pb-3 pt-1">
         <h2 className="text-sm font-semibold leading-snug text-text-primary">{titleWithMeta}</h2>
       </div>
@@ -559,12 +600,27 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
           <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-text-muted">
             Comments
           </label>
-          <IssueCommentList issueId={issueId} comments={comments} />
+          <IssueCommentList
+            issueId={issueId}
+            comments={comments}
+            onConfirmingChange={setNestedConfirmOpen}
+          />
           <div className="mt-2">
             <IssueCommentComposer issueId={issueId} />
           </div>
         </div>
       </div>
+
+      {/* Layered on top of this panel. `Modal` renders a viewport-fixed
+          overlay, so nesting it here paints it above the detail panel rather
+          than inside the scrolling body. */}
+      {confirmingDelete && (
+        <ConfirmDeleteIssueModal
+          issueId={issueId}
+          onDeleted={onClose}
+          onClose={() => setConfirmingDelete(false)}
+        />
+      )}
     </Modal>
   );
 }

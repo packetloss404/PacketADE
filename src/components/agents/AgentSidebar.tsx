@@ -258,14 +258,6 @@ export function AgentSidebar({ selectedId, onSelect, onNewAgent }: AgentSidebarP
         <Badge>{counts.all}</Badge>
         {needsYouIds.size > 0 && <Badge tone="amber">{needsYouIds.size}</Badge>}
         <span className="flex-1" />
-        <button
-          type="button"
-          onClick={onNewAgent}
-          className="rounded p-1 text-text-muted transition-colors hover:bg-bg-hover hover:text-accent-green"
-          title="New agent"
-        >
-          <Plus size={12} />
-        </button>
       </div>
 
       <div className="border-b border-line-soft px-2 py-2">
@@ -296,7 +288,7 @@ export function AgentSidebar({ selectedId, onSelect, onNewAgent }: AgentSidebarP
                   ? "Active"
                   : value === "done"
                     ? "Done"
-                    : "Archive"}
+                    : "Archived"}
               <span className="ml-0.5 opacity-60">({counts[value]})</span>
             </button>
           ))}
@@ -312,7 +304,7 @@ export function AgentSidebar({ selectedId, onSelect, onNewAgent }: AgentSidebarP
             description={
               deferredQuery
                 ? "Try a different title, project, or message."
-                : "Start a GUI agent from this surface."
+                : "Start your first one with New agent below."
             }
           />
         ) : (
@@ -360,10 +352,13 @@ export function AgentSidebar({ selectedId, onSelect, onNewAgent }: AgentSidebarP
         )}
       </div>
 
+      {/* Footer CTA — the ONE create control in this sidebar (the header "+"
+          that called this identical handler is gone, mirroring FleetSidebar). */}
       <div className="border-t border-line-strong bg-bg-tertiary p-2">
         <button
           type="button"
           onClick={onNewAgent}
+          title="New agent — opens the launch composer"
           className="bg-accent-green/15 hover:bg-accent-green/25 flex w-full items-center justify-center gap-1.5 rounded border border-accent-line px-2 py-1.5 text-ui font-medium text-accent-green transition-colors"
         >
           <Plus size={11} />

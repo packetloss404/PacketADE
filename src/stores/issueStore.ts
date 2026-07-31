@@ -278,6 +278,41 @@ export async function reconcileIssueFlightLinks(): Promise<void> {
   }
 }
 
+/**
+ * Deleting an Issue must also clear the flight-side half of the link.
+ *
+ * `Flight.issueIds` and `Issue.flightId` are two halves of one relationship
+ * (see CLAUDE.md: `flightStore.addIssueToFlight` + `issueStore.assignToFlight`
+ * are always called together). `flightStore.deleteFlight` mirrors this from the
+ * other direction — it walks `flight.issueIds` and calls `assignToFlight(id,
+ * null)` before dropping the flight. This is the same move for issue deletion:
+ * every flight still naming the deleted issue drops it, so no flight is left
+ * holding a reference to a record that no longer exists.
+ *
+ * `reconcileIssueLinks` alone would rebuild the same arrays, but only when the
+ * deleted issue itself carried a `flightId`. A flight that lists an issue whose
+ * own `flightId` had drifted to null would keep the dangling id forever, so the
+ * explicit unlink runs on every delete — and the reconcile then runs on the
+ * same store handle as the usual backstop for any other drift.
+ *
+ * Dynamically imported: `flightStore` imports this module at the top level, so
+ * a static import here would close a cycle. One import serves both steps, which
+ * also keeps their ordering deterministic.
+ */
+export async function unlinkDeletedIssueFromFlights(issueId: string): Promise<void> {
+  try {
+    const { useFlightStore } = await import("@/stores/flightStore");
+    const flights = useFlightStore.getState().flights ?? [];
+    for (const flight of flights) {
+      if (!flight.issueIds?.includes(issueId)) continue;
+      useFlightStore.getState().removeIssueFromFlight(flight.id, issueId);
+    }
+    useFlightStore.getState().reconcileIssueLinks();
+  } catch (err) {
+    logSwallowed("issueStore.unlinkDeletedIssueFromFlights")(err);
+  }
+}
+
 function queueIssueFlightReconciliation() {
   if (issueFlightReconcileQueued) return;
   issueFlightReconcileQueued = true;
@@ -343,10 +378,11 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
   },
 
   deleteIssue: (id) => {
-    let removedLinkedIssue = false;
+    let removedIssue = false;
 
     set((s) => {
-      removedLinkedIssue = s.issues.some((i) => i.id === id && i.flightId !== null);
+      removedIssue = s.issues.some((i) => i.id === id);
+      if (!removedIssue) return {};
       // Also remove this issue from any blockedBy/blocks arrays
       const issues = s.issues
         .filter((i) => i.id !== id)
@@ -365,7 +401,12 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
       return { issues };
     });
 
-    if (removedLinkedIssue) queueIssueFlightReconciliation();
+    if (removedIssue) {
+      // Bidirectional cleanup: drop the id from any flight that still names it
+      // (mirrors `flightStore.deleteFlight` clearing `Issue.flightId`) and run
+      // the reconcile backstop. Both live behind one dynamic import.
+      void unlinkDeletedIssueFromFlights(id);
+    }
   },
 
   moveIssue: (id, status) => {

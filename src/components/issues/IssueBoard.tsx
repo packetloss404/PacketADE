@@ -12,6 +12,7 @@ import { APP_NAME_LOWER } from "@/lib/brand";
 import { IssueCard } from "./IssueCard";
 import { NewIssueForm } from "./NewIssueForm";
 import { IssueDetail } from "./IssueDetail";
+import { ConfirmDeleteIssueModal } from "./ConfirmDeleteIssueModal";
 import {
   IssueFilterChips,
   type IssueFilterSelection,
@@ -111,6 +112,9 @@ export function IssueBoard() {
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
+  // Delete confirm for the card affordance. Owned by the board rather than the
+  // card so the dialog survives the card unmounting when the delete lands.
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const [filterText, setFilterText] = useState("");
   const [filterFlight, setFilterFlight] = useState<string>("all");
@@ -379,6 +383,7 @@ export function IssueBoard() {
                     onDragStart={(e) => handleDragStart(e, issue.id)}
                     onClick={() => setSelectedIssueId(issue.id)}
                     isDragging={draggingId === issue.id}
+                    onRequestDelete={() => setPendingDeleteId(issue.id)}
                   />
                 ))}
                 <button
@@ -408,6 +413,19 @@ export function IssueBoard() {
         <IssueDetail
           issueId={selectedIssueId}
           onClose={() => setSelectedIssueId(null)}
+        />
+      )}
+
+      {/* Card-level delete confirm. Deleting the issue whose detail panel is
+          open also closes that panel, so we never leave a detail pane pointed
+          at a record that no longer exists. */}
+      {pendingDeleteId && (
+        <ConfirmDeleteIssueModal
+          issueId={pendingDeleteId}
+          onDeleted={() => {
+            if (selectedIssueId === pendingDeleteId) setSelectedIssueId(null);
+          }}
+          onClose={() => setPendingDeleteId(null)}
         />
       )}
 

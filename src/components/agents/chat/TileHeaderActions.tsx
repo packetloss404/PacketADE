@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { MoreVertical, X } from "lucide-react";
+import { ChevronDown, MoreVertical, X } from "lucide-react";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { AgentModeChip, type AgentMode } from "../AgentModeChip";
 import { ContextUsageRing } from "../ContextUsageRing";
@@ -25,6 +25,14 @@ interface TileHeaderActionsProps {
   onExport: () => void;
   /** Pending edits + permissions for this conversation (amber approval badge). */
   pendingApprovalCount: number;
+  /** Archive this conversation from the overflow menu. Absent → no Archive row
+   * (the Agents view keeps lifecycle actions on the sidebar row). */
+  onArchive?: () => void;
+  /** Accessible name of the close (X) control. Must describe what closing
+   * actually does at THIS mount site. */
+  closeLabel?: string;
+  /** Tooltip for the close control — states the consequence in full. */
+  closeTooltip?: string;
 }
 
 /**
@@ -34,11 +42,15 @@ interface TileHeaderActionsProps {
  * Ruled hybrid responsive model (no ResizeObserver, no width JS):
  *  - CSS `@container` (see `src/styles/conversation-tile.css`) handles ALL
  *    *visual* collapse of the cheap always-mounted set at narrow widths.
- *  - The heavy controls — `ModelSelector`, `ContextUsageRing`, and the
- *    `HeaderOverflowMenu` — MOUNT LAZILY, only when the overflow toggle is open
- *    or this tile is the zoomed pane. Both are already-existing JS state
- *    (local menu open-state + `workspaceStore.zoomedPaneId`), so a resting
- *    narrow tile pays zero cost for them and mounts NO observers.
+ *  - The heavy controls — `ModelSelector` and `ContextUsageRing` — MOUNT
+ *    LAZILY, only when revealed from the overflow menu or when this tile is the
+ *    zoomed pane. Both are already-existing JS state (local reveal state +
+ *    `workspaceStore.zoomedPaneId`), so a resting narrow tile pays zero cost
+ *    for them and mounts NO observers.
+ *  - `HeaderOverflowMenu` is the header's ONE menu (the old second kebab that
+ *    toggled the inline cluster is now a row inside it). It also mounts on
+ *    first use: until then an identical-looking placeholder button holds its
+ *    slot, and its click mounts the menu already open.
  *
  * Always-visible narrow set = three cheap per-slice subscribers: `AgentModeChip`
  * (safety posture), the Changes diffstat chip (`DiffPaneTrigger`, review entry),
@@ -59,6 +71,12 @@ export function TileHeaderActions({
   onChangeModel,
   onExport,
   pendingApprovalCount,
+  onArchive,
+  // Defaults describe the Agents-view mount (AgentChatPane's onClose there
+  // deselects the conversation and shows the New agent screen). The workspace
+  // tile passes its own pair — closing a tile removes the pane, not the chat.
+  closeLabel = "Close conversation",
+  closeTooltip = "Close conversation — returns to the New agent screen. Nothing is stopped or deleted; it stays in the list.",
 }: TileHeaderActionsProps) {
   const isApi = conversation.mode === "api";
 
@@ -66,16 +84,22 @@ export function TileHeaderActions({
     conversation.agent,
   );
 
-  // Local overflow open-state: reveals the heavy cluster inline.
-  const [menuOpen, setMenuOpen] = useState(false);
+  // Inline model/context cluster reveal — now toggled from a row INSIDE the
+  // overflow menu (it used to be a second kebab beside the menu's own).
+  const [inlineControls, setInlineControls] = useState(false);
+  // The overflow menu itself mounts on first use (or when this tile is zoomed);
+  // until then a look-alike placeholder holds its place, so the header always
+  // shows exactly ONE menu control and never shifts.
+  const [menuMounted, setMenuMounted] = useState(false);
+  const [menuOpenSignal, setMenuOpenSignal] = useState(0);
 
-  // `/model` slash command → open the cluster (mounting the picker) and bump
+  // `/model` slash command → reveal the cluster (mounting the picker) and bump
   // the signal so the model dropdown opens.
   const [modelOpenSignal, setModelOpenSignal] = useState(0);
   useEffect(
     () =>
       addPaneControlListener(OPEN_MODEL_DROPDOWN_EVENT, conversationId, () => {
-        setMenuOpen(true);
+        setInlineControls(true);
         setModelOpenSignal((n) => n + 1);
       }),
     [conversationId],
@@ -96,7 +120,8 @@ export function TileHeaderActions({
     return false;
   });
 
-  const heavyMounted = menuOpen || isZoomedTile;
+  const heavyMounted = inlineControls || isZoomedTile;
+  const menuActive = menuMounted || isZoomedTile;
 
   return (
     <div className="tile-header-actions flex shrink-0 items-center gap-1">
@@ -144,34 +169,44 @@ export function TileHeaderActions({
           <ContextUsageRing conversation={conversation} />
         </>
       )}
-      {heavyMounted && (
+      {/* The ONE overflow menu of this header. Mounted on first use; the
+          placeholder below is its visual stand-in until then. */}
+      {menuActive ? (
         <HeaderOverflowMenu
           conversation={conversation}
           previewOpen={previewOpen}
           togglePreview={togglePreview}
           onExport={onExport}
+          openSignal={menuOpenSignal}
+          inlineControlsShown={heavyMounted}
+          onToggleInlineControls={
+            isApi && !isZoomedTile ? () => setInlineControls((v) => !v) : undefined
+          }
+          onArchive={onArchive}
         />
-      )}
-
-      {/* Overflow toggle — mounts/hides the heavy cluster. Redundant while the
-          tile is zoomed (cluster already up) but kept for consistent chrome. */}
-      <Tooltip content={menuOpen ? "Hide controls" : "More controls"}>
+      ) : (
         <button
           type="button"
-          onClick={() => setMenuOpen((v) => !v)}
-          aria-label={menuOpen ? "Hide controls" : "More controls"}
-          aria-expanded={heavyMounted}
-          className="rounded p-0.5 text-text-muted transition-colors hover:text-text-primary"
+          onClick={() => {
+            setMenuMounted(true);
+            setMenuOpenSignal((n) => n + 1);
+          }}
+          aria-label="Conversation menu"
+          aria-haspopup="menu"
+          className="flex items-center gap-1 rounded px-2 py-1 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
         >
-          <MoreVertical size={12} />
+          <span className="inline-flex p-0.5">
+            <MoreVertical size={12} />
+          </span>
+          <ChevronDown size={10} />
         </button>
-      </Tooltip>
+      )}
 
-      <Tooltip content="Back to list">
+      <Tooltip content={closeTooltip}>
         <button
           onClick={onClose}
           className="rounded p-0.5 text-text-muted transition-colors hover:text-text-primary"
-          aria-label="Back to list"
+          aria-label={closeLabel}
         >
           <X size={12} />
         </button>

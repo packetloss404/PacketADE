@@ -897,13 +897,87 @@ pub async fn launch_flight_async(
     }
 }
 
+/// Tear down one attempt's worktree, reporting failure as data.
+///
+/// `ssh` is the already-resolved connection for an SSH attempt; `None` means
+/// the saved `ServerConfig` is gone, which is reported as `deferred` (the
+/// frontend can re-issue `cleanup_attempt_worktree_ssh` with live host
+/// details) rather than as success.
+async fn cleanup_attempt_worktree_with(
+    attempt_id: &str,
+    target: &AttemptTarget,
+    ssh: Option<SshConfig>,
+) -> worktree::WorktreeCleanupOutcome {
+    match target {
+        AttemptTarget::Local { base_path, .. } => {
+            let path = worktree::worktree_path(base_path, attempt_id)
+                .unwrap_or_else(|_| base_path.to_string());
+            let mut outcome = worktree::WorktreeCleanupOutcome::for_path(path);
+            match worktree::remove_local_worktree(base_path, attempt_id, false).await {
+                Ok(()) => outcome.removed = true,
+                Err(e) => {
+                    warn!(attempt = %attempt_id, error = %e, "Local worktree cleanup failed");
+                    outcome.error = Some(e);
+                }
+            }
+            outcome
+        }
+        AttemptTarget::Ssh { base_path, .. } => {
+            let path = worktree::worktree_path(base_path, attempt_id)
+                .unwrap_or_else(|_| base_path.to_string());
+            let mut outcome = worktree::WorktreeCleanupOutcome::for_path(path);
+            match ssh {
+                Some(cfg) => {
+                    match worktree::remove_remote_worktree(&cfg, base_path, attempt_id).await {
+                        Ok(()) => outcome.removed = true,
+                        Err(e) => {
+                            warn!(attempt = %attempt_id, error = %e, "Remote worktree cleanup failed");
+                            outcome.error = Some(e);
+                        }
+                    }
+                }
+                None => {
+                    warn!(attempt = %attempt_id, "SSH worktree cleanup deferred — server no longer configured; frontend may re-issue cleanup_attempt_worktree_ssh");
+                    outcome.deferred = true;
+                }
+            }
+            outcome
+        }
+    }
+}
+
+/// S4 wrapper: resolve the saved `ServerConfig` (pinning the host key via its
+/// saved fingerprint) before tearing the worktree down.
+async fn cleanup_attempt_worktree(
+    attempt_id: &str,
+    target: &AttemptTarget,
+) -> worktree::WorktreeCleanupOutcome {
+    let ssh = match target {
+        AttemptTarget::Ssh {
+            base_path,
+            server_id,
+            ..
+        } => resolve_server_ssh_config(server_id, base_path),
+        AttemptTarget::Local { .. } => None,
+    };
+    cleanup_attempt_worktree_with(attempt_id, target, ssh).await
+}
+
+/// Cancel an attempt: close its session, mark it cancelled, remove its
+/// worktree.
+///
+/// Returns the worktree teardown outcome instead of swallowing it. Cleanup
+/// failure is deliberately NON-FATAL — the attempt is cancelled either way —
+/// but it is now visible to the caller, so `deleteFlightWithAttemptCleanup`
+/// can report a worktree that is still on disk instead of showing the user a
+/// clean delete.
 #[tauri::command]
 pub async fn cancel_flight_attempt(
     state: tauri::State<'_, Arc<ApiAgentState>>,
     sidecar: tauri::State<'_, Arc<SidecarManager>>,
     flight_id: String,
     attempt_id: String,
-) -> Result<(), String> {
+) -> Result<worktree::WorktreeCleanupOutcome, String> {
     // 1. Pull a snapshot of the attempt so we can clean up the worktree
     //    after closing the session.
     let attempt = {
@@ -921,38 +995,56 @@ pub async fn cancel_flight_attempt(
     // 3. Mark cancelled before worktree removal so the UI flips quickly.
     let _ = update_attempt_status(&flight_id, &attempt_id, AttemptStatus::Cancelled, None).await;
 
-    // 4. Remove the worktree.
-    match &attempt.target {
-        AttemptTarget::Local { base_path, .. } => {
-            if let Err(e) = worktree::remove_local_worktree(base_path, &attempt_id, false).await {
-                warn!(attempt = %attempt_id, error = %e, "Local worktree cleanup failed");
-            }
-        }
-        AttemptTarget::Ssh {
-            base_path,
-            server_id,
-            ..
-        } => {
-            // S4: re-resolve the saved `ServerConfig` by server_id so we can
-            // clean up the remote worktree here, pinning the host key via the
-            // saved fingerprint — symmetric with the spec-driven cleanup path.
-            // Only if the server is gone do we defer to the frontend.
-            match resolve_server_ssh_config(server_id, base_path) {
-                Some(cfg) => {
-                    if let Err(e) =
-                        worktree::remove_remote_worktree(&cfg, base_path, &attempt_id).await
-                    {
-                        warn!(attempt = %attempt_id, error = %e, "Remote worktree cleanup failed");
-                    }
-                }
-                None => {
-                    warn!(attempt = %attempt_id, "SSH worktree cleanup deferred — server no longer configured; frontend may re-issue cleanup_attempt_worktree_ssh");
-                }
-            }
-        }
-    }
+    // 4. Remove the worktree. For SSH we re-resolve the saved `ServerConfig`
+    //    by server_id so the host key is pinned via the saved fingerprint;
+    //    only if the server is gone do we defer to the frontend.
+    Ok(cleanup_attempt_worktree(&attempt_id, &attempt.target).await)
+}
 
-    Ok(())
+/// Remove a Flight's cooperative integration worktree.
+///
+/// The integration worktree is flight-keyed, not attempt-keyed, so none of the
+/// attempt cleanup commands can reach it — deleting a cooperative Flight used
+/// to leave `<base>/.pkt-flight-integrations/<flight_id>` (and its
+/// `packetade/flight/<flight_id>` branch) behind forever.
+///
+/// `server_id` selects the remote twin and is resolved from saved servers, so
+/// a deleted server surfaces as `deferred` rather than a silent no-op.
+/// `delete_branch` uses the safe `git branch -d`: the integration branch can
+/// be the only ref to merged-but-unlanded attempt work, and a refusal is
+/// reported in `branch_retained` rather than forced.
+#[tauri::command]
+pub async fn cleanup_flight_integration_worktree(
+    flight_id: String,
+    base_path: String,
+    server_id: Option<String>,
+    delete_branch: bool,
+) -> Result<worktree::WorktreeCleanupOutcome, String> {
+    match server_id {
+        None => {
+            worktree::remove_local_integration_worktree(&base_path, &flight_id, delete_branch).await
+        }
+        Some(server_id) => match resolve_server_ssh_config(&server_id, &base_path) {
+            Some(cfg) => {
+                worktree::remove_remote_integration_worktree(
+                    &cfg,
+                    &base_path,
+                    &flight_id,
+                    delete_branch,
+                )
+                .await
+            }
+            None => {
+                warn!(flight = %flight_id, server = %server_id, "Integration worktree cleanup deferred — server no longer configured");
+                let mut outcome = worktree::WorktreeCleanupOutcome::for_path(
+                    worktree::integration_worktree_path(&base_path, &flight_id)
+                        .unwrap_or_else(|_| base_path.clone()),
+                );
+                outcome.deferred = true;
+                Ok(outcome)
+            }
+        },
+    }
 }
 
 #[tauri::command]
@@ -1044,6 +1136,13 @@ pub async fn set_flight_publish_attempts_as_prs(
     .await
 }
 
+/// Set an attempt's status. Terminal statuses additionally close the session
+/// and tear the worktree down.
+///
+/// Returns the teardown outcome for terminal transitions (`None` for
+/// non-terminal ones) so a failed removal is visible to the frontend instead
+/// of being `warn!`-logged and dropped — the same hole `cancel_flight_attempt`
+/// had.
 #[tauri::command]
 pub async fn mark_attempt_status(
     state: tauri::State<'_, Arc<ApiAgentState>>,
@@ -1051,7 +1150,7 @@ pub async fn mark_attempt_status(
     flight_id: String,
     attempt_id: String,
     status: SetAttemptStatus,
-) -> Result<(), String> {
+) -> Result<Option<worktree::WorktreeCleanupOutcome>, String> {
     let new_status = match status {
         SetAttemptStatus::Reviewing => AttemptStatus::Reviewing,
         SetAttemptStatus::Completed => AttemptStatus::Completed,
@@ -1078,36 +1177,20 @@ pub async fn mark_attempt_status(
 
     update_attempt_status(&flight_id, &attempt_id, new_status, None).await?;
 
-    if let Some(attempt) = attempt_snapshot {
-        // Close the API agent session bound to this attempt (best-effort —
-        // it may already be closed if the agent finished naturally).
-        let _ = close_api_agent_session(state, sidecar, attempt.session_id.clone()).await;
+    let Some(attempt) = attempt_snapshot else {
+        return Ok(None);
+    };
 
-        // Tear down the worktree. Local cleanup runs inline; SSH cleanup is
-        // deferred to the frontend because we don't have host/user/key here.
-        match &attempt.target {
-            AttemptTarget::Local { base_path, .. } => {
-                if let Err(e) = worktree::remove_local_worktree(base_path, &attempt_id, false).await
-                {
-                    warn!(attempt = %attempt_id, error = %e, "Local worktree cleanup failed");
-                }
-            }
-            AttemptTarget::Ssh {
-                base_path,
-                server_id,
-                ..
-            } => {
-                let _ = (base_path, server_id);
-                warn!(
-                    attempt = %attempt_id,
-                    "SSH worktree cleanup deferred for attempt {} — frontend should invoke cleanup_attempt_worktree_ssh",
-                    attempt_id
-                );
-            }
-        }
-    }
+    // Close the API agent session bound to this attempt (best-effort —
+    // it may already be closed if the agent finished naturally).
+    let _ = close_api_agent_session(state, sidecar, attempt.session_id.clone()).await;
 
-    Ok(())
+    // Tear down the worktree. Local cleanup runs inline; SSH cleanup still
+    // prefers the saved ServerConfig and reports `deferred` when it is gone,
+    // so the frontend knows to re-issue `cleanup_attempt_worktree_ssh`.
+    Ok(Some(
+        cleanup_attempt_worktree(&attempt_id, &attempt.target).await,
+    ))
 }
 
 #[cfg(test)]
@@ -1382,6 +1465,113 @@ mod tests {
         let attempt = &state.flights[0].attempts[0];
         assert_eq!(attempt.status, AttemptStatus::Cancelled);
         assert_eq!(attempt.completed_at, Some(123));
+    }
+
+    // --- Worktree teardown reporting (cancel / terminal transition) ---
+
+    fn temp_repo(tag: &str) -> std::path::PathBuf {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let root = std::env::temp_dir().join(format!("packetade-cleanup-{}-{}", tag, nanos));
+        std::fs::create_dir_all(&root).expect("create temp repo dir");
+        let git = |args: &[&str]| {
+            let ok = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&root)
+                .output()
+                .expect("git run")
+                .status
+                .success();
+            assert!(ok, "git {:?} failed", args);
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "test@packetade.test"]);
+        git(&["config", "user.name", "PacketADE Test"]);
+        git(&["checkout", "-q", "-b", "main"]);
+        std::fs::write(root.join("f.txt"), "base\n").expect("write f.txt");
+        git(&["add", "f.txt"]);
+        git(&["commit", "-q", "-m", "init"]);
+        root
+    }
+
+    #[tokio::test]
+    async fn cleanup_reports_success_for_a_real_local_worktree() {
+        let root = temp_repo("ok");
+        let base = root.to_string_lossy().to_string();
+        let path = crate::core::worktree::create_local_worktree(&base, "att-ok", "main")
+            .await
+            .expect("worktree created");
+        let target = AttemptTarget::Local {
+            base_path: base.clone(),
+            worktree_path: path.clone(),
+        };
+
+        let outcome = cleanup_attempt_worktree_with("att-ok", &target, None).await;
+
+        assert!(outcome.removed, "{:?}", outcome);
+        assert!(outcome.error.is_none());
+        assert!(!outcome.needs_attention());
+        assert!(!std::path::Path::new(&path).exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn cleanup_reports_a_failed_local_worktree_removal_instead_of_swallowing_it() {
+        // The worktree dir exists but its base is not a git repo, so
+        // `git worktree remove` fails. This used to be warn!-logged and the
+        // command returned Ok(()) — a stuck worktree looked like a clean
+        // delete to the frontend.
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let root = std::env::temp_dir().join(format!("packetade-cleanup-bad-{}", nanos));
+        let wt = root.join(".pkt-worktrees").join("att-bad");
+        std::fs::create_dir_all(&wt).unwrap();
+        let base = root.to_string_lossy().to_string();
+        let target = AttemptTarget::Local {
+            base_path: base.clone(),
+            worktree_path: wt.to_string_lossy().to_string(),
+        };
+
+        let outcome = cleanup_attempt_worktree_with("att-bad", &target, None).await;
+
+        assert!(!outcome.removed);
+        assert!(outcome.needs_attention());
+        assert!(
+            outcome
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("git worktree remove failed"),
+            "unexpected error: {:?}",
+            outcome.error
+        );
+        // The path is named so the user can finish the job by hand.
+        assert!(outcome.worktree_path.contains("att-bad"));
+        assert!(wt.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn cleanup_reports_ssh_teardown_as_deferred_when_the_server_is_gone() {
+        let target = AttemptTarget::Ssh {
+            base_path: "/srv/repo".to_string(),
+            worktree_path: "/srv/repo/.pkt-worktrees/att-ssh".to_string(),
+            server_id: "server-gone".to_string(),
+        };
+
+        let outcome = cleanup_attempt_worktree_with("att-ssh", &target, None).await;
+
+        assert!(!outcome.removed);
+        assert!(outcome.deferred, "{:?}", outcome);
+        assert!(outcome.error.is_none(), "deferred is not an error");
+        assert!(outcome.needs_attention());
+        assert_eq!(outcome.worktree_path, "/srv/repo/.pkt-worktrees/att-ssh");
     }
 
     #[test]

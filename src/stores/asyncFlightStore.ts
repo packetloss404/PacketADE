@@ -3,6 +3,9 @@ import {
   launchFlightAsync,
   cancelFlightAttempt,
   cleanupAttemptWorktreeSsh,
+  cleanupFlightIntegrationWorktree,
+  worktreeCleanupNeedsAttention,
+  type WorktreeCleanupOutcome,
   getGitStatus,
   getGitStatusRemote,
   markAttemptStatus,
@@ -121,6 +124,13 @@ export interface FlightDeleteImpactEntry {
   cleanliness: AttemptWorktreeCleanliness;
 }
 
+/** The cooperative integration worktree a delete will also remove. */
+export interface FlightDeleteIntegrationImpact {
+  branch: string;
+  worktreePath: string;
+  cleanliness: AttemptWorktreeCleanliness;
+}
+
 export interface FlightDeleteImpact {
   entries: FlightDeleteImpactEntry[];
   /** Non-terminal attempts that will be cancelled. */
@@ -129,14 +139,40 @@ export interface FlightDeleteImpact {
   worktreeCount: number;
   dirtyCount: number;
   unknownCount: number;
+  /**
+   * Present on cooperative Flights that prepared an integration branch. It is
+   * counted separately from `worktreeCount` because it is not attempt-keyed —
+   * it belongs to the Flight itself.
+   */
+  integration?: FlightDeleteIntegrationImpact;
 }
 
 /** One attempt whose teardown did not fully succeed. The Flight is deleted
- *  regardless; this is what the UI reports so nothing is lost silently. */
+ *  regardless; this is what the UI reports so nothing is lost silently.
+ *  The flight-level integration worktree reports here too, with an empty
+ *  `attemptId` and the integration branch. */
 export interface FlightCleanupFailure {
   attemptId: string;
   branch: string;
   message: string;
+}
+
+/**
+ * Turn a reported worktree teardown into a user-facing failure line, or null
+ * when the teardown actually succeeded. This is the bridge that closes the
+ * old hole: Rust reports removal failures as data instead of `warn!`-logging
+ * them, and every reported failure lands in the delete toast.
+ */
+export function describeCleanupOutcome(
+  outcome: WorktreeCleanupOutcome | null | undefined,
+  what: string,
+): string | null {
+  if (!outcome || !worktreeCleanupNeedsAttention(outcome)) return null;
+  if (outcome.deferred) {
+    return `${what} ${outcome.worktreePath} was left in place — its SSH server is no longer configured.`;
+  }
+  const reason = outcome.error ?? "the removal did not complete";
+  return `${what} ${outcome.worktreePath} could not be removed: ${reason}`;
 }
 
 interface AsyncFlightStore {
@@ -148,13 +184,23 @@ interface AsyncFlightStore {
     options?: AsyncLaunchOptions,
   ) => Promise<Attempt[]>;
 
-  /** Cancel a single attempt: closes the API session, removes worktree, marks Cancelled. */
-  cancelAttempt: (flightId: string, attemptId: string) => Promise<void>;
+  /**
+   * Cancel a single attempt: closes the API session, removes worktree, marks
+   * Cancelled.
+   *
+   * Resolves to a user-facing description of anything the teardown left
+   * behind, or null when the worktree is really gone. The backend used to
+   * `warn!` a failed `git worktree remove` and return success, so a stuck
+   * worktree was indistinguishable from a clean cancel.
+   */
+  cancelAttempt: (flightId: string, attemptId: string) => Promise<string | null>;
 
   /**
    * Delete a Flight and take its live work down with it: every non-terminal
    * attempt is cancelled through the normal cancel path (session closed,
-   * worktree removed) before the Flight record is dropped.
+   * worktree removed), and the cooperative integration worktree — which is
+   * flight-keyed and therefore unreachable from any attempt command — is
+   * removed too, before the Flight record is dropped.
    *
    * Best-effort by contract — the delete ALWAYS happens. Per-attempt cleanup
    * failures are collected and returned so the caller can surface them
@@ -906,15 +952,24 @@ async function enrichFlightRetrospective(flight: Flight): Promise<void> {
   }
 }
 
-async function cleanupSshAttemptWorktree(flightId: string, attempt: Attempt): Promise<void> {
-  if (attempt.target.kind !== "ssh") return;
+/**
+ * Frontend fallback sweep for a remote attempt worktree — the only path that
+ * carries live host/user/key details. Returns a failure message instead of
+ * swallowing it, so the delete fan-out can report a remote worktree that is
+ * still sitting on the host.
+ */
+async function cleanupSshAttemptWorktree(
+  flightId: string,
+  attempt: Attempt,
+): Promise<string | null> {
+  if (attempt.target.kind !== "ssh") return null;
   const server = useServerStore.getState().getServer(attempt.target.serverId);
   if (!server) {
     console.warn(
       "SSH worktree cleanup skipped because the saved server no longer exists:",
       attempt.target.serverId,
     );
-    return;
+    return `Remote worktree ${attempt.target.worktreePath} was left in place — SSH server '${attempt.target.serverId}' is no longer configured.`;
   }
 
   try {
@@ -929,8 +984,10 @@ async function cleanupSshAttemptWorktree(flightId: string, attempt: Attempt): Pr
       targetId: server.id,
       hostFingerprint: server.hostFingerprint ?? null,
     });
+    return null;
   } catch (err) {
     console.warn("SSH worktree cleanup failed:", err);
+    return `Remote worktree ${attempt.target.worktreePath} could not be removed: ${cleanupErrorMessage(err)}`;
   }
 }
 
@@ -959,6 +1016,7 @@ async function inspectAttemptWorktree(attempt: Attempt): Promise<AttemptWorktree
 /** Pure: roll a set of probed attempts up into the counts the confirm shows. */
 export function summarizeFlightDeleteImpact(
   entries: FlightDeleteImpactEntry[],
+  integration?: FlightDeleteIntegrationImpact,
 ): FlightDeleteImpact {
   return {
     entries,
@@ -966,6 +1024,43 @@ export function summarizeFlightDeleteImpact(
     worktreeCount: entries.length,
     dirtyCount: entries.filter((entry) => entry.cleanliness === "dirty").length,
     unknownCount: entries.filter((entry) => entry.cleanliness === "unknown").length,
+    ...(integration ? { integration } : {}),
+  };
+}
+
+/** Probe the cooperative integration worktree the same way attempts are
+ *  probed, so its uncommitted work is named in the confirm before the delete
+ *  force-removes it. */
+async function inspectIntegrationWorktree(
+  flight: Flight | undefined,
+): Promise<FlightDeleteIntegrationImpact | undefined> {
+  const integration = flight?.integrationBranch;
+  if (!integration) return undefined;
+  let cleanliness: AttemptWorktreeCleanliness = "unknown";
+  try {
+    if (integration.targetKind === "local") {
+      cleanliness = isWorktreeDirty(await getGitStatus(integration.worktreePath))
+        ? "dirty"
+        : "clean";
+    } else {
+      const server = integration.targetId
+        ? useServerStore.getState().getServer(integration.targetId)
+        : undefined;
+      if (server) {
+        const status = await getGitStatusRemote(
+          toGitServerConfigInput(server),
+          integration.worktreePath,
+        );
+        cleanliness = isWorktreeDirty(status) ? "dirty" : "clean";
+      }
+    }
+  } catch (err) {
+    console.warn("[flight delete] integration worktree dirty-check failed", err);
+  }
+  return {
+    branch: integration.branch,
+    worktreePath: integration.worktreePath,
+    cleanliness,
   };
 }
 
@@ -977,16 +1072,19 @@ export function summarizeFlightDeleteImpact(
 export async function inspectFlightDeleteImpact(flightId: string): Promise<FlightDeleteImpact> {
   const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
   const attempts = attemptsNeedingCleanup(flight);
-  const entries = await Promise.all(
-    attempts.map(async (attempt) => ({
-      attemptId: attempt.id,
-      branch: attempt.branch,
-      status: attempt.status,
-      worktreePath: attempt.target.worktreePath,
-      cleanliness: await inspectAttemptWorktree(attempt),
-    })),
-  );
-  return summarizeFlightDeleteImpact(entries);
+  const [entries, integration] = await Promise.all([
+    Promise.all(
+      attempts.map(async (attempt) => ({
+        attemptId: attempt.id,
+        branch: attempt.branch,
+        status: attempt.status,
+        worktreePath: attempt.target.worktreePath,
+        cleanliness: await inspectAttemptWorktree(attempt),
+      })),
+    ),
+    inspectIntegrationWorktree(flight),
+  ]);
+  return summarizeFlightDeleteImpact(entries, integration);
 }
 
 function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
@@ -1000,7 +1098,7 @@ function plural(count: number, singular: string, pluralForm = `${singular}s`): s
  */
 export function describeFlightDeleteImpact(impact: FlightDeleteImpact | null): string[] {
   if (!impact) return ["Checking this flight's attempts for uncommitted work…"];
-  if (impact.attemptCount === 0) return [];
+  if (impact.attemptCount === 0) return describeIntegrationImpact(impact);
 
   const byStatus = new Map<AttemptStatus, number>();
   for (const entry of impact.entries) {
@@ -1028,7 +1126,88 @@ export function describeFlightDeleteImpact(impact: FlightDeleteImpact | null): s
       `${impact.unknownCount} ${plural(impact.unknownCount, "worktree")} could not be checked for uncommitted changes.`,
     );
   }
+  return [...lines, ...describeIntegrationImpact(impact)];
+}
+
+/** The integration worktree is removed by the same delete, so it is named on
+ *  its own line — including when it holds uncommitted work that the forced
+ *  removal will destroy. */
+function describeIntegrationImpact(impact: FlightDeleteImpact): string[] {
+  const integration = impact.integration;
+  if (!integration) return [];
+  const lines = [
+    `The cooperative integration worktree (${integration.branch}) will be removed; the branch is kept if it still holds unlanded work.`,
+  ];
+  if (integration.cleanliness === "dirty") {
+    lines.push(
+      `The integration worktree has uncommitted changes that will be lost: ${integration.worktreePath}.`,
+    );
+  } else if (integration.cleanliness === "unknown") {
+    lines.push("The integration worktree could not be checked for uncommitted changes.");
+  }
   return lines;
+}
+
+/**
+ * The repo root an integration worktree was created under. Derived from the
+ * worktree path itself (`<base>/.pkt-flight-integrations/<flightId>`) so the
+ * teardown targets exactly the tree that was prepared, even when the Flight's
+ * recorded project path has since changed. Falls back to the Flight's project
+ * path for records written before that layout.
+ */
+export function integrationBasePath(flight: Flight): string | null {
+  const worktreePath = flight.integrationBranch?.worktreePath;
+  if (!worktreePath) return null;
+  const marker = "/.pkt-flight-integrations/";
+  const normalized = worktreePath.replace(/\\/g, "/");
+  const index = normalized.lastIndexOf(marker);
+  if (index > 0) return normalized.slice(0, index);
+  return flight.projectPath || null;
+}
+
+/**
+ * Remove a deleted Flight's cooperative integration worktree. Best-effort and
+ * non-fatal, exactly like attempt teardown: anything left behind comes back as
+ * a `FlightCleanupFailure` for the delete toast rather than being swallowed.
+ */
+async function cleanupFlightIntegration(
+  flight: Flight | undefined,
+): Promise<FlightCleanupFailure | null> {
+  const integration = flight?.integrationBranch;
+  if (!flight || !integration) return null;
+  const basePath = integrationBasePath(flight);
+  if (!basePath) return null;
+
+  const asFailure = (message: string): FlightCleanupFailure => ({
+    // Not attempt-keyed — the integration worktree belongs to the Flight.
+    attemptId: "",
+    branch: integration.branch,
+    message,
+  });
+
+  try {
+    const outcome = await cleanupFlightIntegrationWorktree({
+      flightId: flight.id,
+      basePath,
+      serverId: integration.targetKind === "ssh" ? (integration.targetId ?? null) : null,
+      // Safe `-d` on the Rust side: an unmerged integration branch is kept and
+      // reported rather than force-deleted, because it can be the only ref to
+      // merged-but-unlanded attempt work.
+      deleteBranch: true,
+    });
+    if (outcome?.dirtyPaths?.length) {
+      console.warn(
+        "[flight delete] integration worktree removed with uncommitted changes:",
+        outcome.dirtyPaths,
+      );
+    }
+    const problem = describeCleanupOutcome(outcome, "Integration worktree");
+    return problem ? asFailure(problem) : null;
+  } catch (err) {
+    return asFailure(
+      `Integration worktree ${integration.worktreePath} could not be removed: ${cleanupErrorMessage(err)}`,
+    );
+  }
 }
 
 function cleanupErrorMessage(err: unknown): string {
@@ -1128,7 +1307,9 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     // "done" transition and must capture too.
     const statusBefore = useFlightStore.getState().computeFlightStatus(flightId);
 
-    await cancelFlightAttempt(flightId, attemptId);
+    // The command reports its worktree teardown instead of swallowing a
+    // failed `git worktree remove` — cancellation itself still succeeds.
+    const outcome = await cancelFlightAttempt(flightId, attemptId);
     patchAttempt(flightId, attemptId, {
       status: "cancelled",
       completedAt: Date.now(),
@@ -1146,7 +1327,17 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
 
     // SSH cleanup needs connection details that the backend Attempt record
     // intentionally does not persist, so finish it from the saved Server.
-    if (attempt) await cleanupSshAttemptWorktree(flightId, attempt);
+    // When the backend deferred (or failed) the remote removal, this sweep is
+    // the authority on whether the worktree is really gone.
+    if (attempt && attempt.target.kind === "ssh") {
+      // The sweep runs last and is authoritative for a remote worktree: it
+      // reports a still-unreachable host or a missing server record, and a
+      // clean sweep means the worktree really is gone even if the backend's
+      // own attempt at it failed (its `remove` tolerates an absent worktree).
+      return await cleanupSshAttemptWorktree(flightId, attempt);
+    }
+
+    return describeCleanupOutcome(outcome, "Worktree");
   },
 
   deleteFlightWithAttemptCleanup: async (flightId) => {
@@ -1160,13 +1351,23 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     flightsBeingDeleted.add(flightId);
     try {
       for (const attempt of pending) {
-        let cancelled = true;
         try {
           // The normal cancel path: closes the API session, marks the attempt
-          // Cancelled, and removes the local/remote worktree.
-          await useAsyncFlightStore.getState().cancelAttempt(flightId, attempt.id);
+          // Cancelled, and removes the local/remote worktree. It now reports
+          // what it could NOT remove — a failed `git worktree remove`, or a
+          // remote worktree whose server record is gone — instead of leaving
+          // a stuck worktree looking like a clean delete.
+          const leftBehind = await useAsyncFlightStore
+            .getState()
+            .cancelAttempt(flightId, attempt.id);
+          if (leftBehind) {
+            failures.push({
+              attemptId: attempt.id,
+              branch: attempt.branch,
+              message: leftBehind,
+            });
+          }
         } catch (err) {
-          cancelled = false;
           failures.push({
             attemptId: attempt.id,
             branch: attempt.branch,
@@ -1177,20 +1378,6 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
           // Whatever happened above, never leave a terminal listener bound to
           // a Flight that is about to stop existing.
           detachAttemptTerminalListeners(attempt.sessionId);
-          // Neither the Rust cancel nor the frontend SSH fallback can reach a
-          // remote worktree whose server record is gone — say so instead of
-          // letting it rot on the host.
-          if (
-            cancelled &&
-            attempt.target.kind === "ssh" &&
-            !useServerStore.getState().getServer(attempt.target.serverId)
-          ) {
-            failures.push({
-              attemptId: attempt.id,
-              branch: attempt.branch,
-              message: `Remote worktree ${attempt.target.worktreePath} was left in place — SSH server '${attempt.target.serverId}' is no longer configured.`,
-            });
-          }
         } catch (err) {
           failures.push({
             attemptId: attempt.id,
@@ -1199,6 +1386,11 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
           });
         }
       }
+
+      // The cooperative integration worktree is flight-keyed, so no attempt
+      // cleanup can reach it — without this it outlives its Flight forever.
+      const integrationFailure = await cleanupFlightIntegration(flight);
+      if (integrationFailure) failures.push(integrationFailure);
     } catch (err) {
       // Belt and braces: cleanup must never take the delete down with it.
       failures.push({
@@ -1255,7 +1447,13 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
       await publish;
     }
 
-    await markAttemptStatus(flightId, attemptId, status);
+    // Terminal statuses tear the worktree down; the command reports a failed
+    // removal instead of swallowing it. There is no toast on this path (the
+    // user is accepting/rejecting, not deleting), so it is logged loudly —
+    // the delete path is what surfaces it to the UI.
+    const teardown = await markAttemptStatus(flightId, attemptId, status);
+    const teardownProblem = describeCleanupOutcome(teardown, "Worktree");
+    if (teardownProblem) console.warn("[attempt teardown]", attemptId, teardownProblem);
     patchAttempt(flightId, attemptId, {
       status,
       ...(status === "completed" || status === "failed" || status === "cancelled"
@@ -1266,7 +1464,10 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
       const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
       const attempt = flight?.attempts?.find((a) => a.id === attemptId);
       if (attempt) detachAttemptTerminalListeners(attempt.sessionId);
-      if (attemptBefore) await cleanupSshAttemptWorktree(flightId, attemptBefore);
+      if (attemptBefore) {
+        const sshProblem = await cleanupSshAttemptWorktree(flightId, attemptBefore);
+        if (sshProblem) console.warn("[attempt teardown]", attemptId, sshProblem);
+      }
     }
 
     // N2: a rejected/failed attempt records a coordination event and, when the

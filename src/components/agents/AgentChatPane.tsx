@@ -56,6 +56,15 @@ interface AgentChatPaneProps {
   conversationId: string;
   onClose: () => void;
   /**
+   * Honest naming for the header's close (X) control at THIS mount site —
+   * closing means different things in the Agents view (deselect) and in a
+   * workspace tile (remove the pane). Omitted → the Agents-view wording.
+   */
+  closeLabel?: string;
+  closeTooltip?: string;
+  /** Archive action for the header overflow menu (workspace tile only). */
+  onArchive?: () => void;
+  /**
    * Y/N keyboard focus gate for the protected approval shortcuts. Undefined
    * → armed exactly as today. Defined (tile context) → the document-level Y/N
    * handlers arm iff true, so only the focused tile responds to a keypress.
@@ -88,6 +97,9 @@ function BackToParentLink({ parentId }: { parentId: string }) {
 export function AgentChatPane({
   conversationId,
   onClose,
+  closeLabel,
+  closeTooltip,
+  onArchive,
   keyboardScopeActive,
 }: AgentChatPaneProps) {
   const conversation = useAgentTaskStore((s) =>
@@ -300,6 +312,9 @@ export function AgentChatPane({
           previewOpen={previewOpen}
           togglePreview={togglePreview}
           onClose={onClose}
+          closeLabel={closeLabel}
+          closeTooltip={closeTooltip}
+          onArchive={onArchive}
           onCycleMode={cycleMode}
           onSelectMode={applyMode}
           onSetApproveWrites={(on) => void actions.setApproveWrites(conversationId, on)}

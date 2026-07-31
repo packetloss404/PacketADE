@@ -1122,8 +1122,65 @@ export async function launchFlightAsync(
   return dtoAttempts.map(fromDtoAttempt);
 }
 
-export async function cancelFlightAttempt(flightId: string, attemptId: string): Promise<void> {
+/**
+ * Outcome of a best-effort git worktree teardown (`core::worktree::WorktreeCleanupOutcome`).
+ *
+ * Removal failures are reported as DATA: the attempt is still cancelled and
+ * the Flight is still deleted, but the caller can tell the user that a
+ * worktree is still on disk instead of showing a clean delete. Before this
+ * existed the Rust side `warn!`-logged every failure and returned success.
+ */
+export interface WorktreeCleanupOutcome {
+  /** The worktree we tried to remove — named so the user can finish by hand. */
+  worktreePath: string;
+  /** True when nothing is left behind (removed now, or already absent). */
+  removed: boolean;
+  branch: string | null;
+  branchDeleted: boolean;
+  /** Why the branch survived (unmerged work). Only set when deletion was asked for. */
+  branchRetained: string | null;
+  /** Uncommitted lines seen immediately before a forced removal. */
+  dirtyPaths: string[];
+  /** Non-fatal failure message; present ⇒ `removed` is false. */
+  error: string | null;
+  /** Could not even be attempted here (SSH server record is gone). */
+  deferred: boolean;
+}
+
+/** True when a teardown outcome is something the user must be told about. */
+export function worktreeCleanupNeedsAttention(outcome: WorktreeCleanupOutcome): boolean {
+  return Boolean(outcome.error) || outcome.deferred || !outcome.removed;
+}
+
+export async function cancelFlightAttempt(
+  flightId: string,
+  attemptId: string,
+): Promise<WorktreeCleanupOutcome> {
   return invoke("cancel_flight_attempt", { flightId, attemptId });
+}
+
+/**
+ * Remove a Flight's cooperative integration worktree (and, when asked, its
+ * `packetade/flight/<id>` branch). Flight-keyed rather than attempt-keyed, so
+ * none of the attempt cleanup commands can reach it — without this a deleted
+ * cooperative Flight left `.pkt-flight-integrations/<id>` behind forever.
+ *
+ * Branch deletion is the SAFE `git branch -d`; an unmerged branch is retained
+ * and reported in `branchRetained` rather than force-deleted.
+ */
+export async function cleanupFlightIntegrationWorktree(args: {
+  flightId: string;
+  basePath: string;
+  /** Saved SSH server id for a remote integration worktree; null for local. */
+  serverId?: string | null;
+  deleteBranch: boolean;
+}): Promise<WorktreeCleanupOutcome> {
+  return invoke("cleanup_flight_integration_worktree", {
+    flightId: args.flightId,
+    basePath: args.basePath,
+    serverId: args.serverId ?? null,
+    deleteBranch: args.deleteBranch,
+  });
 }
 
 export async function cleanupAttemptWorktreeSsh(args: {
@@ -1156,7 +1213,9 @@ export async function markAttemptStatus(
   flightId: string,
   attemptId: string,
   status: "reviewing" | "completed" | "failed" | "cancelled",
-): Promise<void> {
+): Promise<WorktreeCleanupOutcome | null> {
+  // Terminal statuses tear the worktree down and report the outcome; a
+  // non-terminal transition returns null (nothing was removed).
   return invoke("mark_attempt_status", { flightId, attemptId, status });
 }
 

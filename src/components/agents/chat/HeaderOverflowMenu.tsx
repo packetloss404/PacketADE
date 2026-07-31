@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import {
+  Archive,
   Brain,
   ChevronDown,
   Copy,
@@ -8,6 +9,7 @@ import {
   MoreVertical,
   PanelRightOpen,
   MonitorUp,
+  SlidersHorizontal,
 } from "lucide-react";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -36,23 +38,125 @@ interface HeaderOverflowMenuProps {
   previewOpen: boolean;
   togglePreview: () => void;
   onExport: () => void;
+  /** Imperative "open now" channel — used when the header's placeholder
+   * trigger mounts this menu on its first click (see TileHeaderActions). */
+  openSignal?: number;
+  /** Are the inline model/context controls currently revealed in the header? */
+  inlineControlsShown?: boolean;
+  /** Reveal/hide the inline model + context cluster. Absent → no such row
+   * (PTY conversations, or a zoomed tile where the cluster is always up). */
+  onToggleInlineControls?: () => void;
+  /** Archive this conversation. Absent → no Archive row (Agents view, where
+   * the sidebar row owns the lifecycle actions). */
+  onArchive?: () => void;
 }
 
 /**
- * Chat header's overflow menu — everything that used to be a standing
- * control lives here now: view mode (P1-17 — one global Summary/Normal/
- * Verbose transcript density, keyboard-cycled with Ctrl/Cmd+Shift+O,
- * un-gated because it applies to PTY transcripts too), memory toggle
- * (api-only), the preview-pane toggle, export (all modes), and the
- * Continue-in section. Owns the shared feedback flash (copy/clipboard
- * confirmations) so every action in the menu reports through one place.
+ * Chat header's overflow menu — the ONE overflow menu of a conversation tile.
+ * Everything that used to be a standing control lives here: view mode (P1-17 —
+ * one global Summary/Normal/Verbose transcript density, keyboard-cycled with
+ * Ctrl/Cmd+Shift+O, un-gated because it applies to PTY transcripts too), memory
+ * toggle (api-only), the preview-pane toggle, export (all modes), the
+ * Continue-in section, the model/context cluster reveal (formerly a second,
+ * visually identical kebab beside this one), and Archive (formerly a third
+ * kebab in the tile chrome bar above). Owns the shared feedback flash
+ * (copy/clipboard confirmations) so every action reports through one place.
+ *
+ * Mount economy: the trigger is cheap and the CONTENT — which subscribes to the
+ * memory + settings stores and composes the memory brief — is a child of
+ * `Dropdown`, so it mounts only while the menu is open. A resting tile pays for
+ * none of it.
  */
 export function HeaderOverflowMenu({
   conversation,
   previewOpen,
   togglePreview,
   onExport,
+  openSignal,
+  inlineControlsShown,
+  onToggleInlineControls,
+  onArchive,
 }: HeaderOverflowMenuProps) {
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [handoffModal, setHandoffModal] = useState<"packetcode" | "flight" | null>(
+    null,
+  );
+
+  function flashFeedback(msg: string) {
+    setFeedback(msg);
+    window.setTimeout(() => setFeedback(null), 1800);
+  }
+
+  return (
+    <div className="relative">
+      <Dropdown
+        align="right"
+        openSignal={openSignal}
+        trigger={
+          <span
+            aria-label="Conversation menu"
+            className="inline-flex p-0.5 text-text-muted hover:text-text-primary"
+          >
+            <MoreVertical size={12} />
+          </span>
+        }
+      >
+        <OverflowMenuContent
+          conversation={conversation}
+          previewOpen={previewOpen}
+          togglePreview={togglePreview}
+          onExport={onExport}
+          inlineControlsShown={inlineControlsShown}
+          onToggleInlineControls={onToggleInlineControls}
+          onArchive={onArchive}
+          flashFeedback={flashFeedback}
+          onRequestPacketCode={() => setHandoffModal("packetcode")}
+          onRequestFlight={() => setHandoffModal("flight")}
+        />
+      </Dropdown>
+      {handoffModal === "packetcode" && (
+        <PacketCodeHandoffModal
+          conversation={conversation}
+          onClose={() => setHandoffModal(null)}
+          onFeedback={flashFeedback}
+        />
+      )}
+      {handoffModal === "flight" && (
+        <AddConversationToFlightModal
+          conversation={conversation}
+          onClose={() => setHandoffModal(null)}
+          onFeedback={flashFeedback}
+        />
+      )}
+      {feedback && (
+        <div className="absolute right-0 top-full z-50 mt-1 whitespace-nowrap rounded border border-bg-border bg-bg-elevated px-2 py-1 text-meta text-text-secondary shadow">
+          {feedback}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface OverflowMenuContentProps
+  extends Omit<HeaderOverflowMenuProps, "openSignal"> {
+  flashFeedback: (msg: string) => void;
+  onRequestPacketCode: () => void;
+  onRequestFlight: () => void;
+}
+
+/** Menu body — mounted only while the dropdown is open. */
+function OverflowMenuContent({
+  conversation,
+  previewOpen,
+  togglePreview,
+  onExport,
+  inlineControlsShown,
+  onToggleInlineControls,
+  onArchive,
+  flashFeedback,
+  onRequestPacketCode,
+  onRequestFlight,
+}: OverflowMenuContentProps) {
   const conversationId = conversation.id;
   const previewDisabled = isRemoteConversation(conversation);
   const composeMemoryBrief = useMemoryStore((s) => s.composeMemoryBrief);
@@ -60,11 +164,7 @@ export function HeaderOverflowMenu({
   const memoryPatterns = useMemoryStore((s) => s.patterns);
   const viewMode = useAgentSettingsStore((s) => s.transcriptViewMode);
   const setTranscriptViewMode = useAgentSettingsStore((s) => s.setTranscriptViewMode);
-  const [feedback, setFeedback] = useState<string | null>(null);
   const [memoryPreviewOpen, setMemoryPreviewOpen] = useState(false);
-  const [handoffModal, setHandoffModal] = useState<"packetcode" | "flight" | null>(
-    null,
-  );
 
   const memoryBrief = useMemo(() => {
     const scope = conversation.sshTarget
@@ -88,11 +188,6 @@ export function HeaderOverflowMenu({
   ]);
   const stats = useMemo(() => memoryBriefStats(memoryBrief), [memoryBrief]);
 
-  function flashFeedback(msg: string) {
-    setFeedback(msg);
-    window.setTimeout(() => setFeedback(null), 1800);
-  }
-
   const handleCopyTranscript = async () => {
     const ok = await copyTranscriptToClipboard(conversation);
     flashFeedback(ok ? "Copied" : "Copy failed");
@@ -101,15 +196,6 @@ export function HeaderOverflowMenu({
   const isApi = conversation.mode === "api";
 
   return (
-    <div className="relative">
-      <Dropdown
-        align="right"
-        trigger={
-          <span className="inline-flex p-0.5 text-text-muted hover:text-text-primary">
-            <MoreVertical size={12} />
-          </span>
-        }
-      >
         <div className="min-w-[240px]">
           <div className="border-b border-bg-border px-3 py-1.5">
             <Tooltip content="Cycle with ⌘⇧O / Ctrl+Shift+O. Summary collapses tool detail; Verbose shows raw inputs.">
@@ -135,6 +221,21 @@ export function HeaderOverflowMenu({
               </div>
             </Tooltip>
           </div>
+
+          {/* Reveal/hide the header's inline model + context cluster. This was
+              a second kebab sitting next to this menu's own trigger. */}
+          {onToggleInlineControls && (
+            <div className="border-b border-bg-border">
+              <DropdownItem onClick={onToggleInlineControls}>
+                <span className="flex items-center gap-1.5 text-ui">
+                  <SlidersHorizontal size={11} />
+                  {inlineControlsShown
+                    ? "Hide model & context controls"
+                    : "Show model & context controls"}
+                </span>
+              </DropdownItem>
+            </div>
+          )}
 
           {isApi && (
             <div className="border-b border-bg-border">
@@ -284,30 +385,21 @@ export function HeaderOverflowMenu({
           <ContinueInMenu
             conversation={conversation}
             onFeedback={flashFeedback}
-            onRequestPacketCode={() => setHandoffModal("packetcode")}
-            onRequestFlight={() => setHandoffModal("flight")}
+            onRequestPacketCode={onRequestPacketCode}
+            onRequestFlight={onRequestFlight}
           />
+
+          {/* Lifecycle, last — folded in from the tile chrome's own kebab so a
+              tile has exactly one overflow menu. */}
+          {onArchive && (
+            <div className="border-t border-bg-border">
+              <DropdownItem onClick={onArchive}>
+                <span className="flex items-center gap-1.5 text-ui">
+                  <Archive size={11} /> Archive conversation
+                </span>
+              </DropdownItem>
+            </div>
+          )}
         </div>
-      </Dropdown>
-      {handoffModal === "packetcode" && (
-        <PacketCodeHandoffModal
-          conversation={conversation}
-          onClose={() => setHandoffModal(null)}
-          onFeedback={flashFeedback}
-        />
-      )}
-      {handoffModal === "flight" && (
-        <AddConversationToFlightModal
-          conversation={conversation}
-          onClose={() => setHandoffModal(null)}
-          onFeedback={flashFeedback}
-        />
-      )}
-      {feedback && (
-        <div className="absolute right-0 top-full z-50 mt-1 whitespace-nowrap rounded border border-bg-border bg-bg-elevated px-2 py-1 text-meta text-text-secondary shadow">
-          {feedback}
-        </div>
-      )}
-    </div>
   );
 }

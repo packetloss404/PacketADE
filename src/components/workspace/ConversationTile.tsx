@@ -1,11 +1,9 @@
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef } from "react";
 import {
-  Archive,
   GripHorizontal,
   Maximize2,
   MessageSquareOff,
   Minimize2,
-  MoreVertical,
   RotateCcw,
   Trash2,
 } from "lucide-react";
@@ -75,9 +73,6 @@ export function ConversationTile({ pane, workspaceId }: ConversationTileProps) {
       s.focusPaneRequest?.workspaceId === workspaceId,
   );
 
-  const [showOverflow, setShowOverflow] = useState(false);
-  const overflowRef = useRef<HTMLDivElement>(null);
-
   // Canonical review surface open-state, scoped to this tile's conversation.
   const reviewOpen = useReviewStore(
     (s) => s.open && s.conversationId === conversationId,
@@ -105,18 +100,6 @@ export function ConversationTile({ pane, workspaceId }: ConversationTileProps) {
     }
   }, [reviewOpen, pane.id, setZoomedPane]);
 
-  // Close the overflow menu on outside click.
-  useEffect(() => {
-    if (!showOverflow) return;
-    const handler = (e: MouseEvent) => {
-      if (overflowRef.current && !overflowRef.current.contains(e.target as Node)) {
-        setShowOverflow(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showOverflow]);
-
   // Reach the mosaic drag source so the chrome bar reorders tiles, mirroring
   // WorkspacePane's convention.
   const mosaicCtx = useContext(MosaicWindowContext);
@@ -124,16 +107,19 @@ export function ConversationTile({ pane, workspaceId }: ConversationTileProps) {
 
   // X removes the PANE ONLY — the conversation survives as an unplaced fleet
   // row (Bravo conceded close-as-archive conflated layout with lifecycle).
+  // The header tooltip says exactly this; nothing is stopped or deleted, so
+  // there is no confirm (the shared confirm is reserved for destructive paths).
   const removeTile = () => {
     useWorkspaceStore.getState().removePane(workspaceId, pane.id);
   };
 
-  // Archive is the explicit lifecycle action (overflow), distinct from X.
+  // Archive is the explicit lifecycle action, distinct from X. It lives in the
+  // chat header's overflow menu — the tile's ONE menu since the chrome bar's
+  // duplicate kebab was removed.
   const archiveConversation = () => {
     if (conversationId) {
       useAgentTaskStore.getState().archiveConversation(conversationId);
     }
-    setShowOverflow(false);
     removeTile();
   };
 
@@ -202,37 +188,9 @@ export function ConversationTile({ pane, workspaceId }: ConversationTileProps) {
       >
         {isZoomed ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
       </button>
-      <div ref={overflowRef} className="relative shrink-0">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowOverflow((v) => !v);
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-          className="p-0.5 text-text-muted transition-colors hover:text-text-primary"
-          title="More"
-        >
-          <MoreVertical size={11} />
-        </button>
-        {showOverflow && (
-          <div
-            className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-bg-border bg-bg-elevated py-1 shadow-xl"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                archiveConversation();
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui text-text-primary transition-colors hover:bg-bg-hover"
-            >
-              <Archive size={12} />
-              Archive conversation
-            </button>
-          </div>
-        )}
-      </div>
+      {/* No kebab here: the chrome bar's overflow menu (its only item was
+          Archive) was merged into the chat header's overflow menu below, so a
+          conversation tile has exactly ONE menu. */}
     </div>
   );
 
@@ -280,6 +238,9 @@ export function ConversationTile({ pane, workspaceId }: ConversationTileProps) {
         <AgentChatPane
           conversationId={conversationId}
           onClose={removeTile}
+          closeLabel="Close tile"
+          closeTooltip="Close tile — removes it from this workspace. The conversation keeps running and stays in the Agents list."
+          onArchive={archiveConversation}
           keyboardScopeActive={isFocused}
         />
       </div>

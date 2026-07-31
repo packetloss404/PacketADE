@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { resolveModuleAlias } from "@/lib/routeRegistry";
+import { getRoute, resolveModuleAlias } from "@/lib/routeRegistry";
 import type { SettingsTarget } from "@/types/settings";
 
 export type CoreView =
@@ -46,6 +46,51 @@ export function getModuleId(view: AppView): string | null {
 
 export function moduleViewId(id: string): AppView {
   return `mod:${id}` as AppView;
+}
+
+/**
+ * Startup view resolution (UX-09 area).
+ *
+ * `bootstrap` used to force `"welcome"` on every launch, so the `selectedView`
+ * it faithfully persisted on every navigation was written and never read. The
+ * app now reopens where the user left off — but only when that destination is
+ * still reachable, because a persisted view that no longer resolves would
+ * strand the user on an empty shell with no rendered view.
+ *
+ * Rules, in order:
+ *  - nothing persisted (fresh install, or a backend that never wrote the key)
+ *    ⇒ `"welcome"`;
+ *  - `mod:<id>` aliases collapse to their canonical route via
+ *    {@link normalizeView} (e.g. `mod:dictation` → `dictation`);
+ *  - a plain module view (`mod:quality`) survives only while that module is
+ *    enabled — `isModuleEnabled` also answers `false` for modules that have
+ *    since been removed from the registry;
+ *  - a core view survives only if {@link ROUTE_REGISTRY} still declares it, and
+ *    — for routes backed by a module, like Dictation — only while that module
+ *    is enabled;
+ *  - anything else (a retired route id such as the legacy `"dashboard"`,
+ *    junk, a future id from a newer build) ⇒ `"welcome"`.
+ *
+ * The module-enabled check is injected rather than imported so this stays a
+ * pure function and `appStore` keeps no dependency on `moduleStore`.
+ */
+export function resolveStartupView(
+  persisted: string | null | undefined,
+  isModuleEnabled: (moduleId: string) => boolean,
+): AppView {
+  const raw = typeof persisted === "string" ? persisted.trim() : "";
+  if (!raw) return "welcome";
+
+  const view = normalizeView(raw as AppView);
+
+  // Plain module view: not a shell route, so the registry can't vouch for it.
+  const moduleId = getModuleId(view);
+  if (moduleId) return isModuleEnabled(moduleId) ? view : "welcome";
+
+  const route = getRoute(view);
+  if (!route) return "welcome";
+  if (route.moduleId && !isModuleEnabled(route.moduleId)) return "welcome";
+  return route.id;
 }
 
 /** v0.8-H: deep-link filter applied to MemoryView when navigated to from

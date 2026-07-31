@@ -245,15 +245,37 @@ describe("ConversationTile chrome + wiring", () => {
     expect(conv?.archived).toBeFalsy();
   });
 
-  it("Archive overflow archives the conversation and removes the tile", () => {
+  it("Archive (handed to the chat header's ONE overflow menu) archives and removes the tile", () => {
     const pane = seedSingle();
-    const { getByTitle, getByText } = render(<ConversationTile pane={pane} workspaceId="ws-1" />);
-    fireEvent.click(getByTitle("More"));
-    fireEvent.click(getByText("Archive conversation"));
+    render(<ConversationTile pane={pane} workspaceId="ws-1" />);
+    // The chrome bar no longer carries its own kebab — Archive travels to the
+    // chat header's overflow menu as the tile's onArchive.
+    act(() => {
+      (lastProps.get("conv-1")?.onArchive as () => void)();
+    });
     const conv = useAgentTaskStore.getState().conversations.find((c) => c.id === "conv-1");
     expect(conv?.archived).toBe(true);
     const ws = useWorkspaceStore.getState().workspaces[0];
     expect(ws.panes.find((p) => p.id === "pane-conv")).toBeUndefined();
+  });
+
+  it("the chrome bar has NO overflow menu of its own (one menu per tile)", () => {
+    const pane = seedSingle();
+    const { queryByTitle, getByTitle } = render(
+      <ConversationTile pane={pane} workspaceId="ws-1" />,
+    );
+    expect(queryByTitle("More")).toBeNull();
+    // Zoom stays in the chrome bar — de-duplication, not a redesign.
+    expect(getByTitle("Zoom to focus")).toBeInTheDocument();
+  });
+
+  it("labels the close control with what closing actually does (pane only)", () => {
+    const pane = seedSingle();
+    render(<ConversationTile pane={pane} workspaceId="ws-1" />);
+    expect(lastProps.get("conv-1")?.closeLabel).toBe("Close tile");
+    expect(lastProps.get("conv-1")?.closeTooltip).toBe(
+      "Close tile — removes it from this workspace. The conversation keeps running and stays in the Agents list.",
+    );
   });
 });
 

@@ -150,14 +150,10 @@ function renderTile(over: Partial<AgentConversation> = {}) {
   );
 }
 
-/** Open the overflow dropdown inside the (already-mounted) HeaderOverflowMenu.
- * Its trigger is the only button lacking an aria-label and text content. */
+/** Open the header's single overflow menu (one click: the placeholder mounts
+ * HeaderOverflowMenu already open). */
 function openOverflowDropdown() {
-  const trigger = screen
-    .getAllByRole("button")
-    .find((b) => !b.getAttribute("aria-label") && !b.textContent?.trim());
-  expect(trigger).toBeTruthy();
-  fireEvent.click(trigger!);
+  fireEvent.click(screen.getByLabelText("Conversation menu"));
 }
 
 beforeEach(() => {
@@ -171,13 +167,9 @@ describe("TileHeaderActions — Memory row reachability", () => {
   it("the Memory row is reachable via the tile overflow cluster and its dropdown", () => {
     renderTile({ memoryContextEnabled: false });
 
-    // Row is not in the DOM until the cluster mounts and the dropdown opens.
+    // Row is not in the DOM until the menu mounts and opens.
     expect(screen.queryByText("Memory")).not.toBeInTheDocument();
 
-    // 1. Open the tile overflow cluster (mounts HeaderOverflowMenu).
-    fireEvent.click(screen.getByLabelText("More controls"));
-
-    // 2. Open the overflow dropdown, revealing the Memory row.
     openOverflowDropdown();
     expect(screen.getByText("Memory")).toBeInTheDocument();
     expect(screen.getByText("Off")).toBeInTheDocument();
@@ -185,7 +177,6 @@ describe("TileHeaderActions — Memory row reachability", () => {
 
   it("toggling the Memory row flips memoryContextEnabled for this conversation", () => {
     renderTile({ memoryContextEnabled: false });
-    fireEvent.click(screen.getByLabelText("More controls"));
     openOverflowDropdown();
 
     const memoryButton = screen.getByText("Memory").closest("button");

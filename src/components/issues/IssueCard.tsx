@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plane, Send, LayoutGrid } from "lucide-react";
+import { Plane, Send, LayoutGrid, Trash2 } from "lucide-react";
 import { useIssueStore, type Issue } from "@/stores/issueStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -11,6 +11,11 @@ interface IssueCardProps {
   onDragStart: (e: React.DragEvent) => void;
   onClick: () => void;
   isDragging?: boolean;
+  /**
+   * Opens the delete confirm for this card. The confirm itself is owned by the
+   * board (not the card) so it survives this card unmounting on delete.
+   */
+  onRequestDelete?: () => void;
 }
 
 const PRIORITY_DISPLAY: Record<Issue["priority"], { label: string; color: string }> = {
@@ -35,7 +40,13 @@ function ticketInitials(ticketId: string): string {
   return prefix.slice(0, 2).toUpperCase();
 }
 
-export function IssueCard({ issue, onDragStart, onClick, isDragging }: IssueCardProps) {
+export function IssueCard({
+  issue,
+  onDragStart,
+  onClick,
+  isDragging,
+  onRequestDelete,
+}: IssueCardProps) {
   const flights = useFlightStore((s) => s.flights);
   const flight = flights.find((f) => f.issueIds.includes(issue.id)) ?? null;
   const sendIssueToWorkspace = useIssueStore((s) => s.sendIssueToWorkspace);
@@ -79,7 +90,7 @@ export function IssueCard({ issue, onDragStart, onClick, isDragging }: IssueCard
       draggable
       onDragStart={onDragStart}
       onClick={onClick}
-      className={`flex flex-col gap-1.5 cursor-pointer rounded-md border border-bg-border bg-bg-secondary p-2.5 transition-all hover:border-line-strong ${
+      className={`group flex flex-col gap-1.5 cursor-pointer rounded-md border border-bg-border bg-bg-secondary p-2.5 transition-all hover:border-line-strong ${
         isDragging ? "opacity-50 scale-[0.97] ring-1 ring-accent-line" : ""
       }`}
     >
@@ -91,6 +102,23 @@ export function IssueCard({ issue, onDragStart, onClick, isDragging }: IssueCard
         <span className={`font-mono text-[10px] font-semibold ${pri.color}`}>
           {pri.label}
         </span>
+        {/* Hover-reveal delete, matching the list-row idiom used by the Fleet
+            sidebar, Flight Deck and the prompt library. Opens the board's
+            shared confirm — it never deletes on this click. */}
+        {onRequestDelete && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRequestDelete();
+            }}
+            aria-label={`Delete issue ${issue.ticketId}`}
+            title="Delete issue"
+            className="p-0.5 text-text-muted opacity-0 transition-all hover:text-accent-red focus:opacity-100 group-hover:opacity-100"
+          >
+            <Trash2 size={10} />
+          </button>
+        )}
       </div>
 
       <p

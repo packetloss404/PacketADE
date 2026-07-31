@@ -20,6 +20,7 @@ const mockSetTheme = vi.hoisted(() => vi.fn());
 const mockSetActiveView = vi.hoisted(() => vi.fn());
 const mockStartBoundedAutonomyRuntime = vi.hoisted(() => vi.fn());
 const mockHydrateConversations = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const mockIsModuleEnabled = vi.hoisted(() => vi.fn(() => true));
 const mockAppState = vi.hoisted(() => ({
   activeView: "flights",
   theme: "dark" as const,
@@ -43,10 +44,17 @@ vi.mock("@/lib/sshTargetMigration", () => ({
   migrateSshTargetsToServers: mockMigrateSshTargetsToServers,
 }));
 
-vi.mock("@/stores/appStore", () => ({
+// Only the store singleton is faked — `resolveStartupView` / `normalizeView`
+// stay real so the startup-view tests exercise the actual route rules.
+vi.mock("@/stores/appStore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/stores/appStore")>()),
   useAppStore: {
     getState: () => mockAppState,
   },
+}));
+
+vi.mock("@/stores/moduleStore", () => ({
+  useModuleStore: { getState: () => ({ isEnabled: mockIsModuleEnabled }) },
 }));
 
 vi.mock("@/stores/workspaceStore", () => ({
@@ -94,14 +102,14 @@ vi.mock("@/stores/agentConversationPersistence", () => ({
 
 import { initializeApp, persistUiState } from "@/lib/bootstrap";
 
-function makePersistedState() {
+function makePersistedState(selectedView: string | null = null) {
   return {
     version: 1,
     flights: [],
     agents: [],
     issues: [{ id: "issue-1", ticketId: "PKT-001" }],
     settings: { maxParallelSessions: 3, milestoneGating: true, projectPath: "/repo" },
-    ui: { theme: "dark", selectedView: null, selectedFlightId: null },
+    ui: { theme: "dark", selectedView, selectedFlightId: null },
     workspaces: [],
     memoryEvents: [],
     memoryPatterns: [],
@@ -188,5 +196,70 @@ describe("initializeApp", () => {
     await initialized;
 
     expect(mockSetInitialized).toHaveBeenCalledWith(true);
+  });
+
+  it("restores the persisted view instead of forcing Welcome", async () => {
+    mockLoadPersistedState.mockResolvedValue(makePersistedState("flights"));
+
+    await initializeApp();
+
+    expect(mockSetActiveView).toHaveBeenCalledWith("flights");
+    expect(mockSetActiveView).toHaveBeenCalledTimes(1);
+  });
+
+  it("lands on Welcome when nothing was ever persisted", async () => {
+    mockLoadPersistedState.mockResolvedValue(makePersistedState(null));
+
+    await initializeApp();
+
+    expect(mockSetActiveView).toHaveBeenCalledWith("welcome");
+  });
+
+  it("falls back to Welcome for a persisted view the registry no longer has", async () => {
+    mockLoadPersistedState.mockResolvedValue(makePersistedState("dashboard"));
+
+    await initializeApp();
+
+    expect(mockSetActiveView).toHaveBeenCalledWith("welcome");
+  });
+
+  it("falls back to Welcome when the persisted view's module is disabled", async () => {
+    mockLoadPersistedState.mockResolvedValue(makePersistedState("mod:dictation"));
+    mockIsModuleEnabled.mockImplementationOnce(() => false);
+
+    await initializeApp();
+
+    expect(mockSetActiveView).toHaveBeenCalledWith("welcome");
+  });
+
+  it("restores the view after conversation hydration and before initialized", async () => {
+    mockLoadPersistedState.mockResolvedValue(makePersistedState("agents"));
+    const order: string[] = [];
+    let resolveConversations!: () => void;
+    mockHydrateConversations.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveConversations = () => {
+            order.push("conversations");
+            resolve();
+          };
+        }),
+    );
+    mockSetActiveView.mockImplementationOnce(() => {
+      order.push("view");
+    });
+    mockSetInitialized.mockImplementationOnce(() => {
+      order.push("initialized");
+    });
+
+    const initialized = initializeApp();
+    await vi.waitFor(() => expect(mockWorkspaceHydrate).toHaveBeenCalled());
+    // The restore is gated on the conversation graph, not just on state.v1.json.
+    expect(order).toEqual([]);
+
+    resolveConversations();
+    await initialized;
+
+    expect(order).toEqual(["conversations", "view", "initialized"]);
   });
 });

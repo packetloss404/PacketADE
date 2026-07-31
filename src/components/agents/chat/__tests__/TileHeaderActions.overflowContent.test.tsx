@@ -119,7 +119,10 @@ function conversation(over: Partial<AgentConversation> = {}): AgentConversation 
   };
 }
 
-function renderTile(over: Partial<AgentConversation> = {}) {
+function renderTile(
+  over: Partial<AgentConversation> = {},
+  props: Partial<Parameters<typeof TileHeaderActions>[0]> = {},
+) {
   const conv = conversation(over);
   render(
     <TileHeaderActions
@@ -135,20 +138,16 @@ function renderTile(over: Partial<AgentConversation> = {}) {
       onChangeModel={vi.fn()}
       onExport={vi.fn()}
       pendingApprovalCount={0}
+      {...props}
     />,
   );
   return conv;
 }
 
-/** Mount the lazy cluster (More controls), then open the overflow dropdown —
- * its trigger is the only button with neither an aria-label nor text. */
+/** The header has ONE menu control: clicking it mounts the overflow menu
+ * already open (the placeholder hands its click straight to the dropdown). */
 function openOverflowMenu() {
-  fireEvent.click(screen.getByLabelText("More controls"));
-  const trigger = screen
-    .getAllByRole("button")
-    .find((b) => !b.getAttribute("aria-label") && !b.textContent?.trim());
-  expect(trigger).toBeTruthy();
-  fireEvent.click(trigger!);
+  fireEvent.click(screen.getByLabelText("Conversation menu"));
 }
 
 afterEach(() => {
@@ -175,6 +174,28 @@ describe("TileHeaderActions — overflow menu content", () => {
     expect(screen.getByText("Open project folder in OS")).toBeInTheDocument();
     expect(screen.getByText("Open in VS Code")).toBeInTheDocument();
     expect(screen.getByText("Open in Cursor")).toBeInTheDocument();
+  });
+
+  it("is the tile's ONE menu: every action from the merged menus is in it", () => {
+    const onArchive = vi.fn();
+    renderTile({}, { onArchive });
+    openOverflowMenu();
+
+    // Merged in from the second header kebab ("More controls").
+    expect(screen.getByText("Show model & context controls")).toBeInTheDocument();
+    // Merged in from the tile chrome bar's kebab (its only item).
+    expect(screen.getByText("Archive conversation")).toBeInTheDocument();
+    // Everything the menu already held.
+    expect(screen.getByText("View mode")).toBeInTheDocument();
+    expect(screen.getByText("Memory")).toBeInTheDocument();
+    expect(screen.getByText("Show preview pane")).toBeInTheDocument();
+    expect(screen.getByText("Send to Monitor")).toBeInTheDocument();
+    expect(screen.getByText("Export as Markdown")).toBeInTheDocument();
+    expect(screen.getByText("Export as JSON")).toBeInTheDocument();
+    expect(screen.getByText("Copy transcript")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Archive conversation"));
+    expect(onArchive).toHaveBeenCalledTimes(1);
   });
 
   it("shows memory stats and a preview item after expanding the flyout when memory is on", () => {

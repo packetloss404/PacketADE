@@ -1,11 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const mockReconcileIssueLinks = vi.hoisted(() => vi.fn());
+const mockRemoveIssueFromFlight = vi.hoisted(() => vi.fn());
+/** Flight-side half of the bidirectional link, seeded per test. */
+const mockFlights = vi.hoisted(() => ({ value: [] as { id: string; issueIds: string[] }[] }));
 
 vi.mock("@/stores/flightStore", () => ({
   useFlightStore: {
     getState: () => ({
+      flights: mockFlights.value,
       reconcileIssueLinks: mockReconcileIssueLinks,
+      removeIssueFromFlight: mockRemoveIssueFromFlight,
     }),
   },
 }));
@@ -37,6 +42,8 @@ describe("issueStore", () => {
   beforeEach(() => {
     localStorage.clear();
     mockReconcileIssueLinks.mockClear();
+    mockRemoveIssueFromFlight.mockClear();
+    mockFlights.value = [];
     // Reset the Zustand store to default state
     useIssueStore.setState({
       issues: [],
@@ -129,6 +136,52 @@ describe("issueStore", () => {
       store().deleteIssue(a.id);
       const bAfter = store().issues.find((i) => i.id === b.id)!;
       expect(bAfter.blockedBy).not.toContain(a.id);
+    });
+
+    it("persists the removal", () => {
+      const issue = store().addIssue(makeIssue());
+      store().deleteIssue(issue.id);
+      const parsed = JSON.parse(localStorage.getItem("packetade:issues")!);
+      expect(parsed.issues).toHaveLength(0);
+    });
+
+    // `flightStore.deleteFlight` clears `Issue.flightId` on the way out; this is
+    // the same move from the other side, so a flight is never left holding the
+    // id of an issue that no longer exists.
+    it("unlinks the issue from every flight that still names it", async () => {
+      const issue = store().addIssue(makeIssue({ flightId: "flight-1" }));
+      mockFlights.value = [
+        { id: "flight-1", issueIds: [issue.id, "issue-other"] },
+        { id: "flight-2", issueIds: ["issue-other"] },
+      ];
+
+      store().deleteIssue(issue.id);
+      await flushMicrotasks();
+
+      expect(mockRemoveIssueFromFlight).toHaveBeenCalledWith("flight-1", issue.id);
+      expect(mockRemoveIssueFromFlight).toHaveBeenCalledTimes(1);
+      // The reconcile backstop still runs.
+      expect(mockReconcileIssueLinks).toHaveBeenCalled();
+    });
+
+    it("still unlinks when only the flight side holds the reference", async () => {
+      const issue = store().addIssue(makeIssue());
+      mockFlights.value = [{ id: "flight-1", issueIds: [issue.id] }];
+
+      store().deleteIssue(issue.id);
+      await flushMicrotasks();
+
+      expect(mockRemoveIssueFromFlight).toHaveBeenCalledWith("flight-1", issue.id);
+    });
+
+    it("touches nothing when the issue does not exist", async () => {
+      mockFlights.value = [{ id: "flight-1", issueIds: ["issue-other"] }];
+
+      store().deleteIssue("nope");
+      await flushMicrotasks();
+
+      expect(mockRemoveIssueFromFlight).not.toHaveBeenCalled();
+      expect(mockReconcileIssueLinks).not.toHaveBeenCalled();
     });
   });
 

@@ -8,7 +8,8 @@ import {
 } from "@/lib/tauri";
 import { logSwallowed } from "@/lib/logSwallowed";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useAppStore } from "@/stores/appStore";
+import { useAppStore, resolveStartupView } from "@/stores/appStore";
+import { useModuleStore } from "@/stores/moduleStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useLayoutStore } from "@/stores/layoutStore";
@@ -115,12 +116,12 @@ export async function initializeApp(): Promise<void> {
       .then((p) => useServerStore.getState().setKnownHostsPath(p))
       .catch((e) => console.warn("[bootstrap] getAppKnownHostsPath failed:", e));
 
-    // Apply theme + force welcome view before doing anything else, so the
-    // first paint of the post-bootstrap UI is correctly themed.
+    // Apply theme before doing anything else, so the first paint of the
+    // post-bootstrap UI is correctly themed. The view is restored further
+    // down — see `startupView`.
     if (state.ui.theme === "dark" || state.ui.theme === "light") {
       useAppStore.getState().setTheme(state.ui.theme);
     }
-    useAppStore.getState().setActiveView("welcome");
 
     // Restore project path: backend settings > localStorage > CWD. Each
     // candidate is validated against the filesystem so a stale path (e.g.
@@ -148,6 +149,26 @@ export async function initializeApp(): Promise<void> {
 
     await conversationsReady;
 
+    // Restore the view the user left the app on. Deliberately placed here:
+    //   - AFTER `conversationsReady`, because the conversation graph is the
+    //     heaviest cross-view dependency (Agents, and the Workspace tiles), so
+    //     restoring earlier could mount those views against half a graph;
+    //   - BEFORE `setInitialized(true)`, so the first post-bootstrap paint is
+    //     already the restored view (no Welcome flash) and the App-level
+    //     persistence effect — which no-ops until `initialized` — doesn't
+    //     immediately write the value straight back.
+    // Unreachable destinations fall back to Welcome; see `resolveStartupView`.
+    // No route is excluded: every view is reachable from the rail/palette at
+    // this same point in the lifecycle, so restoring into one is no different
+    // from the user clicking it. The remaining backend slices (flights,
+    // agents, orchestration) hydrate immediately below into reactive stores,
+    // so a view that mounts ahead of them re-renders when they land.
+    useAppStore
+      .getState()
+      .setActiveView(
+        resolveStartupView(state.ui.selectedView, (id) => useModuleStore.getState().isEnabled(id)),
+      );
+
     // Mark app as initialized so UI persistence and cross-store
     // reconciliation can begin.
     useAppStore.getState().setInitialized(true);
@@ -168,7 +189,9 @@ export async function initializeApp(): Promise<void> {
       .hydrateFromBackend(state)
       .catch(() => undefined);
   } catch {
-    // Backend unavailable — fall back to localStorage / CWD, validated.
+    // Backend unavailable — there is no persisted `selectedView` to restore,
+    // so the store's default (`welcome`) stands.
+    // Fall back to localStorage / CWD for the project path, validated.
     const localPath = localStorage.getItem(PROJECT_PATH_KEY);
     let cwd: string | null = null;
     try {

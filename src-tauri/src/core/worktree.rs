@@ -7,11 +7,13 @@
 //! applies automatically.
 
 use crate::core::execution::{sh_quote, SshConfig};
+use serde::Serialize;
 use std::process::Stdio;
 use tokio::process::Command;
 use tracing::{info, warn};
 
 const WORKTREES_DIR: &str = ".pkt-worktrees";
+const INTEGRATIONS_DIR: &str = ".pkt-flight-integrations";
 
 /// Phase 3.2: maximum time we'll wait for a remote `git clone` to finish.
 /// Large monorepos over slow links can take a while; the existing
@@ -28,6 +30,18 @@ pub fn worktree_path(base: &str, attempt_id: &str) -> Result<String, String> {
     validate_worktree_component(attempt_id)?;
     let trimmed = base.trim_end_matches(['/', '\\']);
     Ok(format!("{}/{}/{}", trimmed, WORKTREES_DIR, attempt_id))
+}
+
+/// Worktree path for a Flight's cooperative integration branch, given its base
+/// path. Mirrors the layout `prepare_local_integration_branch` /
+/// `prepare_remote_integration_branch` create (`<base>/.pkt-flight-integrations/<flight_id>`)
+/// so the teardown path can find it without an attempt id — integration
+/// worktrees are flight-keyed, which is exactly why nothing could remove them
+/// before.
+pub fn integration_worktree_path(base: &str, flight_id: &str) -> Result<String, String> {
+    validate_worktree_component(flight_id)?;
+    let trimmed = base.trim_end_matches(['/', '\\']);
+    Ok(format!("{}/{}/{}", trimmed, INTEGRATIONS_DIR, flight_id))
 }
 
 /// S3: defense-in-depth guard for a repo-relative path that will be handed to a
@@ -585,6 +599,55 @@ async fn install_prepare_commit_msg_hook_for_issue(
     Ok(())
 }
 
+/// Outcome of a best-effort worktree teardown.
+///
+/// Teardown failures are **data, not errors**: the caller (attempt cancel,
+/// terminal-status teardown, flight delete) must still complete its state
+/// transition, but the frontend has to be able to tell the user that a git
+/// worktree is still sitting on disk. Before this existed, every removal
+/// failure was `warn!`-logged and swallowed, so a wedged worktree looked
+/// exactly like a clean delete.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeCleanupOutcome {
+    /// The worktree we tried to remove — named so the user can go and finish
+    /// the job by hand when we could not.
+    pub worktree_path: String,
+    /// True when nothing is left on disk (removed now, or already absent).
+    pub removed: bool,
+    /// The branch the worktree had checked out, when the caller knows it.
+    pub branch: Option<String>,
+    /// True when `branch` was deleted as part of this teardown.
+    pub branch_deleted: bool,
+    /// Why the branch survived. Set only when branch deletion was requested
+    /// and did not happen (typically: it still holds unmerged commits).
+    pub branch_retained: Option<String>,
+    /// `git status --porcelain` lines observed immediately before a forced
+    /// removal — i.e. the uncommitted work this teardown destroyed. Populated
+    /// by the integration-worktree paths; attempt worktrees are dirty-checked
+    /// by the frontend before the delete is confirmed.
+    pub dirty_paths: Vec<String>,
+    /// Non-fatal failure message. Present ⇒ `removed` is false.
+    pub error: Option<String>,
+    /// The removal could not even be attempted here (SSH server record is
+    /// gone), so the worktree is still on the remote host.
+    pub deferred: bool,
+}
+
+impl WorktreeCleanupOutcome {
+    pub fn for_path(worktree_path: impl Into<String>) -> Self {
+        Self {
+            worktree_path: worktree_path.into(),
+            ..Default::default()
+        }
+    }
+
+    /// True when the caller should report this teardown to the user.
+    pub fn needs_attention(&self) -> bool {
+        self.error.is_some() || self.deferred || !self.removed
+    }
+}
+
 /// Remove a local git worktree. Idempotent — missing worktree is not an error.
 ///
 /// When `delete_branch` is true, the `pkt/<attempt_id>` branch is additionally
@@ -1049,6 +1112,143 @@ pub async fn land_remote_integration_branch(
         ));
     }
     Ok(head.trim().to_string())
+}
+
+/// Non-empty `git status --porcelain` lines inside a local worktree. Never
+/// fails the teardown: an unreadable tree reports no dirt but is not treated as
+/// verified-clean by the caller either (the frontend's pre-delete probe is what
+/// asks the user for consent).
+async fn local_worktree_dirt(path: &str) -> Vec<String> {
+    match run_local_git(path, &["status", "--porcelain"]).await {
+        Ok((stdout, _, 0)) => stdout
+            .lines()
+            .map(|line| line.trim_end().to_string())
+            .filter(|line| !line.is_empty())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Remove a Flight's cooperative integration worktree. Idempotent.
+///
+/// Symmetric with `remove_local_worktree`, but flight-keyed rather than
+/// attempt-keyed: nothing else could reach `<base>/.pkt-flight-integrations/<flight_id>`,
+/// so deleting a cooperative Flight used to abandon it.
+///
+/// Semantics:
+/// - The removal is forced (`--force`), matching attempt teardown. Any
+///   uncommitted work found immediately beforehand is reported back in
+///   `dirty_paths` so the destruction is never silent.
+/// - Removal failure is returned as data (`error` + `removed: false`), not an
+///   `Err` — the caller is tearing a Flight down and must finish.
+/// - Branch deletion (when `delete_branch`) uses the SAFE `git branch -d`.
+///   The integration branch can hold merged-but-unlanded attempt work, and
+///   unlike an attempt branch it is the only ref to it; `-D` would make that
+///   unreachable. A refusal is reported in `branch_retained`, not an error.
+pub async fn remove_local_integration_worktree(
+    base: &str,
+    flight_id: &str,
+    delete_branch: bool,
+) -> Result<WorktreeCleanupOutcome, String> {
+    let path = integration_worktree_path(base, flight_id)?;
+    let branch = integration_branch_name(flight_id)?;
+    let mut outcome = WorktreeCleanupOutcome {
+        branch: Some(branch.clone()),
+        ..WorktreeCleanupOutcome::for_path(path.clone())
+    };
+
+    if !std::path::Path::new(&path).exists() {
+        outcome.removed = true;
+    } else {
+        outcome.dirty_paths = local_worktree_dirt(&path).await;
+        let (_, stderr, code) =
+            run_local_git(base, &["worktree", "remove", "--force", &path]).await?;
+        if code == 0 {
+            outcome.removed = true;
+        } else {
+            warn!(path = %path, stderr = %stderr.trim(), "git worktree remove failed (integration)");
+            outcome.error = Some(format!(
+                "git worktree remove failed (exit {}): {}",
+                code,
+                stderr.trim()
+            ));
+        }
+    }
+
+    if delete_branch && outcome.removed {
+        match run_local_git(base, &["branch", "-d", &branch]).await {
+            Ok((_, _, 0)) => outcome.branch_deleted = true,
+            Ok((_, stderr, code)) => {
+                warn!(branch = %branch, stderr = %stderr.trim(), "integration branch retained");
+                outcome.branch_retained = Some(format!(
+                    "branch '{}' was kept (git branch -d exit {}): {}",
+                    branch,
+                    code,
+                    stderr.trim()
+                ));
+            }
+            Err(e) => {
+                outcome.branch_retained = Some(format!("branch '{}' was kept: {}", branch, e));
+            }
+        }
+    }
+
+    Ok(outcome)
+}
+
+/// Remote twin of `remove_local_integration_worktree`. Same non-fatal
+/// reporting contract; `not a working tree` is treated as already-gone.
+pub async fn remove_remote_integration_worktree(
+    cfg: &SshConfig,
+    base: &str,
+    flight_id: &str,
+    delete_branch: bool,
+) -> Result<WorktreeCleanupOutcome, String> {
+    let path = integration_worktree_path(base, flight_id)?;
+    let branch = integration_branch_name(flight_id)?;
+    let mut outcome = WorktreeCleanupOutcome {
+        branch: Some(branch.clone()),
+        ..WorktreeCleanupOutcome::for_path(path.clone())
+    };
+
+    if let Ok((status, 0)) = ssh_git(cfg, &path, &["status", "--porcelain"]).await {
+        outcome.dirty_paths = status
+            .lines()
+            .map(|line| line.trim_end().to_string())
+            .filter(|line| !line.is_empty())
+            .collect();
+    }
+
+    let (combined, code) = ssh_git(cfg, base, &["worktree", "remove", "--force", &path]).await?;
+    if code == 0 || combined.contains("not a working tree") {
+        outcome.removed = true;
+    } else {
+        warn!(path = %path, output = %combined.trim(), "remote git worktree remove failed (integration)");
+        outcome.error = Some(format!(
+            "remote git worktree remove failed (exit {}): {}",
+            code,
+            combined.trim()
+        ));
+    }
+
+    if delete_branch && outcome.removed {
+        match ssh_git(cfg, base, &["branch", "-d", &branch]).await {
+            Ok((_, 0)) => outcome.branch_deleted = true,
+            Ok((out, code)) => {
+                outcome.branch_retained = Some(format!(
+                    "branch '{}' was kept (git branch -d exit {}): {}",
+                    branch,
+                    code,
+                    out.trim()
+                ));
+            }
+            Err(e) => {
+                outcome.branch_retained = Some(format!("branch '{}' was kept: {}", branch, e));
+            }
+        }
+    }
+
+    Ok(outcome)
 }
 
 /// Create a remote git worktree. Idempotent.
@@ -2230,6 +2430,168 @@ mod tests {
             root_is_clean_for_integration(&status),
             "base working tree must be restored after aborted landing: {}",
             status
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // --- Integration-worktree teardown (flight delete) ---
+
+    #[test]
+    fn integration_worktree_path_matches_the_prepared_layout() {
+        assert_eq!(
+            integration_worktree_path("/repo", "flight-1").unwrap(),
+            "/repo/.pkt-flight-integrations/flight-1"
+        );
+        assert_eq!(
+            integration_worktree_path("/repo/", "flight-1").unwrap(),
+            "/repo/.pkt-flight-integrations/flight-1"
+        );
+        // Same component guard as attempt worktrees — a flight id can never
+        // escape the repo.
+        for invalid in ["", "..", "../x", "a/b", "a\\b", "flight 1"] {
+            assert!(
+                integration_worktree_path("/repo", invalid).is_err(),
+                "{invalid:?} should be rejected"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn remove_local_integration_worktree_removes_dir_and_reports_dirt() {
+        let root = fixture_repo_with_worktree("int-remove", "unrelated");
+        let base = root.to_string_lossy().to_string();
+        let integration = prepare_local_integration_branch(&base, "flight-remove", "main").unwrap();
+        assert!(std::path::Path::new(&integration.worktree_path).exists());
+        // Uncommitted work in the integration worktree: the forced removal
+        // destroys it, so it MUST be named in the outcome rather than lost
+        // silently.
+        std::fs::write(
+            std::path::Path::new(&integration.worktree_path).join("stray.txt"),
+            "leftover\n",
+        )
+        .unwrap();
+
+        let outcome = remove_local_integration_worktree(&base, "flight-remove", true)
+            .await
+            .expect("teardown runs");
+
+        assert!(outcome.removed, "worktree must be gone: {:?}", outcome);
+        assert!(outcome.error.is_none());
+        assert!(!std::path::Path::new(&integration.worktree_path).exists());
+        assert_eq!(
+            outcome.worktree_path,
+            integration_worktree_path(&base, "flight-remove").unwrap()
+        );
+        assert!(
+            outcome.dirty_paths.iter().any(|l| l.contains("stray.txt")),
+            "destroyed uncommitted work must be reported: {:?}",
+            outcome.dirty_paths
+        );
+        // Nothing was ever merged into it, so the branch is fully merged into
+        // main and the safe `-d` deletion succeeds.
+        assert!(outcome.branch_deleted, "{:?}", outcome);
+        assert!(!branch_exists(&root, &integration.branch));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn remove_local_integration_worktree_keeps_an_unmerged_branch() {
+        let root = fixture_repo_with_worktree("int-unmerged", "unrelated");
+        let base = root.to_string_lossy().to_string();
+        let integration =
+            prepare_local_integration_branch(&base, "flight-unmerged", "main").unwrap();
+        // Merged-but-never-landed attempt work: the integration branch is the
+        // only ref to it. Removing the worktree must not make it unreachable.
+        let attempt_path = create_local_worktree(&base, "int-task", &integration.branch)
+            .await
+            .unwrap();
+        std::fs::write(
+            std::path::Path::new(&attempt_path).join("task.txt"),
+            "cooperative\n",
+        )
+        .unwrap();
+        git_stdout(&attempt_path, &["add", "task.txt"]).unwrap();
+        git_stdout(&attempt_path, &["commit", "-m", "task"]).unwrap();
+        integrate_local_attempt(
+            &integration.worktree_path,
+            &integration.branch,
+            &attempt_path,
+            &branch_name("int-task"),
+        )
+        .unwrap();
+
+        let outcome = remove_local_integration_worktree(&base, "flight-unmerged", true)
+            .await
+            .expect("teardown runs");
+
+        assert!(outcome.removed);
+        assert!(!outcome.branch_deleted, "unmerged branch must survive");
+        assert!(
+            outcome
+                .branch_retained
+                .as_deref()
+                .unwrap_or_default()
+                .contains(&integration.branch),
+            "retention must be reported: {:?}",
+            outcome.branch_retained
+        );
+        assert!(branch_exists(&root, &integration.branch));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn remove_local_integration_worktree_is_idempotent() {
+        let root = fixture_repo_with_worktree("int-idem", "unrelated");
+        let base = root.to_string_lossy().to_string();
+        prepare_local_integration_branch(&base, "flight-idem", "main").unwrap();
+
+        remove_local_integration_worktree(&base, "flight-idem", false)
+            .await
+            .expect("first teardown");
+        let second = remove_local_integration_worktree(&base, "flight-idem", false)
+            .await
+            .expect("second teardown");
+
+        assert!(second.removed, "absent worktree counts as removed");
+        assert!(second.error.is_none());
+        assert!(second.dirty_paths.is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn remove_local_integration_worktree_reports_removal_failure() {
+        // A directory that looks like an integration worktree but whose base
+        // is not a git repo: `git worktree remove` fails, and the failure has
+        // to come back as data instead of being logged and swallowed.
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let root = std::env::temp_dir().join(format!("packetade-int-fail-{}", nanos));
+        let path = root.join(".pkt-flight-integrations").join("flight-fail");
+        std::fs::create_dir_all(&path).unwrap();
+        let base = root.to_string_lossy().to_string();
+
+        let outcome = remove_local_integration_worktree(&base, "flight-fail", true)
+            .await
+            .expect("teardown reports failure as data, not Err");
+
+        assert!(!outcome.removed);
+        assert!(
+            outcome
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("git worktree remove failed"),
+            "unexpected error: {:?}",
+            outcome.error
+        );
+        assert!(outcome.needs_attention());
+        assert!(path.exists(), "the failed-to-remove dir is still there");
+        assert!(
+            !outcome.branch_deleted,
+            "branch deletion must not run after a failed removal"
         );
         let _ = std::fs::remove_dir_all(&root);
     }
