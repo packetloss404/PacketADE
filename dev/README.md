@@ -173,6 +173,10 @@ remain user-launched. Do not restore archived Planner v1.
   `zen-workspace/features-prompt-library.md` remain design/history references;
   direct review-packet diff opening and command-palette prompt launch are now
   implemented.
+- `features-packetbbs-terminal.md` scopes a future non-secret PacketBBS
+  connection preset: bounded `/healthz` probe plus safe Web/Telnet launch,
+  without shared auth, databases, privileged web embedding, or availability
+  coupling.
 
 ### Remote Agents
 

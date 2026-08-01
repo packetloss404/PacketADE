@@ -7,6 +7,19 @@ it from here.
 Priority: **P1** = real bug or major user-facing gap · **P2** = correctness/UX
 · **P3** = cleanup.
 
+## PacketBBS terminal connection (proposed; not started)
+
+Canonical feature note:
+[`dev/features-packetbbs-terminal.md`](./dev/features-packetbbs-terminal.md).
+
+- **P3 — PacketBBS saved connection preset (PBI1–PBI5).** After the current
+  PacketADE product decisions and release gates, add a versioned non-secret
+  endpoint setting, bounded `/healthz` probe, safe external Web launch,
+  structured-argv Telnet pane launch, and one tagged cross-repository smoke.
+  Do not store BBS credentials, embed its remote page in a privileged Tauri
+  webview, share identities/databases, or make PacketADE startup depend on the
+  board.
+
 ## Dictation reliability and BridgeVoice response
 
 Canonical repair record:
