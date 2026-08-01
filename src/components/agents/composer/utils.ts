@@ -51,20 +51,17 @@ export const MODE_ORDER: AgentMode[] = ["agent", "ask", "manual", "plan"];
 
 /**
  * Provider dropdown grouping. Only includes `api-*` agents (PTY CLI agents
- * like `claude-code` / `codex` are handled elsewhere). The subscription
- * providers (`api-claude-oauth`, `api-openai-codex`) are fully wired via
- * the sidecar and share this dropdown with the key-based API providers.
+ * like `claude-code` / `codex` are handled elsewhere). Every row here
+ * authenticates with an API key from the OS keyring — PacketADE offers no
+ * Claude.ai / ChatGPT subscription login for API agents.
+ *
+ * `api-claude-oauth` is a historical id, not an OAuth row: it is the Claude
+ * Agent SDK running in the sidecar on the Anthropic API key.
+ * `api-openai-codex` was removed in 2026-07 (see `RETIRED_API_AGENTS`).
  */
 export const PROVIDER_GROUPS: { label: string; agents: AgentCli[] }[] = [
   { label: "Anthropic", agents: ["api-claude-oauth" as AgentCli, "api-claude"] },
-  {
-    label: "OpenAI",
-    agents: [
-      "api-openai-codex" as AgentCli,
-      "api-openai",
-      "api-openai-agents",
-    ],
-  },
+  { label: "OpenAI", agents: ["api-openai", "api-openai-agents"] },
   { label: "Other", agents: ["api-openrouter", "api-minimax", "api-ollama"] },
 ];
 

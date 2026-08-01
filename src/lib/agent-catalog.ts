@@ -54,14 +54,13 @@ export interface TerminalAgentEntry {
 
 /**
  * Concise chat "face" names keyed by agentCli. `api-models.ts` names some
- * providers by billing surface ("Anthropic (Subscription)"); the picker wants
- * the runtime face ("Claude OAuth") so search disambiguation reads naturally
+ * providers by runtime ("Claude Agent SDK (API)"); the picker wants the short
+ * face ("Claude Agent SDK") so search disambiguation reads naturally
  * ("cla" → Claude under Chat agents, Claude Code under Terminals).
  */
 const CHAT_FACE: Partial<Record<AgentCli, string>> = {
-  "api-claude-oauth": "Claude OAuth",
+  "api-claude-oauth": "Claude Agent SDK",
   "api-claude": "Claude API",
-  "api-openai-codex": "Codex ChatGPT",
   "api-openai": "OpenAI",
   "api-openai-agents": "OpenAI Agents",
   "api-minimax": "MiniMax",

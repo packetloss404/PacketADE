@@ -11,7 +11,11 @@ import {
 import { getDefaultModel } from "@/lib/api-models";
 import { derivedArtifactProvenance } from "@/lib/provenance";
 import { requestConversationSave } from "@/stores/agentConversationPersistence";
-import { useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
+import {
+  resolveRetiredApiAgent,
+  useAgentTaskStore,
+  type AgentCli,
+} from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useServerStore } from "@/stores/serverStore";
 import type { Attempt, AttemptReviewGate, Flight, ReviewGateReport } from "@/types/flight";
@@ -185,8 +189,21 @@ export async function startReviewGate(
   if (!options.force && attempt.reviewGate) return;
 
   startingAttempts.add(key);
-  const reviewerAgent = policy.reviewerAgentConfigId as AgentCli;
-  const reviewerModel = policy.reviewerModel || getDefaultModel(reviewerAgent);
+  // A persisted policy can name a provider that no longer exists — chiefly
+  // `api-openai-codex`, removed in 2026-07. Substituting its designated
+  // replacement is the one place a retired id SHOULD be remapped: a reviewer
+  // gate that silently no-ops is strictly worse than one that reviews with a
+  // comparable model, and the alternative (an unroutable provider) fails the
+  // attempt for a reason the user cannot act on. Conversations get the
+  // opposite treatment — read-only, explicit user switch, never automatic.
+  const reviewerAgent = resolveRetiredApiAgent(policy.reviewerAgentConfigId as AgentCli);
+  // Also re-derive the model when the agent was substituted: a `gpt-5.5`
+  // pinned for Codex is not necessarily a model the replacement offers, and
+  // `getDefaultModel` on a retired id returns "" (an empty model string is
+  // how this used to reach the backend).
+  const substituted = reviewerAgent !== policy.reviewerAgentConfigId;
+  const reviewerModel =
+    (substituted ? "" : policy.reviewerModel) || getDefaultModel(reviewerAgent);
   const conversationId = `review-${crypto.randomUUID()}`;
   const startedAt = Date.now();
   patchReviewGate(flightId, attemptId, {

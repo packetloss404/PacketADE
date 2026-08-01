@@ -46,6 +46,7 @@ import {
 } from "@/stores/asyncAttemptTerminalListeners";
 import { maybeEscalate, recordAttemptFailure } from "@/lib/flightCoordination";
 import { getDefaultModel, getProviderForAgent } from "@/lib/api-models";
+import { attemptProviderFor } from "@/lib/attemptRouting";
 import type { ServerConfig } from "@/types/server";
 import { reviewerGateAllowsAcceptance } from "@/lib/reviewerGate";
 import {
@@ -243,7 +244,9 @@ export function buildReassignSpec(
   newAgentConfigId: string,
   lookupServer: (id: string) => ServerConfig | undefined,
 ): AttemptTargetSpec | null {
-  const provider = newAgentConfigId.replace(/^api-/, "");
+  // Canonical `get_provider` id via the shared map — never a prefix-strip;
+  // `api-claude` is `anthropic`, not `claude` (see `attemptProviderFor`).
+  const provider = attemptProviderFor(newAgentConfigId);
   const model = getDefaultModel(newAgentConfigId as AgentCli);
   if (failed.target.kind === "local") {
     return {
@@ -1546,7 +1549,7 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     const target = cooperativeTarget(flight);
     for (const task of ready) {
       patchTask(flight.id, task.id, { status: "queued", blockedReason: undefined });
-      const provider = task.agentConfigId.replace(/^api-/, "");
+      const provider = attemptProviderFor(task.agentConfigId);
       const spec: AttemptTargetSpec = target.server
         ? {
             kind: "ssh",

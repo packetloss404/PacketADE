@@ -29,14 +29,16 @@ const PROVIDERS: ProviderEntry[] = [
   {
     id: "claude-oauth",
     name: "Anthropic (Claude subscription)",
-    description: "Sign in with your Claude.ai account for Pro / Max usage.",
+    description:
+      "Sign in with your Claude.ai account so terminal Claude Code sessions use your Pro / Max plan.",
     loginEvent: "packetade:open-claude-login",
     loginCommand: "claude login",
   },
   {
     id: "openai-codex",
     name: "OpenAI (ChatGPT Plus/Pro)",
-    description: "Sign in with your ChatGPT account to use Codex via your plan.",
+    description:
+      "Sign in with your ChatGPT account so terminal Codex CLI sessions use your plan.",
     loginEvent: "packetade:open-codex-login",
     loginCommand: "codex login",
   },
@@ -47,11 +49,18 @@ type StatusEntry = ProviderAuthStatus | "loading";
 /**
  * v0.8.1: Settings → AI Providers → Subscriptions card.
  *
- * Surfaces the two OAuth-based "subscription" agent providers (Claude
- * Code via the Agent SDK and Codex via the ChatGPT login) alongside the
- * existing API-key providers. Live-refreshes on `provider-auth:changed`
- * so a login from another window updates the badge without a manual
- * refresh.
+ * Surfaces the two subscription CLI logins — `claude login` and
+ * `codex login` — alongside the API-key providers. Live-refreshes on
+ * `provider-auth:changed` so a login from another window updates the badge
+ * without a manual refresh.
+ *
+ * SCOPE (2026-07): these credentials serve **PTY / terminal CLI sessions
+ * only**, which are ordinary end-user use of the vendors' own tools. No
+ * PacketADE API-agent row consumes them: every provider in the Agents
+ * picker authenticates with an API key, because Anthropic does not permit
+ * third-party developers to route requests through Free/Pro/Max plan
+ * credentials on behalf of their users
+ * (https://code.claude.com/docs/en/legal-and-compliance).
  *
  * Sign in dispatches the existing per-provider window event that App.tsx
  * picks up to spawn a workspace PTY running `claude login` / `codex login`.

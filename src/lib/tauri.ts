@@ -3113,6 +3113,41 @@ export async function listOllamaModels(): Promise<OllamaModel[]> {
 }
 
 /**
+ * Ollama local-runtime knobs, sent on every native `/api/chat` request.
+ *
+ * `numCtxCap` is a CEILING, not an absolute value: the model's own trained
+ * context window (read from `/api/show`) wins when it is smaller, because
+ * exceeding it degrades quality via rope scaling. Raising the cap costs VRAM
+ * (KV cache is roughly 128 KiB/token on a 7-8B model); leaving it too low means
+ * Ollama silently drops the oldest messages.
+ *
+ * `keepAlive` is how long the daemon keeps the model resident after a turn.
+ * Ollama's own default (`5m`) expires inside a normal agent loop and every
+ * expiry costs a cold reload.
+ */
+export type OllamaRuntimeOptions = {
+  numCtxCap: number;
+  keepAlive: string;
+  defaultNumCtxCap: number;
+  defaultKeepAlive: string;
+};
+
+export async function getOllamaRuntimeOptions(): Promise<OllamaRuntimeOptions> {
+  return invoke<OllamaRuntimeOptions>("get_ollama_runtime_options");
+}
+
+/** Pass `null` for either field to clear the override and restore the default. */
+export async function setOllamaRuntimeOptions(
+  numCtxCap: number | null,
+  keepAlive: string | null,
+): Promise<OllamaRuntimeOptions> {
+  return invoke<OllamaRuntimeOptions>("set_ollama_runtime_options", {
+    numCtxCap,
+    keepAlive,
+  });
+}
+
+/**
  * MiniMax endpoint. MiniMax serves the same API from two hosts —
  * `https://api.minimax.io/v1` (global, the default) and
  * `https://api.minimaxi.com/v1` (mainland China) — and a key is only valid

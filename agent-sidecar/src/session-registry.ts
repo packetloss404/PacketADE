@@ -16,27 +16,36 @@ import { applyMcpTrustSnapshot } from "./mcp-trust.js";
 import type { ProviderHandler } from "./providers/base.js";
 import { EchoProvider } from "./providers/echo.js";
 import { AnthropicProvider } from "./providers/anthropic.js";
-import { OpenAICodexProvider } from "./providers/openai-codex.js";
 import { OpenAIAgentsProvider } from "./providers/openai-agents.js";
 
 type ProviderFactories = Record<string, () => ProviderHandler>;
 
-// Factory map — both subscription providers are wired:
-//   - "claude-oauth"  → Anthropic Agent SDK (OAuth / `claude login`)
-//   - "openai-codex"  → Codex CLI exec mode (`codex login`)
-//   - "openai-agents" → OpenAI Agents SDK (OpenAI API key)
+// Factory map — every provider here authenticates with an **API key** handed
+// over the wire by the Rust supervisor (`StartSessionRequest.apiKey`). No
+// sidecar provider reads a subscription credential store any more.
+//
+//   - "claude-oauth"  → Anthropic Claude Agent SDK (keyring `api-key-anthropic`)
+//   - "openai-agents" → OpenAI Agents SDK          (keyring `api-key-openai`)
+//
+// The `claude-oauth` key is a historical identifier, kept verbatim because
+// persisted conversations store it in `AgentConversation.provider` and resume
+// with it verbatim. It no longer implies OAuth; see providers/anthropic.ts.
+//
+// `openai-codex` was removed in 2026-07: without a ChatGPT subscription,
+// shelling out to `codex exec` bought nothing over `openai-agents`, which
+// talks to the same API with the same key.
+//
 // Add new providers by importing the handler and extending this record.
 const PROVIDERS: ProviderFactories = {
   echo: () => new EchoProvider(),
   "claude-oauth": () => new AnthropicProvider(),
-  "openai-codex": () => new OpenAICodexProvider(),
   "openai-agents": () => new OpenAIAgentsProvider(),
 };
 
 /**
  * Registry entry: the live handler plus the provider name it was created for.
  * The name is kept so `dispatch()` can produce human-readable error messages
- * like `openai-codex does not support retry` without a reverse lookup.
+ * like `openai-agents does not support retry` without a reverse lookup.
  */
 interface SessionEntry {
   handler: ProviderHandler;

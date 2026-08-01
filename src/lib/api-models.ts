@@ -27,25 +27,37 @@ export interface ApiProviderInfo {
   models: ApiModel[];
   needsKey: boolean;
   /**
-   * P1-S4 (Codex honesty): whether this provider's adapter can honor a
-   * per-tool approval round-trip. The OpenAI Codex `exec` adapter maps
-   * EVERY PermissionMode to a sandbox+`never` tuple — its stdin is closed,
-   * so the `-a on-request` interactive-approval flow "can't work here" (the
-   * stdin route was tried and reverted in commit baa8be1;
-   * `agent-sidecar/src/providers/openai-codex.ts`). Undefined is treated as
-   * `true` (approval-capable) for every other provider. When `false`, the
-   * mode pickers filter to only the postures the sandbox can actually
-   * enforce (see `agentModeChipUtils.modesForApprovals`).
+   * P1-S4: whether this provider's adapter can honor a per-tool approval
+   * round-trip. Undefined is treated as `true` (approval-capable). When
+   * `false`, the mode pickers filter to only the postures the adapter can
+   * actually enforce (see `agentModeChipUtils.modesForApprovals`).
+   *
+   * No catalog row sets this today. It was introduced for the OpenAI Codex
+   * `exec` adapter, which mapped EVERY PermissionMode to a sandbox+`never`
+   * tuple because its stdin was closed; that row was removed in 2026-07. The
+   * flag and its plumbing are kept because "this adapter cannot pause for
+   * approval" is a real property a future adapter may have, and discovering
+   * it again the hard way is worse than carrying an unused boolean.
    */
   supportsApprovals?: boolean;
 }
 
 export const API_PROVIDERS: ApiProviderInfo[] = [
   {
+    // Historical id — the row is the Claude Agent SDK, which since 2026-07
+    // authenticates with the `api-key-anthropic` keyring entry instead of a
+    // Claude.ai subscription login. Anthropic's legal-and-compliance page
+    // directs Agent SDK developers to "use the API key authentication
+    // methods described in the Quickstart instead", so the SDK — and the
+    // capabilities only it provides (targeted edit tool, structured plan
+    // blocks, real permission modes, MCP, Claude Code settings sourcing) —
+    // stays; only the credential changed. The ids are unchanged because
+    // persisted conversations store `api-claude-oauth` / `claude-oauth` and
+    // resume with them verbatim.
     id: "anthropic-oauth",
     agentCli: "api-claude-oauth",
-    name: "Anthropic (Subscription)",
-    needsKey: false,
+    name: "Claude Agent SDK (API)",
+    needsKey: true,
     models: [
       { label: "Claude Opus 4.8", value: "claude-opus-4-8" },
       { label: "Claude Opus 4.7", value: "claude-opus-4-7" },
@@ -66,26 +78,13 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
       { label: "Claude Haiku 4.5", value: "claude-haiku-4-5-20251001" },
     ],
   },
-  {
-    id: "openai-codex",
-    agentCli: "api-openai-codex",
-    name: "OpenAI (ChatGPT Plus/Pro)",
-    needsKey: false,
-    // Codex `exec` cannot service ANY approval round-trip — every mode maps
-    // to sandbox + `-a never`; the sandbox IS the safety boundary. Drives
-    // the capability-filtered mode set (P1-S4).
-    supportsApprovals: false,
-    // NOTE: gpt-5-codex is NOT available on a ChatGPT (Plus/Pro) account —
-    // Codex returns 400 "model is not supported when using Codex with a
-    // ChatGPT account". It's API-key-only, so it must not appear here. The
-    // autonomy win for this provider comes from the harness + higher iteration
-    // cap, not the model.
-    models: [
-      { label: "GPT-5.5 (default)", value: "gpt-5.5" },
-      { label: "GPT-5", value: "gpt-5" },
-      { label: "o4-mini", value: "o4-mini" },
-    ],
-  },
+  // REMOVED 2026-07: `openai-codex` / `api-openai-codex`, the
+  // "OpenAI (ChatGPT Plus/Pro)" row that drove `codex exec` as a subprocess on
+  // a ChatGPT subscription login. Without a subscription it bought nothing over
+  // the `openai-agents` row below, which reaches the same OpenAI API with the
+  // same API key and — unlike Codex `exec` — can service a per-tool approval
+  // round-trip. Persisted conversations on the id stay readable; see
+  // `RETIRED_API_AGENTS` in `agentTaskStore.ts`.
   {
     id: "openai",
     agentCli: "api-openai",
@@ -180,10 +179,10 @@ export function getDefaultModel(agent: AgentCli): string {
 }
 
 /**
- * P1-S4 (Codex honesty): whether the given agent's adapter can honor a
- * per-tool approval round-trip. Providers with no catalog entry (e.g. PTY
- * CLI agents) and providers that omit the flag are treated as
- * approval-capable — only `api-openai-codex` is explicitly `false`.
+ * P1-S4: whether the given agent's adapter can honor a per-tool approval
+ * round-trip. Providers with no catalog entry (e.g. PTY CLI agents, and
+ * retired ids) and providers that omit the flag are treated as
+ * approval-capable. No live row sets it `false`; see `supportsApprovals`.
  */
 export function providerSupportsApprovals(agent: AgentCli): boolean {
   return getProviderForAgent(agent)?.supportsApprovals ?? true;

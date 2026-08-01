@@ -1,7 +1,7 @@
 /**
- * D3 (audit finding P0-4) — Plan's "Hand off to Codex" used to hard-code
+ * D3 (audit finding P0-4) — Plan's plan handoff used to hard-code
  * `sshTarget: null`, silently converting a remote conversation into a LOCAL
- * Codex session pointed at a path that only exists on the remote host.
+ * executor session pointed at a path that only exists on the remote host.
  *
  * Contract now:
  *  - the handoff INHERITS the parent's SSH identity (rebuilt from the live
@@ -40,6 +40,16 @@ const taskStoreState = vi.hoisted(() => ({
 vi.mock("@/stores/agentTaskStore", () => ({
   useAgentTaskStore: (selector: (s: typeof taskStoreState) => unknown) =>
     selector(taskStoreState),
+  // The handoff gates on the executor's CREDENTIAL. `api-openai-agents`
+  // authenticates with the OpenAI API key, so the probe key is "openai".
+  // Explicit map, never a prefix-strip — see
+  // `scripts/attempt-provider-mapping.test.mjs`.
+  authProbeProvider: (agent: string) =>
+    ({
+      "api-openai-agents": "openai",
+      "api-claude-oauth": "anthropic",
+      "api-claude": "anthropic",
+    })[agent] ?? "anthropic",
 }));
 
 import { PlanPanel } from "@/components/agents/PlanPanel";
@@ -108,10 +118,10 @@ async function renderPanel(conversation: AgentConversation) {
   await act(async () => {
     render(<PlanPanel conversation={conversation} />);
   });
-  return screen.getByRole("button", { name: /hand off to codex/i });
+  return screen.getByRole("button", { name: /hand off to openai/i });
 }
 
-describe("PlanPanel — Codex handoff preserves the SSH target (D3 / P0-4)", () => {
+describe("PlanPanel — plan handoff preserves the SSH target (D3 / P0-4)", () => {
   it("inherits the parent's remote identity from the live server record", async () => {
     const button = await renderPanel(makeConversation(true));
     await waitFor(() => expect(button).not.toBeDisabled());
@@ -122,7 +132,8 @@ describe("PlanPanel — Codex handoff preserves the SSH target (D3 / P0-4)", () 
 
     await waitFor(() => expect(createApiConversationMock).toHaveBeenCalled());
     expect(createApiConversationMock.mock.calls[0][0]).toMatchObject({
-      agent: "api-openai-codex",
+      // Repointed from the retired `api-openai-codex` row in 2026-07.
+      agent: "api-openai-agents",
       projectPath: "/home/ian/proj",
       sshTarget: {
         serverId: "srv-1",

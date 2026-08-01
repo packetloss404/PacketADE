@@ -581,4 +581,145 @@ describe("legacy conversation hydration strips mirror fields and canonicalizes a
     expect(canonicalizeAgentCli("some-future-provider")).toBe("some-future-provider");
     expect(canonicalizeAgentCli("api-minimax-api")).toBe("api-minimax");
   });
+
+  // ── Retired provider: api-openai-codex (removed 2026-07) ──────────────
+  //
+  // The ChatGPT-subscription Codex row is gone from the picker, the sidecar
+  // registry, and SIDECAR_PROVIDERS. Its persisted conversations must still
+  // hydrate, still read, and must NOT be silently remapped onto another
+  // vendor's credentials.
+  it("hydrates a conversation on the retired api-openai-codex id without crashing", async () => {
+    const retiredConversation = {
+      id: "conv-retired-codex",
+      title: "Codex work",
+      agent: "api-openai-codex",
+      provider: "openai-codex",
+      model: "gpt-5.5",
+      projectPath: "/repo",
+      status: "idle",
+      messages: [
+        { id: "m1", role: "user", content: "do the thing", timestamp: 1 },
+        { id: "m2", role: "assistant", content: "done", timestamp: 2 },
+      ],
+      sessionId: "sess-codex",
+      rawOutput: "",
+      createdAt: 1,
+      updatedAt: 2,
+      mode: "api",
+    };
+
+    const { useAgentTaskStore, hydrateConversations } = await setupHydration([
+      JSON.stringify(retiredConversation),
+    ]);
+
+    expect(() => hydrateConversations()).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const conv = useAgentTaskStore
+      .getState()
+      .conversations.find((c) => c.id === "conv-retired-codex");
+    expect(conv).toBeDefined();
+    // Transcript intact.
+    expect(conv?.messages).toHaveLength(2);
+    // Identity preserved verbatim — NOT aliased onto another provider.
+    // Aliasing would bill a Codex conversation to a different vendor's key.
+    expect(conv?.agent).toBe("api-openai-codex");
+    expect(conv?.provider).toBe("openai-codex");
+  });
+
+  it("refuses new turns on a retired-provider conversation and says why", async () => {
+    const { useAgentTaskStore, hydrateConversations } = await setupHydration([
+      JSON.stringify({
+        id: "conv-retired-send",
+        title: "Codex work",
+        agent: "api-openai-codex",
+        provider: "openai-codex",
+        model: "gpt-5.5",
+        projectPath: "/repo",
+        status: "idle",
+        messages: [{ id: "m1", role: "user", content: "hi", timestamp: 1 }],
+        sessionId: "sess-codex",
+        rawOutput: "",
+        createdAt: 1,
+        updatedAt: 2,
+        mode: "api",
+      }),
+    ]);
+
+    hydrateConversations();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // sendMessage on a hydrated conversation normally routes into
+    // resumeApiConversation; the retired guard must intercept before any
+    // backend call, otherwise this reaches the sidecar and dies as
+    // "Unknown provider: openai-codex".
+    useAgentTaskStore.getState().sendMessage("conv-retired-send", "another turn");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const conv = useAgentTaskStore
+      .getState()
+      .conversations.find((c) => c.id === "conv-retired-send");
+    const last = conv?.messages[conv.messages.length - 1];
+    expect(last?.role).toBe("system");
+    expect(last?.content).toMatch(/no longer offers/i);
+    expect(last?.content).toMatch(/OpenAI Agents SDK/);
+    // The user's turn was refused, not queued or half-sent.
+    expect(conv?.messages.some((m) => m.content === "another turn")).toBe(false);
+    expect(conv?.status).not.toBe("failed");
+  });
+
+  it("substitutes a retired reviewer id for automation, but never a conversation", async () => {
+    const { resolveRetiredApiAgent, isRetiredApiAgent } = await import(
+      "@/stores/agentTaskStore"
+    );
+
+    // Automation (Reviewer Gate) resolves to the replacement so a persisted
+    // policy still reviews rather than silently passing the attempt.
+    expect(resolveRetiredApiAgent("api-openai-codex")).toBe("api-openai-agents");
+    // Everything live passes through untouched.
+    expect(resolveRetiredApiAgent("api-claude-oauth")).toBe("api-claude-oauth");
+    expect(resolveRetiredApiAgent("api-openai")).toBe("api-openai");
+
+    // The Agent SDK row survives the OAuth removal — it was re-authenticated
+    // with the Anthropic API key, not retired. Putting it in the retired set
+    // would strand every conversation on it.
+    expect(isRetiredApiAgent("api-claude-oauth")).toBe(false);
+    expect(isRetiredApiAgent("api-openai-codex")).toBe(true);
+  });
+
+  it("routes the Agent SDK row's auth badge to the Anthropic key, not the OAuth probe", async () => {
+    const { authProbeProvider, apiAgentProvider } = await import(
+      "@/stores/agentTaskStore"
+    );
+
+    // Routing target is unchanged — the sidecar registry key is still
+    // `claude-oauth`, which is what persisted conversations resume with.
+    expect(apiAgentProvider("api-claude-oauth")).toBe("claude-oauth");
+    // The BADGE, however, must reflect the credential actually used. The
+    // `claude-oauth` probe reads ~/.claude and belongs to the PTY CLI launch
+    // gate; the Agents pane must not call it.
+    expect(authProbeProvider("api-claude-oauth")).toBe("anthropic");
+    // Every other row's badge and routing agree.
+    for (const agent of ["api-claude", "api-openai", "api-openai-agents", "api-ollama"]) {
+      expect(authProbeProvider(agent)).toBe(apiAgentProvider(agent));
+    }
+  });
+
+  it("createApiConversation rejects a retired provider id outright", async () => {
+    const { useAgentTaskStore } = await setupHydration([]);
+
+    await expect(
+      useAgentTaskStore.getState().createApiConversation({
+        agent: "api-openai-codex",
+        projectPath: "/repo",
+        model: "gpt-5.5",
+        initialMessage: "go",
+        thinkingEnabled: false,
+        planMode: false,
+        sshTarget: null,
+      }),
+    ).rejects.toThrow(/no longer offers/i);
+  });
 });

@@ -1,11 +1,121 @@
 # Removing subscription OAuth from the Agents (API) surface
 
-Status: **WI-1 SHIPPED. WI-2 onward still design only.**
+Status: **DONE — but NOT by the plan below.** WI-1 shipped as written; the rest
+was superseded by a re-authentication approach and implemented 2026-07-31.
+See §-1 first. Everything from §1.2 onward is retained as the blast-radius map
+that made the change tractable, not as instructions.
 Created: 2026-07-31
 Owner decision (2026-07-31): *"let's not use OAuth with agents."*
 Owner decision (2026-07-31): route the auxiliary features through the
 task-routing layer at the cheapest configured API provider.
+Owner decision (2026-07-31, **supersedes the staging in §4**): do not gate or
+delete the Agent SDK path — **re-authenticate it with an API key**.
 Repo state at analysis time: `main` @ `4d3df4f`.
+
+---
+
+## -1. WHAT ACTUALLY SHIPPED (read this before anything below)
+
+The plan below assumed one thing that turned out to be false: that removing
+subscription OAuth meant removing the Claude Agent SDK row. It does not.
+
+**The prohibition is on the credential, not the SDK.** The Agent SDK
+[Quickstart](https://code.claude.com/docs/en/agent-sdk/quickstart) says, of
+products built on the SDK: *"Unless previously approved, Anthropic does not
+allow third party developers to offer claude.ai login or rate limits for their
+products, including agents built on the Claude Agent SDK. Please use the API key
+authentication methods described in this document instead."* The
+[legal-and-compliance page](https://code.claude.com/docs/en/legal-and-compliance)
+says developers *"including those using the Agent SDK, should use API key
+authentication through Claude Console or a supported cloud provider."*
+
+So the SDK is the **sanctioned** path. §2.1's capability table — which
+correctly showed that migrating `api-claude-oauth` → `api-claude` is a real
+downgrade (no targeted edit tool, no `plan_block`, weaker plan mode, no Claude
+Code settings sourcing) — is now an argument for **keeping** the SDK row, not a
+cost to be absorbed.
+
+### What changed
+
+1. **`api-claude-oauth` was re-authenticated, not removed.** Label:
+   "Claude Agent SDK (API)". `agent-sidecar/src/providers/anthropic.ts` now
+   requires `req.apiKey` (the pattern `openai-agents.ts` already used) and
+   passes it as `ANTHROPIC_API_KEY` through the SDK's `Options.env`. Rust loads
+   it from keyring `api-key-anthropic` in the `api_agent.rs` sidecar-routing
+   branch. `CLAUDE_CODE_OAUTH_TOKEN` is blanked in the same env map. A missing
+   key fails the session immediately with a Settings pointer — it never falls
+   through to whatever credential the machine has.
+2. **The ids were NOT renamed.** `api-claude-oauth` / `claude-oauth` survive as
+   historical identifiers. Rationale in §-1.1.
+3. **`api-openai-codex` was removed outright**, per §1.5/§2.2 — but with the
+   §3.3 graceful-degradation behaviour implemented at the same time rather
+   than a release later.
+4. **No build-time gate was introduced.** WI-2, WI-3, WI-12 are moot: there is
+   nothing left to gate. `src/lib/env.ts` and `src-tauri/Cargo.toml` were not
+   touched.
+5. **Stage C's deletions happened immediately for Codex** (`openai-codex.ts`,
+   `codex-mcp.ts`, `mcp-trust-proxy.ts`, three smoke gates) and **never for
+   Anthropic** — `anthropic.ts` and `@anthropic-ai/claude-agent-sdk` are load-
+   bearing again. §1.2's "FULLY DEAD" verdict on `anthropic.ts` is wrong.
+
+### -1.1 Why the ids were kept
+
+The plan's §3.2 correctly warned against *aliasing* `api-claude-oauth` to
+another provider. Renaming it to something honest (`api-claude-agent-sdk`) is a
+different operation, and it was still rejected:
+
+- **`AgentConversation.provider` is read verbatim on resume**
+  (`agentTaskStore.ts` `resumeApiConversation`) and is never canonicalised on
+  load — §3.1 flags this. A rename needs a second migration path on a field
+  with no existing shim, for zero user-visible benefit.
+- The `api-claude-oauth` ↔ `claude-oauth` pair is load-bearing in
+  `costGuardrails.providerSourceForAgentProvider` and `flight_cost.rs`'s strip
+  site. Renaming splits historical spend across two keys.
+- The id is internal. The user-facing string is the label, and that changed.
+- The retired-id treatment is expensive and was spent where it is actually
+  needed: the Codex row, where the provider genuinely no longer exists.
+
+Every site that could mislead a reader carries a comment saying the id does not
+imply OAuth. `authProbeProvider` (new, in `agentTaskStore.ts`) is the seam that
+keeps the *badge* honest: it maps the Agent SDK row to the `anthropic` keyring
+probe, so the Agents pane stopped calling the `claude-oauth` OAuth probe without
+that probe being deleted — §1.3's fence held.
+
+### -1.2 Capability parity under API-key auth — verified
+
+The docs document permissions (`canUseTool`), `permissionMode` including
+`"plan"`, `mcpServers`, `hooks` (`PreToolUse`), streaming input mode,
+`interrupt()` / `setPermissionMode()` / `setModel()`, the full built-in tool
+suite, and `settingSources` loading of `~/.claude` + project `.claude/` **once,
+for the SDK, without branching on auth mode**. Nothing is documented as
+subscription-only. The tier/provider caveats that do exist (Artifact tool,
+RemoteTrigger, WebSearch on Bedrock) are claude.ai or cloud-provider
+limitations, not API-key limitations.
+
+Caveat worth recording: the docs do not *affirmatively state* that every feature
+behaves identically under both auth modes — they simply never branch. Empirical
+support from the installed SDK 0.2.116: `ApiKeySource` is `'user' | 'project' |
+'org' | 'temporary' | 'oauth'` (distinct sources, same runtime), and the session-
+store code path explicitly skips importing `.credentials.json` when
+`ANTHROPIC_API_KEY` is set. Nothing found suggests a capability split.
+
+### -1.3 Follow-ups this change could not close
+
+- `src/components/flights/LaunchAsyncFlightModal.tsx:102,105` still defaults its
+  reviewer to `api-openai-codex` (another agent owned the file). The modal's
+  existing `if (!reviewerProvider) return "Choose a supported API reviewer."`
+  guard means it degrades to a validation message rather than crashing, and
+  `reviewerGateRuntime.ts` substitutes the replacement for persisted policies —
+  but the *default* should be repointed to `api-openai-agents`.
+- `agent-sidecar/package.json` still declares `@modelcontextprotocol/sdk`, whose
+  only importer (`mcp-trust-proxy.ts`) was deleted. Dropping it changes the
+  lockfile and the `prune-sidecar.js` bundling path, so it was left for a
+  deliberate dependency pass.
+- `agent_sidecar/handler.rs`'s cumulative-token branch
+  (`owner.provider == "openai-codex"`) is now reachable only for historical
+  flight attempts. Left in place so old data cannot double-count.
+- `mcp-config.ts` still hardcodes `~/.claude/settings.json` as the global MCP
+  source for `openai-agents` too (§6's last row). Unchanged, still odd.
 
 > **UPDATE 2026-07-31 — WI-1 is implemented.** The four auxiliary features no
 > longer touch subscription credentials. New seam:
@@ -500,7 +610,17 @@ regression test at all** (only hit for "gemini" in tests is
 
 ---
 
-## 4. Staging: remove outright, or gate?
+## 4. Staging: remove outright, or gate? — **SUPERSEDED**
+
+> **This whole section is obsolete.** It answers "how do we withdraw the Agent
+> SDK row safely?", and the answer turned out to be "we don't withdraw it — we
+> re-credential it." No build-time flag was introduced, `SIDECAR_PROVIDERS`
+> still contains `claude-oauth`, and §4.2's Stages A/B/C do not describe what
+> shipped. §4.1's observation that compliance scales with distribution is still
+> true, but it is no longer load-bearing: an API-key build is compliant at any
+> distribution scale, which is strictly better than a flag. Retained for the
+> record of what was considered and why it was not chosen.
+
 
 ### 4.1 The decisive observation
 
@@ -639,7 +759,9 @@ Notes for later items:
   id. That looks like a live defect in the manual launch path; it is out of
   WI-1's scope but worth a backlog entry.
 
-**WI-2 — Introduce the build-time gate.**
+**WI-2 — Introduce the build-time gate. — CUT.** Superseded by
+re-authentication; there is nothing left to gate. Original text:
+
 Files: `src/lib/env.ts` (new flag), `src/lib/api-models.ts:43-54,68-87`,
 `src/components/agents/composer/utils.ts:59,63`,
 `src/components/views/AgentsView.tsx:21-30`,
@@ -648,13 +770,25 @@ Files: `src/lib/env.ts` (new flag), `src/lib/api-models.ts:43-54,68-87`,
 Effort **M**. Depends on: WI-1 (otherwise the gate is cosmetic).
 Compile-time on the Rust side, not an env var — see §4.2.
 
-**WI-3 — Release Stage A.** CHANGELOG entry stating plainly that PacketADE no
+**WI-3 — Release Stage A. — FOLDED into the single re-auth release.**
+Original text:
+ CHANGELOG entry stating plainly that PacketADE no
 longer offers Claude.ai / ChatGPT subscription login for API agents and why.
 Effort **S**. Depends on: WI-1, WI-2.
 
 ### Stage B — deprecation UX + data migration
 
-**WI-4 — `RETIRED_API_AGENTS` + read-only conversation behaviour.**
+**WI-4 — `RETIRED_API_AGENTS` + read-only conversation behaviour. — DONE
+2026-07-31**, scoped to `api-openai-codex` only (`api-claude-oauth` survives, so
+it is deliberately NOT in the set — that would be an alias-shaped mis-billing,
+exactly what §3.2 warns about). Implemented in `agentTaskStore.ts` as
+`RETIRED_API_AGENTS`, `RETIRED_API_AGENT_REPLACEMENTS`, `isRetiredApiAgent`,
+`resolveRetiredApiAgent`, `retiredApiAgentNotice`, and
+`appendRetiredAgentNotice`, with guards on `createApiConversation` (throws),
+`sendMessage`, and `resumeApiConversation` (both append a persisted `system`
+message). The `apiAgentProvider` map entry is KEPT per §3.3 item 2. Regression
+coverage in `persistenceMigration.test.ts`. Original text:
+
 Files: `src/stores/agentTaskStore.ts:159-205` (new set; **keep** the
 `apiAgentProvider` entries), `src/stores/agentConversationPersistence.ts:164`,
 `src/components/agents/composer/Composer.tsx`, `AgentChatPane.tsx`,
@@ -662,13 +796,25 @@ Files: `src/stores/agentTaskStore.ts:159-205` (new set; **keep** the
 Effort **M**. Depends on: WI-2. Includes the send-path guard (§3.3 item 5) in
 `createApiConversation` / `resumeApiConversation` / `sendMessage`.
 
-**WI-5 — "Switch provider" action.**
+**WI-5 — "Switch provider" action. — NOT DONE.** The graceful-degradation half
+(WI-4) shipped; the explicit user-driven rewrite did not. A user who wants to
+continue a retired conversation currently starts a new one. Still worth doing.
+Original text:
+
 Files: `src/stores/agentTaskStore.ts` (new action rewriting `agent` + `provider`,
 appending a system message, calling `scheduleSave`),
 `src/components/agents/` banner UI.
 Effort **S**. Depends on: WI-4. Must be explicit and logged; never automatic.
 
-**WI-6 — Repoint the `api-openai-codex` consumers.**
+**WI-6 — Repoint the `api-openai-codex` consumers. — MOSTLY DONE 2026-07-31.**
+`PlanPanel.tsx` ("Hand off to Codex" → "Hand off to OpenAI",
+`HANDOFF_EXECUTOR_AGENT = "api-openai-agents"`, auth gate via
+`authProbeProvider`), `CooperativeFlightCard.tsx` (reviewer/scout →
+`api-openai-agents`), and the `reviewerAgentConfigId` fallback
+(`reviewerGateRuntime.ts`, which also re-derives the model so a Codex-pinned
+`gpt-5.5` cannot leak). **`LaunchAsyncFlightModal.tsx` is outstanding** — see
+§-1.3. Original text:
+
 Files: `src/components/agents/PlanPanel.tsx:189,207,226-244`;
 `src/components/flights/LaunchAsyncFlightModal.tsx:131-137`;
 `src/components/flights/CooperativeFlightCard.tsx:57-58`; plus the
@@ -676,7 +822,14 @@ Files: `src/components/agents/PlanPanel.tsx:189,207,226-244`;
 Effort **M**. Depends on: WI-0 (so the cost delta of moving reviewers to a
 metered provider is measurable), WI-4.
 
-**WI-7 — Cost/guardrail read-compat + regression tests.**
+**WI-7 — Cost/guardrail read-compat + regression tests. — DONE 2026-07-31.**
+Both `costGuardrails.ts` directions kept (with a comment saying why);
+`CostDashboardView.tsx` no longer exists. Tests added to
+`persistenceMigration.test.ts`, `attemptRouting.test.ts`,
+`agentCatalog.test.ts`, `AgentModeChip.test.tsx`, plus a new offline sidecar
+gate `agent-sidecar/test/anthropic-apikey-smoke.mjs` and a retired-provider case
+in `registry-smoke.mjs`. Original text:
+
 Files: `src/lib/costGuardrails.ts:327-353` (keep both directions),
 `src/components/views/CostDashboardView.tsx:31,33,46,49` (keep labels),
 `src/stores/__tests__/persistenceMigration.test.ts` (new cases following the
@@ -686,7 +839,11 @@ Effort **M**. Depends on: WI-4, WI-5.
 Note another agent is concurrently editing `pricing.rs` / `conversationCost.ts` —
 rebase on that work before starting.
 
-**WI-8 — Docs.**
+**WI-8 — Docs. — DONE 2026-07-31.** `README.md` provider table + sidecar
+sections, `CLAUDE.md` provider table (and the stale `PROTOCOL_VERSION` 10 → 11),
+`agent-sidecar/README.md` (also 9 → 11), this file, `CHANGELOG.md`
+`[Unreleased]`. Original text:
+
 Files: `README.md:64,66,133,341,365-366,379`; `CLAUDE.md` provider table (**and
 fix the stale `PROTOCOL_VERSION` 10 → 11**);
 `dev/sidecar-over-ssh-verification.md` (rescope to `openai-agents`);
@@ -699,7 +856,14 @@ Effort **S**. Depends on: WI-6.
 
 ### Stage C — deletion (later, on evidence)
 
-**WI-10 — Delete the sidecar OAuth providers.**
+**WI-10 — Delete the sidecar OAuth providers. — PARTIALLY DONE, PARTIALLY
+CANCELLED (2026-07-31).** `openai-codex.ts`, `codex-mcp.ts`,
+`mcp-trust-proxy.ts` and the three codex smoke gates are deleted;
+`registry-smoke.mjs` now asserts the id is rejected. **`anthropic.ts` and
+`@anthropic-ai/claude-agent-sdk` are NOT deleted and must not be** — they are
+the re-authenticated Agent SDK path. `@modelcontextprotocol/sdk` is now
+unimported but still declared (§-1.3). Original text:
+
 Files: delete `agent-sidecar/src/providers/anthropic.ts`,
 `agent-sidecar/src/providers/openai-codex.ts`, `agent-sidecar/src/codex-mcp.ts`,
 `agent-sidecar/src/mcp-trust-proxy.ts`; edit
@@ -713,7 +877,14 @@ Effort **M**. Depends on: WI-9 + one full release cycle + owner confirmation.
 `externalBin`/`resources` wiring in `src-tauri/tauri.conf.json` are affected by
 the dependency change.
 
-**WI-11 — Delete the Rust OAuth routing.**
+**WI-11 — Delete the Rust OAuth routing. — PARTIALLY DONE (2026-07-31).**
+`SIDECAR_PROVIDERS` dropped `openai-codex` and **kept `claude-oauth`**;
+`remote_auth_preflight` collapsed to `""` for every provider (sidecar providers
+now carry their key over the wire from the LOCAL keyring, so there is nothing
+for the remote host to be signed in to) with `remote_sidecar_preflight_script`
+intact; `handler.rs`'s codex cumulative branch retained for historical data.
+`provider_auth.rs` and `auth_watcher.rs` untouched, per §1.3. Original text:
+
 Files: `src-tauri/src/commands/agent_sidecar/mod.rs:30,126-127`;
 `supervisor.rs:1475-1485,1761-1772` (`remote_auth_preflight` collapses; **keep**
 `remote_sidecar_preflight_script`); `handler.rs:531-533,570-620` (codex
@@ -723,11 +894,15 @@ Effort **M**. Depends on: WI-10.
 **Do not touch `provider_auth.rs` or `auth_watcher.rs`** beyond comments — see
 §1.3.
 
-**WI-12 — Remove the gate.**
+**WI-12 — Remove the gate. — CUT** (no gate was ever introduced). Original text:
+
 Files: `src/lib/env.ts`, `src-tauri/Cargo.toml`, and the WI-2 call sites.
 Effort **S**. Depends on: WI-11.
 
-**WI-13 — Retire the `RETIRED_API_AGENTS` read-compat shim.**
+**WI-13 — Retire the `RETIRED_API_AGENTS` read-compat shim. — STILL PENDING**,
+per the `backlog.md:229-259` policy, counting from the release that carries the
+2026-07-31 change. Original text:
+
 Per the `backlog.md:229-259` policy: only after at least one release has shipped
 with the WI-4/WI-5 behaviour, so every machine has had a chance to run it.
 Effort **S**. Depends on: WI-12 + one release cycle.

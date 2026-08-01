@@ -1,14 +1,44 @@
-// Claude Agent SDK provider (subscription-auth / OAuth).
+// Claude Agent SDK provider (Anthropic **API key** auth).
 //
 // Wraps `query()` from `@anthropic-ai/claude-agent-sdk` and translates the
 // SDK's message stream into the sidecar's wire-protocol events. Uses a
 // push-based async-iterable prompt so the single long-lived `query()` call
 // serves every turn of the conversation (no resume-per-turn fallback).
 //
-// OAuth: the SDK picks up `~/.claude/credentials` (or equivalent Claude Code
-// credential store) automatically when no API key env var is set. We do not
-// wire env overrides here — the supervisor is expected to launch this sidecar
-// with an environment that yields OAuth auth.
+// ## Authentication — API key, never subscription OAuth
+//
+// This provider used to rely on the SDK silently picking up the Claude Code
+// OAuth credential store (`~/.claude/.credentials.json`). That is the exact
+// configuration Anthropic prohibits for third-party products:
+//
+//   "Anthropic does not permit third-party developers to offer Claude.ai
+//    login or to route requests through Free, Pro, or Max plan credentials
+//    on behalf of their users."
+//      — https://code.claude.com/docs/en/legal-and-compliance
+//
+//   "Unless previously approved, Anthropic does not allow third party
+//    developers to offer claude.ai login or rate limits for their products,
+//    including agents built on the Claude Agent SDK. Use the API key
+//    authentication methods described in the Quickstart instead."
+//      — https://code.claude.com/docs/en/agent-sdk/overview
+//
+// The SDK itself is the sanctioned path — only the credential was wrong. The
+// Quickstart's documented API-key mechanism is the `ANTHROPIC_API_KEY`
+// environment variable of the process that runs the agent, and `Options.env`
+// is the SDK's documented way to set it ("Environment variables to pass to
+// the Claude Code process. Defaults to `process.env`" — sdk.d.ts). Note the
+// SDK *replaces* the child environment with this object rather than merging
+// (`{...$.env ?? process.env}` in sdk.mjs), so we must spread `process.env`
+// ourselves or the child loses PATH/HOME.
+//
+// We additionally blank `CLAUDE_CODE_OAUTH_TOKEN` so an OAuth token that
+// happens to be exported in the host environment cannot win. The SDK's own
+// session-store code branches on `ANTHROPIC_API_KEY` being present to skip
+// importing `.credentials.json`, so a set key is the documented and the
+// observed signal for "do not use the subscription credential".
+//
+// PTY-backed `claude` CLI sessions are unaffected: they are ordinary use of
+// Claude Code by the user and keep their own OAuth credentials.
 
 import { promises as fsPromises } from "node:fs";
 import type {
@@ -432,6 +462,21 @@ export class AnthropicProvider implements ProviderHandler {
 
   async start(req: StartSessionRequest, emit: Emit): Promise<void> {
     this.emitCurrent = emit;
+    // Compliance gate: this provider is API-key-only. Fail loudly and
+    // specifically rather than starting a query that would silently fall
+    // back to whatever credential the ambient environment supplies.
+    if (!req.apiKey || req.apiKey.trim().length === 0) {
+      emit({
+        type: "error",
+        sessionId: req.sessionId,
+        message:
+          "No Anthropic API key was provided to the Claude Agent SDK provider. " +
+          "Add your Anthropic API key in Settings → API Keys. " +
+          "PacketADE does not use Claude subscription (Claude.ai) login for API agents.",
+      });
+      return;
+    }
+    const apiKey = req.apiKey.trim();
     this.abort = new AbortController();
     this.approveWrites = req.approveWrites === true;
 
@@ -592,8 +637,20 @@ export class AnthropicProvider implements ProviderHandler {
       req.mcpServers ?? {},
     );
 
+    // Environment for the SDK's Claude Code child process. The SDK REPLACES
+    // (does not merge) `process.env` with this object, so spread first.
+    // `ANTHROPIC_API_KEY` is the documented API-key mechanism (Quickstart);
+    // clearing `CLAUDE_CODE_OAUTH_TOKEN` makes sure an ambient subscription
+    // token in the host environment cannot take precedence.
+    const sdkEnv: Record<string, string | undefined> = {
+      ...process.env,
+      ANTHROPIC_API_KEY: apiKey,
+      CLAUDE_CODE_OAUTH_TOKEN: undefined,
+    };
+
     const options: Options = {
       abortController: this.abort,
+      env: sdkEnv,
       cwd: req.projectPath || undefined,
       model: req.model || undefined,
       systemPrompt: req.systemPrompt && req.systemPrompt.length > 0 ? req.systemPrompt : undefined,

@@ -27,7 +27,17 @@ pub use supervisor::SidecarManager;
 
 /// Providers whose sessions are routed through the Node sidecar rather than
 /// the in-process Rust runtime. Keep in sync with slice C's dispatch logic.
-pub const SIDECAR_PROVIDERS: &[&str] = &["claude-oauth", "openai-codex", "openai-agents", "echo"];
+///
+/// Every entry authenticates with an **API key** loaded from the OS keyring by
+/// `api_agent.rs` and handed to the sidecar over the wire. `claude-oauth` is a
+/// historical identifier retained for persisted-conversation compatibility —
+/// it now means "Claude Agent SDK on `api-key-anthropic`", not OAuth.
+///
+/// `openai-codex` was removed in 2026-07: it existed only to drive `codex exec`
+/// on a ChatGPT subscription, and `openai-agents` reaches the same API with an
+/// API key. The short id stays a valid *auth-probe* input in
+/// `provider_auth.rs` because PTY Codex CLI sessions still use it.
+pub const SIDECAR_PROVIDERS: &[&str] = &["claude-oauth", "openai-agents", "echo"];
 
 /// Wire protocol version this supervisor was built against. Must match
 /// `PROTOCOL_VERSION` in `agent-sidecar/src/protocol.ts`. We log a warning if
@@ -118,15 +128,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn codex_routes_through_the_sidecar_forward_path() {
-        // Codex is a sidecar provider, so start_session for it goes through the
-        // `forward_*` path — which is provider-agnostic w.r.t. SSH. This is what
-        // makes Codex-over-SSH work via the remote sidecar (no per-provider SSH
-        // gate); a regression that dropped codex here would force it local-only.
-        assert!(is_sidecar_provider("openai-codex"));
+    fn sdk_providers_route_through_the_sidecar_forward_path() {
+        // Both surviving sidecar providers go through the `forward_*` path,
+        // which is provider-agnostic w.r.t. SSH. That is what makes them work
+        // over the remote sidecar (no per-provider SSH gate); a regression that
+        // dropped one here would force it local-only.
         assert!(is_sidecar_provider("claude-oauth"));
         assert!(is_sidecar_provider("openai-agents"));
         assert!(!is_sidecar_provider("api-openai"));
         assert!(!is_sidecar_provider("api-claude"));
+    }
+
+    #[test]
+    fn dropped_codex_provider_no_longer_routes_to_the_sidecar() {
+        // `openai-codex` was the ChatGPT-subscription `codex exec` row. It is
+        // gone from the picker and from the sidecar registry, so a stale
+        // persisted conversation must NOT be forwarded to a sidecar that has
+        // no factory for it — the frontend's RETIRED_API_AGENTS guard is the
+        // user-facing half, and this is the backend half.
+        assert!(!is_sidecar_provider("openai-codex"));
     }
 }

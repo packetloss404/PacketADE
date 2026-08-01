@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { apiAgentProvider } from "@/stores/agentTaskStore";
+import { authProbeProvider } from "@/stores/agentTaskStore";
 import type { AgentCli } from "@/stores/agentTaskStore";
 import {
   authStatusKey,
@@ -17,8 +17,12 @@ export interface UseProviderAuthStatusResult {
 }
 
 /** Polls + subscribes to provider auth status for every agent in
- * `PROVIDER_GROUPS`. The Rust side watches the claude/codex credential dirs
- * and emits `provider-auth:changed` so badges auto-update after login.
+ * `PROVIDER_GROUPS`. Probes go through `authProbeProvider`, not
+ * `apiAgentProvider`: every picker row is API-key authenticated now, so the
+ * Agent SDK row (`api-claude-oauth`) reports its Anthropic *keyring* status
+ * rather than the `claude-oauth` OAuth-file probe, which belongs to the PTY
+ * CLI launch gate. The Rust side still emits `provider-auth:changed` so the
+ * badges refresh when a key or credential changes.
  *
  * Pass `enabled: false` to skip all probing/subscribing (the unified
  * composer's chat variant has no provider picker, so probing ~9 providers
@@ -47,7 +51,7 @@ export function useProviderAuthStatus(enabled = true): UseProviderAuthStatusResu
     useShallow((s) => {
       const out: Record<string, AuthEntry> = {};
       for (const agent of groupAgents) {
-        const entry = s.entries[authStatusKey(apiAgentProvider(agent))];
+        const entry = s.entries[authStatusKey(authProbeProvider(agent))];
         if (entry) out[agent] = entry.value;
       }
       return out;
@@ -57,7 +61,7 @@ export function useProviderAuthStatus(enabled = true): UseProviderAuthStatusResu
   const refreshAuthStatuses = useCallback(() => {
     if (!enabled) return;
     for (const agent of groupAgents) {
-      void fetchStatus(apiAgentProvider(agent), null, { force: true });
+      void fetchStatus(authProbeProvider(agent), null, { force: true });
     }
   }, [groupAgents, enabled, fetchStatus]);
 
@@ -65,7 +69,7 @@ export function useProviderAuthStatus(enabled = true): UseProviderAuthStatusResu
     if (!enabled) return;
     ensureListener();
     for (const agent of groupAgents) {
-      void fetchStatus(apiAgentProvider(agent));
+      void fetchStatus(authProbeProvider(agent));
     }
   }, [groupAgents, enabled, fetchStatus, ensureListener]);
 

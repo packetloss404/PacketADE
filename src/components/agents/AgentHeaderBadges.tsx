@@ -2,7 +2,7 @@ import { useEffect, useMemo } from "react";
 import { Plane } from "lucide-react";
 import { AuthBadge, type AuthStatus } from "@/components/ui/AuthBadge";
 import { Tooltip } from "@/components/ui/Tooltip";
-import { apiAgentProvider, type AgentCli } from "@/stores/agentTaskStore";
+import { authProbeProvider, type AgentCli } from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAppStore } from "@/stores/appStore";
 import { authStatusKey, useAuthStatusStore } from "@/stores/authStatusStore";
@@ -41,7 +41,7 @@ export function AgentHeaderBadges({
   );
 
   const isApi = agent.startsWith("api-");
-  const provider = isApi ? apiAgentProvider(agent) : null;
+  const provider = isApi ? authProbeProvider(agent) : null;
 
   // Shared cache: N mounted panes on the same provider share one probe and
   // one `provider-auth:changed` subscription. The Agents surface is

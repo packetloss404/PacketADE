@@ -45,31 +45,37 @@ The factory lives in `src/session-registry.ts`. Currently wired:
 
 - **`echo`** — smoke-test provider. Deterministic, no network, used by
   `pnpm sidecar:smoke` to verify the protocol end-to-end.
-- **`claude-oauth`** — Anthropic subscription auth via
+- **`claude-oauth`** — Anthropic **API-key** auth via
   `@anthropic-ai/claude-agent-sdk` (`src/providers/anthropic.ts`). Added in
   Phase 4. Supports the full tool loop, streaming output, MCP server
-  passthrough, and permission / edit approval requests. Auth comes from the
-  Claude Code OAuth credential store — no API key env var needed.
-- **`openai-codex`** — OpenAI ChatGPT subscription via the `codex` CLI
-  (`src/providers/openai-codex.ts`). Current limitations:
-  - No MCP server support. Deliberately not wired — Codex has its own MCP
-    config format (`~/.codex/config.toml` under `[mcp_servers.*]`), and users
-    configure it via `codex mcp add`. Plumbing the sidecar's `mcpServers`
-    field through would mean translating between two incompatible config
-    shapes and fighting the CLI's own precedence rules. Deferred past Tier 3;
-    revisit if user demand indicates benefit. A one-time stderr warning
-    fires if `mcpServers` is non-empty on `start_session`.
-  - Tool-call detail is shallower than the SDK providers because Codex's
-    `--json` output is less structured; unknown event types are logged to
-    stderr and dropped.
-  - `allowedTools` is not enforced — Codex has no equivalent flag, so the
-    provider relies on sandbox policy (`workspace-write` default, `read-only`
-    for plan mode) plus approval gating.
-  - `sendMessage` spawns a fresh `codex exec resume <sessionId>` per turn
-    (Codex's exec mode is one-shot). Overlapping turns are rejected rather
-    than queued.
-  - Auth is handled by the Codex CLI itself — run `codex login` before using
-    this provider.
+  passthrough, and permission / edit approval requests.
+
+  The registry key is historical: it says `oauth`, but since 2026-07 this
+  provider authenticates with an **Anthropic API key**, loaded by Rust from
+  the OS keyring (`api-key-anthropic`) and sent transiently in
+  `start_session.apiKey`. The provider sets it as `ANTHROPIC_API_KEY` in the
+  SDK's `Options.env` — the mechanism the Agent SDK Quickstart documents —
+  and blanks `CLAUDE_CODE_OAUTH_TOKEN` so an ambient subscription token
+  cannot win. A missing key fails the session immediately with a Settings
+  pointer; it never silently falls back to whatever credential the machine
+  has. The key was kept as-is because persisted conversations store
+  `claude-oauth` in `AgentConversation.provider` and resume with it verbatim.
+
+  Rationale: Anthropic's legal-and-compliance page states that "Anthropic does
+  not permit third-party developers to offer Claude.ai login or to route
+  requests through Free, Pro, or Max plan credentials on behalf of their
+  users", and the Agent SDK overview directs developers to "use the API key
+  authentication methods described in the Quickstart instead". The SDK is the
+  sanctioned path; only the credential was wrong.
+
+  **Removed 2026-07: `openai-codex`.** That provider drove `codex exec` as a
+  subprocess on a ChatGPT Plus/Pro subscription login. Without a subscription
+  it bought nothing over `openai-agents` — same API, same key — and it could
+  not service a per-tool approval round-trip. `src/providers/openai-codex.ts`,
+  `src/codex-mcp.ts`, and `src/mcp-trust-proxy.ts` were deleted with it. The
+  registry now rejects the id as an unknown provider, which
+  `registry-smoke.mjs` asserts.
+
 - **`openai-agents`** — OpenAI Agents SDK via `@openai/agents`
   (`src/providers/openai-agents.ts`). Auth uses the existing OpenAI API key
   from the PacketADE keyring; Rust passes it to the sidecar only on
@@ -81,7 +87,7 @@ The factory lives in `src/session-registry.ts`. Currently wired:
 
 ## Protocol summary
 
-**Protocol version: 9**. The version is advertised
+**Protocol version: 11**. The version is advertised
 in the `ready` event's `protocolVersion` field at startup, and the Rust
 supervisor's `EXPECTED_PROTOCOL_VERSION` constant must match (negotiation is
 warn-only: a version mismatch logs but doesn't block the connection). v2

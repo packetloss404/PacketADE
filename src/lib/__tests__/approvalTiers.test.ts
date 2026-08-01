@@ -57,6 +57,24 @@ describe("classifyToolTier — edits split on project containment", () => {
     expect(classifyToolTier("write_file", args, PROJ)).toBe("edit_in_project");
   });
 
+  it("edit_file with a relative in-project path is edit_in_project", () => {
+    const args = JSON.stringify({
+      path: "src/a.ts",
+      old_string: "a",
+      new_string: "b",
+    });
+    expect(classifyToolTier("edit_file", args, PROJ)).toBe("edit_in_project");
+  });
+
+  it("edit_file that climbs out of the project is blocking", () => {
+    const args = JSON.stringify({
+      path: "../outside.ts",
+      old_string: "a",
+      new_string: "b",
+    });
+    expect(classifyToolTier("edit_file", args, PROJ)).toBe("blocking");
+  });
+
   it("relative paths that climb out via .. are blocking", () => {
     const args = JSON.stringify({ path: "../outside.ts", content: "x" });
     expect(classifyToolTier("write_file", args, PROJ)).toBe("blocking");

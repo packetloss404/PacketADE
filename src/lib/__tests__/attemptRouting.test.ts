@@ -2,12 +2,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_ATTEMPT_AGENT,
   SUBSCRIPTION_OAUTH_AGENTS,
+  attemptProviderFor,
   localAttemptTargetFromRoute,
   resolveAttemptExecutor,
   resolveLocalAttemptTarget,
 } from "@/lib/attemptRouting";
 import { useRoutingStore } from "@/stores/routingStore";
-import { getDefaultModel } from "@/lib/api-models";
+import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
+import type { AgentCli } from "@/stores/agentTaskStore";
 
 /**
  * WI-1 — GitHub → "Draft patch" used to hardcode `api-claude-oauth` /
@@ -72,7 +74,7 @@ describe("attemptRouting", () => {
     expect(SUBSCRIPTION_OAUTH_AGENTS.has(target.agentConfigId)).toBe(false);
   });
 
-  it("strips the api- prefix to build the backend provider string", () => {
+  it("maps the agent id onto the backend provider string", () => {
     const target = localAttemptTargetFromRoute(
       { agentConfigId: "api-openrouter" },
       "/repo",
@@ -87,5 +89,63 @@ describe("attemptRouting", () => {
       const executor = resolveAttemptExecutor({ agentConfigId: agent });
       expect(executor.model).not.toBe("");
     }
+  });
+});
+
+/**
+ * The provider-id mapping for EVERY pickable executor, restated independently
+ * of the map it checks.
+ *
+ * Seven of the eight ids round-trip through a naive
+ * `agentConfigId.replace(/^api-/, "")`, which is precisely why the eighth —
+ * `api-claude`, the DEFAULT — shipped broken: it yielded `"claude"`, which
+ * `get_provider` rejects and `load_api_key` reports as a missing key for a
+ * provider that does not exist. `"anthropic"` is the only correct answer.
+ */
+const EXPECTED_PROVIDER_IDS: ReadonlyArray<[AgentCli, string]> = [
+  ["api-claude-oauth", "claude-oauth"],
+  ["api-claude", "anthropic"],
+  ["api-openai", "openai"],
+  ["api-openai-agents", "openai-agents"],
+  ["api-minimax", "minimax"],
+  ["api-openrouter", "openrouter"],
+  ["api-ollama", "ollama"],
+];
+
+describe("attemptProviderFor", () => {
+  it.each(EXPECTED_PROVIDER_IDS)("maps %s to the backend provider %s", (agent, provider) => {
+    expect(attemptProviderFor(agent)).toBe(provider);
+  });
+
+  it("covers every executor the launch picker offers", () => {
+    expect(API_PROVIDERS.map((p) => p.agentCli).sort()).toEqual(
+      EXPECTED_PROVIDER_IDS.map(([agent]) => agent).sort(),
+    );
+  });
+
+  it("still maps the RETIRED codex id so a legacy record cannot mis-bill", () => {
+    // `api-openai-codex` is gone from API_PROVIDERS, but its identity entry
+    // survives in `apiAgentProvider`. Dropping it would send every stored
+    // Codex record through the unknown-agent fallback and bill it to the
+    // user's ANTHROPIC key. Routing is blocked separately, by
+    // RETIRED_API_AGENTS — identity is not.
+    expect(attemptProviderFor("api-openai-codex")).toBe("openai-codex");
+    expect(API_PROVIDERS.some((p) => p.agentCli === "api-openai-codex")).toBe(false);
+  });
+
+  it("differs from a prefix-strip exactly where the P1 lived", () => {
+    const stripped = (agent: string) => agent.replace(/^api-/, "");
+    const divergent = EXPECTED_PROVIDER_IDS.filter(
+      ([agent, provider]) => stripped(agent) !== provider,
+    ).map(([agent]) => agent);
+
+    // If this ever grows, the naive derivation is broken for more executors,
+    // not fewer — never "fix" it by re-deriving.
+    expect(divergent).toEqual(["api-claude"]);
+    expect(attemptProviderFor("api-claude")).not.toBe(stripped("api-claude"));
+  });
+
+  it("resolves the retired identity-duplicate agent id through its alias", () => {
+    expect(attemptProviderFor("api-minimax-api")).toBe("minimax");
   });
 });

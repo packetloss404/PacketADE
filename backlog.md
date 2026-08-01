@@ -214,17 +214,27 @@ implemented: “Plan first” opens a normal read-only `AgentConversation`, the 
 refines and explicitly applies milestones/tasks, and attempts remain
 user-launched. It does not restore Planner v1's autonomous runtime.
 
-- **P1 — attempt launches send a non-dispatchable provider id for `api-claude`.**
-  `pickedToSpec` in `LaunchAsyncFlightModal` (and the reassign path in
-  `asyncFlightStore`) derive the backend provider with
-  `agentConfigId.replace(/^api-/, "")`, which yields `"claude"` for the default
-  `api-claude` executor. `core::llm_provider::get_provider` knows `anthropic`,
-  not `claude`, and `flight_attempts.rs` forwards the string verbatim to
-  `start_api_agent_session`. Found while wiring WI-1 (2026-07-31); the new
-  `src/lib/attemptRouting.ts` deliberately uses `apiAgentProvider` instead and
-  has a regression test for it. Confirm against a real launch, then either
-  route both call sites through `apiAgentProvider` or normalise in Rust —
-  mis-mapping a provider is how a turn gets billed to the wrong credentials.
+- **✅ Resolved 2026-07-31 — attempt launches sent a non-dispatchable provider
+  id for `api-claude`.** Confirmed genuinely broken, and broken for exactly one
+  executor: `agentConfigId.replace(/^api-/, "")` round-trips for all seven
+  other `api-*` ids and yields `"claude"` for `api-claude` — the DEFAULT. That
+  is not a `get_provider` id, so `flight_attempts.rs` forwarded it verbatim and
+  the attempt died in `load_api_key` with "No API key configured for claude",
+  sending the user to Settings for a provider that does not exist. Fixed by
+  routing every attempt-spec builder through one new shared helper,
+  `attemptProviderFor` in `src/lib/attemptRouting.ts` (wraps the authoritative
+  `apiAgentProvider` map, canonicalising legacy ids first): the manual launch
+  path (extracted to `src/components/flights/pickedToSpec.ts`), plus
+  `buildReassignSpec` and `launchReadyTasks` in `asyncFlightStore`. Rust now
+  fails loudly too — `start_api_agent_session` rejects an unroutable provider
+  id up front, naming the id and listing the accepted sidecar/in-process ids,
+  instead of surfacing a phantom missing-key error. Guarded by unit tests on
+  all three call sites plus a source-level fence
+  (`scripts/attempt-provider-mapping.test.mjs`) that fails if anyone
+  reintroduces prefix-stripping. The one surviving `api-` strip is
+  `flight_cost.rs`'s `ExecutorSessionOwner.provider`, which is a cost
+  discriminator (is-this-codex?) and never routed — documented as such in
+  place.
 - **P3 — structured partial multi-target launch result.** Rust launches targets
   sequentially. If provisioning target N fails after earlier targets started,
   the frontend now rehydrates and attaches those partial successes before
@@ -539,6 +549,49 @@ for implementation.
   Fleet to Workspaces, VT to Dictation, and misleading handoff actions; remove
   the two-ellipsis Agent header; add navigation/tab/menu ARIA and responsive
   overflow proof.
+
+## API-agent authentication (subscription OAuth → API keys)
+
+Canonical plan and decision record:
+[`dev/oauth-removal-plan.md`](./dev/oauth-removal-plan.md) — read §-1 first, it
+supersedes the staging in §4.
+
+**SHIPPED 2026-07-31.** No API-agent row uses a Claude.ai / ChatGPT
+subscription login any more. The Claude Agent SDK row was *re-authenticated*
+with the `api-key-anthropic` keyring entry rather than gated or deleted —
+Anthropic's legal-and-compliance page directs Agent SDK developers to use API
+key auth, so the SDK is the sanctioned path and only the credential was wrong.
+`api-openai-codex` was removed outright. PTY CLI sessions and the multi-account
+CLI feature are unaffected and keep their subscription logins.
+
+Outstanding:
+
+- **P2 — repoint the Flight launch reviewer default.**
+  `src/components/flights/LaunchAsyncFlightModal.tsx:102,105` still defaults
+  `reviewerAgent` to the retired `api-openai-codex` and calls
+  `getDefaultModel("api-openai-codex")`, which now returns `""`. It degrades to
+  the modal's "Choose a supported API reviewer." validation rather than
+  crashing, and `reviewerGateRuntime.ts` substitutes `api-openai-agents` for
+  *persisted* policies — but a fresh flight cannot enable the reviewer gate
+  without the user changing the dropdown. Another agent owned the file during
+  the re-auth change. One-line fix.
+- **P2 — WI-5: "Switch provider" action for retired conversations.** The
+  graceful-degradation half shipped (read-only transcript, blocked send path, a
+  persisted `system` message naming the replacement). The explicit,
+  user-initiated rewrite of `agent` + `provider` did not, so a user who wants
+  to continue a stored Codex conversation must start a new one. Must stay
+  explicit and logged; never automatic.
+- **P3 — drop `@modelcontextprotocol/sdk` from `agent-sidecar/package.json`.**
+  Its only importer (`mcp-trust-proxy.ts`) was deleted. Removing it changes the
+  lockfile and the `scripts/prune-sidecar.js` bundling path, so it wants a
+  deliberate dependency pass with an installer build to verify.
+- **P3 — WI-13: retire the `RETIRED_API_AGENTS` read-compat shim**, per the
+  read-compat removal policy above, counting from the release carrying this
+  change.
+- **P3 — `agent_sidecar/handler.rs`'s cumulative-token branch**
+  (`owner.provider == "openai-codex"`) plus `exec_token_snapshots` /
+  `exec_turn_seq` are now reachable only for historical flight attempts. Left in
+  place so old data cannot double-count; delete once that data is aged out.
 
 ## Local model routing (Ollama-first)
 

@@ -30,7 +30,7 @@ import { useMemoryStore } from "@/stores/memoryStore";
 import { useOrchestrationSettingsStore } from "@/stores/orchestrationSettingsStore";
 import { selectRecurringErrorHint } from "@/lib/recurringErrorHint";
 import { MultiTargetPicker, type PickedTarget } from "./MultiTargetPicker";
-import { type AttemptTargetSpec } from "@/lib/tauri";
+import { pickedToSpec } from "./pickedToSpec";
 import type {
   AutonomyFlightMode,
   AutonomyPolicy,
@@ -48,37 +48,6 @@ interface LaunchAsyncFlightModalProps {
   // pane, or GitHub's "Plan flight" hand-off). The prompt/title fields are
   // pre-filled from the flight's objective/title but remain editable.
   flightId?: string;
-}
-
-function pickedToSpec(p: PickedTarget): AttemptTargetSpec {
-  if (p.kind === "local") {
-    return {
-      kind: "local",
-      basePath: p.basePath,
-      baseBranch: p.baseBranch,
-      agentConfigId: p.agent,
-      provider: p.agent.replace(/^api-/, ""),
-      model: p.model,
-    };
-  }
-  return {
-    kind: "ssh",
-    // Phase 2: targetId is now the ServerConfig.id (was SshTarget.id).
-    // The backend agent will be updated to call the field `serverId`
-    // in the same PR — until then we keep the name for wire compat.
-    targetId: p.server.id,
-    host: p.server.host,
-    port: p.server.port,
-    user: p.server.username,
-    keyPath: p.server.keyPath ?? null,
-    authMethod: p.server.authMethod,
-    hostFingerprint: p.server.hostFingerprint ?? null,
-    basePath: p.basePath,
-    baseBranch: p.baseBranch,
-    agentConfigId: p.agent,
-    provider: p.agent.replace(/^api-/, ""),
-    model: p.model,
-  };
 }
 
 export function LaunchAsyncFlightModal({
@@ -130,10 +99,10 @@ export function LaunchAsyncFlightModal({
   );
   const [reviewerAgent, setReviewerAgent] = useState<AgentCli>(
     (existingFlight?.reviewGatePolicy?.reviewerAgentConfigId as AgentCli | undefined) ??
-      "api-openai-codex",
+      "api-openai-agents",
   );
   const [reviewerModel, setReviewerModel] = useState(
-    existingFlight?.reviewGatePolicy?.reviewerModel ?? getDefaultModel("api-openai-codex"),
+    existingFlight?.reviewGatePolicy?.reviewerModel ?? getDefaultModel("api-openai-agents"),
   );
   const [acceptanceCriteria, setAcceptanceCriteria] = useState(
     existingFlight?.reviewGatePolicy?.acceptanceCriteria.join("\n") ?? "",

@@ -1,7 +1,8 @@
 // Registry regression smoke test for the PacketADE agent sidecar.
 //
 // Spawns `node agent-sidecar/dist/index.js` once and issues `start_session`
-// requests for all three concrete providers plus a bogus provider name.
+// requests for every concrete provider, a RETIRED provider, and a bogus
+// provider name.
 // Validates only that each provider is correctly wired through
 // `session-registry` — not that any live integration works.
 //
@@ -11,8 +12,11 @@
 //                       (no Unknown-provider error). The SDK may wait on live
 //                       auth/network on developer machines; this smoke only
 //                       proves registration.
-//   - openai-codex    → `done`, `error`, OR timeout after accepting the start
+//   - openai-agents   → `done`, `error`, OR timeout after accepting the start
 //                       (same rationale)
+//   - openai-codex    → MUST be `error` "Unknown provider:" — the ChatGPT
+//                       subscription row was removed in 2026-07 and must not
+//                       silently resolve to some other provider
 //   - bogus-provider  → MUST be `error` with message starting
 //                       "Unknown provider:" (proves the registry rejects
 //                       unknown names). A `done` here is FAIL.
@@ -80,8 +84,8 @@ const CASES = [
     },
   },
   {
-    provider: "openai-codex",
-    sessionId: "registry-smoke-codex",
+    provider: "openai-agents",
+    sessionId: "registry-smoke-openai-agents",
     verifyNoRetainedStartError: true,
     classify: (term) => {
       if (term.kind === "done") return { ok: true, outcome: "done" };
@@ -97,20 +101,22 @@ const CASES = [
     },
   },
   {
-    provider: "openai-agents",
-    sessionId: "registry-smoke-openai-agents",
-    verifyNoRetainedStartError: true,
+    // RETIRED 2026-07. `openai-codex` drove `codex exec` on a ChatGPT
+    // subscription; it was removed along with subscription OAuth. It must be
+    // rejected exactly like an unknown provider — resolving it to anything
+    // else would silently run a user's stored Codex conversation on the wrong
+    // credentials.
+    provider: "openai-codex",
+    sessionId: "registry-smoke-retired-codex",
     classify: (term) => {
-      if (term.kind === "done") return { ok: true, outcome: "done" };
+      if (term.kind === "error" && /^Unknown provider:/.test(term.message ?? "")) {
+        return { ok: true, outcome: `error: ${term.message}` };
+      }
       if (term.kind === "error")
-        return {
-          ok: true,
-          outcome: `error: ${term.message}`,
-        };
-      return {
-        ok: true,
-        outcome: `timeout after ${PER_SESSION_TIMEOUT_MS}ms (registered, no terminal event)`,
-      };
+        return { ok: false, outcome: `wrong error: ${term.message}` };
+      if (term.kind === "done")
+        return { ok: false, outcome: "done (retired provider still registered!)" };
+      return { ok: false, outcome: `timeout after ${PER_SESSION_TIMEOUT_MS}ms` };
     },
   },
   {

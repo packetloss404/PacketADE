@@ -1,8 +1,9 @@
 # Local Model Routing (Ollama-first)
 
-Status: **PLANNED — not started**
+Status: **IN PROGRESS** — LM1 shipped (bar picker gating), LM3 partial, LM5 done
 Created: 2026-07-30
 Owner decision recorded: 2026-07-30
+Last updated: 2026-07-31
 
 ## Decision record
 
@@ -97,34 +98,80 @@ it is not a signature change.
 
 ## Known defects blocking local-model viability
 
-1. **No `num_ctx`.** `core/llm_openai_compat.rs::stream_chat_compat` sends only
+1. **No `num_ctx`.** — **FIXED 2026-07-31 (LM1).**
+   `core/llm_openai_compat.rs::stream_chat_compat` sent only
    `messages` / `max_tokens` / `stream`. Ollama's OpenAI-compatible endpoint
-   defaults to a small context (historically 4096, model-dependent) and
+   defaults to a small context (4096 on current builds, 2048 historically) and
    **silently truncates the front of the conversation** rather than erroring.
-   This presents as "the local model forgets the system prompt" or "loops on
-   tools" and is almost certainly a config fault, not a model-quality one.
+   This presented as "the local model forgets the system prompt" or "loops on
+   tools" and was a config fault, not a model-quality one.
    `contextWindow` in `src/lib/api-models.ts:13,163` is display metadata only
-   and is never sent.
-2. **No `keep_alive`.** Every call risks a multi-second model reload.
-3. **No tool-capability detection.** Many Ollama models ship without a tools
-   template. The picker currently allows selecting one for an agent tile, which
-   fails at the first tool call. `/api/show` reports capability.
+   and is still never sent — the value now comes from the daemon instead.
+2. **No `keep_alive`.** — **FIXED 2026-07-31 (LM1).** Every call risked a
+   multi-second model reload.
+3. **No tool-capability detection.** — **PARTIALLY FIXED 2026-07-31 (LM1).**
+   Many Ollama models ship without a tools template. The backend now probes
+   `/api/show` and refuses a tool-carrying request to a model whose
+   `capabilities` lack `tools`, with a message naming the model — so it fails
+   in one clear line instead of at the first tool call. **The picker is still
+   ungated**: `ProviderPicker` / the model dropdown still offer tool-incapable
+   models for an agent tile. That gating is the remaining LM1 item.
 
-Fixing (1) and (2) requires Ollama's native `/api/chat` route or an `options`
-passthrough; neither fits the OpenAI-compat shim, so `core/llm_ollama.rs`
-(currently a 40-line passthrough) grows a real second code path.
+Fixing (1) and (2) required Ollama's native `/api/chat` route; neither fits the
+OpenAI-compat shim, so `core/llm_ollama.rs` (previously a 40-line passthrough)
+grew a real second code path.
 
 ## Phased plan
 
 ### LM1 — Ollama fundamentals
 
-Native `/api/chat` path in `core/llm_ollama.rs` with `num_ctx` and
-`keep_alive`; per-model tool-capability probe via `/api/show` surfaced through
-`commands/ollama.rs`; picker gating for non-tool models; a visible warning when
-a request would exceed the negotiated context rather than silent truncation.
+**SHIPPED 2026-07-31**, except picker gating (see defect 3 above).
 
-**Do this first.** Everything downstream is worthless if local inference
-silently truncates.
+`core/llm_ollama.rs` is no longer a passthrough: it speaks Ollama's **native
+`/api/chat`** route, which is the only mechanism that can carry these options.
+Ollama's docs are explicit that the OpenAI-compatible route cannot — *"The
+OpenAI API does not have a way of setting the context size for a model"*
+([openai-compatibility](https://docs.ollama.com/api/openai-compatibility)); the
+options live in `options` / top-level `keep_alive` on
+[`/api/chat`](https://docs.ollama.com/api/chat).
+
+What shipped:
+
+- **`options.num_ctx`**, derived per model rather than hardcoded. `/api/show`
+  is probed once per (endpoint, model) and cached for the process; the trained
+  window comes from the `*.context_length` key in `model_info`, falls back to
+  8192 when the daemon does not report one, and is clamped by a user cap that
+  defaults to **16384** (~2 GiB of KV cache for a 7–8B GQA model — what fits
+  beside a q4 model on an 8 GB card, and 4x Ollama's own default). The model's
+  own window always wins when it is smaller: exceeding it degrades quality via
+  rope scaling. The value deliberately does **not** vary with prompt size —
+  changing `num_ctx` forces a reload, which would defeat `keep_alive`.
+- **`keep_alive`**, default **`30m`** (Ollama's own default of `5m` expires
+  inside a normal agent loop, and every expiry is a cold reload).
+- **Overrides**: persisted in provider settings, edited in Settings → Tools →
+  Provider Endpoints (`ProviderEndpointsCard`), commands
+  `get_ollama_runtime_options` / `set_ollama_runtime_options`, env fallbacks
+  `PACKETADE_OLLAMA_NUM_CTX_CAP` / `PACKETADE_OLLAMA_KEEP_ALIVE`.
+- **Truncation is surfaced, not swallowed.** Ollama has no truncation field, so
+  it is inferred from `prompt_eval_count >= num_ctx` (authoritative) or a
+  content-length estimate over `num_ctx` (the backstop, since a warm KV cache
+  under-reports `prompt_eval_count`), and `done_reason == "length"` for the
+  output side. Each emits a `tracing::warn` **and** appends a visible notice to
+  the turn naming `num_ctx` and pointing at the settings row.
+- **Tool-capability pre-flight**: a tool-carrying request to a model whose
+  `/api/show` capabilities lack `tools` fails with a one-line explanation.
+- **Fallback**: an endpoint that 404s `/api/chat` still works via the old
+  OpenAI-compat route, which logs loudly that `num_ctx` cannot be set there.
+
+Wire-format differences the native route imposed: NDJSON instead of SSE; tool
+calls arrive complete with **no id** (we synthesise `ollama-{name}-{n}`) and
+arguments as an object; tool results replay by `tool_name`, so ids are mapped
+back to names from the assistant turns in history; images ride as bare base64
+in `images: []`; usage is `prompt_eval_count` / `eval_count` with no cache
+bucket.
+
+**Done first.** Everything downstream was worthless while local inference
+silently truncated.
 
 ### LM2 — Custom OpenAI-compatible endpoint
 
@@ -207,6 +254,13 @@ proves the value.
 LM1 and LM2 are independently shippable and useful on their own. LM3 onward is
 the differentiated feature and should not start until LM1 has demonstrated a
 local model completing a real auxiliary task correctly.
+
+**Sequencing note (2026-07-31):** LM3/LM5 landed ahead of LM1 via the OAuth
+removal work. LM1 is now in, so the remaining gap is the one thing it could not
+prove from a unit test — an end-to-end run of a real local model through
+`aux_llm` against a live daemon, confirming the negotiated `num_ctx` is what
+the daemon loaded and that the model is not silently starved. Do that before
+LM4 migrates more surfaces onto local routes.
 
 ## Open questions
 

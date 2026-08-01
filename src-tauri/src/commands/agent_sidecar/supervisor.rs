@@ -1472,16 +1472,18 @@ fn remote_sidecar_assignment() -> String {
     }
 }
 
-fn remote_auth_preflight(provider: &str) -> &'static str {
-    match provider {
-        "claude-oauth" => {
-            r#"if [ ! -s "$HOME/.claude/.credentials.json" ] && [ ! -s "$HOME/.claude/credentials.json" ]; then echo "PACKETADE_PREFLIGHT_ERROR Claude OAuth is not signed in on the SSH host. Run claude login on the remote host." >&2; exit 96; fi"#
-        }
-        "openai-codex" => {
-            r#"if [ ! -s "$HOME/.codex/auth.json" ]; then echo "PACKETADE_PREFLIGHT_ERROR Codex OAuth is not signed in on the SSH host. Run codex login on the remote host." >&2; exit 97; fi"#
-        }
-        _ => "",
-    }
+/// Remote-host credential preflight for a sidecar provider.
+///
+/// Empty for every provider: all sidecar providers now authenticate with an
+/// API key that the LOCAL supervisor loads from the OS keyring and sends over
+/// the wire in `start_session.apiKey`. There is nothing for the remote host to
+/// be "signed in" to, so the old `claude login` / `codex login` file checks
+/// were removed along with subscription OAuth.
+///
+/// Kept as a named seam rather than inlined so an API-key-shaped preflight can
+/// be added here later without re-threading the call site.
+fn remote_auth_preflight(_provider: &str) -> &'static str {
+    ""
 }
 
 fn remote_sidecar_preflight_script(config: &SshConfig, provider: &str) -> String {
@@ -1758,18 +1760,24 @@ mod remote_tests {
     }
 
     #[test]
-    fn remote_preflight_script_checks_remote_oauth_for_subscription_providers() {
-        let claude_script =
-            remote_sidecar_preflight_script(&sample_cfg("/home/alice/project"), "claude-oauth");
-        assert!(claude_script.contains("Claude OAuth is not signed in on the SSH host"));
-
-        let codex_script =
-            remote_sidecar_preflight_script(&sample_cfg("/home/alice/project"), "openai-codex");
-        assert!(codex_script.contains("Codex OAuth is not signed in on the SSH host"));
-
-        let api_script =
-            remote_sidecar_preflight_script(&sample_cfg("/home/alice/project"), "openai-agents");
-        assert!(!api_script.contains("OAuth is not signed in"));
+    fn remote_preflight_script_never_requires_remote_oauth() {
+        // Sidecar providers are API-key-authenticated and the key travels in
+        // `start_session.apiKey` from the LOCAL keyring, so no preflight may
+        // demand a subscription credential file on the SSH host. A regression
+        // that reinstated one would both break remote launches and reintroduce
+        // the subscription-credential dependency this change removed.
+        for provider in ["claude-oauth", "openai-agents", "openai-codex"] {
+            let script =
+                remote_sidecar_preflight_script(&sample_cfg("/home/alice/project"), provider);
+            assert!(
+                !script.contains("OAuth is not signed in"),
+                "{provider} preflight still checks for remote OAuth credentials"
+            );
+            assert!(!script.contains(".credentials.json"), "{provider}");
+            assert!(!script.contains(".codex/auth.json"), "{provider}");
+            // The non-auth preflight checks must survive.
+            assert!(script.contains("Node.js not found"), "{provider}");
+        }
     }
 
     #[test]

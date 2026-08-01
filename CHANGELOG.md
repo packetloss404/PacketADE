@@ -9,6 +9,46 @@ task list.
 
 ## [Unreleased]
 
+### Changed — API agents now use API keys, never subscription logins (2026-07-31)
+
+PacketADE no longer signs API agents in with a Claude.ai or ChatGPT
+subscription. Every row in the Agents provider picker authenticates with an API
+key from Settings → API Keys.
+
+Anthropic's
+[legal and compliance policy](https://code.claude.com/docs/en/legal-and-compliance)
+states that it "does not permit third-party developers to offer Claude.ai login
+or to route requests through Free, Pro, or Max plan credentials on behalf of
+their users", and the Claude Agent SDK overview tells developers to use API key
+authentication instead. The SDK itself is the sanctioned path — only the
+credential was wrong.
+
+- **"Anthropic (Subscription)" is now "Claude Agent SDK (API)".** It is the same
+  agent it always was — Claude Code's own harness, with the targeted edit tool,
+  structured plan blocks, real permission modes, MCP, and `~/.claude` settings
+  sourcing that the leaner in-process "Claude (API)" row does not have. It now
+  bills to your Anthropic API key. Your existing conversations on it keep
+  working; nothing to migrate. If you have no Anthropic key configured, starting
+  a session fails immediately with a pointer to Settings rather than quietly
+  using whatever credential your machine happens to have.
+- **"OpenAI (ChatGPT Plus/Pro)" has been removed.** It ran the Codex CLI as a
+  subprocess on a ChatGPT subscription login. Without that subscription it
+  offered nothing over "OpenAI Agents SDK (API)", which reaches the same OpenAI
+  models with your OpenAI API key — and, unlike Codex, can pause for per-tool
+  approval. Every provider now supports interactive approvals.
+- **Existing Codex conversations are safe.** They still open and read exactly as
+  before, with the full transcript, diffs, plan, and tool history. They are
+  marked read-only: sending a new turn tells you the provider is gone and points
+  you at OpenAI Agents SDK (API) instead of failing with a cryptic error. They
+  are never silently re-pointed at another vendor's key.
+- **Flight reviewers and the Plan panel handoff** that defaulted to Codex now
+  use OpenAI Agents SDK. A saved Reviewer Gate policy pinned to Codex resolves
+  to the replacement so the review still runs — it never silently passes.
+- **Terminal sessions are unchanged.** `claude` and `codex` CLI panes, the
+  multi-account CLI feature, and Settings → AI Providers → Subscriptions all
+  keep using your subscription logins. That is ordinary use of the vendors' own
+  tools and is explicitly unaffected.
+
 ### Added — prompt caching on the Claude API path (2026-07-31)
 
 - **Claude API conversations now reuse their cached prompt instead of paying

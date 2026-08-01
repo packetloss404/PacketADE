@@ -410,28 +410,15 @@ export function Composer(props: ComposerProps) {
   const launchReady = selectedAuthStatus === "ready";
   const launchLabel =
     selectedAuthStatus === "coming_soon" ? "Coming soon" : "Launch";
-  // Which provider (if any) needs an interactive login to become ready.
-  const needsLogin: "claude" | "codex" | null =
-    selectedAuthStatus === "login_required"
-      ? launch?.selectedAgent === "api-claude-oauth"
-        ? "claude"
-        : launch?.selectedAgent === "api-openai-codex"
-          ? "codex"
-          : null
-      : null;
-
-  const handleOpenLogin = useCallback(() => {
-    if (needsLogin === "claude") {
-      window.dispatchEvent(new CustomEvent("packetade:open-claude-login"));
-    } else if (needsLogin === "codex") {
-      window.dispatchEvent(new CustomEvent("packetade:open-codex-login"));
-    }
-  }, [needsLogin]);
-
-  const loginTooltip =
-    needsLogin === "codex"
-      ? "Log in to ChatGPT to continue"
-      : "Log in to Claude to continue";
+  // No API-agent row uses an interactive subscription login any more. Every
+  // provider in the picker authenticates with an API key from Settings → API
+  // Keys, so a not-ready badge resolves to "missing_key" and the hint already
+  // points at the right place. The old inline "Log in" button (which fired
+  // `packetade:open-claude-login` / `packetade:open-codex-login`) is gone
+  // from this surface.
+  //
+  // Interactive `claude login` / `codex login` still exists in Settings →
+  // Subscriptions for PTY CLI sessions, which are unaffected.
 
   // ─── Submit ───────────────────────────────────────────────────────────
   // Single-flight guard (launch): onLaunch returns synchronously while async
@@ -729,9 +716,6 @@ export function Composer(props: ComposerProps) {
                   onModelChange={launch.onModelChange}
                   authStatus={authStatus}
                   refreshAuthStatuses={refreshAuthStatuses}
-                  needsLogin={needsLogin}
-                  loginTooltip={loginTooltip}
-                  onOpenLogin={handleOpenLogin}
                 />
                 <ModelSelector
                   selectedAgent={launch.selectedAgent}
@@ -752,11 +736,9 @@ export function Composer(props: ComposerProps) {
                 launchTitle={
                   launchReady
                     ? "Launch (Enter)"
-                    : needsLogin
-                      ? loginTooltip
-                      : selectedAuth && selectedAuth !== "loading"
-                        ? selectedAuth.hint || launchLabel
-                        : launchLabel
+                    : selectedAuth && selectedAuth !== "loading"
+                      ? selectedAuth.hint || launchLabel
+                      : launchLabel
                 }
                 onLaunch={submitLaunch}
               />

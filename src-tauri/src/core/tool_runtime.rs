@@ -152,6 +152,32 @@ pub async fn tool_definitions_with_mcp_trust(
             }),
         },
         ToolDefinition {
+            name: "edit_file".to_string(),
+            description: "Make a targeted edit to an existing file by replacing an exact string. PREFER THIS over write_file when changing a file that already exists — you only send the lines that change instead of the whole file. 'old_string' must match the file byte-for-byte, including all whitespace and indentation, and must be unique in the file unless 'replace_all' is true; include a few surrounding lines to make it unique. Read the file first so the match is exact.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "File path relative to the project root, or absolute path within the project. The file must already exist — use write_file to create a new file."
+                    },
+                    "old_string": {
+                        "type": "string",
+                        "description": "The exact text to replace, copied verbatim from the file including leading whitespace and indentation. Must not be empty."
+                    },
+                    "new_string": {
+                        "type": "string",
+                        "description": "The replacement text. Must differ from old_string. Use an empty string to delete the matched text."
+                    },
+                    "replace_all": {
+                        "type": "boolean",
+                        "description": "Replace every occurrence of old_string instead of requiring exactly one match. Default false."
+                    }
+                },
+                "required": ["path", "old_string", "new_string"]
+            }),
+        },
+        ToolDefinition {
             name: "list_directory".to_string(),
             description: "List files and directories in a given path. Returns names with [DIR] prefix for directories.".to_string(),
             parameters: serde_json::json!({
@@ -261,6 +287,15 @@ pub async fn execute_tool_with_mcp_trust(
             ExecutionTarget::Ssh { config } => {
                 tool_runtime_ssh::execute_write_file(&call.arguments, config).await
             }
+        },
+        "edit_file" => match target {
+            ExecutionTarget::Local { project_path } => {
+                execute_edit_file(&call.arguments, project_path).await
+            }
+            // Remote edits would need a read-modify-write round trip that the
+            // approval gate cannot preview, so we fail closed rather than
+            // half-wire it. write_file remains available over SSH.
+            ExecutionTarget::Ssh { .. } => Err(EDIT_FILE_REMOTE_UNSUPPORTED.to_string()),
         },
         "list_directory" => match target {
             ExecutionTarget::Local { project_path } => {
@@ -432,6 +467,242 @@ async fn execute_write_file(
         "Successfully wrote {} bytes to {}",
         content.len(),
         path
+    ))
+}
+
+/// Error returned when `edit_file` is called on an SSH execution target.
+pub(crate) const EDIT_FILE_REMOTE_UNSUPPORTED: &str =
+    "edit_file is not available for remote SSH sessions. Read the file with read_file, then send the full updated content with write_file.";
+
+/// Reserved argument the pending-edit approval gate injects when the user
+/// accepts only some hunks: the exact file body to write, replacing the
+/// tool's own search/replace. It is deliberately not part of the tool schema
+/// and the gate strips any model-supplied value before execution.
+pub(crate) const APPROVED_CONTENT_ARG: &str = "__packetade_approved_content";
+
+/// Maximum characters of context echoed back in an `edit_file` result.
+const EDIT_SNIPPET_MAX_CHARS: usize = 800;
+/// Maximum lines of context echoed back in an `edit_file` result.
+const EDIT_SNIPPET_MAX_LINES: usize = 12;
+/// Maximum characters of a single snippet line.
+const EDIT_SNIPPET_MAX_LINE_CHARS: usize = 200;
+
+struct EditArgs<'a> {
+    path: &'a str,
+    old_string: &'a str,
+    new_string: &'a str,
+    replace_all: bool,
+}
+
+fn parse_edit_args(args: &serde_json::Value) -> Result<EditArgs<'_>, String> {
+    let path = args
+        .get("path")
+        .and_then(|p| p.as_str())
+        .ok_or("Missing 'path' parameter")?;
+    let old_string = args
+        .get("old_string")
+        .and_then(|s| s.as_str())
+        .ok_or("Missing 'old_string' parameter")?;
+    let new_string = args
+        .get("new_string")
+        .and_then(|s| s.as_str())
+        .ok_or("Missing 'new_string' parameter")?;
+    let replace_all = args
+        .get("replace_all")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    Ok(EditArgs {
+        path,
+        old_string,
+        new_string,
+        replace_all,
+    })
+}
+
+/// Outcome of a successful exact-string replacement.
+struct EditOutcome {
+    /// Full file content after the replacement(s).
+    content: String,
+    /// Number of occurrences replaced.
+    replacements: usize,
+    /// Byte offset of the first replacement. Valid in both the before and
+    /// after strings — everything ahead of it is byte-identical.
+    first_offset: usize,
+}
+
+/// Apply exact-string replacement with no silent fallbacks: an absent match,
+/// an ambiguous match, an empty needle, or a no-op edit are all hard errors so
+/// the model has to fix its input instead of corrupting the file.
+fn apply_exact_edit(
+    content: &str,
+    old_string: &str,
+    new_string: &str,
+    replace_all: bool,
+) -> Result<EditOutcome, String> {
+    if old_string.is_empty() {
+        return Err(
+            "'old_string' must not be empty. To create a new file or replace an entire file, use write_file instead."
+                .to_string(),
+        );
+    }
+    if old_string == new_string {
+        return Err(
+            "'old_string' and 'new_string' are identical, so this edit would change nothing."
+                .to_string(),
+        );
+    }
+
+    let matches: Vec<usize> = content.match_indices(old_string).map(|(i, _)| i).collect();
+    if matches.is_empty() {
+        return Err(
+            "'old_string' was not found in the file. It must match the file exactly, including all whitespace and indentation. Re-read the file and copy the text verbatim."
+                .to_string(),
+        );
+    }
+    if matches.len() > 1 && !replace_all {
+        return Err(format!(
+            "'old_string' appears {} times in the file, so the edit is ambiguous and was NOT applied. Add more surrounding lines to 'old_string' so it matches exactly one location, or set 'replace_all': true to change every occurrence.",
+            matches.len()
+        ));
+    }
+
+    let first_offset = matches[0];
+    if replace_all {
+        Ok(EditOutcome {
+            content: content.replace(old_string, new_string),
+            replacements: matches.len(),
+            first_offset,
+        })
+    } else {
+        let mut out = String::with_capacity(content.len() + new_string.len());
+        out.push_str(&content[..first_offset]);
+        out.push_str(new_string);
+        out.push_str(&content[first_offset + old_string.len()..]);
+        Ok(EditOutcome {
+            content: out,
+            replacements: 1,
+            first_offset,
+        })
+    }
+}
+
+/// Compute the post-edit file body without touching disk. Used by the
+/// pending-edit approval gate to render a before/after diff for `edit_file`
+/// the same way it renders one for `write_file`.
+pub(crate) fn preview_edit_file(
+    args: &serde_json::Value,
+    before: Option<&str>,
+) -> Result<String, String> {
+    let edit = parse_edit_args(args)?;
+    let before = before.ok_or_else(|| {
+        format!(
+            "Cannot read '{}'. edit_file requires an existing readable file — use write_file to create one.",
+            edit.path
+        )
+    })?;
+    let outcome = apply_exact_edit(before, edit.old_string, edit.new_string, edit.replace_all)?;
+    Ok(outcome.content)
+}
+
+/// Render a compact confirmation: what changed, how many times, and a few
+/// numbered lines around the first replacement so the model can verify
+/// without a follow-up read_file.
+fn format_edit_result(path: &str, after: &str, outcome: &EditOutcome, new_len: usize) -> String {
+    let start_line = after[..outcome.first_offset].matches('\n').count();
+    let end_line = after[..outcome.first_offset + new_len]
+        .matches('\n')
+        .count();
+    let from = start_line.saturating_sub(2);
+    let to = end_line + 2;
+
+    let mut snippet = String::new();
+    let mut emitted = 0usize;
+    let mut omitted = 0usize;
+    for (idx, line) in after.lines().enumerate() {
+        if idx < from || idx > to {
+            continue;
+        }
+        if emitted >= EDIT_SNIPPET_MAX_LINES || snippet.len() >= EDIT_SNIPPET_MAX_CHARS {
+            omitted += 1;
+            continue;
+        }
+        let mut text = line.to_string();
+        truncate_to_char_boundary(&mut text, EDIT_SNIPPET_MAX_LINE_CHARS);
+        if text.len() < line.len() {
+            text.push('…');
+        }
+        snippet.push_str(&format!("{:>5} | {}\n", idx + 1, text));
+        emitted += 1;
+    }
+    if omitted > 0 {
+        snippet.push_str(&format!("      … {} more line(s)\n", omitted));
+    }
+
+    let plural = if outcome.replacements == 1 {
+        "replacement"
+    } else {
+        "replacements"
+    };
+    format!(
+        "Edited {} ({} {}).\n{}",
+        path,
+        outcome.replacements,
+        plural,
+        snippet.trim_end()
+    )
+}
+
+async fn execute_edit_file(args: &serde_json::Value, project_path: &str) -> Result<String, String> {
+    let path = args
+        .get("path")
+        .and_then(|p| p.as_str())
+        .ok_or("Missing 'path' parameter")?;
+
+    // must_exist = true: edit_file never creates files, and this is the same
+    // symlink-resolving workspace confinement read_file enforces.
+    let full_path = validate_path(path, project_path)?;
+
+    let metadata =
+        std::fs::metadata(&full_path).map_err(|e| format!("Cannot access '{}': {}", path, e))?;
+    if !metadata.is_file() {
+        return Err(format!("'{}' is not a file", path));
+    }
+    if metadata.len() > MAX_FILE_SIZE {
+        return Err(format!(
+            "File too large ({} bytes, limit {} bytes)",
+            metadata.len(),
+            MAX_FILE_SIZE
+        ));
+    }
+
+    // Per-hunk acceptance: the approval gate replaced the edit with the exact
+    // body the user picked.
+    if let Some(approved) = args.get(APPROVED_CONTENT_ARG).and_then(|v| v.as_str()) {
+        info!(path = %full_path, "Tool: edit_file (user-merged content)");
+        std::fs::write(&full_path, approved)
+            .map_err(|e| format!("Failed to write '{}': {}", path, e))?;
+        return Ok(format!(
+            "Edited {} — the user applied a modified version of this edit ({} bytes written). Re-read the file before editing it again.",
+            path,
+            approved.len()
+        ));
+    }
+
+    let edit = parse_edit_args(args)?;
+    let before = std::fs::read_to_string(&full_path)
+        .map_err(|e| format!("Failed to read '{}': {}", path, e))?;
+
+    let outcome = apply_exact_edit(&before, edit.old_string, edit.new_string, edit.replace_all)?;
+
+    info!(path = %full_path, replacements = outcome.replacements, "Tool: edit_file");
+    std::fs::write(&full_path, &outcome.content)
+        .map_err(|e| format!("Failed to write '{}': {}", path, e))?;
+
+    Ok(format_edit_result(
+        path,
+        &outcome.content,
+        &outcome,
+        edit.new_string.len(),
     ))
 }
 
@@ -801,6 +1072,447 @@ mod tests {
         assert!(err.contains("outside the project workspace"));
         assert!(!outside.join("evil.txt").exists());
         let _ = std::fs::remove_dir_all(base);
+    }
+
+    /* ------------------------------ edit_file ------------------------------ */
+
+    const SAMPLE: &str = "fn main() {\n    let x = 1;\n    println!(\"{}\", x);\n}\n";
+
+    fn seed(workspace: &Path, name: &str, body: &str) -> PathBuf {
+        let file = workspace.join(name);
+        std::fs::write(&file, body).unwrap();
+        file
+    }
+
+    async fn edit(workspace: &Path, args: serde_json::Value) -> Result<String, String> {
+        execute_edit_file(&args, &workspace.to_string_lossy()).await
+    }
+
+    #[tokio::test]
+    async fn edit_file_replaces_exact_match_and_reports_context() {
+        let (base, workspace) = temp_workspace("edit-exact");
+        let file = seed(&workspace, "main.rs", SAMPLE);
+
+        let out = edit(
+            &workspace,
+            json!({
+                "path": "main.rs",
+                "old_string": "    let x = 1;",
+                "new_string": "    let x = 42;"
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "fn main() {\n    let x = 42;\n    println!(\"{}\", x);\n}\n"
+        );
+        assert!(out.contains("1 replacement"), "{out}");
+        // Compact confirmation with a verifiable snippet, not the whole file.
+        assert!(out.contains("let x = 42;"), "{out}");
+        assert!(out.len() < 400, "result should stay compact: {out}");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn edit_file_not_found_errors_and_leaves_file_untouched() {
+        let (base, workspace) = temp_workspace("edit-missing-needle");
+        let file = seed(&workspace, "main.rs", SAMPLE);
+
+        let err = edit(
+            &workspace,
+            json!({
+                "path": "main.rs",
+                "old_string": "let y = 1;",
+                "new_string": "let y = 2;"
+            }),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.contains("not found"), "{err}");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), SAMPLE);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn edit_file_ambiguous_match_errors_without_writing() {
+        let (base, workspace) = temp_workspace("edit-ambiguous");
+        let body = "a = 1;\nb = 2;\na = 1;\n";
+        let file = seed(&workspace, "dup.txt", body);
+
+        let err = edit(
+            &workspace,
+            json!({
+                "path": "dup.txt",
+                "old_string": "a = 1;",
+                "new_string": "a = 9;"
+            }),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.contains("appears 2 times"), "{err}");
+        assert!(err.contains("replace_all"), "{err}");
+        // Critically: no silent first-match edit.
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), body);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn edit_file_replace_all_replaces_every_occurrence() {
+        let (base, workspace) = temp_workspace("edit-replace-all");
+        let file = seed(&workspace, "dup.txt", "a = 1;\nb = 2;\na = 1;\n");
+
+        let out = edit(
+            &workspace,
+            json!({
+                "path": "dup.txt",
+                "old_string": "a = 1;",
+                "new_string": "a = 9;",
+                "replace_all": true
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "a = 9;\nb = 2;\na = 9;\n"
+        );
+        assert!(out.contains("2 replacements"), "{out}");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn edit_file_identical_strings_error() {
+        let (base, workspace) = temp_workspace("edit-identical");
+        let file = seed(&workspace, "main.rs", SAMPLE);
+
+        let err = edit(
+            &workspace,
+            json!({
+                "path": "main.rs",
+                "old_string": "    let x = 1;",
+                "new_string": "    let x = 1;"
+            }),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.contains("identical"), "{err}");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), SAMPLE);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn edit_file_rejects_empty_old_string() {
+        let (base, workspace) = temp_workspace("edit-empty");
+        let file = seed(&workspace, "main.rs", SAMPLE);
+
+        let err = edit(
+            &workspace,
+            json!({
+                "path": "main.rs",
+                "old_string": "",
+                "new_string": "// header\n"
+            }),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.contains("must not be empty"), "{err}");
+        assert!(err.contains("write_file"), "{err}");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), SAMPLE);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn edit_file_is_whitespace_and_indentation_sensitive() {
+        let (base, workspace) = temp_workspace("edit-whitespace");
+        let file = seed(&workspace, "main.rs", SAMPLE);
+
+        // Tab-indented instead of space-indented → must not match.
+        let err = edit(
+            &workspace,
+            json!({
+                "path": "main.rs",
+                "old_string": "\tlet x = 1;",
+                "new_string": "\tlet x = 2;"
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("not found"), "{err}");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), SAMPLE);
+
+        // Extra internal whitespace → must not match either.
+        let err = edit(
+            &workspace,
+            json!({
+                "path": "main.rs",
+                "old_string": "let x  = 1;",
+                "new_string": "let x  = 2;"
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("not found"), "{err}");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), SAMPLE);
+
+        // Trailing-newline sensitivity: a multi-line needle must match verbatim.
+        let out = edit(
+            &workspace,
+            json!({
+                "path": "main.rs",
+                "old_string": "    let x = 1;\n    println!(\"{}\", x);\n",
+                "new_string": "    let x = 1;\n"
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(out.contains("1 replacement"), "{out}");
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "fn main() {\n    let x = 1;\n}\n"
+        );
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn edit_file_rejects_path_outside_workspace() {
+        let (base, workspace) = temp_workspace("edit-escape");
+        let outside = base.join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        let secret = outside.join("secret.txt");
+        std::fs::write(&secret, "top secret\n").unwrap();
+
+        let err = edit(
+            &workspace,
+            json!({
+                "path": "../outside/secret.txt",
+                "old_string": "top secret",
+                "new_string": "pwned"
+            }),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.contains("outside the project workspace"), "{err}");
+        assert_eq!(std::fs::read_to_string(&secret).unwrap(), "top secret\n");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn edit_file_rejects_symlink_escaping_workspace() {
+        let (base, workspace) = temp_workspace("edit-symlink");
+        let outside = base.join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        let secret = outside.join("secret.txt");
+        std::fs::write(&secret, "top secret\n").unwrap();
+        let link = workspace.join("link");
+        if symlink_dir(&outside, &link).is_err() {
+            let _ = std::fs::remove_dir_all(base);
+            return;
+        }
+
+        let err = edit(
+            &workspace,
+            json!({
+                "path": "link/secret.txt",
+                "old_string": "top secret",
+                "new_string": "pwned"
+            }),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.contains("outside the project workspace"), "{err}");
+        assert_eq!(std::fs::read_to_string(&secret).unwrap(), "top secret\n");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn edit_file_requires_an_existing_file() {
+        let (base, workspace) = temp_workspace("edit-nonexistent");
+
+        let err = edit(
+            &workspace,
+            json!({
+                "path": "nope.txt",
+                "old_string": "a",
+                "new_string": "b"
+            }),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.contains("Cannot resolve path"), "{err}");
+        assert!(!workspace.join("nope.txt").exists());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn edit_file_missing_arguments_error() {
+        let (base, workspace) = temp_workspace("edit-args");
+        seed(&workspace, "main.rs", SAMPLE);
+
+        let err = edit(&workspace, json!({ "path": "main.rs", "new_string": "x" }))
+            .await
+            .unwrap_err();
+        assert!(err.contains("old_string"), "{err}");
+
+        let err = edit(&workspace, json!({ "path": "main.rs", "old_string": "x" }))
+            .await
+            .unwrap_err();
+        assert!(err.contains("new_string"), "{err}");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    // The approval gate injects the user's merged file body under a reserved
+    // argument when only some hunks were accepted; the executor writes that
+    // verbatim instead of running its own replacement.
+    #[tokio::test]
+    async fn edit_file_honours_approved_merged_content() {
+        let (base, workspace) = temp_workspace("edit-merged");
+        let file = seed(&workspace, "main.rs", SAMPLE);
+
+        let mut args = json!({
+            "path": "main.rs",
+            "old_string": "    let x = 1;",
+            "new_string": "    let x = 42;"
+        });
+        args.as_object_mut().unwrap().insert(
+            APPROVED_CONTENT_ARG.to_string(),
+            serde_json::Value::String("user picked this\n".to_string()),
+        );
+
+        let out = edit(&workspace, args).await.unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "user picked this\n"
+        );
+        assert!(out.contains("modified version"), "{out}");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn edit_file_dispatches_through_execute_tool() {
+        let (base, workspace) = temp_workspace("edit-dispatch");
+        let file = seed(&workspace, "main.rs", SAMPLE);
+        let call = ToolCall {
+            id: "tool-edit".to_string(),
+            name: "edit_file".to_string(),
+            arguments: json!({
+                "path": "main.rs",
+                "old_string": "let x = 1;",
+                "new_string": "let x = 7;"
+            }),
+        };
+        let target = ExecutionTarget::Local {
+            project_path: workspace.to_string_lossy().to_string(),
+        };
+
+        let result = execute_tool(&call, &target).await;
+
+        assert!(!result.is_error, "{}", result.content);
+        assert!(std::fs::read_to_string(&file)
+            .unwrap()
+            .contains("let x = 7;"));
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn edit_file_is_rejected_on_ssh_targets() {
+        let call = ToolCall {
+            id: "tool-edit-ssh".to_string(),
+            name: "edit_file".to_string(),
+            arguments: json!({
+                "path": "main.rs",
+                "old_string": "a",
+                "new_string": "b"
+            }),
+        };
+        let target = ExecutionTarget::Ssh {
+            config: crate::core::execution::SshConfig {
+                host: "example.invalid".to_string(),
+                port: 22,
+                user: "nobody".to_string(),
+                remote_path: "/srv/app".to_string(),
+                key_path: None,
+                auth_method: None,
+                target_id: None,
+                host_fingerprint: None,
+            },
+        };
+
+        let result = execute_tool(&call, &target).await;
+
+        assert!(result.is_error);
+        assert!(result.content.contains("not available for remote SSH"));
+        assert!(result.content.contains("write_file"));
+    }
+
+    #[test]
+    fn preview_edit_file_matches_what_the_executor_would_write() {
+        let after = preview_edit_file(
+            &json!({
+                "path": "main.rs",
+                "old_string": "    let x = 1;",
+                "new_string": "    let x = 42;"
+            }),
+            Some(SAMPLE),
+        )
+        .unwrap();
+        assert_eq!(
+            after,
+            "fn main() {\n    let x = 42;\n    println!(\"{}\", x);\n}\n"
+        );
+    }
+
+    #[test]
+    fn preview_edit_file_propagates_edit_errors_to_the_gate() {
+        let ambiguous = preview_edit_file(
+            &json!({ "path": "d.txt", "old_string": "a", "new_string": "b" }),
+            Some("aa"),
+        )
+        .unwrap_err();
+        assert!(ambiguous.contains("appears 2 times"), "{ambiguous}");
+
+        let no_baseline = preview_edit_file(
+            &json!({ "path": "d.txt", "old_string": "a", "new_string": "b" }),
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            no_baseline.contains("existing readable file"),
+            "{no_baseline}"
+        );
+    }
+
+    #[tokio::test]
+    async fn tool_definitions_include_edit_file_schema() {
+        // Empty allowlist: exercise the real definition path without spawning
+        // the user's configured MCP servers.
+        let defs = tool_definitions_with_mcp_allowlist(Some(&[])).await;
+        let def = defs
+            .iter()
+            .find(|d| d.name == "edit_file")
+            .expect("edit_file must be offered to the in-process providers");
+
+        let required = def.parameters["required"].as_array().unwrap();
+        for key in ["path", "old_string", "new_string"] {
+            assert!(
+                required.iter().any(|v| v == key),
+                "{key} must be required: {:?}",
+                required
+            );
+        }
+        let props = def.parameters["properties"].as_object().unwrap();
+        assert_eq!(props["replace_all"]["type"], "boolean");
+        assert!(!props.contains_key(APPROVED_CONTENT_ARG));
     }
 
     #[tokio::test]

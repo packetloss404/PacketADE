@@ -166,9 +166,9 @@ describe("agent/workspace store decoupling", () => {
     const id = await useAgentTaskStore
       .getState()
       .createApiConversation({
-        agent: "api-openai-codex",
+        agent: "api-openai-agents",
         projectPath: "/srv/packetade",
-        model: "gpt-5-codex",
+        model: "gpt-5.5",
         initialMessage: "Build remotely",
         thinkingEnabled: false,
         planMode: false,
@@ -197,8 +197,8 @@ describe("agent/workspace store decoupling", () => {
     });
     expect(startApiAgentSessionMock).toHaveBeenCalledWith(
       id,
-      "openai-codex",
-      "gpt-5-codex",
+      "openai-agents",
+      "gpt-5.5",
       "/srv/packetade",
       "Build remotely",
       null,
@@ -268,9 +268,9 @@ describe("agent/workspace store decoupling", () => {
   it("passes SSH scope to memory briefs without local path probing", async () => {
     const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
     await useAgentTaskStore.getState().createApiConversation({
-      agent: "api-openai-codex",
+      agent: "api-openai-agents",
       projectPath: "/srv/app",
-      model: "gpt-5-codex",
+      model: "gpt-5.5",
       initialMessage: "Build remotely with memory enabled",
       systemPromptOverride: null,
       thinkingEnabled: false,

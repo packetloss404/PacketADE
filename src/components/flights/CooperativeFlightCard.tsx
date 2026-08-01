@@ -54,8 +54,14 @@ export function CooperativeFlightCard({ flight }: { flight: Flight }) {
         ...milestone,
         tasks: milestone.tasks.map((task) => {
           if (task.agentConfigId !== "unassigned" && task.model) return task;
+          // Reviewer / scout run on a DIFFERENT vendor from the implementer
+          // so a review is not the same model marking its own homework. Was
+          // `api-openai-codex` until that row was removed in 2026-07; the
+          // OpenAI Agents SDK row reaches the same API with an API key.
           const agent: AgentCli =
-            task.role === "reviewer" || task.role === "scout" ? "api-openai-codex" : "api-claude";
+            task.role === "reviewer" || task.role === "scout"
+              ? "api-openai-agents"
+              : "api-claude";
           return {
             ...task,
             agentConfigId: task.agentConfigId === "unassigned" ? agent : task.agentConfigId,

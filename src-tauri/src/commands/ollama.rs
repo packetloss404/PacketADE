@@ -57,6 +57,64 @@ pub fn set_ollama_base_url(base_url: Option<String>) -> Result<String, String> {
     Ok(resolve_base_url())
 }
 
+/// The two local-runtime knobs that decide whether Ollama sees the context we
+/// think we sent. Both are sent on the native `/api/chat` route; neither can be
+/// expressed on the OpenAI-compatible one.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct OllamaRuntimeOptions {
+    /// Ceiling on `options.num_ctx`. The model's own trained window still wins
+    /// when it is smaller.
+    pub num_ctx_cap: u32,
+    /// `keep_alive` value sent with every request.
+    pub keep_alive: String,
+    /// The built-in default cap, so the UI can label the reset affordance.
+    pub default_num_ctx_cap: u32,
+    /// The built-in default keep-alive.
+    pub default_keep_alive: String,
+}
+
+fn current_runtime_options() -> OllamaRuntimeOptions {
+    OllamaRuntimeOptions {
+        num_ctx_cap: crate::core::llm_ollama::resolve_num_ctx_cap(),
+        keep_alive: crate::core::llm_ollama::resolve_keep_alive(),
+        default_num_ctx_cap: crate::core::llm_ollama::DEFAULT_NUM_CTX_CAP,
+        default_keep_alive: crate::core::llm_ollama::DEFAULT_KEEP_ALIVE.to_string(),
+    }
+}
+
+#[tauri::command]
+pub fn get_ollama_runtime_options() -> Result<OllamaRuntimeOptions, String> {
+    Ok(current_runtime_options())
+}
+
+/// Save both knobs. A `None` (or blank/zero) field clears that override and
+/// restores the built-in default.
+#[tauri::command]
+pub fn set_ollama_runtime_options(
+    num_ctx_cap: Option<u32>,
+    keep_alive: Option<String>,
+) -> Result<OllamaRuntimeOptions, String> {
+    let cap = match num_ctx_cap.filter(|cap| *cap > 0) {
+        Some(cap) if cap < crate::core::llm_ollama::MIN_NUM_CTX_CAP => {
+            return Err(format!(
+                "Context cap must be at least {} tokens.",
+                crate::core::llm_ollama::MIN_NUM_CTX_CAP
+            ))
+        }
+        other => other,
+    };
+    let keep_alive = keep_alive
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(crate::core::llm_ollama::normalize_keep_alive)
+        .transpose()?;
+
+    crate::core::storage::save_ollama_runtime_options(cap, keep_alive)?;
+    Ok(current_runtime_options())
+}
+
 #[tauri::command]
 pub async fn list_ollama_models() -> Result<Vec<OllamaModel>, String> {
     let base = resolve_base_url();

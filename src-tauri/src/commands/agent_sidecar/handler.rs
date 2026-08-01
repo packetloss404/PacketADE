@@ -528,12 +528,13 @@ impl SidecarManager {
                 // spend live instead of waiting for the next hydrate.
                 //
                 // Provider semantics differ: the Anthropic provider emits
-                // genuine per-message deltas, but the openai-codex provider
-                // emits SESSION-CUMULATIVE running totals on every
-                // `token_count` update (see openai-codex.ts: "replace, not
-                // accumulate"). For snapshot-semantics providers we track the
-                // last-seen snapshot per (session, address) and roll up only
-                // the positive component-wise delta.
+                // genuine per-message deltas, but the retired `openai-codex`
+                // provider emitted SESSION-CUMULATIVE running totals on every
+                // `token_count` update ("replace, not accumulate"). The
+                // provider is gone, so this snapshot-delta path is reachable
+                // only for historical flight attempts persisted with
+                // `provider == "openai-codex"`; it is retained so old data
+                // cannot double-count, not because any live session uses it.
                 //
                 // Async-dispatched so we never block the sidecar event loop
                 // on the `with_state_lock` mutex, and short-circuits cleanly
@@ -565,9 +566,10 @@ impl SidecarManager {
                         Some(o) => o,
                         None => return,
                     };
-                    // Codex `turn_summary` events carry session-cumulative
-                    // totals — accumulate only the delta since the previous
-                    // snapshot. Everything else (claude-oauth) is per-turn.
+                    // Retired-Codex `turn_summary` events carried
+                    // session-cumulative totals — accumulate only the delta
+                    // since the previous snapshot. Every live provider
+                    // (claude-oauth / openai-agents) reports per-turn.
                     let cumulative = owner.provider == "openai-codex";
                     let (d_in, d_out, d_cr, d_cc) = if cumulative {
                         let key = (

@@ -4,12 +4,12 @@
 //! execute tool calls, feed results back, repeat until the model
 //! produces a final text response.
 
-use crate::commands::agent_sidecar::{is_sidecar_provider, SidecarManager};
+use crate::commands::agent_sidecar::{is_sidecar_provider, SidecarManager, SIDECAR_PROVIDERS};
 use crate::commands::api_keys;
 use crate::commands::provider_stats;
 use crate::core::execution::{ExecutionTarget, SshConfig};
 use crate::core::hooks::{self, HookEvent};
-use crate::core::llm_provider::get_provider;
+use crate::core::llm_provider::{get_provider, IN_PROCESS_PROVIDERS};
 use crate::core::llm_system_prompt::build_system_prompt;
 use crate::core::llm_types::*;
 use crate::core::tool_runtime;
@@ -486,6 +486,42 @@ mod tests {
     use super::*;
     use crate::commands::mcp::{McpServerConfig, McpServerEntry};
     use std::collections::HashMap;
+
+    /// edit_file mutates files exactly like write_file, so it must sit behind
+    /// the same three gates: risky-tool permission, the pending-edit approval
+    /// gate, and the plan-mode block. A tool that writes without approval
+    /// would be a security regression.
+    #[test]
+    fn edit_file_is_gated_like_write_file() {
+        assert!(RISKY_TOOLS.contains(&"edit_file"));
+        assert!(EDIT_TOOLS.contains(&"edit_file"));
+        assert!(!PLAN_MODE_ALLOWED.contains(&"edit_file"));
+        // Every edit tool must also be permission-gated.
+        for tool in EDIT_TOOLS {
+            assert!(
+                RISKY_TOOLS.contains(tool),
+                "{tool} bypasses the permission gate"
+            );
+        }
+    }
+
+    /// The gate materializes edit_file's proposed content the same way the
+    /// executor will, so the diff the user approves is the diff that lands.
+    #[test]
+    fn edit_file_preview_feeds_the_pending_edit_payload() {
+        let args = serde_json::json!({
+            "path": "a.rs",
+            "old_string": "let x = 1;",
+            "new_string": "let x = 2;"
+        });
+        let after = tool_runtime::preview_edit_file(&args, Some("let x = 1;\n")).unwrap();
+        assert_eq!(after, "let x = 2;\n");
+
+        // An ambiguous edit fails in the gate too — nothing is ever queued for
+        // approval that the executor would refuse.
+        let ambiguous = tool_runtime::preview_edit_file(&args, Some("let x = 1;let x = 1;"));
+        assert!(ambiguous.is_err());
+    }
 
     #[test]
     fn build_assistant_history_message_skips_blank_turn_without_tools() {
@@ -1001,10 +1037,26 @@ pub async fn start_api_agent_session(
         }
         let sys_prompt = system_prompt_override.clone().unwrap_or_default();
         let tools = allowed_tools.clone().unwrap_or_default();
-        let api_key = if provider == "openai-agents" {
-            Some(api_keys::load_api_key("openai")?)
-        } else {
-            None
+        // Every sidecar provider is API-key authenticated. The key is loaded
+        // here, from the OS keyring, and handed to the sidecar transiently in
+        // `start_session.apiKey` — it is never persisted by the frontend or
+        // the sidecar, and never written to the remote host on SSH launches.
+        //
+        // `claude-oauth` is a historical identifier: it is the Claude Agent SDK
+        // row, and since 2026-07 it authenticates with `api-key-anthropic`
+        // instead of the Claude.ai subscription credential store. Anthropic's
+        // legal-and-compliance page directs third-party developers using the
+        // Agent SDK to "use the API key authentication methods described in the
+        // Quickstart instead", so the SDK stays and only the credential moved.
+        // The id is unchanged because persisted conversations store it in
+        // `AgentConversation.provider` and resume with it verbatim.
+        //
+        // PTY-backed `claude` / `codex` CLI sessions are untouched by this and
+        // keep using their own OAuth logins — that is ordinary end-user use.
+        let api_key = match provider.as_str() {
+            "openai-agents" => Some(api_keys::load_api_key("openai")?),
+            "claude-oauth" => Some(api_keys::load_api_key("anthropic")?),
+            _ => None,
         };
         // MCP config. For LOCAL sessions, merge global (~/.claude/settings.json)
         // and project (.mcp.json) configs, drop disabled entries, and transform
@@ -1108,6 +1160,31 @@ pub async fn start_api_agent_session(
             return Err(e);
         }
         return Ok(());
+    }
+
+    // Fail loudly, and early, on a provider id nothing here can route.
+    //
+    // The old failure mode was a red herring: an unroutable id (typically an
+    // agent-config id with the `api-` prefix stripped, e.g. `api-claude` ->
+    // "claude") sailed past this point and died inside `load_api_key` with
+    // "No API key configured for claude", sending the user to Settings to fix
+    // a key for a provider that does not exist. Name the bad id and the ids
+    // that are actually accepted instead.
+    if let Err(unknown) = get_provider(&provider) {
+        let message = format!(
+            "{unknown}. Expected a canonical provider id — one of {} (sidecar) or {} (in-process). \
+             Agent-config ids must be mapped, not prefix-stripped: \"api-claude\" is \"anthropic\", not \"claude\".",
+            SIDECAR_PROVIDERS.join(", "),
+            IN_PROCESS_PROVIDERS.join(", "),
+        );
+        warn!(session_id = %session_id, provider = %provider, "Unroutable provider id");
+        let _ = app_handle.emit(
+            &error_event(&session_id),
+            ErrorPayload {
+                message: message.clone(),
+            },
+        );
+        return Err(message);
     }
 
     // Decide execution target. For SSH we skip the local-path validation and
@@ -1758,6 +1835,16 @@ async fn finish_cancelled_agent_turn(
     fire_session_end_hooks(hooks_list, session_id).await;
 }
 
+/// Tools that require user permission in `AskForRisky` mode and are refused
+/// outright in `DenyAll`.
+const RISKY_TOOLS: &[&str] = &["bash", "write_file", "edit_file"];
+/// The only tools allowed while plan mode is active — read-only ones.
+const PLAN_MODE_ALLOWED: &[&str] = &["read_file", "list_directory", "grep"];
+/// Tools that mutate file content and therefore must go through the
+/// pending-edit approval gate (and emit a pre-edit baseline when the gate is
+/// off). Every entry here must also be in [`RISKY_TOOLS`].
+const EDIT_TOOLS: &[&str] = &["write_file", "edit_file"];
+
 async fn run_agent_loop(
     app_handle: &tauri::AppHandle,
     state: &Arc<ApiAgentState>,
@@ -2096,9 +2183,6 @@ async fn run_agent_loop(
             }
         };
 
-        const RISKY_TOOLS: &[&str] = &["bash", "write_file"];
-        const PLAN_MODE_ALLOWED: &[&str] = &["read_file", "list_directory", "grep"];
-
         // Execute tool calls in parallel; each async block handles its own gates.
         let futures: Vec<_> = tool_calls
             .iter()
@@ -2259,8 +2343,19 @@ async fn run_agent_loop(
                         }
                     }
 
-                    // Pending edit gate (write_file with approve_writes enabled)
-                    if tc.name == "write_file" && approve_writes {
+                    // The approval gate is the only legitimate writer of the
+                    // reserved merged-content argument — drop anything the
+                    // model tried to smuggle in under that name.
+                    if tc.name == "edit_file" {
+                        if let Some(args) = tc.arguments.as_object_mut() {
+                            args.remove(tool_runtime::APPROVED_CONTENT_ARG);
+                        }
+                    }
+
+                    // Pending edit gate (write_file / edit_file with approve_writes enabled)
+                    let is_edit_tool = EDIT_TOOLS.contains(&tc.name.as_str());
+                    let is_write_file = tc.name == "write_file";
+                    if is_edit_tool && approve_writes {
                         let path = match tc
                             .arguments
                             .get("path")
@@ -2271,32 +2366,6 @@ async fn run_agent_loop(
                                 let err = ToolResult {
                                     tool_call_id: tc.id.clone(),
                                     content: "Missing 'path' parameter".to_string(),
-                                    is_error: true,
-                                };
-                                let _ = app_handle.emit(
-                                    &tool_result_event(&session_id),
-                                    ToolResultPayload {
-                                        id: tc.id.clone(),
-                                        name: tc.name.clone(),
-                                        content: err.content.clone(),
-                                        is_error: true,
-                                        input: serde_json::to_string(&tc.arguments)
-                                            .unwrap_or_default(),
-                                    },
-                                );
-                                return (tc.id.clone(), err);
-                            }
-                        };
-                        let content = match tc
-                            .arguments
-                            .get("content")
-                            .and_then(|v| v.as_str())
-                        {
-                            Some(content) => content.to_string(),
-                            None => {
-                                let err = ToolResult {
-                                    tool_call_id: tc.id.clone(),
-                                    content: "Missing 'content' parameter".to_string(),
                                     is_error: true,
                                 };
                                 let _ = app_handle.emit(
@@ -2346,9 +2415,66 @@ async fn run_agent_loop(
                         };
                         // Read prior content for before/after diff. None for
                         // new files, remote targets, or unreadable paths.
-                        let before = match resolved_local_path {
+                        let before = match &resolved_local_path {
                             Some(path) => tokio::fs::read_to_string(path).await.ok(),
                             None => None,
+                        };
+
+                        // The proposed post-edit file body: write_file carries
+                        // it outright, edit_file materializes it by replaying
+                        // its replacement onto the baseline so the diff the
+                        // user approves is the diff that lands.
+                        let content = if is_write_file {
+                            match tc.arguments.get("content").and_then(|v| v.as_str()) {
+                                Some(content) => content.to_string(),
+                                None => {
+                                    let err = ToolResult {
+                                        tool_call_id: tc.id.clone(),
+                                        content: "Missing 'content' parameter".to_string(),
+                                        is_error: true,
+                                    };
+                                    let _ = app_handle.emit(
+                                        &tool_result_event(&session_id),
+                                        ToolResultPayload {
+                                            id: tc.id.clone(),
+                                            name: tc.name.clone(),
+                                            content: err.content.clone(),
+                                            is_error: true,
+                                            input: serde_json::to_string(&tc.arguments)
+                                                .unwrap_or_default(),
+                                        },
+                                    );
+                                    return (tc.id.clone(), err);
+                                }
+                            }
+                        } else {
+                            let preview = if resolved_local_path.is_none() {
+                                Err(tool_runtime::EDIT_FILE_REMOTE_UNSUPPORTED.to_string())
+                            } else {
+                                tool_runtime::preview_edit_file(&tc.arguments, before.as_deref())
+                            };
+                            match preview {
+                                Ok(after) => after,
+                                Err(e) => {
+                                    let err = ToolResult {
+                                        tool_call_id: tc.id.clone(),
+                                        content: e,
+                                        is_error: true,
+                                    };
+                                    let _ = app_handle.emit(
+                                        &tool_result_event(&session_id),
+                                        ToolResultPayload {
+                                            id: tc.id.clone(),
+                                            name: tc.name.clone(),
+                                            content: err.content.clone(),
+                                            is_error: true,
+                                            input: serde_json::to_string(&tc.arguments)
+                                                .unwrap_or_default(),
+                                        },
+                                    );
+                                    return (tc.id.clone(), err);
+                                }
+                            }
                         };
 
                         let (tx, rx) = oneshot::channel::<EditDecision>();
@@ -2371,13 +2497,20 @@ async fn run_agent_loop(
                                 // user-merged file body before the tool runs
                                 // so the actual write writes only the hunks
                                 // the user picked, not the model's full
-                                // `after`.
+                                // `after`. edit_file carries it in a reserved
+                                // argument its executor honours in place of
+                                // the search/replace.
                                 if let Some(merged) = merged_content {
+                                    let key = if is_write_file {
+                                        "content"
+                                    } else {
+                                        tool_runtime::APPROVED_CONTENT_ARG
+                                    };
                                     if let Some(args) =
                                         tc.arguments.as_object_mut()
                                     {
                                         args.insert(
-                                            "content".to_string(),
+                                            key.to_string(),
                                             serde_json::Value::String(merged),
                                         );
                                     }
@@ -2426,7 +2559,7 @@ async fn run_agent_loop(
                                 return (tc.id.clone(), err);
                             }
                         }
-                    } else if tc.name == "write_file" {
+                    } else if is_edit_tool {
                         // P1-7: no approval gate, but still capture the
                         // pre-edit baseline so review surfaces can diff the
                         // applied result against the true "before" instead

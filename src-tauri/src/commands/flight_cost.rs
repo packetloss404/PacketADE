@@ -96,13 +96,18 @@ pub async fn accumulate_executor_cost(
 pub struct ExecutorSessionOwner {
     pub flight_id: String,
     pub model: String,
-    /// Stripped provider id (e.g. "openai-codex", "claude-oauth"): recorded
-    /// directly on the attempt for the attempt linkage, and derived from the
-    /// task's `agent_config_id` with the `api-` prefix stripped (mirroring
-    /// asyncFlightStore's derivation) for the milestone-task linkage. The
-    /// sidecar `turn_summary` handler uses this to decide whether the
-    /// event's totals are per-turn deltas or session-cumulative snapshots
-    /// (openai-codex).
+    /// Provider discriminator (e.g. "openai-codex", "claude-oauth"): read
+    /// directly off the attempt for the attempt linkage, and derived from the
+    /// task's `agent_config_id` with the `api-` prefix stripped for the
+    /// milestone-task linkage.
+    ///
+    /// Its ONLY consumer is the sidecar `turn_summary` handler, which asks
+    /// whether this is `openai-codex` to decide if the event's totals are
+    /// per-turn deltas or session-cumulative snapshots. It is deliberately
+    /// NOT a routable `get_provider` id — the prefix-strip below yields
+    /// "claude" for `api-claude` — so never feed it to `get_provider` or
+    /// `load_api_key`. (The frontend's attempt specs resolve their provider
+    /// through `attemptProviderFor`; this field is cost bookkeeping only.)
     pub provider: String,
 }
 
@@ -148,11 +153,12 @@ pub fn flight_for_executor_session(
             return Some(ExecutorSessionOwner {
                 flight_id: f.id.clone(),
                 model: t.model.clone().unwrap_or_default(),
-                // Same derivation asyncFlightStore uses for attempts: the
-                // task's agent id minus the `api-` prefix. Without this, a
+                // Tasks carry no provider field, so derive the codex
+                // discriminator from the agent id. Without this, a
                 // codex-backed task session would take the per-turn branch
                 // in the sidecar turn_summary handler and re-add its
-                // session-cumulative totals on every update.
+                // session-cumulative totals on every update. See the field
+                // docs: this is a discriminator, not a routable provider id.
                 provider: t.agent_config_id.trim_start_matches("api-").to_string(),
             });
         }

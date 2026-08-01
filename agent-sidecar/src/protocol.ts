@@ -139,9 +139,12 @@ export type StartSessionRequest = {
   resumeMessages?: ResumeMessage[];
   permissionMode?: PermissionMode;
   approveWrites?: boolean;
-  /** Optional absolute command path for CLI-backed providers. Currently used
-   * by `openai-codex` so PacketADE can honor a user-pinned Codex binary
-   * instead of relying on PATH resolution. */
+  /** Optional absolute command path for CLI-backed providers. Introduced for
+   * the retired `openai-codex` provider so PacketADE could honor a
+   * user-pinned Codex binary instead of relying on PATH resolution. No
+   * surviving provider is CLI-backed, so nothing sends it today; kept on the
+   * wire because removing a field is a protocol break and the next
+   * subprocess-backed provider will want it. */
   commandPath?: string;
   /** Structured workspace metadata. `projectPath` remains for v1/v6
    * compatibility with local sidecars; remote launches use this object to
@@ -201,7 +204,7 @@ export type CloseSessionRequest = {
 // them through the sidecar end-to-end; slice C adds the Rust forwarders.
 //
 // `mode` values mirror the Anthropic SDK's `PermissionMode`. The Codex
-// provider maps them onto its sandbox/approval flags (see openai-codex.ts).
+// provider maps them onto its own approval flags.
 export type SetPermissionModeRequest = {
   type: "set_permission_mode";
   sessionId: string;

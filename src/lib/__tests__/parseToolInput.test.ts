@@ -98,6 +98,7 @@ describe("parseEditToolCalls", () => {
   it("recognizes every provider's edit tool names and nothing else", () => {
     for (const name of [
       "write_file",
+      "edit_file",
       "Write",
       "Edit",
       "MultiEdit",
@@ -123,6 +124,65 @@ describe("parseEditToolCalls", () => {
         ),
       ),
     ).toEqual([{ path: "src/a.ts", after: "hi\n" }]);
+  });
+
+  it("maps edit_file (in-process targeted edit) to a replacement chain", () => {
+    expect(
+      parseEditToolCalls(
+        makeNamedCall(
+          "edit_file",
+          JSON.stringify({
+            path: "src/a.ts",
+            old_string: "  const x = 1;",
+            new_string: "  const x = 2;",
+          }),
+        ),
+      ),
+    ).toEqual([
+      {
+        path: "src/a.ts",
+        replacements: [
+          {
+            oldString: "  const x = 1;",
+            newString: "  const x = 2;",
+            replaceAll: false,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("carries edit_file's replace_all flag through to the descriptor", () => {
+    const [edit] = parseEditToolCalls(
+      makeNamedCall(
+        "edit_file",
+        JSON.stringify({
+          path: "src/a.ts",
+          old_string: "a",
+          new_string: "b",
+          replace_all: true,
+        }),
+      ),
+    );
+    expect(edit.replacements?.[0].replaceAll).toBe(true);
+  });
+
+  it("materializes an edit_file replacement on top of a baseline", () => {
+    const edits = parseEditToolCalls(
+      makeNamedCall(
+        "edit_file",
+        JSON.stringify({
+          path: "src/a.ts",
+          old_string: "  const x = 1;",
+          new_string: "  const x = 2;",
+        }),
+      ),
+    );
+    expect(materializeEdits(edits, "top\n  const x = 1;\nbottom\n")).toBe(
+      "top\n  const x = 2;\nbottom\n",
+    );
+    // No baseline: the transcript alone can't reproduce the result.
+    expect(materializeEdits(edits, null)).toBeNull();
   });
 
   it("maps Claude Code Write (string and object inputs)", () => {

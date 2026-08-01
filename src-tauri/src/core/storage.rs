@@ -122,6 +122,14 @@ struct ProviderRuntimeSettings {
     ollama_base_url: Option<String>,
     #[serde(default)]
     minimax_base_url: Option<String>,
+    /// Ceiling for the `num_ctx` Ollama is asked to allocate. `None` = the
+    /// built-in default in `core::llm_ollama`. See that module for why this is
+    /// a cap rather than an absolute value.
+    #[serde(default)]
+    ollama_num_ctx_cap: Option<u32>,
+    /// How long Ollama keeps a model resident after a turn (`30m`, `-1`, …).
+    #[serde(default)]
+    ollama_keep_alive: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, Default)]
@@ -816,6 +824,34 @@ pub fn save_ollama_base_url(base_url: Option<String>) -> Result<(), String> {
         .map_err(|e| format!("Lock poisoned: {}", e))?;
     let mut settings = load_provider_runtime_settings();
     settings.ollama_base_url = base_url;
+    save_provider_runtime_settings(&settings)
+}
+
+pub fn load_saved_ollama_num_ctx_cap() -> Option<u32> {
+    load_provider_runtime_settings()
+        .ollama_num_ctx_cap
+        .filter(|cap| *cap > 0)
+}
+
+pub fn load_saved_ollama_keep_alive() -> Option<String> {
+    load_provider_runtime_settings()
+        .ollama_keep_alive
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+/// Persist the Ollama local-runtime knobs. `None` clears the override and
+/// restores the built-in default for that field.
+pub fn save_ollama_runtime_options(
+    num_ctx_cap: Option<u32>,
+    keep_alive: Option<String>,
+) -> Result<(), String> {
+    let _lock = PROVIDER_SETTINGS_LOCK
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
+    let mut settings = load_provider_runtime_settings();
+    settings.ollama_num_ctx_cap = num_ctx_cap;
+    settings.ollama_keep_alive = keep_alive;
     save_provider_runtime_settings(&settings)
 }
 

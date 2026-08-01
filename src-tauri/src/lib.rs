@@ -497,6 +497,8 @@ pub fn run() {
             commands::ollama::get_ollama_base_url,
             commands::ollama::set_ollama_base_url,
             commands::ollama::list_ollama_models,
+            commands::ollama::get_ollama_runtime_options,
+            commands::ollama::set_ollama_runtime_options,
             // API agent sessions
             commands::api_agent::start_api_agent_session,
             commands::api_agent::send_api_agent_message,

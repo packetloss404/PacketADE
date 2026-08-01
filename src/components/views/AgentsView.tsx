@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot, X } from "lucide-react";
-import { apiAgentProvider, useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
+import { authProbeProvider, useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { launchConversation } from "@/lib/launchConversation";
@@ -18,10 +18,11 @@ import {
   useWorkspaceAgentsDogfoodStore,
 } from "@/stores/workspaceAgentsDogfoodStore";
 
+// First provider with a ready credential wins the empty-state default.
+// Probed via `authProbeProvider`, so every entry is an API-key check.
 const AUTO_PICK_ORDER: AgentCli[] = [
   "api-claude-oauth",
   "api-claude",
-  "api-openai-codex",
   "api-openai",
   "api-openai-agents",
   "api-openrouter",
@@ -82,7 +83,7 @@ export function AgentsView() {
         try {
           return {
             agent,
-            status: await getProviderAuthStatus(apiAgentProvider(agent)),
+            status: await getProviderAuthStatus(authProbeProvider(agent)),
           };
         } catch {
           return null;

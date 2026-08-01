@@ -114,55 +114,52 @@ describe("AgentModeChip", () => {
     ).toBe("true");
   });
 
-  // P1-S4 (Codex honesty): the exec adapter can't service ANY approval
-  // round-trip, so the picker must offer ONLY the honorable sandbox
-  // postures, relabeled in sandbox vocabulary — never Manual/Deny.
-  describe("Codex capability filtering", () => {
-    it("shows only the three honorable sandbox postures for api-openai-codex", () => {
-      renderChip({ agent: "api-openai-codex", permissionMode: "auto" });
-      fireEvent.click(screen.getByLabelText("Permission options"));
-      const radios = screen.getAllByRole("menuitemradio");
-      expect(radios.map((r) => r.textContent)).toEqual([
-        expect.stringContaining("Read-only"),
-        expect.stringContaining("Workspace-write"),
-        expect.stringContaining("Full access"),
-      ]);
+  // P1-S4 capability filtering. The only row that ever set
+  // `supportsApprovals: false` was `api-openai-codex` (Codex `exec`, whose
+  // stdin was closed), and that row was removed in 2026-07. The filtering
+  // MACHINERY is still live and still unit-tested against both booleans in
+  // `agentModeChipUtils.test.ts`; what these assert is that no live provider
+  // — and no retired one — silently loses modes through the catalog.
+  describe("capability filtering", () => {
+    it("offers the full five-mode set for every live provider", () => {
+      for (const agent of [
+        "api-claude-oauth",
+        "api-claude",
+        "api-openai",
+        "api-openai-agents",
+        "api-minimax",
+        "api-openrouter",
+        "api-ollama",
+      ]) {
+        const { unmount } = render(
+          <AgentModeChip
+            conversation={conversation({ agent, permissionMode: "auto" })}
+            onCycle={vi.fn()}
+            onSelectMode={vi.fn()}
+            onSetApproveWrites={vi.fn()}
+          />,
+        );
+        fireEvent.click(screen.getByLabelText("Permission options"));
+        const radios = screen.getAllByRole("menuitemradio");
+        expect(radios.map((r) => r.textContent)).toEqual([
+          expect.stringContaining("Default"),
+          expect.stringContaining("Plan"),
+          expect.stringContaining("Manual"),
+          expect.stringContaining("Deny"),
+          expect.stringContaining("Yolo"),
+        ]);
+        unmount();
+      }
     });
 
-    it("never offers the approval-implying Manual or Deny postures for Codex", () => {
+    it("does not sandbox-relabel a retired provider id", () => {
+      // `api-openai-codex` has no catalog row now, so
+      // `providerSupportsApprovals` defaults it to true. A read-only stored
+      // conversation on that id must render the ordinary vocabulary rather
+      // than a half-applied Codex sandbox skin.
       renderChip({ agent: "api-openai-codex", permissionMode: "auto" });
-      fireEvent.click(screen.getByLabelText("Permission options"));
-      const text = screen
-        .getAllByRole("menuitemradio")
-        .map((r) => r.textContent)
-        .join(" ");
-      expect(text).not.toMatch(/Manual/);
-      expect(text).not.toMatch(/Deny/);
-    });
-
-    it("relabels the resting pill in sandbox vocabulary for Codex", () => {
-      renderChip({ agent: "api-openai-codex", permissionMode: "auto" });
-      // permissionMode:auto derives 'default' → 'Workspace-write' for Codex.
-      expect(screen.getByText("Workspace-write")).toBeTruthy();
-      expect(screen.queryByText("Default")).toBeNull();
-    });
-
-    it("still selects the underlying mode value from the relabeled row", () => {
-      const onSelectMode = vi.fn();
-      render(
-        <AgentModeChip
-          conversation={conversation({
-            agent: "api-openai-codex",
-            permissionMode: "auto",
-          })}
-          onCycle={vi.fn()}
-          onSelectMode={onSelectMode}
-          onSetApproveWrites={vi.fn()}
-        />,
-      );
-      fireEvent.click(screen.getByLabelText("Permission options"));
-      fireEvent.click(screen.getByRole("menuitemradio", { name: /Full access/ }));
-      expect(onSelectMode).toHaveBeenCalledWith("yolo");
+      expect(screen.getByText("Default")).toBeTruthy();
+      expect(screen.queryByText("Workspace-write")).toBeNull();
     });
   });
 });

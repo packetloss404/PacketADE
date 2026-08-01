@@ -1,4 +1,4 @@
-import { Zap, LogIn } from "lucide-react";
+import { Zap } from "lucide-react";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { AuthBadge, type AuthStatus } from "@/components/ui/AuthBadge";
 import type { AgentCli } from "@/stores/agentTaskStore";
@@ -12,9 +12,6 @@ interface ProviderPickerProps {
   onModelChange: (model: string) => void;
   authStatus: Record<string, AuthEntry>;
   refreshAuthStatuses: () => void;
-  needsLogin: "claude" | "codex" | null;
-  loginTooltip: string;
-  onOpenLogin: () => void;
 }
 
 export function ProviderPicker({
@@ -23,9 +20,6 @@ export function ProviderPicker({
   onModelChange,
   authStatus,
   refreshAuthStatuses,
-  needsLogin,
-  loginTooltip,
-  onOpenLogin,
 }: ProviderPickerProps) {
   const selectedAuth = authStatus[selectedAgent];
   const selectedAuthStatus: AuthStatus =
@@ -56,32 +50,13 @@ export function ProviderPicker({
             }
             className="ml-1"
           />
-          {needsLogin && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onOpenLogin();
-              }}
-              onMouseDown={(e) => {
-                // Stop here too so opening the dropdown's click-toggle
-                // doesn't also fire.
-                e.stopPropagation();
-              }}
-              className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-ui text-accent-amber hover:bg-accent-amber/10 transition-colors"
-              title={loginTooltip}
-            >
-              <LogIn size={10} />
-              Log in
-            </button>
-          )}
         </span>
       }
     >
       {PROVIDER_GROUPS.map((group, gi) => {
-        // Build the renderable rows — skip agents that don't exist in
-        // API_PROVIDERS (e.g. while parallel OAuth entries haven't landed).
+        // Build the renderable rows — skip agents with no API_PROVIDERS
+        // entry, which is how a retired id (e.g. `api-openai-codex`) stays
+        // out of the picker even if it lingers in a group list.
         const rows = group.agents
           .map((agent) => ({
             agent,

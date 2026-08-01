@@ -11,23 +11,34 @@
  *
  * Automatic launches now resolve through the routing settings' workflow roles
  * (Settings → AI Provider Routing), falling back to the same default a manual
- * Flight launch offers. Subscription-OAuth agents are refused outright: a user
- * can still pick one deliberately in the provider picker, but nothing PacketADE
- * routes on their behalf may select one.
+ * Flight launch offers. Retired / non-catalog agents are refused outright
+ * rather than obeyed, so nothing PacketADE routes on the user's behalf can
+ * land on a provider that cannot run.
+ *
+ * Since 2026-07 no picker row uses subscription credentials at all: the
+ * Claude Agent SDK row authenticates with the Anthropic API key, and the
+ * ChatGPT-subscription Codex row was removed.
  */
 
 import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
 import { useRoutingStore } from "@/stores/routingStore";
-import { apiAgentProvider, type AgentCli } from "@/stores/agentTaskStore";
+import { apiAgentProvider, canonicalizeAgentCli, type AgentCli } from "@/stores/agentTaskStore";
 import type { AttemptTargetSpec } from "@/lib/tauri";
 import type { TaskType } from "@/types/flight";
 
 /**
- * Agents whose credentials come from a Claude.ai / ChatGPT subscription login.
- * Never valid as an automatically-resolved target.
+ * Agents that may never be picked by an automatic launch.
+ *
+ * Originally the two subscription-OAuth rows. Both are gone as such:
+ * `api-openai-codex` was removed outright in 2026-07, and `api-claude-oauth`
+ * is now the Claude Agent SDK on an Anthropic API key, so it is a perfectly
+ * legitimate automatic target and is no longer listed.
+ *
+ * The retired id stays here as belt-and-braces: `isUsableAttemptAgent` already
+ * rejects it for having no `API_PROVIDERS` row, and this makes the intent
+ * explicit rather than incidental.
  */
 export const SUBSCRIPTION_OAUTH_AGENTS: ReadonlySet<string> = new Set([
-  "api-claude-oauth",
   "api-openai-codex",
 ]);
 
@@ -44,6 +55,27 @@ export const DEFAULT_ATTEMPT_AGENT: AgentCli = "api-claude";
 function isUsableAttemptAgent(agentConfigId: string): boolean {
   if (SUBSCRIPTION_OAUTH_AGENTS.has(agentConfigId)) return false;
   return API_PROVIDERS.some((p) => p.agentCli === agentConfigId);
+}
+
+/**
+ * The canonical backend provider id for an attempt executor — the ONE place
+ * any attempt spec may derive `AttemptTargetSpec.provider`.
+ *
+ * `flight_attempts.rs` forwards this string verbatim to
+ * `start_api_agent_session`, which routes it either to the sidecar
+ * (`SIDECAR_PROVIDERS`) or to the Rust `get_provider` dispatch. Neither knows
+ * agent-config ids, so the naive `agentConfigId.replace(/^api-/, "")` that
+ * used to live in `pickedToSpec` / `asyncFlightStore` was wrong for the
+ * DEFAULT executor: `api-claude` → `"claude"`, which `get_provider` rejects
+ * and `load_api_key` reports as a missing key for a provider that does not
+ * exist. Every other id happened to round-trip, which is exactly why the bug
+ * survived — so route through the authoritative map instead of re-deriving.
+ *
+ * Legacy hydrated ids are canonicalised first (`api-minimax-api` →
+ * `api-minimax` → `"minimax"`).
+ */
+export function attemptProviderFor(agentConfigId: string): string {
+  return apiAgentProvider(canonicalizeAgentCli(agentConfigId));
 }
 
 /**
@@ -86,13 +118,11 @@ export function localAttemptTargetFromRoute(
     basePath,
     baseBranch,
     agentConfigId: executor.agentConfigId,
-    // The canonical backend provider id, via the same map `agentTaskStore` uses
-    // when it starts an API conversation. Deliberately NOT the naive
-    // `replace(/^api-/, "")` that `pickedToSpec` in LaunchAsyncFlightModal
-    // does — that yields `"claude"` for `api-claude`, which is not a
-    // `get_provider` id. Mis-mapping a provider is how requests end up billed
-    // to the wrong credentials, so this path uses the authoritative map.
-    provider: apiAgentProvider(executor.agentConfigId),
+    // The canonical backend provider id, via the same map `agentTaskStore`
+    // uses when it starts an API conversation. Mis-mapping a provider is how
+    // requests end up billed to the wrong credentials — or, for `api-claude`,
+    // fail outright — so every attempt spec goes through this one helper.
+    provider: attemptProviderFor(executor.agentConfigId),
     model: executor.model,
   };
 }

@@ -44,7 +44,7 @@ const FAMILY_COLORS: Record<AgentFamily, AgentColor> = {
 /**
  * Resolve any agent identifier — CLI slot (`claude-code`, `codex`,
  * `packetcode`, `terminal`) or `api-*` agentCli (`api-claude-oauth`,
- * `api-openai-codex`, `api-minimax-api`, `api-ollama`, …) — to a family.
+ * `api-openai-agents`, `api-minimax-api`, `api-ollama`, …) — to a family.
  */
 function agentFamily(agentId: string): AgentFamily {
   const id = agentId.toLowerCase();

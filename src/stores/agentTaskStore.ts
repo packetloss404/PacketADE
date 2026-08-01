@@ -67,7 +67,6 @@ import { useAgentStreamingStore } from "@/stores/agentStreamingStore";
 import { useEditBaselineStore } from "@/stores/editBaselineStore";
 import { useReviewStore } from "@/stores/reviewStore";
 import { useAgentDraftStore } from "@/stores/agentDraftStore";
-import { useCliOverrideStore } from "@/stores/cliOverrideStore";
 import { useMcpStore } from "@/stores/mcpStore";
 import { useMcpTrustStore } from "@/stores/mcpTrustStore";
 import { assertCostGuardrailsAllowLaunch } from "@/stores/costGuardrailStore";
@@ -135,7 +134,6 @@ export function failTurn(
 export type ApiAgentCli =
   | "api-claude-oauth"
   | "api-claude"
-  | "api-openai-codex"
   | "api-openai-agents"
   | "api-openai"
   | "api-minimax"
@@ -149,7 +147,6 @@ export type AgentCli =
   | "packetcode"
   | "api-claude-oauth"
   | "api-claude"
-  | "api-openai-codex"
   | "api-openai-agents"
   | "api-openai"
   | "api-minimax"
@@ -166,6 +163,53 @@ export const LEGACY_AGENT_ALIASES: Record<string, AgentCli> = {
   "api-minimax-api": "api-minimax",
 };
 
+/**
+ * API provider ids withdrawn from the picker.
+ *
+ * Persisted conversations on these ids still hydrate and stay fully readable —
+ * transcript, tool cards, diffs, plan, cost — but they cannot start a new turn.
+ * Unlike {@link LEGACY_AGENT_ALIASES} these are deliberately NOT remapped: an
+ * alias silently moves a conversation onto different credentials, which is
+ * exactly the mis-billing hazard `apiAgentProvider`'s fallback warns about.
+ *
+ * `api-openai-codex` drove `codex exec` on a ChatGPT Plus/Pro subscription.
+ * Without a subscription it bought nothing over `api-openai-agents`, which
+ * reaches the same OpenAI API with the same API key — so the row, its sidecar
+ * provider, and its registry entry were removed in 2026-07.
+ *
+ * NOTE: `api-claude-oauth` is deliberately NOT here. That row survives; it is
+ * now the Claude Agent SDK authenticated with the `api-key-anthropic` keyring
+ * entry rather than a Claude.ai subscription login. Only its credential and
+ * label changed, so its conversations keep working.
+ */
+export const RETIRED_API_AGENTS: ReadonlySet<string> = new Set(["api-openai-codex"]);
+
+/**
+ * The agent a retired id's *automation* consumers should fall back to.
+ *
+ * Applies only where PacketADE picks an executor on the user's behalf and a
+ * silent skip would be worse than a substitution — chiefly a persisted
+ * Reviewer Gate policy pinned to `api-openai-codex`, which must review with
+ * *something* rather than quietly pass the attempt. It is NOT applied to
+ * conversations: those go read-only and wait for an explicit user switch.
+ */
+export const RETIRED_API_AGENT_REPLACEMENTS: Readonly<Record<string, AgentCli>> = {
+  "api-openai-codex": "api-openai-agents",
+};
+
+/** True when `agent` names a withdrawn provider that can no longer start or
+ * continue a turn. */
+export function isRetiredApiAgent(agent: string): boolean {
+  return RETIRED_API_AGENTS.has(canonicalizeAgentCli(agent));
+}
+
+/** Resolve a retired agent id to its automation replacement. Pass-through for
+ * every live id. See {@link RETIRED_API_AGENT_REPLACEMENTS} for when this is
+ * appropriate — never for a user's conversation. */
+export function resolveRetiredApiAgent(agent: AgentCli): AgentCli {
+  return RETIRED_API_AGENT_REPLACEMENTS[canonicalizeAgentCli(agent)] ?? agent;
+}
+
 /** Resolve a possibly-legacy agent id to its canonical `AgentCli`. Pass-
  * through for anything not in the alias table (including unknown ids —
  * those are surfaced by `apiAgentProvider`'s own fallback, not here). */
@@ -181,8 +225,16 @@ export function isApiAgent(agent: AgentCli): boolean {
 /** Get the provider name from an API agent type. */
 export function apiAgentProvider(agent: AgentCli): string {
   const map: Partial<Record<AgentCli, string>> = {
+    // Historical id. Since 2026-07 this is the Claude Agent SDK on the
+    // `api-key-anthropic` keyring entry, NOT a Claude.ai subscription login.
+    // The string is unchanged because persisted conversations store it in
+    // `AgentConversation.provider` and resume with it verbatim.
     "api-claude-oauth": "claude-oauth",
     "api-claude": "anthropic",
+    // RETIRED (see RETIRED_API_AGENTS). The entry is kept on purpose: dropping
+    // it would send every legacy Codex conversation through the fallback below
+    // and bill it to the user's Anthropic key. Identity still resolves; only
+    // routing is withdrawn, by the retired-agent guards on the send paths.
     "api-openai-codex": "openai-codex",
     "api-openai-agents": "openai-agents",
     "api-openai": "openai",
@@ -190,7 +242,9 @@ export function apiAgentProvider(agent: AgentCli): string {
     "api-openrouter": "openrouter",
     "api-ollama": "ollama",
   };
-  const provider = map[agent];
+  // Canonicalise first so a legacy id hydrated from disk (`api-minimax-api`)
+  // resolves through its alias instead of tripping the unknown-agent fallback.
+  const provider = map[canonicalizeAgentCli(agent)];
   if (!provider) {
     // A missing entry means a new ApiAgentCli was added without updating this
     // map, or a malformed/legacy `api-*` agent was hydrated from disk. Silently
@@ -204,10 +258,77 @@ export function apiAgentProvider(agent: AgentCli): string {
   return provider;
 }
 
-function apiAgentCommandPath(agent: AgentCli): string | null {
-  if (agent !== "api-openai-codex") return null;
-  const manualPath = useCliOverrideStore.getState().overrides.codex?.manualPath.trim();
-  return manualPath || null;
+/**
+ * User-facing explanation shown wherever a retired provider's conversation
+ * tries to take another turn. Kept in one place so the composer banner, the
+ * blocked-send system message, and any future surface all say the same thing.
+ */
+/**
+ * The provider id whose *credential* an API agent's auth badge should reflect.
+ *
+ * Usually identical to {@link apiAgentProvider}, which names the ROUTING
+ * target. The two diverge for `api-claude-oauth`: it still routes to the
+ * sidecar as `claude-oauth`, but since 2026-07 it authenticates with the
+ * Anthropic API key, so its badge must show keyring status — not the
+ * `claude-oauth` OAuth-file probe.
+ *
+ * That OAuth probe is emphatically NOT dead and must not be removed: it is the
+ * launch gate for PTY `claude` / `codex` CLI sessions and for the multi-account
+ * CLI feature (`useAccountLaunchGate`, `SubscriptionsCard`). The Agents pane
+ * simply stops calling it.
+ */
+export function authProbeProvider(agent: AgentCli): string {
+  const routing = apiAgentProvider(agent);
+  return routing === "claude-oauth" ? "anthropic" : routing;
+}
+
+/**
+ * Record — visibly and durably — that a turn was refused because the
+ * conversation's provider has been withdrawn.
+ *
+ * Appended as a `system` message rather than surfaced as a transient toast so
+ * the reason survives a reload and is legible in the transcript the user is
+ * looking at. The conversation status is left alone: it is not *failed*, it is
+ * complete and read-only.
+ */
+export function appendRetiredAgentNotice(conversationId: string, agent: AgentCli): void {
+  let updated: AgentConversation | undefined;
+  useAgentTaskStore.setState((s) => ({
+    conversations: s.conversations.map((c) => {
+      if (c.id !== conversationId) return c;
+      // Don't stack duplicates when a user retries or a queue drains.
+      const last = c.messages[c.messages.length - 1];
+      if (last?.role === "system" && last.content === retiredApiAgentNotice(agent)) return c;
+      const next: AgentConversation = {
+        ...c,
+        messages: [
+          ...c.messages,
+          {
+            id: generateId("msg"),
+            role: "system",
+            content: retiredApiAgentNotice(agent),
+            timestamp: Date.now(),
+          },
+        ],
+        updatedAt: Date.now(),
+      };
+      updated = next;
+      return next;
+    }),
+  }));
+  if (updated) scheduleSave(updated);
+}
+
+export function retiredApiAgentNotice(agent: AgentCli): string {
+  const canonical = canonicalizeAgentCli(agent);
+  const replacement = RETIRED_API_AGENT_REPLACEMENTS[canonical];
+  const base =
+    canonical === "api-openai-codex"
+      ? "This conversation used the OpenAI (ChatGPT Plus/Pro) provider, which PacketADE no longer offers — it required a ChatGPT subscription login. The transcript is preserved and stays fully readable."
+      : `This conversation used a provider PacketADE no longer offers (${canonical}). The transcript is preserved and stays fully readable.`;
+  return replacement === "api-openai-agents"
+    ? `${base} To continue, switch it to OpenAI Agents SDK (API) — the same OpenAI models, billed to your OpenAI API key.`
+    : base;
 }
 
 /** Cleanup functions for API conversation event listeners. */
@@ -545,6 +666,15 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     permissionMode,
     approveWrites,
   }) => {
+    // Retired-provider guard. Blocking the composer alone is not enough: a
+    // profile, a flight relaunch, a "continue in" action, or a stale pane can
+    // all reach this entry point directly. Without this the request would
+    // travel to a backend with no route for the id and die as
+    // `Unknown provider: openai-codex`, which reads as a bug rather than a
+    // product statement.
+    if (isRetiredApiAgent(agent)) {
+      throw new Error(retiredApiAgentNotice(agent));
+    }
     const id = explicitId ?? generateId("conv");
     const provider = apiAgentProvider(agent);
     const isRemoteConversation = Boolean(sshTarget);
@@ -725,7 +855,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           null,
           permissionMode ?? "auto",
           approveWrites ?? false,
-          apiAgentCommandPath(agent),
+          null, // commandPath — no surviving sidecar provider is CLI-backed
           undefined,
           frozenMcpTrust,
         );
@@ -744,6 +874,15 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   sendMessage: (conversationId, content, attachments) => {
     const conv = get().conversations.find((c) => c.id === conversationId);
     if (!conv) return;
+    // Retired-provider guard (see RETIRED_API_AGENTS). The transcript stays
+    // readable; only new turns are refused. Recorded as a system message so
+    // the refusal is visible and persisted rather than silently swallowed —
+    // this also catches queued messages and Monitor-driven sends that route
+    // around the disabled composer.
+    if (conv.mode === "api" && isRetiredApiAgent(conv.agent)) {
+      appendRetiredAgentNotice(conversationId, conv.agent);
+      return;
+    }
     // Fresh user turn — re-arm auto-failover for this conversation.
     failoverGuard.delete(conversationId);
 
@@ -1447,6 +1586,13 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   resumeApiConversation: async (conversationId, content, attachments) => {
     const conv = get().conversations.find((c) => c.id === conversationId);
     if (!conv || conv.mode !== "api" || !conv.provider || !conv.model) return;
+    // Retired-provider guard. The hydrate-then-send path lands here first, so
+    // this is the guard a restarted app actually hits for a stored Codex
+    // conversation.
+    if (isRetiredApiAgent(conv.agent)) {
+      appendRetiredAgentNotice(conversationId, conv.agent);
+      return;
+    }
     // Belt-and-braces re-entry guard; sendMessage already routes around an
     // in-flight resume via apiResumeInFlight, but direct callers must not
     // be able to double-start the backend session either. The add happens
@@ -1558,7 +1704,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         resumeMessages,
         conv.permissionMode ?? "auto",
         conv.approveWrites ?? false,
-        apiAgentCommandPath(conv.agent),
+        null, // commandPath — no surviving sidecar provider is CLI-backed
         undefined,
         frozenMcpTrust,
       );

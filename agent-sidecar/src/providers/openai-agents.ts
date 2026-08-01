@@ -1,9 +1,9 @@
 // OpenAI Agents SDK provider (API-key auth).
 //
-// This provider intentionally lives beside, rather than replacing,
-// `openai-codex`. Codex CLI remains the ChatGPT subscription path; this file
-// is the BYOK OpenAI Agents SDK path and translates SDK runs into PacketADE's
-// existing sidecar protocol.
+// The BYOK OpenAI path. It used to live beside `openai-codex` (Codex CLI on
+// a ChatGPT subscription login); that provider was removed in 2026-07 and
+// this is now the only OpenAI-backed sidecar provider. It translates OpenAI
+// Agents SDK runs into PacketADE's existing sidecar protocol.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { promises as fsPromises } from "node:fs";

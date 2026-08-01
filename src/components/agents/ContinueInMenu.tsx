@@ -82,8 +82,10 @@ const CONTINUATION_CLIS: Partial<Record<AgentCli, CliContinuation>> = {
   codex: { command: "codex", label: "Codex" },
   opencode: { command: "opencode", label: "OpenCode" },
   packetcode: { command: "packetcode", label: "PacketCode" },
+  // The Agent SDK row hands off to the `claude` CLI, where the user's own
+  // subscription login applies — that is ordinary end-user use of Claude Code
+  // and is unaffected by PacketADE moving its API agents onto API keys.
   "api-claude-oauth": { command: "claude", label: "Claude" },
-  "api-openai-codex": { command: "codex", label: "Codex" },
 };
 
 function getCliContinuation(agent: AgentCli): CliContinuation | null {

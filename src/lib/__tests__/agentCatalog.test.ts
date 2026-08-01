@@ -10,15 +10,14 @@ import {
  * `api-models.ts` (Chat agents) and the CLI slots (Terminals) under the ruled
  * capability flags — it must not drop or duplicate either source of truth, and
  * it must carry the P1-S4 `supportsApprovals` flag so the draft tile / picker
- * can filter Codex postures.
+ * can filter postures for any adapter that cannot pause for approval.
  */
 describe("agent-catalog merged registry", () => {
   it("exposes every API provider as a Chat agent with a face + default model", () => {
-    // Claude (OAuth + API), Codex ChatGPT, OpenAI(+Agents), OpenRouter, MiniMax, Ollama.
+    // Claude Agent SDK + Claude API, OpenAI(+Agents), OpenRouter, MiniMax, Ollama.
     const faces = CHAT_AGENTS.map((c) => c.face);
-    expect(faces).toContain("Claude OAuth");
+    expect(faces).toContain("Claude Agent SDK");
     expect(faces).toContain("Claude API");
-    expect(faces).toContain("Codex ChatGPT");
     expect(faces).toContain("Ollama");
     for (const c of CHAT_AGENTS) {
       expect(c.section).toBe("chat");
@@ -27,12 +26,14 @@ describe("agent-catalog merged registry", () => {
     }
   });
 
-  it("carries the P1-S4 Codex honesty flag (supportsApprovals=false only for Codex)", () => {
-    const codex = getChatAgent("api-openai-codex");
-    expect(codex?.supportsApprovals).toBe(false);
-    // Every other chat provider is approval-capable.
+  it("drops the retired Codex row and leaves every live provider approval-capable", () => {
+    // `api-openai-codex` (Codex `exec` on a ChatGPT subscription) was removed
+    // in 2026-07 — it must not resolve to a catalog entry at all, or the
+    // picker would keep offering it.
+    expect(getChatAgent("api-openai-codex")).toBeUndefined();
+    // It was the only row that set supportsApprovals=false. Every surviving
+    // provider can service a per-tool approval round-trip.
     for (const c of CHAT_AGENTS) {
-      if (c.agentCli === "api-openai-codex") continue;
       expect(c.supportsApprovals).toBe(true);
     }
   });
@@ -42,14 +43,12 @@ describe("agent-catalog merged registry", () => {
     expect(getChatAgent("api-claude")?.supportsSsh).toBe(true);
   });
 
-  it("keeps Codex ChatGPT SSH-capable (routes through the remote sidecar)", () => {
-    // Codex-over-SSH works via the remote sidecar (the whole sidecar runs on the
-    // host, so `codex exec` spawns natively there). Only Ollama is local-only, so
-    // Codex must stay SSH-capable — a regression here would silently hide Codex
-    // from remote workspaces.
-    expect(getChatAgent("api-openai-codex")?.supportsSsh).toBe(true);
-    // The subscription providers that run over the remote sidecar are all
-    // SSH-capable; Ollama is the sole exclusion.
+  it("keeps the Agent SDK row SSH-capable (routes through the remote sidecar)", () => {
+    // The sidecar providers run over SSH via the remote sidecar (the whole
+    // sidecar runs on the host). Only Ollama is local-only — a regression here
+    // would silently hide a provider from remote workspaces.
+    expect(getChatAgent("api-claude-oauth")?.supportsSsh).toBe(true);
+    expect(getChatAgent("api-openai-agents")?.supportsSsh).toBe(true);
     for (const c of CHAT_AGENTS) {
       expect(c.supportsSsh).toBe(c.agentCli !== "api-ollama");
     }

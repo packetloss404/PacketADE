@@ -59,20 +59,40 @@ PacketADE connects two complementary execution styles.
 streaming, tool calls, permission gating, plans, review, Memory, and worktree
 endings:
 
-| Row                       | Internal id         | Auth                                                                |
-| ------------------------- | ------------------- | ------------------------------------------------------------------- |
-| Anthropic (Subscription)  | `api-claude-oauth`  | Claude Code OAuth (`claude login`) — uses your Pro/Max subscription |
-| Claude (API)              | `api-claude`        | Anthropic API key in OS keyring                                     |
-| OpenAI (ChatGPT Plus/Pro) | `api-openai-codex`  | Codex CLI OAuth (`codex login`) — uses your ChatGPT subscription    |
-| OpenAI (API)              | `api-openai`        | `OPENAI_API_KEY` in OS keyring                                      |
-| OpenAI Agents SDK (API)   | `api-openai-agents` | `OPENAI_API_KEY` in OS keyring                                      |
-| MiniMax (Token Plan)      | `api-minimax`       | API key in OS keyring                                               |
-| OpenRouter                | `api-openrouter`    | API key in OS keyring                                               |
-| Ollama (Local)            | `api-ollama`        | none — local daemon at `localhost:11434`                            |
+| Row                     | Internal id         | Auth                                     |
+| ----------------------- | ------------------- | ---------------------------------------- |
+| Claude Agent SDK (API)  | `api-claude-oauth`  | Anthropic API key in OS keyring          |
+| Claude (API)            | `api-claude`        | Anthropic API key in OS keyring          |
+| OpenAI (API)            | `api-openai`        | `OPENAI_API_KEY` in OS keyring           |
+| OpenAI Agents SDK (API) | `api-openai-agents` | `OPENAI_API_KEY` in OS keyring           |
+| MiniMax (Token Plan)    | `api-minimax`       | API key in OS keyring                    |
+| OpenRouter              | `api-openrouter`    | API key in OS keyring                    |
+| Ollama (Local)          | `api-ollama`        | none — local daemon at `localhost:11434` |
 
-Auth status is probed live and shown as a badge next to each row (`ready` / `login_required` / `missing_key` / `service_down`). An fs watcher flips the badge automatically after a `claude login` / `codex login` completes, and expired-but-refreshable tokens stay `ready` (the SDK / CLI refreshes them transparently). Most API-key providers run in-process in Rust; subscription providers and the OpenAI Agents SDK provider run in the Node sidecar. Each session can be launched with agent-specific arguments and model selections exposed through the UI.
+**Every API-agent row authenticates with an API key.** PacketADE does not offer
+Claude.ai or ChatGPT subscription login for API agents — Anthropic's
+[legal and compliance policy](https://code.claude.com/docs/en/legal-and-compliance)
+states that it "does not permit third-party developers to offer Claude.ai login
+or to route requests through Free, Pro, or Max plan credentials on behalf of
+their users", and the Agent SDK overview directs developers to use API key
+authentication instead. Terminal CLI sessions (`claude`, `codex`) are ordinary
+end-user use of those tools and keep their own subscription logins; see
+Settings → AI Providers → Subscriptions.
 
-One known limitation: the OpenAI (ChatGPT Plus/Pro) row runs Codex `exec`, whose stdin is closed, so it cannot service per-tool approval round-trips — every mode maps to a sandbox posture, and its mode picker only offers postures the sandbox can actually enforce. All other providers support interactive approvals.
+`api-claude-oauth` is a historical internal id, not an OAuth row: it is the
+Claude Agent SDK running in the Node sidecar on the `api-key-anthropic` keyring
+entry. It is kept as-is so persisted conversations continue to resolve. It is
+the row to pick when you want Claude Code's own agent harness — the targeted
+edit tool, structured plan blocks, real permission modes, and `~/.claude`
+settings sourcing — rather than the leaner in-process `api-claude` runtime.
+
+Auth status is probed live and shown as a badge next to each row (`ready` / `missing_key` / `service_down`). Most API-key providers run in-process in Rust; the Claude Agent SDK and OpenAI Agents SDK providers run in the Node sidecar. Each session can be launched with agent-specific arguments and model selections exposed through the UI.
+
+> The `api-openai-codex` row (OpenAI ChatGPT Plus/Pro via `codex exec`) was
+> removed on 2026-07-31. Existing conversations on it still open and read
+> normally; they are marked read-only and point you at OpenAI Agents SDK (API),
+> which reaches the same models with your OpenAI API key. All providers now
+> support interactive per-tool approvals.
 
 ## Main Features
 
@@ -122,14 +142,14 @@ handoffs, and deep links never materialize wrapper Workspaces.
 - **Right-rail tabbed mode** with Inspector / Plan / Preview / Diff / Files tabs in a single 340 px column — lighter alternative to the full mosaic split for smaller screens; persisted toggle
 - **Smart-approval prefix proposals**: permission prompts compute a sensible allowlist rule (e.g. `Bash(git push:*)`) and let you accept it with one click — closes the "approval fatigue" footgun
 - **Cross-tool unified Project Rules editor** in `Settings → Workspaces & Terminal → Project Rules` reads + writes both `AGENTS.md` and `CLAUDE.md` on save so a single rule set works for both Claude Code and Codex
-- **Plan-with-Claude → Execute-with-Codex** one-click handoff: PlanPanel "Hand off to Codex" button spawns a fresh Codex conversation seeded with the distilled spec + plan; "← back to plan" link in the child's chat header
+- **Plan-with-Claude → Execute-with-OpenAI** one-click handoff: PlanPanel "Hand off to OpenAI" button spawns a fresh OpenAI Agents SDK conversation seeded with the distilled spec + plan; "← back to plan" link in the child's chat header
 - **Old-model pinning** per profile via the `pinnedModel` field — locks a known-good model so future provider auto-upgrades don't silently switch away
 - **Auto-resume across restarts**: hydrated conversations capture the provider's resume token and lazily re-establish the session on next send
 - **Onboarding overlay** on first visit explaining the core affordances; one-time, persisted in localStorage
 
 ### Sidecar Protocol
 
-The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK providers run in a Node sidecar that emits a normalized `api-agent:*` event vocabulary the frontend listens to (the same shape the in-process Rust providers emit). PROTOCOL_VERSION is currently **11**:
+The Claude Agent SDK and OpenAI Agents SDK providers run in a Node sidecar that emits a normalized `api-agent:*` event vocabulary the frontend listens to (the same shape the in-process Rust providers emit). PROTOCOL_VERSION is currently **11**:
 
 - Events: `ready` (handshake), `chunk`, `thinking`, `thinking_stop`, `tool_start`, `tool_result`, `permission_request` (with optional `batchId`/`batchSize`), `pending_edit`, `done` (with optional `resumeToken` and v10 `cancelled` marker), `error`, `plan_block`, `tool_output_extended` (Bash exit code + stdout/stderr; Write/Edit modified paths), `turn_summary` (running tokens between turns), and `rate_limited` (v6, typed provider quota-pause)
 - Requests: `start_session` (with image attachments, resume, and v11 frozen MCP trust snapshots), `send_message`, `permission_response`, `edit_response` (v9-correlated by required `toolUseId`, with optional `mergedContent` for per-hunk acceptance), `cancel`, `close_session`, `set_permission_mode`, `set_model`, `retry`, `cancel_pending_tools`, `inject_user_turn` (v5)
@@ -345,7 +365,7 @@ pnpm install
 
 ### Agent Sidecar
 
-PacketADE ships with a Node.js sidecar that powers the Anthropic (Subscription), OpenAI (ChatGPT Plus/Pro), and OpenAI Agents SDK providers.
+PacketADE ships with a Node.js sidecar that powers the Claude Agent SDK (API) and OpenAI Agents SDK (API) providers.
 
 - `pnpm install` at the repo root also installs the sidecar's dependencies automatically via a `postinstall` hook (idempotent; adds a few seconds to the first install).
 - Before using a sidecar provider for the first time, compile the sidecar once:
@@ -369,8 +389,8 @@ PacketADE ships with a Node.js sidecar that powers the Anthropic (Subscription),
 The sidecar work is complete across the original four v2 tiers and the v3–v11 protocol additions that power the unified conversation tiles:
 
 - **v2 Tier 1 — Bundling:** pinned Node 24.15.0 runtime fetched as a Tauri `externalBin`, sidecar resources bundled with pruned production `node_modules`, `prebundle` chain wired into `tauri build`.
-- **v2 Tier 2 — Lifecycle & auth:** sidecar version handshake on startup, toolbar status chip reflecting live sidecar state, credential expiry parsing for Anthropic Subscription / OpenAI ChatGPT tokens, and a filesystem watcher that re-reads auth when cred files change on disk.
-- **v2 Tier 3 — Protocol & UX:** `pending_edit` diff preview for Anthropic Subscription turns and command forwarding (`set_permission_mode`, `set_model`, `retry`) through a versioned protocol.
+- **v2 Tier 2 — Lifecycle & auth:** sidecar version handshake on startup, toolbar status chip reflecting live sidecar state, credential expiry parsing for the Claude / Codex CLI subscription tokens that gate terminal sessions, and a filesystem watcher that re-reads auth when cred files change on disk.
+- **v2 Tier 3 — Protocol & UX:** `pending_edit` diff preview for Claude Agent SDK turns and command forwarding (`set_permission_mode`, `set_model`, `retry`) through a versioned protocol.
 - **v2 Tier 4 — Observability & updates:** sidecar lifetime stats (uptime, restart count, last-exit reason), per-provider launch counters surfaced to the UI, and a documented Tauri auto-updater setup.
 - **Refresh-token aware expiry:** `provider_auth` now treats expired access tokens as `ready` when a refresh token is present, avoiding spurious "please log in" prompts for subscription users whose SDK / CLI would have refreshed on next use anyway.
 - **v3 — Protocol additions for the Agents pane:** typed image attachments on `start_session` / `send_message`; `mergedContent` on `edit_response` (per-hunk acceptance); `batchId`/`batchSize` on `permission_request`; `resumeToken` on `done`; new `plan_block` event mirroring `TodoWrite`; `tool_output_extended` event with Bash exit code + stdout/stderr + Write/Edit modified paths; `turn_summary` event for live mid-stream token totals.

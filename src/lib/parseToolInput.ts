@@ -87,12 +87,14 @@ export interface CanonicalEdit {
  * transcript edit layer (grouping, diff aggregation, review prompts) fires
  * on every runtime instead of only the legacy in-process `write_file`:
  *
- * - `write_file`  — in-process LlmProvider + openai-agents sidecar
+ * - `write_file` / `edit_file` — in-process LlmProvider (+ `write_file` on
+ *   the openai-agents sidecar)
  * - `Write` / `Edit` / `MultiEdit` / `NotebookEdit` — Claude Code SDK
  * - `apply_patch` — Codex CLI
  */
 export const EDIT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "write_file",
+  "edit_file",
   "Write",
   "Edit",
   "MultiEdit",
@@ -263,6 +265,7 @@ export function parseEditToolCalls(
       if (typeof rec.content !== "string") return [];
       return [{ path, after: rec.content }];
     }
+    case "edit_file":
     case "Edit": {
       const replacement = parseReplacement(rec);
       if (!replacement) return [];

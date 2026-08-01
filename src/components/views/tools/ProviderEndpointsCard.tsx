@@ -3,8 +3,11 @@ import { Check, RotateCcw, Server } from "lucide-react";
 import {
   getMinimaxBaseUrl,
   getOllamaBaseUrl,
+  getOllamaRuntimeOptions,
   setMinimaxBaseUrl,
   setOllamaBaseUrl,
+  setOllamaRuntimeOptions,
+  type OllamaRuntimeOptions,
 } from "@/lib/tauri";
 
 type EndpointRowProps = {
@@ -113,6 +116,137 @@ function EndpointRow({ id, label, fallback, load, save, describe }: EndpointRowP
   );
 }
 
+/**
+ * Ollama's two local-runtime knobs. They live here rather than in a generic
+ * settings slice because they are meaningless for any other provider: only the
+ * native `/api/chat` route can carry them, and getting them wrong is invisible
+ * — an under-sized context window makes Ollama drop the oldest messages with
+ * no error, which reads as model stupidity rather than misconfiguration.
+ */
+function OllamaRuntimeRow() {
+  const [options, setOptions] = useState<OllamaRuntimeOptions | null>(null);
+  const [capDraft, setCapDraft] = useState("");
+  const [keepAliveDraft, setKeepAliveDraft] = useState("");
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  function adopt(next: OllamaRuntimeOptions) {
+    setOptions(next);
+    setCapDraft(String(next.numCtxCap));
+    setKeepAliveDraft(next.keepAlive);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    getOllamaRuntimeOptions()
+      .then((next) => {
+        if (!cancelled) adopt(next);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(String(err));
+        setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function apply(cap: number | null, keepAlive: string | null) {
+    setStatus("saving");
+    setError(null);
+    try {
+      adopt(await setOllamaRuntimeOptions(cap, keepAlive));
+      setStatus("saved");
+    } catch (err) {
+      setStatus("error");
+      setError(String(err));
+    }
+  }
+
+  const parsedCap = Number.parseInt(capDraft, 10);
+  const capValid = Number.isFinite(parsedCap) && parsedCap > 0;
+  const hasChanges =
+    options !== null &&
+    (String(options.numCtxCap) !== capDraft.trim() ||
+      options.keepAlive !== keepAliveDraft.trim());
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[11px] text-text-secondary">Ollama local runtime</span>
+        <span className="text-[10px] text-text-muted">
+          Defaults: {options?.defaultNumCtxCap ?? 16384} tokens,{" "}
+          {options?.defaultKeepAlive ?? "30m"}
+        </span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <label htmlFor="ollama-num-ctx-cap" className="sr-only">
+          Ollama context cap
+        </label>
+        <input
+          id="ollama-num-ctx-cap"
+          type="number"
+          min={2048}
+          step={1024}
+          value={capDraft}
+          onChange={(e) => {
+            setCapDraft(e.target.value);
+            setStatus("idle");
+            setError(null);
+          }}
+          placeholder="16384"
+          className="flex-1 min-w-0 bg-bg-primary border border-bg-border rounded px-2 py-1.5 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
+        />
+        <label htmlFor="ollama-keep-alive" className="sr-only">
+          Ollama keep-alive
+        </label>
+        <input
+          id="ollama-keep-alive"
+          type="text"
+          value={keepAliveDraft}
+          onChange={(e) => {
+            setKeepAliveDraft(e.target.value);
+            setStatus("idle");
+            setError(null);
+          }}
+          placeholder="30m"
+          className="w-20 shrink-0 bg-bg-primary border border-bg-border rounded px-2 py-1.5 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
+        />
+        <button
+          type="button"
+          onClick={() => void apply(parsedCap, keepAliveDraft.trim())}
+          disabled={!hasChanges || !capValid || status === "saving" || !keepAliveDraft.trim()}
+          className="p-1.5 text-accent-green hover:bg-accent-green/10 rounded disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+          title="Save Ollama runtime options"
+        >
+          <Check size={12} />
+        </button>
+        <button
+          type="button"
+          onClick={() => void apply(null, null)}
+          disabled={status === "saving"}
+          className="p-1.5 text-text-muted hover:text-text-primary hover:bg-bg-hover rounded disabled:opacity-40 transition-colors"
+          title="Reset Ollama runtime options"
+        >
+          <RotateCcw size={12} />
+        </button>
+      </div>
+      <div className="mt-1.5 text-[10px] text-text-muted bg-bg-primary border border-bg-border rounded px-3 py-2">
+        Context cap (tokens) and keep-alive, sent as{" "}
+        <span className="text-text-secondary">options.num_ctx</span> and{" "}
+        <span className="text-text-secondary">keep_alive</span> on every request. The cap is a
+        ceiling — a model with a smaller trained window uses its own. Ollama&apos;s default window
+        is 4096 tokens and it drops older messages <em>silently</em> when a prompt exceeds it, so
+        too low is worse than too high. Raising the cap costs VRAM (roughly 128 KiB per token on a
+        7–8B model).
+      </div>
+      {status === "saved" && <div className="mt-1 text-[10px] text-accent-green">Saved.</div>}
+      {error && <div className="mt-1 text-[10px] text-accent-red">{error}</div>}
+    </div>
+  );
+}
+
 export function ProviderEndpointsCard() {
   return (
     <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
@@ -130,11 +264,17 @@ export function ProviderEndpointsCard() {
           save={setOllamaBaseUrl}
           describe={(url) => (
             <>
-              API chat uses <span className="text-text-secondary">{url}/v1</span>; model discovery
-              uses <span className="text-text-secondary">{url}/api/tags</span>.
+              API chat uses the native <span className="text-text-secondary">{url}/api/chat</span>{" "}
+              (the only route that accepts num_ctx / keep_alive); model discovery uses{" "}
+              <span className="text-text-secondary">{url}/api/tags</span>. Endpoints without{" "}
+              <span className="text-text-secondary">/api/chat</span> fall back to{" "}
+              <span className="text-text-secondary">{url}/v1</span>, where the context window
+              cannot be set.
             </>
           )}
         />
+
+        <OllamaRuntimeRow />
 
         <EndpointRow
           id="minimax-base-url"

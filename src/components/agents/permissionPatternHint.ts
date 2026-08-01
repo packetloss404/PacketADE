@@ -35,6 +35,7 @@ export function derivePatternHint(
     return `Bash(${head}:*)`;
   }
   if (toolName === "write_file") return "WriteFile(*)";
+  if (toolName === "edit_file") return "EditFile(*)";
   if (toolName === "read_file") return "ReadFile(*)";
   if (toolName === "list_directory") return "ListDirectory(*)";
   if (toolName === "grep") return "Grep(*)";

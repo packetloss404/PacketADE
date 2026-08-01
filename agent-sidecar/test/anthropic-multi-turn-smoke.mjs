@@ -11,7 +11,8 @@
 // through the sidecar's stdio protocol.
 //
 // Requires:
-//   - Live OAuth creds at `~/.claude/.credentials.json`.
+//   - An Anthropic API key in `ANTHROPIC_API_KEY` (the provider is API-key
+//     only; it no longer reads the Claude Code OAuth credential store).
 //   - `pnpm sidecar:build` has been run.
 //
 // Run from the repo root:
@@ -32,27 +33,26 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve, join } from "node:path";
+import { dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Live test: explicit opt-in plus Anthropic auth (OAuth creds file or
-// ANTHROPIC_API_KEY). A stale credential file is not proof that the provider
-// can answer, so file presence alone no longer turns the offline gate live.
+// Live test: explicit opt-in plus an Anthropic API key. The provider is
+// API-key only as of 2026-07 — a `~/.claude/.credentials.json` file is
+// irrelevant here and no longer counts as auth for this smoke.
 if (process.env.PACKETADE_LIVE_ANTHROPIC_SMOKE !== "1") {
   console.log(
     "[multi-turn-smoke] [skip] set PACKETADE_LIVE_ANTHROPIC_SMOKE=1 to run the live provider round-trip",
   );
   process.exit(0);
 }
-const hasAnthropicAuth =
-  existsSync(join(homedir(), ".claude", ".credentials.json")) ||
-  Boolean(process.env.ANTHROPIC_API_KEY);
-if (!hasAnthropicAuth) {
-  console.log("[multi-turn-smoke] [skip] no Anthropic auth available; skipping live test");
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? "";
+if (!ANTHROPIC_API_KEY) {
+  console.log(
+    "[multi-turn-smoke] [skip] ANTHROPIC_API_KEY is not set; the Agent SDK provider is API-key only",
+  );
   process.exit(0);
 }
 
@@ -225,6 +225,7 @@ async function run() {
     type: "start_session",
     sessionId: SESSION_ID,
     provider: "claude-oauth",
+    apiKey: ANTHROPIC_API_KEY,
     model: MODEL,
     systemPrompt:
       "You are a smoke test. Reply with exactly the word the user requests and nothing else. Do not call any tools.",

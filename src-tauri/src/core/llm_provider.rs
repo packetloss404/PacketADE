@@ -31,7 +31,24 @@ pub(crate) fn delimit_final_sse_line(buffer: &mut Vec<u8>) {
     }
 }
 
+/// Every provider id [`get_provider`] can resolve, for error messages that
+/// tell the caller what a valid id actually looks like. Keep in sync with the
+/// match arms below.
+pub const IN_PROCESS_PROVIDERS: &[&str] = &[
+    "anthropic",
+    "openai",
+    "minimax",
+    "minimax-api",
+    "openrouter",
+    "ollama",
+];
+
 /// Get a provider instance by name.
+///
+/// `name` is a *provider* id, never an agent-config id: the frontend's
+/// `api-claude` maps to `"anthropic"`, not `"claude"`. Callers that derive one
+/// from the other by stripping the `api-` prefix produce ids this match
+/// rejects — see `attemptProviderFor` in `src/lib/attemptRouting.ts`.
 pub fn get_provider(name: &str) -> Result<Box<dyn LlmProvider>, String> {
     match name {
         "anthropic" => Ok(Box::new(super::llm_anthropic::AnthropicProvider)),
@@ -49,6 +66,34 @@ pub fn get_provider(name: &str) -> Result<Box<dyn LlmProvider>, String> {
 #[cfg(test)]
 mod tests {
     use super::delimit_final_sse_line;
+    use super::{get_provider, IN_PROCESS_PROVIDERS};
+
+    #[test]
+    fn every_advertised_in_process_provider_resolves() {
+        for name in IN_PROCESS_PROVIDERS {
+            assert!(
+                get_provider(name).is_ok(),
+                "IN_PROCESS_PROVIDERS advertises '{name}' but get_provider rejects it"
+            );
+        }
+    }
+
+    #[test]
+    fn agent_config_ids_are_not_provider_ids() {
+        // The P1 this guards: a caller deriving the provider by stripping the
+        // `api-` prefix from an agent-config id hands us "claude", which is
+        // NOT the id of the Anthropic provider.
+        for bogus in ["claude", "api-claude", "claude-oauth", "openai-codex"] {
+            let err = get_provider(bogus)
+                .err()
+                .unwrap_or_else(|| panic!("get_provider must reject the agent-config id '{bogus}'"));
+            assert!(
+                err.contains(bogus),
+                "unknown-provider error must name the offending id, got: {err}"
+            );
+        }
+        assert!(get_provider("anthropic").is_ok());
+    }
 
     #[test]
     fn final_sse_record_without_newline_gets_parser_delimiter() {

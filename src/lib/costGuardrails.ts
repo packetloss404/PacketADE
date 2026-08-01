@@ -331,6 +331,9 @@ export function providerSourceForAgentProvider(provider: string): string {
     "claude-oauth": "claude-oauth",
     "api-claude": "api-claude",
     claude: "api-claude",
+    // RETIRED provider (removed 2026-07). BOTH directions are kept so
+    // per-provider budgets configured before the removal keep applying to
+    // the historical spend they were set against.
     "api-openai-codex": "openai-codex",
     "openai-codex": "openai-codex",
     codex: "codex",

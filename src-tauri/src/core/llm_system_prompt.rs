@@ -87,7 +87,8 @@ End with one or two sentences: what changed and what's next. Nothing else.
 ## Tools
 
 - **read_file** — read before modifying.
-- **write_file** — write the complete file content. Creates parent dirs.
+- **edit_file** — replace an exact string in an existing file. Prefer this for changes to files that already exist; `old_string` must match byte-for-byte (whitespace and indentation included) and be unique unless `replace_all` is set. Local sessions only.
+- **write_file** — write the complete file content. Creates parent dirs. Use it for new files or full rewrites.
 - **list_directory** — list files/subdirs.
 - **bash** — run commands. 30s default timeout, 120s max. Prefer specific commands over long pipelines.
 - **grep** — regex search. Use it before reading large files.

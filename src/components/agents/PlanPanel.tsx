@@ -18,11 +18,18 @@ import {
 } from "@/lib/remoteConversation";
 import { parseToolInput } from "@/lib/parseToolInput";
 import { authStatusKey, useAuthStatusStore } from "@/stores/authStatusStore";
+import { authProbeProvider, type AgentCli } from "@/stores/agentTaskStore";
+
 import type {
   AgentConversation,
   AgentPlanItem,
   AgentToolCall,
 } from "@/types/agent-conversation";
+
+/** Executor a Claude planning conversation hands an approved plan to.
+ * Was `api-openai-codex` (Codex `exec` on a ChatGPT subscription) until that
+ * row was removed in 2026-07. */
+const HANDOFF_EXECUTOR_AGENT: AgentCli = "api-openai-agents";
 
 type PlanItemStatus = "pending" | "in_progress" | "completed";
 
@@ -175,27 +182,36 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
     (s) => s.setParentConversation,
   );
 
-  // B8 — Codex auth probe for the "Hand off to Codex" button. Only
-  // meaningful when the parent conversation is a Claude one (Codex
+  // B8 — executor auth probe for the "Hand off to OpenAI" button. Only
+  // meaningful when the parent conversation is a Claude one (the executor
   // can't hand off to itself). Live-refreshes on `provider-auth:changed`
-  // so a `codex login` finishing in another window enables the button.
+  // so a key added in Settings enables the button without a reload.
+  //
+  // The executor was `api-openai-codex` (Codex `exec` on a ChatGPT
+  // subscription) until that row was removed in 2026-07; it is now the
+  // OpenAI Agents SDK row, which reaches the same API with an API key and
+  // additionally honours per-tool approvals.
   const isClaudeParent =
     conversation.agent === "api-claude" ||
     conversation.agent === "api-claude-oauth";
   const [handingOff, setHandingOff] = useState(false);
+  // Credential the handoff button gates on — the OpenAI API key. Derived in
+  // the component rather than at module scope so importing this file never
+  // reaches into the agent-task store.
+  const handoffAuthProvider = authProbeProvider(HANDOFF_EXECUTOR_AGENT);
   const fetchAuthStatus = useAuthStatusStore((s) => s.fetchStatus);
   const ensureAuthListener = useAuthStatusStore((s) => s.ensureListener);
-  const codexAuth = useAuthStatusStore(
-    (s) => s.entries[authStatusKey("openai-codex")]?.value,
+  const executorAuth = useAuthStatusStore(
+    (s) => s.entries[authStatusKey(handoffAuthProvider)]?.value,
   );
-  const codexReady = codexAuth !== undefined && codexAuth !== "loading"
-    ? codexAuth.status === "ready"
+  const executorReady = executorAuth !== undefined && executorAuth !== "loading"
+    ? executorAuth.status === "ready"
     : false;
   useEffect(() => {
     if (!isClaudeParent) return;
     ensureAuthListener();
-    void fetchAuthStatus("openai-codex");
-  }, [isClaudeParent, fetchAuthStatus, ensureAuthListener]);
+    void fetchAuthStatus(handoffAuthProvider);
+  }, [isClaudeParent, fetchAuthStatus, ensureAuthListener, handoffAuthProvider]);
 
   if (!items) return null;
 
@@ -207,10 +223,9 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
   const handoffEligible = isClaudeParent && items.length > 0;
 
   // D3 / P0-4: the handoff used to hard-code `sshTarget: null`, silently
-  // turning a remote conversation into a LOCAL Codex session pointed at a
-  // path that only exists on the remote host. The Codex sidecar does run over
-  // SSH (the supervisor's remote-sidecar preflight covers `openai-codex`), so
-  // the honest fix is to INHERIT the parent's remote identity. The one case we
+  // turning a remote conversation into a LOCAL executor session pointed at a
+  // path that only exists on the remote host. The sidecar does run over SSH,
+  // so the honest fix is to INHERIT the parent's remote identity. The one case we
   // cannot honor is a deleted server record — port/key/auth-method/host
   // fingerprint are gone, and fabricating them would silently downgrade
   // host-key checking — so the button disables with the standard tooltip.
@@ -223,14 +238,14 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
     setHandingOff(true);
     try {
       const prompt = buildHandoffPrompt(conversation, storedPlan);
-      const codexProvider = API_PROVIDERS.find(
-        (p) => p.agentCli === "api-openai-codex",
+      const executorProvider = API_PROVIDERS.find(
+        (p) => p.agentCli === HANDOFF_EXECUTOR_AGENT,
       );
-      const codexModel = codexProvider?.models[0]?.value ?? "gpt-5.5";
+      const executorModel = executorProvider?.models[0]?.value ?? "gpt-5.5";
       const newId = await createApiConversation({
-        agent: "api-openai-codex",
+        agent: HANDOFF_EXECUTOR_AGENT,
         projectPath: conversation.projectPath,
-        model: codexModel,
+        model: executorModel,
         initialMessage: prompt,
         systemPromptOverride:
           "You are executing an approved plan from a planning agent. " +
@@ -247,7 +262,7 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
       setParentConversation(newId, conversation.id);
       selectConversation(newId);
     } catch (e) {
-      console.warn("Codex handoff failed:", e);
+      console.warn("Plan handoff failed:", e);
     } finally {
       setHandingOff(false);
     }
@@ -317,21 +332,21 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
               content={
                 remoteTargetLost
                   ? `Hand off — ${REMOTE_UNSUPPORTED_TOOLTIP} (this conversation's SSH server record no longer exists, so its remote identity cannot be inherited)`
-                  : !codexReady
-                    ? "Codex login required (run `codex login` or sign in via the provider dropdown)"
+                  : !executorReady
+                    ? "OpenAI API key required — add it in Settings → API Keys"
                     : remoteParent
-                      ? `Hand the plan off to a fresh Codex conversation on ${conversation.sshTarget?.host}`
-                      : "Hand the plan off to a fresh Codex conversation for execution"
+                      ? `Hand the plan off to a fresh OpenAI executor conversation on ${conversation.sshTarget?.host}`
+                      : "Hand the plan off to a fresh OpenAI executor conversation"
               }
             >
               <button
                 type="button"
                 onClick={() => void handleHandoff()}
-                disabled={!codexReady || handingOff || remoteTargetLost}
-                aria-disabled={!codexReady || handingOff || remoteTargetLost}
+                disabled={!executorReady || handingOff || remoteTargetLost}
+                aria-disabled={!executorReady || handingOff || remoteTargetLost}
                 className="flex items-center gap-1 text-ui px-2 py-0.5 rounded border border-accent-blue/40 text-accent-blue hover:bg-accent-blue/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <Send size={11} /> {handingOff ? "Handing off…" : "Hand off to Codex"}
+                <Send size={11} /> {handingOff ? "Handing off…" : "Hand off to OpenAI"}
               </button>
             </Tooltip>
           )}

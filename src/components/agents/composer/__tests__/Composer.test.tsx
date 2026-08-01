@@ -38,9 +38,33 @@ vi.mock("@/stores/agentTaskStore", () => {
       getState: vi.fn(() => mocks.agentTaskState),
     },
   );
+  // The real map, not a prefix-strip: `api-claude` is `anthropic`, and a
+  // mock that models the bug teaches the next reader the wrong shape.
+  // `api-openai-codex` is RETIRED but keeps its identity entry so a stored
+  // record cannot fall through to the anthropic default.
+  const apiAgentProvider = (agent: string) =>
+    (
+      ({
+        "api-claude-oauth": "claude-oauth",
+        "api-claude": "anthropic",
+        "api-openai-codex": "openai-codex",
+        "api-openai-agents": "openai-agents",
+        "api-openai": "openai",
+        "api-minimax": "minimax",
+        "api-openrouter": "openrouter",
+        "api-ollama": "ollama",
+      }) as Record<string, string>
+    )[agent] ?? "anthropic";
   return {
     useAgentTaskStore,
-    apiAgentProvider: (agent: string) => agent.replace(/^api-/, ""),
+    apiAgentProvider,
+    // Auth BADGES key on the credential, not the routing target: the Agent
+    // SDK row routes as `claude-oauth` but authenticates with the Anthropic
+    // API key, so its badge probes `anthropic`.
+    authProbeProvider: (agent: string) => {
+      const routing = apiAgentProvider(agent);
+      return routing === "claude-oauth" ? "anthropic" : routing;
+    },
     repoDisplayName: (path: string) => path.split(/[\\/]/).pop() ?? path,
   };
 });

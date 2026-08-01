@@ -54,7 +54,13 @@ vi.mock("@/stores/costGuardrailStore", () => ({
   assertCostGuardrailsAllowLaunch: mocks.assertCostGuardrailsAllowLaunch,
 }));
 
-vi.mock("@/stores/agentTaskStore", () => ({
+// Partial mock: only the store handle is stubbed. `apiAgentProvider` /
+// `canonicalizeAgentCli` stay REAL — they are the single source of truth for
+// the agent-id -> backend-provider mapping that `buildReassignSpec` and
+// `launchReadyTasks` resolve through, and a stubbed one would let a wrong
+// mapping pass.
+vi.mock("@/stores/agentTaskStore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/stores/agentTaskStore")>()),
   useAgentTaskStore: {
     getState: () => ({
       conversations: mocks.conversations,
@@ -829,6 +835,16 @@ describe("buildReassignSpec (E4)", () => {
       expect(spec.port).toBe(2222);
       expect(spec.user).toBe("dev");
       expect(spec.agentConfigId).toBe("api-claude");
+      // Reassigning onto the default executor must produce the canonical
+      // `get_provider` id, not the prefix-strip "claude" the failed attempt
+      // was recorded with.
+      expect(spec.provider).toBe("anthropic");
     }
+  });
+
+  it("maps the default api-claude executor to 'anthropic' on a local reassign", () => {
+    const spec = buildReassignSpec(failedLocal, "api-claude", noServer);
+    expect(spec?.provider).toBe("anthropic");
+    expect(spec?.provider).not.toBe("claude");
   });
 });
