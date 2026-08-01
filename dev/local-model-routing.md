@@ -1,6 +1,7 @@
 # Local Model Routing (Ollama-first)
 
-Status: **IN PROGRESS** — LM1 shipped (bar picker gating), LM3 partial, LM5 done
+Status: **IN PROGRESS** — LM1 shipped (barring picker gating), LM3 partial,
+LM5 done, LM7 needs re-specifying (its target view was deleted)
 Created: 2026-07-30
 Owner decision recorded: 2026-07-30
 Last updated: 2026-07-31
@@ -115,7 +116,21 @@ it is not a signature change.
    `capabilities` lack `tools`, with a message naming the model — so it fails
    in one clear line instead of at the first tool call. **The picker is still
    ungated**: `ProviderPicker` / the model dropdown still offer tool-incapable
-   models for an agent tile. That gating is the remaining LM1 item.
+   models for an agent tile. That gating is the remaining LM1 item, tracked as
+   **F-2.3-15** in
+   [`docs/reports/state-of-the-ade-2026-07-30.md`](../docs/reports/state-of-the-ade-2026-07-30.md).
+
+   The obstacle is that `list_ollama_models` reads `/api/tags`, which returns
+   **no capability data at all** — name, size, digest, modified date, and a
+   `details` block, nothing about tools. Gating therefore needs a second call
+   per model. Two shapes, both viable: fan out `/api/show` at list time (local
+   and fast, but N round trips, so cache per (endpoint, digest) — the digest
+   changes when the model does, so it is a safe cache key), or probe lazily on
+   selection and disable the row after the fact, which is worse UX for one
+   saved round trip. Prefer the first. The `/api/show` probe and its
+   process-lifetime cache already exist in `core/llm_ollama.rs`; the work is
+   exposing them to `commands/ollama.rs` and carrying a `supportsTools` flag
+   into the model list the frontend renders.
 
 Fixing (1) and (2) required Ollama's native `/api/chat` route; neither fits the
 OpenAI-compat shim, so `core/llm_ollama.rs` (previously a 40-line passthrough)
@@ -236,12 +251,34 @@ which is flight/worktree-scoped (auto-commit trailers, autonomy policy) and
 hydrates from `OrchestratorSettings` in Rust. Settings UI under the existing
 six-group IA.
 
-### LM7 — Cost surfacing and gates
+### LM7 — Cost surfacing and gates — **NEEDS RE-SPECIFYING (2026-07-31)**
 
-Split local vs. metered spend in `CostDashboardView` so the saving is visible
-and quantified — this is the feature's proof. Note that
-`src/lib/api-models.ts:159` already has a zero-rate guard for Ollama/free
-models. Plus the usual local/SSH/packaged gates.
+The original wording was: *split local vs. metered spend in `CostDashboardView`
+so the saving is visible and quantified — this is the feature's proof.*
+
+**`CostDashboardView` no longer exists.** The owner removed the entire cost
+*reporting* surface on 2026-07-31 (`35dcb54`) — the dashboard, the live-spend
+chip, the Settings usage card, per-conversation dollars, and `/usage` — on the
+reasoning that a reporting surface is not worth its maintenance cost. Cost
+survives only as a **control**: budget guardrails, the bounded-autonomy
+`maxTotalCost` hard-stop, the shared pricing table, and `usage.jsonl`. See
+[`cost-efficiency-loop.md`](./cost-efficiency-loop.md) §0.
+
+So LM7 cannot be "add a panel". The proof has to come from one of:
+
+1. **A throwaway script over `usage.jsonl`**, the pattern CE3/CE4 were re-scoped
+   to — a local-vs-metered split computed on demand, deleted or left dormant
+   once the number is known. Cheapest, and consistent with the owner decision.
+2. **The guardrails themselves** — if local routing works, metered spend per
+   unit of work falls, and that shows up in cap headroom without any new UI.
+
+Whichever is chosen, state the saving as **measured or modelled, explicitly** —
+the same discipline CE6 is held to. `src/lib/api-models.ts` already has a
+zero-rate guard for Ollama/free models, so local traffic will not pollute the
+metered figure. The local/SSH/packaged gates are unchanged.
+
+**Do not re-add a cost view for this.** Reversing an owner decision to prove a
+feature's value is the wrong trade.
 
 ## Sequencing
 

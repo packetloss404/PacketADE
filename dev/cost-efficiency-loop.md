@@ -1,6 +1,8 @@
 # Cost Efficiency Loop (caching + context discipline)
 
-Status: **IN PROGRESS — Phase 1 caching landed, not yet measured live**
+Status: **IN PROGRESS — Phase 1 caching landed (not yet measured live); CE14
+pulled forward out of Phase 2**
+Last updated: 2026-07-31 (after `422ab94`)
 Created: 2026-07-30
 Research basis: five independent source audits (prompt caching, context
 discipline, task-class routing, batch APIs, cost measurement), 2026-07-30.
@@ -18,6 +20,17 @@ Progress:
 - **CE9 — DONE 2026-07-31.** Real `cached_tokens` on the OpenAI-compat path,
   `prompt_cache_key` for OpenAI, and the superset/disjoint normalisation moved
   to the Rust cost call site. See below.
+- **CE14 — DONE 2026-07-31** (`422ab94`), out of phase order. The targeted
+  `edit_file` tool landed with the provider loop rather than waiting for
+  Phase 2, because whole-file rewrites were the dominant *output* cost and
+  caching cannot help output at all. Local paths only. See below.
+- **CE20 — SUPERSEDED 2026-07-31**, not executed. The routing placebo was
+  wired instead of retired; `resolveForTask` has production callers and the
+  card drives auxiliary-task provider selection. See below.
+
+**Ordering note.** CE14 landed **before** CE8 (freeze the tool array), which is
+the sequence CE14 itself asked for — the tools array changed once, deliberately,
+while nothing depended on it being stable. CE8 can now freeze the final shape.
 
 Related: [`local-model-routing.md`](./local-model-routing.md) (LM1–LM7 — the
 auxiliary-surface routing plan this doc deliberately does **not** duplicate).
@@ -709,21 +722,54 @@ Consequences, stated so they are not rediscovered later:
   current tail-truncation drops the summary line the model needs.
 - **Depends on:** none.
 
-#### CE14 — Targeted edit tool
-- **Changes:** Add an `old_string`/`new_string` (or unified-diff apply) tool
-  alongside `write_file`; demote `write_file` to new-file creation in the
-  system prompt.
-- **Files:** `src-tauri/src/core/tool_runtime.rs`,
-  `src-tauri/src/core/tool_runtime_ssh.rs`,
-  `src-tauri/src/core/llm_system_prompt.rs`,
-  `src-tauri/src/commands/api_agent.rs`
-- **Effort:** medium
-- **Expected saving:** plausibly 5–10x on **output** spend for editing work
-  (output is billed at ~5x input). A 2,000-line file edit is ~25k output tokens
-  today vs ~500 for a diff, plus ~25k of permanent extra input per iteration.
-  Note this changes the tools array — land it before CE8 freezes anything, or
-  accept a one-session invalidation.
-- **Depends on:** sequence relative to CE8.
+#### CE14 — Targeted edit tool — **DONE 2026-07-31** (`422ab94`)
+
+Shipped ahead of the rest of Phase 2, because output tokens are billed at ~5x
+input and caching does nothing for them — this was the largest remaining lever
+that CE6 could not touch.
+
+**What shipped.** `edit_file` performs exact-string replacement and is
+registered for **all five in-process providers at once** — `api-claude`,
+`api-openai`, MiniMax, OpenRouter, and Ollama. `write_file` remains for new
+files and whole-file rewrites.
+
+- **Ambiguous matches ERROR.** If `old_string` occurs more than once the call
+  fails naming the ambiguity, rather than editing the first occurrence. Silent
+  first-match editing is how files get corrupted, and a refusal the model can
+  read and retry is cheaper than a corrupted file the user has to find.
+- **Same approval gate as `write_file`,** and the gate materialises its preview
+  through the **same `apply_exact_edit`** the executor uses — so the diff you
+  approve is byte-for-byte what lands, rather than a second implementation that
+  can drift.
+- **Local only.** The SSH write path (`tool_runtime_ssh.rs`) appends a trailing
+  newline via heredoc, so a remote read-modify-write would grow the file by one
+  newline per edit. Remote agents keep whole-file writes until that is fixed —
+  which is now the highest-value remaining CE item for SSH work.
+
+**Files:** `src-tauri/src/core/tool_runtime.rs` (tool schema, dispatch,
+`apply_exact_edit`), `src-tauri/src/core/llm_system_prompt.rs`,
+`src-tauri/src/commands/api_agent.rs`.
+
+**Two follow-ups it exposed** (both open, both in the State of the ADE report):
+
+1. **Agent profiles with an explicit `allowedTools` list never get it**
+   (F-2.1-14). `allowedTools` is an allow-list, so the shipped read-only
+   profile, `SCOUT_ALLOWED_TOOLS`, and any user profile silently exclude
+   `edit_file` and fall back to whole-file writes — i.e. they keep paying the
+   exact cost this item removed. Every future tool addition has the same defect;
+   a capability group (`"edits"`) is the durable fix.
+2. **A failed edit still renders a diff row** (F-2.1-15).
+   `ToolCallRenderer.tsx:39` routes edit calls into the diff layer on
+   `status === "done" || "error"`, and the frontend previews by first match — so
+   an ambiguity refusal draws a phantom change the backend declined to write.
+   Pre-existing (Claude Code's `Edit` hits the same renderer); `edit_file`'s
+   deliberate error just makes it easy to reach.
+
+**Measurement still owed.** The expected 5–10x on editing output spend is
+modelled, not observed. `scripts/cache-hit-rate.mjs` covers the input side only;
+the output-side proof needs a before/after on a real editing session.
+
+**Ordering:** landed before CE8, as this item asked. CE8 may now freeze.
 
 #### CE15 — Real in-session compaction, wired to `/compact`
 - **Changes:** Token-budget check at the top of each loop iteration
@@ -802,20 +848,36 @@ Consequences, stated so they are not rediscovered later:
   call. Sidecar sites already cap at 50–200 KB.
 - **Depends on:** none.
 
-#### CE20 — Retire the routing placebo
-- **Changes:** `resolveForTask` has **zero production callers** — the only
-  references are two Vitest mocks. `ProviderRoutingCard` writes to
-  `packetade:routing` localStorage that nothing reads. Delete it, or disable the
-  controls with an explicit "not yet wired" state. Do not leave it silently inert.
-- **Files:** `src/stores/routingStore.ts`,
-  `src/components/views/tools/ProviderRoutingCard.tsx`,
-  `src/components/views/ToolsView.tsx`, `src/types/routing.ts`
-- **Effort:** small
-- **Expected saving:** $0 — trust. Its shape (keyed on the flight-worktree
-  `TaskType` union, defaulting to the PTY id `"claude-code"`) cannot express
-  auxiliary routing, so it is not a foundation for LM6; it is dead weight that
-  will be mistaken for one.
-- **Depends on:** none. Coordinate with LM6.
+#### CE20 — Retire the routing placebo — **SUPERSEDED 2026-07-31** (`d8fb78e`)
+
+The original item: `resolveForTask` had **zero production callers** (two Vitest
+mocks were the only references) and `ProviderRoutingCard` wrote to
+`packetade:routing` localStorage that nothing read — so delete it or mark it
+"not yet wired", but do not leave it silently inert.
+
+**It was wired instead of retired.** WI-1 of
+[`oauth-removal-plan.md`](./oauth-removal-plan.md) needed a routing seam to move
+five auxiliary features off subscription credentials, and this card was the
+obvious place to expose the choice. What exists now:
+
+- `src/lib/attemptRouting.ts` calls `routingStore.resolveForTask(...)` on the
+  Draft-patch path — the first production caller.
+- `ProviderRoutingCard` gained an **Auxiliary AI tasks** section covering spec
+  import, Code Quality explain/summarize, PR description and PR review, mirrored
+  into a Rust `AuxRoutingState` that `core/aux_llm.rs` reads.
+- With nothing pinned, `aux_llm` falls back to the cheapest provider holding a
+  keyring `api-key-*` credential, priced against a representative aux workload.
+
+**The original objection was half right and worth keeping on record.** The
+`TaskType` union really is flight-worktree-shaped and really does default to the
+PTY id `"claude-code"`; it could not express auxiliary routing, so auxiliary
+routing got its own `AuxTaskClass` enum in Rust rather than being forced through
+it. Two vocabularies now live on one settings card. That is the debt this item
+turned into — a naming/consolidation cleanup, not a deletion.
+
+**Remaining work:** none that blocks anything. Fold `TaskType` and
+`AuxTaskClass` into one vocabulary when LM6 extends routing to the rest of the
+auxiliary surfaces.
 
 ---
 
@@ -913,6 +975,19 @@ doc contributes only the prerequisites LM7 needs to prove its value: CE1/CE2
 ledger)~~ is **CUT** (§0) — so the ~15 auxiliary call sites the routing work
 targets stay unmeasured, and LM7 must either carry its own measurement or state
 its saving as modelled rather than measured.
+
+> **UPDATE 2026-07-31.** Five of those call sites moved anyway, for a compliance
+> reason rather than a cost one: WI-1 of
+> [`oauth-removal-plan.md`](./oauth-removal-plan.md) routed spec import, Code
+> Quality explain/summarize, PR description, PR review, and Draft patch off
+> subscription OAuth and onto the cheapest **configured API-key** provider via
+> `core/aux_llm.rs` (LM3/LM5 in the routing plan). That changes this section's
+> premise in two ways. **(1)** CE20 is superseded, not owed — see above.
+> **(2)** LM7's original framing ("split local vs. metered spend in
+> `CostDashboardView` so the saving is visible") targets a view that no longer
+> exists, so LM7 must be re-specified against the guardrails or against a
+> throwaway script over `usage.jsonl` — the CE3/CE4 pattern. The saving remains
+> **modelled, not measured**; nothing here changed that.
 
 ---
 
@@ -1025,8 +1100,15 @@ verification rather than before it.
 ## Sequencing
 
 **CE1 → ~~CE2~~ → CE3 → ~~CE4~~ → ~~CE5~~ → CE6-PRE → ~~CE6~~ → CE7 → CE8 →
-~~CE9~~ → CE12 → CE13 → CE10 → CE14 → CE16 → CE11 → CE15 → CE17 → CE18 → CE19 →
-CE20.**
+~~CE9~~ → CE12 → CE13 → CE10 → ~~CE14~~ → CE16 → CE11 → CE15 → CE17 → CE18 →
+CE19 → ~~CE20~~.**
+
+**CE14 shipped early, ahead of CE7/CE8/CE12/CE13**, with the provider loop
+(`422ab94`). Its only sequencing constraint was "land before CE8 freezes the
+tools array", and that is satisfied — CE8 may now freeze the final shape. The
+pull-forward was deliberate: CE6 cannot reduce **output** tokens at all, and
+whole-file rewrites were the dominant output cost. **CE20 was superseded**, not
+executed — the routing card was wired by WI-1 rather than retired.
 
 **CE6 and CE9 shipped together, ahead of CE6-PRE, and CE4's instruments came
 with them.** They share the provider layer, so splitting them would have meant
@@ -1047,9 +1129,9 @@ still be **its own commit with a CHANGELOG note** — historical Codex totals wi
 visibly halve when it lands.
 
 Phase 0 (CE1–CE6-PRE) ships as its own release and must be live for at least one
-real usage period before Phase 1. CE7 and CE12/CE13/CE16/CE18/CE19/CE20 are
+real usage period before Phase 1. CE7 and CE12/CE13/CE16/CE18/CE19 are
 independently useful and can be pulled forward at any time — none of them depend
-on caching. CE11 and CE15 are the two items that should not start until SPIKE-3
+on caching. (CE14 already was; CE20 is superseded.) CE11 and CE15 are the two items that should not start until SPIKE-3
 says they are worth it.
 
 ~~The one ordering constraint that is not negotiable: **CE5 (self-owned ledger)
@@ -1060,9 +1142,26 @@ PacketADE-side replacement. The dashboard is gone and CE5 is cut, so there is no
 history to freeze and no user-visible blind window. **OAuth removal is no longer
 gated on any item in this plan.**
 
-What is left of the original worry is smaller and worth naming: after OAuth
-removal, the vendor CLI files (`~/.claude/cost-tally.json`, `~/.codex/sessions`)
-stop accruing, so the **guardrails** see less spend from those paths — but the
-migrated traffic lands on `api-claude` / `api-openai`, which *do* write
-`~/.packetade/usage.jsonl`, so coverage moves rather than disappears. See
+What is left of the original worry is smaller and worth naming, and it is now
+**shipped state rather than a forecast** (`d8fb78e` for the auxiliary features,
+`422ab94` for the provider rows): the vendor CLI files
+(`~/.claude/cost-tally.json`, `~/.codex/sessions`) stop accruing from
+PacketADE's API surface, so the **guardrails** see less spend from those paths —
+but the migrated traffic lands on `api-claude` / `api-openai` / the Agent SDK
+row, which *do* write `~/.packetade/usage.jsonl`, so coverage moved rather than
+disappeared. Those files keep accruing from PTY CLI panes, which still use
+subscription logins deliberately. See
 [`oauth-removal-plan.md`](./oauth-removal-plan.md).
+
+**One thing that did change the guardrails materially, and it is not in the
+list above:** the stored ledger was repriced (`core/reprice.rs`, `d8fb78e`).
+`usage.jsonl` feeds `assertCostGuardrailsAllowLaunch`, and every pre-CE2 record
+was priced with deprecated Opus 4.1 / retired Haiku 3.5 rates — **$158.88 →
+$52.96** on the real ledger. Caps were tripping at roughly a third of the spend
+actually authorized. Repricing recomputes from stored **token counts**, never by
+scaling dollars, at each record's **own** date, backs up first, marks rows with
+`repricedAt` / `costUsdBefore`, and is guarded against double-application.
+Flight rollups were deliberately **not** repriced — they store a collapsed token
+sum with no input/output split, so recomputing would mean inventing a ratio, and
+`save_flights` merges with `max()` anyway. Filed **P3**: they still carry the
+old rates, so a flight-scoped `maxTotalCost` remains overstated.

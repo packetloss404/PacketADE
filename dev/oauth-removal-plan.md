@@ -1,7 +1,10 @@
 # Removing subscription OAuth from the Agents (API) surface
 
-Status: **DONE — but NOT by the plan below.** WI-1 shipped as written; the rest
-was superseded by a re-authentication approach and implemented 2026-07-31.
+Status: **DONE — but NOT by the plan below.** WI-1 shipped as written (`d8fb78e`);
+the rest was superseded by a re-authentication approach and implemented
+2026-07-31 (`422ab94`). **One item is deliberately still open: WI-5**
+("switch provider" for conversations on the retired `api-openai-codex` id) —
+P2, tracked as F-2.3-16 in the State of the ADE report.
 See §-1 first. Everything from §1.2 onward is retained as the blast-radius map
 that made the change tractable, not as instructions.
 Created: 2026-07-31
@@ -101,12 +104,13 @@ store code path explicitly skips importing `.credentials.json` when
 
 ### -1.3 Follow-ups this change could not close
 
-- `src/components/flights/LaunchAsyncFlightModal.tsx:102,105` still defaults its
-  reviewer to `api-openai-codex` (another agent owned the file). The modal's
-  existing `if (!reviewerProvider) return "Choose a supported API reviewer."`
-  guard means it degrades to a validation message rather than crashing, and
-  `reviewerGateRuntime.ts` substitutes the replacement for persisted policies —
-  but the *default* should be repointed to `api-openai-agents`.
+- ~~`src/components/flights/LaunchAsyncFlightModal.tsx:102,105` still defaults its
+  reviewer to `api-openai-codex`~~ — **CLOSED in the same commit** (`422ab94`,
+  later in the loop than this note was written). Verified 2026-07-31: both the
+  agent and the model default to `api-openai-agents`. The modal's
+  `if (!reviewerProvider) return "Choose a supported API reviewer."` guard and
+  `reviewerGateRuntime.ts`'s substitution for persisted policies remain as the
+  belt-and-braces layer.
 - `agent-sidecar/package.json` still declares `@modelcontextprotocol/sdk`, whose
   only importer (`mcp-trust-proxy.ts`) was deleted. Dropping it changes the
   lockfile and the `prune-sidecar.js` bundling path, so it was left for a
@@ -796,24 +800,32 @@ Files: `src/stores/agentTaskStore.ts:159-205` (new set; **keep** the
 Effort **M**. Depends on: WI-2. Includes the send-path guard (§3.3 item 5) in
 `createApiConversation` / `resumeApiConversation` / `sendMessage`.
 
-**WI-5 — "Switch provider" action. — NOT DONE.** The graceful-degradation half
-(WI-4) shipped; the explicit user-driven rewrite did not. A user who wants to
-continue a retired conversation currently starts a new one. Still worth doing.
-Original text:
+**WI-5 — "Switch provider" action. — NOT DONE. Open, P2.** The
+graceful-degradation half (WI-4) shipped and was accepted as the shipped
+minimum: a conversation on `api-openai-codex` loads intact and read-only, the
+transcript says what to use instead, `RETIRED_AGENT_REPLACEMENT` substitutes at
+runtime so a pinned Reviewer Gate never silently no-ops, and the identity entry
+stays in `apiAgentProvider` so historical spend is not mis-billed. What does
+**not** exist is the action that moves such a conversation onto
+`api-openai-agents` — a user who wants to continue one starts a new
+conversation and loses the thread. Tracked as **F-2.3-16** in
+[`docs/reports/state-of-the-ade-2026-07-30.md`](../docs/reports/state-of-the-ade-2026-07-30.md).
+Still worth doing. Original text:
 
 Files: `src/stores/agentTaskStore.ts` (new action rewriting `agent` + `provider`,
 appending a system message, calling `scheduleSave`),
 `src/components/agents/` banner UI.
 Effort **S**. Depends on: WI-4. Must be explicit and logged; never automatic.
 
-**WI-6 — Repoint the `api-openai-codex` consumers. — MOSTLY DONE 2026-07-31.**
+**WI-6 — Repoint the `api-openai-codex` consumers. — DONE 2026-07-31.**
 `PlanPanel.tsx` ("Hand off to Codex" → "Hand off to OpenAI",
 `HANDOFF_EXECUTOR_AGENT = "api-openai-agents"`, auth gate via
 `authProbeProvider`), `CooperativeFlightCard.tsx` (reviewer/scout →
 `api-openai-agents`), and the `reviewerAgentConfigId` fallback
 (`reviewerGateRuntime.ts`, which also re-derives the model so a Codex-pinned
-`gpt-5.5` cannot leak). **`LaunchAsyncFlightModal.tsx` is outstanding** — see
-§-1.3. Original text:
+`gpt-5.5` cannot leak). **`LaunchAsyncFlightModal.tsx` closed later in the same
+commit** — verified 2026-07-31: both `reviewerAgent` and `reviewerModel`
+default to `api-openai-agents`. **WI-6 is DONE.** Original text:
 
 Files: `src/components/agents/PlanPanel.tsx:189,207,226-244`;
 `src/components/flights/LaunchAsyncFlightModal.tsx:131-137`;

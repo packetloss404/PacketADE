@@ -523,13 +523,13 @@ This was an independent read-only audit; no finding below is silently approved
 for implementation.
 
 - **✅ Resolved 2026-07-30 — the three P0s.** The Workspace-level Agent
-  inspector is removed (`e7e7c27`), one surface-scoped `RightDock` owns every
+  inspector is removed (`a8abf54`), one surface-scoped `RightDock` owns every
   right-side panel with conversation-scoped Preview and authoritative
-  Hide/Close plus the wired Markdown viewer (`93d41af`), and local-only
-  actions are gated on SSH conversations (`33708c0`). See the shipped entry in
+  Hide/Close plus the wired Markdown viewer (`86cfac3`), and local-only
+  actions are gated on SSH conversations (`531fbec`). See the shipped entry in
   the 2026-07-30 State of the ADE section below.
 - **P1 — make the global New menu truthful.** The route registry landed in
-  `dffbe61` and unified Left Rail, command palette, Status Strip labels,
+  `2898946` and unified Left Rail, command palette, Status Strip labels,
   hotkeys, and Dictation's route identity, so the remaining piece is the
   creation surface itself: the "+ New" menu still offers only Flight and
   Issue, and the Ctrl+K palette still offers no creation at all. Tracked with
@@ -566,15 +566,11 @@ CLI feature are unaffected and keep their subscription logins.
 
 Outstanding:
 
-- **P2 — repoint the Flight launch reviewer default.**
-  `src/components/flights/LaunchAsyncFlightModal.tsx:102,105` still defaults
-  `reviewerAgent` to the retired `api-openai-codex` and calls
-  `getDefaultModel("api-openai-codex")`, which now returns `""`. It degrades to
-  the modal's "Choose a supported API reviewer." validation rather than
-  crashing, and `reviewerGateRuntime.ts` substitutes `api-openai-agents` for
-  *persisted* policies — but a fresh flight cannot enable the reviewer gate
-  without the user changing the dropdown. Another agent owned the file during
-  the re-auth change. One-line fix.
+- **~~P2 — repoint the Flight launch reviewer default.~~ DONE 2026-07-31**
+  (`422ab94`, later in the same commit than the note that recorded it as open).
+  `LaunchAsyncFlightModal.tsx` now defaults both `reviewerAgent` and
+  `reviewerModel` to `api-openai-agents`; `reviewerGateRuntime.ts`'s
+  substitution for persisted policies stays as the second layer.
 - **P2 — WI-5: "Switch provider" action for retired conversations.** The
   graceful-degradation half shipped (read-only transcript, blocked send path, a
   persisted `system` message naming the replacement). The explicit,
@@ -602,12 +598,24 @@ explicitly **out of scope**; the chosen direction is per-task-class routing so
 auxiliary calls can run on local hardware while the agentic loop stays on
 frontier models.
 
-- **P1 — LM1: fix Ollama fundamentals.** `stream_chat_compat` never sends
-  `num_ctx` or `keep_alive`, so Ollama silently truncates the front of the
-  conversation at its default context and reloads the model between calls.
-  Needs a native `/api/chat` path in `core/llm_ollama.rs`, a `/api/show`
-  tool-capability probe with picker gating, and a visible over-context warning
-  instead of silent truncation. Blocks everything else in this section.
+- **~~P1 — LM1: fix Ollama fundamentals.~~ DONE 2026-07-31** (`422ab94`), except
+  picker gating. The root cause was structural: Ollama's OpenAI-compatible
+  endpoint **cannot set context size at all** (their docs say so), so every
+  local model had been silently truncating to the daemon default regardless of
+  what we sent. `core/llm_ollama.rs` now speaks the native `/api/chat` route;
+  `num_ctx` is derived per model from `/api/show` and capped (default 16384,
+  overridable in Settings → Tools → Provider Endpoints and by
+  `PACKETADE_OLLAMA_NUM_CTX_CAP`), deliberately **not** varying with prompt
+  size because changing `num_ctx` forces a model reload that would defeat
+  `keep_alive` (now 30m, up from Ollama's 5m). Truncation is inferred and
+  surfaced on the turn. A tool-carrying request to a model without `tools`
+  capability now fails in one clear line naming the model.
+- **P2 — LM1 remainder: gate the Ollama model picker on tool capability.**
+  `list_ollama_models` reads `/api/tags`, which returns no capability data, so
+  the dropdown still offers tool-incapable models for an agent tile — the
+  backend refuses legibly, but only after the user has committed. Needs a
+  per-model `/api/show` probe cached by (endpoint, digest) and a
+  `supportsTools` flag carried into the model list. Report ref: F-2.3-15.
 - **P2 — LM2: custom OpenAI-compatible endpoint row.** One provider row wrapping
   `stream_chat_compat` with a user-supplied base URL covers vLLM, LM Studio,
   LiteLLM, hosted inference, and any self-hosted gateway. Independently useful.
@@ -643,18 +651,55 @@ card, per-conversation and per-turn dollar readouts, `/usage`). Cost remains a
 control input only: budget guardrails, the bounded-autonomy cost hard-stop, the
 shared pricing table, and all token accounting are untouched.
 
+- **~~CE14 — targeted edit tool.~~ DONE 2026-07-31** (`422ab94`), pulled forward
+  out of Phase 2 because caching cannot reduce **output** tokens and whole-file
+  rewrites were the dominant output cost. `edit_file` does exact-string
+  replacement for `api-claude`, `api-openai`, MiniMax, OpenRouter and Ollama;
+  ambiguous matches error rather than editing the first occurrence; the
+  approval gate materialises its preview through the same `apply_exact_edit`
+  the executor uses. **Local only** — the SSH write path appends a newline via
+  heredoc, so a remote read-modify-write would grow one per edit. Landed before
+  CE8, as CE14 required.
+- **P2 — add `edit_file` to agent profiles that pin `allowedTools`.**
+  `AgentProfile.allowedTools` is an allow-list, so the shipped read-only
+  profile, `SCOUT_ALLOWED_TOOLS`, and any user profile silently exclude the new
+  tool and keep paying whole-file-rewrite output costs. Fails invisibly. The
+  durable fix is a capability group (`"edits"`) rather than per-tool names, so
+  the next tool addition does not repeat this. Report ref: F-2.1-14.
+- **P2 — a failed edit still renders a diff row.**
+  `src/components/agents/chat/ToolCallRenderer.tsx:39` routes edit tool calls
+  into the diff layer on `status === "done" || "error"`, and the frontend
+  previews by first match — so an edit the backend **refused** draws a phantom
+  change in the transcript. Pre-existing and not specific to `edit_file`
+  (Claude Code's `Edit` uses the same renderer); the new ambiguity error just
+  makes it easy to reach. Report ref: F-2.1-15.
+- **P3 — SSH agents cannot use `edit_file`.** `tool_runtime_ssh.rs`'s write path
+  appends a trailing newline via heredoc, so remote read-modify-write would
+  grow the file by one newline per edit. Remote work keeps whole-file writes —
+  i.e. remote agents still pay the exact output cost CE14 removed locally.
+  Fixing the heredoc newline is the prerequisite.
 - **P2 — CE3 remainder: cache-write tokens on the Codex sub-agent bucket.**
   `SubAgentTokenBucket` has no `cacheWriteTokens`, so a multi-agent Codex turn
   under-reports the most expensive token class to the guardrails once caching
   makes it non-zero. Hard prerequisite of CE6.
-- **P2 — CE1: Codex cached-token double-count.** Rust passes `input` and
-  `cached` as separate additive arguments; OpenAI's `cached_tokens` is a subset
-  of prompt tokens, so Codex rows are overstated ~2–2.6x at typical hit rates.
-  Its own commit with a CHANGELOG note.
-- **P3 — CE4 re-scoped: temporary cache-hit-rate instrumentation.** A script
-  over `~/.packetade/usage.jsonl` (which already records `cache_read`/
-  `cache_write` and discards them) that prints the hit rate per model. Exists
-  only to prove CE6 worked, then goes dormant — **not** a new reporting surface.
+- **P3 (was P2) — CE1: Codex cached-token double-count.** Rust passed `input`
+  and `cached` as separate additive arguments; OpenAI's `cached_tokens` is a
+  subset of prompt tokens, so Codex rows are overstated ~2–2.6x at typical hit
+  rates. **Downgraded 2026-07-31:** `api-openai-codex` was removed (`422ab94`),
+  so no new rows can be produced — this is now purely a historical-data
+  correction, and the live half of the subset problem was fixed by CE9's
+  `pricing::billable_input_tokens` normalisation (`d8fb78e`). If it is done at
+  all it still wants its own commit and CHANGELOG note, because historical
+  Codex totals will visibly halve.
+- **~~P3 — CE4 re-scoped: temporary cache-hit-rate instrumentation.~~ DONE
+  2026-07-31** — shipped with CE6 rather than after it, because caching fails
+  **silently** on short prefixes and a feature you cannot prove fired is not
+  shippable. Two instruments: a `CE6-CACHE` log line per round trip carrying
+  the per-iteration hit rate, and `scripts/cache-hit-rate.mjs` over
+  `usage.jsonl`. Acceptance is `cache_read` zero on iteration 0 and non-zero
+  after. Neither is a reporting surface; both go dormant once CE6 is verified
+  against the live API — **which has not happened yet.** The 60–80% figure is
+  modelled, not measured.
 - **P3 — flight rollups still carry pre-CE2 dollars.** CE2-B (done 2026-07-31)
   repriced `usage.jsonl` and persisted conversation messages, but the flight
   cost fields in `state.v1.json` — `flights[].total_cost`, `attempts[].cost`,
@@ -725,7 +770,7 @@ the normal priority scheme.
   the Creation, Opening & Deletion Flows chapter (§5) of
   `docs/reports/state-of-the-ade-2026-07-30.md`. Nothing in it was fixed by
   the bug loop or the five decision implementations. Its top items — including
-  the chapter's only Critical — were then shipped in `f405ea1`; the residue is
+  the chapter's only Critical — were then shipped in `c3906c7`; the residue is
   tracked as the P1 deletion and shell follow-ups above.
 - **✅ Decided 2026-07-30 — the five owner decisions (D1–D5).** All five
   resolved by the owner: D1 YES — remove the Workspace-level Agent inspector
@@ -739,14 +784,14 @@ the normal priority scheme.
   Editor as a first-class RightDock panel (wire `editorStore.openFile`
   production callers, protect dirty buffers; folds into D2's RightDock scope).
 - **✅ Shipped 2026-07-30 — the five decisions are implemented.** Four commits
-  in the decided order: `e7e7c27` (D1 — remove the Workspace-level Agent
-  inspector; resolves P0-1), `33708c0` (D3 — gate local-only actions on SSH
+  in the decided order: `a8abf54` (D1 — remove the Workspace-level Agent
+  inspector; resolves P0-1), `531fbec` (D3 — gate local-only actions on SSH
   conversations; resolves P0-4, and also fixes the same silent SSH→local
   conversion in the `/new` and `/review` slash commands plus diff failures
-  that rendered as `+0/−0`), `dffbe61` (D4 — single route registry owning
+  that rendered as `+0/−0`), `2898946` (D4 — single route registry owning
   rail, palette, labels, placements, hotkeys; resolves P1-9/UX-14, with
   hotkeys now matching the physical `KeyboardEvent.code` so the Ctrl+Shift
-  chords work on AZERTY/QWERTZ/Dvorak), and `93d41af` (D2 + D5 — one
+  chords work on AZERTY/QWERTZ/Dvorak), and `86cfac3` (D2 + D5 — one
   surface-scoped `RightDock` controller plus the reconnected Editor panel with
   a wired Markdown viewer; resolves P0-2, P0-3, P1-5/UX-10, P1-7). This
   delivered the audit's MS1–MS3 slices. Gates green at each step: `pnpm build`
@@ -754,7 +799,7 @@ the normal priority scheme.
   across 179 files. Known pre-existing and not caused by this wave: one
   unhandled rejection in `src/lib/__tests__/bootstrap.test.ts`, reproduced on
   a clean tree.
-- **✅ Shipped 2026-07-30 — main-shell follow-ups (`f405ea1`).** Everything the
+- **✅ Shipped 2026-07-30 — main-shell follow-ups (`c3906c7`).** Everything the
   five decisions deliberately left out, in four groups.
   **(A) Deletion safety.** The report's §5 Critical is closed: the SSH-server
   delete had no confirmation and the only component that carried one
@@ -802,7 +847,7 @@ the normal priority scheme.
   Ctrl+K palette (as an actions section, not a faked route).
   Gates: `pnpm build` green, Vitest 1466/1466 across 194 files (up from 1363),
   ESLint at zero errors.
-- **✅ Shipped 2026-07-30 — delete cleanup (`d94cca4`).** The three questions
+- **✅ Shipped 2026-07-30 — delete cleanup (`8cc2217`).** The three questions
   the previous loop deferred were all answered by the owner and implemented, so
   a confirmed delete now actually cleans up after itself.
   **(1) Flight delete cancels and cleans up.**
@@ -845,7 +890,7 @@ the normal priority scheme.
   `ConfirmDeleteModal` copy no longer claims the password stays behind.
   Gates: `pnpm build` green, Vitest 1523/1523 across 199 files (up from 1466),
   `cargo test` 444/444 (up from 440), ESLint at zero errors.
-- **✅ Shipped 2026-07-30 — the remaining cleanup holes (`6847e5c`).** Six
+- **✅ Shipped 2026-07-30 — the remaining cleanup holes (`7cad08b`).** Six
   groups; everything the previous two loops recorded as still open except undo,
   which needs an owner decision first.
   **(1) Rust worktree failures now surface.** New `WorktreeCleanupOutcome`
@@ -885,7 +930,7 @@ the normal priority scheme.
   backstop. Comment deletion added with the same confirm idiom.
   **(5) Chrome de-duplicated.** `AgentSidebar` drops its header "+" and keeps
   the labelled footer CTA (matching the `FleetSidebar` resolution from
-  `f405ea1`), so the report's "Partly resolved" duplicate-sidebar-CTA finding
+  `c3906c7`), so the report's "Partly resolved" duplicate-sidebar-CTA finding
   now fully closes. `ConversationTile` had **three** kebabs — tile chrome, a
   "More controls" toggle, and the overflow menu's own trigger — merged into
   **one** menu with every action preserved and the lazy-mount economy intact.
@@ -902,12 +947,12 @@ the normal priority scheme.
   fixtures and proven end-to-end with a planted `window.confirm` probe.
   Gates: `pnpm build` green, Vitest 1581/1581 across 200 files (up from 1523),
   `cargo test` 452/452 with 2 ignored (up from 444), ESLint at zero errors.
-- **P1 — deletion and shell follow-ups.** What `f405ea1`, `d94cca4`, and
-  `6847e5c` deliberately left out; each needs behaviour or a design decision
+- **P1 — deletion and shell follow-ups.** What `c3906c7`, `8cc2217`, and
+  `7cad08b` deliberately left out; each needs behaviour or a design decision
   rather than a confirm dialog.
   - **Undo — the owner decision that blocks the rest.** No undo exists for any
     destructive action; confirmation is still the only safety net. Deferred
-    again in `6847e5c` because it would touch every store. Two options, pick
+    again in `7cad08b` because it would touch every store. Two options, pick
     one: **(a) soft-delete + restore** — every store gains a tombstone and a
     restore path, persistence changes, recovery survives an app restart; or
     **(b) a time-boxed undo toast** — the commit is deferred for N seconds,
@@ -928,7 +973,7 @@ the normal priority scheme.
     function. Recorded so it is not mistaken for an oversight in the new code.
   - **NEW — two pre-existing `cargo fmt` drifts** in
     `src-tauri/src/commands/agent_sidecar/supervisor.rs` and
-    `src-tauri/src/commands/mod.rs`. They predate `6847e5c` and were left
+    `src-tauri/src/commands/mod.rs`. They predate `7cad08b` and were left
     untouched so its diff stayed reviewable. `cargo fmt` is still not gated.
   - The duplicate `CancelPendingButton` rendered twice at once in
     `PendingApprovalsSection` and the composer row, plus a third count badge.
@@ -949,3 +994,55 @@ the normal priority scheme.
   intentionally for load-compat (`agentStore.ts`, `workspaceStore.ts`) stay;
   audit stray descriptive mentions (e.g. `src/agents/packetcode.ts`
   description) at the next cleanup pass.
+
+## 2026-07-31 cost/provider loops — ledger
+
+Two commits landed on 2026-07-31 after the State of the ADE report's last
+status pass. The report was re-passed against `422ab94`; this section records
+only what the sections above do not already carry.
+
+- **✅ Shipped — Flight launch on the default executor was broken** (`422ab94`).
+  `pickedToSpec` derived the backend provider by stripping the `api-` prefix,
+  yielding `"claude"` where the backend expects `"anthropic"`. Seven of eight
+  ids round-trip by coincidence, which is why it survived review; the one that
+  breaks is the **default** executor, and it failed with "No API key configured
+  for claude" — sending the user to configure a provider that does not exist.
+  Fixed at three call sites through one shared helper, plus a test mock that
+  had been teaching the bug. Rust now rejects an unroutable provider id up
+  front, naming the offending value. `scripts/attempt-provider-mapping.test.mjs`
+  is a source-level fence against reintroducing the strip, and **it was
+  verified to fail when the bug is put back**.
+- **P3 — `flight_cost.rs` keeps its `api-` strip deliberately.** It produces a
+  cost-attribution *discriminator*, not a routable provider id, and must keep
+  matching keys already written into historical rollups. Recorded so a future
+  consistency sweep does not "fix" it and split historical spend. The
+  `api-claude-oauth` ↔ `claude-oauth` pairing in
+  `costGuardrails.providerSourceForAgentProvider` is load-bearing for the same
+  reason — it is why the re-auth kept the id and changed only the label.
+  Report ref: F-2.4-15.
+- **✅ Shipped — auxiliary features route to a configured API key** (`d8fb78e`,
+  WI-1). Spec import, Code Quality explain/summarize, PR description, PR
+  review, and Draft patch called `SidecarManager::forward_start("claude-oauth")`
+  directly, bypassing the provider picker. They now resolve through
+  `core/aux_llm.rs` to the cheapest **configured** API-key provider, ranked by
+  pricing a representative workload; Ollama is excluded from automatic
+  selection because it has no credential and a stopped daemon would win at $0.
+  Those five were `forward_start`'s only callers, so the bare wrapper was
+  deleted — every remaining sidecar path goes through `api_agent.rs` behind
+  `is_sidecar_provider`, with a standing source fence in
+  `commands/aux_routing.rs`. `resolveForTask` and the Provider Routing card are
+  no longer placebos, which closes the long-standing UX-07 / F-2.1-05 item by
+  wiring rather than removal.
+- **✅ Shipped — historical repricing** (`d8fb78e`, CE2-B). `core/reprice.rs`
+  recomputes from stored **token counts**, never by scaling dollars, at each
+  record's own date, backing up first and marking `repricedAt` /
+  `costUsdBefore`, guarded against double-application. Real ledger:
+  **$158.88 → $52.96**. Not cosmetic — `usage.jsonl` feeds
+  `assertCostGuardrailsAllowLaunch`, so an overstated history was tripping
+  budget caps at about a third of the spend actually authorized. Flight rollups
+  are the known exception, tracked above.
+- **Still open and re-verified at `422ab94`:** the Anthropic `pending_edit`
+  event still omits `toolUseId`, so gated write approvals still hang the turn
+  on the Claude Agent SDK row (report F-2.3-01). The provider re-auth touched
+  `anthropic.ts` but not this emitter. It remains the cheapest high-value fix
+  in the report.

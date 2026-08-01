@@ -3,7 +3,7 @@
 Last updated: 2026-07-30 (Workspace/Agents and Settings IA are complete; the
 five main-shell/right-dock decisions were made *and implemented* 2026-07-30,
 delivering MS1–MS3, and their follow-up loops closed every cleanup hole except
-undo; `main` is at `6847e5c`; Remote Agents remains preserved at its Sprint-0
+undo; `main` is at `7cad08b`; Remote Agents remains preserved at its Sprint-0
 decision gate)
 
 > **2026-07-30 — State of the ADE review completed.** The State of the ADE
@@ -15,12 +15,12 @@ decision gate)
 > [`backlog.md`](./backlog.md#2026-07-30-state-of-the-ade-review).
 >
 > **Same day — the five main-shell decisions were made and implemented.** All
-> five owner decisions landed in four commits (`e7e7c27` D1, `33708c0` D3,
-> `dffbe61` D4, `93d41af` D2+D5), delivering the audit's MS1–MS3 slices with
+> five owner decisions landed in four commits (`a8abf54` D1, `531fbec` D3,
+> `2898946` D4, `86cfac3` D2+D5), delivering the audit's MS1–MS3 slices with
 > gates green at each step (build passing, lint at zero errors, Vitest
 > 1260 → 1363 across 179 files). The UX quick wins and creation-flow fixes then
-> shipped in `f405ea1`, the three deferred delete-cleanup decisions in
-> `d94cca4`, and the remaining cleanup holes in `6847e5c` — typed
+> shipped in `c3906c7`, the three deferred delete-cleanup decisions in
+> `8cc2217`, and the remaining cleanup holes in `7cad08b` — typed
 > worktree-cleanup outcomes, cooperative integration worktrees, startup view
 > restore, issue and comment deletion, chrome de-duplication (Vitest 1581
 > across 200 files, `cargo test` 452 with 2 ignored). Remaining: MS4
@@ -55,7 +55,7 @@ surface goal. It is preserved, not canceled, at its three Sprint-0 decisions.
 
 | ID  | Track                                     | Priority | Status                                                                | Canonical Plan                                                                                                                                                                                                                                                                                                                                                                         |
 | --- | ----------------------------------------- | -------: | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R11 | Main shell and right-dock ownership       |       P1 | Decisions (MS1–MS3), follow-up polish (`f405ea1`), delete cleanup (`d94cca4`), and cleanup holes (`6847e5c`) all shipped 2026-07-30; MS4 packaged proof, **undo** (owner decision pending), and `WorkspacePane`'s un-confirmed PTY kill remain | [`HANDOFF.md`](./HANDOFF.md), [`dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md)                                                                                                                                                                                                                          |
+| R11 | Main shell and right-dock ownership       |       P1 | Decisions (MS1–MS3), follow-up polish (`c3906c7`), delete cleanup (`8cc2217`), and cleanup holes (`7cad08b`) all shipped 2026-07-30; MS4 packaged proof, **undo** (owner decision pending), and `WorkspacePane`'s un-confirmed PTY kill remain | [`HANDOFF.md`](./HANDOFF.md), [`dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md)                                                                                                                                                                                                                          |
 | R10 | Workspace/Agents restructuring            |       P0 | Complete; final owner policy implemented and fully verified           | [`dev/workspace-agents-restructuring-goal.md`](./dev/workspace-agents-restructuring-goal.md), [`dev/workspace-agents-wa0-route-contract.md`](./dev/workspace-agents-wa0-route-contract.md), [`dev/workspace-agents-wa3-handoff-evidence.md`](./dev/workspace-agents-wa3-handoff-evidence.md), [`dev/workspace-agents-wa4-dogfood-gate.md`](./dev/workspace-agents-wa4-dogfood-gate.md) |
 | R0  | Remote Agents: PWA + Packet Cloud relay   |       P1 | Preserved; paused at three Sprint-0 product decisions                 | [`dev/remoteagents/README.md`](./dev/remoteagents/README.md)                                                                                                                                                                                                                                                                                                                           |
 | R1  | Docs and planning consolidation           |       P1 | Root set overhauled 2026-07-30; ongoing maintenance                   | [`dev/README.md`](./dev/README.md)                                                                                                                                                                                                                                                                                                                                                     |
@@ -118,7 +118,7 @@ gate and unsigned-package evidence is in
 | D11 | Local-first MCP Hub       |       P2 | Source complete / environment-gated    | Run real Codex/local/SSH crash/reload/version-skew, packaged catalog/removal, offline, trust-downgrade, and reconnect smoke.                                                           |
 | D12 | Workspace/Agents surface  |       P0 | Ownership/source complete              | New attachment is retired; preserve saved-pane compatibility. Run remaining SSH/external-runtime release proof separately; interactive native popouts still wait for one-writer state. |
 | D13 | Settings authority and IA |       P1 | Six-group IA complete; authority cleanup open | Remove or enforce remaining placebo controls, make safety saves authoritative, and complete SSH/MCP/provider correctness before adding more preferences.                              |
-| D14 | Main shell and right dock |       P1 | Decisions (MS1–MS3), follow-up polish, and delete cleanup all shipped 2026-07-30; MS4 proof and the residue open | All five decisions landed (`e7e7c27`, `33708c0`, `dffbe61`, `93d41af`), then the follow-up loop in `f405ea1`: deletion-confirm sweep (shared `ConfirmDeleteModal`, no native `confirm` left, dead `ServersView.tsx` deleted), Ctrl+K/Escape terminal guards, live-work-only app-close confirm, `Modal` Escape-by-default, the Issues-board six-column wrap, and unified workspace creation. Then `d94cca4` closed the three deferred delete decisions: Flight delete cancels every non-terminal attempt (including `reviewing`, whose worktree is still on disk) and reports what may survive, conversation delete discards the worktree and `pkt/<id>` branch behind a dirty-state confirm, and SSH-server delete clears the keyring secret on both the current and legacy services. Remaining: MS4 packaged/responsive proof; Rust swallows git worktree-removal errors (`cancel_flight_attempt` only `warn!`s — needs a signature change); cooperative `integrationBranch` worktrees are still abandoned on Flight delete; no undo anywhere; and Issues still have no delete path. |
+| D14 | Main shell and right dock |       P1 | Decisions (MS1–MS3), follow-up polish, and delete cleanup all shipped 2026-07-30; MS4 proof and the residue open | All five decisions landed (`a8abf54`, `531fbec`, `2898946`, `86cfac3`), then the follow-up loop in `c3906c7`: deletion-confirm sweep (shared `ConfirmDeleteModal`, no native `confirm` left, dead `ServersView.tsx` deleted), Ctrl+K/Escape terminal guards, live-work-only app-close confirm, `Modal` Escape-by-default, the Issues-board six-column wrap, and unified workspace creation. Then `8cc2217` closed the three deferred delete decisions: Flight delete cancels every non-terminal attempt (including `reviewing`, whose worktree is still on disk) and reports what may survive, conversation delete discards the worktree and `pkt/<id>` branch behind a dirty-state confirm, and SSH-server delete clears the keyring secret on both the current and legacy services. Remaining: MS4 packaged/responsive proof; Rust swallows git worktree-removal errors (`cancel_flight_attempt` only `warn!`s — needs a signature change); cooperative `integrationBranch` worktrees are still abandoned on Flight delete; no undo anywhere; and Issues still have no delete path. |
 
 ## Later
 
@@ -177,8 +177,8 @@ Run the usual gates before release: `pnpm lint`, `pnpm test`, `pnpm build`,
 
 1. Preserve the completed Workspace/Agents and Settings IA contracts.
 2. Finish the main-shell wave: MS1–MS3 shipped 2026-07-30 with the five
-   decisions, the UX quick wins and creation-flow fixes in `f405ea1`, and the
-   delete cleanup in `d94cca4`; complete MS4 polish/proof plus the remaining
+   decisions, the UX quick wins and creation-flow fixes in `c3906c7`, and the
+   delete cleanup in `8cc2217`; complete MS4 polish/proof plus the remaining
    cleanup holes (Rust worktree-error surfacing, cooperative integration
    worktrees, undo).
 3. Run the packaged local/SSH/manual Flight supervision matrices and the

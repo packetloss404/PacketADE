@@ -5,13 +5,13 @@ Date: 2026-07-29
 Status: **REVIEW COMPLETE — DECISIONS MADE AND IMPLEMENTED 2026-07-30**
 
 All five owner decisions were implemented the same day they were made, in four
-commits: `e7e7c27` (D1), `33708c0` (D3), `dffbe61` (D4), `93d41af` (D2+D5).
+commits: `a8abf54` (D1), `531fbec` (D3), `2898946` (D4), `86cfac3` (D2+D5).
 That delivered **MS1, MS2, and MS3**. Gates were green at every step —
 `pnpm build` passing, ESLint at zero errors, and Vitest 1260 → 1276 → 1320 →
 1363 passing across 179 files. (One pre-existing unhandled rejection in
 `src/lib/__tests__/bootstrap.test.ts` reproduces on a clean tree.)
 
-A follow-up loop then landed as `f405ea1` (deletion safety, keyboard/exit
+A follow-up loop then landed as `c3906c7` (deletion safety, keyboard/exit
 safety, modal/board fixes, and unified creation flows), with gates at `pnpm
 build` green, ESLint at zero errors, and Vitest 1466 passing across 194 files.
 Within this document it resolves **finding 10** and **MS3 step 4**; the rest of
@@ -66,7 +66,7 @@ This audit is a source and test review. It did not change product behavior.
 
 ## P0 findings — correctness and safety
 
-### 1. Workspace mounts a stale global Agent inspector — RESOLVED (`e7e7c27`)
+### 1. Workspace mounts a stale global Agent inspector — RESOLVED (`a8abf54`)
 
 `App` mounts `AgentInspectorPane` whenever Workspace is active and a global
 `selectedConversationId` exists. It does not prove that the conversation is a
@@ -83,10 +83,10 @@ Recommendation: remove the App-level Workspace inspector. If old saved
 conversation panes need an inspector, open it only from an explicitly focused
 saved pane in that Workspace.
 
-Resolution: implemented as D1 in `e7e7c27`. The App-level Workspace inspector
+Resolution: implemented as D1 in `a8abf54`. The App-level Workspace inspector
 is removed and Inspector is owned solely by the Agents view.
 
-### 2. Right-side panels have no shared width or ownership arbitration — RESOLVED (`93d41af`)
+### 2. Right-side panels have no shared width or ownership arbitration — RESOLVED (`86cfac3`)
 
 Workspace may render its 480px Editor and 280px Git panel together. `App` can
 then add a 280–720px Agent inspector outside Workspace. Combined with the 240px
@@ -106,10 +106,10 @@ Recommendation: introduce one surface-scoped `RightDock` owner with mutually
 exclusive modes, one resizer, available-width clamping, and automatic collapse
 below a minimum center width.
 
-Resolution: implemented as D2 in `93d41af`. One surface-scoped `RightDock`
+Resolution: implemented as D2 in `86cfac3`. One surface-scoped `RightDock`
 controller now owns width, stacking, and visibility of every right-side panel.
 
-### 3. Preview ownership is global and internally inconsistent — RESOLVED (`93d41af`)
+### 3. Preview ownership is global and internally inconsistent — RESOLVED (`86cfac3`)
 
 `previewPaneStore` contains no conversation ID. A relative Markdown path opened
 for conversation A can therefore be resolved against conversation B's project
@@ -132,11 +132,11 @@ Evidence:
 Recommendation: use one conversation-scoped dock record containing
 `{ conversationId, expanded, activeTab, previewTarget }`.
 
-Resolution: implemented as part of D2 in `93d41af`. Preview state is now
+Resolution: implemented as part of D2 in `86cfac3`. Preview state is now
 conversation-scoped inside the `RightDock` record and Hide/Close are
 authoritative.
 
-### 4. SSH conversations expose local-only Inspector operations — RESOLVED (`33708c0`)
+### 4. SSH conversations expose local-only Inspector operations — RESOLVED (`531fbec`)
 
 The Files tab correctly admits that SSH is unsupported. Preview does not: it
 calls local `readFileContents` without an SSH target. Applied-file Review reads
@@ -160,7 +160,7 @@ Evidence:
 Recommendation: disable these disk-backed actions for SSH immediately or
 implement a single remote-aware file contract before exposing them.
 
-Resolution: implemented as D3 in `33708c0`. Preview, applied Review, Undo,
+Resolution: implemented as D3 in `531fbec`. Preview, applied Review, Undo,
 Plan handoff, and diff are gated on SSH conversations. The same commit also
 fixed the identical silent SSH→local conversion in the `/new` and `/review`
 slash commands, and diff failures that had been rendering as `+0/−0` instead
@@ -168,7 +168,7 @@ of surfacing. Full remote parity remains later work.
 
 ## P1 findings — product behavior and wiring
 
-### 5. Files advertises a Preview path that is not wired — RESOLVED (`93d41af`)
+### 5. Files advertises a Preview path that is not wired — RESOLVED (`86cfac3`)
 
 File rows call an optional `onSelectFile`, but `AgentInspectorPane` does not
 provide it. Preview nevertheless tells the user to open Markdown from Files.
@@ -181,7 +181,7 @@ Evidence:
 - `src/components/agents/AgentPreviewPane.tsx:163-170`
 
 Resolution: folded into decision 5 by the 2026-07-30 amendment and closed with
-the D5 implementation in `93d41af` — the reconnected `RightDock` Editor panel
+the D5 implementation in `86cfac3` — the reconnected `RightDock` Editor panel
 has a wired Markdown viewer, so the Files → Preview path Files advertises now
 exists.
 
@@ -205,7 +205,7 @@ Evidence:
 Recommendation: make Plan and Review authoritative in the right dock. Keep only
 compact summaries or triggers in chat.
 
-### 7. The Workspace Editor panel is unreachable — RESOLVED (`93d41af`)
+### 7. The Workspace Editor panel is unreachable — RESOLVED (`86cfac3`)
 
 `editorStore.openFile` has no production caller outside its declaration and
 tests. The shell still carries a full 480px Editor pane. If it is reconnected,
@@ -222,7 +222,7 @@ Evidence:
 Recommendation: either remove the unreachable pane or promote it into the
 shared dock with real open-file producers and dirty-buffer protection.
 
-Resolution: implemented as D5 in `93d41af` — promote, not remove. The Editor
+Resolution: implemented as D5 in `86cfac3` — promote, not remove. The Editor
 is a first-class `RightDock` panel, `editorStore.openFile` has production
 callers, and dirty buffers are protected.
 
@@ -245,7 +245,7 @@ Recommendation: derive shell context from a typed local-or-SSH target owned by
 the active surface. Disable the local folder picker for SSH until it has a
 server-aware action.
 
-### 9. Main navigation metadata is duplicated and drifting — RESOLVED (`dffbe61`)
+### 9. Main navigation metadata is duplicated and drifting — RESOLVED (`2898946`)
 
 Left Rail, Status Strip, command palette, hotkeys, and module registration
 maintain separate route lists. The command palette omits Agents, Flight Deck,
@@ -263,14 +263,14 @@ Evidence:
 Recommendation: create one route registry containing label, icon, aliases,
 shortcut, placement, and enabled predicate.
 
-Resolution: implemented as D4 in `dffbe61`. A single route registry owns the
+Resolution: implemented as D4 in `2898946`. A single route registry owns the
 left rail, command palette, Status Strip labels, placements, and hotkeys, and
 Dictation has one route identity. Hotkeys now match the physical
 `KeyboardEvent.code`, so the Ctrl+Shift chords work on AZERTY, QWERTZ, and
 Dvorak layouts. The registry enabled the creation-label fixes in finding 10,
-which shipped in `f405ea1`.
+which shipped in `c3906c7`.
 
-### 10. Creation labels do not match their actions — RESOLVED (`f405ea1`)
+### 10. Creation labels do not match their actions — RESOLVED (`c3906c7`)
 
 The global New button claims it creates a session, Flight, or Issue, but its
 menu contains only Flight and Issue. Fleet's **New session** creates an empty
@@ -288,7 +288,7 @@ Recommendation: make New a truthful creation hub for Workspace, CLI Session,
 Agent, Flight, and Issue. Rename Fleet's action **New Workspace** unless it is
 changed to add a session to the active Workspace.
 
-Resolution: implemented in `f405ea1`. The global New menu now carries **New
+Resolution: implemented in `c3906c7`. The global New menu now carries **New
 Workspace** alongside New Flight and New Issue, and its tooltip matches its
 contents; workspace creation is also reachable from the Ctrl+K palette as an
 actions entry rather than a faked route. Fleet's duplicate top "+" and bottom
@@ -418,14 +418,14 @@ for width. The Plan and Diff/Review duplication in finding 6 is unchanged.
 
 ### MS1 — correctness boundaries (delivered 2026-07-30)
 
-1. ~~Remove the unscoped Workspace Agent inspector.~~ Done — `e7e7c27`.
-2. ~~Gate local-only Inspector and handoff actions for SSH.~~ Done — `33708c0`.
+1. ~~Remove the unscoped Workspace Agent inspector.~~ Done — `a8abf54`.
+2. ~~Gate local-only Inspector and handoff actions for SSH.~~ Done — `531fbec`.
 3. ~~Make Preview state conversation-scoped and make Hide/Close
-   authoritative.~~ Done — `93d41af`.
+   authoritative.~~ Done — `86cfac3`.
 4. Add cancellation acknowledgment for Running Agents and Side Chat. **Open.**
 5. Clear repository/PR detail state across repo and host switches. **Open.**
 
-### MS2 — one right dock (delivered 2026-07-30, `93d41af`)
+### MS2 — one right dock (delivered 2026-07-30, `86cfac3`)
 
 1. ~~Introduce a surface-scoped `RightDock` controller.~~ Done.
 2. ~~Make Inspector, Git, and Editor mutually exclusive owners.~~ Done.
@@ -437,14 +437,14 @@ for width. The Plan and Diff/Review duplication in finding 6 is unchanged.
    buffers are protected, and per the same-day D5 amendment the panel opens
    and previews Markdown (`.md`) files, resolving finding P1-5.
 
-### MS3 — one navigation registry (delivered 2026-07-30, `dffbe61`)
+### MS3 — one navigation registry (delivered 2026-07-30, `2898946`)
 
 1. ~~Define route label/icon/shortcut/placement metadata once.~~ Done.
 2. ~~Generate Left Rail, command palette, Status Strip labels, and hotkeys
    from it.~~ Done — hotkeys match the physical `KeyboardEvent.code`, so the
    Ctrl+Shift chords work on AZERTY, QWERTZ, and Dvorak.
 3. ~~Collapse Dictation to one route identity.~~ Done.
-4. ~~Make the global New menu truthful.~~ Done — `f405ea1`. New Workspace joins
+4. ~~Make the global New menu truthful.~~ Done — `c3906c7`. New Workspace joins
    New Flight and New Issue, the tooltip matches the contents, workspace
    creation is in the Ctrl+K palette, and the Fleet duplicate create controls
    are collapsed to one labelled action.
@@ -468,18 +468,18 @@ implemented the same day.
    Agents. **Recommended: yes.**
    — **DECIDED 2026-07-30: YES.** Remove the Workspace-level Agent inspector;
    Inspector is owned solely by the Agents view (resolves P0-1).
-   — **IMPLEMENTED 2026-07-30: `e7e7c27`.** P0-1 resolved.
+   — **IMPLEMENTED 2026-07-30: `a8abf54`.** P0-1 resolved.
 2. Replace independent right panels with one `RightDock`. **Recommended: yes.**
    — **DECIDED 2026-07-30: YES.** Build one `RightDock` controller owning
    width/stacking/visibility of all right-side panels (resolves P0-2, helps
    P0-3).
-   — **IMPLEMENTED 2026-07-30: `93d41af`.** P0-2 and P0-3 resolved.
+   — **IMPLEMENTED 2026-07-30: `86cfac3`.** P0-2 and P0-3 resolved.
 3. Disable unsupported SSH Preview/Diff/Editor actions before adding full remote
    parity. **Recommended: yes.**
    — **DECIDED 2026-07-30: YES.** Gate/disable local-only actions (Preview,
    applied-Review, Undo, Plan handoff, diff) on SSH conversations now; full
    remote parity later (resolves P0-4).
-   — **IMPLEMENTED 2026-07-30: `33708c0`.** P0-4 resolved. The commit also
+   — **IMPLEMENTED 2026-07-30: `531fbec`.** P0-4 resolved. The commit also
    fixed the same silent SSH→local conversion in the `/new` and `/review`
    slash commands, and diff failures that had been rendering as `+0/−0`.
 4. Make one route registry own rail, palette, labels, and hotkeys.
@@ -487,10 +487,10 @@ implemented the same day.
    — **DECIDED 2026-07-30: YES.** A single route registry owns the left rail,
    command palette, labels, and hotkeys (resolves UX-14/P1-9; enables the
    creation-label fixes).
-   — **IMPLEMENTED 2026-07-30: `dffbe61`.** P1-9/UX-14 resolved. Hotkeys match
+   — **IMPLEMENTED 2026-07-30: `2898946`.** P1-9/UX-14 resolved. Hotkeys match
    the physical `KeyboardEvent.code`, so the Ctrl+Shift chords work on AZERTY,
    QWERTZ, and Dvorak layouts. The creation-label fixes it enabled shipped in
-   `f405ea1` (finding 10).
+   `c3906c7` (finding 10).
 5. Reconnect the lightweight Editor through the dock or remove its unreachable
    shell. **Decision required after reviewing PacketCode/editor positioning.**
    — **DECIDED 2026-07-30: RECONNECT.** The lightweight Editor becomes a
@@ -503,7 +503,7 @@ implemented the same day.
    preview `.md` files, resolving finding P1-5 (Files advertises a
    Markdown-Preview path that is not wired; `onSelectFile` not provided by
    `AgentInspectorPane`).
-   — **IMPLEMENTED 2026-07-30: `93d41af`** (same commit as D2). P1-7 and P1-5
+   — **IMPLEMENTED 2026-07-30: `86cfac3`** (same commit as D2). P1-7 and P1-5
    resolved.
 
 ## Evidence limits

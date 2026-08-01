@@ -49,6 +49,75 @@ credential was wrong.
   keep using your subscription logins. That is ordinary use of the vendors' own
   tools and is explicitly unaffected.
 
+### Changed — the AI features that used to spend your subscription now use your API key (2026-07-31)
+
+Five features called a model without ever asking you which one: importing a
+spec into issues, Code Quality's "explain this error" and "summarize", writing
+a pull-request description, reviewing a pull request, and drafting a patch.
+All five quietly used your Claude subscription login.
+
+- **They now run on the cheapest API provider you have configured.** PacketADE
+  prices the providers you hold a key for against a representative small task
+  and picks the cheapest — so if you have both an Anthropic and an OpenAI key,
+  these background jobs land wherever they cost least, and the main agent
+  conversation you actually chose is untouched.
+- **You can override the choice.** Settings → Tools → Provider Routing has a new
+  **Auxiliary AI tasks** section that pins a provider and model per task. That
+  card used to be decorative; it now decides something real.
+- **Local models are never chosen for you.** Ollama would win any
+  cheapest-provider ranking at $0 — including when the daemon is not running —
+  so it is only ever used if you pick it explicitly.
+- **With no API key configured, these features stop and say so**, pointing you
+  at Settings → API Keys. They never fall back to a subscription login.
+
+### Added — a targeted edit tool for the API providers (2026-07-31)
+
+- **Claude (API), OpenAI (API), MiniMax, OpenRouter, and Ollama agents can now
+  edit part of a file instead of rewriting all of it.** Previously the only way
+  for these agents to change three lines was to regenerate the entire file.
+  That is slow, it is billed at the expensive output rate, and smaller models
+  frequently mangled the untouched parts.
+- **An ambiguous edit is refused, not guessed.** If the text the agent wants to
+  replace appears more than once, the edit fails and says so rather than
+  silently changing the first occurrence.
+- **Approvals work exactly as before.** The edit goes through the same approval
+  prompt as a whole-file write, and the diff you are shown is produced by the
+  same code that performs the edit — what you approve is what lands.
+- **Local workspaces only for now.** Agents working over SSH continue to use
+  whole-file writes.
+- **If you use an agent profile with a fixed tool list**, add `edit_file` to it;
+  profiles that name their tools explicitly will not pick up the new one on
+  their own.
+
+### Fixed — local Ollama models were silently running out of context (2026-07-31)
+
+- **Every local model has been quietly truncating your conversation.** Ollama's
+  OpenAI-compatible endpoint has no way to set the context size, so models ran
+  at the daemon's small default no matter how long the conversation was — and
+  Ollama drops the front of the conversation rather than reporting an error.
+  This is what "the local model forgot the system prompt" and "it loops on
+  tools" actually were: a configuration fault, not model quality.
+- **PacketADE now asks each model what context window it was trained for** and
+  uses it, up to a ceiling you can change in Settings → Tools → Provider
+  Endpoints (16k by default, which is four times Ollama's own).
+- **Models stay loaded for 30 minutes** instead of unloading after 5, so a
+  normal agent turn no longer pays for a cold reload part-way through.
+- **If a conversation does overflow, you are told.** The turn carries a notice
+  naming the limit and pointing at the setting, instead of the model quietly
+  losing the beginning of its instructions.
+- **Asking a model without tool support to use tools now fails in one clear
+  line** naming the model, rather than looping. The model picker still lists
+  models that cannot run tools — check the model before starting an agent tile.
+
+### Fixed — launching a Flight on the default agent failed with a misleading error (2026-07-31)
+
+- **"No API key configured for claude" was wrong twice over**: there is no
+  provider called "claude", and adding a key would not have helped. PacketADE
+  was deriving the wrong internal name when starting a Flight attempt, and the
+  one agent it broke on happened to be the default. Flights now launch on every
+  provider, and an unrecognised one is reported by name instead of being turned
+  into a dead end.
+
 ### Added — prompt caching on the Claude API path (2026-07-31)
 
 - **Claude API conversations now reuse their cached prompt instead of paying

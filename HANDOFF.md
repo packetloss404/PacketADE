@@ -27,14 +27,14 @@ All five threads from that review are now closed. The first two:
 
 1. **Committed and verified.** The State of the ADE review work landed on
    `main` as
-   `72b2734` (bug fixes + Gemini removal + docs), `580ee80` (build evidence),
+   `d5cfe8b` (bug fixes + Gemini removal + docs), `580ee80` (build evidence),
    and `3f8aba1` (consolidated ledger expansion), all pushed; gates were green
    at each commit (pnpm build, cargo check + test 440/440, vitest 1260/1260,
    sidecar build).
 2. **The main-shell implementation pass. COMPLETE.** The owner made all five
    main-shell decisions on 2026-07-30 and all five were implemented the same
    day, in the decided order, one commit per step with gates green at each:
-   `e7e7c27` (D1), `33708c0` (D3), `dffbe61` (D4), `93d41af` (D2+D5).
+   `a8abf54` (D1), `531fbec` (D3), `2898946` (D4), `86cfac3` (D2+D5).
    `pnpm build` stayed green and lint stayed at zero errors throughout, and
    the Vitest suite grew 1260 → 1276 → 1320 → 1363 passing across 179 files.
    Known pre-existing and not caused by this wave: one unhandled rejection in
@@ -42,23 +42,23 @@ All five threads from that review are now closed. The first two:
 
 The five owner decisions, all made 2026-07-30 and all implemented 2026-07-30:
 
-1. **DECIDED: YES. IMPLEMENTED `e7e7c27`.** Remove the unscoped
+1. **DECIDED: YES. IMPLEMENTED `a8abf54`.** Remove the unscoped
    Workspace-level Agent inspector; Inspector is owned solely by the Agents
    view (resolves P0-1).
-2. **DECIDED: YES. IMPLEMENTED `93d41af`.** Build one surface-scoped
+2. **DECIDED: YES. IMPLEMENTED `86cfac3`.** Build one surface-scoped
    `RightDock` controller owning width/stacking/visibility of all right-side
    panels (resolves P0-2, P0-3).
-3. **DECIDED: YES. IMPLEMENTED `33708c0`.** Gate/disable local-only actions
+3. **DECIDED: YES. IMPLEMENTED `531fbec`.** Gate/disable local-only actions
    (Preview, applied-Review, Undo, Plan handoff, diff) on SSH conversations
    now; full remote parity later (resolves P0-4). The same commit also fixed
    the identical silent SSH→local conversion in the `/new` and `/review` slash
    commands, and diff failures that had been rendering as `+0/−0`.
-4. **DECIDED: YES. IMPLEMENTED `dffbe61`.** One route registry owns the main
+4. **DECIDED: YES. IMPLEMENTED `2898946`.** One route registry owns the main
    rail, command palette, labels, placements, and hotkeys (resolves
    UX-14/P1-9; enables the creation-label fixes). Hotkeys now match the
    physical `KeyboardEvent.code`, so the Ctrl+Shift chords work on AZERTY,
    QWERTZ, and Dvorak layouts.
-5. **DECIDED: RECONNECT. IMPLEMENTED `93d41af`.** The lightweight Editor is
+5. **DECIDED: RECONNECT. IMPLEMENTED `86cfac3`.** The lightweight Editor is
    now a first-class `RightDock` panel — `editorStore.openFile` has production
    callers and dirty buffers are protected. In-app quick editing IS part of
    PacketADE's positioning. Per the same-day amendment, the panel's wired
@@ -73,7 +73,7 @@ Gitea capability and repo-switch tests, and the packaged local/SSH and
 
 The third thread closed on top of that sequence:
 
-3. **The main-shell follow-up loop. COMPLETE — `f405ea1`.** The Group A UX
+3. **The main-shell follow-up loop. COMPLETE — `c3906c7`.** The Group A UX
    quick wins and the Group B creation-flow fixes that D1–D5 deliberately left
    out are all shipped, committed, and pushed. Gates at that commit: `pnpm
    build` green, Vitest 1466/1466 across 194 files (up from 1363), ESLint at
@@ -104,8 +104,8 @@ The third thread closed on top of that sequence:
 
 The fourth thread closed on top of that:
 
-4. **The delete-cleanup loop. COMPLETE — `d94cca4`.** The three questions
-   `f405ea1` deferred were all answered by the owner on 2026-07-30 and
+4. **The delete-cleanup loop. COMPLETE — `8cc2217`.** The three questions
+   `c3906c7` deferred were all answered by the owner on 2026-07-30 and
    implemented the same day, so a confirmed delete now cleans up after itself.
    Gates at that commit: `pnpm build` green, Vitest 1523/1523 across 199 files
    (up from 1466), `cargo test` 444/444 (up from 440), ESLint at zero errors.
@@ -147,7 +147,7 @@ The fourth thread closed on top of that:
 
 The fifth thread closed on top of that:
 
-5. **The cleanup-holes loop. COMPLETE — `6847e5c`.** Everything the previous
+5. **The cleanup-holes loop. COMPLETE — `7cad08b`.** Everything the previous
    two loops recorded as still open, except undo. Gates at that commit: `pnpm
    build` green, Vitest 1581/1581 across 200 files (up from 1523), `cargo test`
    452/452 with 2 ignored (up from 444), ESLint at zero errors. What landed:
@@ -215,7 +215,7 @@ same list, with evidence and finding IDs, is §0.3 of
 
 No undo exists for any destructive action anywhere in the app — confirmation is
 still the only safety net, and every other cleanup hole is now closed. It was
-deferred again in `6847e5c` because it touches every store and is a design
+deferred again in `7cad08b` because it touches every store and is a design
 decision, not a bug fix. Pick one:
 
 - **(a) Soft-delete + restore.** Every store gains a tombstone and a restore
@@ -235,7 +235,7 @@ retention model first.
 **Then the one destructive-without-confirm path left:**
 
 - **`WorkspacePane`'s terminal tile "Close pane" kills the PTY with no
-  confirmation.** Surfaced during the `6847e5c` chrome loop, which rebuilt the
+  confirmation.** Surfaced during the `7cad08b` chrome loop, which rebuilt the
   tile menus around that control without adding a confirm. Every other
   destructive path in the app now asks first, and the equivalent kill through
   Fleet delete carries a full typed confirm modal — this one does not. Report
@@ -256,7 +256,7 @@ retention model first.
   host, matching the existing gap for every remote worktree function.
 - Two pre-existing `cargo fmt` drifts in
   `src-tauri/src/commands/agent_sidecar/supervisor.rs` and
-  `src-tauri/src/commands/mod.rs`, left untouched so `6847e5c`'s diff stayed
+  `src-tauri/src/commands/mod.rs`, left untouched so `7cad08b`'s diff stayed
   reviewable. `cargo fmt` is still not gated.
 - A "don't ask again" preference for the app-close confirmation.
 - The six-spellings label sweep across `WelcomeScreen`, `ProjectInfoCard`, and
@@ -270,15 +270,15 @@ unaddressed MS1 items remain open alongside these.
 
 ## Current product state
 
-- `main` is at `6847e5c` (cleanup holes: typed worktree-cleanup outcomes,
+- `main` is at `7cad08b` (cleanup holes: typed worktree-cleanup outcomes,
   cooperative integration worktrees, startup view restore, issue and comment
-  deletion, chrome de-duplication), on top of `d94cca4` (delete cleanup: flight
-  attempts, conversation worktrees, SSH keyring), `f405ea1` (main-shell
-  follow-ups: deletion safety, keyboard/exit safety, creation flows), `93d41af`
-  (D2+D5 RightDock and reconnected Editor), `dffbe61` (D4), `33708c0` (D3),
-  `e7e7c27` (D1), and the State of the ADE review commits `3f8aba1` /
-  `580ee80` / `72b2734` — all committed 2026-07-30.
-- Gates at `main` (`6847e5c`): `pnpm build` green, ESLint 0 errors, Vitest
+  deletion, chrome de-duplication), on top of `8cc2217` (delete cleanup: flight
+  attempts, conversation worktrees, SSH keyring), `c3906c7` (main-shell
+  follow-ups: deletion safety, keyboard/exit safety, creation flows), `86cfac3`
+  (D2+D5 RightDock and reconnected Editor), `2898946` (D4), `531fbec` (D3),
+  `a8abf54` (D1), and the State of the ADE review commits `3f8aba1` /
+  `580ee80` / `d5cfe8b` — all committed 2026-07-30.
+- Gates at `main` (`7cad08b`): `pnpm build` green, ESLint 0 errors, Vitest
   1581/1581 across 200 files, `cargo test` 452/452 with 2 ignored.
 - The main shell now has one surface-scoped `RightDock`, one route registry
   behind the rail/palette/labels/hotkeys, SSH-gated local-only actions, an
@@ -391,7 +391,7 @@ runbooks and record evidence when the required environment exists.
 ## Latest Windows build
 
 On 2026-07-30, `pnpm tauri build` succeeded from the State of the ADE review
-commit `72b2734` (16 verified bug fixes, Gemini CLI removal, docs overhaul). Sidecar
+commit `d5cfe8b` (16 verified bug fixes, Gemini CLI removal, docs overhaul). Sidecar
 development dependencies were restored after the production prune and the
 repository was left clean.
 
@@ -416,10 +416,10 @@ All three artifacts are unsigned.
 
 Every commit in this sequence ran the frontend gates before landing:
 
-- Vitest grew 1260 → 1276 (`e7e7c27`) → 1320 (`33708c0`, cumulative through
-  `dffbe61`) → 1363 across 179 files (`93d41af`) → 1466 across 194 files
-  (`f405ea1`) → **1523 passing across 199 files** (`d94cca4`);
-- `cargo test` grew 440 → **444** (`d94cca4`, the new `delete_ssh_password`
+- Vitest grew 1260 → 1276 (`a8abf54`) → 1320 (`531fbec`, cumulative through
+  `2898946`) → 1363 across 179 files (`86cfac3`) → 1466 across 194 files
+  (`c3906c7`) → **1523 passing across 199 files** (`8cc2217`);
+- `cargo test` grew 440 → **444** (`8cc2217`, the new `delete_ssh_password`
   coverage);
 - ESLint passed with zero errors at every step;
 - the TypeScript/Vite production build passed at every step;
@@ -463,11 +463,11 @@ limited to existing `ts-rs` serde-alias and Vite chunk/dynamic-import warnings.
 
 ## Suggested first prompt
 
-> Read `HANDOFF.md`. The five decided main-shell items (`e7e7c27`, `33708c0`,
-> `dffbe61`, `93d41af`), the main-shell follow-up loop (`f405ea1` —
+> Read `HANDOFF.md`. The five decided main-shell items (`a8abf54`, `531fbec`,
+> `2898946`, `86cfac3`), the main-shell follow-up loop (`c3906c7` —
 > deletion-confirm sweep, Ctrl+K/Escape terminal guards, app-close confirm,
 > Modal Escape default, Issues-board wrap, unified workspace creation), and the
-> delete-cleanup loop (`d94cca4` — Flight delete cancels non-terminal attempts
+> delete-cleanup loop (`8cc2217` — Flight delete cancels non-terminal attempts
 > and cleans worktrees, conversation delete discards the worktree/branch with a
 > dirty-state confirm, SSH delete clears the keyring on both services) are all
 > implemented and committed — do not re-open them. Pick up what they
