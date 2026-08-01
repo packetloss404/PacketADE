@@ -31,6 +31,35 @@ Composer/store convergence.
   acceleration only after the repaired CPU path has packaged latency/quality
   measurements; do not add a cloud dependency by default.
 
+## Packet Control — evidence layer (proposed, not started)
+
+Canonical plan:
+[`dev/packet-control-loop.md`](./dev/packet-control-loop.md) (CTL1–CTL9).
+Adopted 2026-07-31 from the packetcode-side proposal
+`D:\projects\packetcode\PACKETCOMPUTERS.md`, which keeps the Packet Computers
+half. Phases 1–2 only: a stable evidence manifest plus terminal verification
+local and over SSH. No daemon, no browser/desktop control, no autonomy change.
+
+- **P2 — CTL1 evidence contract.** Freeze `ControlRun`/`ControlStep`/
+  `ControlArtifact`, the five-value verdict, and the lossless projection onto
+  PacketAgent's `ValidationEvidenceRecord`. Blocks everything else, and is the
+  item that prevents PacketADE growing a second evidence format alongside the
+  PacketAgent PH8 return path.
+- **P2 — CTL2–CTL6 capture path.** Core module and persistence under
+  `<DATA_DIR>/control/`, redaction through `ProvenanceEnvelope`, terminal
+  driver local and over SSH with host-key pinning enforced, and an explicit
+  pre-execution approval gate.
+- **P3 — CTL7–CTL8 surfaces.** Control run list/detail reusing the shared
+  `Modal`/`DiffViewer` idioms, then attach-to-`Attempt` as `AttemptReviewGate`
+  input without auto-overriding the gate.
+- **Owner decisions ratified 2026-07-31.** D1 verdicts come from deterministic
+  exit-code/assertion rules with user confirmation and a recorded
+  `verdict_authority`; no model judges a claim in Phases 1–2. D2 every run is
+  user-initiated and attempt→run linkage is manual and after-the-fact. D3
+  retention is capped with explicit reported pruning that will not silently
+  drop a run an `Attempt` references. Consequences are folded into CTL1–CTL8;
+  no new rows were needed.
+
 ## Remote Agents (preserved; currently paused)
 
 Canonical plan: [`dev/remoteagents/README.md`](./dev/remoteagents/README.md).

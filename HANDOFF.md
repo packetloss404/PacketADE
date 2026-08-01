@@ -1,9 +1,34 @@
 # PacketADE Handoff
 
-Last updated: 2026-07-30
+Last updated: 2026-07-31
 
 This is the restart document for the next PacketADE work session. Read it
 before older plans or audit notes.
+
+## Latest pass — 2026-07-31 (Packet Control adoption)
+
+Docs and planning only; **no PacketADE runtime code changed**.
+
+- **Packet Control Phases 1–2 adopted into PacketADE** from the packetcode
+  proposal (`D:\projects\packetcode\PACKETCOMPUTERS.md`). Plan:
+  [`dev/packet-control-loop.md`](./dev/packet-control-loop.md), CTL1–CTL9,
+  **proposed — not started**. Packet Computers stays a packetcode item.
+- **The load-bearing constraint is CTL1.** PacketADE is already growing an
+  evidence path in `dev/bridgemind/packetagent-handoff-loop.md` PH8, so CTL1
+  must project losslessly onto PacketAgent's `ValidationEvidenceRecord`, and
+  `CoordinationArtifactRef` (`core/flight.rs`) must not be widened into a
+  bundle type. One evidence format, not three.
+- **Owner decisions D1–D3 ratified**: deterministic exit-code/assertion
+  verdicts with a recorded `verdict_authority` (no model judges a claim in
+  Phases 1–2), user-initiated runs only with manual after-the-fact attach to
+  an `Attempt`, and capped retention with reported pruning.
+- **Cross-repo:** PCH4 (abandoned-job resubmit) and PCMP1/PCMP2 (Packet
+  Computers registry) shipped in packetcode at `ac758fe`. PC9 in
+  [`dev/bridgemind/packetcode-bridgecode-loop.md`](./dev/bridgemind/packetcode-bridgecode-loop.md)
+  is updated; PC5/PC10 remain externally gated on signing credentials, a
+  published build, and a live PacketAgent.
+- Two back-dated marketing plans were deleted from `marketing/`; the
+  press-kit collateral there is untouched.
 
 ## Resume here
 
