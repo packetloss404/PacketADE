@@ -68,6 +68,17 @@ pub enum ContentBlock {
         media_type: String,
         data_base64: String,
     },
+    /// Opaque provider-owned reasoning payload that must be replayed verbatim
+    /// on the next request to keep an interleaved-thinking chain intact.
+    ///
+    /// Currently produced only by MiniMax M3's OpenAI-compatible endpoint
+    /// (`reasoning_details`), whose docs require the *entire* assistant message
+    /// — reasoning included — to be appended to history between tool rounds.
+    /// The block is deliberately opaque: it round-trips byte-for-byte for the
+    /// provider that emitted it and is silently dropped by every other message
+    /// builder, so it is inert for Anthropic/OpenAI/Ollama/OpenRouter.
+    #[serde(rename = "provider_reasoning")]
+    ProviderReasoning { details: serde_json::Value },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,6 +141,11 @@ pub enum StreamChunk {
     },
     /// A delta of extended-thinking (reasoning) text.
     ThinkingDelta { text: String },
+    /// The provider's own structured reasoning payload for this assistant turn,
+    /// already accumulated across the stream. Emitted once, just before `Done`,
+    /// by providers that require it to be replayed in history (MiniMax M3's
+    /// `reasoning_details`). Consumers store it verbatim; they never inspect it.
+    ReasoningDetails { details: serde_json::Value },
     /// The current extended-thinking block is complete.
     ThinkingStop,
     /// An error occurred.
@@ -157,6 +173,12 @@ pub struct LlmRequest {
     /// Budget for extended thinking tokens (Anthropic). Ignored when thinking_enabled is false.
     #[serde(default = "default_thinking_budget")]
     pub thinking_budget_tokens: u32,
+    /// Stable cache-partition key for this logical conversation (the session
+    /// id). Sent to OpenAI as `prompt_cache_key` so successive agent-loop
+    /// iterations route to the same cache partition. Ignored by every other
+    /// provider — Anthropic keys its cache off the prefix itself.
+    #[serde(default)]
+    pub cache_key: Option<String>,
 }
 
 fn default_thinking_budget() -> u32 {

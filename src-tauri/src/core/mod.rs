@@ -1,6 +1,8 @@
 pub mod agent;
 pub mod agent_config;
 pub mod agents_md;
+// WI-1 — the auxiliary LLM seam every non-agentic feature routes through.
+pub mod aux_llm;
 pub mod brand;
 // v0.8.8 quality ai: hand-authored prompts for the Code Quality AI features
 // (explain-error + summarize-run). Kept next to `github_ai_prompts` so prompt
@@ -34,6 +36,8 @@ pub mod migration;
 pub mod orchestrator;
 pub mod provenance;
 pub mod pty;
+// One-time reprice of historical cost figures written with the pre-CE2 rates.
+pub mod reprice;
 pub mod shared;
 pub mod shell_path;
 pub mod ssh_askpass;

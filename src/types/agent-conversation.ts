@@ -46,6 +46,15 @@ export interface AgentMessage {
    * frontend pricing table (see conversationCost.estimateTurnCostUsd).
    * Absent when the model has no pricing entry. */
   costUsd?: number;
+  /** Set only on turns whose `costUsd` was rewritten by the one-time
+   * historical reprice (`src-tauri/src/core/reprice.rs`), which corrected
+   * figures computed with the pre-CE2 model rates. ISO timestamp of the pass.
+   * Nothing reads these; they exist so a future reader can see that the number
+   * on disk is not the number that was originally stamped. Declared here so
+   * the hydrate → save round-trip keeps them. */
+  repricedAt?: string;
+  /** The `costUsd` value that was on disk before the reprice above. */
+  costUsdBefore?: number;
   /** Extended thinking text produced by this turn (Anthropic). */
   thinking?: string;
   /** Evidence supplied alongside this message (for example imported image

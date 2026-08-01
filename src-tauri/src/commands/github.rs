@@ -1579,27 +1579,34 @@ pub async fn github_investigate_issue(
 
 // === v0.8-E: AI PR description + AI pre-flight code review =================
 //
-// Both commands run a one-shot `claude-oauth` sidecar session and stream
-// assistant chunks to the frontend over the existing
-// `api-agent:chunk:<sessionId>` / `api-agent:done:<sessionId>` event
-// channels — the same wire shape every API-agent conversation uses, so the
-// frontend listener code in `PRDescriptionButton.tsx` / `PRReviewPanel.tsx`
-// is just a thin chunk-buffer + done-resolver pair.
+// Both commands run a one-shot auxiliary LLM turn and stream assistant
+// chunks to the frontend over the existing `api-agent:chunk:<sessionId>` /
+// `api-agent:done:<sessionId>` event channels — the same wire shape every
+// API-agent conversation uses, so the frontend listener code in
+// `PRDescriptionButton.tsx` / `PRReviewPanel.tsx` is just a thin
+// chunk-buffer + done-resolver pair.
+//
+// WI-1 (`dev/oauth-removal-plan.md`): these used to fire
+// `SidecarManager::forward_start("claude-oauth")`, silently routing the
+// user's Claude subscription credentials. Provider + model now come from the
+// routing layer (`core::aux_llm`) — the configured route, else the cheapest
+// configured API key, else a clear error. Never OAuth.
 //
 // The Tauri command itself returns the freshly minted `session_id` to the
-// caller and does NOT block on the assistant turn. A spawned background
-// task awaits the supervisor's one-shot waiter (which resolves on the
-// `done`/`error` events that fire after the model finishes) and then
-// closes the sidecar session.
+// caller and does NOT block on the assistant turn; `spawn_aux_stream` owns
+// the turn and emits the terminal `done` / `error` event.
 
 /// Maximum raw diff bytes shipped to the model. PR-description prompts get
 /// less context than reviews; bumping either is cheap.
 const PR_DESCRIPTION_DIFF_CAP_BYTES: usize = 50 * 1024;
 const PR_REVIEW_DIFF_CAP_BYTES: usize = 75 * 1024;
 const PR_DESCRIPTION_COMMIT_CAP: usize = 50;
-const AI_PR_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
-const AI_PR_MODEL: &str = "claude-sonnet-4-6";
-const AI_PR_PROVIDER: &str = "claude-oauth";
+/// Task classes for the routing layer. Provider and model come from
+/// `core::aux_llm` — there are no provider/model constants here, by design.
+const AI_PR_DESCRIPTION_TASK: crate::core::aux_llm::AuxTaskClass =
+    crate::core::aux_llm::AuxTaskClass::PrDescription;
+const AI_PR_REVIEW_TASK: crate::core::aux_llm::AuxTaskClass =
+    crate::core::aux_llm::AuxTaskClass::PrReview;
 
 /// Cut `text` to at most `cap` bytes ending on a UTF-8 boundary. Returns
 /// `(text, was_truncated, original_byte_len)`. Appends a graceful marker
@@ -1619,34 +1626,6 @@ fn truncate_for_model(text: &str, cap: usize) -> (String, bool, usize) {
         original_len
     ));
     (s, true, original_len)
-}
-
-/// Spawn a background task that awaits the one-shot completion then runs
-/// `forward_close`, ensuring the sidecar supervisor doesn't keep the
-/// session in its owned-sessions set after the model finishes streaming.
-fn spawn_oneshot_cleanup(
-    manager: std::sync::Arc<crate::commands::agent_sidecar::SidecarManager>,
-    session_id: String,
-    receiver: tokio::sync::oneshot::Receiver<Result<String, String>>,
-    feature: &'static str,
-) {
-    tokio::spawn(async move {
-        match tokio::time::timeout(AI_PR_TIMEOUT, receiver).await {
-            Ok(Ok(Ok(_))) => {}
-            Ok(Ok(Err(msg))) => {
-                warn!(feature, session_id = %session_id, error = %msg, "AI PR feature: sidecar reported error");
-            }
-            Ok(Err(_)) => {
-                warn!(feature, session_id = %session_id, "AI PR feature: waiter dropped before completion");
-            }
-            Err(_) => {
-                warn!(feature, session_id = %session_id, timeout_secs = AI_PR_TIMEOUT.as_secs(), "AI PR feature: timed out waiting for sidecar done");
-            }
-        }
-        if let Err(e) = manager.forward_close(session_id.clone()).await {
-            warn!(feature, session_id = %session_id, error = %e, "AI PR feature: forward_close failed (non-fatal)");
-        }
-    });
 }
 
 /// `GET /repos/{o}/{r}/compare/{base}...{head}` with `Accept:
@@ -1749,18 +1728,22 @@ async fn fetch_issue_title_body(
     Some((title, issue_body))
 }
 
-/// `github_ai_pr_description` — kick off a one-shot `claude-oauth` sidecar
-/// session that writes a structured PR description from a base..head diff,
-/// the branch's recent commits, and (optionally) the linked-issue bodies.
+/// `github_ai_pr_description` — kick off a one-shot auxiliary LLM turn that
+/// writes a structured PR description from a base..head diff, the branch's
+/// recent commits, and (optionally) the linked-issue bodies.
 ///
 /// Returns the freshly minted `session_id`. The caller subscribes to
 /// `api-agent:chunk:<sessionId>` for streamed text deltas and
 /// `api-agent:done:<sessionId>` for completion. The command does not wait
 /// for the assistant turn to finish.
+///
+/// Returns `Err` before any model call when no API provider is configured;
+/// see [`crate::core::aux_llm`].
 #[tauri::command]
 pub async fn github_ai_pr_description(
+    app_handle: tauri::AppHandle,
     auth: State<'_, GitHubAuthState>,
-    sidecar: State<'_, std::sync::Arc<crate::commands::agent_sidecar::SidecarManager>>,
+    routing: State<'_, crate::core::aux_llm::AuxRoutingState>,
     owner: String,
     repo: String,
     base: String,
@@ -1775,6 +1758,11 @@ pub async fn github_ai_pr_description(
 ) -> Result<String, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
+
+    // Resolve the route BEFORE the GitHub fetches so "no provider configured"
+    // fails instantly instead of after a multi-second diff download.
+    let route = routing.resolve(AI_PR_DESCRIPTION_TASK)?;
+
     require_github_host(auth.inner()).await?;
 
     let auth_inner = auth.inner();
@@ -1838,47 +1826,9 @@ pub async fn github_ai_pr_description(
         &linked_refs,
     );
 
-    let manager = std::sync::Arc::clone(&*sidecar);
     let session_id = session_id_override
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| format!("ai-pr-description-{}", uuid::Uuid::new_v4()));
-    let receiver = manager.wait_for_oneshot(&session_id).await;
-
-    let start = manager
-        .forward_start(
-            session_id.clone(),
-            AI_PR_PROVIDER.to_string(),
-            AI_PR_MODEL.to_string(),
-            crate::core::github_ai_prompts::PR_DESCRIPTION_SYSTEM_PROMPT.to_string(),
-            Vec::new(),
-            serde_json::Value::Null,
-            false, // source_mcp_from_fs — local session
-            String::new(),
-            user_turn,
-            None,
-            None,
-            Some(false),
-            Some(false),
-            serde_json::Value::Null,
-            serde_json::Value::Null,
-            None,
-            None,
-            None,
-            None,
-        )
-        .await;
-
-    if let Err(e) = start {
-        drop(receiver);
-        return Err(format!("Failed to start AI PR description session: {}", e));
-    }
-
-    spawn_oneshot_cleanup(
-        manager,
-        session_id.clone(),
-        receiver,
-        "github_ai_pr_description",
-    );
 
     info!(
         owner = %owner,
@@ -1886,32 +1836,48 @@ pub async fn github_ai_pr_description(
         base = %base,
         head = %head,
         session_id = %session_id,
+        provider = %route.provider,
+        model = %route.model,
         "AI PR description session started"
+    );
+
+    crate::core::aux_llm::spawn_aux_stream(
+        app_handle,
+        AI_PR_DESCRIPTION_TASK,
+        route,
+        session_id.clone(),
+        crate::core::github_ai_prompts::PR_DESCRIPTION_SYSTEM_PROMPT.to_string(),
+        user_turn,
     );
 
     Ok(session_id)
 }
 
-/// `github_ai_pr_review` — kick off a one-shot `claude-oauth` sidecar
-/// session that produces a structured pre-flight code review (Blocking /
-/// Asks / Nits sections) over an existing PR's diff.
+/// `github_ai_pr_review` — kick off a one-shot auxiliary LLM turn that
+/// produces a structured pre-flight code review (Blocking / Asks / Nits
+/// sections) over an existing PR's diff.
 ///
 /// Returns the freshly minted `session_id`. See [`github_ai_pr_description`]
-/// for the event-channel + lifecycle contract.
+/// for the event-channel + lifecycle contract and the no-provider error.
 #[tauri::command]
 pub async fn github_ai_pr_review(
+    app_handle: tauri::AppHandle,
     auth: State<'_, GitHubAuthState>,
-    sidecar: State<'_, std::sync::Arc<crate::commands::agent_sidecar::SidecarManager>>,
+    routing: State<'_, crate::core::aux_llm::AuxRoutingState>,
     owner: String,
     repo: String,
     pr_number: u32,
     // v0.8 race-fix: see `github_ai_pr_description::session_id_override`.
     // Frontend pre-allocates the session id so it can subscribe BEFORE the
-    // sidecar starts emitting chunks.
+    // turn starts emitting chunks.
     session_id_override: Option<String>,
 ) -> Result<String, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
+
+    // Resolve the route before the GitHub fetches — fail fast, fail clearly.
+    let route = routing.resolve(AI_PR_REVIEW_TASK)?;
+
     require_github_host(auth.inner()).await?;
 
     let client = github_client_from_state(auth.inner()).await?;
@@ -1962,49 +1928,27 @@ pub async fn github_ai_pr_review(
         &owner, &repo, pr_number, &pr_title, &pr_body, &diff_text, truncated, original,
     );
 
-    let manager = std::sync::Arc::clone(&*sidecar);
     let session_id = session_id_override
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| format!("ai-pr-review-{}", uuid::Uuid::new_v4()));
-    let receiver = manager.wait_for_oneshot(&session_id).await;
-
-    let start = manager
-        .forward_start(
-            session_id.clone(),
-            AI_PR_PROVIDER.to_string(),
-            AI_PR_MODEL.to_string(),
-            crate::core::github_ai_prompts::PR_REVIEW_SYSTEM_PROMPT.to_string(),
-            Vec::new(),
-            serde_json::Value::Null,
-            false, // source_mcp_from_fs — local session
-            String::new(),
-            user_turn,
-            None,
-            None,
-            Some(false),
-            Some(false),
-            serde_json::Value::Null,
-            serde_json::Value::Null,
-            None,
-            None,
-            None,
-            None,
-        )
-        .await;
-
-    if let Err(e) = start {
-        drop(receiver);
-        return Err(format!("Failed to start AI PR review session: {}", e));
-    }
-
-    spawn_oneshot_cleanup(manager, session_id.clone(), receiver, "github_ai_pr_review");
 
     info!(
         owner = %owner,
         repo = %repo,
         pr = pr_number,
         session_id = %session_id,
+        provider = %route.provider,
+        model = %route.model,
         "AI PR review session started"
+    );
+
+    crate::core::aux_llm::spawn_aux_stream(
+        app_handle,
+        AI_PR_REVIEW_TASK,
+        route,
+        session_id.clone(),
+        crate::core::github_ai_prompts::PR_REVIEW_SYSTEM_PROMPT.to_string(),
+        user_turn,
     );
 
     Ok(session_id)
@@ -2578,6 +2522,7 @@ pub async fn github_ai_catch_up(
         attachments: Vec::new(),
         thinking_enabled: false,
         thinking_budget_tokens: 0,
+        cache_key: None,
     };
 
     let handle = app_handle.clone();
@@ -2775,6 +2720,7 @@ pub async fn github_ai_triage(
         attachments: Vec::new(),
         thinking_enabled: false,
         thinking_budget_tokens: 0,
+        cache_key: None,
     };
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::core::llm_types::StreamChunk>(64);

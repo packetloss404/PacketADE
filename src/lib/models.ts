@@ -51,6 +51,10 @@ export function getModelsForAgent(agentConfigId: string): ModelOption[] {
     case "packetcode":
       return PACKETCODE_MODELS;
     default:
+      // API (non-PTY) agents carry their model catalogue in `api-models.ts`;
+      // callers that can route to one (the routing settings card) read it from
+      // there directly rather than importing it here, which would create a
+      // cycle through `agentTaskStore`.
       return [{ label: "System Default", value: null }];
   }
 }

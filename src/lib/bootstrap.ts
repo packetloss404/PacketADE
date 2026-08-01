@@ -18,6 +18,7 @@ import { useMemoryStore } from "@/stores/memoryStore";
 import { useServerStore } from "@/stores/serverStore";
 import { useCliAccountStore } from "@/stores/cliAccountStore";
 import { useIssueStore } from "@/stores/issueStore";
+import { useRoutingStore } from "@/stores/routingStore";
 import { migrateSshTargetsToServers } from "@/lib/sshTargetMigration";
 import { startBoundedAutonomyRuntime } from "@/stores/boundedAutonomyRuntime";
 import { startCostGuardrailMonitor } from "@/stores/analyticsStore";
@@ -221,6 +222,12 @@ export async function initializeApp(): Promise<void> {
   // notifications. It used to hang off the (now removed) LiveSpendChip.
   startCostGuardrailMonitor();
   void sampleWorkspaceAgentsDisplayTopology();
+
+  // WI-1: mirror the persisted auxiliary AI routing settings into the backend,
+  // which is where spec import / Code Quality AI / PR AI resolve their provider.
+  // Until this lands the backend routes everything on "auto (cheapest
+  // configured API key)" — the same default — so the race is benign.
+  useRoutingStore.getState().syncAuxRouting();
 
   // Kick CLI detection in the background — surfaces installed status to the
   // onboarding flow and the workspace creation modal. Must not block startup.

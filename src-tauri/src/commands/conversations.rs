@@ -13,7 +13,11 @@ use super::shared::home_dir;
 use crate::core::brand::DATA_DIR_NAME;
 
 /// Resolve the conversations directory (`<home>/.packetade/conversations`).
-fn conversations_dir() -> Result<PathBuf, String> {
+///
+/// `pub(crate)` so the one-time cost-reprice migration (`core::reprice`) can
+/// target the exact same directory this module writes, rather than
+/// re-deriving it and risking a divergence.
+pub(crate) fn conversations_dir() -> Result<PathBuf, String> {
     let home = home_dir().ok_or_else(|| "Could not resolve home directory".to_string())?;
     Ok(PathBuf::from(home)
         .join(DATA_DIR_NAME)

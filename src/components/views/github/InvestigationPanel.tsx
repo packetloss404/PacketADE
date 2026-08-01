@@ -12,6 +12,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAsyncFlightStore } from "@/stores/asyncFlightStore";
 import { useMemoryStore } from "@/stores/memoryStore";
+import { resolveLocalAttemptTarget } from "@/lib/attemptRouting";
 import type { AttemptTargetSpec } from "@/lib/tauri";
 import type { GitHubIssue } from "@/types/github";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
@@ -115,8 +116,14 @@ export function InvestigationPanel({
     setFeedback(null);
     try {
       // Seed a single-attempt async Flight using the investigation as the
-      // brief. Executor model = claude-sonnet-4-6 over the OAuth sidecar
-      // (api-claude-oauth) per the v0.8-D spec.
+      // brief.
+      //
+      // WI-1 (`dev/oauth-removal-plan.md`): the executor used to be hardwired
+      // to `api-claude-oauth` / `claude-sonnet-4-6`, so "Draft patch" spent the
+      // user's Claude subscription on an agentic run they never picked a
+      // provider for. It now resolves through the routing layer's
+      // "Implementation" role (Settings → AI Provider Routing), which is the
+      // same choice a manual Flight launch honours.
       const brief =
         `GitHub issue #${issue.number}: ${issue.title}\n\n` +
         `Issue description:\n${issue.body?.trim() || "(no description)"}\n\n` +
@@ -130,14 +137,10 @@ export function InvestigationPanel({
         workspaceId: activeWorkspace?.id ?? null,
         issueIds: [],
       });
-      const target: AttemptTargetSpec = {
-        kind: "local",
-        basePath: resolvedProjectPath,
-        baseBranch: "main",
-        agentConfigId: "api-claude-oauth",
-        provider: "claude-oauth",
-        model: "claude-sonnet-4-6",
-      };
+      const target: AttemptTargetSpec = resolveLocalAttemptTarget(
+        "implementation",
+        resolvedProjectPath,
+      );
       await launchAsync(flight.id, brief, [target]);
       setActiveFlight(flight.id);
       setActiveView("flights");

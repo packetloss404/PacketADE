@@ -17,39 +17,54 @@ pub struct OpenAiCompatConfig {
     pub provider_id: String,
 }
 
-fn ollama_usage_capabilities() -> &'static Mutex<HashMap<String, bool>> {
+/// Per-process memo of "does this endpoint accept optional parameter X?",
+/// keyed by `"<param>|<endpoint scope>"`. Populated by the negotiate-once /
+/// retry-without pattern below so one 400 does not repeat on every turn.
+fn compat_capabilities() -> &'static Mutex<HashMap<String, bool>> {
     static CAPABILITIES: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
     CAPABILITIES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn cached_ollama_usage_capability(base_url: &str) -> Option<bool> {
-    ollama_usage_capabilities()
-        .lock()
-        .ok()
-        .and_then(|capabilities| capabilities.get(base_url).copied())
+fn capability_key(param: &str, scope: &str) -> String {
+    format!("{}|{}", param, scope)
 }
 
-fn remember_ollama_usage_capability(base_url: &str, supported: bool) {
-    if let Ok(mut capabilities) = ollama_usage_capabilities().lock() {
-        capabilities.insert(base_url.to_string(), supported);
+fn cached_capability(param: &str, scope: &str) -> Option<bool> {
+    compat_capabilities()
+        .lock()
+        .ok()
+        .and_then(|capabilities| capabilities.get(&capability_key(param, scope)).copied())
+}
+
+fn remember_capability(param: &str, scope: &str, supported: bool) {
+    if let Ok(mut capabilities) = compat_capabilities().lock() {
+        capabilities.insert(capability_key(param, scope), supported);
     }
 }
 
-fn rejects_stream_usage(status: reqwest::StatusCode, body: &str) -> bool {
+/// Does this error body look like "I do not know that optional parameter"
+/// (as opposed to a real request error we must surface)? Conservative on
+/// purpose: only an explicit 400 naming the parameter counts.
+fn rejects_parameter(status: reqwest::StatusCode, body: &str, param: &str) -> bool {
     if status != reqwest::StatusCode::BAD_REQUEST {
         return false;
     }
     let message = body.to_ascii_lowercase();
-    message.contains("stream_options")
+    message.contains(param)
         && [
             "unknown",
             "unrecognized",
             "unsupported",
             "not permitted",
             "extra inputs",
+            "invalid parameter",
         ]
         .iter()
         .any(|needle| message.contains(needle))
+}
+
+fn rejects_stream_usage(status: reqwest::StatusCode, body: &str) -> bool {
+    rejects_parameter(status, body, "stream_options")
 }
 
 /// Convert our internal messages to the OpenAI chat format.
@@ -105,6 +120,7 @@ fn build_openai_messages(
                 if let MessageContent::Blocks(blocks) = &msg.content {
                     let mut text_parts = Vec::new();
                     let mut tool_calls = Vec::new();
+                    let mut reasoning: Option<serde_json::Value> = None;
                     for block in blocks {
                         match block {
                             ContentBlock::Text { text } => text_parts.push(text.clone()),
@@ -122,6 +138,9 @@ fn build_openai_messages(
                                     },
                                 }));
                             }
+                            ContentBlock::ProviderReasoning { details } => {
+                                reasoning = Some(details.clone());
+                            }
                             _ => {}
                         }
                     }
@@ -133,6 +152,14 @@ fn build_openai_messages(
                     }
                     if !tool_calls.is_empty() {
                         entry["tool_calls"] = serde_json::Value::Array(tool_calls);
+                    }
+                    // MiniMax M3 interleaved thinking: the provider's own
+                    // reasoning payload must be replayed verbatim on the
+                    // assistant turn, or the reasoning chain breaks across
+                    // tool rounds and the model degrades at agent work.
+                    // Providers that never emit one never get the field.
+                    if let Some(details) = reasoning {
+                        entry["reasoning_details"] = details;
                     }
                     out.push(entry);
                 } else {
@@ -274,6 +301,73 @@ fn finish_tool_acc(acc: ToolCallAcc) -> Option<StreamChunk> {
     })
 }
 
+/// Fields of a `reasoning_details` object that stream in fragments and must be
+/// concatenated. Everything else (`type`, `id`, `format`, `index`, `signature`)
+/// is a scalar that the last delta wins.
+const REASONING_TEXT_FIELDS: [&str; 3] = ["text", "summary", "data"];
+
+/// Accumulator for MiniMax-style `reasoning_details`, which arrive spread
+/// across streaming deltas as an array of objects distinguished by `index`.
+///
+/// The payload is treated as **opaque**: we never interpret it, we only have to
+/// hand the completed array back to the provider verbatim on the next request
+/// (MiniMax M3's interleaved-thinking contract). A `BTreeMap` keyed on `index`
+/// keeps replay order identical to the provider's.
+#[derive(Default)]
+struct ReasoningAcc {
+    entries: std::collections::BTreeMap<i64, serde_json::Map<String, serde_json::Value>>,
+}
+
+impl ReasoningAcc {
+    /// Fold one delta's `reasoning_details` array in, returning the
+    /// newly-arrived human-readable text so the caller can stream it to the
+    /// thinking pane. Pure (no I/O) so the fragment handling is unit-testable.
+    fn absorb(&mut self, raw: &serde_json::Value) -> String {
+        let Some(items) = raw.as_array() else {
+            return String::new();
+        };
+        let mut fresh = String::new();
+        for item in items {
+            let Some(obj) = item.as_object() else { continue };
+            let index = obj.get("index").and_then(|i| i.as_i64()).unwrap_or(0);
+            let slot = self.entries.entry(index).or_default();
+            for (key, value) in obj {
+                if REASONING_TEXT_FIELDS.contains(&key.as_str()) {
+                    let Some(fragment) = value.as_str() else { continue };
+                    // "data" is opaque/encrypted — accumulate it, but never
+                    // surface it as thinking text.
+                    if key != "data" {
+                        fresh.push_str(fragment);
+                    }
+                    match slot.get_mut(key) {
+                        Some(serde_json::Value::String(existing)) => existing.push_str(fragment),
+                        _ => {
+                            slot.insert(key.clone(), serde_json::Value::String(fragment.to_string()));
+                        }
+                    }
+                } else {
+                    slot.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        fresh
+    }
+
+    fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// The completed array, in `index` order, ready to replay.
+    fn finish(&mut self) -> serde_json::Value {
+        serde_json::Value::Array(
+            std::mem::take(&mut self.entries)
+                .into_values()
+                .map(serde_json::Value::Object)
+                .collect(),
+        )
+    }
+}
+
 /// Drain the accumulator into a `ToolUseEnd` per call, in `index` order. Pure.
 fn drain_tool_calls(calls: &mut std::collections::BTreeMap<i64, ToolCallAcc>) -> Vec<StreamChunk> {
     std::mem::take(calls)
@@ -292,6 +386,51 @@ async fn flush_tool_calls(
     for chunk in drain_tool_calls(calls) {
         let _ = tx.send(chunk).await;
     }
+}
+
+/// Terminal sequence for one streamed turn: flush accumulated tool calls,
+/// close the thinking block, hand back the provider's reasoning payload, then
+/// signal `Done`.
+///
+/// `ReasoningDetails` must precede `Done` — consumers stop reading at `Done`.
+///
+/// Token semantics are the **vendor's own, unmodified**: OpenAI-family
+/// endpoints report `prompt_tokens` as a SUPERSET that already contains
+/// `prompt_tokens_details.cached_tokens`, whereas Anthropic's buckets are
+/// disjoint. Normalising here would double-subtract, because both cost engines
+/// already branch on the shared table's `inputIncludesCacheRead` flag. There is
+/// no cache-*write* count to report: OpenAI-style caching is automatic and
+/// writes are not billed or counted.
+#[allow(clippy::too_many_arguments)]
+async fn finish_compat_turn(
+    tx: &mpsc::Sender<StreamChunk>,
+    tool_calls: &mut std::collections::BTreeMap<i64, ToolCallAcc>,
+    reasoning: &mut ReasoningAcc,
+    thinking_open: &mut bool,
+    input_tokens: u64,
+    output_tokens: u64,
+    cached_tokens: u64,
+) {
+    flush_tool_calls(tx, tool_calls).await;
+    if *thinking_open {
+        *thinking_open = false;
+        let _ = tx.send(StreamChunk::ThinkingStop).await;
+    }
+    if !reasoning.is_empty() {
+        let _ = tx
+            .send(StreamChunk::ReasoningDetails {
+                details: reasoning.finish(),
+            })
+            .await;
+    }
+    let _ = tx
+        .send(StreamChunk::Done {
+            input_tokens,
+            output_tokens,
+            cache_read_input_tokens: cached_tokens,
+            cache_creation_input_tokens: 0,
+        })
+        .await;
 }
 
 /// Stream a chat completion from an OpenAI-compatible endpoint.
@@ -322,13 +461,42 @@ pub async fn stream_chat_compat(
     // negotiate usage once; an explicit unsupported-parameter response is
     // retried without the option and cached for this app process.
     let ollama_usage = config.provider_id == "ollama"
-        && cached_ollama_usage_capability(&config.base_url) != Some(false);
+        && cached_capability("stream_options", &config.base_url) != Some(false);
     if matches!(
         config.provider_id.as_str(),
         "openai" | "openrouter" | "minimax"
     ) || ollama_usage
     {
         body["stream_options"] = serde_json::json!({ "include_usage": true });
+    }
+
+    // MiniMax M3 interleaved thinking. Without `reasoning_split` the model's
+    // chain of thought is embedded in `content` inside `<think>` tags, which we
+    // would then have to preserve byte-for-byte through the UI. With it, the
+    // reasoning arrives as a structured `reasoning_details` array that we
+    // accumulate below and replay on the assistant turn — which is what
+    // MiniMax's docs require to keep the reasoning chain alive across tool
+    // rounds. Scoped per model, because older MiniMax models may 400 on the
+    // parameter; that case is negotiated away exactly once (see below).
+    let reasoning_scope = format!("{}|{}", config.base_url, request.model);
+    let minimax_reasoning_split = config.provider_id == "minimax"
+        && cached_capability("reasoning_split", &reasoning_scope) != Some(false);
+    if minimax_reasoning_split {
+        body["reasoning_split"] = serde_json::json!(true);
+    }
+
+    // OpenAI prompt caching is automatic on the prefix hash; `prompt_cache_key`
+    // only influences which cache partition the request routes to, raising the
+    // hit rate for a long agent loop that re-sends the same prefix. OpenAI-only
+    // on purpose — MiniMax / OpenRouter / Ollama do not document the field and
+    // a stray unknown parameter is a 400 risk for zero benefit.
+    // https://developers.openai.com/api/docs/guides/prompt-caching
+    if config.provider_id == "openai" {
+        if let Some(ref key) = request.cache_key {
+            if !key.is_empty() {
+                body["prompt_cache_key"] = serde_json::json!(key);
+            }
+        }
     }
 
     if !tools.is_empty() {
@@ -358,7 +526,7 @@ pub async fn stream_chat_compat(
 
     let response = if response.status().is_success() {
         if ollama_usage {
-            remember_ollama_usage_capability(&config.base_url, true);
+            remember_capability("stream_options", &config.base_url, true);
         }
         response
     } else {
@@ -367,24 +535,43 @@ pub async fn stream_chat_compat(
             .text()
             .await
             .unwrap_or_else(|_| "Failed to read response body".to_string());
+
+        // Negotiate away any optional parameter this endpoint explicitly
+        // rejected, remember the answer for the process, and retry once.
+        let mut drop_params: Vec<&str> = Vec::new();
         if ollama_usage && rejects_stream_usage(status, &body_text) {
-            remember_ollama_usage_capability(&config.base_url, false);
-            body.as_object_mut()
-                .expect("OpenAI-compatible request body is an object")
-                .remove("stream_options");
-            client
-                .post(&url)
-                .headers(headers)
-                .json(&body)
-                .send()
-                .await
-                .map_err(|e| format!("Ollama compatibility retry failed: {}", e))?
-        } else {
+            remember_capability("stream_options", &config.base_url, false);
+            drop_params.push("stream_options");
+        }
+        if minimax_reasoning_split && rejects_parameter(status, &body_text, "reasoning_split") {
+            tracing::warn!(
+                model = %request.model,
+                "MiniMax endpoint rejected reasoning_split; falling back to <think>-in-content"
+            );
+            remember_capability("reasoning_split", &reasoning_scope, false);
+            drop_params.push("reasoning_split");
+        }
+
+        if drop_params.is_empty() {
             return Err(format!(
                 "{} API error ({}): {}",
                 config.provider_id, status, body_text
             ));
         }
+
+        let object = body
+            .as_object_mut()
+            .expect("OpenAI-compatible request body is an object");
+        for param in drop_params {
+            object.remove(param);
+        }
+        client
+            .post(&url)
+            .headers(headers)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("{} compatibility retry failed: {}", config.provider_id, e))?
     };
 
     if !response.status().is_success() {
@@ -412,6 +599,9 @@ pub async fn stream_chat_compat(
         std::collections::BTreeMap::new();
     let mut input_tokens: u64 = 0;
     let mut output_tokens: u64 = 0;
+    let mut cached_tokens: u64 = 0;
+    let mut reasoning = ReasoningAcc::default();
+    let mut thinking_open = false;
 
     let mut stream_ended = false;
     loop {
@@ -443,15 +633,16 @@ pub async fn stream_chat_compat(
             }
 
             if line == "data: [DONE]" {
-                flush_tool_calls(&tx, &mut tool_calls_acc).await;
-                let _ = tx
-                    .send(StreamChunk::Done {
-                        input_tokens,
-                        output_tokens,
-                        cache_read_input_tokens: 0,
-                        cache_creation_input_tokens: 0,
-                    })
-                    .await;
+                finish_compat_turn(
+                    &tx,
+                    &mut tool_calls_acc,
+                    &mut reasoning,
+                    &mut thinking_open,
+                    input_tokens,
+                    output_tokens,
+                    cached_tokens,
+                )
+                .await;
                 return Ok(());
             }
 
@@ -467,6 +658,15 @@ pub async fn stream_chat_compat(
                             .get("completion_tokens")
                             .and_then(|v| v.as_u64())
                             .unwrap_or(output_tokens);
+                        // CE9: real cache-read counts instead of a hardcoded 0.
+                        // Chat Completions reports them at
+                        // `usage.prompt_tokens_details.cached_tokens`, as a
+                        // SUBSET of `prompt_tokens` (see finish_compat_turn).
+                        cached_tokens = usage
+                            .get("prompt_tokens_details")
+                            .and_then(|d| d.get("cached_tokens"))
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(cached_tokens);
                     }
 
                     if let Some(choices) = parsed.get("choices").and_then(|c| c.as_array()) {
@@ -475,6 +675,20 @@ pub async fn stream_chat_compat(
                                 Some(d) => d,
                                 None => continue,
                             };
+
+                            // Provider-owned reasoning (MiniMax M3
+                            // `reasoning_split`). Accumulated for verbatim
+                            // replay in history, and mirrored to the thinking
+                            // pane so the reasoning stays visible now that it
+                            // no longer arrives inside `content`.
+                            if let Some(details) = delta.get("reasoning_details") {
+                                let fresh = reasoning.absorb(details);
+                                if !fresh.is_empty() {
+                                    thinking_open = true;
+                                    let _ =
+                                        tx.send(StreamChunk::ThinkingDelta { text: fresh }).await;
+                                }
+                            }
 
                             // Text content
                             if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
@@ -529,15 +743,16 @@ pub async fn stream_chat_compat(
 
     // If we exited the stream without [DONE]/finish_reason, still flush any
     // accumulated tool calls before signalling Done.
-    flush_tool_calls(&tx, &mut tool_calls_acc).await;
-    let _ = tx
-        .send(StreamChunk::Done {
-            input_tokens,
-            output_tokens,
-            cache_read_input_tokens: 0,
-            cache_creation_input_tokens: 0,
-        })
-        .await;
+    finish_compat_turn(
+        &tx,
+        &mut tool_calls_acc,
+        &mut reasoning,
+        &mut thinking_open,
+        input_tokens,
+        output_tokens,
+        cached_tokens,
+    )
+    .await;
 
     Ok(())
 }
@@ -662,6 +877,114 @@ mod tests {
         } else {
             panic!("expected ToolUseEnd");
         }
+    }
+
+    /// MiniMax M3 streams `reasoning_details` in fragments keyed by `index`.
+    /// Text fields concatenate; scalars are carried through untouched so the
+    /// array we replay is the array the provider built.
+    #[test]
+    fn reasoning_details_accumulate_by_index_and_concatenate_text() {
+        let mut acc = ReasoningAcc::default();
+        let a = acc.absorb(&json!([{
+            "type": "reasoning.text",
+            "id": "reasoning-text-1",
+            "format": "MiniMax-response-v1",
+            "index": 0,
+            "text": "Let me "
+        }]));
+        let b = acc.absorb(&json!([{ "index": 0, "text": "think." }]));
+        let c = acc.absorb(&json!([{ "index": 1, "type": "reasoning.text", "text": "Second." }]));
+
+        assert_eq!(a, "Let me ");
+        assert_eq!(b, "think.");
+        assert_eq!(c, "Second.");
+
+        let finished = acc.finish();
+        let items = finished.as_array().unwrap();
+        assert_eq!(items.len(), 2, "one entry per index, in index order");
+        assert_eq!(items[0]["text"], "Let me think.");
+        assert_eq!(items[0]["format"], "MiniMax-response-v1");
+        assert_eq!(items[0]["id"], "reasoning-text-1");
+        assert_eq!(items[1]["text"], "Second.");
+    }
+
+    /// Encrypted reasoning still round-trips, but must never be shown to the
+    /// user as thinking text.
+    #[test]
+    fn encrypted_reasoning_accumulates_without_surfacing_as_thinking() {
+        let mut acc = ReasoningAcc::default();
+        let surfaced = acc.absorb(&json!([{
+            "type": "reasoning.encrypted", "index": 0, "data": "AAAA"
+        }]));
+        assert_eq!(surfaced, "", "opaque blobs are not thinking text");
+        assert_eq!(acc.finish()[0]["data"], "AAAA");
+    }
+
+    /// The MiniMax contract: the assistant turn replayed to the model carries
+    /// its `reasoning_details` back verbatim alongside content and tool calls.
+    #[test]
+    fn assistant_turn_replays_provider_reasoning_details() {
+        let details = json!([{ "type": "reasoning.text", "index": 0, "text": "why" }]);
+        let messages = vec![ChatMessage {
+            role: ChatRole::Assistant,
+            content: MessageContent::Blocks(vec![
+                ContentBlock::ProviderReasoning {
+                    details: details.clone(),
+                },
+                ContentBlock::Text {
+                    text: "calling a tool".to_string(),
+                },
+                ContentBlock::ToolUse {
+                    id: "call_1".to_string(),
+                    name: "get_weather".to_string(),
+                    arguments: json!({ "location": "SF" }),
+                },
+            ]),
+        }];
+
+        let built = build_openai_messages(&messages, None, &[]);
+
+        assert_eq!(built.len(), 1);
+        assert_eq!(built[0]["reasoning_details"], details);
+        assert_eq!(built[0]["content"], "calling a tool");
+        assert_eq!(built[0]["tool_calls"][0]["id"], "call_1");
+    }
+
+    /// Providers that never emit reasoning must not gain an empty field —
+    /// an unexpected key is a 400 risk and changes the cached prefix bytes.
+    #[test]
+    fn assistant_turn_without_reasoning_omits_the_field() {
+        let messages = vec![ChatMessage {
+            role: ChatRole::Assistant,
+            content: MessageContent::Blocks(vec![ContentBlock::Text {
+                text: "plain".to_string(),
+            }]),
+        }];
+
+        let built = build_openai_messages(&messages, None, &[]);
+
+        assert!(built[0].get("reasoning_details").is_none());
+    }
+
+    #[test]
+    fn parameter_rejection_detection_is_per_parameter() {
+        assert!(rejects_parameter(
+            reqwest::StatusCode::BAD_REQUEST,
+            "reasoning_split: Extra inputs are not permitted",
+            "reasoning_split"
+        ));
+        // A rejection naming a DIFFERENT parameter must not drop ours.
+        assert!(!rejects_parameter(
+            reqwest::StatusCode::BAD_REQUEST,
+            "unknown parameter: stream_options",
+            "reasoning_split"
+        ));
+        // Real errors are surfaced, never negotiated away.
+        assert!(!rejects_parameter(
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            "reasoning_split unsupported",
+            "reasoning_split"
+        ));
     }
 
     #[test]

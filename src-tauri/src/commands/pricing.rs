@@ -316,6 +316,25 @@ pub fn calculate_cost(
     calculate_cost_at(model, &today(), input, output, cache_read, cache_write, 0)
 }
 
+/// Normalise a vendor's reported prompt-token count into the **disjoint**
+/// bucket model `calculate_cost` requires.
+///
+/// OpenAI-family endpoints report `prompt_tokens` as a superset that already
+/// contains `prompt_tokens_details.cached_tokens`; Anthropic reports
+/// `input_tokens` and `cache_read_input_tokens` as separate buckets. Which one
+/// a model uses is recorded per vendor in the shared table as
+/// `inputIncludesCacheRead`, so callers ask here rather than hardcoding a
+/// vendor assumption. Unknown models are left alone.
+///
+/// Wire payloads and `UsageEntry` rows deliberately keep the vendor's own
+/// numbers; the normalisation happens here, at the cost call site.
+pub fn billable_input_tokens(model: &str, input: u64, cache_read: u64) -> u64 {
+    match pricing_for(model) {
+        Some(p) if p.input_includes_cache_read => input.saturating_sub(cache_read),
+        _ => input,
+    }
+}
+
 /// Compute the USD cost for a usage record priced at the rates in effect on
 /// `date` (`YYYY-MM-DD`), with the two cache-write TTLs billed separately.
 ///
@@ -431,6 +450,34 @@ mod tests {
                 got
             );
         }
+    }
+
+    /// The superset/disjoint distinction must come from the table, not from a
+    /// hardcoded vendor guess at the call site. Getting this backwards
+    /// over-bills OpenAI turns by counting cached reads at the full input rate
+    /// — the exact error CE9's parsing change would otherwise introduce.
+    #[test]
+    fn billable_input_normalises_only_superset_vendors() {
+        // OpenAI reports prompt_tokens as a superset containing cached_tokens.
+        assert!(pricing_for("gpt-5.5").unwrap().input_includes_cache_read);
+        assert_eq!(billable_input_tokens("gpt-5.5", 4_000, 3_000), 1_000);
+
+        // Anthropic's buckets are already disjoint — subtracting would
+        // under-bill.
+        assert!(!pricing_for("claude-opus-4-8")
+            .unwrap()
+            .input_includes_cache_read);
+        assert_eq!(
+            billable_input_tokens("claude-opus-4-8", 4_000, 3_000),
+            4_000
+        );
+
+        // Never goes negative, and an unknown model is left untouched.
+        assert_eq!(billable_input_tokens("gpt-5.5", 100, 400), 0);
+        assert_eq!(
+            billable_input_tokens("totally-unknown-model-xyz", 4_000, 3_000),
+            4_000
+        );
     }
 
     #[test]

@@ -140,12 +140,24 @@ layer B above stays available without being built as a product.
 
 ### LM3 — Unified auxiliary LLM entry point
 
-New `core/aux_llm.rs` exposing something like
-`run_aux(task_class, prompt, opts) -> stream`, which internally selects
-mechanism (in-process / sidecar), provider, and model from settings.
-`TaskClass` enumerates the auxiliary surfaces (commit message, PR description,
-code-quality explanation, memory op, spec parse, side chat, catch-up,
-subagent).
+**PARTIALLY SHIPPED 2026-07-31** as WI-1 of
+[`oauth-removal-plan.md`](./oauth-removal-plan.md). `core/aux_llm.rs` now
+exists with `AuxTaskClass`, a pure `resolve_aux_route`, `run_aux_oneshot`
+(blocking text) and `spawn_aux_stream` (emits `api-agent:chunk|done|error`).
+Five task classes are modelled — `spec-import`, `code-quality-explain`,
+`code-quality-summarize`, `pr-description`, `pr-review` — covering every
+mechanism-2 site, so **LM5 is done too**. Settings live in
+`src/stores/routingStore.ts` and are mirrored into a Rust `AuxRoutingState`;
+LM6's routing UI exists for these classes in `ProviderRoutingCard`.
+
+Still to do here: extend `AuxTaskClass` to the remaining surfaces (memory ops,
+insights, side chat, catch-up, subagent, custom agent) and migrate the
+mechanism-1 and mechanism-3 sites onto it (LM4).
+
+Note the seam deliberately has **no sidecar branch**: subscription-OAuth
+routing for auxiliary work is what WI-1 removed, so `run_aux` selects only
+among in-process `LlmProvider` ids with a keyring credential. §7.4 of the OAuth
+plan settles the conflict with LM5's original wording below.
 
 This is the load-bearing phase. It is what the initial scoping missed.
 
@@ -158,9 +170,16 @@ migration; do before LM5.
 
 ### LM5 — Migrate mechanism-2 sites
 
-Move `code_quality.rs`, `github.rs` PR commands, and `issues.rs` spec import
-onto `aux_llm`, with the sidecar `claude-oauth` path retained as a selectable
-route so subscription-funded operation stays the default.
+**DONE 2026-07-31** (WI-1). `code_quality.rs`, the `github.rs` PR commands, and
+`issues.rs` spec import all run through `aux_llm`.
+
+The original wording below is **superseded** — it said to keep `claude-oauth`
+selectable "so subscription-funded operation stays the default", which is the
+opposite of the 2026-07-31 owner decision. Subscription OAuth is not a
+selectable auxiliary route and must not become one; see
+[`oauth-removal-plan.md`](./oauth-removal-plan.md) §0. The default is now the
+cheapest provider the user has an API key for, and mechanism 2 no longer
+exists for these features.
 
 ### LM6 — Routing settings
 

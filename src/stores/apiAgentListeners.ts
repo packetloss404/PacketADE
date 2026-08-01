@@ -34,7 +34,11 @@ import {
   taintingEvidence,
   toolResultProvenance,
 } from "@/lib/provenance";
-import { looksLikeRateLimit, pickFailoverModel } from "@/lib/autoFailover";
+import {
+  isAccountLevelExhaustion,
+  looksLikeRateLimit,
+  pickFailoverModel,
+} from "@/lib/autoFailover";
 import {
   notifySessionComplete,
   notifySessionError,
@@ -435,7 +439,12 @@ export async function installApiAgentListeners(conversationId: string): Promise<
       conv.model &&
       useAgentSettingsStore.getState().autoFailoverEnabled &&
       !failoverGuard.has(id) &&
-      looksLikeRateLimit(event.payload.message)
+      looksLikeRateLimit(event.payload.message) &&
+      // A drained quota / credit balance is an ACCOUNT-level wall: every model
+      // the session's provider can reach shares it, and `retryLastTurn` can
+      // only swap the model, never the provider. Retrying would burn a request
+      // and show a "retrying on X" notice for a retry that cannot succeed.
+      !isAccountLevelExhaustion(event.payload.message)
     ) {
       const fallback = pickFailoverModel(conv.model);
       if (fallback && fallback !== conv.model) {

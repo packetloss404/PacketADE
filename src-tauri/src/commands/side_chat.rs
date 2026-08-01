@@ -100,6 +100,7 @@ pub async fn ask_side_chat_stream(
         attachments: Vec::new(),
         thinking_enabled: false,
         thinking_budget_tokens: 0,
+        cache_key: None,
     };
 
     let provider = match get_provider(DEFAULT_PROVIDER) {

@@ -214,6 +214,17 @@ implemented: “Plan first” opens a normal read-only `AgentConversation`, the 
 refines and explicitly applies milestones/tasks, and attempts remain
 user-launched. It does not restore Planner v1's autonomous runtime.
 
+- **P1 — attempt launches send a non-dispatchable provider id for `api-claude`.**
+  `pickedToSpec` in `LaunchAsyncFlightModal` (and the reassign path in
+  `asyncFlightStore`) derive the backend provider with
+  `agentConfigId.replace(/^api-/, "")`, which yields `"claude"` for the default
+  `api-claude` executor. `core::llm_provider::get_provider` knows `anthropic`,
+  not `claude`, and `flight_attempts.rs` forwards the string verbatim to
+  `start_api_agent_session`. Found while wiring WI-1 (2026-07-31); the new
+  `src/lib/attemptRouting.ts` deliberately uses `apiAgentProvider` instead and
+  has a regression test for it. Confirm against a real launch, then either
+  route both call sites through `apiAgentProvider` or normalise in Rust —
+  mis-mapping a provider is how a turn gets billed to the wrong credentials.
 - **P3 — structured partial multi-target launch result.** Rust launches targets
   sequentially. If provisioning target N fails after earlier targets started,
   the frontend now rehydrates and attaches those partial successes before
@@ -547,17 +558,21 @@ frontier models.
 - **P2 — LM2: custom OpenAI-compatible endpoint row.** One provider row wrapping
   `stream_chat_compat` with a user-supplied base URL covers vLLM, LM Studio,
   LiteLLM, hosted inference, and any self-hosted gateway. Independently useful.
-- **P2 — LM3: unify the auxiliary LLM entry point.** Auxiliary surfaces reach a
-  model three incompatible ways — in-process `get_provider` (4 sites), sidecar
-  `claude-oauth` one-shots (3 sites), and `claude` CLI shell-out (4 sites, no
-  provider abstraction and no token accounting). Only 4 of ~15 sit behind
-  `get_provider`, so routing is a new `core/aux_llm.rs` seam, not a signature
-  change.
-- **P2 — LM4/LM5: migrate auxiliary sites onto the seam.** Mechanism-3 sites
-  (`memory.rs`, `insights.rs`, `spec.rs`, `github.rs:1577`) first — they drop a
-  hard `claude`-on-PATH dependency and gain token accounting. Then the
-  sidecar sites, keeping `claude-oauth` selectable so subscription-funded
-  operation stays the default.
+- **~~P2 — LM3: unify the auxiliary LLM entry point.~~ PARTIALLY DONE
+  2026-07-31** (shipped as WI-1 of `dev/oauth-removal-plan.md`).
+  `src-tauri/src/core/aux_llm.rs` exists with five task classes covering spec
+  import, both Code Quality AI actions, and both GitHub PR AI actions. It
+  resolves the routing settings first, else the cheapest provider with a
+  keyring `api-key-*` credential, ranked against `shared/model-pricing.json`.
+  Remaining: extend `AuxTaskClass` to the mechanism-1 and mechanism-3 surfaces.
+- **P2 — LM4: migrate the mechanism-3 sites onto the seam.** `memory.rs`,
+  `insights.rs`, `spec.rs`, `github.rs` investigate — they drop a hard
+  `claude`-on-PATH dependency and gain token accounting. **LM5 is done**: no
+  auxiliary feature starts a sidecar session any more, and the bare
+  `SidecarManager::forward_start` was deleted with its last caller. The old
+  "keep `claude-oauth` selectable so subscription-funded operation stays the
+  default" wording is withdrawn — it contradicts the 2026-07-31 owner
+  decision.
 - **P3 — LM6/LM7: routing settings and cost proof.** New `modelRoutingStore`
   plus settings slice mapping task class → provider/model (not
   `orchestrationSettingsStore`, which is flight-scoped). **The cost-proof half
@@ -587,6 +602,19 @@ shared pricing table, and all token accounting are untouched.
   over `~/.packetade/usage.jsonl` (which already records `cache_read`/
   `cache_write` and discards them) that prints the hit rate per model. Exists
   only to prove CE6 worked, then goes dormant — **not** a new reporting surface.
+- **P3 — flight rollups still carry pre-CE2 dollars.** CE2-B (done 2026-07-31)
+  repriced `usage.jsonl` and persisted conversation messages, but the flight
+  cost fields in `state.v1.json` — `flights[].total_cost`, `attempts[].cost`,
+  `milestones[].tasks[].cost`, `planner_cost`,
+  `autonomy_runtime.action_history[].cost` — were left alone: they store a
+  single collapsed `tokens` sum with no input/output/cache split and no
+  per-turn model, so recomputing them means guessing an I/O ratio.
+  `storage::save_flights` also merges `total_cost` with `max()`, so a lowered
+  value would be pushed back up by the next frontend snapshot. **User-visible
+  consequence: a per-flight budget cap can trip early on a flight whose spend
+  predates CE2.** Fixing it properly means recording the token split per
+  rollup (`accumulate_executor_cost` would need per-class arguments) — worth
+  doing only if per-flight caps get used in anger.
 - **~~CE5 — self-owned ledger with attribution~~ CUT 2026-07-31.** It existed
   to make a permanent reporting surface complete. Consequences: subscription
   providers stay outside the PacketADE-owned ledger permanently; CE6-PRE

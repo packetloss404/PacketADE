@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use tauri::State;
-use tracing::{info, warn};
+use tracing::info;
 
 #[derive(Clone, Serialize)]
 pub struct LanguageStats {
@@ -442,15 +442,18 @@ pub fn analyze_code_quality(project_path: String) -> Result<CodeQualityReport, S
 // =============================================================================
 // v0.8.8 quality ai
 // -----------------------------------------------------------------------------
-// AI-powered actions for the Code Quality modal. Both commands route through
-// the `claude-oauth` sidecar one-shot pattern established by
-// `commands::github::github_ai_pr_review`: the caller pre-allocates a session
-// id, subscribes to `api-agent:chunk:<sid>` / `api-agent:done:<sid>` /
-// `api-agent:error:<sid>`, and we fire `SidecarManager::forward_start` with
-// the prompt envelope from `core::code_quality_ai_prompts`. A background
-// task awaits the oneshot waiter and calls `forward_close` so the sidecar
-// supervisor doesn't keep the session in its owned-sessions set after the
-// model finishes streaming.
+// AI-powered actions for the Code Quality modal. The caller pre-allocates a
+// session id, subscribes to `api-agent:chunk:<sid>` / `api-agent:done:<sid>` /
+// `api-agent:error:<sid>`, then invokes; we resolve an auxiliary route and hand
+// the prompt envelope from `core::code_quality_ai_prompts` to
+// `core::aux_llm::spawn_aux_stream`, which emits that same event triple.
+//
+// WI-1 (`dev/oauth-removal-plan.md`): these used to fire
+// `SidecarManager::forward_start("claude-oauth")`, routing the user's Claude
+// subscription credentials for an action they never picked a provider for.
+// Provider + model now come from the routing layer (Settings → AI Provider
+// Routing), defaulting to the cheapest configured API key. With no configured
+// provider the command returns a clear error; it never falls back to OAuth.
 //
 // Coordinated with q1 (runner) + q3 (autofix) by living at the end of this
 // file behind a single, clearly-marked section header so unrelated diffs
@@ -477,12 +480,12 @@ const SUMMARIZE_PER_CHECK_CAP_BYTES: usize = 32 * 1024;
 /// trim things below this, no extra work happens.
 const SUMMARIZE_TOTAL_CAP_BYTES: usize = 96 * 1024;
 
-/// Sidecar timeout for the AI quality features. Matches `AI_PR_TIMEOUT` in
-/// `commands::github` — these are conversational one-shots, not long
-/// agentic loops.
-const AI_QUALITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
-const AI_QUALITY_MODEL: &str = "claude-sonnet-4-6";
-const AI_QUALITY_PROVIDER: &str = "claude-oauth";
+/// Task classes for the routing layer. Provider and model come from
+/// `core::aux_llm` — there are no provider/model constants here, by design.
+const AI_QUALITY_EXPLAIN_TASK: crate::core::aux_llm::AuxTaskClass =
+    crate::core::aux_llm::AuxTaskClass::CodeQualityExplain;
+const AI_QUALITY_SUMMARIZE_TASK: crate::core::aux_llm::AuxTaskClass =
+    crate::core::aux_llm::AuxTaskClass::CodeQualitySummarize;
 
 /// Cut `text` to at most `cap` bytes ending on a UTF-8 boundary. Returns
 /// `(text, was_truncated, original_byte_len)`. Mirrors the helper in
@@ -612,32 +615,6 @@ fn read_file_context(
     (capped, truncated, out.len())
 }
 
-/// Background task that mirrors `commands::github::spawn_oneshot_cleanup`.
-fn spawn_quality_ai_cleanup(
-    manager: std::sync::Arc<crate::commands::agent_sidecar::SidecarManager>,
-    session_id: String,
-    receiver: tokio::sync::oneshot::Receiver<Result<String, String>>,
-    feature: &'static str,
-) {
-    tokio::spawn(async move {
-        match tokio::time::timeout(AI_QUALITY_TIMEOUT, receiver).await {
-            Ok(Ok(Ok(_))) => {}
-            Ok(Ok(Err(msg))) => {
-                warn!(feature, session_id = %session_id, error = %msg, "code quality AI: sidecar reported error");
-            }
-            Ok(Err(_)) => {
-                warn!(feature, session_id = %session_id, "code quality AI: waiter dropped before completion");
-            }
-            Err(_) => {
-                warn!(feature, session_id = %session_id, timeout_secs = AI_QUALITY_TIMEOUT.as_secs(), "code quality AI: timed out waiting for sidecar done");
-            }
-        }
-        if let Err(e) = manager.forward_close(session_id.clone()).await {
-            warn!(feature, session_id = %session_id, error = %e, "code quality AI: forward_close failed (non-fatal)");
-        }
-    });
-}
-
 /// Validate the user-supplied file path before reading it. We allow ANY
 /// absolute path the user can see in the diagnostic — the modal already
 /// runs against the active workspace's `projectPath`, so paths originate
@@ -653,12 +630,15 @@ fn validate_diagnostic_file_path(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// `code_quality_ai_explain` — kick off a one-shot `claude-oauth` sidecar
-/// session that explains a single diagnostic in plain language. The
-/// frontend pre-allocates a session id (via `crypto.randomUUID()`-style)
-/// and subscribes to `api-agent:chunk|done|error:<sid>` BEFORE invoking
-/// this command. Returns the session id (echoed back from the override
-/// so the caller can re-confirm).
+/// `code_quality_ai_explain` — kick off a one-shot auxiliary LLM turn that
+/// explains a single diagnostic in plain language. The frontend
+/// pre-allocates a session id (via `crypto.randomUUID()`-style) and
+/// subscribes to `api-agent:chunk|done|error:<sid>` BEFORE invoking this
+/// command. Returns the session id (echoed back from the override so the
+/// caller can re-confirm).
+///
+/// Returns `Err` before any model call when no API provider is configured;
+/// see [`crate::core::aux_llm`].
 ///
 /// `error_id` is opaque to the backend — it's a UI handle the frontend
 /// uses to correlate the streaming reply back to a specific row in the
@@ -670,7 +650,8 @@ fn validate_diagnostic_file_path(path: &str) -> Result<(), String> {
 /// to say "not enough context" rather than fabricate.
 #[tauri::command]
 pub async fn code_quality_ai_explain(
-    sidecar: State<'_, std::sync::Arc<crate::commands::agent_sidecar::SidecarManager>>,
+    app_handle: tauri::AppHandle,
+    routing: State<'_, crate::core::aux_llm::AuxRoutingState>,
     error_id: String,
     error_text: String,
     file_path: String,
@@ -698,50 +679,13 @@ pub async fn code_quality_ai_explain(
         ctx_original_bytes,
     );
 
-    let manager = std::sync::Arc::clone(&*sidecar);
+    // Resolve provider + model up front so a missing API key surfaces as a
+    // command error the modal can render, not as a silent dead stream.
+    let route = routing.resolve(AI_QUALITY_EXPLAIN_TASK)?;
+
     let session_id = session_id_override
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| format!("quality-ai-explain-{}", uuid::Uuid::new_v4()));
-    let receiver = manager.wait_for_oneshot(&session_id).await;
-
-    let start = manager
-        .forward_start(
-            session_id.clone(),
-            AI_QUALITY_PROVIDER.to_string(),
-            AI_QUALITY_MODEL.to_string(),
-            crate::core::code_quality_ai_prompts::EXPLAIN_ERROR_SYSTEM_PROMPT.to_string(),
-            Vec::new(),
-            serde_json::Value::Null,
-            false, // source_mcp_from_fs — local session
-            String::new(),
-            user_turn,
-            None,
-            None,
-            Some(false),
-            Some(false),
-            serde_json::Value::Null,
-            serde_json::Value::Null,
-            None,
-            None,
-            None,
-            None,
-        )
-        .await;
-
-    if let Err(e) = start {
-        drop(receiver);
-        return Err(format!(
-            "Failed to start code-quality AI explain session: {}",
-            e
-        ));
-    }
-
-    spawn_quality_ai_cleanup(
-        manager,
-        session_id.clone(),
-        receiver,
-        "code_quality_ai_explain",
-    );
 
     info!(
         error_id = %error_id,
@@ -751,16 +695,27 @@ pub async fn code_quality_ai_explain(
         language = language,
         context_truncated = ctx_truncated,
         session_id = %session_id,
+        provider = %route.provider,
+        model = %route.model,
         "code quality AI explain session started"
+    );
+
+    crate::core::aux_llm::spawn_aux_stream(
+        app_handle,
+        AI_QUALITY_EXPLAIN_TASK,
+        route,
+        session_id.clone(),
+        crate::core::code_quality_ai_prompts::EXPLAIN_ERROR_SYSTEM_PROMPT.to_string(),
+        user_turn,
     );
 
     Ok(session_id)
 }
 
-/// `code_quality_ai_summarize` — kick off a one-shot `claude-oauth`
-/// sidecar session that produces a structured Markdown summary of every
-/// failing check in a run. Same session-id + streaming contract as
-/// [`code_quality_ai_explain`].
+/// `code_quality_ai_summarize` — kick off a one-shot auxiliary LLM turn
+/// that produces a structured Markdown summary of every failing check in a
+/// run. Same session-id + streaming contract as
+/// [`code_quality_ai_explain`], including its no-provider error.
 ///
 /// `run_id` is opaque to the backend (the frontend uses it to cache the
 /// final markdown locally so re-opening the modal doesn't re-stream the
@@ -778,7 +733,8 @@ pub async fn code_quality_ai_explain(
 /// prompt header).
 #[tauri::command]
 pub async fn code_quality_ai_summarize(
-    sidecar: State<'_, std::sync::Arc<crate::commands::agent_sidecar::SidecarManager>>,
+    app_handle: tauri::AppHandle,
+    routing: State<'_, crate::core::aux_llm::AuxRoutingState>,
     run_id: String,
     project_name: String,
     check_outputs: HashMap<String, String>,
@@ -868,57 +824,29 @@ pub async fn code_quality_ai_summarize(
     let user_turn =
         crate::core::code_quality_ai_prompts::summarize_run_user_turn(&project_name, &check_inputs);
 
-    let manager = std::sync::Arc::clone(&*sidecar);
+    let route = routing.resolve(AI_QUALITY_SUMMARIZE_TASK)?;
+
     let session_id = session_id_override
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| format!("quality-ai-summary-{}", uuid::Uuid::new_v4()));
-    let receiver = manager.wait_for_oneshot(&session_id).await;
-
-    let start = manager
-        .forward_start(
-            session_id.clone(),
-            AI_QUALITY_PROVIDER.to_string(),
-            AI_QUALITY_MODEL.to_string(),
-            crate::core::code_quality_ai_prompts::SUMMARIZE_RUN_SYSTEM_PROMPT.to_string(),
-            Vec::new(),
-            serde_json::Value::Null,
-            false, // source_mcp_from_fs — local session
-            String::new(),
-            user_turn,
-            None,
-            None,
-            Some(false),
-            Some(false),
-            serde_json::Value::Null,
-            serde_json::Value::Null,
-            None,
-            None,
-            None,
-            None,
-        )
-        .await;
-
-    if let Err(e) = start {
-        drop(receiver);
-        return Err(format!(
-            "Failed to start code-quality AI summarize session: {}",
-            e
-        ));
-    }
-
-    spawn_quality_ai_cleanup(
-        manager,
-        session_id.clone(),
-        receiver,
-        "code_quality_ai_summarize",
-    );
 
     info!(
         run_id = %run_id,
         project = %project_name,
         checks = entries.len(),
         session_id = %session_id,
+        provider = %route.provider,
+        model = %route.model,
         "code quality AI summarize session started"
+    );
+
+    crate::core::aux_llm::spawn_aux_stream(
+        app_handle,
+        AI_QUALITY_SUMMARIZE_TASK,
+        route,
+        session_id.clone(),
+        crate::core::code_quality_ai_prompts::SUMMARIZE_RUN_SYSTEM_PROMPT.to_string(),
+        user_turn,
     );
 
     Ok(session_id)

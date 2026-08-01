@@ -145,6 +145,7 @@ pub(crate) async fn run_agent_loop(
             attachments: Vec::new(),
             thinking_enabled: false,
             thinking_budget_tokens: 0,
+            cache_key: None,
         };
 
         let (tx, rx) = mpsc::channel::<StreamChunk>(64);

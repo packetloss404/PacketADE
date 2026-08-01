@@ -402,15 +402,54 @@ fn build_start_history(
     messages
 }
 
+/// CE6 instrumentation — one line per LLM round trip recording the cache mix.
+///
+/// `hit` = cache reads as a share of all input-side tokens. It is
+/// rate-independent, so it survives a stale pricing table and is the acceptance
+/// signal for prompt caching (see `dev/cost-efficiency-loop.md`). Anthropic's
+/// buckets are disjoint; OpenAI reports `read` as a subset of `input`, which
+/// `pricing::billable_input_tokens` normalises at the cost call site.
+fn log_cache_usage(
+    session_id: &str,
+    model: &str,
+    iteration: usize,
+    input_tokens: u64,
+    cache_read: u64,
+    cache_write: u64,
+) {
+    let denominator = input_tokens
+        .saturating_add(cache_read)
+        .saturating_add(cache_write);
+    if denominator == 0 {
+        return;
+    }
+    let hit = cache_read as f64 / denominator as f64;
+    tracing::info!(
+        target: "packetade::cache",
+        session_id = %session_id,
+        model = %model,
+        iteration,
+        input_tokens,
+        cache_read,
+        cache_write,
+        hit_rate = format!("{:.3}", hit),
+        "CE6-CACHE: prompt-cache mix for one request"
+    );
+}
+
 fn build_assistant_history_message(
     text_content: &str,
     tool_calls: &[ToolCall],
+    provider_reasoning: Option<serde_json::Value>,
 ) -> Option<ChatMessage> {
-    if tool_calls.is_empty() {
-        if text_content.trim().is_empty() {
-            return None;
-        }
+    // A turn with neither text nor a tool call is skipped even when the
+    // provider sent reasoning: replaying reasoning alone would produce an
+    // assistant message with empty content, which the APIs reject.
+    if tool_calls.is_empty() && text_content.trim().is_empty() {
+        return None;
+    }
 
+    if tool_calls.is_empty() && provider_reasoning.is_none() {
         return Some(ChatMessage {
             role: ChatRole::Assistant,
             content: MessageContent::text(text_content),
@@ -418,6 +457,11 @@ fn build_assistant_history_message(
     }
 
     let mut blocks = Vec::new();
+    // Reasoning leads the block list so it is replayed ahead of the content it
+    // produced, matching the order the provider streamed it.
+    if let Some(details) = provider_reasoning {
+        blocks.push(ContentBlock::ProviderReasoning { details });
+    }
     if !text_content.is_empty() {
         blocks.push(ContentBlock::Text {
             text: text_content.to_string(),
@@ -445,13 +489,17 @@ mod tests {
 
     #[test]
     fn build_assistant_history_message_skips_blank_turn_without_tools() {
-        assert!(build_assistant_history_message("", &[]).is_none());
-        assert!(build_assistant_history_message(" \n\t", &[]).is_none());
+        assert!(build_assistant_history_message("", &[], None).is_none());
+        assert!(build_assistant_history_message(" \n\t", &[], None).is_none());
+        // Reasoning alone is not a turn — replaying it would build an assistant
+        // message with empty content, which the APIs reject.
+        let details = serde_json::json!([{ "type": "reasoning.text", "text": "x" }]);
+        assert!(build_assistant_history_message("", &[], Some(details)).is_none());
     }
 
     #[test]
     fn build_assistant_history_message_keeps_text_turn_without_tools() {
-        let message = build_assistant_history_message("done", &[]).unwrap();
+        let message = build_assistant_history_message("done", &[], None).unwrap();
 
         assert_eq!(message.role, ChatRole::Assistant);
         match message.content {
@@ -468,7 +516,7 @@ mod tests {
             arguments: serde_json::json!({ "path": "README.md" }),
         }];
 
-        let message = build_assistant_history_message("", &tool_calls).unwrap();
+        let message = build_assistant_history_message("", &tool_calls, None).unwrap();
 
         assert_eq!(message.role, ChatRole::Assistant);
         match message.content {
@@ -486,6 +534,54 @@ mod tests {
                     }
                     _ => panic!("expected tool use block"),
                 }
+            }
+            MessageContent::Text(_) => panic!("expected block content"),
+        }
+    }
+
+    /// MiniMax M3's interleaved-thinking contract: the reasoning payload has to
+    /// survive into history alongside the tool call, ahead of the content it
+    /// produced, or the reasoning chain breaks on the next tool round.
+    #[test]
+    fn build_assistant_history_message_preserves_provider_reasoning() {
+        let details = serde_json::json!([{ "type": "reasoning.text", "index": 0, "text": "why" }]);
+        let tool_calls = vec![ToolCall {
+            id: "call_1".to_string(),
+            name: "read_file".to_string(),
+            arguments: serde_json::json!({}),
+        }];
+
+        let message =
+            build_assistant_history_message("text", &tool_calls, Some(details.clone())).unwrap();
+
+        match message.content {
+            MessageContent::Blocks(blocks) => {
+                assert_eq!(blocks.len(), 3);
+                match &blocks[0] {
+                    ContentBlock::ProviderReasoning { details: stored } => {
+                        assert_eq!(stored, &details, "replayed verbatim");
+                    }
+                    _ => panic!("reasoning must lead the block list"),
+                }
+                assert!(matches!(blocks[1], ContentBlock::Text { .. }));
+                assert!(matches!(blocks[2], ContentBlock::ToolUse { .. }));
+            }
+            MessageContent::Text(_) => panic!("expected block content"),
+        }
+    }
+
+    /// A final (no-tool-call) turn that carried reasoning still keeps it, so a
+    /// follow-up user turn resumes the same reasoning chain.
+    #[test]
+    fn build_assistant_history_message_keeps_reasoning_on_a_final_turn() {
+        let details = serde_json::json!([{ "type": "reasoning.text", "index": 0, "text": "why" }]);
+
+        let message = build_assistant_history_message("answer", &[], Some(details)).unwrap();
+
+        match message.content {
+            MessageContent::Blocks(blocks) => {
+                assert_eq!(blocks.len(), 2);
+                assert!(matches!(blocks[0], ContentBlock::ProviderReasoning { .. }));
             }
             MessageContent::Text(_) => panic!("expected block content"),
         }
@@ -1629,7 +1725,7 @@ async fn finish_cancelled_agent_turn(
     );
     let cost = crate::commands::pricing::calculate_cost(
         model,
-        input_tokens,
+        crate::commands::pricing::billable_input_tokens(model, input_tokens, cache_read),
         output_tokens,
         cache_read,
         cache_write,
@@ -1786,6 +1882,9 @@ async fn run_agent_loop(
             attachments: pending_attachments,
             thinking_enabled,
             thinking_budget_tokens: 8000,
+            // Stable for the life of the session, so every iteration of this
+            // loop lands on the same OpenAI prompt-cache partition.
+            cache_key: Some(session_id.to_string()),
         };
 
         // Stream the response
@@ -1806,6 +1905,10 @@ async fn run_agent_loop(
         let mut current_tool_name = String::new();
         let mut current_tool_args = String::new();
         let mut got_error = false;
+        // Provider-owned reasoning payload for this assistant turn (MiniMax M3
+        // `reasoning_details`). Stored verbatim on the history message so the
+        // next iteration replays it and the interleaved-thinking chain holds.
+        let mut provider_reasoning: Option<serde_json::Value> = None;
 
         // Process stream chunks
         loop {
@@ -1865,7 +1968,26 @@ async fn run_agent_loop(
                             total_output_tokens += output_tokens;
                             total_cache_read += cache_read_input_tokens;
                             total_cache_write += cache_creation_input_tokens;
+                            // CE6 instrumentation. Prompt caching fails
+                            // SILENTLY when the prefix is under the model's
+                            // minimum cacheable length, so the only proof it
+                            // is working is a non-zero cache_read that rises
+                            // from iteration 1 onward. Logged per iteration
+                            // rather than per turn so a mid-turn invalidation
+                            // (attachments, an MCP flap, a rewind) is visible
+                            // as the iteration where reads drop back to zero.
+                            log_cache_usage(
+                                session_id,
+                                &model,
+                                iteration,
+                                input_tokens,
+                                cache_read_input_tokens,
+                                cache_creation_input_tokens,
+                            );
                             break;
+                        }
+                        Some(StreamChunk::ReasoningDetails { details }) => {
+                            provider_reasoning = Some(details);
                         }
                         Some(StreamChunk::ThinkingDelta { text }) => {
                             let _ = app_handle.emit(
@@ -1902,7 +2024,9 @@ async fn run_agent_loop(
         }
         stream_result?;
 
-        if let Some(assistant_msg) = build_assistant_history_message(&text_content, &tool_calls) {
+        if let Some(assistant_msg) =
+            build_assistant_history_message(&text_content, &tool_calls, provider_reasoning)
+        {
             let mut histories = state.histories.lock().await;
             if let Some(history) = histories.get_mut(session_id) {
                 history.push(assistant_msg);
@@ -1924,7 +2048,11 @@ async fn run_agent_loop(
             );
             let cost = crate::commands::pricing::calculate_cost(
                 &model,
-                total_input_tokens,
+                crate::commands::pricing::billable_input_tokens(
+                    &model,
+                    total_input_tokens,
+                    total_cache_read,
+                ),
                 total_output_tokens,
                 total_cache_read,
                 total_cache_write,
@@ -2508,7 +2636,7 @@ async fn run_agent_loop(
     );
     let cost = crate::commands::pricing::calculate_cost(
         &model,
-        total_input_tokens,
+        crate::commands::pricing::billable_input_tokens(&model, total_input_tokens, total_cache_read),
         total_output_tokens,
         total_cache_read,
         total_cache_write,

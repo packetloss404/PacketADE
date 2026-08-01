@@ -1,9 +1,29 @@
 # Removing subscription OAuth from the Agents (API) surface
 
-Status: **DESIGN ONLY — nothing implemented.**
+Status: **WI-1 SHIPPED. WI-2 onward still design only.**
 Created: 2026-07-31
 Owner decision (2026-07-31): *"let's not use OAuth with agents."*
+Owner decision (2026-07-31): route the auxiliary features through the
+task-routing layer at the cheapest configured API provider.
 Repo state at analysis time: `main` @ `4d3df4f`.
+
+> **UPDATE 2026-07-31 — WI-1 is implemented.** The four auxiliary features no
+> longer touch subscription credentials. New seam:
+> `src-tauri/src/core/aux_llm.rs` (the `core/aux_llm.rs` that
+> [`local-model-routing.md`](./local-model-routing.md) LM3 proposed) plus
+> `src-tauri/src/commands/aux_routing.rs` for the settings surface. Provider and
+> model come from the routing settings, else the cheapest provider with a
+> keyring `api-key-*` credential, ranked against `shared/model-pricing.json`.
+> With nothing configured the feature fails with a Settings → API Keys pointer;
+> there is no OAuth fallback. `SidecarManager::forward_start` (the bare wrapper)
+> was deleted along with its only four callers, so every remaining path into the
+> sidecar comes from `api_agent.rs`'s `is_sidecar_provider`-gated routing layer.
+> `commands/aux_routing.rs::auxiliary_features_never_start_a_sidecar_session` is
+> the standing CI check §6 asks for. Frontend: `Draft patch` resolves through
+> `src/lib/attemptRouting.ts` → `routingStore.resolveForTask("implementation")`,
+> and `ProviderRoutingCard` gained an "Auxiliary AI tasks" section — so
+> `resolveForTask`/`resolveForAuxTask` now have production callers and that card
+> is no longer a placebo. **Line references below predate these edits.**
 
 > **UPDATE 2026-07-31 — WI-0 is no longer a blocker.** The owner removed the
 > cost reporting surface (Cost Dashboard, live-spend chip, per-conversation
@@ -585,15 +605,39 @@ conflated there. CE5 is what makes the post-removal number attributable.
 ### Stage A — compliance fix (ship first)
 
 **WI-1 — Repoint or gate the four auxiliary `claude-oauth` consumers.**
-Files: `src-tauri/src/commands/issues.rs:79,177-198`;
-`src-tauri/src/commands/code_quality.rs:485,708,878`;
-`src-tauri/src/commands/github.rs:1602,1848,1972`;
-`src/components/views/github/InvestigationPanel.tsx:137-139`.
-Effort **M**. Depends on: nothing. **This is the highest-value item in the
-plan** — it is the exposure the user never opted into (§1.4). Coordinate with
-`local-model-routing.md` LM3 (`core/aux_llm.rs`) rather than solving it twice;
-if LM3 is not imminent, a per-feature constant flip plus a
-"requires an API key" gate is acceptable.
+**DONE 2026-07-31.** Resolved as option (b) from §2.3 — route to the cheapest
+configured provider — built on the LM3 seam rather than solved twice.
+
+New: `src-tauri/src/core/aux_llm.rs` (`AuxTaskClass`, `resolve_aux_route`,
+`run_aux_oneshot`, `spawn_aux_stream`, `AuxRoutingState`),
+`src-tauri/src/commands/aux_routing.rs` (three commands),
+`src/lib/attemptRouting.ts`, plus an aux slice on `src/stores/routingStore.ts`
+and an "Auxiliary AI tasks" section in
+`src/components/views/tools/ProviderRoutingCard.tsx`.
+
+Repointed: `commands/issues.rs` (`issues_extract_from_spec`),
+`commands/code_quality.rs` (`code_quality_ai_explain`,
+`code_quality_ai_summarize`), `commands/github.rs`
+(`github_ai_pr_description`, `github_ai_pr_review`),
+`src/components/views/github/InvestigationPanel.tsx` (Draft patch).
+Deleted: the bare `SidecarManager::forward_start`
+(`commands/agent_sidecar/protocol.rs`), `spawn_oneshot_cleanup`,
+`spawn_quality_ai_cleanup`, and the `AI_*_PROVIDER` / `AI_*_MODEL` constants.
+
+Notes for later items:
+* The streaming features keep the `api-agent:chunk|done|error:<sid>` contract,
+  so their frontend listeners were untouched.
+* Auxiliary turns now write `~/.packetade/usage.jsonl` rows with
+  `source: "aux"` and `agent_id: <task class>`. The OAuth sidecar wrote none,
+  so this is coverage gained, relevant to the WI-0 discussion above.
+* Ollama is deliberately excluded from *automatic* selection (no credential to
+  prove the user configured it, and a stopped daemon would win every ranking at
+  $0); it stays explicitly selectable.
+* Draft patch's provider id comes from `apiAgentProvider`, not the naive
+  `replace(/^api-/, "")` that `LaunchAsyncFlightModal.pickedToSpec` uses —
+  the latter yields `"claude"` for `api-claude`, which is not a `get_provider`
+  id. That looks like a live defect in the manual launch path; it is out of
+  WI-1's scope but worth a backlog entry.
 
 **WI-2 — Introduce the build-time gate.**
 Files: `src/lib/env.ts` (new flag), `src/lib/api-models.ts:43-54,68-87`,

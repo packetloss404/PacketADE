@@ -8,54 +8,13 @@ use super::supervisor::SidecarManager;
 use crate::core::execution::SshConfig;
 
 impl SidecarManager {
-    /// Forward a start_session request to the sidecar.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn forward_start(
-        &self,
-        session_id: String,
-        provider: String,
-        model: String,
-        system_prompt: String,
-        allowed_tools: Vec<String>,
-        mcp_servers: Value,
-        source_mcp_from_fs: bool,
-        project_path: String,
-        initial_message: String,
-        api_key: Option<String>,
-        resume: Option<String>,
-        thinking_enabled: Option<bool>,
-        plan_mode: Option<bool>,
-        attachments: Value,
-        resume_messages: Value,
-        permission_mode: Option<String>,
-        approve_writes: Option<bool>,
-        command_path: Option<String>,
-        workspace: Option<Value>,
-    ) -> Result<(), String> {
-        self.forward_start_with_mcp_trust(
-            session_id,
-            provider,
-            model,
-            system_prompt,
-            allowed_tools,
-            mcp_servers,
-            source_mcp_from_fs,
-            project_path,
-            initial_message,
-            api_key,
-            resume,
-            thinking_enabled,
-            plan_mode,
-            attachments,
-            resume_messages,
-            permission_mode,
-            approve_writes,
-            command_path,
-            workspace,
-            Value::Null,
-        )
-        .await
-    }
+    // NOTE (WI-1, `dev/oauth-removal-plan.md`): the bare `forward_start`
+    // convenience wrapper lived here until the four auxiliary features (spec
+    // import, the two Code Quality AI actions, the two GitHub PR AI actions)
+    // stopped calling it with a hardcoded `"claude-oauth"` provider. It had no
+    // other callers, so it was removed with them. Its absence is the guarantee
+    // that every remaining path into the sidecar comes from
+    // `api_agent.rs`'s routing layer, which is gated by `is_sidecar_provider`.
 
     /// Forward a start request with MCPH4's frozen per-session MCP authority.
     #[allow(clippy::too_many_arguments)]

@@ -34,9 +34,14 @@ pub fn save_persisted_state(state: PersistedStateDto) -> Result<(), String> {
         // See the issue-slice contract on this function.
         let preserved_issues = std::mem::take(&mut state.issues);
         let preserved_retros = std::mem::take(&mut state.retrospectives);
+        // Backend-only marker: `PersistedStateDto` has no field for it, so a
+        // frontend bulk save would otherwise clear it and make the one-time
+        // cost-reprice pass rescan the ledger on every subsequent launch.
+        let preserved_reprice = state.cost_reprice_v1_at.take();
         *state = incoming;
         state.issues = preserved_issues;
         state.retrospectives = preserved_retros;
+        state.cost_reprice_v1_at = preserved_reprice;
     })
 }
 

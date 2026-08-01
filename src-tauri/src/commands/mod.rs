@@ -5,6 +5,8 @@ pub mod analytics;
 pub mod api_agent;
 pub mod api_keys;
 pub mod auth_watcher;
+// WI-1 — auxiliary LLM routing settings surface (see core::aux_llm).
+pub mod aux_routing;
 pub mod checkpoints;
 pub mod cli_account;
 pub mod code_quality;
@@ -27,6 +29,7 @@ pub mod issues;
 pub mod mcp;
 pub mod memory;
 pub mod monitor_windows;
+pub mod minimax;
 pub mod ollama;
 pub mod packet_agent;
 pub mod pricing;

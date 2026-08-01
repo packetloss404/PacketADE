@@ -107,6 +107,7 @@ mod tests {
             cli_accounts: vec![],
             cli_account_defaults: Default::default(),
             flight_approvals: vec![],
+            cost_reprice_v1_at: None,
         }
     }
 

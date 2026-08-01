@@ -9,6 +9,102 @@ task list.
 
 ## [Unreleased]
 
+### Added — prompt caching on the Claude API path (2026-07-31)
+
+- **Claude API conversations now reuse their cached prompt instead of paying
+  full price for it on every step.** An agent turn can call tools dozens of
+  times, and each call re-sent the entire system prompt, the whole tool list and
+  the full conversation so far — at the full input rate, every time. Those
+  tokens are now served from Anthropic's prompt cache at a tenth of the input
+  rate. On a long tool-using turn the input bill is expected to drop by roughly
+  60–80%; the longer the turn, the bigger the share.
+- **The trade-off, stated plainly.** Writing to the cache costs about 25% more
+  than plain input, so a single question you ask and then abandon is slightly
+  *more* expensive than before. The cache pays for itself from the second step
+  onward, which is the overwhelming majority of real agent work.
+- **Caching sticks for five minutes, and every reuse resets that clock.** A turn
+  that keeps working never falls out of cache. Come back to a conversation after
+  a long coffee break and the next message pays to warm the cache again.
+- **Nothing about your conversations changes** — the request is identical apart
+  from asking Anthropic to cache it. This affects the **Claude (API)** row only;
+  the Anthropic subscription row already runs its own caching inside the Claude
+  Agent SDK.
+- For anyone who wants to confirm the saving, `node scripts/cache-hit-rate.mjs`
+  prints the cache hit rate per model from your local usage log.
+
+### Fixed — MiniMax now points at the documented API host (2026-07-31)
+
+- **MiniMax was calling a legacy hostname that no longer appears in MiniMax's
+  own documentation.** It now uses `https://api.minimax.io/v1`, the published
+  global endpoint. If you are on a mainland-China plan, Settings → Tools →
+  Provider Endpoints has a **MiniMax base URL** field — switch it to
+  `https://api.minimaxi.com/v1`, since a key is valid against only one host.
+  (The Ollama field lives in the same card and is unchanged.)
+- **MiniMax M3 lost its train of thought between tool calls.** M3 reasons
+  *between* tool steps, and MiniMax's API requires the model's reasoning to be
+  handed back with each follow-up request to keep that chain intact. PacketADE
+  was dropping it, so every tool result arrived with the model's own prior
+  reasoning erased — which made M3 look far weaker at multi-step work than it
+  is. The reasoning is now captured and replayed. As a bonus, it shows up in the
+  thinking panel where it belongs, instead of as raw `<think>` markup in the
+  middle of the reply.
+- **Auto-failover no longer retries into the same wall.** When MiniMax reported
+  an exhausted quota, PacketADE would announce "retrying on MiniMax M2" and
+  retry against a different MiniMax tier — which draws on the same account
+  quota, so the retry could not possibly succeed. Auto-failover now recognises
+  account-level exhaustion (a spent quota, a drained credit balance, a billing
+  limit) and surfaces the real error instead of a retry that was never going to
+  work. Ordinary rate limits and overload errors still fail over to a cheaper
+  tier as before, for every provider.
+
+### Fixed — OpenAI-family conversations report their cached tokens (2026-07-31)
+
+- OpenAI, OpenRouter and MiniMax conversations were recording zero cached
+  tokens no matter what the provider actually reported, so cached input was
+  priced at the full rate. The real figures are now read and priced correctly.
+  These providers were already caching automatically — the saving was real, it
+  just was not showing up in the numbers the budget guardrails act on.
+- OpenAI conversations also now send a stable per-conversation cache key, which
+  improves the odds of a cache hit across the steps of a long turn.
+
+### Fixed — historical spend repriced at the corrected rates (2026-07-31)
+
+- **Your recorded spend history changed, on purpose.** Until the rate-table
+  correction earlier the same day, PacketADE priced Claude Opus 4.5–4.8 at the
+  deprecated Opus 4.1 rate (`$15/$75` instead of `$5/$25`), Claude Haiku 4.5 at
+  the retired Haiku 3.5 rate (`$0.80/$4` instead of `$1/$5`), and the MiniMax
+  M2 family at `$0.40/$2.20` instead of the official `$0.30/$1.20`. Every dollar
+  figure written to disk before that fix inherited the error: Opus spend
+  overstated roughly **3x**, MiniMax M2 roughly **1.6x**, Haiku 4.5 understated
+  roughly **20%**.
+- A one-time migration now rewrites those figures on first launch. It runs over
+  `~/.packetade/usage.jsonl` and the `costUsd` stamped on messages in
+  `~/.packetade/conversations/*.json`, and it **recomputes each figure from that
+  record's own stored token counts** — nothing is scaled or estimated. Each
+  record is priced at the rates in effect on **its own date**, so a turn that
+  predates a scheduled rate change keeps that era's rate.
+- **Why it matters even though the Cost Dashboard is gone.** Those numbers are
+  no longer *reported* anywhere, but they are still what the budget guardrails
+  hard-stop on. A 3x-overstated history makes a daily or monthly cap block a
+  launch at about a third of the spend you actually authorised. Repricing is
+  what keeps the caps honest.
+- **Recoverable and visible.** The originals are copied to
+  `usage.jsonl.pre-reprice-<date>` and `conversations.pre-reprice-<date>/`
+  before anything is written; those backups are never overwritten and never
+  deleted. Every rewritten record carries `repriced_at`/`repricedAt` plus the
+  previous value in `cost_usd_before`/`costUsdBefore`, so no figure changes
+  without a trail. Records that recompute to the value already stored are left
+  untouched and unmarked.
+- **Left alone, deliberately:** records that do not carry enough token detail to
+  be recomputed, and records for a model the rate table does not know (guessing
+  would be worse than a stale number). Also untouched are the per-flight
+  rollups in `state.v1.json` (`flights[].total_cost`, `attempts[].cost`,
+  `tasks[].cost`) — they store a single collapsed token total with no
+  input/output/cache split and no per-turn model, so they cannot be recomputed
+  without inventing numbers. **Consequence: a per-flight budget cap can still
+  trip early on a flight whose spend predates the fix.** Raise that flight's
+  cap, or clear it, if it blocks you.
+
 ### Removed — cost reporting surface (2026-07-31)
 
 - The Cost Dashboard is gone. Its view, its command-palette and Status Strip

@@ -1,6 +1,6 @@
 # Cost Efficiency Loop (caching + context discipline)
 
-Status: **IN PROGRESS — Phase 0 started**
+Status: **IN PROGRESS — Phase 1 caching landed, not yet measured live**
 Created: 2026-07-30
 Research basis: five independent source audits (prompt caching, context
 discipline, task-class routing, batch APIs, cost measurement), 2026-07-30.
@@ -10,7 +10,14 @@ Progress:
 - **CE2 — DONE 2026-07-31.** One shared rate table, corrected Anthropic and
   MiniMax rows, cache-aware and date-aware pricing. See below.
 - **CE5 — CUT 2026-07-31** (owner decision, see next block).
-- **CE3 / CE4 — RE-SCOPED 2026-07-31** to temporary instrumentation.
+- **CE3 / CE4 — RE-SCOPED 2026-07-31** to temporary instrumentation. CE4's
+  instruments shipped with CE6 (`log_cache_usage` + `scripts/cache-hit-rate.mjs`).
+- **CE6 — DONE 2026-07-31.** Anthropic automatic prompt caching (top-level
+  `cache_control`), 5-minute TTL, plus the two instruments that prove it. See
+  below. **Effect is modelled, not yet measured against the live API.**
+- **CE9 — DONE 2026-07-31.** Real `cached_tokens` on the OpenAI-compat path,
+  `prompt_cache_key` for OpenAI, and the superset/disjoint normalisation moved
+  to the Rust cost call site. See below.
 
 Related: [`local-model-routing.md`](./local-model-routing.md) (LM1–LM7 — the
 auxiliary-surface routing plan this doc deliberately does **not** duplicate).
@@ -87,7 +94,7 @@ Verified against source on 2026-07-30:
 
 | Fact | Evidence |
 | --- | --- |
-| **Zero prompt caching on the in-process Anthropic path.** `cache_control` appears in **no** file under `src-tauri/src`, `src`, or `agent-sidecar/src`. The request body is `model`/`messages`/`max_tokens`/`stream` + optional `system` (bare string) / `tools` / `temperature` / `thinking`. | `core/llm_anthropic.rs:153-174`; repo-wide grep returns nothing |
+| ~~**Zero prompt caching on the in-process Anthropic path.**~~ **FIXED by CE6 (2026-07-31)** — every Messages request now carries a top-level `cache_control` marker. The original finding stands as the baseline: `cache_control` appeared in **no** file under `src-tauri/src`, `src`, or `agent-sidecar/src`, and the body was `model`/`messages`/`max_tokens`/`stream` + optional `system` (bare string) / `tools` / `temperature` / `thinking`. | `core/llm_anthropic.rs`; repo-wide grep returned nothing |
 | **The agent loop re-sends everything, up to 150 times per user turn.** `messages` is re-cloned from `state.histories` at the top of every iteration; `tools` and `system_prompt` are cloned in. History is append-only. | `commands/api_agent.rs:30` (`MAX_TOOL_ITERATIONS = 150`), `:1742`, `:1762-1765`, `:1779-1789`, `:1782` |
 | **Nothing bounds a live session's context.** The only `history.truncate` is the retry/rewind path. The only compaction runs on app-restart resume. | `api_agent.rs:1437`; `src/stores/agentTaskStore.ts:290-312`, only called from `resumeApiConversation` (`:1501`, `:1558`) |
 | **`/compact` is a placebo.** It trims the local UI array to the last 4 messages and inserts a note that literally says the backend context was not compacted. It never touches `state.histories`. | `src/components/agents/composer/slashCommandHandlers.ts:146-164` |
@@ -356,6 +363,51 @@ and saves nothing; it makes the meter honest. Phase 1 is the actual win.
   understated ~20%. Repricing them is a product decision (it visibly rewrites
   history), not a refactor, so it is left to CE5's one-time-import work.
 
+#### CE2-B — Reprice the stored history — **DONE 2026-07-31**
+
+The product decision CE2 deferred, taken by the owner on 2026-07-31 and no
+longer blocked on CE5 (which is CUT). CE5's cancellation is precisely why this
+had to become its own item: there is no longer a one-time-import workstream to
+carry it.
+
+- **Changes:** `src-tauri/src/core/reprice.rs` — a one-shot startup migration in
+  the established `core::migration` mould (called from `lib::run` after
+  `migrate_data_dir`, best-effort, warn-and-continue). It rewrites `cost_usd` in
+  `~/.packetade/usage.jsonl` and `messages[].costUsd` in
+  `~/.packetade/conversations/*.json`, recomputing each figure **from that
+  record's own stored token counts** through the shared table, priced at the
+  record's **own date** via `pricing_for_at`/`calculate_cost_at`.
+- **Why automatic rather than a script:** the numbers feed a hard stop that
+  fires without user action, and this repo's only precedent for touching user
+  data is the startup migration (`scripts/` is build tooling). It is a total
+  no-op on a fresh install — it returns before creating so much as a state file.
+- **Safety:** originals copied to `usage.jsonl.pre-reprice-<date>` and
+  `conversations.pre-reprice-<date>/` (never overwritten, never deleted) before
+  any write; writes go through tmp+rename. Rewritten records carry
+  `repriced_at`/`repricedAt` + `cost_usd_before`/`costUsdBefore`. Idempotent per
+  record on that marker, with `PersistedState.cost_reprice_v1_at` as a
+  fast-path skip.
+- **Deliberately skipped:** records without the token detail to recompute, and
+  models absent from the table (`calculate_cost_at` would return `0.0` and erase
+  a real figure). Also the flight rollups — `flights[].total_cost`,
+  `attempts[].cost`, `tasks[].cost`, `planner_cost`,
+  `autonomy_runtime.action_history[].cost` — which carry only a collapsed
+  `tokens` sum with no per-class split and no per-turn model, so they are not
+  recomputable without guessing. **Open consequence: a per-flight cap can still
+  trip early on pre-CE2 spend.** Recorded in `backlog.md`.
+- **Why it matters with the dashboard gone (§0):** `usage.jsonl` `cost_usd` is
+  read by `read_usage_analytics`, which is what `assertCostGuardrailsAllowLaunch`
+  hard-stops on. A 3x-overstated Opus history trips a daily/monthly cap at ~⅓ of
+  the authorised spend. The message-level `costUsd`, by contrast, now has **no
+  reader at all** (`aggregateConversationCost` recomputes from tokens); it is
+  repriced for consistency, not for behaviour.
+- **Verify:** `core::reprice::tests` — Opus 3x down, Haiku up, MiniMax M2 +
+  M2.7, date-aware selection across the Sonnet 5 rollover, skip-not-corrupt for
+  four flavours of unrecomputable record, backup-before-write, no-overwrite of
+  an existing backup, idempotency (ledger + conversations), OpenAI
+  `inputIncludesCacheRead` subtraction, reasoning-at-output-rate, checkpoint
+  subdirectories ignored, and fresh-install total no-op.
+
 #### CE3 — Cache-write term in the token accounting — **RE-SCOPED 2026-07-31**
 - **Re-scope.** Originally "make the estimator and the dashboard correct". The
   dashboard is gone (§0), so the live/persisted de-dup is deleted from scope
@@ -443,27 +495,77 @@ Consequences, stated so they are not rediscovered later:
 
 ### Phase 1 — Caching (the win)
 
-#### CE6 — Anthropic automatic cache breakpoint (one line)
-- **Changes:** `body["cache_control"] = json!({"type": "ephemeral"})` in the
-  Anthropic request body. This is Anthropic's documented automatic-breakpoint
-  mode: the API places the breakpoint on the last cacheable block and advances
-  it as the conversation grows. `system` may stay a bare string. **Use the
-  default 5-minute TTL — do not default to 1h** (see risks).
-- **Files:** `src-tauri/src/core/llm_anthropic.rs`
-- **Effort:** small
-- **Expected saving:** modelled 60–80% input reduction on multi-iteration
-  turns; ~0% (and ~25% *worse* on input) for one-shot abandoned turns. Worked
-  example from the audit: 20 iterations, ~5k stable prefix, ~3k/iteration
-  growth → ~670k billed input tokens today, of which the ~570k quadratic term
-  becomes 0.1x reads.
-- **Verify:** `cache_read_input_tokens` is already parsed end-to-end
-  (`llm_anthropic.rs:260-267`, `:371-378` → `llm_types.rs:121-130` →
-  `api_agent.rs:1861-1867` → `pricing.rs:229`) and reads 0 today. Acceptance =
-  the CE4 hit-rate tile goes non-zero and stays high across the CE6-PRE
-  benchmark, **per model** — a silent no-op is the documented failure mode on
-  short prefixes.
-- **Depends on:** CE3 (hard), CE4 (to see the result), CE7 (for
-  attachment-bearing sessions to benefit at all).
+#### CE6 — Anthropic automatic cache breakpoint — **DONE 2026-07-31**
+
+- **What shipped.** `build_anthropic_body` (a new pure function extracted from
+  `stream_chat` so the caching contract is testable without a network call) now
+  emits a single top-level `"cache_control": {"type": "ephemeral"}` on every
+  Messages API request. This is Anthropic's **automatic** caching mode: the API
+  places the breakpoint on the last cacheable block and advances it as the
+  conversation grows, so we hand-manage nothing. `system` deliberately stays a
+  bare string — promoting it to a text-block array is only needed to hang an
+  *explicit* per-block breakpoint off it (that is CE11, still not done).
+- **Shape verified first-party 2026-07-31**, not guessed:
+  <https://platform.claude.com/docs/en/build-with-claude/prompt-caching>
+  ("Automatic caching … the recommended starting point for most use cases") and
+  the `POST /v1/messages` reference, which lists a top-level optional
+  `cache_control` of type `CacheControlEphemeral` described as "Top-level cache
+  control automatically applies a cache_control marker to the last cacheable
+  block in the request." **No beta header is required.**
+- **TTL.** `ANTHROPIC_CACHE_TTL: Option<&str> = None` — the API default
+  5-minute window. `Some("1h")` is the one-line switch to the 1-hour window and
+  the constant carries the reasoning inline: cache *reads refresh the TTL for
+  free*, so 5m already survives an entire agent loop, while 1h charges every
+  one-shot turn 2x input (vs 1.25x) for a benefit only an idle-returning user
+  collects. Do not flip it without SPIKE-3's idle-share measurement.
+- **Files:** `src-tauri/src/core/llm_anthropic.rs`,
+  `src-tauri/src/core/llm_types.rs` (`LlmRequest.cache_key`),
+  `src-tauri/src/commands/api_agent.rs` (`log_cache_usage`),
+  `scripts/cache-hit-rate.mjs` (new).
+- **Expected effect (modelled, not yet measured).** 60–80% input reduction on
+  multi-iteration turns; ~0%, and ~25% *worse* on input, for one-shot abandoned
+  turns. Worked example from the audit: 20 iterations, ~5k stable prefix,
+  ~3k/iteration growth → ~670k billed input tokens before, of which the ~570k
+  quadratic term becomes 0.1x reads. **No measured figure is claimed here** —
+  the change was verified statically and by unit test; the token-mix
+  confirmation is the acceptance step below.
+- **How we prove it worked (this is the re-scoped CE4).** Prompt caching fails
+  **silently** below a model's minimum cacheable length, so "it compiled" proves
+  nothing. Two instruments landed with it:
+  1. `log_cache_usage` in `api_agent.rs` emits one `CE6-CACHE` line per LLM
+     round trip (`target: "packetade::cache"`) with `iteration`, `input_tokens`,
+     `cache_read`, `cache_write` and the hit rate. Per *iteration*, not per
+     turn, so a mid-turn invalidation shows up as the exact iteration where
+     reads fall back to zero. **Acceptance: `cache_read` is 0 on iteration 0
+     (the write) and non-zero from iteration 1 onward.**
+  2. `scripts/cache-hit-rate.mjs` reads `~/.packetade/usage.jsonl` — where
+     `cache_read`/`cache_write` were already recorded and then discarded by the
+     ingest loop — and prints input / cache_read / cache_write / output and
+     hit rate **per model**. It reads the vendor-semantics flag out of
+     `shared/model-pricing.json` so the denominator means the same thing for a
+     superset vendor and a disjoint one. Expected ~0% before this change, high
+     and stable after. It prints an explicit diagnostic when every row is 0.
+- **Unit-test evidence** (`core::llm_anthropic::tests`): the body carries the
+  top-level marker; `ttl` is absent (5-minute default); `system` is still a bare
+  string; two identical requests serialise byte-identically (nothing clock- or
+  counter-derived can poison the prefix); `cache_key` never leaks into the
+  Anthropic body.
+- **Still outstanding, deliberately:** hit rate has not been observed against
+  the live API, so SPIKE-4 (minimum-cacheable-prefix per model, notably
+  `claude-opus-4-6` / `claude-haiku-4-5` at 4,096 tokens on a bare project) is
+  still open and is what the two instruments above exist to answer.
+- **Depended on:** CE3 (hard), CE4 (shipped here as the two instruments),
+  CE7 (attachment-bearing sessions still do not benefit — unchanged).
+- **CE3's remainder was NOT done first, and that is deliberate — here is why it
+  is safe.** CE3's outstanding half is the missing `cacheWriteTokens` field on
+  `agentStreamingStore`'s **Codex sub-agent** bucket (`SubAgentTokenBucket`).
+  That bucket is fed only by the *sidecar* Codex MultiAgentV2 path
+  (`api-openai-codex`), which neither CE6 nor CE9 touches: CE6 is the in-process
+  Anthropic provider, CE9 the in-process OpenAI-compat provider, and neither
+  makes a Codex sub-agent's cache writes non-zero. The dependency was written
+  against "any change that makes `cache_creation_input_tokens` non-zero
+  anywhere"; scoped to what actually shipped, it is not triggered. **It still
+  blocks any future sidecar caching work (SPIKE-2).**
 
 #### CE7 — Fix the attachment lifecycle
 - **Changes:** Construct `ContentBlock::Image` into stored history when a user
@@ -499,18 +601,50 @@ Consequences, stated so they are not rediscovered later:
 - **Verify:** kill an MCP server mid-session; hit rate does not drop.
 - **Depends on:** CE4 (to observe).
 
-#### CE9 — OpenAI-compat: parse `cached_tokens`, send `prompt_cache_key`
-- **Changes:** Parse `usage.prompt_tokens_details.cached_tokens` in the
-  streaming loop and report as `cache_read` instead of the hardcoded `0` at
-  `llm_openai_compat.rs:451-452`/`:537-538`. Subtract from `prompt_tokens`
-  before reporting `input_tokens` (per the CE1 contract). Send a stable
-  per-session `prompt_cache_key` **on the OpenAI provider only**.
-- **Files:** `src-tauri/src/core/llm_openai_compat.rs`
-- **Effort:** small
-- **Expected saving:** no new savings — OpenAI/MiniMax/OpenRouter already cache
-  automatically with no client opt-in. This makes existing savings **visible**
-  and stops over-reporting cached input at full rate.
-- **Depends on:** CE1, CE2. **Per-provider gating is mandatory** — see risks.
+#### CE9 — OpenAI-compat: parse `cached_tokens`, send `prompt_cache_key` — **DONE 2026-07-31**
+
+- **What shipped.** The two hardcoded `cache_read_input_tokens: 0` literals are
+  gone. Both stream terminators now route through one `finish_compat_turn`
+  helper that reports the real `usage.prompt_tokens_details.cached_tokens`
+  (Chat Completions' documented path;
+  <https://developers.openai.com/api/docs/guides/prompt-caching>). Cache
+  *writes* stay 0 and are documented as such: OpenAI-style caching is automatic
+  and writes are neither billed nor counted.
+- **Where the superset/disjoint normalisation went — a correction to the plan
+  above.** The plan said to subtract `cached_tokens` from `prompt_tokens` before
+  reporting. That would have been a **regression**: the frontend estimator
+  already branches on the shared table's `inputIncludesCacheRead` and subtracts
+  itself (`conversationCost.ts`), so normalising on the wire would have
+  double-subtracted and *under*-billed OpenAI turns. Instead:
+  - The wire payload and the `UsageEntry` row keep the **vendor's own numbers**,
+    which is what both cost engines are already written against.
+  - Normalisation happens at the Rust cost call site, via a new
+    `pricing::billable_input_tokens(model, input, cache_read)` that reads the
+    per-vendor flag out of the shared table. This is exactly where
+    `pricing.rs`'s own module doc says it belongs ("normalising those payloads
+    … happens at the call sites, not here"), and it means no call site hardcodes
+    a vendor assumption. Applied at all three `calculate_cost` sites in
+    `api_agent.rs`. A no-op before this change (cache reads were always 0) and a
+    no-op for Anthropic (disjoint), so nothing historical shifts.
+  - `scripts/cache-hit-rate.mjs` applies the same flag when computing its
+    denominator, so a MiniMax row and an Anthropic row are comparable.
+- **`prompt_cache_key`.** `LlmRequest` gained an optional `cache_key`;
+  `api_agent.rs` fills it with the session id, stable for the session's life.
+  It is sent **only** when `provider_id == "openai"` — MiniMax / OpenRouter /
+  Ollama do not document the field and an unknown parameter is a 400 risk for
+  zero benefit. A unit test asserts it never reaches the Anthropic body.
+- **Files:** `src-tauri/src/core/llm_openai_compat.rs`,
+  `src-tauri/src/core/llm_types.rs`, `src-tauri/src/commands/pricing.rs`,
+  `src-tauri/src/commands/api_agent.rs`, `scripts/cache-hit-rate.mjs`.
+- **Saving:** none new — OpenAI/MiniMax/OpenRouter already cached automatically
+  with no client opt-in. This makes the existing saving **visible** and stops
+  cached input being priced at the full input rate.
+- **Note for CE1.** This closes the in-process half of the superset/disjoint
+  contract. The Codex double-count in `analytics.rs` and
+  `agent_sidecar/handler.rs` is untouched and remains CE1's scope — those sites
+  should call `billable_input_tokens` rather than re-deriving the rule.
+- **Depended on:** CE1, CE2. Per-provider gating was mandatory and is enforced
+  by `config.provider_id` checks, not by a shared code path.
 
 #### CE10 — System-prompt ordering contract
 - **Changes:** Reorder frontend composition to profile prompt → AGENTS.md →
@@ -890,8 +1024,19 @@ verification rather than before it.
 
 ## Sequencing
 
-**CE1 → ~~CE2~~ → CE3 → CE4 → ~~CE5~~ → CE6-PRE → CE6 → CE7 → CE8 → CE9 → CE12 →
-CE13 → CE10 → CE14 → CE16 → CE11 → CE15 → CE17 → CE18 → CE19 → CE20.**
+**CE1 → ~~CE2~~ → CE3 → ~~CE4~~ → ~~CE5~~ → CE6-PRE → ~~CE6~~ → CE7 → CE8 →
+~~CE9~~ → CE12 → CE13 → CE10 → CE14 → CE16 → CE11 → CE15 → CE17 → CE18 → CE19 →
+CE20.**
+
+**CE6 and CE9 shipped together, ahead of CE6-PRE, and CE4's instruments came
+with them.** They share the provider layer, so splitting them would have meant
+touching `llm_openai_compat.rs` twice. The consequence to be honest about:
+without CE6-PRE's pinned workload there is no *replayable* before/after, so the
+first real measurement will be longitudinal and therefore confounded by
+workload drift. That is acceptable for the binary question CE6 actually has to
+answer first — "did the breakpoint fire at all, per model?" — which the
+per-iteration `CE6-CACHE` log line answers directly. It is **not** sufficient to
+claim a percentage saving; do not quote one until CE6-PRE exists.
 
 **CE2 shipped first, ahead of CE1.** The ordering assumed CE1's token-semantics
 contract had to land before the tables could be collapsed; in practice the

@@ -161,6 +161,17 @@ pub fn run() {
     core::migration::migrate_mission_to_flight();
     commands::crashes::install_panic_hook();
 
+    // One-time: rewrite the dollar figures in `usage.jsonl` and in persisted
+    // conversation messages that were computed with the pre-CE2 (wrong) model
+    // rates — Opus overstated ~3x, MiniMax M2 ~1.6x, Haiku 4.5 understated
+    // ~20%. This is not cosmetic: those numbers are what the budget guardrails
+    // hard-stop on, so a 3x-overstated history locks the user out early. Runs
+    // after migrate_data_dir so the data dir has settled, after the panic hook
+    // so a surprise is reported, and before the Tauri builder so nothing is
+    // writing either artifact. No-op on a fresh install, and idempotent
+    // (see `core::reprice`).
+    core::reprice::reprice_historical_costs();
+
     // Reap PTY-agent children stranded by a previous run's abnormal exit
     // (SIGKILL / crash / force-quit) before we spawn anything new. Runs after
     // migrate_data_dir so the registry resolves to the current data dir.
@@ -194,6 +205,10 @@ pub fn run() {
         .manage(mcp_server::create_mcp_server_state())
         .manage(commands::monitor_windows::MonitorWindowRegistry::default())
         .manage(commands::project_memory::ProjectMemoryWatchState::default())
+        // WI-1 — backend mirror of the auxiliary AI routing settings. Empty
+        // until the frontend routing store pushes; an empty map means
+        // "auto (cheapest configured API key)", never a subscription login.
+        .manage(core::aux_llm::AuxRoutingState::default())
         .setup(|app| {
             // Spawn the Node agent sidecar and stash the supervisor in
             // managed state so slice C's routing layer can reach it via
@@ -294,6 +309,10 @@ pub fn run() {
             // v0.8.8 quality ai
             commands::code_quality::code_quality_ai_explain,
             commands::code_quality::code_quality_ai_summarize,
+            // WI-1 — auxiliary AI routing settings
+            commands::aux_routing::set_aux_routing_overrides,
+            commands::aux_routing::get_aux_route_resolutions,
+            commands::aux_routing::get_aux_provider_options,
             // Crash reports
             commands::crashes::list_crashes,
             commands::crashes::read_crash,
@@ -473,6 +492,8 @@ pub fn run() {
             // Local-only per-provider launch counter (Tier 4 slice B)
             commands::provider_stats::get_provider_launch_stats,
             // Ollama local model discovery
+            commands::minimax::get_minimax_base_url,
+            commands::minimax::set_minimax_base_url,
             commands::ollama::get_ollama_base_url,
             commands::ollama::set_ollama_base_url,
             commands::ollama::list_ollama_models,

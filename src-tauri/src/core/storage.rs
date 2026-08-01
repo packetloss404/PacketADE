@@ -95,6 +95,12 @@ pub const STATE_FILENAME: &str = "state.v1.json";
 const PROVIDER_SETTINGS_FILENAME: &str = "provider-settings.v1.json";
 pub const DEFAULT_OLLAMA_ROOT_BASE_URL: &str = "http://localhost:11434";
 
+/// MiniMax's documented **global** OpenAI-compatible host. Mainland-China
+/// accounts are served from `https://api.minimaxi.com/v1` instead, which is why
+/// this is overridable. (The historical `api.minimaxi.chat` host this app used
+/// to hardcode appears nowhere in MiniMax's current docs.)
+pub const DEFAULT_MINIMAX_BASE_URL: &str = "https://api.minimax.io/v1";
+
 static STATE_LOCK: Mutex<()> = Mutex::new(());
 static PROVIDER_SETTINGS_LOCK: Mutex<()> = Mutex::new(());
 
@@ -114,6 +120,8 @@ static ASYNC_STATE_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
 struct ProviderRuntimeSettings {
     #[serde(default)]
     ollama_base_url: Option<String>,
+    #[serde(default)]
+    minimax_base_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, Default)]
@@ -153,6 +161,16 @@ pub struct PersistedState {
     /// Legacy autonomous-Planner approval records. Read-compatible only.
     #[serde(default)]
     pub flight_approvals: Vec<FlightApprovalRequest>,
+    /// One-time marker: ISO timestamp at which `core::reprice` rewrote the
+    /// historical cost figures that were computed with the pre-CE2 (wrong)
+    /// model rates. `None` means the pass has not run on this install.
+    ///
+    /// This is only a fast-path skip so a mature ledger isn't rescanned on
+    /// every launch — the migration is *also* idempotent per record (each
+    /// rewritten record carries its own `repriced_at` / `repricedAt` marker),
+    /// so losing this flag cannot cause a double-apply.
+    #[serde(default)]
+    pub cost_reprice_v1_at: Option<String>,
 }
 
 impl Default for PersistedState {
@@ -172,6 +190,7 @@ impl Default for PersistedState {
             cli_accounts: Vec::new(),
             cli_account_defaults: BTreeMap::new(),
             flight_approvals: Vec::new(),
+            cost_reprice_v1_at: None,
         }
     }
 }
@@ -814,6 +833,64 @@ pub fn resolve_ollama_root_base_url() -> String {
 
 pub fn resolve_ollama_openai_base_url() -> String {
     format!("{}/v1", resolve_ollama_root_base_url())
+}
+
+/// Normalise a MiniMax OpenAI-compatible base URL. Unlike Ollama's, the `/v1`
+/// suffix is *kept* (it is part of MiniMax's documented base URL) and added
+/// when the user pasted the bare host.
+pub fn normalize_minimax_base_url(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("MiniMax URL cannot be empty.".to_string());
+    }
+
+    let mut parsed = reqwest::Url::parse(trimmed).map_err(|_| {
+        "Enter a full MiniMax URL, for example https://api.minimax.io/v1.".to_string()
+    })?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("MiniMax URL must start with http:// or https://.".to_string());
+    }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err("MiniMax URL cannot include query parameters or fragments.".to_string());
+    }
+
+    let path = parsed.path().trim_end_matches('/').to_string();
+    let with_version = if path.ends_with("/v1") {
+        path
+    } else {
+        format!("{}/v1", path)
+    };
+    parsed.set_path(&with_version);
+
+    Ok(parsed.as_str().trim_end_matches('/').to_string())
+}
+
+pub fn load_saved_minimax_base_url() -> Option<String> {
+    load_provider_runtime_settings()
+        .minimax_base_url
+        .and_then(|url| normalize_minimax_base_url(&url).ok())
+}
+
+pub fn save_minimax_base_url(base_url: Option<String>) -> Result<(), String> {
+    let _lock = PROVIDER_SETTINGS_LOCK
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
+    let mut settings = load_provider_runtime_settings();
+    settings.minimax_base_url = base_url;
+    save_provider_runtime_settings(&settings)
+}
+
+/// Saved endpoint wins, then `PACKETADE_MINIMAX_URL`, then the documented
+/// global host — the same precedence Ollama's resolver uses.
+pub fn resolve_minimax_base_url() -> String {
+    if let Some(saved) = load_saved_minimax_base_url() {
+        return saved;
+    }
+
+    std::env::var("PACKETADE_MINIMAX_URL")
+        .ok()
+        .and_then(|url| normalize_minimax_base_url(&url).ok())
+        .unwrap_or_else(|| DEFAULT_MINIMAX_BASE_URL.to_string())
 }
 
 fn write_with_backup(path: &PathBuf, content: &str) -> Result<(), String> {

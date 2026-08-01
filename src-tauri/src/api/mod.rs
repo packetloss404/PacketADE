@@ -2732,6 +2732,10 @@ impl From<PersistedStateDto> for core_storage::PersistedState {
             // here. (The frontend reads approvals through a dedicated
             // flight-planner query, not through PersistedStateDto.)
             flight_approvals: Vec::new(),
+            // Backend-only one-time migration marker; never travels over the
+            // DTO. `commands::state::save_persisted_state` re-applies the
+            // on-disk value after `*state = incoming`.
+            cost_reprice_v1_at: None,
         }
     }
 }

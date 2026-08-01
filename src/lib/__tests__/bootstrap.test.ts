@@ -21,6 +21,7 @@ const mockSetActiveView = vi.hoisted(() => vi.fn());
 const mockStartBoundedAutonomyRuntime = vi.hoisted(() => vi.fn());
 const mockHydrateConversations = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const mockIsModuleEnabled = vi.hoisted(() => vi.fn(() => true));
+const mockSyncAuxRouting = vi.hoisted(() => vi.fn());
 const mockAppState = vi.hoisted(() => ({
   activeView: "flights",
   theme: "dark" as const,
@@ -98,6 +99,9 @@ vi.mock("@/stores/boundedAutonomyRuntime", () => ({
 }));
 vi.mock("@/stores/agentConversationPersistence", () => ({
   hydrateConversations: mockHydrateConversations,
+}));
+vi.mock("@/stores/routingStore", () => ({
+  useRoutingStore: { getState: () => ({ syncAuxRouting: mockSyncAuxRouting }) },
 }));
 
 import { initializeApp, persistUiState } from "@/lib/bootstrap";
@@ -196,6 +200,18 @@ describe("initializeApp", () => {
     await initialized;
 
     expect(mockSetInitialized).toHaveBeenCalledWith(true);
+  });
+
+  /**
+   * WI-1: spec import / Code Quality AI / the GitHub PR AI features resolve
+   * their provider in Rust, against a mirror of the frontend routing settings.
+   * If boot never pushes that mirror, the settings card silently configures
+   * nothing again — which is the exact defect this change set out to fix.
+   */
+  it("mirrors the auxiliary AI routing settings into the backend", async () => {
+    await initializeApp();
+
+    expect(mockSyncAuxRouting).toHaveBeenCalled();
   });
 
   it("restores the persisted view instead of forcing Welcome", async () => {

@@ -3,31 +3,31 @@
 //! Currently houses `issues_extract_from_spec`, the AI-powered spec → issue
 //! drafts pipeline behind the `SpecImportModal` UI.
 //!
-//! ## Why the sidecar?
+//! ## Routing (WI-1)
 //!
-//! Unlike `github_ai_triage` which talks to the in-process `LlmProvider`
-//! (Anthropic API key route), this command intentionally routes through the
-//! `claude-oauth` sidecar so it draws from the user's Claude Pro / Max
-//! subscription rather than a metered API key. It follows the standard
-//! one-shot sidecar pattern: register a one-shot waiter, fire
-//! `forward_start`, wait for `done`, close the session.
+//! This command used to fire a one-shot `claude-oauth` sidecar session so it
+//! drew on the user's Claude Pro / Max subscription. That routed subscription
+//! OAuth credentials for work the user never chose a provider for, and it
+//! bypassed `is_sidecar_provider` entirely. It now goes through
+//! [`crate::core::aux_llm`], which resolves the configured auxiliary route
+//! (Settings → AI Provider Routing) or the cheapest configured API key, and
+//! fails with a clear "configure a provider" message when there is none.
 //!
 //! ## Why synchronous?
 //!
 //! The frontend's `SpecImportModal` shows a two-stage UX (paste → review),
 //! so the user already accepts a blocking wait between Stage 1 and Stage 2.
 //! Returning a `Vec<ExtractedIssueDraft>` directly is simpler than streaming
-//! `api-agent:*` events and re-parsing them on the frontend; the sidecar's
-//! per-request timeout (`SPEC_IMPORT_TIMEOUT`) bounds the worst-case wait.
+//! `api-agent:*` events and re-parsing them on the frontend; the
+//! `SPEC_IMPORT_TIMEOUT` bounds the worst-case wait.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use tracing::{info, warn};
 
-use crate::commands::agent_sidecar::SidecarManager;
+use crate::core::aux_llm::{self, AuxRoutingState, AuxTaskClass};
 
 /// One issue draft as returned from the AI extraction.
 ///
@@ -63,20 +63,14 @@ pub struct ExtractedIssueDraft {
 /// that the user can split into smaller imports.
 const SPEC_TEXT_CAP_BYTES: usize = 200 * 1024;
 
-/// Wall-clock cap on the one-shot session. The spec import is interactive
+/// Wall-clock cap on the one-shot turn. The spec import is interactive
 /// (user is staring at a spinner), so we'd rather fail fast than make them
 /// wait 5 minutes for a degenerate response.
 const SPEC_IMPORT_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// Model used for spec extraction. Sonnet 4.6 is the same model the rest of
-/// the OAuth-routed AI features use (`github_ai_pr_description`,
-/// `github_ai_pr_review`, flight-planner summarization) — consistent
-/// behavior + one model to babysit across releases.
-const SPEC_IMPORT_MODEL: &str = "claude-sonnet-4-6";
-
-/// Provider — `claude-oauth` draws from `~/.claude/.credentials.json` so
-/// this command works for users without an Anthropic API key configured.
-const SPEC_IMPORT_PROVIDER: &str = "claude-oauth";
+/// Task class for the routing layer. Provider and model come from
+/// `core::aux_llm` — there is no provider constant here any more, by design.
+const SPEC_IMPORT_TASK: AuxTaskClass = AuxTaskClass::SpecImport;
 
 /// Strip surrounding markdown ```json fences from a response. Mirrors the
 /// helper in `commands::github` (kept private there); duplicated here to
@@ -111,25 +105,27 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
 }
 
 /// `issues_extract_from_spec` — break a pasted spec / PRD / design doc into
-/// a JSON array of [`ExtractedIssueDraft`] using a one-shot Claude OAuth
-/// sidecar session.
+/// a JSON array of [`ExtractedIssueDraft`] using a one-shot auxiliary LLM
+/// turn (see [`crate::core::aux_llm`]).
 ///
 /// Returns the parsed drafts directly (synchronous from the frontend's
 /// point of view). The frontend's `SpecImportModal` blocks on this promise
 /// to advance from Stage 1 (paste) → Stage 2 (review).
 ///
 /// Failure modes:
-/// * `spec_text` empty / oversized → `Err` returned before any sidecar call.
-/// * `SidecarManager` not managed → `Err` (shouldn't happen in a normal
-///   process; only useful for tests).
-/// * Sidecar `forward_start` fails → `Err` with the underlying message.
-/// * Timeout (`SPEC_IMPORT_TIMEOUT`) → `Err`; the session is closed in a
-///   `finally`-style block so we don't leak it.
+/// * `spec_text` empty / oversized → `Err` returned before any model call.
+/// * No configured API provider → `Err` naming the feature and pointing at
+///   Settings → API Keys. There is no subscription-OAuth fallback.
+/// * Provider error → `Err` with the underlying message.
+/// * Timeout (`SPEC_IMPORT_TIMEOUT`) → `Err`.
 /// * Empty / non-JSON response → `Err` with a truncated preview of the
 ///   raw response so the frontend can show a retry button with context.
+///
+/// `project_path` is retained for wire compatibility with `SpecImportModal`
+/// and for log correlation; the extraction reads no files.
 #[tauri::command]
 pub async fn issues_extract_from_spec(
-    sidecar: State<'_, Arc<SidecarManager>>,
+    routing: State<'_, AuxRoutingState>,
     spec_text: String,
     project_path: String,
 ) -> Result<Vec<ExtractedIssueDraft>, String> {
@@ -139,86 +135,40 @@ pub async fn issues_extract_from_spec(
     }
     super::validate_input_size(&spec_text, SPEC_TEXT_CAP_BYTES, "Spec text")?;
 
-    // Resolve the sidecar manager and drop the State borrow before we await
-    // any long-running operation.
-    let manager = Arc::clone(&*sidecar);
+    // Resolve provider + model before any long-running work, and drop the
+    // State borrow before the first await.
+    let route = routing.resolve(SPEC_IMPORT_TASK)?;
 
     let system_prompt = crate::core::issue_ai_prompts::SPEC_IMPORT_SYSTEM_PROMPT.to_string();
     let user_turn = crate::core::issue_ai_prompts::spec_import_user_turn(trimmed);
 
-    // Mint a unique one-shot session id so it can't collide with any
-    // existing chat / planner / PR-review session.
+    // Mint a unique session id so usage rows and logs can be correlated.
     let session_id = format!("issues-spec-import-{}", uuid::Uuid::new_v4());
-
-    // Register the completion waiter BEFORE `forward_start` so we can't
-    // miss early chunks.
-    let receiver = manager.wait_for_oneshot(&session_id).await;
-
-    // The sidecar's Claude Agent SDK call uses `project_path` as cwd. The
-    // extraction itself doesn't read files, but the SDK insists on *some*
-    // path; fall back to the data dir if the caller passed an empty
-    // string.
-    let resolved_project_path = if project_path.trim().is_empty() {
-        crate::core::storage::data_dir()
-            .to_string_lossy()
-            .into_owned()
-    } else {
-        project_path.clone()
-    };
 
     info!(
         session_id = %session_id,
-        project_path = %resolved_project_path,
+        project_path = %project_path,
+        provider = %route.provider,
+        model = %route.model,
         spec_bytes = spec_text.len(),
-        "issues_extract_from_spec: starting one-shot session"
+        "issues_extract_from_spec: starting one-shot turn"
     );
 
-    let start_result = manager
-        .forward_start(
-            session_id.clone(),
-            SPEC_IMPORT_PROVIDER.to_string(),
-            SPEC_IMPORT_MODEL.to_string(),
+    let wait_result = tokio::time::timeout(
+        SPEC_IMPORT_TIMEOUT,
+        aux_llm::run_aux_oneshot(
+            SPEC_IMPORT_TASK,
+            &route,
+            &session_id,
             system_prompt,
-            Vec::new(),              // allowed_tools — none
-            serde_json::Value::Null, // mcp_servers — none
-            false,                   // source_mcp_from_fs — local session
-            resolved_project_path,
-            user_turn,               // initial_message carries the work
-            None,                    // api_key — claude-oauth uses ~/.claude
-            None,                    // resume token
-            Some(false),             // thinking_enabled
-            Some(false),             // plan_mode
-            serde_json::Value::Null, // attachments
-            serde_json::Value::Null, // resume_messages
-            None,                    // permission_mode
-            None,                    // approve_writes
-            None,                    // command_path
-            None,                    // workspace — derive local from project_path
-        )
-        .await;
-
-    if let Err(e) = start_result {
-        return Err(format!("Failed to start spec-import session: {}", e));
-    }
-
-    // Await completion with a wall-clock timeout. The waiter is resolved
-    // by the chunk/done/error branches in `agent_sidecar::handle_event`.
-    let wait_result = tokio::time::timeout(SPEC_IMPORT_TIMEOUT, receiver).await;
-
-    // Always best-effort close the session so the supervisor's owned-set
-    // doesn't leak a stale id. Mirrors the standard one-shot sidecar pattern.
-    if let Err(e) = manager.forward_close(session_id.clone()).await {
-        warn!(
-            session_id = %session_id,
-            error = %e,
-            "issues_extract_from_spec: forward_close failed (non-fatal)"
-        );
-    }
+            user_turn,
+        ),
+    )
+    .await;
 
     let raw = match wait_result {
-        Ok(Ok(Ok(text))) => text,
-        Ok(Ok(Err(msg))) => return Err(format!("Spec import session error: {}", msg)),
-        Ok(Err(_)) => return Err("Spec import waiter dropped before completion.".to_string()),
+        Ok(Ok(text)) => text,
+        Ok(Err(msg)) => return Err(format!("Spec import failed: {}", msg)),
         Err(_) => {
             return Err(format!(
                 "Spec import timed out after {}s.",

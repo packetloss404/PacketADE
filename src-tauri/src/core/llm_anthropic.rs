@@ -9,6 +9,42 @@ use tokio::sync::mpsc;
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
+/// CE6 — TTL for the automatic cache breakpoint.
+///
+/// `None` uses the API default 5-minute window: a cache *write* bills at 1.25x
+/// base input and a read at 0.1x, so 5m breaks even after ~2 reads. `Some("1h")`
+/// selects the 1-hour window, which bills writes at 2x and therefore needs ~3+
+/// reads to break even.
+///
+/// Deliberately pinned to the 5-minute default. Our agent loop iterates many
+/// times within seconds and every cache *read* refreshes the TTL for free, so
+/// 5m already survives an entire turn; 1h only helps a user who returns to an
+/// idle session between 5 minutes and 1 hour later, and charges every one-shot
+/// turn 2x input for the privilege. Flip this to `Some("1h")` only with
+/// measured evidence that the idle-return population is large (see
+/// `dev/cost-efficiency-loop.md`, SPIKE-3).
+const ANTHROPIC_CACHE_TTL: Option<&str> = None;
+
+/// The automatic-caching marker: a single `cache_control` at the **top level**
+/// of the request body. The API places the breakpoint on the last cacheable
+/// block itself and advances it as the conversation grows, so we never
+/// hand-manage breakpoints (that is CE11, deliberately not done yet).
+///
+/// Shape verified 2026-07-31 against
+/// <https://platform.claude.com/docs/en/build-with-claude/prompt-caching>
+/// ("Automatic caching ... the recommended starting point for most use cases")
+/// and the `POST /v1/messages` reference, which lists a top-level optional
+/// `cache_control` of type `CacheControlEphemeral` described as "Top-level
+/// cache control automatically applies a cache_control marker to the last
+/// cacheable block in the request." No beta header is required.
+fn anthropic_cache_control() -> serde_json::Value {
+    let mut control = serde_json::json!({ "type": "ephemeral" });
+    if let Some(ttl) = ANTHROPIC_CACHE_TTL {
+        control["ttl"] = serde_json::json!(ttl);
+    }
+    control
+}
+
 pub struct AnthropicProvider;
 
 /// Convert our messages to Anthropic format (system prompt is separate, tool results use specific format).
@@ -137,6 +173,44 @@ fn build_anthropic_tools(tools: &[ToolDefinition]) -> Vec<serde_json::Value> {
         .collect()
 }
 
+/// Assemble the Messages API request body. Pure, so the caching contract is
+/// unit-testable without a network call.
+fn build_anthropic_body(request: &LlmRequest) -> serde_json::Value {
+    let messages = build_anthropic_messages(&request.messages, &request.attachments);
+    let tools = build_anthropic_tools(&request.tools);
+
+    let mut body = serde_json::json!({
+        "model": request.model,
+        "messages": messages,
+        "max_tokens": request.max_tokens,
+        "stream": true,
+        // CE6: automatic prompt caching. Must stay at the TOP level — a
+        // block-level marker is a different (explicit-breakpoint) mode.
+        "cache_control": anthropic_cache_control(),
+    });
+
+    if let Some(ref sp) = request.system_prompt {
+        // Stays a bare string on purpose: automatic caching does not need the
+        // system prompt promoted to a text-block array (that is only required
+        // to hang an explicit per-block breakpoint off it).
+        body["system"] = serde_json::json!(sp);
+    }
+    if !tools.is_empty() {
+        body["tools"] = serde_json::Value::Array(tools);
+    }
+    if let Some(temp) = request.temperature {
+        body["temperature"] = serde_json::json!(temp);
+    }
+    if request.thinking_enabled {
+        body["thinking"] = serde_json::json!({
+            "type": "enabled",
+            "budget_tokens": request.thinking_budget_tokens,
+        });
+    }
+
+    body
+}
+
 #[async_trait::async_trait]
 impl LlmProvider for AnthropicProvider {
     async fn stream_chat(
@@ -147,31 +221,7 @@ impl LlmProvider for AnthropicProvider {
     ) -> Result<(), String> {
         let client = reqwest::Client::new();
 
-        let messages = build_anthropic_messages(&request.messages, &request.attachments);
-        let tools = build_anthropic_tools(&request.tools);
-
-        let mut body = serde_json::json!({
-            "model": request.model,
-            "messages": messages,
-            "max_tokens": request.max_tokens,
-            "stream": true,
-        });
-
-        if let Some(ref sp) = request.system_prompt {
-            body["system"] = serde_json::json!(sp);
-        }
-        if !tools.is_empty() {
-            body["tools"] = serde_json::Value::Array(tools);
-        }
-        if let Some(temp) = request.temperature {
-            body["temperature"] = serde_json::json!(temp);
-        }
-        if request.thinking_enabled {
-            body["thinking"] = serde_json::json!({
-                "type": "enabled",
-                "budget_tokens": request.thinking_budget_tokens,
-            });
-        }
+        let body = build_anthropic_body(&request);
 
         let response = client
             .post(ANTHROPIC_API_URL)
@@ -422,5 +472,110 @@ impl LlmProvider for AnthropicProvider {
 
     fn provider_id(&self) -> &str {
         "anthropic"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request() -> LlmRequest {
+        LlmRequest {
+            model: "claude-opus-4-8".to_string(),
+            messages: vec![ChatMessage {
+                role: ChatRole::User,
+                content: MessageContent::text("hello"),
+            }],
+            tools: vec![ToolDefinition {
+                name: "read_file".to_string(),
+                description: "read a file".to_string(),
+                parameters: serde_json::json!({ "type": "object" }),
+            }],
+            system_prompt: Some("you are helpful".to_string()),
+            max_tokens: 16384,
+            temperature: None,
+            attachments: Vec::new(),
+            thinking_enabled: false,
+            thinking_budget_tokens: 8000,
+            cache_key: Some("session-1".to_string()),
+        }
+    }
+
+    /// CE6 acceptance: every Anthropic request carries the automatic-caching
+    /// marker at the TOP level of the body. A block-level marker is a
+    /// different mode and would leave automatic caching off.
+    #[test]
+    fn body_carries_top_level_automatic_cache_control() {
+        let body = build_anthropic_body(&request());
+
+        assert_eq!(
+            body["cache_control"],
+            serde_json::json!({ "type": "ephemeral" }),
+            "top-level cache_control must be an ephemeral marker"
+        );
+    }
+
+    /// The default TTL is the 5-minute window, i.e. `ttl` is *absent*. A
+    /// stray `"ttl": "1h"` would silently double every cache-write bill.
+    #[test]
+    fn cache_control_defaults_to_the_five_minute_ttl() {
+        assert_eq!(ANTHROPIC_CACHE_TTL, None);
+        assert!(
+            anthropic_cache_control().get("ttl").is_none(),
+            "omitting ttl selects the 5-minute default"
+        );
+    }
+
+    /// Automatic caching does not require the system prompt to become a
+    /// text-block array; keeping it a bare string keeps the prefix bytes
+    /// identical to what shipped before CE6.
+    #[test]
+    fn system_prompt_stays_a_bare_string() {
+        let body = build_anthropic_body(&request());
+        assert_eq!(body["system"], serde_json::json!("you are helpful"));
+    }
+
+    /// The prefix must be byte-identical across iterations of one turn, or the
+    /// cache is written rather than read every time. Nothing in the body may
+    /// depend on a clock, a counter, or iteration index.
+    #[test]
+    fn body_is_byte_stable_across_identical_requests() {
+        let first = serde_json::to_string(&build_anthropic_body(&request())).unwrap();
+        let second = serde_json::to_string(&build_anthropic_body(&request())).unwrap();
+        assert_eq!(first, second);
+    }
+
+    /// `cache_key` is an OpenAI-only concept; Anthropic keys off the prefix
+    /// itself, so it must not leak into the body as an unknown parameter.
+    #[test]
+    fn cache_key_is_not_sent_to_anthropic() {
+        let body = build_anthropic_body(&request());
+        assert!(body.get("cache_key").is_none());
+        assert!(body.get("prompt_cache_key").is_none());
+    }
+
+    /// A `ProviderReasoning` block belongs to the OpenAI-compatible MiniMax
+    /// path. Anthropic's builder must ignore it rather than emit an unknown
+    /// content block (which the API rejects).
+    #[test]
+    fn provider_reasoning_blocks_are_dropped_for_anthropic() {
+        let messages = vec![ChatMessage {
+            role: ChatRole::Assistant,
+            content: MessageContent::Blocks(vec![
+                ContentBlock::ProviderReasoning {
+                    details: serde_json::json!([{ "type": "reasoning.text", "text": "hmm" }]),
+                },
+                ContentBlock::Text {
+                    text: "answer".to_string(),
+                },
+            ]),
+        }];
+
+        let built = build_anthropic_messages(&messages, &[]);
+
+        assert_eq!(built.len(), 1);
+        let content = built[0]["content"].as_array().unwrap();
+        assert_eq!(content.len(), 1, "only the text block survives");
+        assert_eq!(content[0]["type"], "text");
     }
 }

@@ -33,10 +33,45 @@ export function looksLikeRateLimit(message: string): boolean {
 }
 
 /**
+ * Is this an ACCOUNT-level exhaustion rather than a per-model throttle?
+ *
+ * The distinction decides whether failover can possibly help. A 429 / overload
+ * is usually per-model capacity, so a different tier on the same vendor is a
+ * genuine escape hatch. A drained credit balance or a spent quota is a property
+ * of the *account*, shared by every model that account can reach — retrying on
+ * a cheaper tier just walks into the identical wall one request later, having
+ * spent another request and shown the user a misleading "retrying on X" notice.
+ *
+ * This is why MiniMax's ladder was actively harmful: it failed M2.5 over to
+ * another MiniMax tier drawing on the same quota pool. It is equally wrong for
+ * Anthropic and OpenAI, so the guard is vendor-independent.
+ */
+export function isAccountLevelExhaustion(message: string): boolean {
+  if (!message) return false;
+  const m = message.toLowerCase();
+  return (
+    m.includes("quota") ||
+    m.includes("credit balance") ||
+    m.includes("insufficient_quota") ||
+    m.includes("usage limit") ||
+    m.includes("billing")
+  );
+}
+
+/**
  * Given the current model, return the next model to try as a same-provider
  * failover. Walks "thorough → balanced → fast" within the matching provider
  * catalog. Returns null when no catalog-backed fallback exists (the caller
  * surfaces the original error in that case).
+ *
+ * **Same-provider by construction, not by preference.** `retryLastTurn` swaps
+ * only `SessionConfig.model` on the live backend session — the provider, its
+ * endpoint and its API key are fixed for the session's lifetime. Handing back
+ * another vendor's model id would therefore post e.g. `claude-sonnet-5` to
+ * MiniMax's endpoint and fail harder than the error we were recovering from.
+ * Cross-vendor failover needs a provider swap on a live session (new key, new
+ * endpoint, re-derived tool schema); until that exists, the honest fix for a
+ * shared-quota wall is to decline the retry — see `isAccountLevelExhaustion`.
  */
 export function pickFailoverModel(currentModel: string): string | null {
   const providerModels = findProviderCatalog(currentModel);
@@ -64,8 +99,11 @@ export function pickFailoverModel(currentModel: string): string | null {
     return pick((model) => model.includes("o4-mini"));
   }
 
-  // MiniMax M2 family: fall back to any other MiniMax tier in the catalog
-  // (e.g. M2.5 -> M2.1 -> M2) when the current one is rate-limited.
+  // MiniMax family: fall back to any other MiniMax tier in the catalog
+  // (e.g. M3 -> M2.5 -> M2) when the current one is rate-limited. Every tier
+  // draws on one account quota pool, so this only ever helps for a per-model
+  // throttle — the caller must have ruled out account-level exhaustion first
+  // (`isAccountLevelExhaustion`).
   if (m.includes("minimax")) {
     return pick((model) => model.includes("minimax") && model !== m);
   }

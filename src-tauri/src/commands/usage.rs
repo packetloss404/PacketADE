@@ -7,6 +7,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::commands::shared::home_dir;
 use crate::core::brand::DATA_DIR_NAME;
 
+/// One append-only row of `~/.packetade/usage.jsonl`.
+///
+/// Token counts are the vendor's **raw** numbers — for OpenAI-family models
+/// `input_tokens` is a superset that already contains `cache_read`. Callers
+/// normalise at the cost call site via `pricing::billable_input_tokens`; the
+/// stored row keeps the vendor's own figures.
+///
+/// Rows rewritten by the one-time historical reprice (`core::reprice`) carry
+/// two extra keys not modelled here: `repriced_at` (ISO timestamp of the pass)
+/// and `cost_usd_before` (the figure computed with the pre-CE2 rates). Serde
+/// ignores unknown fields, so those rows still deserialize into this struct —
+/// but a rewrite of this record shape must preserve them.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageEntry {
     pub ts: String,
@@ -80,6 +92,19 @@ pub fn current_timestamp_iso() -> String {
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
         year, month, day, hour, minute, second
     )
+}
+
+/// Convert a millisecond Unix timestamp into a `YYYY-MM-DD` UTC date string —
+/// the shape `pricing::pricing_for_at` / `calculate_cost_at` expect.
+///
+/// Needed when re-pricing a historical record whose timestamp is ms-epoch
+/// rather than an ISO string (persisted conversation messages carry
+/// `timestamp: number`). Negative/pre-epoch inputs are impossible for a `u64`,
+/// so this never has to handle them.
+pub fn iso_date_from_millis(ms: u64) -> String {
+    let days = (ms / 1000) as i64 / 86_400;
+    let (year, month, day) = days_to_ymd(days);
+    format!("{:04}-{:02}-{:02}", year, month, day)
 }
 
 /// Convert a count of days since the Unix epoch (1970-01-01) into a

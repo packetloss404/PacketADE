@@ -2982,6 +2982,39 @@ export async function deleteApiKey(provider: string): Promise<void> {
   return invoke("delete_api_key", { provider });
 }
 
+// === WI-1: auxiliary AI routing ===========================================
+//
+// The routing store owns persistence (localStorage `packetade:routing-aux`)
+// and mirrors it into the backend, which is where resolution happens — only
+// Rust can see the OS keyring, so only Rust can answer "which providers are
+// actually configured, and which is cheapest". See
+// `src-tauri/src/core/aux_llm.rs`.
+
+/**
+ * Replace the backend's mirror of the auxiliary routing settings. Keys are
+ * `AuxTaskClass` ids; a task class with `provider: null` is omitted, which the
+ * backend reads as "Auto (cheapest configured)".
+ */
+export async function setAuxRoutingOverrides(
+  overrides: Record<string, { provider?: string | null; model?: string | null }>,
+): Promise<void> {
+  return invoke("set_aux_routing_overrides", { overrides });
+}
+
+/** What every auxiliary task class resolves to right now. */
+export async function getAuxRouteResolutions(): Promise<
+  import("@/types/routing").AuxRouteResolution[]
+> {
+  return invoke<import("@/types/routing").AuxRouteResolution[]>("get_aux_route_resolutions");
+}
+
+/** Providers an auxiliary task class may be pinned to, with credential status. */
+export async function getAuxProviderOptions(): Promise<
+  import("@/types/routing").AuxProviderOption[]
+> {
+  return invoke<import("@/types/routing").AuxProviderOption[]>("get_aux_provider_options");
+}
+
 export type ProviderAuthStatus = {
   status:
     | "ready"
@@ -3077,6 +3110,20 @@ export async function setOllamaBaseUrl(baseUrl: string | null): Promise<string> 
 
 export async function listOllamaModels(): Promise<OllamaModel[]> {
   return invoke("list_ollama_models");
+}
+
+/**
+ * MiniMax endpoint. MiniMax serves the same API from two hosts —
+ * `https://api.minimax.io/v1` (global, the default) and
+ * `https://api.minimaxi.com/v1` (mainland China) — and a key is only valid
+ * against one of them. Pass `null` to reset to the default.
+ */
+export async function getMinimaxBaseUrl(): Promise<string> {
+  return invoke<string>("get_minimax_base_url");
+}
+
+export async function setMinimaxBaseUrl(baseUrl: string | null): Promise<string> {
+  return invoke<string>("set_minimax_base_url", { baseUrl });
 }
 
 export interface ImageAttachment {
