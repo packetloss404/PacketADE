@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 use tracing::{info, warn};
 
 use portable_pty::{
@@ -11,6 +12,8 @@ use portable_pty::{
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
+use tokio::process::Command as TokioCommand;
+use tokio::time::timeout;
 use uuid::Uuid;
 
 fn pty_output_event(session_id: &str) -> String {
@@ -31,8 +34,26 @@ const ALLOWED_COMMANDS: &[&str] = &[
     "sh",
     "zsh",
     "powershell",
+    "pwsh",
     "cmd",
+    "wsl",
+    "fish",
+    "nu",
+    "xonsh",
     "ssh",
+];
+
+const ALLOWED_SHELL_COMMANDS: &[&str] = &[
+    "bash",
+    "sh",
+    "zsh",
+    "powershell",
+    "pwsh",
+    "cmd",
+    "wsl",
+    "fish",
+    "nu",
+    "xonsh",
 ];
 
 /// Extract the program name from a command string for allowlist checks.
@@ -169,6 +190,15 @@ fn resolve_windows_command(command: &str) -> String {
         return command.to_string();
     }
 
+    if command.eq_ignore_ascii_case("bash") {
+        if let Some(path) = crate::core::agent::git_bash_fallback_candidates()
+            .into_iter()
+            .find(|candidate| candidate.is_file())
+        {
+            return path.to_string_lossy().into_owned();
+        }
+    }
+
     let mut where_cmd = std::process::Command::new("where");
     where_cmd.arg(command);
     hide_window(&mut where_cmd);
@@ -211,6 +241,182 @@ pub struct PtySessionInfo {
     pub project_path: String,
     pub pid: Option<u32>,
     pub alive: bool,
+}
+
+#[derive(Clone, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalShellProbe {
+    pub available: bool,
+    pub executable: String,
+    pub version: Option<String>,
+    pub working_directory: String,
+    pub platform: String,
+}
+
+fn decode_console_output(bytes: &[u8]) -> String {
+    let looks_utf16 = bytes.starts_with(&[0xff, 0xfe])
+        || bytes
+            .chunks_exact(2)
+            .take(16)
+            .any(|pair| pair.get(1) == Some(&0));
+    if looks_utf16 {
+        let start = if bytes.starts_with(&[0xff, 0xfe]) {
+            2
+        } else {
+            0
+        };
+        let words: Vec<u16> = bytes[start..]
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .collect();
+        String::from_utf16_lossy(&words)
+    } else {
+        String::from_utf8_lossy(bytes).into_owned()
+    }
+}
+
+fn first_probe_line(stdout: &[u8], stderr: &[u8]) -> Option<String> {
+    [stdout, stderr].into_iter().find_map(|bytes| {
+        decode_console_output(bytes)
+            .lines()
+            .map(|line| line.trim().trim_matches('\0'))
+            .find(|line| !line.is_empty())
+            .map(|line| line.chars().take(120).collect())
+    })
+}
+
+async fn probe_shell_version(path: &str, program: &str) -> Option<String> {
+    let mut command = if cfg!(windows) && path.to_ascii_lowercase().ends_with(".cmd") {
+        let mut command = TokioCommand::new("cmd.exe");
+        command.arg("/c").arg(path);
+        command
+    } else {
+        TokioCommand::new(path)
+    };
+
+    match program {
+        "cmd" => {
+            command.args(["/c", "ver"]);
+        }
+        "powershell" | "pwsh" => {
+            command.args([
+                "-NoLogo",
+                "-NoProfile",
+                "-Command",
+                "$PSVersionTable.PSVersion.ToString()",
+            ]);
+        }
+        "wsl" => {
+            command.arg("--version");
+        }
+        _ => {
+            command.arg("--version");
+        }
+    }
+    command.stdin(std::process::Stdio::null());
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::piped());
+    command.kill_on_drop(true);
+    #[cfg(target_os = "windows")]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let child = command.spawn().ok()?;
+    match timeout(Duration::from_secs(4), child.wait_with_output()).await {
+        Ok(Ok(output)) => first_probe_line(&output.stdout, &output.stderr),
+        _ => None,
+    }
+}
+
+#[tauri::command]
+pub async fn probe_terminal_shell(
+    command: String,
+    project_path: String,
+) -> Result<TerminalShellProbe, String> {
+    let program = command_program_name(&command);
+    if !ALLOWED_SHELL_COMMANDS
+        .iter()
+        .any(|candidate| *candidate == program)
+    {
+        return Err(format!(
+            "'{}' is not a supported terminal shell. Supported shells: {:?}",
+            command, ALLOWED_SHELL_COMMANDS
+        ));
+    }
+
+    let explicit = std::path::Path::new(&command);
+    let executable = if explicit.is_absolute() || command.contains('/') || command.contains('\\') {
+        if !crate::core::agent::is_executable_file(&command) {
+            return Err(format!("Shell executable was not found: {}", command));
+        }
+        command.clone()
+    } else {
+        let catalog_id = if cfg!(windows) && program == "bash" {
+            "git-bash"
+        } else {
+            "terminal-shell"
+        };
+        crate::core::agent::resolve_catalog_path(catalog_id, &command)
+            .await
+            .ok_or_else(|| format!("Shell '{}' was not found on PATH", command))?
+    };
+
+    let working_directory = if std::path::Path::new(project_path.trim()).is_dir() {
+        project_path
+    } else {
+        neutral_scratch_cwd().unwrap_or_default()
+    };
+    let version = probe_shell_version(&executable, &program).await;
+
+    Ok(TerminalShellProbe {
+        available: true,
+        executable,
+        version,
+        working_directory,
+        platform: std::env::consts::OS.to_string(),
+    })
+}
+
+#[tauri::command]
+pub async fn list_wsl_distributions() -> Result<Vec<String>, String> {
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(Vec::new())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = TokioCommand::new("wsl.exe");
+        command.args(["--list", "--quiet"]);
+        command.stdin(std::process::Stdio::null());
+        command.stdout(std::process::Stdio::piped());
+        command.stderr(std::process::Stdio::piped());
+        command.kill_on_drop(true);
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+        let child = command
+            .spawn()
+            .map_err(|error| format!("Unable to start WSL detection: {}", error))?;
+        let output = timeout(Duration::from_secs(5), child.wait_with_output())
+            .await
+            .map_err(|_| "WSL distribution detection timed out".to_string())?
+            .map_err(|error| format!("WSL distribution detection failed: {}", error))?;
+        if !output.status.success() {
+            return Ok(Vec::new());
+        }
+        let mut distributions = Vec::new();
+        for line in decode_console_output(&output.stdout).lines() {
+            let distro = line
+                .trim()
+                .trim_start_matches('*')
+                .trim()
+                .trim_matches('\0');
+            if !distro.is_empty() && !distributions.iter().any(|existing| existing == distro) {
+                distributions.push(distro.to_string());
+            }
+        }
+        Ok(distributions)
+    }
 }
 
 /// Payload for scoped PTY output. The monotonically increasing sequence lets
@@ -1125,6 +1331,23 @@ mod tests {
     use super::*;
     use portable_pty::ExitStatus;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    #[test]
+    fn wsl_utf16_console_output_decodes_without_nul_bytes() {
+        let encoded: Vec<u8> = "Ubuntu\r\nDebian\r\n"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect();
+        assert_eq!(decode_console_output(&encoded), "Ubuntu\r\nDebian\r\n");
+    }
+
+    #[test]
+    fn shell_probe_allowlist_excludes_arbitrary_programs() {
+        assert!(ALLOWED_SHELL_COMMANDS.contains(&"pwsh"));
+        assert!(ALLOWED_SHELL_COMMANDS.contains(&"bash"));
+        assert!(!ALLOWED_SHELL_COMMANDS.contains(&"calc"));
+        assert!(!ALLOWED_SHELL_COMMANDS.contains(&"node"));
+    }
 
     #[cfg(windows)]
     #[test]

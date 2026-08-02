@@ -25,6 +25,8 @@ import type {
 import type { ServerConfig } from "@/types/server";
 import type { CliAccount, CliAccountCli } from "@/types/cliAccount";
 import type { PacketAgentRequest, PacketAgentResponse } from "@/types/packet-agent";
+import type { TerminalShellProbe } from "@/types/terminal-shell";
+import { normalizeTerminalShellSelection } from "@/lib/terminalShells";
 
 type WorkspacePaneDtoWithFrontendMetadata = WorkspaceDto["panes"][number] &
   Pick<Workspace["panes"][number], "pinnedCommands">;
@@ -138,6 +140,17 @@ export async function writePty(sessionId: string, data: string): Promise<void> {
 
 export async function resizePty(sessionId: string, cols: number, rows: number): Promise<void> {
   return invoke("resize_pty", { sessionId, cols, rows });
+}
+
+export async function probeTerminalShell(
+  command: string,
+  projectPath: string,
+): Promise<TerminalShellProbe> {
+  return invoke<TerminalShellProbe>("probe_terminal_shell", { command, projectPath });
+}
+
+export async function listWslDistributions(): Promise<string[]> {
+  return invoke<string[]>("list_wsl_distributions");
 }
 
 export async function killPty(sessionId: string): Promise<void> {
@@ -1873,6 +1886,9 @@ function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
       // Multi-account CLI support: thread the selected account id through
       // hydration or it silently drops on the next save. Absent ⇒ ambient.
       accountId: pane.accountId,
+      terminalShell: pane.terminalShell
+        ? normalizeTerminalShellSelection(pane.terminalShell)
+        : undefined,
     })),
     projectPath: workspace.projectPath,
     prompt: workspace.prompt,
@@ -1889,6 +1905,9 @@ function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
     // hydration so conversation wrappers survive a load/save round-trip; an
     // unknown value degrades to undefined (a normal workspace).
     origin: workspace.origin === "conversation" ? "conversation" : undefined,
+    terminalShell: workspace.terminalShell
+      ? normalizeTerminalShellSelection(workspace.terminalShell)
+      : undefined,
   };
 }
 
@@ -1915,6 +1934,7 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDtoWithFrontendMetadata 
       // carry the field — an ambient pane stays byte-identical to the
       // pre-multi-account shape, so an old binary round-trip is unaffected.
       ...(pane.accountId ? { accountId: pane.accountId } : {}),
+      ...(pane.terminalShell ? { terminalShell: pane.terminalShell } : {}),
     })),
     projectPath: workspace.projectPath,
     prompt: workspace.prompt,
@@ -1930,6 +1950,7 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDtoWithFrontendMetadata 
     // Tile program (P1-S2): persist the `origin` marker only when set — a
     // normal workspace stays byte-identical to the pre-tile shape.
     ...(workspace.origin === "conversation" ? { origin: "conversation" as const } : {}),
+    ...(workspace.terminalShell ? { terminalShell: workspace.terminalShell } : {}),
   } satisfies WorkspaceDtoWithFrontendMetadata;
 }
 

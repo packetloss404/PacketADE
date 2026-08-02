@@ -87,6 +87,24 @@ pub async fn resolve_path(command: &str) -> Option<String> {
 /// destination must be part of normal discovery rather than treated as a
 /// manual override.
 pub async fn resolve_catalog_path(id: &str, command: &str) -> Option<String> {
+    #[cfg(target_os = "windows")]
+    if id == "git-bash" {
+        // `where bash` may resolve the legacy WSL launcher in System32. A Git
+        // Bash profile must point at Git for Windows, so prefer its documented
+        // install locations and only accept a PATH hit that is clearly under a
+        // Git directory.
+        if let Some(path) = resolve_path(command).await {
+            let normalized = path.replace('/', "\\").to_ascii_lowercase();
+            if normalized.contains("\\git\\") {
+                return Some(path);
+            }
+        }
+        return git_bash_fallback_candidates()
+            .into_iter()
+            .find(|path| is_executable_file(&path.to_string_lossy()))
+            .map(|path| path.to_string_lossy().to_string());
+    }
+
     if let Some(path) = resolve_path(command).await {
         return Some(path);
     }
@@ -97,6 +115,37 @@ pub async fn resolve_catalog_path(id: &str, command: &str) -> Option<String> {
         .into_iter()
         .find(|path| is_executable_file(&path.to_string_lossy()))
         .map(|path| path.to_string_lossy().to_string())
+}
+
+#[cfg(target_os = "windows")]
+pub fn git_bash_fallback_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(program_files) = std::env::var_os("ProgramFiles") {
+        candidates.push(
+            PathBuf::from(program_files)
+                .join("Git")
+                .join("bin")
+                .join("bash.exe"),
+        );
+    }
+    if let Some(program_files_x86) = std::env::var_os("ProgramFiles(x86)") {
+        candidates.push(
+            PathBuf::from(program_files_x86)
+                .join("Git")
+                .join("bin")
+                .join("bash.exe"),
+        );
+    }
+    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+        candidates.push(
+            PathBuf::from(local_app_data)
+                .join("Programs")
+                .join("Git")
+                .join("bin")
+                .join("bash.exe"),
+        );
+    }
+    candidates
 }
 
 pub fn packetcode_fallback_candidates() -> Vec<PathBuf> {

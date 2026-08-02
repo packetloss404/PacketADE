@@ -23,6 +23,8 @@ import { LoginPtyModal } from "@/components/auth/LoginPtyModal";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { accountLoginCliForSlot, useAccountLaunchGate } from "@/hooks/useAccountLaunchGate";
 import type { WorkspacePane as WorkspacePaneType } from "@/types/workspace";
+import { useTerminalSettingsStore } from "@/stores/terminalSettingsStore";
+import { resolveTerminalShellLaunch } from "@/lib/terminalShells";
 
 /** Per-agent CLI flag to bypass all permission prompts.
  * OpenCode is intentionally omitted — it has no equivalent launch flag and
@@ -66,6 +68,7 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
   const promptTemplates = usePromptStore((s) => s.templates);
   const packetCodeLocalDataHome = usePacketCodeIntegrationStore((s) => s.localDataHome);
   const packetCodeRemoteDataHomes = usePacketCodeIntegrationStore((s) => s.remoteDataHomes);
+  const defaultTerminalShell = useTerminalSettingsStore((s) => s.defaultShell);
 
   // Close the overflow menu on outside click; reset to the root view so it
   // doesn't reopen mid-drill-down next time.
@@ -157,6 +160,15 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
     return args.length > 0 ? args : undefined;
   }, [agentConfig?.defaultArgs, bypassPermissions, effort, model, pane.agentId]);
 
+  const terminalShellLaunch = useMemo(
+    () =>
+      resolveTerminalShellLaunch(
+        pane.terminalShell ?? workspace?.terminalShell ?? defaultTerminalShell,
+        command,
+      ),
+    [command, defaultTerminalShell, pane.terminalShell, workspace?.terminalShell],
+  );
+
   // SSH override for remote workspaces
   const server = workspace?.serverId
     ? useServerStore.getState().getServer(workspace.serverId)
@@ -221,15 +233,27 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
     Object.assign(merged, accountEnv);
     return Object.keys(merged).length > 0 ? merged : undefined;
   }, [isRemote, localPlatform, packetCodeHome, accountEnv]);
-  const effectiveCommand = isRemote ? "ssh" : command;
-  const remoteCommand = isRemote && pane.agentId === "packetcode" ? "packetcode" : command;
+  const localCommand = pane.agentId === "terminal" ? terminalShellLaunch.command : command;
+  const localArgs =
+    pane.agentId === "terminal"
+      ? terminalShellLaunch.args.length > 0
+        ? terminalShellLaunch.args
+        : undefined
+      : cliArgs;
+  const effectiveCommand = isRemote ? "ssh" : localCommand;
+  const remoteCommand =
+    isRemote && pane.agentId === "terminal"
+      ? null
+      : isRemote && pane.agentId === "packetcode"
+        ? "packetcode"
+        : command;
   const effectiveArgs = useMemo(() => {
-    if (!isRemote || !server) return cliArgs;
+    if (!isRemote || !server) return localArgs;
     return buildSshArgs(
       server,
       workspace?.remoteProjectPath ?? server.remotePath ?? "",
       remoteCommand,
-      cliArgs,
+      pane.agentId === "terminal" ? undefined : cliArgs,
       knownHostsPath ?? undefined,
       paneEnv,
     );
@@ -237,7 +261,9 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
     isRemote,
     server,
     remoteCommand,
+    localArgs,
     cliArgs,
+    pane.agentId,
     workspace?.remoteProjectPath,
     knownHostsPath,
     paneEnv,
@@ -281,11 +307,7 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
           {/* Right next to the agent identity: two tiles running the same CLI
               under two logins are otherwise identical. Ambient panes render
               nothing here. */}
-          <AccountChip
-            accountId={accountId}
-            caveat={accountCaveat}
-            className="max-w-[130px]"
-          />
+          <AccountChip accountId={accountId} caveat={accountCaveat} className="max-w-[130px]" />
           <div className="flex-1" />
           <span
             className={`shrink-0 rounded-full px-1.5 py-0.5 font-mono text-meta ${statusPillClass}`}

@@ -253,6 +253,8 @@ pub fn run() {
             commands::pty::kill_pty_and_wait,
             commands::pty::list_pty_sessions,
             commands::pty::read_pty_transcript,
+            commands::pty::probe_terminal_shell,
+            commands::pty::list_wsl_distributions,
             commands::pty::ssh_exec,
             commands::pty::ssh_fetch_fingerprint,
             commands::pty::ssh_pin_host,

@@ -22,6 +22,9 @@ vi.mock("@/components/views/tools/ProjectInfoCard", () => ({
 vi.mock("@/components/views/tools/WorkspaceSettingsCard", () => ({
   WorkspaceSettingsCard: () => <div>Workspace card</div>,
 }));
+vi.mock("@/components/views/tools/TerminalShellSettingsCard", () => ({
+  TerminalShellSettingsCard: () => <div>Terminal shell card</div>,
+}));
 vi.mock("@/components/views/tools/CliAgentsCard", () => ({
   CliAgentsCard: ({ focusedCliId }: { focusedCliId?: string | null }) => (
     <div>CLI clients card {focusedCliId}</div>

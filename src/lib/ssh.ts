@@ -6,7 +6,8 @@ function shellEscape(s: string): string {
 }
 
 /** Ensure common bin dirs are on PATH for non-login SSH shells. */
-const PATH_SETUP = 'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.cargo/bin:$HOME/.opencode/bin:$HOME/.nvm/versions/node/$(ls $HOME/.nvm/versions/node/ 2>/dev/null | tail -1)/bin:/usr/local/bin:$PATH" 2>/dev/null;';
+const PATH_SETUP =
+  'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.cargo/bin:$HOME/.opencode/bin:$HOME/.nvm/versions/node/$(ls $HOME/.nvm/versions/node/ 2>/dev/null | tail -1)/bin:/usr/local/bin:$PATH" 2>/dev/null;';
 
 /** Common SSH flags shared across all connection types.
  *
@@ -72,7 +73,7 @@ function baseSshArgs(
 export function buildSshArgs(
   server: ServerConfig,
   remotePath: string,
-  remoteCommand: string,
+  remoteCommand: string | null,
   remoteArgs?: string[],
   knownHostsPath?: string,
   remoteEnv?: Record<string, string>,
@@ -84,10 +85,9 @@ export function buildSshArgs(
   // shell-escaped so paths or args containing spaces, quotes, or shell
   // metacharacters can't break out of the remote `sh -c` shell that SSH
   // wraps the command in.
-  const cmdParts = [
-    shellEscape(remoteCommand),
-    ...(remoteArgs ?? []).map(shellEscape),
-  ].join(" ");
+  const cmdParts = remoteCommand
+    ? [shellEscape(remoteCommand), ...(remoteArgs ?? []).map(shellEscape)].join(" ")
+    : 'exec "${SHELL:-/bin/sh}" -l';
   const envSetup = Object.entries(remoteEnv ?? {})
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([name, value]) => {
@@ -126,7 +126,7 @@ export const REMOTE_INSTALL_COMMANDS: Record<string, string> = {
   opencode: "curl -fsSL https://opencode.ai/install | bash",
   codex: "npm install -g @openai/codex",
   packetcode:
-    "curl -fsSL https://raw.githubusercontent.com/packetloss404/packetcode/main/install.sh | INSTALL_DIR=\"$HOME/.local/bin\" bash",
+    'curl -fsSL https://raw.githubusercontent.com/packetloss404/packetcode/main/install.sh | INSTALL_DIR="$HOME/.local/bin" bash',
 };
 
 /** Map agent IDs to the CLI command name to check on the remote. */

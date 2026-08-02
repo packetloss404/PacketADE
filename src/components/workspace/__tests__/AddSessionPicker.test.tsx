@@ -7,6 +7,7 @@ import type { Workspace } from "@/types/workspace";
 
 const addPane = vi.hoisted(() => vi.fn());
 const openSettings = vi.hoisted(() => vi.fn());
+const terminalSettingsState = vi.hoisted(() => ({ defaultShell: { profile: "auto" as const } }));
 const agentState = vi.hoisted(() => ({
   agents: [
     { id: "claude-code", installed: true },
@@ -22,21 +23,56 @@ vi.mock("@/stores/workspaceStore", () => ({
 }));
 
 vi.mock("@/stores/appStore", () => ({
-  useAppStore: (
-    selector: (state: { openSettings: typeof openSettings }) => unknown,
-  ) => selector({ openSettings }),
+  useAppStore: (selector: (state: { openSettings: typeof openSettings }) => unknown) =>
+    selector({ openSettings }),
 }));
 
 vi.mock("@/stores/agentStore", () => ({
-  useAgentStore: (
-    selector: (state: typeof agentState) => unknown,
-  ) => selector(agentState),
+  useAgentStore: (selector: (state: typeof agentState) => unknown) => selector(agentState),
 }));
 
 vi.mock("@/stores/serverStore", () => ({
-  useServerStore: (
-    selector: (state: { servers: unknown[] }) => unknown,
-  ) => selector({ servers: [] }),
+  useServerStore: (selector: (state: { servers: unknown[] }) => unknown) =>
+    selector({ servers: [] }),
+}));
+
+vi.mock("@/stores/terminalSettingsStore", () => ({
+  useTerminalSettingsStore: (selector: (state: typeof terminalSettingsState) => unknown) =>
+    selector(terminalSettingsState),
+}));
+
+vi.mock("@/hooks/useTerminalShellDetection", () => ({
+  useTerminalShellDetection: () => ({
+    shells: {
+      auto: { profile: "auto", available: true, path: null, version: null },
+      powershell7: { profile: "powershell7", available: true, path: "pwsh.exe", version: "7" },
+      "windows-powershell": {
+        profile: "windows-powershell",
+        available: true,
+        path: "powershell",
+        version: null,
+      },
+      "command-prompt": {
+        profile: "command-prompt",
+        available: true,
+        path: "cmd",
+        version: null,
+      },
+      "git-bash": {
+        profile: "git-bash",
+        available: true,
+        path: "C:\\Program Files\\Git\\bin\\bash.exe",
+        version: "5",
+      },
+      wsl: { profile: "wsl", available: true, path: "wsl.exe", version: "2" },
+      bash: { profile: "bash", available: true, path: "/bin/bash", version: "5" },
+      zsh: { profile: "zsh", available: false, path: null, version: null },
+    },
+    wslDistributions: ["Ubuntu"],
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+  }),
 }));
 
 const localWorkspace: Workspace = {
@@ -72,9 +108,7 @@ describe("AddSessionPicker", () => {
   });
 
   function openPopover() {
-    render(
-      <AddSessionPicker workspace={localWorkspace} variant="popover" />,
-    );
+    render(<AddSessionPicker workspace={localWorkspace} variant="popover" />);
     fireEvent.click(screen.getByRole("button", { name: /add session/i }));
   }
 
@@ -90,9 +124,7 @@ describe("AddSessionPicker", () => {
     const packetCodeIndex = buttons.findIndex((button) =>
       button.textContent?.includes("PacketCode"),
     );
-    const claudeIndex = buttons.findIndex((button) =>
-      button.textContent?.includes("Claude Code"),
-    );
+    const claudeIndex = buttons.findIndex((button) => button.textContent?.includes("Claude Code"));
     expect(packetCodeIndex).toBeGreaterThanOrEqual(0);
     expect(packetCodeIndex).toBeLessThan(claudeIndex);
   });
@@ -105,6 +137,33 @@ describe("AddSessionPicker", () => {
     // Multi-account: an untouched row passes NO account option at all, so
     // `addPane` resolves the sticky per-project default itself.
     expect(addPane).toHaveBeenCalledWith("ws-local", "packetcode", undefined);
+  });
+
+  it("keeps the Terminal row on the inherited Auto path until a shell is chosen", () => {
+    openPopover();
+
+    expect(screen.getByRole("combobox", { name: "Shell for new Terminal session" })).toHaveValue(
+      "inherit",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+
+    expect(addPane).toHaveBeenCalledWith("ws-local", "terminal", undefined);
+  });
+
+  it("stores a one-session shell override on the new Terminal pane", () => {
+    openPopover();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Shell for new Terminal session" }), {
+      target: { value: "command-prompt" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+
+    expect(addPane).toHaveBeenCalledWith("ws-local", "terminal", {
+      terminalShell: {
+        profile: "command-prompt",
+        executable: "cmd",
+      },
+    });
   });
 
   it("routes missing PacketCode to its Settings recovery panel", () => {
@@ -129,9 +188,7 @@ describe("AddSessionPicker", () => {
       target: { value: "cla" },
     });
 
-    expect(
-      screen.getByRole("button", { name: "Claude Code" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Claude Code" })).toBeInTheDocument();
     expect(screen.queryByText("PacketCode")).toBeNull();
     expect(screen.queryByText("Claude API")).toBeNull();
   });

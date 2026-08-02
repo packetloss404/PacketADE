@@ -51,6 +51,7 @@ import { ProjectRulesCard } from "./tools/ProjectRulesCard";
 import { OrchestrationSettingsCard } from "./tools/OrchestrationSettingsCard";
 import { ProviderEndpointsCard } from "./tools/ProviderEndpointsCard";
 import { WorkspaceSettingsCard } from "./tools/WorkspaceSettingsCard";
+import { TerminalShellSettingsCard } from "./tools/TerminalShellSettingsCard";
 import { MemorySettingsCard } from "./tools/MemorySettingsCard";
 import { GitHubSettingsCard } from "./tools/GitHubSettingsCard";
 import { SubscriptionsCard } from "./tools/SubscriptionsCard";
@@ -250,6 +251,7 @@ export function ToolsView() {
             <div className="max-w-3xl space-y-4">
               <ProjectInfoCard projectPath={projectPath} gitBranch={gitBranch} />
               <WorkspaceSettingsCard />
+              <TerminalShellSettingsCard />
             </div>
           )}
 
@@ -268,10 +270,7 @@ export function ToolsView() {
                   <label>" action uses, so there is one login path. */}
               <CliAccountsCard onRequestLogin={setLoginAccount} />
               {loginAccount && (
-                <AccountLoginModal
-                  account={loginAccount}
-                  onClose={() => setLoginAccount(null)}
-                />
+                <AccountLoginModal account={loginAccount} onClose={() => setLoginAccount(null)} />
               )}
             </div>
           )}

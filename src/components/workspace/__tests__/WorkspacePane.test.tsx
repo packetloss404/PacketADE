@@ -6,6 +6,8 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { CODEX_CONFIG } from "@/agents/codex";
 import { OPENCODE_CONFIG } from "@/agents/opencode";
+import { TERMINAL_CONFIG } from "@/agents/terminal";
+import { useTerminalSettingsStore } from "@/stores/terminalSettingsStore";
 import type { Workspace } from "@/types/workspace";
 
 // The tile header lives entirely inside WorkspacePane's `renderHeader`
@@ -22,13 +24,16 @@ let currentHeaderState: TerminalHeaderRenderState = {
   onRestart: vi.fn(),
   onKill: vi.fn(),
 };
+let lastTerminalProps: Record<string, unknown> = {};
 
 vi.mock("@/components/session/TerminalPane", () => ({
-  TerminalPane: ({
-    renderHeader,
-  }: {
+  TerminalPane: (props: {
     renderHeader?: (state: TerminalHeaderRenderState) => React.ReactNode;
-  }) => <>{renderHeader ? renderHeader(currentHeaderState) : null}</>,
+    [key: string]: unknown;
+  }) => {
+    lastTerminalProps = props;
+    return <>{props.renderHeader ? props.renderHeader(currentHeaderState) : null}</>;
+  },
 }));
 
 // WorkspacePane reaches for MosaicWindowContext to wire the drag source.
@@ -42,10 +47,11 @@ function makeWorkspace(): Workspace {
   return {
     id: "ws-1",
     name: "Header diet test workspace",
-    agents: ["codex", "opencode"],
+    agents: ["codex", "opencode", "terminal"],
     panes: [
       { id: "pane-codex", agentId: "codex", sessionId: null },
       { id: "pane-opencode", agentId: "opencode", sessionId: null },
+      { id: "pane-terminal", agentId: "terminal", sessionId: null },
     ],
     projectPath: "/tmp/project",
     createdAt: now,
@@ -65,6 +71,7 @@ describe("WorkspacePane tile header", () => {
       agents: [
         { ...CODEX_CONFIG, installed: true },
         { ...OPENCODE_CONFIG, installed: true },
+        { ...TERMINAL_CONFIG, installed: true },
       ],
       detecting: false,
     });
@@ -76,6 +83,8 @@ describe("WorkspacePane tile header", () => {
       onRestart: vi.fn(),
       onKill: vi.fn(),
     };
+    lastTerminalProps = {};
+    useTerminalSettingsStore.setState({ defaultShell: { profile: "auto" } });
   });
 
   it("renders a diet header: grip, dot, name, status, zoom, one overflow — no standalone accent/pin/prompt/model controls", () => {
@@ -142,5 +151,37 @@ describe("WorkspacePane tile header", () => {
 
     expect(currentHeaderState.onKill).toHaveBeenCalledTimes(1);
     expect(removePaneSpy).toHaveBeenCalledWith(workspace.id, "pane-codex");
+  });
+
+  it("applies the selected shell only to a raw local Terminal pane", () => {
+    useTerminalSettingsStore.setState({
+      defaultShell: { profile: "command-prompt", executable: "cmd.exe" },
+    });
+    const workspace = useWorkspaceStore.getState().workspaces[0];
+
+    const { unmount } = render(
+      <WorkspacePane pane={workspace.panes[2]} workspaceId={workspace.id} />,
+    );
+    expect(lastTerminalProps.cliCommand).toBe("cmd.exe");
+    expect(lastTerminalProps.cliArgs).toBeUndefined();
+
+    unmount();
+    render(<WorkspacePane pane={workspace.panes[0]} workspaceId={workspace.id} />);
+    expect(lastTerminalProps.cliCommand).toBe("codex");
+  });
+
+  it("uses pane override before workspace and app shell defaults", () => {
+    useTerminalSettingsStore.setState({ defaultShell: { profile: "command-prompt" } });
+    const workspace = useWorkspaceStore.getState().workspaces[0];
+    workspace.terminalShell = { profile: "powershell7" };
+    const pane = {
+      ...workspace.panes[2],
+      terminalShell: { profile: "wsl" as const, wslDistro: "Ubuntu" },
+    };
+
+    render(<WorkspacePane pane={pane} workspaceId={workspace.id} />);
+
+    expect(lastTerminalProps.cliCommand).toBe("wsl");
+    expect(lastTerminalProps.cliArgs).toEqual(["--distribution", "Ubuntu"]);
   });
 });

@@ -573,10 +573,21 @@ engine or persisted conversation panes as cleanup.
   Diagnostics now own all previous cards through lossless sub-tabs. Search,
   scope badges, current typed PacketCode recovery, and legacy Agent-section CLI
   recovery compatibility are implemented and test-covered.
+- **P2 — selectable local Terminal shells. SOURCE COMPLETE 2026-08-02;
+  package proof open.** App, Workspace, and per-pane choices now resolve in
+  that order before Auto. Auto deliberately preserves the old
+  PowerShell-on-Windows/Bash-on-POSIX launch. Detection, WSL distribution
+  discovery, install help, custom-shell allowlisting, and bounded probes are
+  implemented; coding-CLI panes remain separate and SSH Terminals use the
+  remote login shell. Commit the current worktree, then run a packaged matrix
+  covering Auto, PowerShell 7, Windows PowerShell, Command Prompt, Git Bash,
+  WSL, unavailable-shell recovery, persistence/hydration, and CLI/SSH
+  non-regression before calling it shipped.
 - **P2 — add CLI-first preferences and diagnostics.** Terminal appearance and
-  behavior, shell/environment, Workspace restore/template defaults, default CLI
-  and model, worktree cleanup, external editor, and a consolidated
-  CLI/provider/SSH doctor are the major missing Settings capabilities.
+  behavior, Workspace restore/template defaults, default CLI and model,
+  worktree cleanup, external editor, environment editing, and a consolidated
+  CLI/provider/SSH doctor remain missing Settings capabilities. Local shell
+  selection is now split into the source-complete item above.
 
 ## Main app navigation and right-panel audit
 

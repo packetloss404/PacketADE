@@ -86,9 +86,7 @@ describe("SSH argument construction", () => {
     );
     const remote = args[args.length - 1] ?? "";
 
-    expect(remote).toContain(
-      "export PACKETCODE_HOME='/srv/packet code/'\\''isolated'\\''';",
-    );
+    expect(remote).toContain("export PACKETCODE_HOME='/srv/packet code/'\\''isolated'\\''';");
     expect(remote).toContain("cd '/repo with spaces' && 'packetcode'");
   });
 
@@ -98,5 +96,20 @@ describe("SSH argument construction", () => {
         "PACKETCODE_HOME; touch /tmp/pwned": "/safe",
       }),
     ).toThrow("Invalid remote environment variable name");
+  });
+
+  it("launches the remote host login shell when no remote command is requested", () => {
+    const args = buildSshArgs(
+      server({ hostFingerprint: "SHA256:abc" }),
+      "/repo",
+      null,
+      undefined,
+      "C:/PacketADE/known_hosts",
+    );
+    const remote = args[args.length - 1] ?? "";
+
+    expect(remote).toContain("cd '/repo' && exec \"${SHELL:-/bin/sh}\" -l");
+    expect(remote).not.toContain("powershell");
+    expect(remote).not.toContain("bash");
   });
 });

@@ -45,6 +45,18 @@ pub struct GridPositionDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+pub struct TerminalShellSelectionDto {
+    pub profile: String,
+    #[ts(optional)]
+    pub executable: Option<String>,
+    #[ts(optional)]
+    pub args: Option<Vec<String>>,
+    #[ts(optional)]
+    pub wsl_distro: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspacePaneDto {
     pub id: String,
     pub agent_id: WorkspaceAgentSlotDto,
@@ -82,6 +94,10 @@ pub struct WorkspacePaneDto {
     #[serde(default)]
     #[ts(optional)]
     pub account_id: Option<String>,
+    /// Raw-terminal pane shell override. Absent means inherit/Auto.
+    #[serde(default)]
+    #[ts(optional)]
+    pub terminal_shell: Option<TerminalShellSelectionDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -123,6 +139,10 @@ pub struct WorkspaceDto {
     /// core `Workspace.origin`.
     #[ts(optional)]
     pub origin: Option<String>,
+    /// Workspace raw-terminal shell override. Absent means app default/Auto.
+    #[serde(default)]
+    #[ts(optional)]
+    pub terminal_shell: Option<TerminalShellSelectionDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -1235,6 +1255,7 @@ impl From<core_workspace::WorkspacePane> for WorkspacePaneDto {
             kind: value.kind,
             conversation_id: value.conversation_id,
             account_id: value.account_id,
+            terminal_shell: value.terminal_shell.map(Into::into),
         }
     }
 }
@@ -1257,6 +1278,29 @@ impl From<WorkspacePaneDto> for core_workspace::WorkspacePane {
             kind: value.kind,
             conversation_id: value.conversation_id,
             account_id: value.account_id,
+            terminal_shell: value.terminal_shell.map(Into::into),
+        }
+    }
+}
+
+impl From<core_workspace::TerminalShellSelection> for TerminalShellSelectionDto {
+    fn from(value: core_workspace::TerminalShellSelection) -> Self {
+        Self {
+            profile: value.profile,
+            executable: value.executable,
+            args: value.args,
+            wsl_distro: value.wsl_distro,
+        }
+    }
+}
+
+impl From<TerminalShellSelectionDto> for core_workspace::TerminalShellSelection {
+    fn from(value: TerminalShellSelectionDto) -> Self {
+        Self {
+            profile: value.profile,
+            executable: value.executable,
+            args: value.args,
+            wsl_distro: value.wsl_distro,
         }
     }
 }
@@ -1298,6 +1342,7 @@ impl From<core_workspace::Workspace> for WorkspaceDto {
             remote_project_path: value.remote_project_path,
             github_repo: value.github_repo.map(Into::into),
             origin: value.origin,
+            terminal_shell: value.terminal_shell.map(Into::into),
         }
     }
 }
@@ -1321,6 +1366,7 @@ impl From<WorkspaceDto> for core_workspace::Workspace {
             remote_project_path: value.remote_project_path,
             github_repo: value.github_repo.map(Into::into),
             origin: value.origin,
+            terminal_shell: value.terminal_shell.map(Into::into),
         }
     }
 }
@@ -2763,6 +2809,7 @@ pub fn generated_typescript_schema() -> String {
     push_decl!(WorkspaceStatusDto);
     push_decl!(ThemeDto);
     push_decl!(GridPositionDto);
+    push_decl!(TerminalShellSelectionDto);
     push_decl!(WorkspacePaneDto);
     push_decl!(GithubRepoDto);
     push_decl!(WorkspaceDto);

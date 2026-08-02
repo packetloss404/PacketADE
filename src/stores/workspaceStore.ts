@@ -5,6 +5,8 @@ import { logSwallowed } from "@/lib/logSwallowed";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useServerStore } from "@/stores/serverStore";
 import { rememberAccountChoice, resolveAccountId } from "@/lib/sessionAccountDefaults";
+import { normalizeTerminalShellSelection } from "@/lib/terminalShells";
+import type { TerminalShellSelection } from "@/types/terminal-shell";
 
 export interface WorkspaceSessionConfig {
   prompt?: string;
@@ -33,6 +35,8 @@ export interface WorkspaceSessionConfig {
    * modal — remembers it.
    */
   accountIds?: Partial<Record<WorkspaceAgentSlot, string | null>>;
+  /** Optional raw-terminal default for the new workspace. */
+  terminalShell?: TerminalShellSelection;
 }
 
 /**
@@ -123,7 +127,7 @@ interface WorkspaceStore {
   addPane: (
     workspaceId: string,
     agentId: WorkspaceAgentSlot,
-    options?: { accountId?: string | null },
+    options?: { accountId?: string | null; terminalShell?: TerminalShellSelection },
   ) => string | null;
   removePane: (workspaceId: string, paneId: string) => void;
   /**
@@ -136,6 +140,10 @@ interface WorkspaceStore {
   removeConversationPanes: (conversationId: string) => void;
   setDefaultBypassPermissions: (value: boolean) => void;
   setAutoBindGithubRepo: (value: boolean) => void;
+  setTerminalShellOverride: (
+    workspaceId: string,
+    selection: TerminalShellSelection | undefined,
+  ) => void;
   setZoomedPane: (paneId: string | null) => void;
   /**
    * Tile program (P4-S1): NET-NEW focus+flash plumbing (no such symbol existed
@@ -395,6 +403,19 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set({ autoBindGithubRepo: value });
   },
 
+  setTerminalShellOverride: (workspaceId, input) => {
+    const terminalShell = input ? normalizeTerminalShellSelection(input) : undefined;
+    set(
+      commitWorkspaces((state) => ({
+        workspaces: state.workspaces.map((workspace) =>
+          workspace.id === workspaceId
+            ? { ...workspace, terminalShell, updatedAt: Date.now() }
+            : workspace,
+        ),
+      })),
+    );
+  },
+
   createWorkspace: (name, agents, projectPath, sessionConfig) => {
     const serverId = sessionConfig?.serverId;
     const remoteProjectPath = sessionConfig?.remoteProjectPath;
@@ -460,6 +481,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       serverId,
       remoteProjectPath,
       githubRepo: sessionConfig?.githubRepo,
+      terminalShell: sessionConfig?.terminalShell
+        ? normalizeTerminalShellSelection(sessionConfig.terminalShell)
+        : undefined,
     };
     set(
       commitWorkspaces((s) => {
@@ -646,6 +670,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
             sessionId: null,
             // Ambient panes stay byte-identical to the pre-multi-account shape.
             ...(accountId ? { accountId } : {}),
+            ...(agentId === "terminal" && options?.terminalShell
+              ? { terminalShell: normalizeTerminalShellSelection(options.terminalShell) }
+              : {}),
           };
           return {
             ...w,

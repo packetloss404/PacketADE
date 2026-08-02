@@ -118,12 +118,12 @@ describe("workspaceStore.createWorkspace", () => {
     // The empty-path rule used to live only in WorkspaceCreationModal, so the
     // instant paths (Ctrl+N, Fleet sidebar) could bypass it. It is a store
     // invariant now — no caller can create the broken workspace.
-    expect(() =>
-      useWorkspaceStore.getState().createWorkspace("Path-less", [], ""),
-    ).toThrow(/non-empty projectPath/i);
-    expect(() =>
-      useWorkspaceStore.getState().createWorkspace("Path-less", [], "   "),
-    ).toThrow(/non-empty projectPath/i);
+    expect(() => useWorkspaceStore.getState().createWorkspace("Path-less", [], "")).toThrow(
+      /non-empty projectPath/i,
+    );
+    expect(() => useWorkspaceStore.getState().createWorkspace("Path-less", [], "   ")).toThrow(
+      /non-empty projectPath/i,
+    );
     expect(useWorkspaceStore.getState().workspaces).toHaveLength(0);
   });
 
@@ -331,5 +331,46 @@ describe("workspaceStore kind-keyed sites (P1-S1)", () => {
     const ws = useWorkspaceStore.getState().workspaces[0];
     expect(ws.agents).toEqual([]);
     expect(ws.panes).toHaveLength(0);
+  });
+});
+
+describe("workspace terminal shell overrides", () => {
+  beforeEach(() => {
+    useWorkspaceStore.setState({ workspaces: [], activeWorkspaceId: null, zoomedPaneId: null });
+  });
+
+  it("persists and clears a workspace-level override", () => {
+    useWorkspaceStore.setState({ workspaces: [makeWorkspace([])] });
+
+    useWorkspaceStore.getState().setTerminalShellOverride("ws-1", {
+      profile: "wsl",
+      executable: "wsl.exe",
+      wslDistro: "Ubuntu",
+    });
+    expect(useWorkspaceStore.getState().workspaces[0].terminalShell).toMatchObject({
+      profile: "wsl",
+      wslDistro: "Ubuntu",
+    });
+
+    useWorkspaceStore.getState().setTerminalShellOverride("ws-1", undefined);
+    expect(useWorkspaceStore.getState().workspaces[0].terminalShell).toBeUndefined();
+  });
+
+  it("stores a per-pane override only for raw Terminal panes", () => {
+    useWorkspaceStore.setState({ workspaces: [makeWorkspace([])] });
+    const shell = { profile: "command-prompt" as const, executable: "cmd.exe" };
+
+    const terminalPaneId = useWorkspaceStore
+      .getState()
+      .addPane("ws-1", "terminal", { terminalShell: shell });
+    const codexPaneId = useWorkspaceStore
+      .getState()
+      .addPane("ws-1", "codex", { terminalShell: shell });
+    const workspace = useWorkspaceStore.getState().workspaces[0];
+
+    expect(workspace.panes.find((pane) => pane.id === terminalPaneId)?.terminalShell).toEqual(
+      shell,
+    );
+    expect(workspace.panes.find((pane) => pane.id === codexPaneId)?.terminalShell).toBeUndefined();
   });
 });

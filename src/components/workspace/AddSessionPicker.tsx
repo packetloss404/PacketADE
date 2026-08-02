@@ -10,6 +10,15 @@ import { useServerStore } from "@/stores/serverStore";
 import { isAccountAwareSlot } from "@/lib/sessionAccountDefaults";
 import { SessionAccountPicker } from "@/components/workspace/SessionAccountPicker";
 import type { Workspace, WorkspaceAgentSlot } from "@/types/workspace";
+import { useTerminalShellDetection } from "@/hooks/useTerminalShellDetection";
+import { useTerminalSettingsStore } from "@/stores/terminalSettingsStore";
+import {
+  selectionForProfile,
+  shellProfileLabel,
+  shellProfilesForPlatform,
+  terminalPlatform,
+} from "@/lib/terminalShells";
+import type { TerminalShellProfileId, TerminalShellSelection } from "@/types/terminal-shell";
 
 interface AddSessionPickerProps {
   workspace: Workspace;
@@ -22,21 +31,14 @@ interface AddSessionPickerProps {
   onOpenTemplates?: () => void;
 }
 
-export function AddSessionPicker({
-  workspace,
-  variant,
-  onOpenTemplates,
-}: AddSessionPickerProps) {
+export function AddSessionPicker({ workspace, variant, onOpenTemplates }: AddSessionPickerProps) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (variant !== "popover" || !open) return;
     const handler = (event: MouseEvent) => {
-      if (
-        anchorRef.current &&
-        !anchorRef.current.contains(event.target as Node)
-      ) {
+      if (anchorRef.current && !anchorRef.current.contains(event.target as Node)) {
         setOpen(false);
       }
     };
@@ -47,11 +49,7 @@ export function AddSessionPicker({
   if (variant === "inline") {
     return (
       <div className="mx-auto w-full max-w-[380px] rounded-lg border border-bg-border bg-bg-secondary shadow-sm">
-        <PickerContent
-          workspace={workspace}
-          onClose={() => {}}
-          onOpenTemplates={onOpenTemplates}
-        />
+        <PickerContent workspace={workspace} onClose={() => {}} onOpenTemplates={onOpenTemplates} />
       </div>
     );
   }
@@ -90,11 +88,7 @@ interface PickerContentProps {
   onOpenTemplates?: () => void;
 }
 
-function PickerContent({
-  workspace,
-  onClose,
-  onOpenTemplates,
-}: PickerContentProps) {
+function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentProps) {
   const [filter, setFilter] = useState("");
   /**
    * Multi-account CLI support: per-row explicit account choices. A slot absent
@@ -106,17 +100,23 @@ function PickerContent({
   const [accountChoices, setAccountChoices] = useState<
     Partial<Record<WorkspaceAgentSlot, string | null>>
   >({});
+  const [terminalShellChoice, setTerminalShellChoice] = useState<
+    TerminalShellSelection | undefined
+  >(undefined);
   const agents = useAgentStore((state) => state.agents);
   const servers = useServerStore((state) => state.servers);
   const addPane = useWorkspaceStore((state) => state.addPane);
   const openSettings = useAppStore((state) => state.openSettings);
+  const defaultTerminalShell = useTerminalSettingsStore((state) => state.defaultShell);
+  const shellDetection = useTerminalShellDetection();
+  const terminalProfiles = shellProfilesForPlatform(terminalPlatform()).filter(
+    (profile) => profile !== "custom" || defaultTerminalShell.profile === "custom",
+  );
 
   const isInstalled = (slot: WorkspaceAgentSlot): boolean => {
     if (slot === "terminal") return true;
     if (workspace.serverId) {
-      const server = servers.find(
-        (candidate) => candidate.id === workspace.serverId,
-      );
+      const server = servers.find((candidate) => candidate.id === workspace.serverId);
       return server?.installedAgents.includes(slot) ?? false;
     }
     return agents.find((agent) => agent.id === slot)?.installed ?? false;
@@ -141,11 +141,15 @@ function PickerContent({
     // NO `accountId` at all, and `addPane` resolves the sticky per-project
     // default. Only a deliberate switch travels as an explicit choice.
     const touched = slot in accountChoices;
-    addPane(
-      workspace.id,
-      slot,
-      touched ? { accountId: accountChoices[slot] ?? null } : undefined,
-    );
+    const options: {
+      accountId?: string | null;
+      terminalShell?: TerminalShellSelection;
+    } = {};
+    if (touched) options.accountId = accountChoices[slot] ?? null;
+    if (slot === "terminal" && terminalShellChoice) {
+      options.terminalShell = terminalShellChoice;
+    }
+    addPane(workspace.id, slot, Object.keys(options).length > 0 ? options : undefined);
     onClose();
   };
 
@@ -178,8 +182,7 @@ function PickerContent({
           const installed = isInstalled(entry.slot);
           const color = getAgentColor(entry.slot);
           const hint = INSTALL_HINTS[entry.slot];
-          const recommended =
-            entry.slot === "packetcode" && packetCodeReady;
+          const recommended = entry.slot === "packetcode" && packetCodeReady;
 
           return (
             <div
@@ -196,17 +199,13 @@ function PickerContent({
                     : `${entry.face} is not available for this workspace`
                 }
                 className={`flex min-w-0 flex-1 items-center gap-2 text-left text-ui ${
-                  installed
-                    ? "text-text-primary"
-                    : "cursor-not-allowed text-text-muted opacity-50"
+                  installed ? "text-text-primary" : "cursor-not-allowed text-text-muted opacity-50"
                 }`}
               >
-                <span
-                  className={`h-2 w-2 shrink-0 rounded-full ${color.text} bg-current`}
-                />
+                <span className={`h-2 w-2 shrink-0 rounded-full ${color.text} bg-current`} />
                 <span className="truncate">{entry.face}</span>
                 {recommended && (
-                  <span className="ml-auto rounded bg-accent-amber/15 px-1.5 py-0.5 text-meta text-accent-amber">
+                  <span className="bg-accent-amber/15 ml-auto rounded px-1.5 py-0.5 text-meta text-accent-amber">
                     Recommended
                   </span>
                 )}
@@ -221,9 +220,7 @@ function PickerContent({
                 <SessionAccountPicker
                   cli={entry.slot}
                   projectPath={workspace.projectPath}
-                  value={
-                    entry.slot in accountChoices ? accountChoices[entry.slot] : undefined
-                  }
+                  value={entry.slot in accountChoices ? accountChoices[entry.slot] : undefined}
                   onChange={(accountId) =>
                     setAccountChoices((prev) => ({ ...prev, [entry.slot]: accountId }))
                   }
@@ -231,11 +228,50 @@ function PickerContent({
                 />
               )}
 
+              {installed && entry.slot === "terminal" && (
+                <select
+                  aria-label="Shell for new Terminal session"
+                  value={terminalShellChoice?.profile ?? "inherit"}
+                  onChange={(event) => {
+                    const raw = event.target.value;
+                    if (raw === "inherit") {
+                      setTerminalShellChoice(undefined);
+                      return;
+                    }
+                    const profile = raw as TerminalShellProfileId;
+                    const inherited = workspace.terminalShell ?? defaultTerminalShell;
+                    const next =
+                      inherited.profile === profile
+                        ? { ...inherited }
+                        : selectionForProfile(profile, shellDetection.shells[profile]);
+                    if (profile === "wsl" && !next.wslDistro) {
+                      next.wslDistro = shellDetection.wslDistributions[0];
+                    }
+                    setTerminalShellChoice(next);
+                  }}
+                  onClick={(event) => event.stopPropagation()}
+                  className="max-w-[132px] shrink-0 rounded border border-bg-border bg-bg-primary px-1.5 py-0.5 text-[9px] text-text-secondary focus:border-accent-green focus:outline-none"
+                >
+                  <option value="inherit">Default shell</option>
+                  {terminalProfiles.map((profile) => {
+                    const result = shellDetection.shells[profile];
+                    const unavailable =
+                      profile !== "auto" && profile !== "custom" && result?.available === false;
+                    return (
+                      <option key={profile} value={profile} disabled={unavailable}>
+                        {shellProfileLabel(profile)}
+                        {unavailable ? " · unavailable" : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              )}
+
               {!installed && entry.slot === "packetcode" && (
                 <button
                   type="button"
                   onClick={openPacketCodeSetup}
-                  className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-meta text-accent-amber transition-colors hover:bg-accent-amber/10"
+                  className="hover:bg-accent-amber/10 inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-meta text-accent-amber transition-colors"
                   title="Install, locate, and configure PacketCode"
                 >
                   <Settings2 size={10} />
@@ -260,14 +296,12 @@ function PickerContent({
         })}
 
         {sessionRows.length === 0 && (
-          <div className="px-3 py-2 text-ui text-text-muted">
-            No matching CLI sessions
-          </div>
+          <div className="px-3 py-2 text-ui text-text-muted">No matching CLI sessions</div>
         )}
       </div>
 
       {!packetCodeReady && !normalizedFilter && (
-        <div className="mx-2 my-1 rounded border border-accent-amber/20 bg-accent-amber/5 px-2 py-1.5 text-meta text-text-muted">
+        <div className="border-accent-amber/20 bg-accent-amber/5 mx-2 my-1 rounded border px-2 py-1.5 text-meta text-text-muted">
           PacketCode is the recommended PacketADE terminal loop. Use{" "}
           <button
             type="button"

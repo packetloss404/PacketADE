@@ -1,3 +1,5 @@
+import type { TerminalShellSelection } from "@/types/terminal-shell";
+
 export type WorkspaceAgentSlot = "terminal" | "claude-code" | "codex" | "opencode" | "packetcode";
 
 export interface WorkspacePane {
@@ -31,6 +33,8 @@ export interface WorkspacePane {
    * round-trip pattern as `kind`/`conversationId`.
    */
   accountId?: string;
+  /** Per-pane raw local Terminal shell override. Absent means inherit. */
+  terminalShell?: TerminalShellSelection;
 }
 
 export interface Workspace {
@@ -67,4 +71,6 @@ export interface Workspace {
    * whose conversation pane was stripped by an old-binary re-save.
    */
   origin?: "conversation";
+  /** Raw local Terminal default for this workspace. Absent means app default. */
+  terminalShell?: TerminalShellSelection;
 }

@@ -1,11 +1,47 @@
 # PacketADE Handoff
 
-Last updated: 2026-08-01
+Last updated: 2026-08-02
 
 This is the restart document for the next PacketADE work session. Read it
 before older plans or audit notes.
 
-## Latest pass — 2026-08-01 (correctness fixes and proof refresh)
+## Latest pass — 2026-08-02 (selectable local terminal shells)
+
+Selectable shells are implemented for raw local Terminal panes without
+changing the default path.
+
+- `Settings → Workspaces & Terminal → Workspace defaults` now owns an app
+  default and an active-local-Workspace override. **Add Session** can set one
+  per Terminal pane. Resolution is pane → Workspace → app → Auto.
+- Auto is the compatibility contract: absent/invalid persisted values still
+  launch `powershell` on Windows and `bash` on macOS/Linux with the same empty
+  argument list used before this pass.
+- Windows choices are PowerShell 7, Windows PowerShell, Command Prompt, Git
+  Bash, and WSL (including detected distribution selection); POSIX choices are
+  Bash and Zsh. An allowlisted custom executable accepts bounded structured
+  arguments. Detection, install guidance, and a bounded test probe report the
+  executable, version, platform, and working directory.
+- This setting affects only new or restarted local Terminal panes. Dedicated
+  Claude Code, Codex, OpenCode, and PacketCode panes are unchanged. Remote
+  Terminal panes now open the SSH host's login shell rather than inheriting a
+  local shell choice.
+- Current source gates are green: `pnpm build`; `pnpm lint:src` with **0
+  errors** (9 existing Fast Refresh warnings); Vitest **1873/1873 across 228
+  files**; `cargo check`; and Rust **603 passed / 0 failed / 2 ignored**, plus
+  the intentionally manual schema-export test. The checked-in Tauri schema was
+  regenerated.
+- Host detection found Windows PowerShell, PowerShell 7, Command Prompt, Git
+  Bash at `C:\Program Files\Git\bin\bash.exe`, and WSL distributions
+  `Ubuntu-24.04` and `docker-desktop`. The PATH `bash.exe` is the Windows WSL
+  launcher, so PacketADE deliberately prefers the Git-for-Windows path for the
+  Git Bash profile.
+- This feature and this documentation pass are **not yet committed or
+  packaged**. The working tree is based on local `main` `b8c2d21`; that branch
+  was already one commit ahead of `origin/main`. The last Windows package is
+  still the `fd8c226` build described below. Run a packaged shell matrix before
+  calling the feature release-proven.
+
+## Prior pass — 2026-08-01 (correctness fixes and proof refresh)
 
 The “implemented but awaiting proof” backlog was re-audited without promoting
 fixtures to live/package claims. Canonical evidence:
@@ -427,13 +463,17 @@ safety saves and SSH password storage are source-complete and peer-reviewed.
 ## Remote Agents is still paused
 
 Remote Agents is preserved as the next major networked product bet, but no
-Remote Agents code should be written until the owner resolves all three
-Sprint-0 decisions in
+Remote Agents implementation should begin until the owner resolves the two
+remaining blocking Sprint-0 decisions in
 [`dev/remoteagents/09-open-decisions.md`](./dev/remoteagents/09-open-decisions.md):
 
 1. authentication provider;
 2. end-to-end-encryption timing;
-3. code/repository location.
+
+Relay architecture and code location were resolved on 2026-08-02: extend the
+standalone Rust service at `D:\projects\packet-relay`; keep shared protocol
+schemas and the PWA under PacketADE's `remoteagents/` workspace initially. Do
+not create a second relay on Cloudflare.
 
 The canonical plan is
 [`dev/remoteagents/README.md`](./dev/remoteagents/README.md). Keep the v1

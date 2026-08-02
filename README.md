@@ -191,6 +191,16 @@ The Claude Agent SDK and OpenAI Agents SDK providers run in a Node sidecar that 
 - Saved layouts hydrate dormant: Welcome launches no hidden CLIs, and only the
   selected Workspace starts its panes. Once running, those PTYs survive normal
   navigation to Agents, Flights, and other views
+- Local **Terminal** panes can use Auto-detect, PowerShell 7, Windows
+  PowerShell, Command Prompt, Git Bash, WSL, Bash, Zsh, or an allowlisted
+  custom shell. Configure the app default and active-Workspace override in
+  `Settings → Workspaces & Terminal → Workspace defaults`, or choose a
+  per-session override from **Add Session**. Precedence is session → Workspace
+  → app default → Auto; leaving everything unset preserves the historical
+  PowerShell-on-Windows/Bash-on-macOS-or-Linux launch exactly
+- Shell selection applies only to new or restarted local Terminal panes.
+  Dedicated Claude Code, Codex, OpenCode, and PacketCode panes keep their own
+  launch commands; SSH Terminal panes use the remote host's login shell
 - Live status bars for supported agent CLIs
 - Per-pane model and effort overrides, bypass-permissions toggles
 - PacketCode integration with strict version detection, bounded `doctor --json`

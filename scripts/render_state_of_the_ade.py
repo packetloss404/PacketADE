@@ -555,8 +555,8 @@ def cover(meta: list[str]) -> list:
         )
     )
     summary = Paragraph(
-        '<font name="%s" size="12">The original seven-domain review plus the 2026-08-01 '
-        "source, proof, Settings, Git-authority, and operational-truth status pass. Section 0 "
+        '<font name="%s" size="12">The original seven-domain review plus the 2026-08-02 '
+        "source, proof, Settings, Git-authority, operational-truth, and terminal-shell status pass. Section 0 "
         "is current; the detailed July audit remains preserved as dated evidence.</font>" % FONT,
         ParagraphStyle(
             "CoverSummary",
@@ -637,7 +637,7 @@ def page_furniture(canvas, doc):
         canvas.setFont(FONT, 7.3)
         canvas.setFillColor(MUTED)
         canvas.drawRightString(
-            width - doc.rightMargin, height - 0.39 * inch, "status 2026-08-01 \u00b7 package source fd8c226"
+            width - doc.rightMargin, height - 0.39 * inch, "status 2026-08-02 \u00b7 last package fd8c226"
         )
     canvas.setStrokeColor(LINE)
     canvas.line(doc.leftMargin, 0.48 * inch, width - doc.rightMargin, 0.48 * inch)
@@ -662,7 +662,7 @@ def render(source: Path, destination: Path):
         bottomMargin=0.64 * inch,
         title=TITLE,
         author="PacketADE engineering review",
-        subject="Living State of the ADE report, status pass 2026-08-01",
+        subject="Living State of the ADE report, status pass 2026-08-02",
     )
     frame = Frame(
         doc.leftMargin,
@@ -678,8 +678,8 @@ def render(source: Path, destination: Path):
     doc.addPageTemplates([PageTemplate(id="main", frames=[frame], onPage=page_furniture)])
 
     meta = [
-        [("Report", "2026-07-30 living record"), ("Status pass", "2026-08-01"), ("Package source", "fd8c226 on pushed main")],
-        [("Version", "0.10.2 \u00b7 protocol v11"), ("Source proof", "vitest 1857/225 \u00b7 Rust 600"), ("Windows build", "app + MSI + NSIS \u00b7 unsigned")],
+        [("Report", "2026-07-30 living record"), ("Status pass", "2026-08-02"), ("Last package", "fd8c226 \u00b7 unsigned")],
+        [("Version", "0.10.2 \u00b7 protocol v11"), ("Source proof", "vitest 1873/228 \u00b7 Rust 603"), ("Working tree", "b8c2d21 + shell profiles")],
     ]
 
     toc = TableOfContents()

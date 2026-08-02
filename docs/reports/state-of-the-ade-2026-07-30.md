@@ -8,7 +8,7 @@ register. The human edition is state-of-the-ade-2026-07-30.pdf and carries
 identical content. The former HTML edition was retired 2026-07-30.
 -->
 
-**Document type:** living record · **Report date:** 2026-07-30 · **Last status pass:** 2026-08-01 against packaged source commit `fd8c226`
+**Document type:** living record · **Report date:** 2026-07-30 · **Last status pass:** 2026-08-02 against the working tree based on `b8c2d21`; last packaged source remains `fd8c226`
 **Human edition:** [`state-of-the-ade-2026-07-30.pdf`](./state-of-the-ade-2026-07-30.pdf) — same content, paginated, 5 embedded screenshots.
 **Screenshots:** referenced by relative path under [`visual-audit-2026-07-30/`](./visual-audit-2026-07-30/); regenerate with `e2e/visual-audit.spec.ts`.
 
@@ -16,7 +16,7 @@ identical content. The former HTML edition was retired 2026-07-30.
 
 Read this section first. Everything below it is evidence.
 
-### 0.0 Current authority — 2026-08-01
+### 0.0 Current authority — 2026-08-02
 
 This section supersedes stale status language in the dated deep-dive below.
 Use [`../../backlog.md`](../../backlog.md) for the item-level task register,
@@ -43,18 +43,30 @@ The current product state is:
   are awaited and revision-fenced, unenforced controls are hidden, and SSH
   passwords remain OS-keyring-only with compensating rollback and truthful
   test/error state.
+- Selectable shells for raw local Terminal panes are source-complete in the
+  current working tree. Pane, Workspace, and app choices precede Auto; Auto
+  preserves the historical `powershell`-on-Windows/`bash`-on-POSIX launch.
+  Detection, WSL distributions, install guidance, custom-shell allowlisting,
+  and a bounded probe are wired. Dedicated CLI panes are unchanged and SSH
+  Terminals use the remote login shell. Commit/package and manual shell-matrix
+  proof remain open.
 - Flight Deck Option B, PacketAgent W9 consumer source, PacketCode integration,
   Project Memory, local-first MCP Hub, Dictation hardening, trust/provenance,
   Issue-to-Flight mirroring, and read-only Monitor are implemented at the
   source level. Their remaining gates are real/package/environment proof, not
   permission to claim a release.
 - Remote Agents is preserved but paused. Do not begin implementation until the
-  owner resolves authentication provider, E2EE timing, and code/repository
-  location.
-- The reviewed source is committed and pushed at `fd8c226`. A fresh unsigned
+  owner resolves authentication provider and E2EE timing. Relay architecture
+  and code location are already locked to the standalone Rust service at
+  `D:\projects\packet-relay`, with shared schemas and the PWA beginning under
+  PacketADE's `remoteagents/` workspace.
+- The last packaged operational-honesty source is committed and pushed at
+  `fd8c226`. A fresh unsigned
   v0.10.2 Windows application, MSI, and NSIS setup EXE were built from that
-  exact revision; hashes and paths are recorded in `HANDOFF.md`. No new tag or
-  public release was created.
+  exact revision; hashes and paths are recorded in `HANDOFF.md`. The current
+  shell-profile working tree is based on local `main` `b8c2d21`, is not yet
+  committed or packaged, and does not supersede that package evidence. No new
+  tag or public release was created.
 
 ### 0.1 State vector
 
@@ -62,16 +74,17 @@ The current product state is:
 |---|---|
 | `report_date` | 2026-07-30 |
 | `repo` | `D:\projects\PacketADE` |
-| `source_package_head` | `fd8c226` on pushed `main` |
+| `current_source_head` | local `main` `b8c2d21` plus uncommitted shell-profile work; branch was already one commit ahead of `origin/main` |
+| `last_windows_package_source` | `fd8c226` |
 | `app_version` | 0.10.2 · sidecar protocol v11 |
 | `chat_providers` | **7** (`api-openai-codex` dropped in `422ab94`; was 8) |
 | `loc_reviewed` | ~177k (frontend + Rust + sidecar) |
 | `gate_pnpm_build` | green |
 | `gate_lint` | 0 errors |
-| `gate_vitest` | 1857 / 1857 across 225 files |
+| `gate_vitest` | 1873 / 1873 across 228 files |
 | `gate_high_priority_focus` | 108 / 108 across 15 files |
 | `gate_sidecar_check` | green; live Anthropic round trip remains opt-in/external |
-| `gate_cargo_test` | 600 passed / 0 failed / 3 intentionally ignored or manual |
+| `gate_cargo_test` | 603 passed / 0 failed / 2 ignored; schema-export test intentionally manual/ignored |
 | `gate_ci` | **none — there is no CI** |
 | `historical_findings` (§2-§5) | 2026-07-30 baseline; original status tokens retained as evidence, not the live backlog |
 | `historical_audit_ledger` (§11) | 218 items swept across 64 docs; use §0.3 and `backlog.md` for current disposition |
@@ -115,21 +128,22 @@ closed releases.
 
 | # | Current item | Why it is still open | Authority |
 |---|---|---|---|
-| 1 | **Remote Agents Sprint 0 is paused.** | Owner must choose authentication provider, E2EE timing, and code/repository location before implementation. | `dev/remoteagents/09-open-decisions.md` |
+| 1 | **Remote Agents Sprint 0 is paused.** | The Rust `packet-relay` service and repository split are selected; owner must still choose authentication provider and E2EE timing before implementation. | `dev/remoteagents/09-open-decisions.md` |
 | 2 | **Distribution trust: CI, signing, notarization, updater.** | Release readiness is 0 failures / 6 warnings, but installers remain unsigned, updater configuration/signing and `latest.json` are absent, and no hosted CI gate exists. | `ROADMAP.md` R2 · release runbooks |
 | 3 | **Packaged acceptance matrix.** | Fresh unsigned Windows app/MSI/NSIS artifacts now exist for `fd8c226`; manual launch, lifecycle, accessibility, denial, credential, and real-host matrices remain. | `dev/proof-audit-2026-08-01.md` |
-| 4 | **Global Undo needs an owner design decision.** | Choose durable soft-delete/restore or a time-boxed undo toast; confirmations remain the current safety net. | UX-25 · D-12 · `backlog.md` |
-| 5 | **Flight supervision release-like proof.** | RG8/CG9/CI9/AP9 still require packaged local and disposable pinned-SSH matrices. | `dev/bridgemind/*-loop.md` |
-| 6 | **PacketAgent real W9 interoperability.** | Consumer source/fixtures pass; closure needs a separately running URL/token/workspace, close/relaunch durability, and remaining PacketAgent product slices. | `dev/bridgemind/packetagent-handoff-loop.md` |
-| 7 | **PacketCode published-release proof.** | Sibling source and doctor pass; signed multi-platform artifacts, clean-machine install/upgrade/rollback, packaged PacketADE launch, and PacketAgent compatibility remain. | `dev/bridgemind/packetcode-bridgecode-loop.md` |
-| 8 | **Settings and SSH external proof.** | P1 source is complete; run packaged OS-keyring behavior and live pinned-host password authentication. Stable scoped MCP IDs, active-project identity, profile validation, and consolidated diagnostics remain bounded P2 work. | `dev/workspace-agent-settings-decision-2026-07-29.md` |
-| 9 | **GitHub/Gitea packaged authority proof.** | Source guards and focused tests pass. Run real repository/PR transitions plus a slow-write/host-switch overlap because Rust selects the process-global host at command start. | `backlog.md` Git-host section |
-| 10 | **Issue-to-Flight mirroring proof.** | Source planner/store integration passes; packaged create/adopt/update/pull/conflict/restart/revoked-auth matrices need disposable GitHub and Gitea repositories. | `dev/issue-flight-mirror-design.md` |
-| 11 | **Memory, MCP, and provenance environment proof.** | Source implementations pass; real editor watch storms, configured local/pinned-SSH MCP servers, provider parity, crash/reload/version-skew, YOLO, and packaged visual checks remain. | BridgeMind loop ledgers |
-| 12 | **Dictation hardware/platform proof.** | Source hardening is complete, but this host has zero active capture endpoints; Windows device-loss/default/USB/Bluetooth and packaged macOS/Linux matrices remain. | `dev/bridgemind/dictation-repair-hardening-loop.md` |
-| 13 | **Monitor packaged/multi-display proof.** | Source route/capability tests pass and launch errors are visible; packaged lifecycle, stale-state, accessibility, and WebView-to-Rust denial proof remain. | `dev/send-to-monitor-plan.md` |
-| 14 | **Main-shell MS4 and bounded cleanup.** | Responsive/accessibility and 800px-to-ultrawide packaged review remain, plus naming polish, Ctrl+N versus `/new` semantics, and explicit keep/delete decisions for dead or unreferenced code. | `dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md` |
-| 15 | **Local-model and retired-provider follow-up.** | Gate Ollama picker rows by tool capability and decide whether to add WI-5 provider migration for conversations on the retired Codex chat-provider id. | `dev/local-model-routing.md` · `dev/oauth-removal-plan.md` |
+| 4 | **Local Terminal shell packaged matrix.** | Source and full local gates pass; commit/package and manually verify Auto, each installed Windows profile, unavailable-shell recovery, persistence/hydration, and CLI/SSH non-regression. | `backlog.md` · `HANDOFF.md` |
+| 5 | **Global Undo needs an owner design decision.** | Choose durable soft-delete/restore or a time-boxed undo toast; confirmations remain the current safety net. | UX-25 · D-12 · `backlog.md` |
+| 6 | **Flight supervision release-like proof.** | RG8/CG9/CI9/AP9 still require packaged local and disposable pinned-SSH matrices. | `dev/bridgemind/*-loop.md` |
+| 7 | **PacketAgent real W9 interoperability.** | Consumer source/fixtures pass; closure needs a separately running URL/token/workspace, close/relaunch durability, and remaining PacketAgent product slices. | `dev/bridgemind/packetagent-handoff-loop.md` |
+| 8 | **PacketCode published-release proof.** | Sibling source and doctor pass; signed multi-platform artifacts, clean-machine install/upgrade/rollback, packaged PacketADE launch, and PacketAgent compatibility remain. | `dev/bridgemind/packetcode-bridgecode-loop.md` |
+| 9 | **Settings and SSH external proof.** | P1 source is complete; run packaged OS-keyring behavior and live pinned-host password authentication. Stable scoped MCP IDs, active-project identity, profile validation, and consolidated diagnostics remain bounded P2 work. | `dev/workspace-agent-settings-decision-2026-07-29.md` |
+| 10 | **GitHub/Gitea packaged authority proof.** | Source guards and focused tests pass. Run real repository/PR transitions plus a slow-write/host-switch overlap because Rust selects the process-global host at command start. | `backlog.md` Git-host section |
+| 11 | **Issue-to-Flight mirroring proof.** | Source planner/store integration passes; packaged create/adopt/update/pull/conflict/restart/revoked-auth matrices need disposable GitHub and Gitea repositories. | `dev/issue-flight-mirror-design.md` |
+| 12 | **Memory, MCP, and provenance environment proof.** | Source implementations pass; real editor watch storms, configured local/pinned-SSH MCP servers, provider parity, crash/reload/version-skew, YOLO, and packaged visual checks remain. | BridgeMind loop ledgers |
+| 13 | **Dictation hardware/platform proof.** | Source hardening is complete, but this host has zero active capture endpoints; Windows device-loss/default/USB/Bluetooth and packaged macOS/Linux matrices remain. | `dev/bridgemind/dictation-repair-hardening-loop.md` |
+| 14 | **Monitor packaged/multi-display proof.** | Source route/capability tests pass and launch errors are visible; packaged lifecycle, stale-state, accessibility, and WebView-to-Rust denial proof remain. | `dev/send-to-monitor-plan.md` |
+| 15 | **Main-shell MS4 and bounded cleanup.** | Responsive/accessibility and 800px-to-ultrawide packaged review remain, plus naming polish, Ctrl+N versus `/new` semantics, and explicit keep/delete decisions for dead or unreferenced code. | `dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md` |
+| 16 | **Local-model and retired-provider follow-up.** | Gate Ollama picker rows by tool capability and decide whether to add WI-5 provider migration for conversations on the retired Codex chat-provider id. | `dev/local-model-routing.md` · `dev/oauth-removal-plan.md` |
 
 Closed by the 2026-08-01 source loop and no longer open: unconfirmed terminal-
 pane kill, duplicate cancel-pending controls, Anthropic edit correlation, Agent
@@ -156,12 +170,13 @@ autonomy persistence, and writable SSH-password lifecycle. Exact proof is in
 | `d8fb78e` | 2026-07-31 | CE6 prompt caching + its proof instruments · CE9 OpenAI-compat `cached_tokens` / `prompt_cache_key` · **WI-1** auxiliary routing off subscription OAuth (`core/aux_llm.rs`, `forward_start` deleted) — closes F-2.1-05 · historical repricing (`core/reprice.rs`, $158.88 → $52.96) · MiniMax host + `reasoning_details` round-trip |
 | `422ab94` | 2026-07-31 | Sidecar re-authenticated on API keys (`api-claude-oauth` kept, relabelled; `api-openai-codex` dropped) — closes F-2.5-01 · CE14 targeted `edit_file` · LM1 Ollama native `/api/chat` with `num_ctx` + `keep_alive` · Flight-launch P1 provider-id mapping |
 | `fd8c226` | 2026-08-01 | Terminal-pane confirmation; exact Anthropic edit correlation; acknowledgement-bound Agent Stop and Side Chat; Monitor error visibility; cancel-pending de-duplication; local/SSH/repository/Git-host authority guards; truthful Settings saves; hidden unenforced controls; OS-keyring SSH password lifecycle; proof and documentation reconciliation. Pushed to `main` and compiled into fresh unsigned Windows app/MSI/NSIS artifacts. |
+| working tree on `b8c2d21` | 2026-08-02 | Selectable raw-local-Terminal shells with app/Workspace/pane precedence, exact Auto compatibility, detection/install/probe UX, WSL distribution support, persisted schema, and remote-login-shell separation. Source-gated; not yet committed or packaged. |
 
 ---
 
 ## 1. Executive Summary
 
-> **2026-08-01 status note.** The assessment below explains the original audit
+> **2026-08-02 status note.** The assessment below explains the original audit
 > and is retained as evidence. Its forward-looking claims are superseded by
 > §0.0-§0.4. In particular, the terminal-pane confirmation, Anthropic edit-
 > approval correlation, acknowledgement-bound Agent Stop/Side Chat behavior,
@@ -190,7 +205,7 @@ The review found the weaknesses cluster in three bands, none of them structural 
 | **43 / 5** | Reconciled UX findings / owner decisions — all 5 decided **and implemented** 2026-07-30 |
 | **182 / 15** | Still-valid items across 64 audited docs / critical among them |
 | **65** | Creation / opening / deletion flow findings (5 reviewers) |
-| **1260 → 1820** | Vitest tests before the five implementations → after the 2026-07-31 cost/provider loops (`422ab94`); `cargo test` 440 → 595 |
+| **1260 → 1873** | Vitest tests before the five implementations → current shell-profile working tree; `cargo test` 440 → 603 |
 
 > **KEY**
 > **Headline strengths**
@@ -2305,15 +2320,15 @@ The sweep below was taken before `c3906c7`, `8cc2217`, and `7cad08b`. These rows
 
 ## 12. Recommended Next 90 Days
 
-### 12.0 Current order — status pass 2026-08-01
+### 12.0 Current order — status pass 2026-08-02
 
 1. **Done 2026-08-01:** commit and push the reviewed source as `fd8c226`, build
    fresh Windows app/MSI/NSIS artifacts from that revision, and bind the hashes
    in `HANDOFF.md` and the proof audit.
 2. Run the packaged/local matrices that need no product decision: terminal-
-   pane close, Agent Stop, Side Chat, Monitor launch failure, Settings save
-   failure, OS-keyring lifecycle, local Git-host switching, and responsive/
-   accessibility review.
+   pane close, the local shell profiles, Agent Stop, Side Chat, Monitor launch
+   failure, Settings save failure, OS-keyring lifecycle, local Git-host
+   switching, and responsive/accessibility review.
 3. Designate disposable GitHub, Gitea, and pinned SSH fixtures, then close the
    external authority, Issue-to-Flight, Flight supervision, MCP/provider,
    provenance, and real-host password gates without touching real user data.
@@ -2321,8 +2336,9 @@ The sweep below was taken before `c3906c7`, `8cc2217`, and `7cad08b`. These rows
    and add hosted CI for the already-green local quality ladder.
 5. Decide Undo, then complete the bounded Settings/MS4/local-model cleanup in
    §0.3 instead of reopening already-closed source work.
-6. Make the three Remote Agents Sprint-0 decisions. Only then start the relay,
-   PWA, and desktop feature-flag implementation.
+6. Resolve the two remaining Remote Agents Sprint-0 decisions (auth provider
+   and E2EE timing). Relay/code location is already selected; only then start
+   the relay, PWA, and desktop feature-flag implementation.
 
 The remainder of §12 is the original 2026-07-30 recommendation narrative. It
 is preserved for rationale and sequence history; §12.0 is authoritative now.

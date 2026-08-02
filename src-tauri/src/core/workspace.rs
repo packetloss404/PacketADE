@@ -6,6 +6,17 @@ pub struct GridPosition {
     pub col: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TerminalShellSelection {
+    pub profile: String,
+    #[serde(default)]
+    pub executable: Option<String>,
+    #[serde(default)]
+    pub args: Option<Vec<String>>,
+    #[serde(default)]
+    pub wsl_distro: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspacePane {
     pub id: String,
@@ -46,6 +57,10 @@ pub struct WorkspacePane {
     /// above — an inert `#[serde(default)]` mirror.
     #[serde(default)]
     pub account_id: Option<String>,
+    /// Optional raw-terminal shell override. Absent means inherit the
+    /// workspace/app default; old binaries therefore degrade to Auto.
+    #[serde(default)]
+    pub terminal_shell: Option<TerminalShellSelection>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,6 +97,10 @@ pub struct Workspace {
     /// downgrade pattern as the pane-level `kind`/`conversation_id`.
     #[serde(default)]
     pub origin: Option<String>,
+    /// Workspace-level raw-terminal shell override. Absent means inherit the
+    /// app default (which itself defaults to Auto).
+    #[serde(default)]
+    pub terminal_shell: Option<TerminalShellSelection>,
 }
 
 #[cfg(test)]
@@ -107,6 +126,7 @@ mod tests {
             kind: Some("conversation".to_string()),
             conversation_id: Some("conv-123".to_string()),
             account_id: None,
+            terminal_shell: None,
         }
     }
 
@@ -138,6 +158,7 @@ mod tests {
         assert!(pane.conversation_id.is_none());
         // Multi-account: absent ⇒ ambient login, exactly today's behaviour.
         assert!(pane.account_id.is_none());
+        assert!(pane.terminal_shell.is_none());
     }
 
     #[test]
@@ -158,6 +179,7 @@ mod tests {
             kind: None,
             conversation_id: None,
             account_id: Some("acct-personal".to_string()),
+            terminal_shell: None,
         };
         let json = serde_json::to_string(&pane).unwrap();
         let back: WorkspacePane = serde_json::from_str(&json).unwrap();
@@ -182,6 +204,7 @@ mod tests {
             remote_project_path: None,
             github_repo: None,
             origin: Some("conversation".to_string()),
+            terminal_shell: None,
         }
     }
 
@@ -213,6 +236,7 @@ mod tests {
         }"#;
         let ws: Workspace = serde_json::from_str(legacy).unwrap();
         assert!(ws.origin.is_none());
+        assert!(ws.terminal_shell.is_none());
     }
 
     #[test]
@@ -244,5 +268,33 @@ mod tests {
         assert!(reloaded.kind.is_none());
         assert!(reloaded.conversation_id.is_none());
         assert!(reloaded.account_id.is_none());
+        assert!(reloaded.terminal_shell.is_none());
+    }
+
+    #[test]
+    fn terminal_shell_overrides_round_trip_and_default_absent() {
+        let mut pane = conversation_pane();
+        pane.kind = None;
+        pane.conversation_id = None;
+        pane.terminal_shell = Some(TerminalShellSelection {
+            profile: "wsl".to_string(),
+            executable: Some("wsl.exe".to_string()),
+            args: None,
+            wsl_distro: Some("Ubuntu".to_string()),
+        });
+        let json = serde_json::to_string(&pane).unwrap();
+        let back: WorkspacePane = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.terminal_shell, pane.terminal_shell);
+
+        let mut workspace = wrapper_workspace();
+        workspace.terminal_shell = Some(TerminalShellSelection {
+            profile: "git-bash".to_string(),
+            executable: Some("C:\\Program Files\\Git\\bin\\bash.exe".to_string()),
+            args: Some(vec!["--login".to_string(), "-i".to_string()]),
+            wsl_distro: None,
+        });
+        let json = serde_json::to_string(&workspace).unwrap();
+        let back: Workspace = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.terminal_shell, workspace.terminal_shell);
     }
 }

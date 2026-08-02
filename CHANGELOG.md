@@ -9,6 +9,19 @@ task list.
 
 ## [Unreleased]
 
+### Added — selectable local terminal shells (2026-08-02)
+
+- Raw local Terminal panes can now use Auto-detect, PowerShell 7, Windows
+  PowerShell, Command Prompt, Git Bash, WSL, Bash, Zsh, or an allowlisted
+  custom shell.
+- An app default, active-Workspace override, and per-session override resolve
+  in pane → Workspace → app order. Leaving all settings untouched falls
+  through to Auto, which preserves the previous `powershell`/`bash` launch.
+- Settings detects installed shells and WSL distributions, links official
+  installation guidance where relevant, and provides a bounded test probe.
+- Dedicated coding-CLI panes remain unchanged; SSH Terminal panes open the
+  remote host's login shell.
+
 ### Changed — API agents now use API keys, never subscription logins (2026-07-31)
 
 PacketADE no longer signs API agents in with a Claude.ai or ChatGPT

@@ -8,6 +8,8 @@ export type ThemeDto = "dark" | "light";
 
 export type GridPositionDto = { row: number, col: number, };
 
+export type TerminalShellSelectionDto = { profile: string, executable?: string, args?: Array<string>, wslDistro?: string, };
+
 export type WorkspacePaneDto = { id: string, agentId: WorkspaceAgentSlotDto, sessionId: string | null, gridPosition: GridPositionDto, accentColor?: string, pinnedCommands?: Array<string>, taskId?: string, flightId?: string, agentConfigId?: string, initialPrompt?: string, overrideCommand?: string, overrideArgs?: Array<string>,
 /**
  * Pane kind discriminant (tile program, P1-S1). Absent ⇒ terminal. `kind`
@@ -24,7 +26,11 @@ conversationId?: string,
  * under. Absent ⇒ ambient login (today's behaviour). Inert
  * `#[serde(default)]` mirror of core `WorkspacePane.account_id`.
  */
-accountId?: string, };
+accountId?: string,
+/**
+ * Raw-terminal pane shell override. Absent means inherit/Auto.
+ */
+terminalShell?: TerminalShellSelectionDto, };
 
 export type GithubRepoDto = { owner: string, repo: string, };
 
@@ -34,7 +40,11 @@ export type WorkspaceDto = { id: string, name: string, agents: Array<WorkspaceAg
  * conversation wrappers, else absent. Inert `#[ts(optional)]` mirror of
  * core `Workspace.origin`.
  */
-origin?: string, };
+origin?: string,
+/**
+ * Workspace raw-terminal shell override. Absent means app default/Auto.
+ */
+terminalShell?: TerminalShellSelectionDto, };
 
 export type ServerConfigDto = { id: string, name: string, host: string, port: number, username: string, authMethod: string, keyPath: string | null, remotePath: string | null, lastConnectedAt: bigint | null, installedAgents: Array<string>, hostFingerprint: string | null, };
 
