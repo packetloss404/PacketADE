@@ -164,6 +164,7 @@ describe("WorkspacePane tile header", () => {
     );
     expect(lastTerminalProps.cliCommand).toBe("cmd.exe");
     expect(lastTerminalProps.cliArgs).toBeUndefined();
+    expect(screen.getByText("Terminal · Command Prompt")).toBeInTheDocument();
 
     unmount();
     render(<WorkspacePane pane={workspace.panes[0]} workspaceId={workspace.id} />);
@@ -183,5 +184,6 @@ describe("WorkspacePane tile header", () => {
 
     expect(lastTerminalProps.cliCommand).toBe("wsl");
     expect(lastTerminalProps.cliArgs).toEqual(["--distribution", "Ubuntu"]);
+    expect(screen.getByText("Terminal · WSL · Ubuntu")).toBeInTheDocument();
   });
 });

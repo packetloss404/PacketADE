@@ -175,6 +175,10 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
     : undefined;
   const knownHostsPath = useServerStore((s) => s.knownHostsPath);
   const isRemote = !!server;
+  const paneIdentity =
+    pane.agentId === "terminal"
+      ? `${agentName} · ${isRemote ? "Remote login shell" : terminalShellLaunch.label}`
+      : agentName;
   const localPlatform =
     typeof navigator !== "undefined" &&
     /windows|win32|win64/i.test(navigator.userAgent || navigator.platform || "")
@@ -303,7 +307,9 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
           <span
             className={`h-2 w-2 shrink-0 rounded-full ${c.text} bg-current ${state.alive ? "animate-pulse" : ""}`}
           />
-          <span className={`truncate text-ui font-semibold ${c.text}`}>{agentName}</span>
+          <span className={`truncate text-ui font-semibold ${c.text}`} title={paneIdentity}>
+            {paneIdentity}
+          </span>
           {/* Right next to the agent identity: two tiles running the same CLI
               under two logins are otherwise identical. Ambient panes render
               nothing here. */}
@@ -610,7 +616,7 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
     },
     [
       agentConfig,
-      agentName,
+      paneIdentity,
       mosaicWindowActions,
       isZoomed,
       setZoomedPane,

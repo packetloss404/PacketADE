@@ -11,12 +11,12 @@ describe("terminal shell profiles", () => {
     expect(resolveTerminalShellLaunch(undefined, "powershell")).toEqual({
       command: "powershell",
       args: [],
-      label: "Auto-detect",
+      label: "Windows PowerShell (Auto)",
     });
     expect(resolveTerminalShellLaunch({ profile: "auto" }, "bash")).toEqual({
       command: "bash",
       args: [],
-      label: "Auto-detect",
+      label: "Bash (Auto)",
     });
   });
 
@@ -48,7 +48,7 @@ describe("terminal shell profiles", () => {
         { profile: "custom", executable: "C:\\Windows\\System32\\calc.exe" },
         "powershell",
       ),
-    ).toMatchObject({ command: "powershell", label: "Auto-detect" });
+    ).toMatchObject({ command: "powershell", label: "Windows PowerShell (Auto)" });
   });
 
   it("normalizes corrupted persistence and parses quoted startup args", () => {

@@ -9,6 +9,8 @@ task list.
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-08-02
+
 ### Added — selectable local terminal shells (2026-08-02)
 
 - Raw local Terminal panes can now use Auto-detect, PowerShell 7, Windows
@@ -19,6 +21,8 @@ task list.
   through to Auto, which preserves the previous `powershell`/`bash` launch.
 - Settings detects installed shells and WSL distributions, links official
   installation guidance where relevant, and provides a bounded test probe.
+- Terminal pane headers now show the effective shell identity, including the
+  shell selected by Auto and the chosen WSL distribution.
 - Dedicated coding-CLI panes remain unchanged; SSH Terminal panes open the
   remote host's login shell.
 

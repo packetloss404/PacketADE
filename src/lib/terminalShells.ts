@@ -167,6 +167,23 @@ export interface TerminalShellLaunch {
   label: string;
 }
 
+function autoShellLabel(command: string): string {
+  switch (customShellProgram(command)) {
+    case "powershell":
+      return "Windows PowerShell (Auto)";
+    case "pwsh":
+      return "PowerShell 7 (Auto)";
+    case "cmd":
+      return "Command Prompt (Auto)";
+    case "bash":
+      return "Bash (Auto)";
+    case "zsh":
+      return "Zsh (Auto)";
+    default:
+      return `${command} (Auto)`;
+  }
+}
+
 /** Resolve one stored choice into PTY launch arguments without invoking a shell. */
 export function resolveTerminalShellLaunch(
   input: TerminalShellSelection | undefined,
@@ -207,10 +224,10 @@ export function resolveTerminalShellLaunch(
       if (executable && isSupportedCustomShell(executable)) {
         return { command: executable, args: selection.args ?? [], label: "Custom shell" };
       }
-      return { command: autoCommand, args: [], label: "Auto-detect" };
+      return { command: autoCommand, args: [], label: autoShellLabel(autoCommand) };
     case "auto":
     default:
       // Compatibility contract: byte-for-byte the old command/args choice.
-      return { command: autoCommand, args: [], label: "Auto-detect" };
+      return { command: autoCommand, args: [], label: autoShellLabel(autoCommand) };
   }
 }
