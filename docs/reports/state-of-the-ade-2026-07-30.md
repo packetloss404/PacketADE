@@ -8,7 +8,7 @@ register. The human edition is state-of-the-ade-2026-07-30.pdf and carries
 identical content. The former HTML edition was retired 2026-07-30.
 -->
 
-**Document type:** living record · **Report date:** 2026-07-30 · **Last status pass:** 2026-08-02 against the working tree based on `b8c2d21`; last packaged source remains `fd8c226`
+**Document type:** living record · **Report date:** 2026-07-30 · **Last status pass:** 2026-08-02 against tagged release source `61e0669` (`v0.10.3`)
 **Human edition:** [`state-of-the-ade-2026-07-30.pdf`](./state-of-the-ade-2026-07-30.pdf) — same content, paginated, 5 embedded screenshots.
 **Screenshots:** referenced by relative path under [`visual-audit-2026-07-30/`](./visual-audit-2026-07-30/); regenerate with `e2e/visual-audit.spec.ts`.
 
@@ -43,13 +43,18 @@ The current product state is:
   are awaited and revision-fenced, unenforced controls are hidden, and SSH
   passwords remain OS-keyring-only with compensating rollback and truthful
   test/error state.
-- Selectable shells for raw local Terminal panes are source-complete in the
-  current working tree. Pane, Workspace, and app choices precede Auto; Auto
+- Selectable shells for raw local Terminal panes are committed and packaged.
+  Pane, Workspace, and app choices precede Auto; Auto
   preserves the historical `powershell`-on-Windows/`bash`-on-POSIX launch.
   Detection, WSL distributions, install guidance, custom-shell allowlisting,
   and a bounded probe are wired. Dedicated CLI panes are unchanged and SSH
-  Terminals use the remote login shell. Commit/package and manual shell-matrix
-  proof remain open.
+  Terminals use the remote login shell. Native Settings detection/Auto and
+  direct Windows profile command probes pass; the interactive packaged pane,
+  persistence, and unavailable-profile matrix remains open.
+- Claude Code panes now self-bootstrap PacketADE's native model/context/cost
+  bar through a session-scoped `--settings` collector. No separately installed
+  script or global Claude settings edit is required; release-mode invocation
+  through both Windows PowerShell and Git Bash is proven.
 - Flight Deck Option B, PacketAgent W9 consumer source, PacketCode integration,
   Project Memory, local-first MCP Hub, Dictation hardening, trust/provenance,
   Issue-to-Flight mirroring, and read-only Monitor are implemented at the
@@ -60,13 +65,11 @@ The current product state is:
   and code location are already locked to the standalone Rust service at
   `D:\projects\packet-relay`, with shared schemas and the PWA beginning under
   PacketADE's `remoteagents/` workspace.
-- The last packaged operational-honesty source is committed and pushed at
-  `fd8c226`. A fresh unsigned
-  v0.10.2 Windows application, MSI, and NSIS setup EXE were built from that
-  exact revision; hashes and paths are recorded in `HANDOFF.md`. The current
-  shell-profile working tree is based on local `main` `b8c2d21`, is not yet
-  committed or packaged, and does not supersede that package evidence. No new
-  tag or public release was created.
+- Release source `61e0669` is committed, pushed, and tagged `v0.10.3`. Fresh
+  unsigned Windows application, MSI, and NSIS setup artifacts were built from
+  that exact revision; hashes and paths are recorded in `HANDOFF.md`. Release
+  gate 11/11 passes. Signing/updater warnings remain external distribution
+  gates rather than package-build failures.
 
 ### 0.1 State vector
 
@@ -74,22 +77,22 @@ The current product state is:
 |---|---|
 | `report_date` | 2026-07-30 |
 | `repo` | `D:\projects\PacketADE` |
-| `current_source_head` | local `main` `b8c2d21` plus uncommitted shell-profile work; branch was already one commit ahead of `origin/main` |
-| `last_windows_package_source` | `fd8c226` |
-| `app_version` | 0.10.2 · sidecar protocol v11 |
+| `current_source_head` | `61e0669` (`v0.10.3` release source; later evidence-only documentation commit does not change the package) |
+| `last_windows_package_source` | `61e0669` |
+| `app_version` | 0.10.3 · sidecar protocol v11 |
 | `chat_providers` | **7** (`api-openai-codex` dropped in `422ab94`; was 8) |
 | `loc_reviewed` | ~177k (frontend + Rust + sidecar) |
 | `gate_pnpm_build` | green |
 | `gate_lint` | 0 errors |
-| `gate_vitest` | 1873 / 1873 across 228 files |
+| `gate_vitest` | 1875 / 1875 across 229 files |
 | `gate_high_priority_focus` | 108 / 108 across 15 files |
 | `gate_sidecar_check` | green; live Anthropic round trip remains opt-in/external |
-| `gate_cargo_test` | 603 passed / 0 failed / 2 ignored; schema-export test intentionally manual/ignored |
+| `gate_cargo_test` | 606 passed / 0 failed / 2 ignored; explicit schema export 1 / 1 |
 | `gate_ci` | **none — there is no CI** |
 | `historical_findings` (§2-§5) | 2026-07-30 baseline; original status tokens retained as evidence, not the live backlog |
 | `historical_audit_ledger` (§11) | 218 items swept across 64 docs; use §0.3 and `backlog.md` for current disposition |
 | `owner_decisions` | D1-D5 and Workspace/Agents Option B decided and implemented; Undo remains a separate owner decision |
-| `windows_package` | fresh unsigned app/MSI/NSIS built from `fd8c226`; hashes in `HANDOFF.md` |
+| `windows_package` | fresh unsigned app/MSI/NSIS built from tagged `61e0669`; hashes in `HANDOFF.md` |
 | `release_readiness` | 0 failures / 6 warnings; signing, notarization, updater signing/config, and `latest.json` remain absent |
 
 ### 0.2 ID scheme and grep recipes
@@ -110,7 +113,7 @@ The current product state is:
   already closed during the original audit pass.
 - `grep -n "NEW 2026-07-30" state-of-the-ade-2026-07-30.md` → findings discovered after first publication.
 - `grep -n "NEW 2026-07-31" state-of-the-ade-2026-07-30.md` → findings opened by the 2026-07-31 loops.
-- Resolving commits referenced by this document, in order: `d5cfe8b`, `a8abf54`, `531fbec`, `2898946`, `86cfac3`, `c3906c7`, `8cc2217`, `7cad08b`, `073cbf8`, `35dcb54`, `d8fb78e`, `422ab94`.
+- Resolving commits referenced by this document, in order: `d5cfe8b`, `a8abf54`, `531fbec`, `2898946`, `86cfac3`, `c3906c7`, `8cc2217`, `7cad08b`, `073cbf8`, `35dcb54`, `d8fb78e`, `422ab94`, `fd8c226`, `4193df3`, `61e0669`.
 
 > **SHA REMAP, 2026-07-31.** The first eight shas above were rewritten by a
 > history rewrite between publication and the 07-31 pass; the originals
@@ -130,8 +133,8 @@ closed releases.
 |---|---|---|---|
 | 1 | **Remote Agents Sprint 0 is paused.** | The Rust `packet-relay` service and repository split are selected; owner must still choose authentication provider and E2EE timing before implementation. | `dev/remoteagents/09-open-decisions.md` |
 | 2 | **Distribution trust: CI, signing, notarization, updater.** | Release readiness is 0 failures / 6 warnings, but installers remain unsigned, updater configuration/signing and `latest.json` are absent, and no hosted CI gate exists. | `ROADMAP.md` R2 · release runbooks |
-| 3 | **Packaged acceptance matrix.** | Fresh unsigned Windows app/MSI/NSIS artifacts now exist for `fd8c226`; manual launch, lifecycle, accessibility, denial, credential, and real-host matrices remain. | `dev/proof-audit-2026-08-01.md` |
-| 4 | **Local Terminal shell packaged matrix.** | Source and full local gates pass; commit/package and manually verify Auto, each installed Windows profile, unavailable-shell recovery, persistence/hydration, and CLI/SSH non-regression. | `backlog.md` · `HANDOFF.md` |
+| 3 | **Packaged acceptance matrix.** | Fresh unsigned v0.10.3 Windows app/MSI/NSIS artifacts now exist for tagged `61e0669`; manual launch, lifecycle, accessibility, denial, credential, and real-host matrices remain. | `dev/proof-audit-2026-08-01.md` |
+| 4 | **Local Terminal shell interactive packaged matrix.** | Source, package compile, native detection/Auto, and direct Windows profile probes pass; manually verify real panes, unavailable-shell recovery, persistence/hydration, and CLI/SSH non-regression. | `backlog.md` · `HANDOFF.md` |
 | 5 | **Global Undo needs an owner design decision.** | Choose durable soft-delete/restore or a time-boxed undo toast; confirmations remain the current safety net. | UX-25 · D-12 · `backlog.md` |
 | 6 | **Flight supervision release-like proof.** | RG8/CG9/CI9/AP9 still require packaged local and disposable pinned-SSH matrices. | `dev/bridgemind/*-loop.md` |
 | 7 | **PacketAgent real W9 interoperability.** | Consumer source/fixtures pass; closure needs a separately running URL/token/workspace, close/relaunch durability, and remaining PacketAgent product slices. | `dev/bridgemind/packetagent-handoff-loop.md` |
@@ -170,7 +173,8 @@ autonomy persistence, and writable SSH-password lifecycle. Exact proof is in
 | `d8fb78e` | 2026-07-31 | CE6 prompt caching + its proof instruments · CE9 OpenAI-compat `cached_tokens` / `prompt_cache_key` · **WI-1** auxiliary routing off subscription OAuth (`core/aux_llm.rs`, `forward_start` deleted) — closes F-2.1-05 · historical repricing (`core/reprice.rs`, $158.88 → $52.96) · MiniMax host + `reasoning_details` round-trip |
 | `422ab94` | 2026-07-31 | Sidecar re-authenticated on API keys (`api-claude-oauth` kept, relabelled; `api-openai-codex` dropped) — closes F-2.5-01 · CE14 targeted `edit_file` · LM1 Ollama native `/api/chat` with `num_ctx` + `keep_alive` · Flight-launch P1 provider-id mapping |
 | `fd8c226` | 2026-08-01 | Terminal-pane confirmation; exact Anthropic edit correlation; acknowledgement-bound Agent Stop and Side Chat; Monitor error visibility; cancel-pending de-duplication; local/SSH/repository/Git-host authority guards; truthful Settings saves; hidden unenforced controls; OS-keyring SSH password lifecycle; proof and documentation reconciliation. Pushed to `main` and compiled into fresh unsigned Windows app/MSI/NSIS artifacts. |
-| working tree on `b8c2d21` | 2026-08-02 | Selectable raw-local-Terminal shells with app/Workspace/pane precedence, exact Auto compatibility, detection/install/probe UX, WSL distribution support, persisted schema, and remote-login-shell separation. Source-gated; not yet committed or packaged. |
+| `4193df3` | 2026-08-02 | v0.10.3 version cut plus effective raw-local-Terminal shell identities, including Auto and WSL distribution labels. |
+| `61e0669` | 2026-08-02 | PacketADE-owned Claude Code native statusline collector and visible first-snapshot state. Pushed, tagged `v0.10.3`, source-gated, and compiled into fresh unsigned Windows app/MSI/NSIS artifacts together with the selectable-shell feature. |
 
 ---
 
@@ -182,7 +186,7 @@ autonomy persistence, and writable SSH-password lifecycle. Exact proof is in
 > approval correlation, acknowledgement-bound Agent Stop/Side Chat behavior,
 > Git/repository authority corrections, Settings P1 authority/security work,
 > and their source tests are now complete. The present bottleneck is no longer
-> those source defects; it is commit/package-bound and real-environment proof,
+> those source defects; it is interactive packaged and real-environment proof,
 > distribution trust, the Undo decision, bounded MS4/P2 cleanup, and the three
 > Remote Agents Sprint-0 decisions.
 
@@ -2322,9 +2326,9 @@ The sweep below was taken before `c3906c7`, `8cc2217`, and `7cad08b`. These rows
 
 ### 12.0 Current order — status pass 2026-08-02
 
-1. **Done 2026-08-01:** commit and push the reviewed source as `fd8c226`, build
-   fresh Windows app/MSI/NSIS artifacts from that revision, and bind the hashes
-   in `HANDOFF.md` and the proof audit.
+1. **Done 2026-08-02:** tag release source `61e0669` as `v0.10.3`, build fresh
+   Windows app/MSI/NSIS artifacts from that revision, validate the release-mode
+   Claude statusline helper, and bind the hashes in `HANDOFF.md`.
 2. Run the packaged/local matrices that need no product decision: terminal-
    pane close, the local shell profiles, Agent Stop, Side Chat, Monitor launch
    failure, Settings save failure, OS-keyring lifecycle, local Git-host

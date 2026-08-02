@@ -4,9 +4,9 @@
 
 PacketADE is a Tauri v2 desktop app that brings AI coding agents, planning, issue tracking, memory, and workspace management into a single native environment. It is built for running real development workflows across multiple agent CLIs without leaving the app.
 
-Current source release: **v0.10.2** (2026-07-28). A fresh unsigned Windows
-development build was compiled from pushed `main` commit `fd8c226` on
-2026-08-01; see
+Current source release: **v0.10.3** (2026-08-02), tagged from pushed `main`
+commit `61e0669`. Fresh unsigned Windows app, NSIS, and MSI artifacts were
+compiled from that exact revision; see
 [`HANDOFF.md`](./HANDOFF.md#latest-windows-build) for the exact artifacts and
 hashes.
 
@@ -16,7 +16,7 @@ _An actual native PacketADE capture: PacketCode and Claude Code running their re
 
 ## Documentation Map
 
-- [`docs/reports/state-of-the-ade-2026-07-30.md`](./docs/reports/state-of-the-ade-2026-07-30.md) — primary AI-readable State of the ADE living record; Section 0 is the current 2026-08-01 authority.
+- [`docs/reports/state-of-the-ade-2026-07-30.md`](./docs/reports/state-of-the-ade-2026-07-30.md) — primary AI-readable State of the ADE living record; Section 0 is the current 2026-08-02 authority.
 - [`docs/reports/state-of-the-ade-2026-07-30.pdf`](./docs/reports/state-of-the-ade-2026-07-30.pdf) — identical paginated human edition.
 - [`HANDOFF.md`](./HANDOFF.md) — exact restart point, completed decisions,
   current owner questions, build evidence, and guardrails.
@@ -29,8 +29,9 @@ _An actual native PacketADE capture: PacketCode and Claude Code running their re
 - `AGENTS.md` / `CLAUDE.md` — local agent-facing repository instructions (generated and intentionally gitignored).
 
 The main-shell/right-dock decisions, Workspace/Agents restructuring, and the
-six-group Settings information architecture are implemented. Remaining shell
-work is the explicit MS4 packaged/responsive proof and the smaller residue in
+six-group Settings information architecture are implemented. The local-shell
+feature is committed, packaged, and command-probed on Windows; remaining shell
+work is the explicit interactive packaged matrix, MS4 responsive proof, and the smaller residue in
 [`backlog.md`](./backlog.md); Remote Agents has selected the standalone Rust
 `packet-relay` service and remains paused on its two unresolved Sprint-0
 decisions: auth provider and the E2EE launch gate.
@@ -43,6 +44,9 @@ decisions: auth provider and the E2EE launch gate.
   event contract
 - Run PacketCode, Claude Code, Codex CLI, OpenCode, and plain shells in
   CLI-first **Workspaces** with persistent draggable mosaics
+- See the effective raw-terminal shell in each pane header, and get a native
+  Claude Code model/context/cost bar without installing a separate statusline
+  script or changing global Claude settings
 - Launch and supervise larger units of work from the **Flight Deck** — a single-screen master-detail flight control surface
 - Track issues on a kanban board and send them directly to workspace sessions
 - Connect to remote servers via SSH and run agent sessions over the wire
@@ -420,7 +424,7 @@ PacketADE ships with a Node.js sidecar that powers the Claude Agent SDK (API) an
 
 - To point the app at a custom sidecar entry point (e.g. when running from a different working copy), set `PACKETADE_SIDECAR_PATH` to the absolute path of the compiled entry file before launching PacketADE. `PACKETADE_NODE_PATH` similarly overrides the Node binary used to launch it.
 
-`pnpm build:all` still works for a full local build. For **production bundling**, `pnpm tauri build` now auto-runs the `prebundle` chain (`fetch-node` → `sidecar:install` → `sidecar:build` → `sidecar:prune`) via Tauri's `beforeBuildCommand`, so no manual sidecar or Node setup is needed. A pinned Node 24.15.0 runtime is fetched as a Tauri `externalBin`, and the sidecar ships with a pruned production `node_modules`. Reference sizes from the v0.10.2 Windows build: NSIS installer 84.16 MiB, MSI installer 131.47 MiB (both are produced because `bundle.targets` is `"all"`), standalone `packetade.exe` 41.31 MiB. The prune step removes the sidecar's devDependencies; run `pnpm sidecar:install` afterward to restore them for further sidecar development.
+`pnpm build:all` still works for a full local build. For **production bundling**, `pnpm tauri build` now auto-runs the `prebundle` chain (`fetch-node` → `sidecar:install` → `sidecar:build` → `sidecar:prune`) via Tauri's `beforeBuildCommand`, so no manual sidecar or Node setup is needed. A pinned Node 24.15.0 runtime is fetched as a Tauri `externalBin`, and the sidecar ships with a pruned production `node_modules`. Reference sizes from the v0.10.3 Windows build: NSIS installer 84.68 MiB, MSI installer 132.19 MiB (both are produced because `bundle.targets` is `"all"`), standalone `packetade.exe` 43.81 MiB. The prune step removes the sidecar's devDependencies; run `pnpm sidecar:install` afterward to restore them for further sidecar development.
 
 #### Sidecar status
 

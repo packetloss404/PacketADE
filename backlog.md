@@ -573,16 +573,18 @@ engine or persisted conversation panes as cleanup.
   Diagnostics now own all previous cards through lossless sub-tabs. Search,
   scope badges, current typed PacketCode recovery, and legacy Agent-section CLI
   recovery compatibility are implemented and test-covered.
-- **P2 — selectable local Terminal shells. SOURCE COMPLETE 2026-08-02;
-  package proof open.** App, Workspace, and per-pane choices now resolve in
+- **P2 — selectable local Terminal shells. SHIPPED IN v0.10.3; interactive
+  package matrix open.** App, Workspace, and per-pane choices now resolve in
   that order before Auto. Auto deliberately preserves the old
   PowerShell-on-Windows/Bash-on-POSIX launch. Detection, WSL distribution
   discovery, install help, custom-shell allowlisting, and bounded probes are
   implemented; coding-CLI panes remain separate and SSH Terminals use the
-  remote login shell. Commit the current worktree, then run a packaged matrix
-  covering Auto, PowerShell 7, Windows PowerShell, Command Prompt, Git Bash,
-  WSL, unavailable-shell recovery, persistence/hydration, and CLI/SSH
-  non-regression before calling it shipped.
+  remote login shell. Release source `61e0669` is tagged and packaged; native
+  detection/Auto and direct PowerShell 7, Windows PowerShell, Command Prompt,
+  Git Bash, and WSL command probes pass. Still run the interactive packaged
+  pane matrix covering every profile, unavailable-shell recovery,
+  persistence/hydration, and CLI/SSH non-regression before calling the full UX
+  acceptance matrix closed.
 - **P2 — add CLI-first preferences and diagnostics.** Terminal appearance and
   behavior, Workspace restore/template defaults, default CLI and model,
   worktree cleanup, external editor, environment editing, and a consolidated
@@ -822,12 +824,14 @@ the normal priority scheme.
   (`workspaceStore.ts`), and retired builtin agent configs are filtered on
   hydrate (`agentStore.ts`). Supported PTY CLIs are now Claude Code, Codex
   CLI, OpenCode, PacketCode, and plain shells.
-- **✅ Shipped — statusline tooling in `claude-code-tools`.** The sibling
+- **✅ Shipped — statusline tooling is now self-contained in PacketADE.** The sibling
   `claude-code-tools` repo now carries feature-synced Claude Code statuslines
   for Windows (`claudetools-win/statusline.ps1`, PowerShell, no deps) and
   macOS/Linux (`claudetools-bash/statusline/`, bash + `jq`/`bc`, with
-  installer). Not part of the PacketADE build; noted here so the ledger does
-  not lose cross-repo work.
+  installer). PacketADE v0.10.3 no longer depends on those scripts: it injects
+  a session-scoped collector into Claude Code panes, preserves global Claude
+  settings, and feeds the native model/context/cost bar directly. The sibling
+  tooling remains useful for Claude Code outside PacketADE.
 - **✅ Refreshed 2026-08-01 — adopt State of the ADE review recommendations.**
   The report's current actionable set is reconciled with this ledger; see
   `docs/reports/state-of-the-ade-2026-07-30.md` — the agent-facing edition and
@@ -1128,5 +1132,5 @@ only what the sections above do not already carry.
   SDK `pending_edit` event now carries the exact non-empty `toolUseId` consumed
   by `edit_response`, so gated writes resolve the correct parked hook. The
   dedicated `sidecar:anthropic-edit-correlation-smoke` is part of
-  `sidecar:check`; final integrated gates and the `fd8c226` unsigned Windows
+  `sidecar:check`; final integrated gates and the `61e0669` v0.10.3 unsigned Windows
   package build pass. Live-provider approval remains external proof.

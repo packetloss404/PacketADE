@@ -5,7 +5,7 @@ Last updated: 2026-08-02
 This is the restart document for the next PacketADE work session. Read it
 before older plans or audit notes.
 
-## Latest pass — 2026-08-02 (selectable local terminal shells)
+## Latest pass — 2026-08-02 (v0.10.3 terminal and statusline release)
 
 Selectable shells are implemented for raw local Terminal panes without
 changing the default path.
@@ -25,21 +25,31 @@ changing the default path.
   Claude Code, Codex, OpenCode, and PacketCode panes are unchanged. Remote
   Terminal panes now open the SSH host's login shell rather than inheriting a
   local shell choice.
-- Current source gates are green: `pnpm build`; `pnpm lint:src` with **0
-  errors** (9 existing Fast Refresh warnings); Vitest **1873/1873 across 228
-  files**; `cargo check`; and Rust **603 passed / 0 failed / 2 ignored**, plus
-  the intentionally manual schema-export test. The checked-in Tauri schema was
-  regenerated.
+- Raw Terminal pane headers show the effective shell, including Auto's actual
+  resolution and the selected WSL distribution.
+- Claude Code panes no longer depend on a separately installed statusline
+  script. PacketADE injects a session-scoped collector through Claude's
+  supported `--settings` option, writes the existing native-bar contract, and
+  leaves global `~/.claude/settings.json` untouched. The bar shows a collecting
+  state until its first model/context/cost snapshot.
+- Current source gates are green: `pnpm preflight`; `pnpm lint:src` with **0
+  errors** (9 existing Fast Refresh warnings); Vitest **1875/1875 across 229
+  files**; Rust **606 passed / 0 failed / 2 ignored**; and the explicit Tauri
+  schema export **1/1**.
 - Host detection found Windows PowerShell, PowerShell 7, Command Prompt, Git
   Bash at `C:\Program Files\Git\bin\bash.exe`, and WSL distributions
   `Ubuntu-24.04` and `docker-desktop`. The PATH `bash.exe` is the Windows WSL
   launcher, so PacketADE deliberately prefers the Git-for-Windows path for the
   Git Bash profile.
-- This feature and this documentation pass are **not yet committed or
-  packaged**. The working tree is based on local `main` `b8c2d21`; that branch
-  was already one commit ahead of `origin/main`. The last Windows package is
-  still the `fd8c226` build described below. Run a packaged shell matrix before
-  calling the feature release-proven.
+- Native Settings proved detection and Auto's bounded PowerShell probe. Direct
+  process probes passed for PowerShell 7, Windows PowerShell, Command Prompt,
+  Git Bash, and WSL; the statusline command passed through both Windows
+  PowerShell and Git Bash in debug and release-mode binaries.
+- Release source `61e0669` is pushed and tagged `v0.10.3`. Fresh unsigned
+  standalone/NSIS/MSI artifacts were built from that exact commit, release
+  gate **11/11** passed, and sidecar development dependencies were restored.
+  The remaining shell acceptance work is the explicit interactive packaged
+  pane/persistence/unavailable-profile matrix, not source or compile proof.
 
 ## Prior pass — 2026-08-01 (correctness fixes and proof refresh)
 
@@ -503,24 +513,21 @@ recorded in
 
 ## Latest Windows build
 
-On 2026-08-01, `pnpm tauri build` succeeded from pushed `main` commit
-`fd8c22643715572c89365e7a21bf3c7f06fd57f4`. Sidecar development dependencies
-were restored after the production prune.
-
-This is a post-tag local development rebuild that still uses version `0.10.2`;
-it is not a newly tagged public release.
+On 2026-08-02, `pnpm tauri build` succeeded from pushed/tagged release-source
+commit `61e06691c0679c7f7f6f0e313af61fbedbf872fa` (`v0.10.3`). Sidecar
+development dependencies were restored after the production prune.
 
 | Artifact                         |       Size | SHA-256                                                            |
 | -------------------------------- | ---------: | ------------------------------------------------------------------ |
-| `packetade.exe`                  |  43.59 MiB | `47E04DD3B439B467E81E0CA0DB1ECF7C58786A6724ABDC496FEE09E1F0373A14` |
-| `PacketADE_0.10.2_x64-setup.exe` |  84.64 MiB | `872129D74DE1F5E2A42ABAC39FC46D0E703BC2EAA5A5FC066FBD3E0E4B6E37B7` |
-| `PacketADE_0.10.2_x64_en-US.msi` | 132.16 MiB | `4BA6DC0F3FD492D32633D207DB3A33CFF4C5BFF295D73D51A702480AC4D7660D` |
+| `packetade.exe`                  |  43.81 MiB | `B09463BA9F59D4AA4B1E6C807303C77FFE7F53F95F3F233F167A4ABCB92A04FB` |
+| `PacketADE_0.10.3_x64-setup.exe` |  84.68 MiB | `6A2AA8F94721B55A098E1CC74782E4D60C67C2C7E8285FD5AF19DDFE3492D2DD` |
+| `PacketADE_0.10.3_x64_en-US.msi` | 132.19 MiB | `A9631E279F15017D9DF11B379E94E9E5792CACBAC674AB3A0329F3EF5B7E4460` |
 
 Local paths:
 
 - `C:\Users\ianwalmsley\packetade-build\release\packetade.exe`
-- `C:\Users\ianwalmsley\packetade-build\release\bundle\nsis\PacketADE_0.10.2_x64-setup.exe`
-- `C:\Users\ianwalmsley\packetade-build\release\bundle\msi\PacketADE_0.10.2_x64_en-US.msi`
+- `C:\Users\ianwalmsley\packetade-build\release\bundle\nsis\PacketADE_0.10.3_x64-setup.exe`
+- `C:\Users\ianwalmsley\packetade-build\release\bundle\msi\PacketADE_0.10.3_x64_en-US.msi`
 
 All three artifacts are unsigned.
 
@@ -529,11 +536,12 @@ stale Browserslist, and `ts-rs` serde-alias warnings.
 
 ## Last verified gates
 
-The `fd8c226` source/package pass is the current authority: **225 frontend test
-files / 1,857 tests**, **15 focused files / 108 tests**, **600 Rust tests passed
-with 3 intentionally ignored/manual**, deterministic sidecar checks passing,
-ESLint at zero errors with nine existing Fast Refresh warnings, production web
-build passing, and both Windows installer formats compiled successfully.
+The `61e0669` v0.10.3 source/package pass is the current authority: **229
+frontend test files / 1,875 tests**, **606 Rust tests passed with 2
+intentionally ignored/manual**, deterministic sidecar checks and release gate
+**11/11** passing, ESLint at zero errors with nine existing Fast Refresh
+warnings, production web build passing, and both Windows installer formats
+compiled successfully.
 
 Every commit in this sequence ran the frontend gates before landing:
 
