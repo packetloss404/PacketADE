@@ -8,10 +8,14 @@ describe("git-host capabilities (G10)", () => {
     expect(gh.activityFeed).toBe(true);
     expect(gh.checkRuns).toBe(true);
     expect(gh.draftPrToggle).toBe(true);
+    expect(gh.aiAssist).toBe(true);
+    expect(gh.inlineReviewComments).toBe(true);
     // Gitea has no Events feed, no check-runs, no GraphQL draft toggle...
     expect(gt.activityFeed).toBe(false);
     expect(gt.checkRuns).toBe(false);
     expect(gt.draftPrToggle).toBe(false);
+    expect(gt.aiAssist).toBe(false);
+    expect(gt.inlineReviewComments).toBe(false);
     // ...but does support reviews (G11).
     expect(gt.prReviews).toBe(true);
   });

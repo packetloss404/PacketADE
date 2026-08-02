@@ -6,6 +6,7 @@ the category PacketADE competes in. Compiled from read-only web research (fan-ou
 Figures are vendor/third-party-reported unless noted; treat funding/valuation/ARR as approximate.
 
 Companion docs:
+
 - [`bridgemind/bridgespace-competitive-brief.md`](./bridgemind/bridgespace-competitive-brief.md) — deep dive on the closest competitor
 - [`bridgemind/bridgeswarm-teardown.md`](./bridgemind/bridgeswarm-teardown.md) — BridgeSwarm orchestration teardown
 - [`bridgemind/swarm-orchestration-plan.md`](./bridgemind/swarm-orchestration-plan.md) — PacketADE's own swarm response (mostly shipped)
@@ -21,33 +22,33 @@ whatever CLI you installed.
 
 ## Master comparison
 
-| Product | Status | Platform | Agent model | Provider breadth | **Auth model** | Isolation | Orchestration |
-|---|---|---|---|---|---|---|---|
-| **PacketADE** (us) | Active | Tauri2/Rust; macOS/Win/Linux | Wraps PTY CLIs **+ in-process API agents** | **8 provider rows** (Anthropic sub, Claude API, Codex sub, OpenAI API, OpenAI Agents SDK, MiniMax, OpenRouter, Ollama) | **OAuth-sub vs API-key, live auth badges, refresh-aware, dual in-process/sidecar transport** | Git worktrees (Flight attempts) | Flights + roles/ownership/collision/feed |
-| **BridgeSpace** (BridgeMind) | GA v3.4.15 | Tauri2/Rust; mac/Win/Linux | Wraps external CLIs | Delegated to installed CLIs; discontinued BridgeCode remains a historical benchmark | Claude/Codex account connection plus Settings API Keys; no verified unified ADE provider/auth contract comparable to PacketADE's rows/badges/transports | Git worktrees | **BridgeSwarm** roles + ownership + quality gates |
-| **Warp** | Active, ~$73M (Sequoia) | Rust native (non-Electron); mac/Linux/Win + cloud | Own harness **+** wraps CLIs | ~5 providers / 40+ models, picker + auto-route | Warp account + credits; **BYOK API-key-only**, no OAuth-sub, no badges | Git worktrees (Tab Configs) | Parallel independent tabs |
-| **Cursor Cloud** (Anysphere) | Dominant, ~$4B ARR | Electron desktop/web/iOS/Slack | **Own proprietary stack** | Multi-model, single-vendor-controlled, auto-route | **Single-vendor account**; BYO keys IDE-only (not cloud agents); no badges | Cloud VMs | Parallel + `/multitask` sub-agents |
-| **AgentsRoom** | Active v1.120 | Electron+xterm; mac/Win/Linux + iOS/Android | Wraps 8 CLIs | **8** (Claude Code, Codex, Antigravity, OpenCode, Aider, Grok Build, Mistral Vibe, Kimi); per-agent + mid-conv switch | **Never touches creds** — no login/API-key/badges by design | Worktree optional (weak) | **Richest**: 14 roles, React-Flow editor, MCP `team_*` handoff, role morphing |
-| **Conductor** | Active v0.77, YC S24, $22M A | macOS-only native | Wraps 4: Claude Code, Codex, Cursor, OpenCode | 4 harnesses + routing (OpenRouter/Bedrock/GLM) | CLI-auth-vs-API-key toggle + status readout; delegates identity, no badges | Git worktrees | Parallel independent |
-| **Superset** | Active, YC P26, ELv2 | macOS-only (Win/Linux soon) | Wraps **12+ CLIs** (breadth leader) | 12+, launch picker, BYO providers | **Pure BYO-keys**, no modeling/badges (its OAuth2.1 is for its own MCP server) | Git worktrees (100+ parallel) | Parallel + cron |
-| **Nimbalyst** (ex-Crystal) | Active, **free + MIT** | Electron; mac/Win/Linux + iOS | Wraps Claude Code + Codex (+alpha) | Narrow (~2) | BYO CLI login; no modeling/badges | Git worktrees | Parallel + compare-approaches, session kanban |
-| **Claude Squad** | Active, AGPL-3.0 | Go **TUI**; mac/Linux (WSL) | Wraps Claude Code, Codex, Gemini, Aider, OpenCode, Amp | Broad via profiles | Env-vars / BYO; no modeling | **tmux + worktrees** | Parallel multiplexer |
-| **Sculptor** (Imbue) | Beta, MIT | macOS/Linux | Wraps Claude Code + Pi | **Claude-only** | BYO Claude/Max, single-vendor | **Docker containers** (strongest) | Parallel |
-| **Omnara** | Active, YC S25, Apache-2.0 | Mobile-first: iOS/Android/web/watch/CLI | Remote-controls Claude Code + Codex | Claude/Codex-centric | BYO subscription; control-plane sync only | **None** (overlay) | Single + orchestrator sub-agents |
-| **Vibe Kanban** (Bloop) | **Dead** Apr 2026 → OSS | Local web UI (Rust+SQLite) | Wraps 10+ CLIs | 10+ agents | Pure BYO CLI login; no modeling | Git worktrees | **Kanban-dispatch** (the canonical one) |
-| **Terragon** | **Dead** Jan 2026 → OSS | Cloud/hosted | Wraps Claude Code, Codex, + | Multi, extensible | **Dual sub-or-API-key** (closest to us) but cloud-centralized, no badges | Cloud sandbox containers | Parallel background + auto-PR |
+| Product                      | Status                       | Platform                                          | Agent model                                            | Provider breadth                                                                                                      | **Auth model**                                                                                                                                          | Isolation                         | Orchestration                                                                 |
+| ---------------------------- | ---------------------------- | ------------------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------- |
+| **PacketADE** (us)           | Active                       | Tauri2/Rust; macOS/Win/Linux                      | Wraps PTY CLIs **+ API agents**                        | **7 API-agent rows** (Claude Agent SDK, Claude API, OpenAI API, OpenAI Agents SDK, MiniMax, OpenRouter, Ollama)       | **API-key/local auth badges, separate CLI-account health, dual in-process/sidecar transport**                                                           | Git worktrees (Flight attempts)   | Flights + roles/ownership/collision/feed                                      |
+| **BridgeSpace** (BridgeMind) | GA v3.4.15                   | Tauri2/Rust; mac/Win/Linux                        | Wraps external CLIs                                    | Delegated to installed CLIs; discontinued BridgeCode remains a historical benchmark                                   | Claude/Codex account connection plus Settings API Keys; no verified unified ADE provider/auth contract comparable to PacketADE's rows/badges/transports | Git worktrees                     | **BridgeSwarm** roles + ownership + quality gates                             |
+| **Warp**                     | Active, ~$73M (Sequoia)      | Rust native (non-Electron); mac/Linux/Win + cloud | Own harness **+** wraps CLIs                           | ~5 providers / 40+ models, picker + auto-route                                                                        | Warp account + credits; **BYOK API-key-only**, no OAuth-sub, no badges                                                                                  | Git worktrees (Tab Configs)       | Parallel independent tabs                                                     |
+| **Cursor Cloud** (Anysphere) | Dominant, ~$4B ARR           | Electron desktop/web/iOS/Slack                    | **Own proprietary stack**                              | Multi-model, single-vendor-controlled, auto-route                                                                     | **Single-vendor account**; BYO keys IDE-only (not cloud agents); no badges                                                                              | Cloud VMs                         | Parallel + `/multitask` sub-agents                                            |
+| **AgentsRoom**               | Active v1.120                | Electron+xterm; mac/Win/Linux + iOS/Android       | Wraps 8 CLIs                                           | **8** (Claude Code, Codex, Antigravity, OpenCode, Aider, Grok Build, Mistral Vibe, Kimi); per-agent + mid-conv switch | **Never touches creds** — no login/API-key/badges by design                                                                                             | Worktree optional (weak)          | **Richest**: 14 roles, React-Flow editor, MCP `team_*` handoff, role morphing |
+| **Conductor**                | Active v0.77, YC S24, $22M A | macOS-only native                                 | Wraps 4: Claude Code, Codex, Cursor, OpenCode          | 4 harnesses + routing (OpenRouter/Bedrock/GLM)                                                                        | CLI-auth-vs-API-key toggle + status readout; delegates identity, no badges                                                                              | Git worktrees                     | Parallel independent                                                          |
+| **Superset**                 | Active, YC P26, ELv2         | macOS-only (Win/Linux soon)                       | Wraps **12+ CLIs** (breadth leader)                    | 12+, launch picker, BYO providers                                                                                     | **Pure BYO-keys**, no modeling/badges (its OAuth2.1 is for its own MCP server)                                                                          | Git worktrees (100+ parallel)     | Parallel + cron                                                               |
+| **Nimbalyst** (ex-Crystal)   | Active, **free + MIT**       | Electron; mac/Win/Linux + iOS                     | Wraps Claude Code + Codex (+alpha)                     | Narrow (~2)                                                                                                           | BYO CLI login; no modeling/badges                                                                                                                       | Git worktrees                     | Parallel + compare-approaches, session kanban                                 |
+| **Claude Squad**             | Active, AGPL-3.0             | Go **TUI**; mac/Linux (WSL)                       | Wraps Claude Code, Codex, Gemini, Aider, OpenCode, Amp | Broad via profiles                                                                                                    | Env-vars / BYO; no modeling                                                                                                                             | **tmux + worktrees**              | Parallel multiplexer                                                          |
+| **Sculptor** (Imbue)         | Beta, MIT                    | macOS/Linux                                       | Wraps Claude Code + Pi                                 | **Claude-only**                                                                                                       | BYO Claude/Max, single-vendor                                                                                                                           | **Docker containers** (strongest) | Parallel                                                                      |
+| **Omnara**                   | Active, YC S25, Apache-2.0   | Mobile-first: iOS/Android/web/watch/CLI           | Remote-controls Claude Code + Codex                    | Claude/Codex-centric                                                                                                  | BYO subscription; control-plane sync only                                                                                                               | **None** (overlay)                | Single + orchestrator sub-agents                                              |
+| **Vibe Kanban** (Bloop)      | **Dead** Apr 2026 → OSS      | Local web UI (Rust+SQLite)                        | Wraps 10+ CLIs                                         | 10+ agents                                                                                                            | Pure BYO CLI login; no modeling                                                                                                                         | Git worktrees                     | **Kanban-dispatch** (the canonical one)                                       |
+| **Terragon**                 | **Dead** Jan 2026 → OSS      | Cloud/hosted                                      | Wraps Claude Code, Codex, +                            | Multi, extensible                                                                                                     | **Dual sub-or-API-key** (closest to us) but cloud-centralized, no badges                                                                                | Cloud sandbox containers          | Parallel background + auto-PR                                                 |
 
 ## Where each stands (one paragraph each)
 
 **BridgeMind / BridgeSpace** — The closest overall analog: same Tauri2/Rust ADE shape with a 16-pane
 grid, worktrees, Kanban dispatch, role-based orchestration (BridgeSwarm), shared memory, MCP spine,
-and Whisper voice. Solo-founder, build-in-public, ~$201K ARR, targets *non-coders/vibe-coders*.
+and Whisper voice. Solo-founder, build-in-public, ~$201K ARR, targets _non-coders/vibe-coders_.
 BridgeSpace now exposes custom Agent prompts and Settings API Keys, but current public material still
 does not establish one unified provider/auth/transport contract comparable to PacketADE's. Full brief:
 [`bridgemind/bridgespace-competitive-brief.md`](./bridgemind/bridgespace-competitive-brief.md).
 
 **Warp** — Biggest and best-funded (~$73M, Sequoia). Native Rust terminal repositioned as an "ADE";
-runs its own multi-provider agent *and* wraps external CLIs, with worktrees, parallel tabs, native
+runs its own multi-provider agent _and_ wraps external CLIs, with worktrees, parallel tabs, native
 code review, and MCP. Auth is account-credit-centric with API-key-only BYOK — no OAuth-subscription
 login for its own agent and no provider-identity UI. The rival most worth watching on UX/scale.
 
@@ -56,7 +57,7 @@ agent stack, cloud-VM isolation, `/multitask` sub-agents, deep Slack/GitHub/Line
 single-vendor funnel: you authenticate to Cursor, models are abstracted behind its routing/credits,
 and BYO keys don't even work for cloud agents. The inverse of PacketADE's provider-neutral thesis.
 
-**AgentsRoom** — The richest *orchestration* peer and closest on provider breadth: 8 CLIs, per-agent
+**AgentsRoom** — The richest _orchestration_ peer and closest on provider breadth: 8 CLIs, per-agent
 provider with mid-conversation switching, a **React-Flow visual team editor** with 14 roles, an
 MCP-based `team_*` handoff protocol, cheaper-model QA delegation, one-click role "morphing," plus a
 real iOS/Android companion. Electron. Deliberately **never touches credentials** — zero in-app auth
@@ -69,10 +70,10 @@ The bar to beat on UX; shallower than PacketADE on auth/provider depth.
 
 **Superset** — Breadth leader (12+ CLIs) with an agent-facing MCP server (27 workspace tools) and a
 real team/enterprise pricing ladder. macOS-only, ELv2 source-available, tiny early team. Pure
-BYO-keys with no provider-auth modeling. Its coverage makes PacketADE's 8 rows look narrow on
-*count*, but PacketADE's auth abstraction is a different (and absent-here) axis.
+BYO-keys with no provider-auth modeling. Its coverage makes PacketADE's 7 rows look narrow on
+_count_, but PacketADE's auth abstraction is a different (and absent-here) axis.
 
-**Nimbalyst (ex-Crystal)** — Crystal *pioneered the desktop worktree-parallel-sessions pattern* that
+**Nimbalyst (ex-Crystal)** — Crystal _pioneered the desktop worktree-parallel-sessions pattern_ that
 is now the category's shared DNA; its free + MIT successor Nimbalyst adds a session kanban, inline AI
 diffs, WYSIWYG artifact editors, and a mobile companion. Electron, narrow provider set (Claude
 Code + Codex), no auth modeling. Closest desktop analog; edge is visual editors, not providers.
@@ -81,7 +82,7 @@ Code + Codex), no auth modeling. Closest desktop analog; edge is visual editors,
 via a profiles system, AGPL-3.0. No GUI, kanban, memory, voice, MCP, or Windows-native support. Its
 generic-CLI-profile model is instructive; its auth is bare env-vars.
 
-**Sculptor (Imbue)** — Strongest *isolation* story: a real Docker container per agent (user-owned,
+**Sculptor (Imbue)** — Strongest _isolation_ story: a real Docker container per agent (user-owned,
 local, free), with mid-session Claude model switching, a Skills system, and a CI Babysitter.
 Single-vendor (Claude only), macOS/Linux, research-preview. PacketADE's closest philosophical rival
 on local user-owned isolation — but isolates harder while abstracting providers less.
@@ -97,13 +98,14 @@ per card, inline diff review, preview browser, MCP. The direct reference point f
 Deck worktree-attempt model — with no provider/auth abstraction.
 
 **Terragon** — Cloud fire-and-forget background orchestrator, also **dead** (shut Jan 2026, OSS
-snapshot). Ran each agent in a cloud sandbox container and auto-opened PRs. Notably the *only* peer
+snapshot). Ran each agent in a cloud sandbox container and auto-opened PRs. Notably the _only_ peer
 besides PacketADE to model a subscription-vs-API-key split — but centralized creds in its cloud and
 had no live badges. Validates the auth axis while showing the cloud-centralized version is fragile.
 
 ## Synthesis
 
 ### Common pattern (category DNA)
+
 1. **Wrap external CLIs, don't build the agent** — everyone except Warp and Cursor.
 2. **Git worktrees as the default isolation primitive** — Sculptor (Docker) and Terragon/Cursor
    (cloud sandboxes/VMs) are the outliers.
@@ -114,6 +116,7 @@ had no live badges. Validates the auth axis while showing the cloud-centralized 
    Kanban (Apr '26) all died or changed hands within one quarter.
 
 ### Differentiation battlegrounds
+
 - **Orchestration quality** — top axis. AgentsRoom (visual team editor + MCP handoff), BridgeSwarm
   (roles + ownership + gates), and Warp (task-decomposing harness) lead; most others just launch
   parallel independent agents.
@@ -127,17 +130,21 @@ had no live badges. Validates the auth axis while showing the cloud-centralized 
 - **MCP** — surprisingly under-marketed; Warp, Superset, AgentsRoom, BridgeMCP foreground it.
 
 ### Where PacketADE is genuinely differentiated
-1. **Provider/auth-type as a first-class, badged concept** — unique. OAuth/subscription vs API-key,
-   live refresh-token-aware badges (`ready | login_required | missing_key`), filesystem auth-watcher.
+
+1. **Provider/auth-type as a first-class, badged concept** — unique. API-key
+   providers and local Ollama have live status (`ready | missing_key |
+service_down`), while PTY CLI account health remains a separate,
+   refresh-aware surface.
 2. **Dual transport behind one event contract** — in-process `LlmProvider` (Claude/OpenAI API,
-   MiniMax, OpenRouter, Ollama) *and* a versioned Node sidecar (Anthropic sub, Codex sub, OpenAI
-   Agents SDK), both emitting `api-agent:*`. No peer runs both raw-API and subscription-CLI providers
-   behind one contract.
+   MiniMax, OpenRouter, Ollama) _and_ a versioned Node sidecar (Claude Agent SDK
+   and OpenAI Agents SDK), both emitting `api-agent:*`. No peer runs both
+   in-process raw-API and SDK providers behind one contract.
 3. **Layered work hierarchy (Flights above issues/sessions)** — most peers stop at card→agent→worktree→diff.
 4. **Breadth of integrated surfaces** — API-agent chat tiles + PTY terminals + memory + dictation +
    MCP + cost analytics in one Tauri app; few peers span this range.
 
 ### Gaps PacketADE should weigh (where peers are ahead)
+
 - **Orchestration depth** — AgentsRoom's visual team editor + MCP handoff and BridgeSwarm's gates set
   a higher bar than parallel attempts. (PacketADE's [`swarm-orchestration-plan.md`](./bridgemind/swarm-orchestration-plan.md)
   already ships roles/ownership/collision/feed; auto-reassignment escalation is the remaining gap.)
@@ -147,7 +154,8 @@ had no live badges. Validates the auth axis while showing the cloud-centralized 
   not on auth depth).
 
 ### Bottom line
+
 UI/worktree/kanban/diff parity is table-stakes and no longer differentiates anyone. PacketADE's
 durable moats are **provider/auth abstraction, dual transport, memory, and MCP breadth** — precisely
-the lanes the rest of the field under-invests in, and aligned to a *professional-engineer* audience
+the lanes the rest of the field under-invests in, and aligned to a _professional-engineer_ audience
 that BridgeMind/Warp's vibe-coder positioning doesn't serve.

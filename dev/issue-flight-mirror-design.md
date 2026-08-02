@@ -160,3 +160,12 @@ Design + decisions are **locked**. Implementation is the phased P0→P3 plan.
 
 Remaining gate: packaged GitHub + Gitea create/adopt/update/pull/conflict,
 hidden-window, restart, and revoked-auth recovery proof.
+
+## 2026-08-01 proof refresh
+
+The focused mirror and host-routing source tests pass as part of the **22-file /
+124-test** implemented-feature audit. GitHub CLI authentication is available,
+but no remote issues were created or changed because the packaged matrix needs
+an explicitly selected disposable repository. `tea` is absent, and Gitea proof
+also remains open. See
+[`proof-audit-2026-08-01.md`](./proof-audit-2026-08-01.md).

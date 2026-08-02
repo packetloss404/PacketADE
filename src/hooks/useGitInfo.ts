@@ -1,10 +1,15 @@
 import { useEffect } from "react";
 import { useAppStore } from "@/stores/appStore";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { getGitBranch } from "@/lib/tauri";
 
 export function useGitInfo() {
   const projectPath = useLayoutStore((s) => s.projectPath);
+  const activeWorkspace = useWorkspaceStore((s) =>
+    s.workspaces.find((workspace) => workspace.id === s.activeWorkspaceId),
+  );
+  const activeWorkspaceIsRemote = Boolean(activeWorkspace?.serverId);
   const setGitBranch = useAppStore((s) => s.setGitBranch);
   const gitBranch = useAppStore((s) => s.gitBranch);
 
@@ -12,7 +17,10 @@ export function useGitInfo() {
     // No project open → `projectPath` is "" (and the backend treats that as the
     // filesystem root). Polling git there just fails every 10s, spams the log,
     // and runs a child process against "/" for no reason — skip it entirely.
-    const hasProject = projectPath !== "" && projectPath !== "/";
+    // layoutStore intentionally retains the last local fallback while an SSH
+    // Workspace is active. That fallback is not authoritative for the remote
+    // Workspace, so never poll it or display its branch as remote state.
+    const hasProject = !activeWorkspaceIsRemote && projectPath !== "" && projectPath !== "/";
     if (!hasProject) {
       setGitBranch(null);
       return;
@@ -42,7 +50,7 @@ export function useGitInfo() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [projectPath, setGitBranch]);
+  }, [activeWorkspaceIsRemote, projectPath, setGitBranch]);
 
   return gitBranch;
 }

@@ -5,7 +5,6 @@ import {
   githubCreatePr,
   githubGetAuthenticatedUser,
   githubGetPrChecks,
-  githubHasToken,
   githubInvestigateIssue,
   githubListIssueComments,
   githubListIssues,
@@ -28,6 +27,7 @@ import {
   gitHostAddGitea,
   gitHostRemoveConnection,
   gitHostSetActive,
+  gitHostHasToken,
   gitGetOriginUrl,
 } from "@/lib/tauri";
 import type { GithubNotification, GitHostConnectionInfo, GitHubRelease } from "@/lib/tauri";
@@ -123,6 +123,17 @@ function isTokenError(message: string): boolean {
   return message.toLowerCase().includes("token not set");
 }
 
+function isAuthRejection(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("401") ||
+    normalized.includes("403") ||
+    normalized.includes("unauthorized") ||
+    normalized.includes("forbidden") ||
+    normalized.includes("bad credentials")
+  );
+}
+
 interface AuthenticatedUser {
   login: string;
   avatarUrl: string;
@@ -167,11 +178,13 @@ interface GitHubStore {
   /** G2: remove a non-GitHub connection. */
   removeGitHostConnection: (id: string) => Promise<void>;
   /** G3: manually set the active connection (host override). */
-  setActiveConnection: (id: string) => void;
+  setActiveConnection: (id: string, force?: boolean) => void;
   /** G3: resolve + set the active connection from a project's origin remote. */
   resolveActiveConnectionForProject: (projectPath: string) => Promise<void>;
   fetchRepos: () => Promise<void>;
   selectRepo: (owner: string, repo: string) => void;
+  /** Clear repository authority without changing the selected Git host. */
+  clearRepositoryContext: () => void;
   fetchIssues: () => Promise<void>;
   investigateIssue: (projectPath: string, issueNumber: number) => Promise<void>;
   createPR: (
@@ -272,6 +285,111 @@ interface GitHubStore {
   clearInvestigation: () => void;
 }
 
+function resetHostScopedState(
+  config: GitHubConfig,
+  activeConnectionId: string,
+): Partial<GitHubStore> {
+  const nextConfig = { ...config, selectedRepo: null };
+  saveConfig(nextConfig);
+  return {
+    activeConnectionId,
+    isConnected: false,
+    isInitializing: true,
+    authenticatedUser: null,
+    config: nextConfig,
+    repos: [],
+    issues: [],
+    prs: [],
+    releases: [],
+    prDiff: null,
+    investigation: null,
+    isInvestigating: false,
+    isLoading: false,
+    isPrLoading: false,
+    isReleasesLoading: false,
+    releasesError: null,
+    error: null,
+    lastSyncAt: null,
+    prChecks: {},
+    prChecksLoading: {},
+    prChecksError: {},
+    issueComments: {},
+    issueCommentsLoading: {},
+    prAiReviews: {},
+    notifications: [],
+    notificationsLoading: false,
+    notificationsError: null,
+    unreadCount: 0,
+    issuesPage: 1,
+    prsPage: 1,
+    reposPage: 1,
+    issuesHasMore: false,
+    prsHasMore: false,
+    reposHasMore: false,
+    isLoadingMoreIssues: false,
+    isLoadingMorePrs: false,
+    isLoadingMoreRepos: false,
+  };
+}
+
+function resetRepoScopedState(config: GitHubConfig): Partial<GitHubStore> {
+  saveConfig(config);
+  return {
+    config,
+    issues: [],
+    prs: [],
+    releases: [],
+    prDiff: null,
+    investigation: null,
+    isInvestigating: false,
+    isLoading: false,
+    isPrLoading: false,
+    isReleasesLoading: false,
+    releasesError: null,
+    error: null,
+    lastSyncAt: null,
+    prChecks: {},
+    prChecksLoading: {},
+    prChecksError: {},
+    issueComments: {},
+    issueCommentsLoading: {},
+    prAiReviews: {},
+    issuesPage: 1,
+    prsPage: 1,
+    issuesHasMore: false,
+    prsHasMore: false,
+    isLoadingMoreIssues: false,
+    isLoadingMorePrs: false,
+  };
+}
+
+let authorityEpoch = 0;
+let hostResolutionSequence = 0;
+let hostActivationSequence = 0;
+let hostActivationQueue: Promise<void> = Promise.resolve();
+let lastConfirmedConnectionId = GITHUB_CONNECTION_ID;
+let prDiffRequestSequence = 0;
+let investigationRequestSequence = 0;
+let connectionsRequestSequence = 0;
+
+interface AuthoritySnapshot {
+  epoch: number;
+  key: string;
+}
+
+function authorityKey(state: Pick<GitHubStore, "activeConnectionId" | "config">): string {
+  const repo = state.config.selectedRepo;
+  return `${state.activeConnectionId}:${repo?.owner ?? ""}/${repo?.repo ?? ""}`;
+}
+
+function captureAuthority(state: GitHubStore): AuthoritySnapshot {
+  return { epoch: authorityEpoch, key: authorityKey(state) };
+}
+
+function isAuthorityCurrent(snapshot: AuthoritySnapshot, state: GitHubStore): boolean {
+  return snapshot.epoch === authorityEpoch && snapshot.key === authorityKey(state);
+}
+
 // v0.8-E: cache key shared by the AI-review store + the `PRReviewPanel`
 // component. Stable shape across renders so component lookups stay O(1).
 // Exported so the `PRReviewPanel` doesn't have to duplicate the format.
@@ -349,21 +467,24 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
 
   initializeAuth: async () => {
     if (get().isInitializing) return;
+    const connectionId = get().activeConnectionId;
+    const transition = hostActivationSequence;
     set({ isInitializing: true, error: null });
     try {
-      let hasToken = await githubHasToken();
-      if (!hasToken && pendingLegacyToken) {
+      let hasToken = await gitHostHasToken(connectionId);
+      if (connectionId === GITHUB_CONNECTION_ID && !hasToken && pendingLegacyToken) {
         await githubSetToken(pendingLegacyToken);
         hasToken = true;
       }
 
       // One-time migration: rewrite persisted config without token.
-      if (pendingLegacyToken) {
+      if (connectionId === GITHUB_CONNECTION_ID && pendingLegacyToken) {
         pendingLegacyToken = null;
         saveConfig(get().config);
       }
 
       let authenticatedUser: AuthenticatedUser | null = null;
+      let authProbeError: string | null = null;
       if (hasToken) {
         try {
           authenticatedUser = await githubGetAuthenticatedUser();
@@ -372,15 +493,26 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
           // "user" and the next API call will surface a clearer error. Surface
           // the failure so a broken probe doesn't silently mask real issues.
           logSwallowed("githubStore.initializeAuth.userProbe")(e);
+          const message = String(e);
+          if (isAuthRejection(message)) {
+            hasToken = false;
+          } else {
+            authProbeError = `Could not verify Git-host identity: ${message}`;
+          }
         }
       }
 
+      if (get().activeConnectionId !== connectionId || transition !== hostActivationSequence)
+        return;
       set({
         isConnected: hasToken,
         isInitializing: false,
         authenticatedUser,
+        error: authProbeError,
       });
     } catch (e) {
+      if (get().activeConnectionId !== connectionId || transition !== hostActivationSequence)
+        return;
       set({
         isConnected: false,
         isInitializing: false,
@@ -393,26 +525,50 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   connect: async (token) => {
     const trimmed = token.trim();
     if (!trimmed) return;
+    const connectionId = get().activeConnectionId;
+    const transition = hostActivationSequence;
     set({ isLoading: true, error: null });
     try {
       await githubSetToken(trimmed);
       pendingLegacyToken = null;
       let authenticatedUser: AuthenticatedUser | null = null;
+      let authProbeError: string | null = null;
       try {
         authenticatedUser = await githubGetAuthenticatedUser();
       } catch (e) {
-        // Don't fail connect on the probe; the badge will show "user" until
-        // the next refresh.
         logSwallowed("githubStore.connect.userProbe")(e);
+        const message = String(e);
+        if (isAuthRejection(message)) {
+          try {
+            await githubClearToken();
+          } catch (clearError) {
+            console.warn("[githubStore] rejected token cleanup failed:", clearError);
+          }
+          if (get().activeConnectionId !== connectionId || transition !== hostActivationSequence)
+            return;
+          set({
+            isConnected: false,
+            isLoading: false,
+            authenticatedUser: null,
+            error: `GitHub rejected this token: ${message}`,
+          });
+          return;
+        }
+        authProbeError = `Token saved, but GitHub identity could not be verified: ${message}`;
       }
+      if (get().activeConnectionId !== connectionId || transition !== hostActivationSequence)
+        return;
+      authorityEpoch += 1;
       set({
+        ...resetRepoScopedState(get().config),
         isConnected: true,
         isLoading: false,
         authenticatedUser,
-        repos: [],
-        issues: [],
+        error: authProbeError,
       });
     } catch (e) {
+      if (get().activeConnectionId !== connectionId || transition !== hostActivationSequence)
+        return;
       set({
         isConnected: false,
         isLoading: false,
@@ -423,18 +579,23 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   },
 
   disconnect: async () => {
+    const connectionId = get().activeConnectionId;
+    const transition = hostActivationSequence;
     set({ isLoading: true, error: null });
     try {
       await githubClearToken();
+      if (get().activeConnectionId !== connectionId || transition !== hostActivationSequence)
+        return;
+      authorityEpoch += 1;
       set({
+        ...resetHostScopedState(get().config, get().activeConnectionId),
         isConnected: false,
+        isInitializing: false,
         isLoading: false,
-        authenticatedUser: null,
-        repos: [],
-        issues: [],
-        lastSyncAt: null,
       });
     } catch (e) {
+      if (get().activeConnectionId !== connectionId || transition !== hostActivationSequence)
+        return;
       set({
         isLoading: false,
         error: String(e),
@@ -443,8 +604,11 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   },
 
   loadConnections: async () => {
+    const request = ++connectionsRequestSequence;
     try {
-      set({ connections: await gitHostListConnections() });
+      const connections = await gitHostListConnections();
+      if (request !== connectionsRequestSequence) return;
+      set({ connections });
     } catch (e) {
       console.warn("[githubStore] loadConnections failed:", e);
     }
@@ -456,37 +620,113 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   },
 
   removeGitHostConnection: async (id) => {
-    const wasActive = get().activeConnectionId === id;
+    const wasActiveAtStart = get().activeConnectionId === id;
     await gitHostRemoveConnection(id);
-    await get().loadConnections();
     // If we removed the active host, fall back to GitHub — and sync the backend
     // (its active_connection_id must not dangle at the deleted id).
-    if (wasActive) {
-      set({ activeConnectionId: GITHUB_CONNECTION_ID });
-      void gitHostSetActive(GITHUB_CONNECTION_ID).catch((e) =>
-        console.warn("[githubStore] gitHostSetActive failed:", e),
-      );
+    const currentConnectionId = get().activeConnectionId;
+    if (currentConnectionId === id) {
+      get().setActiveConnection(GITHUB_CONNECTION_ID);
+    } else if (wasActiveAtStart) {
+      // Rust falls back to GitHub when it removes the active connection. If
+      // the user selected another host while removal was in flight, reassert
+      // that newer intent through the serialized activation queue.
+      get().setActiveConnection(currentConnectionId, true);
     }
+    await get().loadConnections();
   },
 
-  setActiveConnection: (id) => {
-    set({ activeConnectionId: id });
-    void gitHostSetActive(id).catch((e) =>
-      console.warn("[githubStore] gitHostSetActive failed:", e),
-    );
+  setActiveConnection: (id, force = false) => {
+    if (get().activeConnectionId === id && !force) return;
+    const previousConfig = get().config;
+    hostResolutionSequence += 1;
+    const transition = ++hostActivationSequence;
+    authorityEpoch += 1;
+    set(resetHostScopedState(get().config, id));
+    hostActivationQueue = hostActivationQueue
+      .catch(() => undefined)
+      .then(async () => {
+        await gitHostSetActive(id);
+        if (transition !== hostActivationSequence) return;
+        const hasToken = await gitHostHasToken(id);
+        let authReady = hasToken;
+        let authenticatedUser: AuthenticatedUser | null = null;
+        let authProbeError: string | null = null;
+        if (authReady) {
+          try {
+            authenticatedUser = await githubGetAuthenticatedUser();
+          } catch (e) {
+            logSwallowed("githubStore.setActiveConnection.userProbe")(e);
+            const message = String(e);
+            if (isAuthRejection(message)) {
+              authReady = false;
+            } else {
+              authProbeError = `Could not verify Git-host identity: ${message}`;
+            }
+          }
+        }
+        if (transition !== hostActivationSequence || get().activeConnectionId !== id) return;
+        lastConfirmedConnectionId = id;
+        set({
+          isConnected: authReady,
+          isInitializing: false,
+          authenticatedUser,
+          error: authProbeError,
+        });
+      })
+      .catch(async (e) => {
+        if (transition !== hostActivationSequence || get().activeConnectionId !== id) return;
+        authorityEpoch += 1;
+        let rollbackSucceeded = true;
+        try {
+          await gitHostSetActive(lastConfirmedConnectionId);
+        } catch (rollbackError) {
+          rollbackSucceeded = false;
+          console.warn("[githubStore] Git host rollback failed:", rollbackError);
+        }
+        if (transition !== hostActivationSequence || get().activeConnectionId !== id) return;
+        if (!rollbackSucceeded) {
+          set({
+            ...resetHostScopedState(get().config, id),
+            isConnected: false,
+            isInitializing: false,
+            authenticatedUser: null,
+            error: `Could not activate Git host and could not restore the last confirmed host: ${String(e)}`,
+          });
+          return;
+        }
+        let hasToken = false;
+        let authenticatedUser: AuthenticatedUser | null = null;
+        try {
+          hasToken = await gitHostHasToken(lastConfirmedConnectionId);
+          if (transition !== hostActivationSequence || get().activeConnectionId !== id) return;
+          if (hasToken) authenticatedUser = await githubGetAuthenticatedUser();
+        } catch (probeError) {
+          console.warn("[githubStore] rolled-back Git host auth probe failed:", probeError);
+          if (isAuthRejection(String(probeError))) hasToken = false;
+        }
+        if (transition !== hostActivationSequence || get().activeConnectionId !== id) return;
+        set({
+          ...resetHostScopedState(previousConfig, lastConfirmedConnectionId),
+          isConnected: hasToken,
+          isInitializing: false,
+          authenticatedUser,
+          error: `Could not activate Git host: ${String(e)}`,
+        });
+      });
   },
 
   resolveActiveConnectionForProject: async (projectPath) => {
     if (!projectPath) return;
+    const resolution = ++hostResolutionSequence;
     try {
       // Ensure the connection list is loaded so the resolver can match.
       if (get().connections.length === 0) await get().loadConnections();
       const origin = await gitGetOriginUrl(projectPath);
+      if (resolution !== hostResolutionSequence) return;
       const { connectionId } = resolveConnectionForRemote(origin, get().connections);
       const active = connectionId ?? GITHUB_CONNECTION_ID;
-      set({ activeConnectionId: active });
-      // Tell the backend so its commands target the right host.
-      await gitHostSetActive(active);
+      get().setActiveConnection(active);
     } catch (e) {
       console.warn("[githubStore] resolveActiveConnectionForProject failed:", e);
     }
@@ -494,12 +734,14 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
 
   fetchRepos: async () => {
     if (!get().isConnected) return;
+    const authority = captureAuthority(get());
     set({ isLoading: true, error: null });
     try {
       // v0.8-C: route through the paginated endpoint so we can compute
       // `reposHasMore` from the response cardinality (page-size 30).
       const json = await githubListReposPage(1);
       const repos: GitHubRepo[] = JSON.parse(json);
+      if (!isAuthorityCurrent(authority, get())) return;
       set({
         repos,
         isLoading: false,
@@ -513,6 +755,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         try {
           const json = await githubListRepos();
           const repos: GitHubRepo[] = JSON.parse(json);
+          if (!isAuthorityCurrent(authority, get())) return;
           set({
             repos,
             isLoading: false,
@@ -528,6 +771,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
           logSwallowed("githubStore.fetchRepos.legacyFallback")(fallbackErr);
         }
       }
+      if (!isAuthorityCurrent(authority, get())) return;
       set({
         isConnected: isTokenError(message) ? false : get().isConnected,
         error: message,
@@ -538,21 +782,27 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
 
   selectRepo: (owner, repo) => {
     const config = { ...get().config, selectedRepo: { owner, repo } };
-    saveConfig(config);
-    set({
-      config,
-      issues: [],
-      issuesPage: 1,
-      issuesHasMore: false,
-      prs: [],
-      prsPage: 1,
-      prsHasMore: false,
-    });
+    if (
+      authorityKey({ activeConnectionId: get().activeConnectionId, config }) === authorityKey(get())
+    ) {
+      return;
+    }
+    authorityEpoch += 1;
+    set(resetRepoScopedState(config));
+  },
+
+  clearRepositoryContext: () => {
+    hostResolutionSequence += 1;
+    const state = get();
+    if (!state.config.selectedRepo && state.issues.length === 0 && state.prs.length === 0) return;
+    authorityEpoch += 1;
+    set(resetRepoScopedState({ ...state.config, selectedRepo: null }));
   },
 
   fetchIssues: async () => {
     const { config, issueStateFilter } = get();
     if (!get().isConnected || !config.selectedRepo) return;
+    const authority = captureAuthority(get());
     set({ isLoading: true, error: null });
     try {
       // v0.8-C: paginated + state-filtered.
@@ -563,6 +813,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         1,
       );
       const { issues, hasMore } = parseIssuesPage(json);
+      if (!isAuthorityCurrent(authority, get())) return;
       set({
         issues,
         isLoading: false,
@@ -576,6 +827,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         try {
           const json = await githubListIssues(config.selectedRepo.owner, config.selectedRepo.repo);
           const { issues } = parseIssuesPage(json);
+          if (!isAuthorityCurrent(authority, get())) return;
           set({
             issues,
             isLoading: false,
@@ -591,6 +843,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
           logSwallowed("githubStore.fetchIssues.legacyFallback")(fallbackErr);
         }
       }
+      if (!isAuthorityCurrent(authority, get())) return;
       set({
         isConnected: isTokenError(message) ? false : get().isConnected,
         error: message,
@@ -602,6 +855,8 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   investigateIssue: async (projectPath, issueNumber) => {
     const { config } = get();
     if (!get().isConnected || !config.selectedRepo) return;
+    const authority = captureAuthority(get());
+    const request = ++investigationRequestSequence;
     set({ isInvestigating: true, investigation: null });
     try {
       const result = await githubInvestigateIssue(
@@ -610,9 +865,11 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         config.selectedRepo.repo,
         issueNumber,
       );
+      if (!isAuthorityCurrent(authority, get()) || request !== investigationRequestSequence) return;
       set({ investigation: result, isInvestigating: false });
     } catch (e) {
       const message = String(e);
+      if (!isAuthorityCurrent(authority, get()) || request !== investigationRequestSequence) return;
       set({
         isConnected: isTokenError(message) ? false : get().isConnected,
         error: message,
@@ -625,6 +882,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   createPR: async (title, body, head, base, draft) => {
     const { config } = get();
     if (!get().isConnected || !config.selectedRepo) throw new Error("No repo selected");
+    const authority = captureAuthority(get());
     set({ isLoading: true, error: null });
     try {
       const json = await githubCreatePr(
@@ -636,15 +894,17 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         base,
         draft,
       );
-      set({ isLoading: false });
+      if (isAuthorityCurrent(authority, get())) set({ isLoading: false });
       return json;
     } catch (e) {
       const message = String(e);
-      set({
-        isConnected: isTokenError(message) ? false : get().isConnected,
-        error: message,
-        isLoading: false,
-      });
+      if (isAuthorityCurrent(authority, get())) {
+        set({
+          isConnected: isTokenError(message) ? false : get().isConnected,
+          error: message,
+          isLoading: false,
+        });
+      }
       throw e;
     }
   },
@@ -652,6 +912,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   fetchPrs: async () => {
     const { config, prStateFilter } = get();
     if (!get().isConnected || !config.selectedRepo) return;
+    const authority = captureAuthority(get());
     set({ isPrLoading: true, error: null });
     try {
       const json = await githubListPrsPage(
@@ -661,6 +922,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         1,
       );
       const prs: GitHubPr[] = JSON.parse(json);
+      if (!isAuthorityCurrent(authority, get())) return;
       set({
         prs,
         isPrLoading: false,
@@ -674,6 +936,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         try {
           const json = await githubListPrs(config.selectedRepo.owner, config.selectedRepo.repo);
           const prs: GitHubPr[] = JSON.parse(json);
+          if (!isAuthorityCurrent(authority, get())) return;
           set({
             prs,
             isPrLoading: false,
@@ -689,6 +952,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
           logSwallowed("githubStore.fetchPrs.legacyFallback")(fallbackErr);
         }
       }
+      if (!isAuthorityCurrent(authority, get())) return;
       set({ error: message, isPrLoading: false });
     }
   },
@@ -696,13 +960,16 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   fetchReleases: async () => {
     const { config } = get();
     if (!get().isConnected || !config.selectedRepo) return;
+    const authority = captureAuthority(get());
     set({ isReleasesLoading: true, releasesError: null });
     try {
       const json = await githubListReleases(config.selectedRepo.owner, config.selectedRepo.repo);
       const releases: GitHubRelease[] = JSON.parse(json);
+      if (!isAuthorityCurrent(authority, get())) return;
       set({ releases, isReleasesLoading: false, releasesError: null });
     } catch (e) {
       logSwallowed("githubStore.fetchReleases")(e);
+      if (!isAuthorityCurrent(authority, get())) return;
       set({
         releases: [],
         isReleasesLoading: false,
@@ -714,6 +981,8 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   getPrDiff: async (prNumber) => {
     const { config } = get();
     if (!get().isConnected || !config.selectedRepo) return;
+    const authority = captureAuthority(get());
+    const request = ++prDiffRequestSequence;
     set({ isPrLoading: true, prDiff: null });
     try {
       const diff = await githubGetPrDiff(
@@ -721,8 +990,10 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         config.selectedRepo.repo,
         prNumber,
       );
+      if (!isAuthorityCurrent(authority, get()) || request !== prDiffRequestSequence) return;
       set({ prDiff: diff, isPrLoading: false });
     } catch (e) {
+      if (!isAuthorityCurrent(authority, get()) || request !== prDiffRequestSequence) return;
       set({ error: String(e), isPrLoading: false });
     }
   },
@@ -738,6 +1009,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   fetchPrChecks: async (pr, options) => {
     const { config } = get();
     if (!get().isConnected || !config.selectedRepo) return;
+    const authority = captureAuthority(get());
     const key = `${config.selectedRepo.owner}/${config.selectedRepo.repo}#${pr.number}`;
     if (!options?.force && get().prChecks[key]) return;
     set((s) => ({ prChecksLoading: { ...s.prChecksLoading, [key]: true } }));
@@ -747,12 +1019,14 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         config.selectedRepo.repo,
         pr.number,
       );
+      if (!isAuthorityCurrent(authority, get())) return;
       set((s) => ({
         prChecks: { ...s.prChecks, [key]: checks },
         prChecksLoading: { ...s.prChecksLoading, [key]: false },
         prChecksError: { ...s.prChecksError, [key]: "" },
       }));
     } catch (e) {
+      if (!isAuthorityCurrent(authority, get())) return;
       set((s) => ({
         prChecksLoading: { ...s.prChecksLoading, [key]: false },
         prChecksError: { ...s.prChecksError, [key]: String(e) },
@@ -770,12 +1044,14 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
 
   setIssueStateFilter: (state) => {
     if (get().issueStateFilter === state) return;
+    authorityEpoch += 1;
     set({ issueStateFilter: state, issues: [] });
     void get().fetchIssues();
   },
 
   setPrStateFilter: (state) => {
     if (get().prStateFilter === state) return;
+    authorityEpoch += 1;
     set({ prStateFilter: state, prs: [] });
     void get().fetchPrs();
   },
@@ -783,6 +1059,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   fetchIssueComments: async (issue) => {
     const { config } = get();
     if (!get().isConnected || !config.selectedRepo) return;
+    const authority = captureAuthority(get());
     const key = issueCommentsKey(config.selectedRepo.owner, config.selectedRepo.repo, issue.number);
     set((s) => ({
       issueCommentsLoading: { ...s.issueCommentsLoading, [key]: true },
@@ -793,6 +1070,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         config.selectedRepo.repo,
         issue.number,
       );
+      if (!isAuthorityCurrent(authority, get())) return;
       set((s) => ({
         issueComments: { ...s.issueComments, [key]: comments },
         issueCommentsLoading: (() => {
@@ -803,6 +1081,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
       }));
     } catch (e) {
       const message = String(e);
+      if (!isAuthorityCurrent(authority, get())) return;
       set((s) => ({
         error: message,
         isConnected: isTokenError(message) ? false : s.isConnected,
@@ -825,6 +1104,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
     if (!get().isConnected || !config.selectedRepo) {
       throw new Error("Not connected");
     }
+    const authority = captureAuthority(get());
     const key = issueCommentsKey(config.selectedRepo.owner, config.selectedRepo.repo, issue.number);
     try {
       const created = await githubPostIssueComment(
@@ -833,6 +1113,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         issue.number,
         trimmed,
       );
+      if (!isAuthorityCurrent(authority, get())) return;
       set((s) => ({
         issueComments: {
           ...s.issueComments,
@@ -843,6 +1124,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
       void get().fetchIssueComments(issue);
     } catch (e) {
       const message = String(e);
+      if (!isAuthorityCurrent(authority, get())) throw e;
       set((s) => ({
         error: message,
         isConnected: isTokenError(message) ? false : s.isConnected,
@@ -854,6 +1136,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   setIssueState: async (issue, nextState) => {
     const { config } = get();
     if (!get().isConnected || !config.selectedRepo) return;
+    const authority = captureAuthority(get());
     const prev = issue.state;
     // Optimistic update.
     set((s) => ({
@@ -865,6 +1148,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
       } else {
         await githubReopenIssue(config.selectedRepo.owner, config.selectedRepo.repo, issue.number);
       }
+      if (!isAuthorityCurrent(authority, get())) return;
       // Success: reconcile with the server (handles GitHub-side
       // normalization). On error we skip this — the rollback above is
       // the authoritative final state, and a redundant fetch would just
@@ -872,6 +1156,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
       void get().fetchIssues();
     } catch (e) {
       const message = String(e);
+      if (!isAuthorityCurrent(authority, get())) throw e;
       // Roll back optimistic update.
       set((s) => ({
         issues: s.issues.map((i) => (i.number === issue.number ? { ...i, state: prev } : i)),
@@ -885,6 +1170,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   setIssueAssignees: async (issue, assignees) => {
     const { config } = get();
     if (!get().isConnected || !config.selectedRepo) return;
+    const authority = captureAuthority(get());
     const prev = get().issues.find((i) => i.number === issue.number);
     set((s) => ({
       issues: s.issues.map((i) =>
@@ -898,9 +1184,11 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         issue.number,
         assignees,
       );
+      if (!isAuthorityCurrent(authority, get())) return;
       void get().fetchIssues();
     } catch (e) {
       const message = String(e);
+      if (!isAuthorityCurrent(authority, get())) throw e;
       if (prev) {
         set((s) => ({
           issues: s.issues.map((i) =>
@@ -916,6 +1204,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   setIssueLabels: async (issue, labels) => {
     const { config } = get();
     if (!get().isConnected || !config.selectedRepo) return;
+    const authority = captureAuthority(get());
     const prev = get().issues.find((i) => i.number === issue.number);
     set((s) => ({
       issues: s.issues.map((i) => (i.number === issue.number ? { ...i, labels } : i)),
@@ -927,9 +1216,11 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         issue.number,
         labels.map((l) => l.name),
       );
+      if (!isAuthorityCurrent(authority, get())) return;
       void get().fetchIssues();
     } catch (e) {
       const message = String(e);
+      if (!isAuthorityCurrent(authority, get())) throw e;
       if (prev) {
         set((s) => ({
           issues: s.issues.map((i) =>
@@ -945,6 +1236,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   setIssueMilestone: async (issue, milestone) => {
     const { config } = get();
     if (!get().isConnected || !config.selectedRepo) return;
+    const authority = captureAuthority(get());
     const prev = get().issues.find((i) => i.number === issue.number);
     set((s) => ({
       issues: s.issues.map((i) => (i.number === issue.number ? { ...i, milestone } : i)),
@@ -956,9 +1248,11 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         issue.number,
         milestone?.number ?? null,
       );
+      if (!isAuthorityCurrent(authority, get())) return;
       void get().fetchIssues();
     } catch (e) {
       const message = String(e);
+      if (!isAuthorityCurrent(authority, get())) throw e;
       if (prev) {
         set((s) => ({
           issues: s.issues.map((i) =>
@@ -976,6 +1270,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
     if (!get().isConnected || !config.selectedRepo || isLoadingMoreIssues || !get().issuesHasMore) {
       return;
     }
+    const authority = captureAuthority(get());
     set({ isLoadingMoreIssues: true });
     const nextPage = issuesPage + 1;
     try {
@@ -986,6 +1281,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         nextPage,
       );
       const { issues: more, hasMore } = parseIssuesPage(json);
+      if (!isAuthorityCurrent(authority, get())) return;
       set((s) => {
         const seen = new Set(s.issues.map((i) => i.number));
         const appended = [...s.issues, ...more.filter((i) => !seen.has(i.number))];
@@ -997,6 +1293,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         };
       });
     } catch (e) {
+      if (!isAuthorityCurrent(authority, get())) return;
       set({ error: String(e), isLoadingMoreIssues: false });
     }
   },
@@ -1006,6 +1303,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
     if (!get().isConnected || !config.selectedRepo || isLoadingMorePrs || !get().prsHasMore) {
       return;
     }
+    const authority = captureAuthority(get());
     set({ isLoadingMorePrs: true });
     const nextPage = prsPage + 1;
     try {
@@ -1016,6 +1314,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         nextPage,
       );
       const more: GitHubPr[] = JSON.parse(json);
+      if (!isAuthorityCurrent(authority, get())) return;
       set((s) => {
         const seen = new Set(s.prs.map((p) => p.number));
         const appended = [...s.prs, ...more.filter((p) => !seen.has(p.number))];
@@ -1027,6 +1326,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         };
       });
     } catch (e) {
+      if (!isAuthorityCurrent(authority, get())) return;
       set({ error: String(e), isLoadingMorePrs: false });
     }
   },
@@ -1036,11 +1336,13 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
     if (!get().isConnected || isLoadingMoreRepos || !get().reposHasMore) {
       return;
     }
+    const authority = captureAuthority(get());
     set({ isLoadingMoreRepos: true });
     const nextPage = reposPage + 1;
     try {
       const json = await githubListReposPage(nextPage);
       const more: GitHubRepo[] = JSON.parse(json);
+      if (!isAuthorityCurrent(authority, get())) return;
       set((s) => {
         const seen = new Set(s.repos.map((r) => r.id));
         const appended = [...s.repos, ...more.filter((r) => !seen.has(r.id))];
@@ -1052,6 +1354,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         };
       });
     } catch (e) {
+      if (!isAuthorityCurrent(authority, get())) return;
       set({ error: String(e), isLoadingMoreRepos: false });
     }
   },
@@ -1128,9 +1431,11 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
 
   fetchNotifications: async () => {
     if (!get().isConnected) return;
+    const authority = captureAuthority(get());
     set({ notificationsLoading: true, notificationsError: null });
     try {
       const notifications = await githubListNotifications(false);
+      if (!isAuthorityCurrent(authority, get())) return;
       set({
         notifications,
         unreadCount: notifications.filter((n) => n.unread).length,
@@ -1138,6 +1443,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
       });
     } catch (e) {
       const message = String(e);
+      if (!isAuthorityCurrent(authority, get())) return;
       set({
         notificationsError: message,
         notificationsLoading: false,
@@ -1147,20 +1453,20 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   },
 
   markNotificationRead: async (threadId) => {
+    const authority = captureAuthority(get());
     const target = get().notifications.find((n) => n.id === threadId);
     // Nothing to do if it's already read / unknown.
     if (!target || !target.unread) return;
     // Optimistic: flip to read locally and drop the unread count.
     set((s) => ({
-      notifications: s.notifications.map((n) =>
-        n.id === threadId ? { ...n, unread: false } : n,
-      ),
+      notifications: s.notifications.map((n) => (n.id === threadId ? { ...n, unread: false } : n)),
       unreadCount: Math.max(0, s.unreadCount - 1),
     }));
     try {
       await githubMarkNotificationRead(threadId);
     } catch (e) {
       const message = String(e);
+      if (!isAuthorityCurrent(authority, get())) return;
       // Roll back the optimistic update. Recompute unreadCount from the
       // (rolled-back) array rather than blindly re-incrementing, so a refetch
       // that replaced the list mid-flight can't leave the badge over-counting.
@@ -1181,5 +1487,8 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
-  clearInvestigation: () => set({ investigation: null }),
+  clearInvestigation: () => {
+    investigationRequestSequence += 1;
+    set({ investigation: null, isInvestigating: false });
+  },
 }));

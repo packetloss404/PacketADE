@@ -698,7 +698,7 @@ export function GitDashboard({
         <div className="border-accent-amber/30 bg-accent-amber/5 mx-2 mt-2 shrink-0 rounded border px-2 py-1.5">
           <div className="flex items-center gap-1.5">
             <ShieldCheck size={11} className="shrink-0 text-accent-amber" />
-            <span className="text-ui font-semibold text-text-primary">Review before commit</span>
+            <span className="text-ui font-semibold text-text-primary">Flight review context</span>
             <span className="flex-1" />
             <button
               type="button"
@@ -715,7 +715,7 @@ export function GitDashboard({
             {reviewContext.taskCount === 1 ? "" : "s"}.
             {reviewContext.pendingApprovalCount > 0
               ? ` ${reviewContext.pendingApprovalCount} approval${reviewContext.pendingApprovalCount === 1 ? "" : "s"} still pending.`
-              : " Resolve flight review, then land the commit."}
+              : " Open the review packet for task and attempt context."}
           </div>
         </div>
       )}
@@ -890,8 +890,8 @@ export function GitDashboard({
             <div className="flex items-center gap-1.5 text-meta text-accent-amber">
               <FileCheck2 size={10} />
               <span className="truncate">
-                Review {reviewContext.linkedFileCount} flight-linked file
-                {reviewContext.linkedFileCount === 1 ? "" : "s"} before committing.
+                Review context is available for {reviewContext.linkedFileCount} flight-linked file
+                {reviewContext.linkedFileCount === 1 ? "" : "s"}.
               </span>
             </div>
           ) : (
@@ -924,7 +924,7 @@ export function GitDashboard({
             ) : (
               <Check size={11} />
             )}
-            {reviewContext.linkedFileCount > 0 ? "Commit after review" : "Commit staged"}
+            Commit staged
           </button>
         </div>
       }

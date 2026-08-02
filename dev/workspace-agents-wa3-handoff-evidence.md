@@ -108,3 +108,12 @@ migration and evidence-boundary coverage.
 
 Detachable interactive Agent windows remain out of scope until WA5 establishes
 a safe single-writer contract.
+
+## 2026-08-01 proof refresh
+
+Focused Workspace decoupling, remote-project picker, sidecar remote-path, and
+CLI catalog tests pass. PacketADE has zero configured SSH servers, PacketCode
+is available only as a sibling source/dev binary rather than a published
+install, and no live PacketAgent credential is configured. All three manual
+gates above therefore remain open. See
+[`proof-audit-2026-08-01.md`](./proof-audit-2026-08-01.md).

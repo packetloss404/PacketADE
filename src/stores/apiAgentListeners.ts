@@ -49,10 +49,7 @@ import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useEditBaselineStore } from "@/stores/editBaselineStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useAgentStreamingStore } from "@/stores/agentStreamingStore";
-import {
-  auditSourceChain,
-  useProvenanceAuditStore,
-} from "@/stores/provenanceAuditStore";
+import { auditSourceChain, useProvenanceAuditStore } from "@/stores/provenanceAuditStore";
 import {
   useAgentTaskStore,
   requestConversationSave,
@@ -336,75 +333,77 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     let updated: AgentConversation | undefined;
     let nextQueued: string | undefined;
     let promotedQueuedMessageId: string | undefined;
-    setState((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const messages = c.messages.map((m) => {
-          if (!m.isStreaming) return m;
-          const settled: AgentMessage = {
-                ...m,
-                isStreaming: false,
-                inputTokens: event.payload.input_tokens,
-                outputTokens: event.payload.output_tokens,
-                cacheReadTokens: event.payload.cache_read_input_tokens,
-                cacheWriteTokens: event.payload.cache_creation_input_tokens,
-                // Stamp the estimated USD cost at receipt time so render
-                // surfaces never need per-message IPC (undefined when the
-                // model has no pricing entry). Reasoning tokens landed on
-                // the message via earlier turn-summary events.
-                costUsd:
-                  estimateTurnCostUsd(c.model, {
-                    inputTokens: event.payload.input_tokens,
-                    outputTokens: event.payload.output_tokens,
-                    cacheReadTokens: event.payload.cache_read_input_tokens,
-                    cacheWriteTokens: event.payload.cache_creation_input_tokens,
-                    reasoningTokens: m.reasoningTokens,
-                  }) ?? undefined,
-              };
-          settled.provenance = assistantDerivativeProvenance(
-            settled,
-            activeTurnEvidence(c),
-          );
-          return settled;
-        });
-        const queued = c.queuedMessages ?? [];
-        let remainingQueued = queued;
-        const shouldDrainQueued = !event.payload.cancelled && queued.length > 0;
-        if (shouldDrainQueued) {
-          nextQueued = queued[0];
-          remainingQueued = queued.slice(1);
-        } else if (event.payload.cancelled) {
-          // Cancelled turn: never auto-send a message the user queued behind
-          // a turn they just killed. Mirror cancelActiveConversation (G33):
-          // clear the queue and drop `queued:true` bubbles so none stick.
-          remainingQueued = [];
-        }
-        let promotedDrainingBubble = false;
-        const visibleMessages = shouldDrainQueued
-          ? messages.map((m) => {
-              if (!promotedDrainingBubble && m.queued) {
-                promotedDrainingBubble = true;
-                promotedQueuedMessageId = m.id;
-                return { ...m, queued: undefined };
-              }
-              return m;
-            })
-          : event.payload.cancelled
-            ? messages.filter((m) => !m.queued)
-            : messages;
-        const newResume = event.payload.resume_token ?? c.resumeToken;
-        const next: AgentConversation = {
-          ...c,
-          messages: visibleMessages,
-          status: "idle",
-          updatedAt: Date.now(),
-          queuedMessages: remainingQueued,
-          resumeToken: newResume ?? undefined,
-        };
-        updated = next;
-        return next;
-      }),
-    }));
+    setState((s) => {
+      const cancellingConversationIds = new Set(s.cancellingConversationIds);
+      cancellingConversationIds.delete(id);
+      return {
+        cancellingConversationIds,
+        conversations: s.conversations.map((c) => {
+          if (c.id !== id) return c;
+          const messages = c.messages.map((m) => {
+            if (!m.isStreaming) return m;
+            const settled: AgentMessage = {
+              ...m,
+              isStreaming: false,
+              inputTokens: event.payload.input_tokens,
+              outputTokens: event.payload.output_tokens,
+              cacheReadTokens: event.payload.cache_read_input_tokens,
+              cacheWriteTokens: event.payload.cache_creation_input_tokens,
+              // Stamp the estimated USD cost at receipt time so render
+              // surfaces never need per-message IPC (undefined when the
+              // model has no pricing entry). Reasoning tokens landed on
+              // the message via earlier turn-summary events.
+              costUsd:
+                estimateTurnCostUsd(c.model, {
+                  inputTokens: event.payload.input_tokens,
+                  outputTokens: event.payload.output_tokens,
+                  cacheReadTokens: event.payload.cache_read_input_tokens,
+                  cacheWriteTokens: event.payload.cache_creation_input_tokens,
+                  reasoningTokens: m.reasoningTokens,
+                }) ?? undefined,
+            };
+            settled.provenance = assistantDerivativeProvenance(settled, activeTurnEvidence(c));
+            return settled;
+          });
+          const queued = c.queuedMessages ?? [];
+          let remainingQueued = queued;
+          const shouldDrainQueued = !event.payload.cancelled && queued.length > 0;
+          if (shouldDrainQueued) {
+            nextQueued = queued[0];
+            remainingQueued = queued.slice(1);
+          } else if (event.payload.cancelled) {
+            // Cancelled turn: never auto-send a message the user queued behind
+            // a turn they just killed. Mirror cancelActiveConversation (G33):
+            // clear the queue and drop `queued:true` bubbles so none stick.
+            remainingQueued = [];
+          }
+          let promotedDrainingBubble = false;
+          const visibleMessages = shouldDrainQueued
+            ? messages.map((m) => {
+                if (!promotedDrainingBubble && m.queued) {
+                  promotedDrainingBubble = true;
+                  promotedQueuedMessageId = m.id;
+                  return { ...m, queued: undefined };
+                }
+                return m;
+              })
+            : event.payload.cancelled
+              ? messages.filter((m) => !m.queued)
+              : messages;
+          const newResume = event.payload.resume_token ?? c.resumeToken;
+          const next: AgentConversation = {
+            ...c,
+            messages: visibleMessages,
+            status: "idle",
+            updatedAt: Date.now(),
+            queuedMessages: remainingQueued,
+            resumeToken: newResume ?? undefined,
+          };
+          updated = next;
+          return next;
+        }),
+      };
+    });
     if (updated) requestConversationSave(id);
     // Turn done — reset transient streaming state. Reasoning text already
     // landed on the assistant message; the live delta buffer is now stale.
@@ -438,6 +437,7 @@ export async function installApiAgentListeners(conversationId: string): Promise<
       conv.mode === "api" &&
       conv.model &&
       useAgentSettingsStore.getState().autoFailoverEnabled &&
+      !getState().cancellingConversationIds.has(id) &&
       !failoverGuard.has(id) &&
       looksLikeRateLimit(event.payload.message) &&
       // A drained quota / credit balance is an ACCOUNT-level wall: every model
@@ -472,28 +472,33 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     }
 
     let updated: AgentConversation | undefined;
-    setState((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const messages = c.messages.map((m) =>
-          m.isStreaming
-            ? {
-                ...m,
-                isStreaming: false,
-                content: m.content + `\n\nError: ${event.payload.message}`,
-              }
-            : m,
-        );
-        const next = {
-          ...c,
-          messages,
-          status: "failed" as const,
-          updatedAt: Date.now(),
-        };
-        updated = next;
-        return next;
-      }),
-    }));
+    setState((s) => {
+      const cancellingConversationIds = new Set(s.cancellingConversationIds);
+      cancellingConversationIds.delete(id);
+      return {
+        cancellingConversationIds,
+        conversations: s.conversations.map((c) => {
+          if (c.id !== id) return c;
+          const messages = c.messages.map((m) =>
+            m.isStreaming
+              ? {
+                  ...m,
+                  isStreaming: false,
+                  content: m.content + `\n\nError: ${event.payload.message}`,
+                }
+              : m,
+          );
+          const next = {
+            ...c,
+            messages,
+            status: "failed" as const,
+            updatedAt: Date.now(),
+          };
+          updated = next;
+          return next;
+        }),
+      };
+    });
     if (updated) requestConversationSave(id);
     if (updated) {
       // Pref-gated error notification (honors onSessionError + debounce).
@@ -559,19 +564,12 @@ export async function installApiAgentListeners(conversationId: string): Promise<
       const tier = classifyToolTier(event.payload.name, event.payload.arguments, conv.projectPath);
       const sourceChain = taintingEvidence(conv);
       const provenanceGate = provenanceNeedsRiskGate(conv, tier);
-      if (
-        decideApprovalGate(deriveMode(conv), tier) === "auto_allow" &&
-        !provenanceGate
-      ) {
+      if (decideApprovalGate(deriveMode(conv), tier) === "auto_allow" && !provenanceGate) {
         useProvenanceAuditStore.getState().record({
           conversationId: id,
           toolId: event.payload.id,
           action: event.payload.name,
-          target: safeToolLocator(
-            event.payload.name,
-            event.payload.arguments,
-            conv.projectPath,
-          ),
+          target: safeToolLocator(event.payload.name, event.payload.arguments, conv.projectPath),
           decision: "auto_allowed",
           effectivePolicy: deriveMode(conv),
           sourceChain: auditSourceChain(sourceChain),
@@ -582,11 +580,7 @@ export async function installApiAgentListeners(conversationId: string): Promise<
       const pendingPermission: PendingPermission = {
         ...event.payload,
         sourceChain,
-        safeTarget: safeToolLocator(
-          event.payload.name,
-          event.payload.arguments,
-          conv.projectPath,
-        ),
+        safeTarget: safeToolLocator(event.payload.name, event.payload.arguments, conv.projectPath),
         effectivePolicy: provenanceGate
           ? `${deriveMode(conv)} + evidence boundary`
           : deriveMode(conv),
@@ -596,11 +590,7 @@ export async function installApiAgentListeners(conversationId: string): Promise<
         conversationId: id,
         toolId: event.payload.id,
         action: event.payload.name,
-        target: safeToolLocator(
-          event.payload.name,
-          event.payload.arguments,
-          conv.projectPath,
-        ),
+        target: safeToolLocator(event.payload.name, event.payload.arguments, conv.projectPath),
         decision: "prompted",
         effectivePolicy: pendingPermission.effectivePolicy ?? deriveMode(conv),
         sourceChain: auditSourceChain(sourceChain),

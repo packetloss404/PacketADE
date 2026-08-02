@@ -6,10 +6,10 @@ newline-delimited JSON on stdin/stdout.
 
 ## Why a sidecar?
 
-The Anthropic subscription provider uses the Claude Agent SDK, the OpenAI
-subscription provider wraps `codex exec`, and the OpenAI Agents SDK provider
-uses the OpenAI API key path behind the same sidecar protocol. Keeping these
-in an isolated Node child process lets the Rust
+The API-key-backed Claude Agent SDK and OpenAI Agents SDK providers share the
+same sidecar protocol. The former `codex exec` chat provider was removed in
+July 2026; Codex CLI remains a separate PTY-backed Workspace client. Keeping
+the surviving SDK providers in an isolated Node child process lets the Rust
 supervisor handle lifecycle, crash restart, and routing events into Tauri
 event channels for the React UI without making the frontend care which
 transport produced a turn.

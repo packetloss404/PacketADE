@@ -205,6 +205,7 @@ pub fn run() {
         .manage(mcp_server::create_mcp_server_state())
         .manage(commands::monitor_windows::MonitorWindowRegistry::default())
         .manage(commands::project_memory::ProjectMemoryWatchState::default())
+        .manage(std::sync::Arc::new(commands::side_chat::SideChatState::default()))
         // WI-1 — backend mirror of the auxiliary AI routing settings. Empty
         // until the frontend routing store pushes; an empty map means
         // "auto (cheapest configured API key)", never a subscription login.
@@ -258,6 +259,7 @@ pub fn run() {
             commands::pty::ssh_check_remote_path,
             commands::pty::get_app_known_hosts_path,
             commands::ssh_keys::get_ssh_password_exists,
+            commands::ssh_keys::set_ssh_password,
             commands::ssh_keys::delete_ssh_password,
             // Git
             commands::git::get_git_branch,
@@ -369,6 +371,7 @@ pub fn run() {
             // Flight chat
             // Side chat (ephemeral context-aware helper)
             commands::side_chat::ask_side_chat_stream,
+            commands::side_chat::cancel_side_chat_stream,
             // GitHub integration
             commands::github::github_set_token,
             commands::github::github_clear_token,

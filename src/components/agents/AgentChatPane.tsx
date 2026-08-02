@@ -105,6 +105,9 @@ export function AgentChatPane({
   const conversation = useAgentTaskStore((s) =>
     s.conversations.find((c) => c.id === conversationId),
   );
+  const isStopping = useAgentTaskStore(
+    (s) => s.cancellingConversationIds?.has(conversationId) ?? false,
+  );
 
   // Grouped store actions — keeps reference stable across renders.
   const actions = useAgentTaskStore(
@@ -122,7 +125,7 @@ export function AgentChatPane({
   );
 
   // Approval actions live in their own substore now — group them so the
-  // PendingApprovalsSection / composer cancel button see stable references.
+  // permission section, review surface, and composer see stable references.
   const approvalActions = useAgentApprovalStore(
     useShallow((s) => ({
       respondPermission: s.respondPermission,
@@ -130,8 +133,8 @@ export function AgentChatPane({
       cancelPendingTools: s.cancelPendingTools,
     })),
   );
-  // Live queues read from the substore — drives both the per-item cards
-  // and pendingApprovalCount (Composer's cancel button, PendingApprovalsSection).
+  // Live queues read from the substore — drives the per-item cards and the
+  // composer's single canonical cancel-pending action.
   const pendingPermissions = useAgentApprovalStore(
     (s) => s.permissions.get(conversationId) ?? EMPTY_PENDING_PERMISSIONS,
   );
@@ -204,7 +207,9 @@ export function AgentChatPane({
     );
   }
 
-  const status = STATUS_DISPLAY[conversation.status] ?? STATUS_DISPLAY.idle;
+  const status = isStopping
+    ? { label: "Stopping…", className: "text-accent-amber" }
+    : (STATUS_DISPLAY[conversation.status] ?? STATUS_DISPLAY.idle);
   const agentLabel = AGENT_LABELS[conversation.agent] ?? conversation.agent;
   const agentColor = getAgentColor(conversation.agent);
 
@@ -403,7 +408,6 @@ export function AgentChatPane({
         conversationId={conversationId}
         pendingPermissions={pendingPermissions}
         respondPermission={approvalActions.respondPermission}
-        cancelPendingTools={approvalActions.cancelPendingTools}
         appendAllowedToolPattern={actions.appendAllowedToolPattern}
         keyboardScopeActive={keyboardScopeActive}
       />

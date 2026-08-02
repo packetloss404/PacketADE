@@ -7,7 +7,7 @@
  * icon. These tests pin the fix: an explicit styled confirm is required, Cancel
  * mutates nothing, and the modal names the work still riding on the host.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
@@ -74,16 +74,16 @@ describe("ServersSettingsCard delete confirm", () => {
     expect(useServerStore.getState().servers).toEqual([PROD]);
   });
 
-  it("deletes only after the explicit confirm button", () => {
+  it("deletes only after the explicit confirm button and awaited persistence", async () => {
     render(<ServersSettingsCard />);
 
     fireEvent.click(screen.getByRole("button", { name: "Delete prod-box" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete host" }));
 
-    expect(useServerStore.getState().servers).toEqual([]);
+    await waitFor(() => expect(useServerStore.getState().servers).toEqual([]));
   });
 
-  it("purges the stored SSH password from the OS keyring", () => {
+  it("purges the stored SSH password from the OS keyring", async () => {
     render(<ServersSettingsCard />);
 
     fireEvent.click(screen.getByRole("button", { name: "Delete prod-box" }));
@@ -91,11 +91,12 @@ describe("ServersSettingsCard delete confirm", () => {
 
     // Without this the `ssh-<id>` secret outlived its record forever with no
     // in-app path to remove it.
-    expect(invoke).toHaveBeenCalledWith("delete_ssh_password", { serverId: "srv-1" });
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("delete_ssh_password", { serverId: "srv-1" }),
+    );
   });
 
-  it("still deletes the host when the credential store rejects", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("restores the host and reports the error when credential cleanup rejects", async () => {
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {
       if (cmd === "delete_ssh_password") throw new Error("credential store locked");
       return undefined;
@@ -105,18 +106,13 @@ describe("ServersSettingsCard delete confirm", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete prod-box" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete host" }));
 
-    // Keyring purge is best-effort: the record the user confirmed is gone.
-    expect(useServerStore.getState().servers).toEqual([]);
-    expect(screen.queryByRole("heading", { name: "Delete remote host?" })).not.toBeInTheDocument();
-
-    // Logged, not silently swallowed.
-    await vi.waitFor(() =>
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining("serverStore.deleteSshPassword"),
-        expect.anything(),
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        /Credential cleanup failed, so the host record was restored/,
       ),
     );
-    warn.mockRestore();
+    expect(useServerStore.getState().servers).toEqual([PROD]);
+    expect(screen.getByRole("heading", { name: "Delete remote host?" })).toBeInTheDocument();
   });
 
   it("tells the user the password is removed, not left behind", () => {
@@ -138,6 +134,21 @@ describe("ServersSettingsCard delete confirm", () => {
 
     expect(nativeConfirm).not.toHaveBeenCalled();
     nativeConfirm.mockRestore();
+  });
+
+  it("keeps the confirm open and does not touch credentials when record persistence fails", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "save_servers_slice") throw new Error("state file locked");
+      return undefined;
+    });
+
+    render(<ServersSettingsCard />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete prod-box" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete host" }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("state file locked"));
+    expect(useServerStore.getState().servers).toEqual([PROD]);
+    expect(invoke).not.toHaveBeenCalledWith("delete_ssh_password", expect.anything());
   });
 
   it("shows no in-use callout for an unused host", () => {
@@ -242,5 +253,151 @@ describe("ServersSettingsCard delete confirm", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete prod-box" }));
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+describe("ServersSettingsCard password credentials", () => {
+  it("writes a password only to the OS keyring and never to ServerConfig", async () => {
+    seedServers([
+      {
+        ...PROD,
+        authMethod: "password",
+        hostFingerprint: "SHA256:trusted",
+      },
+    ]);
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_ssh_password_exists") return true;
+      return undefined;
+    });
+
+    render(<ServersSettingsCard />);
+    fireEvent.click(screen.getByTitle("Edit"));
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct horse battery staple" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("set_ssh_password", {
+        serverId: "srv-1",
+        password: "correct horse battery staple",
+      }),
+    );
+    expect(useServerStore.getState().servers[0]).toMatchObject({
+      id: "srv-1",
+      authMethod: "password",
+    });
+    expect(JSON.stringify(useServerStore.getState().servers)).not.toContain(
+      "correct horse battery staple",
+    );
+  });
+
+  it("tests the pinned host, auth, and configured path with the draft password", async () => {
+    seedServers([
+      {
+        ...PROD,
+        authMethod: "password",
+        remotePath: "/srv/app",
+        hostFingerprint: "SHA256:trusted",
+      },
+    ]);
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_ssh_password_exists") return true;
+      if (cmd === "ssh_check_remote_path") {
+        return { exists: true, isDirectory: true, isGitRepo: true };
+      }
+      return undefined;
+    });
+
+    render(<ServersSettingsCard />);
+    fireEvent.click(screen.getByTitle("Edit"));
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "draft-secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test host, auth, and path" }));
+
+    expect(
+      await screen.findByText("Connected. The remote path is a Git repository."),
+    ).toBeVisible();
+    expect(invoke).toHaveBeenCalledWith("ssh_check_remote_path", {
+      targetId: "srv-1",
+      host: "10.0.0.4",
+      port: 22,
+      user: "deploy",
+      authMethod: "password",
+      keyPath: null,
+      password: "draft-secret",
+      hostFingerprint: "SHA256:trusted",
+      remotePath: "/srv/app",
+    });
+
+    fireEvent.change(screen.getByDisplayValue("/srv/app"), {
+      target: { value: "/srv/other" },
+    });
+    expect(
+      screen.queryByText("Connected. The remote path is a Git repository."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows credential-manager access failures instead of treating them as no password", async () => {
+    seedServers([
+      {
+        ...PROD,
+        authMethod: "password",
+        hostFingerprint: "SHA256:trusted",
+      },
+    ]);
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_ssh_password_exists") throw new Error("credential manager locked");
+      return undefined;
+    });
+
+    render(<ServersSettingsCard />);
+    fireEvent.click(screen.getByTitle("Edit"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /Could not access the saved credential: credential manager locked/,
+    );
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "replacement" },
+    });
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
+  it("rolls the server record back and keeps the form open when credential update fails", async () => {
+    seedServers([
+      {
+        ...PROD,
+        authMethod: "password",
+        hostFingerprint: "SHA256:trusted",
+      },
+    ]);
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_ssh_password_exists") return true;
+      if (cmd === "set_ssh_password") throw new Error("credential write denied");
+      return undefined;
+    });
+
+    render(<ServersSettingsCard />);
+    fireEvent.click(screen.getByTitle("Edit"));
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "replacement" },
+    });
+    fireEvent.change(screen.getByDisplayValue("prod-box"), {
+      target: { value: "renamed" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /previous server configuration was restored/,
+    );
+    expect(screen.getByRole("heading", { name: "Edit Server" })).toBeInTheDocument();
+    expect(useServerStore.getState().servers[0].name).toBe("prod-box");
+    const serverWrites = vi
+      .mocked(invoke)
+      .mock.calls.filter(([command]) => command === "save_servers_slice");
+    expect(serverWrites).toHaveLength(2);
   });
 });

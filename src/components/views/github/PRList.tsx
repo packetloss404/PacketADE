@@ -14,6 +14,7 @@ export interface PRListProps {
   hasMore: boolean;
   isLoadingMore: boolean;
   onLoadMore: () => void;
+  showChecks?: boolean;
 }
 
 export function PRList({
@@ -26,6 +27,7 @@ export function PRList({
   hasMore,
   isLoadingMore,
   onLoadMore,
+  showChecks = true,
 }: PRListProps) {
   // NOTE: GitHub's `/pulls` LIST endpoint does NOT return
   // `additions`/`deletions`/`changed_files`/`requested_reviewers` — those
@@ -33,9 +35,9 @@ export function PRList({
   // zeros for every PR (v0.7 FIX 3). Removed until per-PR fetch lands.
   // `draft` IS on the list response and is retained.
   return (
-    <div className="flex flex-col min-h-0 overflow-hidden">
+    <div className="flex min-h-0 flex-col overflow-hidden">
       {/* v0.8-C: state filter */}
-      <div className="flex items-center gap-1 px-3 py-2 border-b border-bg-border flex-shrink-0">
+      <div className="flex flex-shrink-0 items-center gap-1 border-b border-bg-border px-3 py-2">
         <StateFilterChip
           label="Open"
           active={stateFilter === "open"}
@@ -52,11 +54,9 @@ export function PRList({
           onClick={() => onStateFilterChange("all")}
         />
         <div className="flex-1" />
-        <span className="text-[9.5px] text-text-muted font-mono">
-          {prs.length} loaded
-        </span>
+        <span className="font-mono text-[9.5px] text-text-muted">{prs.length} loaded</span>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2">
+      <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-3">
         {isLoading && prs.length === 0 ? (
           <div className="flex items-center justify-center py-12 text-text-muted">
             <Loader2 size={16} className="animate-spin" />
@@ -75,10 +75,8 @@ export function PRList({
                   type="button"
                   key={pr.number}
                   onClick={() => onSelect(pr.number)}
-                  className={`w-full text-left bg-bg-secondary border rounded-lg px-3.5 py-2.5 transition-colors ${
-                    active
-                      ? "border-accent-purple/50"
-                      : "border-bg-border hover:border-line-strong"
+                  className={`w-full rounded-lg border bg-bg-secondary px-3.5 py-2.5 text-left transition-colors ${
+                    active ? "border-accent-purple/50" : "border-bg-border hover:border-line-strong"
                   }`}
                 >
                   <div className="flex items-start gap-2.5">
@@ -88,45 +86,35 @@ export function PRList({
                         draft ? "text-text-muted" : "text-accent-purple"
                       }`}
                     />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="text-[10px] text-text-muted tabular-nums">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        <span className="text-[10px] tabular-nums text-text-muted">
                           #{pr.number}
                         </span>
-                        <span className="text-xs font-medium text-text-primary">
-                          {pr.title}
-                        </span>
+                        <span className="text-xs font-medium text-text-primary">{pr.title}</span>
                         {draft && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-bg-tertiary text-text-muted border border-bg-border">
+                          <span className="rounded-full border border-bg-border bg-bg-tertiary px-1.5 py-0.5 text-[9px] text-text-muted">
                             draft
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2.5 text-[10px] text-text-muted flex-wrap">
+                      <div className="flex flex-wrap items-center gap-2.5 text-[10px] text-text-muted">
                         <span>
-                          <span className="text-text-secondary">
-                            {pr.user?.login ?? "unknown"}
-                          </span>{" "}
+                          <span className="text-text-secondary">{pr.user?.login ?? "unknown"}</span>{" "}
                           wants to merge
                         </span>
-                        <span className="font-mono text-text-secondary">
-                          {pr.head?.ref ?? ""}
-                        </span>
+                        <span className="font-mono text-text-secondary">{pr.head?.ref ?? ""}</span>
                         <ChevronRight size={9} />
-                        <span className="font-mono text-text-secondary">
-                          {pr.base?.ref ?? ""}
-                        </span>
+                        <span className="font-mono text-text-secondary">{pr.base?.ref ?? ""}</span>
                         <span className="text-line-strong">·</span>
-                        <span className="text-text-muted">
-                          opened {timeAgo(pr.created_at)} ago
-                        </span>
+                        <span className="text-text-muted">opened {timeAgo(pr.created_at)} ago</span>
                         {/* v0.8-B: pr check pill */}
-                        <PrCheckPill pr={pr} />
+                        {showChecks && <PrCheckPill pr={pr} />}
                       </div>
                     </div>
-                    <div className="flex flex-col gap-1 items-end flex-shrink-0">
+                    <div className="flex flex-shrink-0 flex-col items-end gap-1">
                       <span
-                        className={`inline-flex items-center gap-1 text-[9.5px] px-1.5 py-0.5 rounded-full font-medium ${
+                        className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9.5px] font-medium ${
                           pr.state === "closed"
                             ? "bg-accent-purple/15 text-accent-purple"
                             : "bg-accent-green/15 text-accent-green"
@@ -143,18 +131,14 @@ export function PRList({
             {/* v0.8-C: pagination */}
             {hasMore && (
               <div className="flex items-center justify-center gap-2 px-3 py-3">
-                <span className="text-[10px] text-text-muted">
-                  Showing {prs.length}
-                </span>
+                <span className="text-[10px] text-text-muted">Showing {prs.length}</span>
                 <button
                   type="button"
                   onClick={onLoadMore}
                   disabled={isLoadingMore}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-bg-tertiary text-text-primary border border-bg-border rounded hover:border-line-strong disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 rounded border border-bg-border bg-bg-tertiary px-2.5 py-1 text-[10.5px] font-medium text-text-primary hover:border-line-strong disabled:opacity-60"
                 >
-                  {isLoadingMore && (
-                    <Loader2 size={10} className="animate-spin" />
-                  )}
+                  {isLoadingMore && <Loader2 size={10} className="animate-spin" />}
                   Load more
                 </button>
               </div>

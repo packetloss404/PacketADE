@@ -697,6 +697,7 @@ interface DetailProps {
 }
 
 function FlightDetailPane({ flight, status, onLaunchAttempt }: DetailProps) {
+  const toast = useToast();
   const cfg = FLIGHT_STATUS_CONFIG[status];
   const tasks = flightTasks(flight);
   const sessions = flight.linkedSessionIds.length;
@@ -730,7 +731,12 @@ function FlightDetailPane({ flight, status, onLaunchAttempt }: DetailProps) {
             )}
           </div>
           <button
-            onClick={() => void openMonitorWindow({ kind: "flight", flightId: flight.id })}
+            onClick={() =>
+              void openMonitorWindow({ kind: "flight", flightId: flight.id }).catch((error) => {
+                const message = error instanceof Error ? error.message : String(error);
+                toast.error(`Monitor could not be opened: ${message}`);
+              })
+            }
             className="rounded border border-bg-border px-2.5 py-1.5 text-[10px] text-text-secondary hover:bg-bg-hover"
           >
             Send to Monitor

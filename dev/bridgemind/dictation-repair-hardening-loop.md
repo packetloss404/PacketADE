@@ -143,3 +143,11 @@ microphone, run the Settings doctor for each, then exercise the matrix in
 - [Tauri Debian packaging](https://v2.tauri.app/distribute/debian/)
 - [Windows `SendInput` limitations](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput)
 - [BridgeVoice product benchmark](https://www.bridgemind.ai/products/bridgevoice)
+
+## 2026-08-01 proof refresh
+
+The focused Dictation store and target-delivery tests pass. Windows reports
+zero active capture endpoints, so the physical microphone matrix could not be
+run; macOS and Linux packaged hosts are also unavailable. DV17 remains correctly
+deferred until a packaged CPU baseline exists. See
+[`proof-audit-2026-08-01.md`](../proof-audit-2026-08-01.md).

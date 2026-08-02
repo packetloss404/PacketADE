@@ -1,6 +1,5 @@
 import { create } from "zustand";
-import { saveServersSlice, deleteSshPassword } from "@/lib/tauri";
-import { generateId } from "@/lib/storage";
+import { saveServersSlice } from "@/lib/tauri";
 import { logSwallowed } from "@/lib/logSwallowed";
 import type { ServerConfig, ServerConnectionState, ConnectionStep } from "@/types/server";
 
@@ -15,15 +14,24 @@ interface ServerStore {
   knownHostsPath: string | null;
 
   // CRUD
-  addServer: (config: Omit<ServerConfig, "id" | "installedAgents">) => ServerConfig;
   updateServer: (id: string, updates: Partial<ServerConfig>) => void;
-  deleteServer: (id: string) => void;
+  addServerPersisted: (
+    config: Omit<ServerConfig, "id" | "installedAgents">,
+    id: string,
+  ) => Promise<ServerConfig>;
+  updateServerPersisted: (id: string, updates: Partial<ServerConfig>) => Promise<ServerConfig>;
+  deleteServerRecordPersisted: (id: string) => Promise<ServerConfig>;
+  restoreServerRecordPersisted: (server: ServerConfig) => Promise<void>;
   setActiveServer: (id: string | null) => void;
   getServer: (id: string) => ServerConfig | undefined;
 
   // Connection state (ephemeral)
   setConnectionStatus: (serverId: string, state: ServerConnectionState) => void;
-  updateConnectionStep: (serverId: string, stepId: string, updates: Partial<ConnectionStep>) => void;
+  updateConnectionStep: (
+    serverId: string,
+    stepId: string,
+    updates: Partial<ConnectionStep>,
+  ) => void;
   clearConnectionState: (serverId: string) => void;
 
   // Hydration
@@ -31,8 +39,19 @@ interface ServerStore {
   setKnownHostsPath: (path: string) => void;
 }
 
+let serverWriteQueue: Promise<void> = Promise.resolve();
+
+function queueServerWrite<T>(operation: () => Promise<T>): Promise<T> {
+  const result = serverWriteQueue.then(operation);
+  serverWriteQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
 function syncToBackend(servers: ServerConfig[]) {
-  void saveServersSlice(servers).catch(logSwallowed("serverStore.save"));
+  void queueServerWrite(() => saveServersSlice(servers)).catch(logSwallowed("serverStore.save"));
 }
 
 export const useServerStore = create<ServerStore>((set, get) => ({
@@ -41,44 +60,57 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   connectionStates: {},
   knownHostsPath: null,
 
-  addServer: (config) => {
-    const server: ServerConfig = {
-      ...config,
-      id: generateId("srv"),
-      installedAgents: [],
-    };
-    set((s) => {
-      const servers = [...s.servers, server];
-      syncToBackend(servers);
-      return { servers, activeServerId: server.id };
-    });
-    return server;
-  },
-
   updateServer: (id, updates) => {
     set((s) => {
-      const servers = s.servers.map((srv) =>
-        srv.id === id ? { ...srv, ...updates } : srv,
-      );
+      const servers = s.servers.map((srv) => (srv.id === id ? { ...srv, ...updates } : srv));
       syncToBackend(servers);
       return { servers };
     });
   },
 
-  deleteServer: (id) => {
-    set((s) => {
-      const servers = s.servers.filter((srv) => srv.id !== id);
-      const activeServerId = s.activeServerId === id ? null : s.activeServerId;
-      syncToBackend(servers);
-      return { servers, activeServerId };
-    });
-    // The keyring secret is not part of the persisted slice, so dropping the
-    // record alone orphaned `ssh-<id>` in the OS credential store forever with
-    // no path in the app to remove it. Best-effort and deliberately not
-    // awaited: a locked or unavailable credential store must never block the
-    // delete the user just confirmed.
-    void deleteSshPassword(id).catch(logSwallowed("serverStore.deleteSshPassword"));
-  },
+  addServerPersisted: (config, id) =>
+    queueServerWrite(async () => {
+      if (get().servers.some((server) => server.id === id)) {
+        throw new Error(`A remote server with id '${id}' already exists.`);
+      }
+      const server: ServerConfig = { ...config, id, installedAgents: [] };
+      const servers = [...get().servers, server];
+      await saveServersSlice(servers);
+      set({ servers, activeServerId: id });
+      return server;
+    }),
+
+  updateServerPersisted: (id, updates) =>
+    queueServerWrite(async () => {
+      const current = get().servers.find((server) => server.id === id);
+      if (!current) throw new Error(`Remote server '${id}' no longer exists.`);
+      const updated = { ...current, ...updates };
+      const servers = get().servers.map((server) => (server.id === id ? updated : server));
+      await saveServersSlice(servers);
+      set({ servers });
+      return updated;
+    }),
+
+  deleteServerRecordPersisted: (id) =>
+    queueServerWrite(async () => {
+      const current = get().servers.find((server) => server.id === id);
+      if (!current) throw new Error(`Remote server '${id}' no longer exists.`);
+      const servers = get().servers.filter((server) => server.id !== id);
+      await saveServersSlice(servers);
+      set({
+        servers,
+        activeServerId: get().activeServerId === id ? null : get().activeServerId,
+      });
+      return current;
+    }),
+
+  restoreServerRecordPersisted: (server) =>
+    queueServerWrite(async () => {
+      const withoutDuplicate = get().servers.filter((candidate) => candidate.id !== server.id);
+      const servers = [...withoutDuplicate, server];
+      await saveServersSlice(servers);
+      set({ servers });
+    }),
 
   setActiveServer: (id) => set({ activeServerId: id }),
 

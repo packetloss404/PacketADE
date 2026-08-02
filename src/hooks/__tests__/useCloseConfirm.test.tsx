@@ -86,7 +86,23 @@ describe("useCloseConfirm", () => {
     await requestClose();
     act(() => result.current.confirm());
     expect(destroy).toHaveBeenCalledTimes(1);
-    expect(result.current.pending).toBeNull();
+    await waitFor(() => expect(result.current.pending).toBeNull());
+  });
+
+  it("keeps the confirmation visible when destroy is rejected", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    destroy.mockRejectedValueOnce(new Error("destroy denied"));
+    collectLiveWork.mockResolvedValue(BUSY);
+    const { result } = renderHook(() => useCloseConfirm());
+    await waitFor(() => expect(closeHandler).toBeTypeOf("function"));
+    await requestClose();
+    act(() => result.current.confirm());
+    await waitFor(() => expect(warn).toHaveBeenCalledWith(
+      "[useCloseConfirm.destroy] failed:",
+      expect.any(Error),
+    ));
+    expect(result.current.pending).toEqual(BUSY);
+    warn.mockRestore();
   });
 
   it("survives a registration failure outside Tauri", async () => {

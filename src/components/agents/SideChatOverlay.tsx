@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Copy, MessageSquarePlus, MessageSquareShare, Send, X } from "lucide-react";
+import { Check, Copy, MessageSquarePlus, MessageSquareShare, Send, Square, X } from "lucide-react";
 import { useSideChatStore } from "@/stores/sideChatStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
@@ -15,8 +15,10 @@ export function SideChatOverlay() {
   const question = useSideChatStore((s) => s.question);
   const answer = useSideChatStore((s) => s.answer);
   const isStreaming = useSideChatStore((s) => s.isStreaming);
+  const isStopping = useSideChatStore((s) => s.isStopping);
   const setQuestion = useSideChatStore((s) => s.setQuestion);
   const ask = useSideChatStore((s) => s.ask);
+  const cancel = useSideChatStore((s) => s.cancel);
   const close = useSideChatStore((s) => s.close);
 
   const selectedConversationId = useAgentTaskStore((s) => s.selectedConversationId);
@@ -179,14 +181,27 @@ export function SideChatOverlay() {
           className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-1 text-ui text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:border-accent-purple/50"
           disabled={isStreaming}
         />
-        <button
-          type="submit"
-          disabled={isStreaming || !question.trim()}
-          className="self-end p-1.5 rounded bg-accent-purple/20 text-accent-purple hover:bg-accent-purple/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          aria-label="Send"
-        >
-          <Send size={12} />
-        </button>
+        {isStreaming ? (
+          <button
+            type="button"
+            onClick={cancel}
+            disabled={isStopping}
+            className="self-end rounded bg-accent-red/15 p-1.5 text-accent-red transition-colors hover:bg-accent-red/25 disabled:cursor-wait disabled:opacity-60"
+            aria-label="Stop side chat"
+            title={isStopping ? "Waiting for Stop acknowledgement" : "Stop side chat"}
+          >
+            <Square size={12} className={isStopping ? "animate-pulse" : undefined} />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={!question.trim()}
+            className="self-end rounded bg-accent-purple/20 p-1.5 text-accent-purple transition-colors hover:bg-accent-purple/30 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Send"
+          >
+            <Send size={12} />
+          </button>
+        )}
       </form>
     </div>
   );

@@ -1,4 +1,5 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { GripHorizontal, Plus, Play, X, Maximize2, Minimize2, MoreVertical } from "lucide-react";
 import { MosaicWindowContext } from "react-mosaic-component";
 import { TerminalPane, type TerminalHeaderRenderState } from "@/components/session/TerminalPane";
@@ -19,6 +20,7 @@ import { accountEnvForSlot } from "@/lib/cliAccountEnv";
 import { AccountChip } from "@/components/session/AccountChip";
 import { AccountBlockedPane } from "@/components/workspace/AccountBlockedPane";
 import { LoginPtyModal } from "@/components/auth/LoginPtyModal";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { accountLoginCliForSlot, useAccountLaunchGate } from "@/hooks/useAccountLaunchGate";
 import type { WorkspacePane as WorkspacePaneType } from "@/types/workspace";
 
@@ -58,6 +60,7 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
   // "root" is the menu list, the other views are drilled-into sub-panels.
   const [showOverflow, setShowOverflow] = useState(false);
   const [overflowView, setOverflowView] = useState<"root" | "model" | "prompts" | "pins">("root");
+  const [pendingClose, setPendingClose] = useState<{ onKill: () => void } | null>(null);
   const [newPinCmd, setNewPinCmd] = useState("");
   const overflowRef = useRef<HTMLDivElement>(null);
   const promptTemplates = usePromptStore((s) => s.templates);
@@ -369,8 +372,7 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (state.alive) state.onKill();
-                        useWorkspaceStore.getState().removePane(workspaceId, pane.id);
+                        setPendingClose({ onKill: state.onKill });
                         setShowOverflow(false);
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
@@ -610,6 +612,26 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
     ],
   );
 
+  const closeConfirmation = pendingClose
+    ? createPortal(
+        <ConfirmDeleteModal
+          title="Close terminal pane?"
+          entityName={agentName}
+          description="will be removed from this Workspace."
+          warnings={["Any live PTY and CLI process in this pane will be stopped."]}
+          warningTitle="Session lifecycle"
+          confirmLabel="Close pane"
+          onClose={() => setPendingClose(null)}
+          onConfirm={() => {
+            pendingClose.onKill();
+            useWorkspaceStore.getState().removePane(workspaceId, pane.id);
+            setPendingClose(null);
+          }}
+        />,
+        document.body,
+      )
+    : null;
+
   const wrapperBorderClass = isFocused ? "border border-accent-line" : "border border-bg-border";
   // Focus-flash highlight (P4-S1): amber ring pulse while a focusPaneRequest
   // targets this pane.
@@ -623,74 +645,80 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
   // the CLI cannot be spawned with the wrong (or missing) account env.
   if (gateHolds) {
     return (
-      <div
-        data-pane-zoomed={isZoomed || undefined}
-        className={`flex h-full flex-col overflow-hidden rounded-md ${wrapperBorderClass} ${flashClass}`}
-      >
-        {renderHeader({
-          alive: false,
-          error: null,
-          showApproval: false,
-          cliCommand: effectiveCommand,
-          // "Start session" in the overflow menu re-probes instead of spawning.
-          onRestart: recheck,
-          onKill: () => {},
-        })}
-        <AccountBlockedPane
-          accountId={accountId ?? ""}
-          label={gate.label}
-          reason={gate.state === "blocked" ? gate.reason : ""}
-          probing={gate.state === "probing"}
-          onLogin={
-            gate.state === "blocked" && gate.loginCli
-              ? () => setShowAccountLogin(true)
-              : undefined
-          }
-          onRecheck={recheck}
-        />
-        {showAccountLogin && loginCli && (
-          <LoginPtyModal
-            cli={loginCli}
-            projectPath={workspace?.projectPath}
-            // The whole point: the login writes credentials into THIS
-            // account's config dir, not the ambient one.
-            env={accountEnv}
-            accountLabel={gate.label}
-            onClose={() => {
-              setShowAccountLogin(false);
-              recheck();
-            }}
+      <>
+        <div
+          data-pane-zoomed={isZoomed || undefined}
+          className={`flex h-full flex-col overflow-hidden rounded-md ${wrapperBorderClass} ${flashClass}`}
+        >
+          {renderHeader({
+            alive: false,
+            error: null,
+            showApproval: false,
+            cliCommand: effectiveCommand,
+            // "Start session" in the overflow menu re-probes instead of spawning.
+            onRestart: recheck,
+            onKill: () => {},
+          })}
+          <AccountBlockedPane
+            accountId={accountId ?? ""}
+            label={gate.label}
+            reason={gate.state === "blocked" ? gate.reason : ""}
+            probing={gate.state === "probing"}
+            onLogin={
+              gate.state === "blocked" && gate.loginCli
+                ? () => setShowAccountLogin(true)
+                : undefined
+            }
+            onRecheck={recheck}
           />
-        )}
-      </div>
+          {showAccountLogin && loginCli && (
+            <LoginPtyModal
+              cli={loginCli}
+              projectPath={workspace?.projectPath}
+              // The whole point: the login writes credentials into THIS
+              // account's config dir, not the ambient one.
+              env={accountEnv}
+              accountLabel={gate.label}
+              onClose={() => {
+                setShowAccountLogin(false);
+                recheck();
+              }}
+            />
+          )}
+        </div>
+        {closeConfirmation}
+      </>
     );
   }
 
   return (
-    // data-pane-zoomed lets mosaic-overrides.css maximize this pane's
-    // already-mounted mosaic tile when zoomed (.mosaic-zoom-active) instead
-    // of mounting a duplicate WorkspacePane (which would spawn a second PTY).
-    <div
-      data-pane-zoomed={isZoomed || undefined}
-      className={`flex h-full flex-col overflow-hidden rounded-md ${wrapperBorderClass} ${flashClass}`}
-    >
-      <TerminalPane
-        paneId={pane.id}
-        autoStart={autoStart}
-        cliCommand={effectiveCommand}
-        cliArgs={effectiveArgs}
-        env={isRemote ? undefined : paneEnv}
-        projectPath={workspace?.projectPath}
-        initialPrompt={initialPrompt}
-        renderHeader={renderHeader}
-        onSessionCreated={(sessionId) =>
-          useWorkspaceStore.getState().setPaneSession(workspaceId, pane.id, sessionId)
-        }
-        onSessionEnded={() =>
-          useWorkspaceStore.getState().setPaneSession(workspaceId, pane.id, null)
-        }
-        showCloseButton={false}
-      />
-    </div>
+    <>
+      {/* data-pane-zoomed lets mosaic-overrides.css maximize this pane's
+          already-mounted mosaic tile when zoomed (.mosaic-zoom-active) instead
+          of mounting a duplicate WorkspacePane (which would spawn a second PTY). */}
+      <div
+        data-pane-zoomed={isZoomed || undefined}
+        className={`flex h-full flex-col overflow-hidden rounded-md ${wrapperBorderClass} ${flashClass}`}
+      >
+        <TerminalPane
+          paneId={pane.id}
+          autoStart={autoStart}
+          cliCommand={effectiveCommand}
+          cliArgs={effectiveArgs}
+          env={isRemote ? undefined : paneEnv}
+          projectPath={workspace?.projectPath}
+          initialPrompt={initialPrompt}
+          renderHeader={renderHeader}
+          onSessionCreated={(sessionId) =>
+            useWorkspaceStore.getState().setPaneSession(workspaceId, pane.id, sessionId)
+          }
+          onSessionEnded={() =>
+            useWorkspaceStore.getState().setPaneSession(workspaceId, pane.id, null)
+          }
+          showCloseButton={false}
+        />
+      </div>
+      {closeConfirmation}
+    </>
   );
 }

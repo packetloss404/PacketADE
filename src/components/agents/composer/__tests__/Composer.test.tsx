@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     selectedRepo: "D:\\projects\\PacketADE" as string | null,
     selectedConversationId: null as string | null,
     conversations: [] as unknown[],
+    cancellingConversationIds: new Set<string>(),
     setSelectedRepo: vi.fn(),
     sendMessage: vi.fn(),
     cancelActiveConversation: vi.fn(),
@@ -84,35 +85,32 @@ vi.mock("@/stores/projectHistoryStore", () => ({
 
 vi.mock("@/stores/serverStore", () => ({
   useServerStore: vi.fn(
-    (selector: (state: {
-      servers: unknown[];
-      updateServer: () => void;
-    }) => unknown) =>
+    (selector: (state: { servers: unknown[]; updateServer: () => void }) => unknown) =>
       selector({ servers: [], updateServer: vi.fn() }),
   ),
 }));
 
 vi.mock("@/stores/appStore", () => ({
-  useAppStore: vi.fn(
-    (selector: (state: { setActiveView: () => void }) => unknown) =>
-      selector({ setActiveView: vi.fn() }),
+  useAppStore: vi.fn((selector: (state: { setActiveView: () => void }) => unknown) =>
+    selector({ setActiveView: vi.fn() }),
   ),
 }));
 
 vi.mock("@/stores/promptStore", () => ({
-  usePromptStore: vi.fn(
-    (selector: (state: { templates: unknown[] }) => unknown) =>
-      selector({ templates: [] }),
+  usePromptStore: vi.fn((selector: (state: { templates: unknown[] }) => unknown) =>
+    selector({ templates: [] }),
   ),
 }));
 
 vi.mock("@/stores/profileStore", () => ({
   useProfileStore: vi.fn(
-    (selector: (state: {
-      profiles: Array<{ id: string; name: string; description: string; isBuiltin: boolean }>;
-      defaultProfileId: string;
-      setDefaultProfile: () => void;
-    }) => unknown) =>
+    (
+      selector: (state: {
+        profiles: Array<{ id: string; name: string; description: string; isBuiltin: boolean }>;
+        defaultProfileId: string;
+        setDefaultProfile: () => void;
+      }) => unknown,
+    ) =>
       selector({
         profiles: [
           {
@@ -215,6 +213,7 @@ beforeEach(() => {
   localStorage.clear();
   useAgentDraftStore.setState({ drafts: {} });
   mocks.agentTaskState.selectedRepo = "D:\\projects\\PacketADE";
+  mocks.agentTaskState.cancellingConversationIds = new Set<string>();
   let counter = 0;
   mocks.createObjectURL.mockImplementation(() => `blob:preview-${++counter}`);
   Object.defineProperty(URL, "createObjectURL", {
@@ -229,9 +228,7 @@ beforeEach(() => {
 
 describe("Composer (launch variant) — image attachments", () => {
   it("keeps staged images when launch is rejected as a no-op", async () => {
-    useAgentDraftStore
-      .getState()
-      .setDraft(LAUNCH_DRAFT_KEY, "describe this screenshot");
+    useAgentDraftStore.getState().setDraft(LAUNCH_DRAFT_KEY, "describe this screenshot");
     const onLaunch = vi.fn((_text: string, _attachments: unknown[]) => false);
     renderLaunch(onLaunch);
     await stageImage();
@@ -265,9 +262,7 @@ describe("Composer (launch variant) — image attachments", () => {
     renderLaunch(vi.fn(() => false));
     const textarea = screen.getByPlaceholderText(/what would you like to work on/i);
     fireEvent.change(textarea, { target: { value: "half-typed launch prompt" } });
-    expect(useAgentDraftStore.getState().drafts[LAUNCH_DRAFT_KEY]).toBe(
-      "half-typed launch prompt",
-    );
+    expect(useAgentDraftStore.getState().drafts[LAUNCH_DRAFT_KEY]).toBe("half-typed launch prompt");
   });
 });
 
@@ -289,9 +284,7 @@ describe("Composer (chat variant) — per-conversation drafts + send (protected)
   it("shows the persisted draft for its conversation on mount", () => {
     useAgentDraftStore.getState().setDraft("conv-1", "restored draft");
     renderChat(makeConversation("conv-1"));
-    expect(screen.getByPlaceholderText(/send a message/i)).toHaveValue(
-      "restored draft",
-    );
+    expect(screen.getByPlaceholderText(/send a message/i)).toHaveValue("restored draft");
   });
 
   it("Enter sends the trimmed draft through sendMessage and clears it", () => {
@@ -300,11 +293,7 @@ describe("Composer (chat variant) — per-conversation drafts + send (protected)
     fireEvent.change(textarea, { target: { value: "  hello agent  " } });
     fireEvent.keyDown(textarea, { key: "Enter" });
 
-    expect(mocks.agentTaskState.sendMessage).toHaveBeenCalledWith(
-      "conv-1",
-      "hello agent",
-      null,
-    );
+    expect(mocks.agentTaskState.sendMessage).toHaveBeenCalledWith("conv-1", "hello agent", null);
     expect(useAgentDraftStore.getState().drafts["conv-1"]).toBeUndefined();
   });
 
@@ -325,10 +314,30 @@ describe("Composer (chat variant) — per-conversation drafts + send (protected)
     fireEvent.change(textarea, { target: { value: "queue me" } });
     fireEvent.keyDown(textarea, { key: "Enter" });
 
-    expect(mocks.agentTaskState.sendMessage).toHaveBeenCalledWith(
-      "conv-1",
-      "queue me",
-      null,
-    );
+    expect(mocks.agentTaskState.sendMessage).toHaveBeenCalledWith("conv-1", "queue me", null);
+  });
+
+  it("disables and pulses Stop while terminal cancellation acknowledgement is pending", () => {
+    const conv = makeConversation("conv-stopping");
+    conv.status = "active";
+    conv.messages = [
+      {
+        id: "m-streaming",
+        role: "assistant",
+        content: "still winding down",
+        timestamp: 1,
+        isStreaming: true,
+      },
+    ];
+    mocks.agentTaskState.cancellingConversationIds = new Set([conv.id]);
+
+    const { container } = renderChat(conv);
+    const stopIcon = container.querySelector("svg.lucide-square");
+    const stopButton = stopIcon?.closest("button");
+
+    expect(stopButton).toBeDisabled();
+    expect(stopIcon).toHaveClass("animate-pulse");
+    fireEvent.click(stopButton!);
+    expect(mocks.agentTaskState.cancelActiveConversation).not.toHaveBeenCalled();
   });
 });

@@ -50,10 +50,7 @@ import { NotificationsInbox } from "@/components/views/github/NotificationsInbox
 import { AITriageDrawer } from "@/components/views/github/AITriageDrawer";
 import { InvestigationPanel } from "@/components/views/github/InvestigationPanel";
 import { timeAgo } from "@/components/views/github/shared";
-import {
-  CtaFeedbackRow,
-  type CtaFeedback,
-} from "@/components/views/github/CtaFeedbackRow";
+import { CtaFeedbackRow, type CtaFeedback } from "@/components/views/github/CtaFeedbackRow";
 import type { GitHubIssue } from "@/types/github";
 import { relativeTime } from "@/lib/time";
 
@@ -123,7 +120,14 @@ export function GitHubView() {
   } = useGitHubStore();
 
   const addIssue = useIssueStore((s) => s.addIssue);
+  const openSettings = useAppStore((s) => s.openSettings);
   const projectPath = useLayoutStore((s) => s.projectPath);
+  const activeProjectWorkspace = useWorkspaceStore((s) =>
+    s.workspaces.find((workspace) => workspace.id === s.activeWorkspaceId),
+  );
+  const activeProjectWorkspaceId = activeProjectWorkspace?.id ?? null;
+  const activeProjectServerId = activeProjectWorkspace?.serverId ?? null;
+  const activeProjectLocalPath = activeProjectWorkspace?.projectPath ?? "";
 
   const [tokenInput, setTokenInput] = useState("");
   const [tab, setTab] = useState<TabKey>("issues");
@@ -137,9 +141,7 @@ export function GitHubView() {
   const [reviewRefreshKey, setReviewRefreshKey] = useState(0);
   // GP1: review comments for the selected PR, rendered inline in the diff.
   const [prReviewComments, setPrReviewComments] = useState<ReviewComment[]>([]);
-  const [prDetailTab, setPrDetailTab] = useState<"overview" | "checks">(
-    "overview",
-  );
+  const [prDetailTab, setPrDetailTab] = useState<"overview" | "checks">("overview");
   // v0.8-F: triage drawer open state
   const [triageOpen, setTriageOpen] = useState(false);
 
@@ -155,9 +157,28 @@ export function GitHubView() {
   const resolveActiveConnectionForProject = useGitHubStore(
     (s) => s.resolveActiveConnectionForProject,
   );
+  const clearRepositoryContext = useGitHubStore((s) => s.clearRepositoryContext);
   useEffect(() => {
-    if (projectPath) void resolveActiveConnectionForProject(projectPath);
-  }, [projectPath, resolveActiveConnectionForProject]);
+    // The layout fallback remains local while an SSH Workspace is active.
+    // Never resolve its origin as though it belonged to the remote project.
+    const localAuthorityPath = activeProjectWorkspaceId
+      ? activeProjectServerId
+        ? ""
+        : activeProjectLocalPath
+      : projectPath;
+    if (localAuthorityPath) {
+      void resolveActiveConnectionForProject(localAuthorityPath);
+    } else if (activeProjectServerId) {
+      clearRepositoryContext();
+    }
+  }, [
+    activeProjectWorkspaceId,
+    activeProjectServerId,
+    activeProjectLocalPath,
+    projectPath,
+    resolveActiveConnectionForProject,
+    clearRepositoryContext,
+  ]);
 
   // G10: capability gating for the active host (Gitea hides GitHub-only surfaces).
   const connections = useGitHubStore((s) => s.connections);
@@ -167,7 +188,21 @@ export function GitHubView() {
     [connections, activeConnectionId],
   );
   const activeCaps = useMemo(() => capabilitiesFor(activeHostKind), [activeHostKind]);
+  const aiAssistAvailable = activeCaps.aiAssist && !activeProjectWorkspace?.serverId;
   const setActiveConnection = useGitHubStore((s) => s.setActiveConnection);
+  const detailScope = `${activeConnectionId}:${config.selectedRepo?.owner ?? ""}/${config.selectedRepo?.repo ?? ""}`;
+  useEffect(() => {
+    // Detail state is view-local, while host/repo data lives in the store.
+    // Reset both selections whenever that authority boundary changes so an
+    // identically numbered issue or PR from the previous host cannot linger.
+    setSelectedIssueNum(null);
+    setSelectedPrNumber(null);
+    setPrReviewComments([]);
+    setPrDetailTab("overview");
+    setReviewRefreshKey(0);
+    setTriageOpen(false);
+    clearInvestigation();
+  }, [detailScope, clearInvestigation]);
   useEffect(() => {
     // If we land on a tab the active host doesn't support, fall back to Issues.
     if (tab === "activity" && !activeCaps.activityFeed) setTab("issues");
@@ -235,43 +270,32 @@ export function GitHubView() {
   useEffect(() => {
     if (selectedIssueNum == null && issues.length > 0) {
       setSelectedIssueNum(issues[0].number);
-    } else if (
-      selectedIssueNum != null &&
-      !issues.find((i) => i.number === selectedIssueNum)
-    ) {
+    } else if (selectedIssueNum != null && !issues.find((i) => i.number === selectedIssueNum)) {
       setSelectedIssueNum(issues[0]?.number ?? null);
     }
   }, [issues, selectedIssueNum]);
 
   const selectedIssue = useMemo(
     () => issues.find((i) => i.number === selectedIssueNum) ?? null,
-    [issues, selectedIssueNum]
+    [issues, selectedIssueNum],
   );
 
   const filteredIssues = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return issues;
-    return issues.filter(
-      (i) =>
-        i.title.toLowerCase().includes(q) || String(i.number).includes(q)
-    );
+    return issues.filter((i) => i.title.toLowerCase().includes(q) || String(i.number).includes(q));
   }, [issues, searchQuery]);
 
   // v0.8-F: issues currently in the list with no labels — these are the
   // default selection for the triage drawer. We pull from the unfiltered
   // `issues` so the drawer's view doesn't accidentally shrink when the
   // user has a text filter applied.
-  const untriagedIssues = useMemo(
-    () => issues.filter((i) => i.labels.length === 0),
-    [issues],
-  );
+  const untriagedIssues = useMemo(() => issues.filter((i) => i.labels.length === 0), [issues]);
 
   // v0.8-F: wire AITriageDrawer.onApply into the existing store action.
   // Falls back to the raw tauri command when the store doesn't expose
   // `setIssueLabels` (back-compat for installs that pre-date v0.8-C).
-  async function handleTriageApply(
-    labelsByIssue: Record<number, string[]>,
-  ): Promise<void> {
+  async function handleTriageApply(labelsByIssue: Record<number, string[]>): Promise<void> {
     const entries = Object.entries(labelsByIssue);
     for (const [numStr, labels] of entries) {
       const num = Number(numStr);
@@ -326,49 +350,54 @@ export function GitHubView() {
 
   if (!isConnected) {
     return (
-      <div className="flex flex-col h-full bg-bg-primary p-4 overflow-y-auto">
-        <div className="flex items-center gap-2 mb-6">
+      <div className="flex h-full flex-col overflow-y-auto bg-bg-primary p-4">
+        <div className="mb-6 flex items-center gap-2">
           <Github size={14} className="text-text-primary" />
-          <h2 className="text-xs font-semibold text-text-primary">
-            GitHub Integration
-          </h2>
+          <h2 className="text-xs font-semibold text-text-primary">Git Hosts</h2>
         </div>
 
-        <div className="max-w-md mx-auto mt-16">
-          <div className="bg-bg-secondary border border-bg-border rounded-lg p-6 text-center">
+        <div className="mx-auto mt-16 max-w-md">
+          <div className="rounded-lg border border-bg-border bg-bg-secondary p-6 text-center">
             <Github size={32} className="mx-auto mb-4 text-text-muted" />
-            <h3 className="text-sm font-semibold text-text-primary mb-2">
-              Connect to GitHub
+            <h3 className="mb-2 text-sm font-semibold text-text-primary">
+              {activeHostKind === "gitea" ? "Configure Gitea / Forgejo" : "Connect to GitHub"}
             </h3>
-            <p className="text-[11px] text-text-muted mb-4">
-              Enter a personal access token with repo scope to browse
-              repositories and issues.
+            <p className="mb-4 text-[11px] text-text-muted">
+              {activeHostKind === "gitea"
+                ? "This host has no usable token. Update or recreate the connection in Settings."
+                : "Enter a personal access token with repo scope to browse repositories and issues."}
             </p>
             {isInitializing && (
-              <p className="text-[11px] text-text-muted mb-3">
-                Checking auth state...
-              </p>
+              <p className="mb-3 text-[11px] text-text-muted">Checking auth state...</p>
             )}
-            <div className="flex gap-2">
-              <input
-                type="password"
-                value={tokenInput}
-                onChange={(e) => setTokenInput(e.target.value)}
-                placeholder="ghp_xxxxxxxxxxxx"
-                className="flex-1 bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
-                onKeyDown={(e) => e.key === "Enter" && handleConnect()}
-              />
+            {activeHostKind === "gitea" ? (
               <button
-                onClick={handleConnect}
-                disabled={isLoading || isInitializing}
-                className="px-4 py-1.5 text-xs bg-accent-green/15 text-accent-green border border-accent-green/30 rounded font-medium hover:bg-accent-green/25 transition-colors"
+                type="button"
+                onClick={() => openSettings({ section: "github" })}
+                className="bg-accent-green/15 border-accent-green/30 hover:bg-accent-green/25 rounded border px-4 py-1.5 text-xs font-medium text-accent-green transition-colors"
               >
-                Connect
+                Open Settings
               </button>
-            </div>
-            {error && (
-              <p className="text-[11px] text-accent-red mt-3">{error}</p>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                  placeholder="ghp_xxxxxxxxxxxx"
+                  className="flex-1 rounded border border-bg-border bg-bg-primary px-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:border-accent-green focus:outline-none"
+                  onKeyDown={(e) => e.key === "Enter" && handleConnect()}
+                />
+                <button
+                  onClick={handleConnect}
+                  disabled={isLoading || isInitializing}
+                  className="bg-accent-green/15 border-accent-green/30 hover:bg-accent-green/25 rounded border px-4 py-1.5 text-xs font-medium text-accent-green transition-colors"
+                >
+                  Connect
+                </button>
+              </div>
             )}
+            {error && <p className="mt-3 text-[11px] text-accent-red">{error}</p>}
           </div>
         </div>
       </div>
@@ -380,7 +409,7 @@ export function GitHubView() {
   const openCount = issues.length;
 
   return (
-    <div className="flex flex-col h-full bg-bg-primary overflow-hidden">
+    <div className="flex h-full flex-col overflow-hidden bg-bg-primary">
       <HeaderBand
         username={username}
         repos={repos}
@@ -395,7 +424,7 @@ export function GitHubView() {
 
       {/* G13: host indicator + override (shown once a second host is configured) */}
       {connections.length > 1 && (
-        <div className="flex items-center gap-1.5 px-3 py-1 bg-bg-secondary border-b border-bg-border flex-shrink-0">
+        <div className="flex flex-shrink-0 items-center gap-1.5 border-b border-bg-border bg-bg-secondary px-3 py-1">
           <span className="text-[10px] text-text-muted">Host</span>
           {connections.map((c) => (
             <button
@@ -405,8 +434,8 @@ export function GitHubView() {
               title={c.baseUrl}
               className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] transition-colors ${
                 c.id === activeConnectionId
-                  ? "bg-bg-elevated text-text-primary border border-line-strong"
-                  : "text-text-muted hover:text-text-secondary border border-transparent"
+                  ? "border border-line-strong bg-bg-elevated text-text-primary"
+                  : "border border-transparent text-text-muted hover:text-text-secondary"
               }`}
             >
               <HostIcon kind={c.kind} size={11} />
@@ -427,13 +456,10 @@ export function GitHubView() {
       />
 
       {error && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-accent-red/10 border-b border-accent-red/20 flex-shrink-0">
+        <div className="bg-accent-red/10 border-accent-red/20 flex flex-shrink-0 items-center gap-2 border-b px-4 py-2">
           <AlertCircle size={12} className="text-accent-red" />
-          <span className="text-[11px] text-accent-red flex-1">{error}</span>
-          <button
-            onClick={clearError}
-            className="text-accent-red/60 hover:text-accent-red"
-          >
+          <span className="flex-1 text-[11px] text-accent-red">{error}</span>
+          <button onClick={clearError} className="text-accent-red/60 hover:text-accent-red">
             <X size={12} />
           </button>
         </div>
@@ -444,11 +470,11 @@ export function GitHubView() {
         // renders regardless of the selected repository.
         <NotificationsInbox />
       ) : !config.selectedRepo ? (
-        <div className="flex-1 flex items-center justify-center text-[11px] text-text-muted">
+        <div className="flex flex-1 items-center justify-center text-[11px] text-text-muted">
           Select a repository to begin.
         </div>
       ) : tab === "issues" ? (
-        <div className="flex-1 grid grid-cols-[340px_1fr] min-h-0 overflow-hidden">
+        <div className="grid min-h-0 flex-1 grid-cols-[340px_1fr] overflow-hidden">
           <IssueList
             issues={filteredIssues}
             totalIssues={openCount}
@@ -468,6 +494,7 @@ export function GitHubView() {
             totalLoaded={issues.length}
             onOpenTriage={() => setTriageOpen(true)}
             untriagedCount={untriagedIssues.length}
+            aiAssistAvailable={aiAssistAvailable}
           />
           <IssueDetail
             issue={selectedIssue}
@@ -476,10 +503,11 @@ export function GitHubView() {
             onImport={handleImportIssue}
             onInvestigate={(num) => investigateIssue(projectPath, num)}
             onRefetch={() => fetchIssues()}
+            aiAssistAvailable={aiAssistAvailable}
           />
         </div>
       ) : tab === "prs" ? (
-        <div className="flex-1 grid grid-cols-[1fr_auto] min-h-0 overflow-hidden">
+        <div className="grid min-h-0 flex-1 grid-cols-[1fr_auto] overflow-hidden">
           <PRList
             prs={prs}
             isLoading={isPrLoading}
@@ -493,10 +521,11 @@ export function GitHubView() {
             hasMore={prsHasMore}
             isLoadingMore={isLoadingMorePrs}
             onLoadMore={loadMorePrs}
+            showChecks={activeCaps.checkRuns}
           />
           {selectedPrNumber != null && (
-            <div className="w-[480px] border-l border-bg-border bg-bg-primary overflow-y-auto">
-              <div className="px-4 py-3 border-b border-bg-border flex items-center gap-2">
+            <div className="w-[480px] overflow-y-auto border-l border-bg-border bg-bg-primary">
+              <div className="flex items-center gap-2 border-b border-bg-border px-4 py-3">
                 <GitPullRequest size={12} className="text-accent-purple" />
                 <span className="text-xs font-semibold text-text-primary">
                   PR #{selectedPrNumber} diff
@@ -515,7 +544,9 @@ export function GitHubView() {
                 if (!pr) return null;
                 return (
                   <PRActionBar
+                    key={`${detailScope}#${pr.number}`}
                     pr={pr}
+                    allowDraftToggle={activeCaps.draftPrToggle}
                     onAction={() => {
                       void fetchPrs();
                     }}
@@ -526,18 +557,18 @@ export function GitHubView() {
                   the existing diff/review surface and the dedicated checks
                   list. Sits below the action bar so PRActionBar stays
                   reachable on every tab. */}
-              <div className="flex items-center gap-0 px-3.5 border-b border-bg-border bg-bg-secondary">
+              <div className="flex items-center gap-0 border-b border-bg-border bg-bg-secondary px-3.5">
                 {(
                   [
                     { key: "overview", label: "Overview" },
-                    { key: "checks", label: "Checks" },
+                    ...(activeCaps.checkRuns ? [{ key: "checks" as const, label: "Checks" }] : []),
                   ] as { key: "overview" | "checks"; label: string }[]
                 ).map((t) => (
                   <button
                     key={t.key}
                     type="button"
                     onClick={() => setPrDetailTab(t.key)}
-                    className={`px-2.5 py-1.5 text-[11px] font-medium border-b-2 transition-colors ${
+                    className={`border-b-2 px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
                       prDetailTab === t.key
                         ? "border-accent-purple text-text-primary"
                         : "border-transparent text-text-muted hover:text-text-primary"
@@ -552,18 +583,17 @@ export function GitHubView() {
                   <div className="p-3">
                     {isPrLoading ? (
                       <div className="flex items-center justify-center py-12">
-                        <Loader2
-                          size={16}
-                          className="animate-spin text-text-muted"
-                        />
+                        <Loader2 size={16} className="animate-spin text-text-muted" />
                       </div>
                     ) : prDiff ? (
-                      <div className="border border-bg-border rounded-lg overflow-hidden">
+                      <div className="overflow-hidden rounded-lg border border-bg-border">
                         <DiffViewer
                           diff={prDiff}
                           reviewComments={prReviewComments}
                           onAddComment={
-                            config.selectedRepo && selectedPrNumber != null
+                            activeCaps.inlineReviewComments &&
+                            config.selectedRepo &&
+                            selectedPrNumber != null
                               ? async (anchor: DiffCommentAnchor, body: string) => {
                                   const { owner, repo } = config.selectedRepo!;
                                   await invoke("github_post_pr_review_comment", {
@@ -582,9 +612,7 @@ export function GitHubView() {
                         />
                       </div>
                     ) : (
-                      <p className="text-[11px] text-text-muted">
-                        No diff available.
-                      </p>
+                      <p className="text-[11px] text-text-muted">No diff available.</p>
                     )}
                   </div>
                   {/* v0.8-E: AI pre-flight code review. Lives below the diff so
@@ -593,7 +621,9 @@ export function GitHubView() {
                   {(() => {
                     const pr = prs.find((p) => p.number === selectedPrNumber);
                     if (!pr) return null;
-                    return <PRReviewPanel pr={pr} />;
+                    return aiAssistAvailable ? (
+                      <PRReviewPanel key={`${detailScope}#${pr.number}`} pr={pr} />
+                    ) : null;
                   })()}
                   {/* v0.8-13: pr reviews panel — read-only viewer for
                       existing GitHub formal reviews + per-line comment
@@ -602,7 +632,13 @@ export function GitHubView() {
                   {(() => {
                     const pr = prs.find((p) => p.number === selectedPrNumber);
                     if (!pr) return null;
-                    return <PullRequestReviewsPanel pr={pr} refreshKey={reviewRefreshKey} />;
+                    return activeCaps.prReviews ? (
+                      <PullRequestReviewsPanel
+                        key={`${detailScope}#${pr.number}`}
+                        pr={pr}
+                        refreshKey={reviewRefreshKey}
+                      />
+                    ) : null;
                   })()}
                 </>
               ) : (
@@ -617,11 +653,7 @@ export function GitHubView() {
           )}
         </div>
       ) : tab === "releases" ? (
-        <ReleasesList
-          releases={releases}
-          loading={isReleasesLoading}
-          error={releasesError}
-        />
+        <ReleasesList releases={releases} loading={isReleasesLoading} error={releasesError} />
       ) : (
         <ActivityFeed
           issues={issues}
@@ -636,17 +668,17 @@ export function GitHubView() {
           onClose={() => setShowPRModal(false)}
           onSubmit={createPR}
           isLoading={isLoading}
+          allowAiAssist={aiAssistAvailable}
+          allowDraft={activeCaps.draftPrToggle}
           /* v0.8 spec: when a user opens the PR modal while focused on an
              issue, seed the "Closes #N" picker with that issue so the
              linkage is the default rather than an extra click. */
-          initialLinkedIssues={
-            selectedIssueNum != null ? [selectedIssueNum] : []
-          }
+          initialLinkedIssues={selectedIssueNum != null ? [selectedIssueNum] : []}
         />
       )}
 
       {/* v0.8-F: triage drawer */}
-      {triageOpen && config.selectedRepo && (
+      {triageOpen && aiAssistAvailable && config.selectedRepo && (
         <AITriageDrawer
           owner={config.selectedRepo.owner}
           repo={config.selectedRepo.repo}
@@ -671,60 +703,60 @@ function ReleasesList({
 }) {
   if (loading && releases.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-[11px] text-text-muted">
+      <div className="flex flex-1 items-center justify-center text-[11px] text-text-muted">
         Loading releases…
       </div>
     );
   }
   if (error && releases.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center px-4 text-center text-[11px] text-accent-red">
+      <div className="flex flex-1 items-center justify-center px-4 text-center text-[11px] text-accent-red">
         Couldn’t load releases: {error}
       </div>
     );
   }
   if (releases.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-[11px] text-text-muted">
+      <div className="flex flex-1 items-center justify-center text-[11px] text-text-muted">
         No releases published for this repository.
       </div>
     );
   }
   return (
-    <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
+    <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-3">
       {releases.map((r) => (
         <a
           key={r.id}
           href={r.html_url}
           target="_blank"
           rel="noreferrer"
-          className="block rounded-lg border border-bg-border bg-bg-primary px-3 py-2 hover:border-line-strong transition-colors"
+          className="block rounded-lg border border-bg-border bg-bg-primary px-3 py-2 transition-colors hover:border-line-strong"
         >
           <div className="flex items-center gap-2">
-            <Tag size={11} className="text-text-muted flex-shrink-0" />
-            <span className="text-[12px] font-semibold text-text-primary truncate">
+            <Tag size={11} className="flex-shrink-0 text-text-muted" />
+            <span className="truncate text-[12px] font-semibold text-text-primary">
               {r.name || r.tag_name}
             </span>
-            <span className="text-[10px] font-mono text-text-muted">{r.tag_name}</span>
+            <span className="font-mono text-[10px] text-text-muted">{r.tag_name}</span>
             {r.draft && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent-amber/15 text-accent-amber">
+              <span className="bg-accent-amber/15 rounded px-1.5 py-0.5 text-[9px] text-accent-amber">
                 draft
               </span>
             )}
             {r.prerelease && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent-blue/15 text-accent-blue">
+              <span className="bg-accent-blue/15 rounded px-1.5 py-0.5 text-[9px] text-accent-blue">
                 pre-release
               </span>
             )}
             <span className="flex-1" />
             {r.published_at && (
-              <span className="text-[10px] text-text-muted flex-shrink-0">
+              <span className="flex-shrink-0 text-[10px] text-text-muted">
                 {relativeTime(Date.parse(r.published_at))}
               </span>
             )}
           </div>
           {r.body && (
-            <p className="mt-1 text-[11px] text-text-secondary leading-snug line-clamp-3 whitespace-pre-wrap">
+            <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-[11px] leading-snug text-text-secondary">
               {r.body.slice(0, 400)}
             </p>
           )}
@@ -759,28 +791,24 @@ function HeaderBand({
   hostKind,
 }: HeaderBandProps) {
   return (
-    <div className="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-bg-border bg-bg-secondary flex-shrink-0">
+    <div className="flex flex-shrink-0 items-center gap-2.5 border-b border-bg-border bg-bg-secondary px-3.5 py-2.5">
       <HostIcon kind={hostKind} size={13} className="text-text-primary" />
       <span className="text-xs font-semibold text-text-primary">{hostLabel(hostKind)}</span>
 
-      <RepoSelector
-        selected={selected}
-        repos={repos}
-        onSelect={onSelectRepo}
-      />
+      <RepoSelector selected={selected} repos={repos} onSelect={onSelectRepo} />
 
       <button
         type="button"
         onClick={onRefresh}
         disabled={isLoading}
         title="Refresh"
-        className="p-1 text-text-muted hover:text-text-primary transition-colors"
+        className="p-1 text-text-muted transition-colors hover:text-text-primary"
       >
         <RefreshCw size={11} className={isLoading ? "animate-spin" : ""} />
       </button>
 
-      <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-accent-green/10 text-accent-green">
-        <span className="w-1.5 h-1.5 rounded-full bg-accent-green" />
+      <span className="bg-accent-green/10 inline-flex items-center gap-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium text-accent-green">
+        <span className="h-1.5 w-1.5 rounded-full bg-accent-green" />
         Connected · {username}
       </span>
 
@@ -789,18 +817,20 @@ function HeaderBand({
       <button
         type="button"
         onClick={onNewPR}
-        className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-accent-purple/15 text-accent-purple border border-accent-purple/30 rounded hover:bg-accent-purple/25 transition-colors"
+        className="bg-accent-purple/15 border-accent-purple/30 hover:bg-accent-purple/25 inline-flex items-center gap-1.5 rounded border px-2.5 py-1 text-[10.5px] font-medium text-accent-purple transition-colors"
       >
         <GitPullRequest size={10} />
         New PR
       </button>
-      <button
-        type="button"
-        onClick={onDisconnect}
-        className="text-[10px] text-text-muted hover:text-accent-red transition-colors px-1.5 py-1"
-      >
-        Disconnect
-      </button>
+      {hostKind === "github" && (
+        <button
+          type="button"
+          onClick={onDisconnect}
+          className="px-1.5 py-1 text-[10px] text-text-muted transition-colors hover:text-accent-red"
+        >
+          Disconnect
+        </button>
+      )}
     </div>
   );
 }
@@ -826,7 +856,7 @@ function SubTabs({
   showActivity,
 }: SubTabsProps) {
   return (
-    <div className="flex items-center px-2.5 bg-bg-secondary border-b border-bg-border flex-shrink-0">
+    <div className="flex flex-shrink-0 items-center border-b border-bg-border bg-bg-secondary px-2.5">
       <GhTab
         active={tab === "issues"}
         onClick={() => onTab("issues")}
@@ -868,13 +898,10 @@ function SubTabs({
         accent="default"
       />
       <div className="flex-1" />
-      <span className="text-[10px] text-text-muted px-1.5">
+      <span className="px-1.5 text-[10px] text-text-muted">
         {lastSyncAt ? (
           <>
-            synced{" "}
-            <span className="font-mono text-text-secondary">
-              {relativeTime(lastSyncAt)}
-            </span>
+            synced <span className="font-mono text-text-secondary">{relativeTime(lastSyncAt)}</span>
           </>
         ) : (
           <span className="font-mono text-text-secondary">not synced yet</span>
@@ -906,32 +933,27 @@ function GhTab({ active, onClick, icon, label, badge, accent }: GhTabProps) {
       : accent === "purple"
         ? "border-accent-purple"
         : "border-accent-blue";
-  const badgeBg =
-    active
-      ? accent === "green"
-        ? "bg-accent-green/20 text-accent-green"
-        : accent === "purple"
-          ? "bg-accent-purple/20 text-accent-purple"
-          : "bg-accent-blue/20 text-accent-blue"
-      : "bg-bg-tertiary text-text-muted";
+  const badgeBg = active
+    ? accent === "green"
+      ? "bg-accent-green/20 text-accent-green"
+      : accent === "purple"
+        ? "bg-accent-purple/20 text-accent-purple"
+        : "bg-accent-blue/20 text-accent-blue"
+    : "bg-bg-tertiary text-text-muted";
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-3 py-2 text-[11px] -mb-px border-b-2 transition-colors ${
+      className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-[11px] transition-colors ${
         active
           ? `${accentText} ${accentBorder} font-semibold`
-          : "text-text-muted border-transparent hover:text-text-secondary font-medium"
+          : "border-transparent font-medium text-text-muted hover:text-text-secondary"
       }`}
     >
       {icon} {label}
       {badge != null && (
-        <span
-          className={`text-[9px] px-1.5 rounded-full tabular-nums ${badgeBg}`}
-        >
-          {badge}
-        </span>
+        <span className={`rounded-full px-1.5 text-[9px] tabular-nums ${badgeBg}`}>{badge}</span>
       )}
     </button>
   );
@@ -945,6 +967,7 @@ interface IssueDetailProps {
   onInvestigate: (issueNumber: number) => void;
   // v0.8-C
   onRefetch?: () => void;
+  aiAssistAvailable?: boolean;
 }
 
 function IssueDetail({
@@ -954,6 +977,7 @@ function IssueDetail({
   onImport,
   onInvestigate,
   onRefetch,
+  aiAssistAvailable = true,
 }: IssueDetailProps) {
   // v0.8-D — store hooks for Plan flight + Branch from issue. Hooks must
   // run in stable order on every render, so they're called BEFORE the
@@ -979,14 +1003,18 @@ function IssueDetail({
 
   if (!issue) {
     return (
-      <div className="flex items-center justify-center h-full text-[11px] text-text-muted bg-bg-primary">
+      <div className="flex h-full items-center justify-center bg-bg-primary text-[11px] text-text-muted">
         Select an issue to view details
       </div>
     );
   }
 
-  const resolvedProjectPath =
-    activeWorkspace?.projectPath || projectPathFromLayout || "";
+  const workspaceIsRemote = Boolean(activeWorkspace?.serverId);
+  const resolvedProjectPath = activeWorkspace
+    ? workspaceIsRemote
+      ? (activeWorkspace.remoteProjectPath ?? activeWorkspace.projectPath)
+      : activeWorkspace.projectPath
+    : projectPathFromLayout || "";
 
   async function handlePlanFlight() {
     if (!issue || actionBusy) return;
@@ -1027,6 +1055,14 @@ function IssueDetail({
 
   async function handleBranchFromIssue() {
     if (!issue || actionBusy) return;
+    if (workspaceIsRemote) {
+      setFeedback({
+        tone: "error",
+        message:
+          "Branch from issue is local-only here. Use the Workspace Git panel for this SSH project.",
+      });
+      return;
+    }
     if (!resolvedProjectPath) {
       setFeedback({
         tone: "error",
@@ -1054,36 +1090,36 @@ function IssueDetail({
 
   const issueIsOpen = issue.state !== "closed";
   return (
-    <div className="overflow-y-auto flex flex-col min-h-0 bg-bg-primary">
-      <div className="px-4 py-3.5 border-b border-bg-border">
+    <div className="flex min-h-0 flex-col overflow-y-auto bg-bg-primary">
+      <div className="border-b border-bg-border px-4 py-3.5">
         <div className="flex items-start gap-2.5">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1.5">
+          <div className="min-w-0 flex-1">
+            <div className="mb-1.5 flex items-center gap-2">
               {issueIsOpen ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-accent-green/15 text-accent-green border border-accent-green/30">
+                <span className="bg-accent-green/15 border-accent-green/30 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold text-accent-green">
                   <AlertCircle size={9} /> Open
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-accent-purple/15 text-accent-purple border border-accent-purple/30">
+                <span className="bg-accent-purple/15 border-accent-purple/30 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold text-accent-purple">
                   <Check size={9} /> Closed
                 </span>
               )}
               <span className="text-[10px] text-text-muted">
-                <span className="text-text-secondary">{issue.user.login}</span>{" "}
-                opened {timeAgo(issue.created_at)} ago
+                <span className="text-text-secondary">{issue.user.login}</span> opened{" "}
+                {timeAgo(issue.created_at)} ago
                 <span className="mx-1.5 text-line-strong">·</span>
                 <span className="font-mono">#{issue.number}</span>
               </span>
             </div>
-            <h2 className="m-0 text-[15px] font-semibold text-text-primary leading-snug">
+            <h2 className="m-0 text-[15px] font-semibold leading-snug text-text-primary">
               {issue.title}
             </h2>
             {issue.labels.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-2">
+              <div className="mt-2 flex flex-wrap gap-1.5">
                 {issue.labels.map((l) => (
                   <span
                     key={l.name}
-                    className="text-[10px] px-2 py-0.5 rounded-full border font-medium"
+                    className="rounded-full border px-2 py-0.5 text-[10px] font-medium"
                     style={{
                       backgroundColor: `#${l.color}22`,
                       color: `#${l.color}`,
@@ -1111,25 +1147,26 @@ function IssueDetail({
       {/* v0.8-C: issue actions / comments */}
       <IssueActionBar issue={issue} onChange={() => onRefetch?.()} />
 
-      <div className="flex items-center gap-1.5 px-4 py-2 border-b border-bg-border bg-bg-secondary flex-shrink-0 flex-wrap">
+      <div className="flex flex-shrink-0 flex-wrap items-center gap-1.5 border-b border-bg-border bg-bg-secondary px-4 py-2">
         <button
           type="button"
           onClick={() => onImport(issue)}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-accent-green/15 text-accent-green border border-accent-green/30 rounded hover:bg-accent-green/25 transition-colors"
+          className="bg-accent-green/15 border-accent-green/30 hover:bg-accent-green/25 inline-flex items-center gap-1.5 rounded border px-2.5 py-1 text-[10.5px] font-medium text-accent-green transition-colors"
         >
           <Diamond size={10} /> Import to board
         </button>
         <button
           type="button"
           onClick={() => onInvestigate(issue.number)}
-          disabled={isInvestigating}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-accent-blue/15 text-accent-blue border border-accent-blue/30 rounded hover:bg-accent-blue/25 transition-colors disabled:opacity-50"
+          disabled={isInvestigating || !aiAssistAvailable}
+          title={
+            aiAssistAvailable
+              ? "Investigate this issue with the configured AI route"
+              : "AI investigation is available for local GitHub Workspaces only"
+          }
+          className="bg-accent-blue/15 border-accent-blue/30 hover:bg-accent-blue/25 inline-flex items-center gap-1.5 rounded border px-2.5 py-1 text-[10.5px] font-medium text-accent-blue transition-colors disabled:opacity-50"
         >
-          {isInvestigating ? (
-            <Loader2 size={10} className="animate-spin" />
-          ) : (
-            <Brain size={10} />
-          )}
+          {isInvestigating ? <Loader2 size={10} className="animate-spin" /> : <Brain size={10} />}
           Investigate with AI
         </button>
         {/* v0.8-D — Plan flight: stage a flight seeded with the issue body;
@@ -1139,7 +1176,7 @@ function IssueDetail({
           type="button"
           onClick={() => void handlePlanFlight()}
           disabled={actionBusy === "plan"}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-accent-soft text-accent-green border border-accent-line rounded hover:bg-accent-green/15 transition-colors disabled:opacity-50"
+          className="hover:bg-accent-green/15 inline-flex items-center gap-1.5 rounded border border-accent-line bg-accent-soft px-2.5 py-1 text-[10.5px] font-medium text-accent-green transition-colors disabled:opacity-50"
         >
           {actionBusy === "plan" ? (
             <Loader2 size={10} className="animate-spin" />
@@ -1154,8 +1191,13 @@ function IssueDetail({
         <button
           type="button"
           onClick={() => void handleBranchFromIssue()}
-          disabled={actionBusy === "branch"}
-          className="inline-flex items-center gap-1.5 text-[10.5px] text-text-secondary hover:text-text-primary px-2 py-1 disabled:opacity-50"
+          disabled={actionBusy === "branch" || workspaceIsRemote}
+          title={
+            workspaceIsRemote
+              ? "Use the Workspace Git panel to create a branch on this SSH project"
+              : "Create and check out a branch in the active local Workspace"
+          }
+          className="inline-flex items-center gap-1.5 px-2 py-1 text-[10.5px] text-text-secondary hover:text-text-primary disabled:opacity-50"
         >
           {actionBusy === "branch" ? (
             <Loader2 size={10} className="animate-spin" />
@@ -1168,37 +1210,34 @@ function IssueDetail({
 
       {/* v0.8-D — inline feedback under the action row. Reflects the last
           CTA invocation; cleared on issue change or by the user. */}
-      {feedback && (
-        <CtaFeedbackRow
-          feedback={feedback}
-          onDismiss={() => setFeedback(null)}
-        />
-      )}
+      {feedback && <CtaFeedbackRow feedback={feedback} onDismiss={() => setFeedback(null)} />}
 
-      <div className="px-4 py-3.5 border-b border-bg-border">
+      <div className="border-b border-bg-border px-4 py-3.5">
         <IssueBody body={issue.body} />
       </div>
 
       {/* v0.8-C: issue actions / comments */}
-      <div className="px-4 py-3 border-b border-bg-border">
+      <div className="border-b border-bg-border px-4 py-3">
         <IssueCommentList issue={issue} />
       </div>
-      <div className="px-4 py-3 border-b border-bg-border">
-        <IssueCommentComposer
-          issue={issue}
-          onPosted={() => onRefetch?.()}
-        />
+      <div className="border-b border-bg-border px-4 py-3">
+        <IssueCommentComposer issue={issue} onPosted={() => onRefetch?.()} />
       </div>
 
-      <div className="px-4 py-3.5 flex-1 min-h-0">
-        <InvestigationPanel
-          issue={issue}
-          investigation={investigation}
-          isInvestigating={isInvestigating}
-          onRun={() => onInvestigate(issue.number)}
-        />
+      <div className="min-h-0 flex-1 px-4 py-3.5">
+        {aiAssistAvailable ? (
+          <InvestigationPanel
+            issue={issue}
+            investigation={investigation}
+            isInvestigating={isInvestigating}
+            onRun={() => onInvestigate(issue.number)}
+          />
+        ) : (
+          <p className="text-[11px] text-text-muted">
+            AI investigation is unavailable for this Git host or SSH Workspace.
+          </p>
+        )}
       </div>
     </div>
   );
 }
-

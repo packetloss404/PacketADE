@@ -54,12 +54,10 @@ import type {
   SendMessageRequest,
   SetModelRequest,
   SetPermissionModeRequest,
+  SidecarEvent,
   StartSessionRequest,
 } from "../protocol.js";
-import {
-  mcpToolDenial,
-  parseAnthropicMcpToolName,
-} from "../mcp-trust.js";
+import { mcpToolDenial, parseAnthropicMcpToolName } from "../mcp-trust.js";
 import type { ProviderHandler } from "./base.js";
 import {
   query,
@@ -212,6 +210,34 @@ type EditResolver = (result: HookJSONOutput) => void;
 interface PendingEditMeta {
   resolver: EditResolver;
   path: string;
+}
+
+type PendingEditEvent = Extract<SidecarEvent, { type: "pending_edit" }>;
+
+/**
+ * Build the blocking edit-approval event with the same tool-use ID used to
+ * park the SDK hook. Keeping this in one typed constructor makes correlation
+ * an invariant: a pending edit can never be emitted without the ID required
+ * by the matching `edit_response` request.
+ */
+export function buildPendingEditEvent(
+  sessionId: string,
+  toolUseId: string,
+  path: string,
+  before: string,
+  after: string,
+): PendingEditEvent {
+  if (toolUseId.trim().length === 0) {
+    throw new Error("Anthropic pending edit is missing its tool-use ID");
+  }
+  return {
+    type: "pending_edit",
+    sessionId,
+    toolUseId,
+    path,
+    before,
+    after,
+  };
 }
 
 /**
@@ -556,6 +582,16 @@ export class AnthropicProvider implements ProviderHandler {
       if (!path) return { continue: true };
 
       const key = toolUseID ?? input.tool_use_id;
+      if (typeof key !== "string" || key.trim().length === 0) {
+        const correlationError =
+          "Anthropic SDK returned a write tool without a tool-use ID; the edit was denied because it cannot be approved safely";
+        this.emitCurrent?.({
+          type: "error",
+          sessionId: req.sessionId,
+          message: correlationError,
+        });
+        return { continue: false, stopReason: correlationError };
+      }
       const beforeOnDisk = await readBefore(path);
 
       if (!this.approveWrites) {
@@ -603,13 +639,7 @@ export class AnthropicProvider implements ProviderHandler {
       }
       const currentEmit = this.emitCurrent;
       if (currentEmit) {
-        currentEmit({
-          type: "pending_edit",
-          sessionId: req.sessionId,
-          path,
-          before,
-          after,
-        });
+        currentEmit(buildPendingEditEvent(req.sessionId, key, path, before, after));
       }
 
       return await new Promise<HookJSONOutput>((resolve) => {

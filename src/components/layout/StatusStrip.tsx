@@ -1,6 +1,7 @@
 import { GitBranch, FolderGit2, Mic, Loader2 } from "lucide-react";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore } from "@/stores/appStore";
 import { useDictationStore } from "@/stores/dictationStore";
 import { useSidecarStatus } from "@/hooks/useSidecarStatus";
@@ -81,13 +82,23 @@ function SidecarStatusDot({ status }: { status: SidecarStatus | null }) {
 export function StatusStrip() {
   const gitBranch = useGitInfo();
   const projectPath = useLayoutStore((s) => s.projectPath);
+  const activeWorkspace = useWorkspaceStore((s) =>
+    s.workspaces.find((workspace) => workspace.id === s.activeWorkspaceId),
+  );
   const activeView = useAppStore((s) => s.activeView);
   const dictationStatus = useDictationStore((s) => s.status);
   const isRecording = useDictationStore((s) => s.isRecording);
   const isTranscribing = useDictationStore((s) => s.isTranscribing);
   const sidecar = useSidecarStatus();
 
-  const projectName = projectPath ? (projectPath.split(/[/\\]/).pop() ?? null) : null;
+  const effectiveProjectPath = activeWorkspace
+    ? activeWorkspace.serverId
+      ? (activeWorkspace.remoteProjectPath ?? activeWorkspace.projectPath)
+      : activeWorkspace.projectPath
+    : projectPath;
+  const projectName = effectiveProjectPath
+    ? (effectiveProjectPath.split(/[/\\]/).pop() ?? null)
+    : null;
   // D4: labels come from the one route registry, which also resolves
   // `mod:<id>` aliases (e.g. Dictation) to their canonical route.
   const viewLabel = routeStatusLabel(activeView);
@@ -98,7 +109,14 @@ export function StatusStrip() {
       {projectName && (
         <span className="flex items-center gap-1.5 text-[10.5px]">
           <FolderGit2 size={10} className="text-text-faint" />
-          <span className="font-mono text-text-secondary">{projectName}</span>
+          <span
+            className="font-mono text-text-secondary"
+            title={
+              activeWorkspace?.serverId ? `SSH: ${effectiveProjectPath}` : effectiveProjectPath
+            }
+          >
+            {activeWorkspace?.serverId ? `SSH:${projectName}` : projectName}
+          </span>
         </span>
       )}
 

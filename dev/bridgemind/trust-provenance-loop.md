@@ -124,3 +124,10 @@ with `backlog.md`, `ROADMAP.md`, and this ledger reconciled.
 - No blanket prompt for every read or every agent action.
 - No trust label that bypasses PacketADE's permission, review, or autonomy
   limits.
+
+## 2026-08-01 proof refresh
+
+Focused provenance envelope/policy/UI tests and the sidecar frozen-trust gates
+pass. Live provider transport parity, configured SSH and remote MCP, restart,
+YOLO, and current packaged visual/manual proof were unavailable and remain TP8.
+See [`proof-audit-2026-08-01.md`](../proof-audit-2026-08-01.md).

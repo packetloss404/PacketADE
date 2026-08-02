@@ -1,11 +1,48 @@
 # PacketADE Handoff
 
-Last updated: 2026-07-31
+Last updated: 2026-08-01
 
 This is the restart document for the next PacketADE work session. Read it
 before older plans or audit notes.
 
-## Latest pass — 2026-07-31 (Packet Control adoption)
+## Latest pass — 2026-08-01 (correctness fixes and proof refresh)
+
+The “implemented but awaiting proof” backlog was re-audited without promoting
+fixtures to live/package claims. Canonical evidence:
+[`dev/proof-audit-2026-08-01.md`](./dev/proof-audit-2026-08-01.md).
+
+- The current working tree fixes the highest-priority operational-honesty
+  residue: Anthropic pending edits carry their `toolUseId`; Agent Stop remains
+  `Stopping` until backend acknowledgement; Side Chat has request-scoped events
+  and cancellation; Monitor-open failures are visible; terminal-pane removal
+  confirms its live-PTY consequence; and the duplicate cancel-pending chrome is
+  removed.
+- Git/repository authority now follows the active local/SSH Workspace and
+  host/repository scope; stale async reads and mutations are revision-guarded,
+  and GitHub-only actions are capability-gated for Gitea/Forgejo.
+- Settings safety writes are awaited and revision-fenced, unenforced controls
+  are hidden, and SSH password management now has an OS-keyring-only secret
+  boundary with compensating rollback and truthful test/error state.
+- The exact focused 2026-08-01 check passes **15 files / 108 tests**,
+  `pnpm sidecar:check` passes, and the Rust suite passes **600 tests** with
+  **3 explicitly ignored/manual tests**. The complete frontend count and
+  package evidence are recorded in the proof audit; no commit/package was
+  created by this loop.
+- Clean PacketAgent `main` `f71021c` passes the focused W9 package/trust suite
+  **11/11** and event/lifecycle/serialized-restart suite **25/25**, with one
+  live interoperability test correctly skipped because no URL/token/workspace
+  is configured.
+- Clean PacketCode `main` `9f3364a` passes `go test ./...` and its source-tree
+  schema-v1 doctor reports healthy. PCH3, PCH4, and PCH5 are closed; only the
+  published/clean-machine and PacketAgent cross-product gates remain.
+- This Windows profile still has zero PacketADE SSH servers and zero active
+  capture endpoints. Current-package, real-host, microphone, external-editor,
+  live-provider, and cross-platform gates therefore remain open.
+- Release readiness reports **0 failures / 6 warnings**: signing/notarization,
+  updater signing/configuration, and `latest.json` are absent. Existing bundles
+  predate the current working tree and are not proof of it.
+
+## Prior pass — 2026-07-31 (Packet Control adoption)
 
 Docs and planning only; **no PacketADE runtime code changed**.
 
@@ -22,8 +59,9 @@ Docs and planning only; **no PacketADE runtime code changed**.
   verdicts with a recorded `verdict_authority` (no model judges a claim in
   Phases 1–2), user-initiated runs only with manual after-the-fact attach to
   an `Attempt`, and capped retention with reported pruning.
-- **Cross-repo:** PCH4 (abandoned-job resubmit) and PCMP1/PCMP2 (Packet
-  Computers registry) shipped in packetcode at `ac758fe`. PC9 in
+- **Cross-repo:** PCH3 (workflow verifier), PCH4 (abandoned-job resubmit),
+  PCH5 (remote MCP trust), and PCMP1/PCMP2 (Packet Computers registry) have now
+  shipped in packetcode. PC9 in
   [`dev/bridgemind/packetcode-bridgecode-loop.md`](./dev/bridgemind/packetcode-bridgecode-loop.md)
   is updated; PC5/PC10 remain externally gated on signing credentials, a
   published build, and a live PacketAgent.
@@ -32,7 +70,8 @@ Docs and planning only; **no PacketADE runtime code changed**.
 
 ## Resume here
 
-The 2026-07-30 State of the ADE review is complete. It comprised a research
+The 2026-07-30 State of the ADE review is complete and received a current
+status pass on 2026-08-01. It comprised a research
 fleet pass
 over the landscape, a bug-fix wave, a full root-documentation overhaul
 (`README.md`, `ROADMAP.md`, `backlog.md`, `CHANGELOG.md`, this file), and the
@@ -41,9 +80,9 @@ outcomes and open recommendations are ledgered in
 [`backlog.md`](./backlog.md#2026-07-30-state-of-the-ade-review); the full
 consolidated report now ships as two editions with identical content:
 `docs/reports/state-of-the-ade-2026-07-30.md` — the agent-facing source of
-truth, with a machine summary block, stable finding IDs, per-finding status
-and resolving commit, and grep recipes — and
-`docs/reports/state-of-the-ade-2026-07-30.pdf` (104 pages) for human reading.
+truth, whose Section 0 now supersedes the dated deep-dive statuses with the
+2026-08-01 source/proof disposition — and
+`docs/reports/state-of-the-ade-2026-07-30.pdf` (98 pages) for human reading.
 Regenerate the PDF from the Markdown with
 `python3 scripts/render_state_of_the_ade.py docs/reports/state-of-the-ade-2026-07-30.md docs/reports/state-of-the-ade-2026-07-30.pdf`.
 The HTML edition was retired on 2026-07-30; do not recreate it.
@@ -100,8 +139,8 @@ The third thread closed on top of that sequence:
 
 3. **The main-shell follow-up loop. COMPLETE — `c3906c7`.** The Group A UX
    quick wins and the Group B creation-flow fixes that D1–D5 deliberately left
-   out are all shipped, committed, and pushed. Gates at that commit: `pnpm
-   build` green, Vitest 1466/1466 across 194 files (up from 1363), ESLint at
+   out are all shipped, committed, and pushed. Gates at that commit: `pnpm build`
+   green, Vitest 1466/1466 across 194 files (up from 1363), ESLint at
    zero errors. What landed:
    - **Deletion safety.** The §5 Critical is closed: the unrouted dead-code
      `ServersView.tsx` was deleted and a shared `ConfirmDeleteModal` plus
@@ -173,8 +212,8 @@ The fourth thread closed on top of that:
 The fifth thread closed on top of that:
 
 5. **The cleanup-holes loop. COMPLETE — `7cad08b`.** Everything the previous
-   two loops recorded as still open, except undo. Gates at that commit: `pnpm
-   build` green, Vitest 1581/1581 across 200 files (up from 1523), `cargo test`
+   two loops recorded as still open, except undo. Gates at that commit: `pnpm build`
+   green, Vitest 1581/1581 across 200 files (up from 1523), `cargo test`
    452/452 with 2 ignored (up from 444), ESLint at zero errors. What landed:
    - **Rust worktree failures now surface.** New `WorktreeCleanupOutcome`
      (`worktreePath`, `removed`, `branch`, `branchDeleted`, `branchRetained`,
@@ -257,14 +296,13 @@ They are not mutually exclusive — (b) is a strict subset of (a)'s UX — but (
 should not be started as an incremental extension of (b) without deciding the
 retention model first.
 
-**Then the one destructive-without-confirm path left:**
+**The final destructive-without-confirm path is now fixed in the 2026-08-01
+working tree:**
 
-- **`WorkspacePane`'s terminal tile "Close pane" kills the PTY with no
-  confirmation.** Surfaced during the `7cad08b` chrome loop, which rebuilt the
-  tile menus around that control without adding a confirm. Every other
-  destructive path in the app now asks first, and the equivalent kill through
-  Fleet delete carries a full typed confirm modal — this one does not. Report
-  §5.3 P-04 / D-09.
+- **`WorkspacePane`'s terminal tile "Close pane" now uses the shared typed
+  confirmation.** It names the live PTY/CLI consequence, Cancel preserves the
+  pane, and confirmation stops the process before removing the pane. Focused
+  component coverage passes; final integrated gates are pending.
 
 **Then the smaller residue:**
 
@@ -272,8 +310,9 @@ retention model first.
   duplicate superseded by `IssueDetail`, only self-referencing. The
   issue-deletion work went into `IssueDetail`; this file was left untouched.
   Delete-or-keep decision (report §5.3 B-11).
-- The duplicate `CancelPendingButton` rendered twice at once in
-  `PendingApprovalsSection` and the composer row, plus a third count badge.
+- The duplicate `CancelPendingButton` is resolved in the 2026-08-01 working
+  tree: the composer owns the one canonical cancel-pending action while
+  per-item and bulk Allow/Deny remain.
 - The four-controls-one-action finding's remaining legs: `Ctrl+N` and the
   `/new` slash command still reach conversation creation by separate routes
   with different semantics. Both sidebar legs are now de-duplicated.
@@ -289,9 +328,12 @@ retention model first.
 - `useServerConnection` and `ConnectionProgress` are unreferenced — kept
   deliberately, but they need a keep-or-delete decision.
 
-MS4 (responsive/accessibility semantics, Gitea capability and repo-switch
-tests, packaged local/SSH and 800px-to-ultrawide visual matrix) and the two
-unaddressed MS1 items remain open alongside these.
+MS4 (responsive/accessibility semantics, packaged local/SSH and
+800px-to-ultrawide visual matrix) remains open. Running Agents and Side Chat
+cancellation acknowledgement, Gitea capability gates, and repo/host-context
+invalidation are implemented and independently reviewed in the 2026-08-01
+working tree. Real GitHub/Gitea package proof and the bounded slow-write/host-
+switch stress case remain open.
 
 ## Current product state
 
@@ -321,8 +363,8 @@ unaddressed MS1 items remain open alongside these.
   (`WorktreeCleanupOutcome`) rather than a log line, and cooperative
   `.pkt-flight-integrations/<flightId>` worktrees are removed on flight delete
   with `git branch -d` (never `-D`, because that branch can be the only ref to
-  merged-but-unlanded work). **What remains is undo** — and the un-confirmed
-  PTY kill in `WorkspacePane`'s "Close pane" — see the restart list.
+  merged-but-unlanded work). **What remains is undo**; the terminal-pane close
+  confirmation was added in the 2026-08-01 working tree.
 - Ctrl+K and Escape yield to focused terminals and text inputs, and closing the
   app confirms only when live work would be destroyed. Startup restores the
   last view you were on, validated against the route registry and
@@ -336,8 +378,8 @@ unaddressed MS1 items remain open alongside these.
   and creation is reachable from the "+ New" menu and the Ctrl+K palette.
 - Gemini CLI is no longer a supported PTY agent. Supported PTY CLIs are Claude
   Code, Codex CLI, OpenCode, PacketCode, and plain shells; the GUI-agent picker
-  keeps its eight chat rows (Anthropic subscription/API, OpenAI
-  ChatGPT/API/Agents SDK, MiniMax, OpenRouter, Ollama). Saved panes that
+  keeps its seven chat rows (Claude Agent SDK/API, OpenAI API/Agents SDK,
+  MiniMax, OpenRouter, Ollama). Saved panes that
   referenced `gemini` reopen as plain terminals.
 - Workspace/Agents restructuring is complete. Workspaces are CLI/PacketCode
   first; Agents is the first-class GUI-agent surface; new Workspace
@@ -362,22 +404,19 @@ unaddressed MS1 items remain open alongside these.
 
 ## Settings work that remains
 
-The information architecture is done. The remaining work is authority and
-runtime correctness, tracked in
+The information architecture and 2026-08-01 P1 authority/security pass are
+done. Remaining work is the bounded P2 follow-up and external proof tracked in
 [`dev/workspace-agent-settings-decision-2026-07-29.md`](./dev/workspace-agent-settings-decision-2026-07-29.md)
 and [`backlog.md`](./backlog.md):
 
-- enforce or hide PacketADE MCP provider scope/tool controls;
-- implement secure SSH password set/delete/test or remove Password auth from
-  new server setup;
-- consume or remove AI Provider Routing / Task Role Defaults;
-- wire or remove the unused Agent rail-collapse preference;
+- consume or remove Task Role Defaults (AI Provider Routing is now consumed);
 - migrate MCP selections/trust to stable scoped IDs;
 - make Project information use the active local/SSH Workspace identity;
-- make Flight/autonomy Settings saves awaited and authoritative.
+- validate provider-aware profile model/tool choices;
+- run packaged OS-keyring and live pinned-SSH password-authentication proof.
 
-Do not confuse this authority cleanup with the completed six-group Settings
-navigation work.
+The unused Agent rail-collapse and unenforced MCP scope/tool controls are hidden;
+safety saves and SSH password storage are source-complete and peer-reviewed.
 
 ## Remote Agents is still paused
 
@@ -411,7 +450,10 @@ environments, external products, hardware, or credentials:
 - real external-editor and project-Memory watch interoperability.
 
 These are not permission to invent new source features. Follow the linked
-runbooks and record evidence when the required environment exists.
+runbooks and record evidence when the required environment exists. The last
+source-level recheck and the exact reason each external gate remains open are
+recorded in
+[`dev/proof-audit-2026-08-01.md`](./dev/proof-audit-2026-08-01.md).
 
 ## Latest Windows build
 
@@ -423,10 +465,10 @@ repository was left clean.
 This is a post-tag local development rebuild that still uses version `0.10.2`;
 it is not a newly tagged public release.
 
-| Artifact | Size | SHA-256 |
-| --- | ---: | --- |
-| `packetade.exe` | 42.63 MiB | `D28FFCD355933F280A4C348DB26C77C53D61C9983B07858DBFA79DDD0E84E7E8` |
-| `PacketADE_0.10.2_x64-setup.exe` | 84.47 MiB | `F1B19D36B84338FC495EC1591EC3E66437A118C87617A4EFC27239C68B3BF0E7` |
+| Artifact                         |       Size | SHA-256                                                            |
+| -------------------------------- | ---------: | ------------------------------------------------------------------ |
+| `packetade.exe`                  |  42.63 MiB | `D28FFCD355933F280A4C348DB26C77C53D61C9983B07858DBFA79DDD0E84E7E8` |
+| `PacketADE_0.10.2_x64-setup.exe` |  84.47 MiB | `F1B19D36B84338FC495EC1591EC3E66437A118C87617A4EFC27239C68B3BF0E7` |
 | `PacketADE_0.10.2_x64_en-US.msi` | 131.90 MiB | `A79B995A927AF4D91E74BD682122C32ED27CF8CBAE99779312EBF11D654A09C8` |
 
 Local paths:
@@ -508,7 +550,7 @@ limited to existing `ts-rs` serde-alias and Vite chunk/dynamic-import warnings.
 > lying X tooltip, a "don't ask again" close preference, the six-spellings label
 > sweep (`WelcomeScreen`/`ProjectInfoCard`/`OnboardingPane`), a keep-or-delete
 > decision on the now-unreferenced `useServerConnection` / `ConnectionProgress`,
-> and narrowing `scripts/confirm-idiom.test.mjs` so a test *name* containing
+> and narrowing `scripts/confirm-idiom.test.mjs` so a test _name_ containing
 > `confirm (` stops tripping the fence. Keep gates green at each step
 > (`pnpm build`, `pnpm lint`, Vitest — currently 1523 passing across 199 files —
 > and `cargo test`, currently 444).

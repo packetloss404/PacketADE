@@ -87,3 +87,13 @@ until the close/reconnect continuation gate passes against the real runtime.
 - The operator can always inspect, pause, revoke, and understand cost and stop
   reason.
 - Returned code and artifacts remain reviewable before landing.
+
+## 2026-08-01 proof refresh
+
+PacketADE's focused package-consumer tests passed. On clean PacketAgent `main`
+`f71021c`, the focused package/trust tests passed **11/11**, and the event,
+lifecycle, serialized disconnect/process-reconstruction, and validation tests
+passed **25/25** with the one opt-in live interoperability test skipped. The
+required live base URL, bearer credential, and workspace ID are not configured,
+so PH10 remains honestly gated. See
+[`proof-audit-2026-08-01.md`](../proof-audit-2026-08-01.md).

@@ -48,4 +48,32 @@ describe("Toolbar '+ New' menu", () => {
     expect(useWorkspaceStore.getState().creationRequest).not.toBeNull();
     expect(useAppStore.getState().activeView).toBe("workspace");
   });
+
+  it("shows the authoritative remote path and disables the local folder picker", () => {
+    useWorkspaceStore.setState({
+      activeWorkspaceId: "remote-workspace",
+      workspaces: [
+        {
+          id: "remote-workspace",
+          name: "Remote repo",
+          agents: ["packetcode"],
+          panes: [],
+          projectPath: "C:\\stale-local-repo",
+          remoteProjectPath: "/srv/current-repo",
+          serverId: "ssh-1",
+          createdAt: 1,
+          updatedAt: 1,
+          status: "active",
+        },
+      ],
+    });
+
+    render(<Toolbar />);
+
+    expect(
+      screen.getByTitle(
+        "Remote project: /srv/current-repo (Remote repo) — change it in Workspace settings",
+      ),
+    ).toBeDisabled();
+  });
 });

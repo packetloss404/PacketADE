@@ -305,7 +305,9 @@ export type SidecarEvent =
   | {
       type: "pending_edit";
       sessionId: string;
-      toolUseId?: string;
+      /** Exact SDK tool call parked by the provider. Required so the host's
+       * edit_response resolves this edit rather than leaving the turn hung. */
+      toolUseId: string;
       path: string;
       before?: string;
       after: string;

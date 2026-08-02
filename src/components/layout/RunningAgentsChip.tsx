@@ -22,6 +22,7 @@ function fmtTokens(n: number): string {
 export function RunningAgentsChip() {
   const conversations = useAgentTaskStore((s) => s.conversations);
   const cancelActiveConversation = useAgentTaskStore((s) => s.cancelActiveConversation);
+  const cancellingConversationIds = useAgentTaskStore((s) => s.cancellingConversationIds);
 
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -67,6 +68,7 @@ export function RunningAgentsChip() {
           </div>
           {running.map((conv) => {
             const { totalTokens } = aggregateConversationCost(conv);
+            const stopping = cancellingConversationIds?.has(conv.id) ?? false;
             return (
               <div
                 key={conv.id}
@@ -90,10 +92,11 @@ export function RunningAgentsChip() {
                 <button
                   type="button"
                   onClick={() => void cancelActiveConversation(conv.id)}
-                  className="rounded p-1 text-text-muted hover:bg-bg-hover hover:text-accent-red"
-                  title="Stop this agent"
+                  disabled={stopping}
+                  className="rounded p-1 text-text-muted hover:bg-bg-hover hover:text-accent-red disabled:cursor-wait disabled:opacity-60"
+                  title={stopping ? "Waiting for Stop acknowledgement" : "Stop this agent"}
                 >
-                  <Square size={10} />
+                  <Square size={10} className={stopping ? "animate-pulse" : undefined} />
                 </button>
               </div>
             );

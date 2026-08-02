@@ -37,6 +37,7 @@ interface Props {
   pr: GitHubPr;
   /** Called after a successful action — triggers a refetch in the parent. */
   onAction: () => void;
+  allowDraftToggle?: boolean;
 }
 
 type ActionKind = "merge" | "close" | "reopen" | "to-draft" | "ready";
@@ -55,21 +56,16 @@ function isMerged(pr: GitHubPr): boolean {
   return false;
 }
 
-export function PRActionBar({ pr, onAction }: Props) {
+export function PRActionBar({ pr, onAction, allowDraftToggle = true }: Props) {
   const { config, updatePrState } = useGitHubStore();
   // v0.8: pre-seed the merge dropdown with the user's persisted default. We
   // pull from the store snapshot (not a live subscription) so the local
   // dropdown choice can drift from the global default within a session
   // without thrashing on Settings tweaks.
-  const defaultMergeStrategy = useGitHubStore(
-    (s) => s.defaultMergeStrategy,
-  );
-  const requireMergeConfirmation = useGitHubStore(
-    (s) => s.requireMergeConfirmation,
-  );
+  const defaultMergeStrategy = useGitHubStore((s) => s.defaultMergeStrategy);
+  const requireMergeConfirmation = useGitHubStore((s) => s.requireMergeConfirmation);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
-  const [mergeMethod, setMergeMethod] =
-    useState<GitHubMergeMethod>(defaultMergeStrategy);
+  const [mergeMethod, setMergeMethod] = useState<GitHubMergeMethod>(defaultMergeStrategy);
   const [showMergeMenu, setShowMergeMenu] = useState(false);
 
   const merged = isMerged(pr);
@@ -79,14 +75,12 @@ export function PRActionBar({ pr, onAction }: Props) {
 
   if (merged) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-bg-border bg-bg-secondary/60">
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-accent-green/15 text-accent-green border border-accent-green/30">
+      <div className="bg-bg-secondary/60 flex items-center gap-2 border-b border-bg-border px-3 py-2">
+        <span className="bg-accent-green/15 border-accent-green/30 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold text-accent-green">
           <CheckCircle2 size={12} />
           Merged
         </span>
-        <span className="text-[10px] text-text-muted">
-          This pull request has been merged.
-        </span>
+        <span className="text-[10px] text-text-muted">This pull request has been merged.</span>
       </div>
     );
   }
@@ -98,16 +92,21 @@ export function PRActionBar({ pr, onAction }: Props) {
       setStatus({ kind: "error", message: "No repository selected." });
       return;
     }
+    const expectedConnectionId = useGitHubStore.getState().activeConnectionId;
+    const stillCurrent = () => {
+      const current = useGitHubStore.getState();
+      return (
+        current.activeConnectionId === expectedConnectionId &&
+        current.config.selectedRepo?.owner === repo.owner &&
+        current.config.selectedRepo?.repo === repo.repo
+      );
+    };
     setStatus({ kind: "running", action });
     try {
       if (action === "merge") {
         const chosen = method ?? mergeMethod;
-        const result = await githubMergePr(
-          repo.owner,
-          repo.repo,
-          pr.number,
-          chosen,
-        );
+        const result = await githubMergePr(repo.owner, repo.repo, pr.number, chosen);
+        if (!stillCurrent()) return;
         updatePrState(pr.number, {
           state: "closed",
           merged: true,
@@ -119,33 +118,28 @@ export function PRActionBar({ pr, onAction }: Props) {
         });
       } else if (action === "close") {
         await githubClosePr(repo.owner, repo.repo, pr.number);
+        if (!stillCurrent()) return;
         updatePrState(pr.number, { state: "closed" });
         setStatus({ kind: "success", message: "Closed." });
       } else if (action === "reopen") {
         await githubReopenPr(repo.owner, repo.repo, pr.number);
+        if (!stillCurrent()) return;
         updatePrState(pr.number, { state: "open" });
         setStatus({ kind: "success", message: "Reopened." });
       } else if (action === "to-draft") {
-        const next = await githubSetPrDraftState(
-          repo.owner,
-          repo.repo,
-          pr.number,
-          true,
-        );
+        const next = await githubSetPrDraftState(repo.owner, repo.repo, pr.number, true);
+        if (!stillCurrent()) return;
         updatePrState(pr.number, { draft: next });
         setStatus({ kind: "success", message: "Converted to draft." });
       } else if (action === "ready") {
-        const next = await githubSetPrDraftState(
-          repo.owner,
-          repo.repo,
-          pr.number,
-          false,
-        );
+        const next = await githubSetPrDraftState(repo.owner, repo.repo, pr.number, false);
+        if (!stillCurrent()) return;
         updatePrState(pr.number, { draft: next });
         setStatus({ kind: "success", message: "Marked ready for review." });
       }
       onAction();
     } catch (e) {
+      if (!stillCurrent()) return;
       setStatus({ kind: "error", message: String(e) });
     }
   }
@@ -171,8 +165,8 @@ export function PRActionBar({ pr, onAction }: Props) {
   const isRunning = status.kind === "running";
 
   return (
-    <div className="flex flex-col gap-2 px-3 py-2 border-b border-bg-border bg-bg-secondary/60">
-      <div className="flex items-center gap-1.5 flex-wrap">
+    <div className="bg-bg-secondary/60 flex flex-col gap-2 border-b border-bg-border px-3 py-2">
+      <div className="flex flex-wrap items-center gap-1.5">
         {isOpen && !isDraft && (
           <>
             {/* Merge — primary CTA with strategy dropdown */}
@@ -181,7 +175,7 @@ export function PRActionBar({ pr, onAction }: Props) {
                 type="button"
                 onClick={() => startConfirm("merge", mergeMethod)}
                 disabled={isRunning}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-semibold bg-accent-green/15 text-accent-green border border-accent-green/30 rounded-l hover:bg-accent-green/25 transition-colors disabled:opacity-50"
+                className="bg-accent-green/15 border-accent-green/30 hover:bg-accent-green/25 inline-flex items-center gap-1.5 rounded-l border px-2.5 py-1 text-[10.5px] font-semibold text-accent-green transition-colors disabled:opacity-50"
               >
                 {isRunning && status.action === "merge" ? (
                   <Loader2 size={10} className="animate-spin" />
@@ -195,35 +189,31 @@ export function PRActionBar({ pr, onAction }: Props) {
                 onClick={() => setShowMergeMenu((v) => !v)}
                 disabled={isRunning}
                 aria-label="Choose merge strategy"
-                className="inline-flex items-center px-1.5 py-1 text-[10.5px] font-semibold bg-accent-green/15 text-accent-green border border-l-0 border-accent-green/30 rounded-r hover:bg-accent-green/25 transition-colors disabled:opacity-50"
+                className="bg-accent-green/15 border-accent-green/30 hover:bg-accent-green/25 inline-flex items-center rounded-r border border-l-0 px-1.5 py-1 text-[10.5px] font-semibold text-accent-green transition-colors disabled:opacity-50"
               >
                 <ChevronDown size={10} />
               </button>
               {showMergeMenu && (
-                <div className="absolute z-10 top-full left-0 mt-1 bg-bg-secondary border border-bg-border rounded shadow-lg min-w-[140px]">
-                  {(["merge", "squash", "rebase"] as GitHubMergeMethod[]).map(
-                    (m) => (
-                      <button
-                        type="button"
-                        key={m}
-                        onClick={() => {
-                          setMergeMethod(m);
-                          setShowMergeMenu(false);
-                        }}
-                        className={`w-full text-left px-2.5 py-1.5 text-[10.5px] hover:bg-bg-tertiary transition-colors ${
-                          m === mergeMethod
-                            ? "text-accent-green"
-                            : "text-text-secondary"
-                        }`}
-                      >
-                        {m === "merge"
-                          ? "Create a merge commit"
-                          : m === "squash"
-                            ? "Squash and merge"
-                            : "Rebase and merge"}
-                      </button>
-                    ),
-                  )}
+                <div className="absolute left-0 top-full z-10 mt-1 min-w-[140px] rounded border border-bg-border bg-bg-secondary shadow-lg">
+                  {(["merge", "squash", "rebase"] as GitHubMergeMethod[]).map((m) => (
+                    <button
+                      type="button"
+                      key={m}
+                      onClick={() => {
+                        setMergeMethod(m);
+                        setShowMergeMenu(false);
+                      }}
+                      className={`w-full px-2.5 py-1.5 text-left text-[10.5px] transition-colors hover:bg-bg-tertiary ${
+                        m === mergeMethod ? "text-accent-green" : "text-text-secondary"
+                      }`}
+                    >
+                      {m === "merge"
+                        ? "Create a merge commit"
+                        : m === "squash"
+                          ? "Squash and merge"
+                          : "Rebase and merge"}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
@@ -232,42 +222,46 @@ export function PRActionBar({ pr, onAction }: Props) {
               type="button"
               onClick={() => startConfirm("close")}
               disabled={isRunning}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-bg-tertiary text-text-secondary border border-bg-border rounded hover:bg-accent-red/10 hover:text-accent-red hover:border-accent-red/30 transition-colors disabled:opacity-50"
+              className="hover:bg-accent-red/10 hover:border-accent-red/30 inline-flex items-center gap-1.5 rounded border border-bg-border bg-bg-tertiary px-2.5 py-1 text-[10.5px] font-medium text-text-secondary transition-colors hover:text-accent-red disabled:opacity-50"
             >
               <XCircle size={10} /> Close
             </button>
 
-            <button
-              type="button"
-              onClick={() => startConfirm("to-draft")}
-              disabled={isRunning}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-bg-tertiary text-text-secondary border border-bg-border rounded hover:bg-bg-tertiary/80 hover:text-text-primary transition-colors disabled:opacity-50"
-            >
-              <FileEdit size={10} /> Convert to draft
-            </button>
+            {allowDraftToggle && (
+              <button
+                type="button"
+                onClick={() => startConfirm("to-draft")}
+                disabled={isRunning}
+                className="hover:bg-bg-tertiary/80 inline-flex items-center gap-1.5 rounded border border-bg-border bg-bg-tertiary px-2.5 py-1 text-[10.5px] font-medium text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50"
+              >
+                <FileEdit size={10} /> Convert to draft
+              </button>
+            )}
           </>
         )}
 
         {isOpen && isDraft && (
           <>
-            <button
-              type="button"
-              onClick={() => startConfirm("ready")}
-              disabled={isRunning}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-semibold bg-accent-green/15 text-accent-green border border-accent-green/30 rounded hover:bg-accent-green/25 transition-colors disabled:opacity-50"
-            >
-              {isRunning && status.action === "ready" ? (
-                <Loader2 size={10} className="animate-spin" />
-              ) : (
-                <CheckCircle2 size={10} />
-              )}
-              Ready for review
-            </button>
+            {allowDraftToggle && (
+              <button
+                type="button"
+                onClick={() => startConfirm("ready")}
+                disabled={isRunning}
+                className="bg-accent-green/15 border-accent-green/30 hover:bg-accent-green/25 inline-flex items-center gap-1.5 rounded border px-2.5 py-1 text-[10.5px] font-semibold text-accent-green transition-colors disabled:opacity-50"
+              >
+                {isRunning && status.action === "ready" ? (
+                  <Loader2 size={10} className="animate-spin" />
+                ) : (
+                  <CheckCircle2 size={10} />
+                )}
+                Ready for review
+              </button>
+            )}
             <button
               type="button"
               onClick={() => startConfirm("close")}
               disabled={isRunning}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-bg-tertiary text-text-secondary border border-bg-border rounded hover:bg-accent-red/10 hover:text-accent-red hover:border-accent-red/30 transition-colors disabled:opacity-50"
+              className="hover:bg-accent-red/10 hover:border-accent-red/30 inline-flex items-center gap-1.5 rounded border border-bg-border bg-bg-tertiary px-2.5 py-1 text-[10.5px] font-medium text-text-secondary transition-colors hover:text-accent-red disabled:opacity-50"
             >
               <XCircle size={10} /> Close
             </button>
@@ -279,7 +273,7 @@ export function PRActionBar({ pr, onAction }: Props) {
             type="button"
             onClick={() => startConfirm("reopen")}
             disabled={isRunning}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-accent-blue/15 text-accent-blue border border-accent-blue/30 rounded hover:bg-accent-blue/25 transition-colors disabled:opacity-50"
+            className="bg-accent-blue/15 border-accent-blue/30 hover:bg-accent-blue/25 inline-flex items-center gap-1.5 rounded border px-2.5 py-1 text-[10.5px] font-medium text-accent-blue transition-colors disabled:opacity-50"
           >
             {isRunning && status.action === "reopen" ? (
               <Loader2 size={10} className="animate-spin" />
@@ -292,21 +286,21 @@ export function PRActionBar({ pr, onAction }: Props) {
       </div>
 
       {status.kind === "confirming" && (
-        <div className="flex items-center gap-1.5 px-2 py-1.5 bg-bg-tertiary border border-bg-border rounded text-[10.5px]">
-          <span className="text-text-secondary flex-1">
+        <div className="flex items-center gap-1.5 rounded border border-bg-border bg-bg-tertiary px-2 py-1.5 text-[10.5px]">
+          <span className="flex-1 text-text-secondary">
             {confirmCopy(status.action, status.mergeMethod ?? mergeMethod)}
           </span>
           <button
             type="button"
             onClick={() => run(status.action, status.mergeMethod)}
-            className="px-2 py-0.5 text-[10px] font-medium bg-accent-green/15 text-accent-green border border-accent-green/30 rounded hover:bg-accent-green/25 transition-colors"
+            className="bg-accent-green/15 border-accent-green/30 hover:bg-accent-green/25 rounded border px-2 py-0.5 text-[10px] font-medium text-accent-green transition-colors"
           >
             Confirm
           </button>
           <button
             type="button"
             onClick={cancelConfirm}
-            className="px-2 py-0.5 text-[10px] font-medium text-text-muted hover:text-text-primary transition-colors"
+            className="px-2 py-0.5 text-[10px] font-medium text-text-muted transition-colors hover:text-text-primary"
           >
             Cancel
           </button>

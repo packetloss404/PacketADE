@@ -22,12 +22,17 @@ const mockStartBoundedAutonomyRuntime = vi.hoisted(() => vi.fn());
 const mockHydrateConversations = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const mockIsModuleEnabled = vi.hoisted(() => vi.fn(() => true));
 const mockSyncAuxRouting = vi.hoisted(() => vi.fn());
+const mockListen = vi.hoisted(() => vi.fn().mockResolvedValue(vi.fn()));
 const mockAppState = vi.hoisted(() => ({
   activeView: "flights",
   theme: "dark" as const,
   setInitialized: mockSetInitialized,
   setTheme: mockSetTheme,
   setActiveView: mockSetActiveView,
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: mockListen,
 }));
 
 vi.mock("@/lib/tauri", () => ({

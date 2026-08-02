@@ -96,6 +96,9 @@ export function Composer(props: ComposerProps) {
   const launch = props.variant === "launch" ? props : undefined;
   const conversation = isChat ? props.conversation : undefined;
   const conversationId = isChat ? props.conversationId : "";
+  const isStopping = useAgentTaskStore(
+    (s) => isChat && (s.cancellingConversationIds?.has(conversationId) ?? false),
+  );
 
   // ─── Draft text — always in the per-conversation draft store ─────────
   const draftKey = isChat ? conversationId : LAUNCH_DRAFT_KEY;
@@ -648,13 +651,14 @@ export function Composer(props: ComposerProps) {
               />
 
               {isActive ? (
-                <Tooltip content="Stop turn">
+                <Tooltip content={isStopping ? "Waiting for Stop acknowledgement" : "Stop turn"}>
                   <button
                     type="button"
                     onClick={handleStop}
-                    className="shrink-0 rounded bg-accent-red/15 p-1.5 text-accent-red transition-colors hover:bg-accent-red/25"
+                    disabled={isStopping}
+                    className="shrink-0 rounded bg-accent-red/15 p-1.5 text-accent-red transition-colors hover:bg-accent-red/25 disabled:cursor-wait disabled:opacity-60"
                   >
-                    <Square size={12} />
+                    <Square size={12} className={isStopping ? "animate-pulse" : undefined} />
                   </button>
                 </Tooltip>
               ) : (

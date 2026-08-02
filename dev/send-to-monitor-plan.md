@@ -663,3 +663,11 @@ main window.
 
 Next proof is the packaged manual matrix above. Do not start terminal/workspace
 monitors until a separate session-attachment design makes them safe.
+
+## 2026-08-01 proof refresh
+
+Focused Monitor route/capability tests pass, and Windows reports two active
+displays. The app is closed and the current working tree has not yet been
+packaged, so no claim is made for multi-display lifecycle behavior or packaged
+WebView-to-Rust denial. See
+[`proof-audit-2026-08-01.md`](./proof-audit-2026-08-01.md).

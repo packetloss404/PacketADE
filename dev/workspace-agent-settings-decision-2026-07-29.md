@@ -1,8 +1,9 @@
 # PacketADE Workspace, Agents, and Settings Decision Report
 
 Date: 2026-07-29
-Status: Workspace/Agents recommendation and six-group Settings IA implemented;
-Settings authority corrections remain open
+Status: Workspace/Agents recommendation, six-group Settings IA, and the
+2026-08-01 P1 Settings authority/security pass are source-complete; bounded P2
+and packaged/live proof remain
 Scope: PacketADE Workspaces, GUI agent placement, PacketCode positioning, and Settings
 
 ## Executive answer
@@ -42,8 +43,10 @@ The Settings surface remains. Its former 16-section root navigation mixed
 preferences, credentials, operational tools, status, and navigation. The owner
 approved the six-group Option B on 2026-07-29, and the lossless grouped
 navigation, sub-tabs, search, scope badges, and typed CLI recovery routes are
-implemented. Controls that do not govern runtime behavior still require the
-separate authority cleanup below.
+implemented. The 2026-08-01 authority pass hid controls that did not govern
+runtime behavior, made safety persistence authoritative, and completed the
+OS-keyring-only SSH password source flow. Remaining P2 and external proof are
+called out below.
 
 ## The decision in one table
 
@@ -68,8 +71,9 @@ PacketCode strengthens the case for a CLI-first Workspace. It does not make
 PacketADE's GUI-agent engine redundant. The GUI engine owns capabilities a TUI
 should not have to reproduce:
 
-- eight provider/auth identities with live status;
-- subscription and API-key transports behind one event contract;
+- seven API-agent provider/auth identities with live status;
+- in-process and Agent SDK transports behind one event contract, with PTY CLI
+  account/subscription health kept separate;
 - permission and edit review;
 - plans, tool cards, diffs, worktree endings, and cost;
 - resumable local/SSH conversations;
@@ -344,9 +348,9 @@ focused sub-tabs, and search can find them by product terminology. Scope badges
 show whether the selected subsection affects the App, Project, Workspace, new
 sessions, new conversations, or new Flights.
 
-The grouping decision is complete. Several controls still persist desired
-state without changing effective runtime state; grouping them did not pretend
-to fix their authority.
+The grouping decision is complete. The 2026-08-01 authority pass removed the
+known P1 desired-state/runtime mismatches; stable scoped MCP IDs, active-project
+identity, provider-aware validation, and external proof remain bounded follow-up.
 
 ### Six-group implementation checkpoint — 2026-07-29
 
@@ -368,44 +372,41 @@ navigation, search, scopes, and compatibility routing.
 
 ## Settings findings that should block more polish
 
-### P0 - MCP provider scope and allowed-tool controls are not enforced
+### Resolved 2026-08-01 - unenforced MCP controls are hidden
 
-The PacketADE MCP provider UI persists Project/Global scope and individual tool
-checkboxes, but `mcp_server_start` receives only port and `allowWrites`. Rust
-constructs the full static tool router.
+The audit found that the PacketADE MCP provider UI exposed Project/Global scope
+and individual tool checkboxes even though `mcp_server_start` received only port
+and `allowWrites` and Rust constructed the full static tool router.
 
-Until fixed, disable/remove the scope and tool controls and describe the actual
-loopback endpoint plus its real write gate. The complete fix is a frozen backend
-policy that filters `list_tools`, `call_tool`, and resource reads and returns
-the effective policy to the UI.
+The scope and individual-tool controls are now hidden. The real, enforced
+`allowWrites` boundary remains visible. A future frozen backend policy may
+reintroduce narrower controls only when their effective policy is observable.
 
-### P0 - password SSH configuration cannot save a password
+### Source resolved 2026-08-01 - SSH password lifecycle
 
-The Server form offers Password auth but has no password field. Rust can read or
-check an SSH keyring value, but no active command writes/deletes one. Users are
-told to re-save a server even though Settings cannot save the secret.
+The audit found that the Server form offered Password auth without a writable
+secret lifecycle even though Rust could read/check an existing keyring value.
 
-Either hide Password auth or implement secure set/delete commands, a secret
-field with stored state, and a Test action that verifies host key, auth, and
-base path. Never persist the password in frontend state or the server DTO.
+Settings now provides secure set/delete commands, an ephemeral secret field,
+compensating rollback across record/keyring writes, and a Test action covering
+host key, auth, and base path. The password never enters frontend persistence,
+the server DTO, or logs. Packaged OS-keyring and live pinned-host proof remain.
 
-### P0 - AI Provider Routing is unconsumed
+### Resolved 2026-07-31 - AI Provider Routing is consumed
 
-The routing tab says tasks auto-fill from its defaults, but its resolver has no
-production call site. It also selects CLI agent configs rather than the eight
-API provider rows.
+`d8fb78e` routed auxiliary AI work through the configured provider policy, and
+the launch-routing seam consumes the same task defaults. The card is no longer
+a placebo. Future launch review should continue to show the resolved
+agent/model and source; do not regress to a hidden hardcoded provider.
 
-Remove it until consumed, or wire it end to end and rename it **Task Role
-Defaults**. Launch review must show the resolved agent/model and source.
+### Resolved 2026-08-01 - unused Agent setting hidden
 
-### P1 - one Agent setting remains placebo
-
-Default launch location is now consumed by the first-class Agents launcher.
-**Start right rail collapsed** still persists but has no production consumer;
+Default launch location is consumed by the first-class Agents launcher. The
+audit found that **Start right rail collapsed** had no production consumer;
 the Inspector owns its collapsed state separately.
 
-Remove or wire the rail setting. Surface real hidden preferences such as
-transcript density and worktree cleanup instead.
+The unused rail setting is hidden. Future preferences such as transcript density
+and worktree cleanup still require real runtime consumers before exposure.
 
 ### P1 - MCP defaults are unsafe when names collide across scopes
 
@@ -427,14 +428,15 @@ Workspace's local/SSH identity directly.
 anchor. Explicit links win over the default section, and legacy PacketCode
 targets normalize into the new CLI Clients subsection.
 
-### P1 - Flight settings can say Saved before persistence succeeds
+### Resolved 2026-08-01 - authoritative Flight settings persistence
 
-Orchestration settings update memory, fire an unawaited backend merge/write, and
-swallow errors. The card immediately displays Saved. Trailer changes can also
-create overlapping read/merge/write operations.
+The audit found that orchestration settings updated memory, fired an unawaited
+backend merge/write, swallowed errors, and immediately displayed Saved. Trailer
+changes could also create overlapping read/merge/write operations.
 
-Make saves awaitable, revisioned, and error-visible. YOLO policy is a safety
-boundary and cannot be best-effort UI state.
+Saves are now awaited, serialized, revision-fenced, error-visible, and rolled
+back to the last backend-confirmed state. Rapid trailer edits are covered by
+regression tests.
 
 ## Other important Settings corrections
 

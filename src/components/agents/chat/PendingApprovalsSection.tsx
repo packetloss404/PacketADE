@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { PendingApprovalsRollup } from "../PendingApprovalsRollup";
 import { PermissionPrompt } from "../PermissionPrompt";
-import { CancelPendingButton } from "./CancelPendingButton";
 import { useAppStore } from "@/stores/appStore";
 import type {
   AgentConversation,
@@ -31,7 +30,6 @@ interface PendingApprovalsSectionProps {
   conversationId: string;
   pendingPermissions: PendingPermission[];
   respondPermission: ApprovalStore["respondPermission"];
-  cancelPendingTools: ApprovalStore["cancelPendingTools"];
   appendAllowedToolPattern: TaskStore["appendAllowedToolPattern"];
   /**
    * Y/N focus gate (P3-S1). Undefined → no pane context (standalone
@@ -48,7 +46,6 @@ export function PendingApprovalsSection({
   conversationId,
   pendingPermissions,
   respondPermission,
-  cancelPendingTools,
   appendAllowedToolPattern,
   keyboardScopeActive,
 }: PendingApprovalsSectionProps) {
@@ -167,10 +164,6 @@ export function PendingApprovalsSection({
               · Y allow · N deny (top prompt: {pendingPermissions[0]?.name})
             </span>
           </button>
-          <CancelPendingButton
-            pendingCount={totalCount}
-            onCancel={() => void cancelPendingTools(conversationId)}
-          />
         </div>
       </div>
     );
@@ -202,7 +195,6 @@ export function PendingApprovalsSection({
         pendingPermissions={pendingPermissions}
         onAllowAllPermissions={allowAllPermissions}
         onDenyAllPermissions={denyAllPermissions}
-        onCancelAllPending={() => void cancelPendingTools(conversationId)}
       />
       {pendingPermissions.map((item, idx) => (
         <PermissionPrompt

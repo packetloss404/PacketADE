@@ -115,7 +115,7 @@ describe("WorkspacePane tile header", () => {
     expect(name.className).not.toContain("text-accent-amber");
   });
 
-  it("overflow menu offers Restart session and Close pane; Close pane removes the pane from workspaceStore", () => {
+  it("confirms before Close pane stops a live PTY and removes the pane", () => {
     const workspace = useWorkspaceStore.getState().workspaces[0];
     const removePaneSpy = vi.spyOn(useWorkspaceStore.getState(), "removePane");
 
@@ -125,6 +125,22 @@ describe("WorkspacePane tile header", () => {
     expect(screen.getByText("Restart session")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Close pane"));
+    expect(screen.getByText("Close terminal pane?")).toBeInTheDocument();
+    expect(
+      screen.getByText("Any live PTY and CLI process in this pane will be stopped."),
+    ).toBeInTheDocument();
+    expect(removePaneSpy).not.toHaveBeenCalled();
+    expect(currentHeaderState.onKill).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(screen.queryByText("Close terminal pane?")).not.toBeInTheDocument();
+    expect(removePaneSpy).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTitle("More"));
+    fireEvent.click(screen.getByText("Close pane"));
+    fireEvent.click(screen.getByRole("button", { name: "Close pane" }));
+
+    expect(currentHeaderState.onKill).toHaveBeenCalledTimes(1);
     expect(removePaneSpy).toHaveBeenCalledWith(workspace.id, "pane-codex");
   });
 });

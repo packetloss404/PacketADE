@@ -1,12 +1,14 @@
 # PacketADE — State of the ADE — 2026-07
 
 <!--
-AUDIENCE: coding agents. This file is the machine-readable edition and the
-source of truth. The human edition is state-of-the-ade-2026-07-30.pdf and
-carries identical content. The former HTML edition was retired 2026-07-30.
+AUDIENCE: coding agents. This file is the machine-readable edition. Section 0
+is the current source of truth; Sections 1-12 preserve the detailed 2026-07-30
+audit as dated evidence and their original status tokens are not a live task
+register. The human edition is state-of-the-ade-2026-07-30.pdf and carries
+identical content. The former HTML edition was retired 2026-07-30.
 -->
 
-**Document type:** living record · **Report date:** 2026-07-30 · **Last status pass:** 2026-07-31 after `422ab94`
+**Document type:** living record · **Report date:** 2026-07-30 · **Last status pass:** 2026-08-01 against `148375d` plus the integrated working tree
 **Human edition:** [`state-of-the-ade-2026-07-30.pdf`](./state-of-the-ade-2026-07-30.pdf) — same content, paginated, 5 embedded screenshots.
 **Screenshots:** referenced by relative path under [`visual-audit-2026-07-30/`](./visual-audit-2026-07-30/); regenerate with `e2e/visual-audit.spec.ts`.
 
@@ -14,27 +16,65 @@ carries identical content. The former HTML edition was retired 2026-07-30.
 
 Read this section first. Everything below it is evidence.
 
+### 0.0 Current authority — 2026-08-01
+
+This section supersedes stale status language in the dated deep-dive below.
+Use [`../../backlog.md`](../../backlog.md) for the item-level task register,
+[`../../HANDOFF.md`](../../HANDOFF.md) for session restart, and
+[`../../dev/proof-audit-2026-08-01.md`](../../dev/proof-audit-2026-08-01.md)
+for exact proof and external-gate disposition.
+
+The current product state is:
+
+- Workspace/Agents restructuring and the six-group Settings information
+  architecture are complete. Workspaces are CLI/PacketCode-first; GUI agents
+  own a first-class same-window surface; new Workspace conversation attachment
+  is retired while saved-pane compatibility remains.
+- The 2026-08-01 high-priority source loop is complete and independently
+  reviewed: destructive terminal-pane close now confirms the live-PTY effect;
+  Anthropic edit approvals carry exact `toolUseId` correlation; Agent Stop and
+  Side Chat wait for request-owned cancellation acknowledgement; Monitor-open
+  failures are visible; and cancel-pending chrome has one owner.
+- Local/SSH Workspace, repository, and Git-host authority are now explicit.
+  Host/repository switches invalidate stale reads, detail, caches, and
+  mutations; activation is serialized/latest-wins; and GitHub-only actions are
+  capability-gated for Gitea/Forgejo.
+- The Settings P1 authority/security pass is source-complete: autonomy writes
+  are awaited and revision-fenced, unenforced controls are hidden, and SSH
+  passwords remain OS-keyring-only with compensating rollback and truthful
+  test/error state.
+- Flight Deck Option B, PacketAgent W9 consumer source, PacketCode integration,
+  Project Memory, local-first MCP Hub, Dictation hardening, trust/provenance,
+  Issue-to-Flight mirroring, and read-only Monitor are implemented at the
+  source level. Their remaining gates are real/package/environment proof, not
+  permission to claim a release.
+- Remote Agents is preserved but paused. Do not begin implementation until the
+  owner resolves authentication provider, E2EE timing, and code/repository
+  location.
+- No 2026-08-01 commit, tag, or installer was created by the source/proof loop.
+  Existing v0.10.2 bundles predate this working tree.
+
 ### 0.1 State vector
 
 | Key | Value |
 |---|---|
 | `report_date` | 2026-07-30 |
 | `repo` | `D:\projects\PacketADE` |
-| `main_head` | `422ab94` (report first published against `549edb1`) |
+| `main_head` | `148375d` plus the integrated 2026-08-01 working tree (not commit-bound) |
 | `app_version` | 0.10.2 · sidecar protocol v11 |
 | `chat_providers` | **7** (`api-openai-codex` dropped in `422ab94`; was 8) |
 | `loc_reviewed` | ~177k (frontend + Rust + sidecar) |
 | `gate_pnpm_build` | green |
 | `gate_lint` | 0 errors |
-| `gate_vitest` | 1820 / 1820 across 218 files |
-| `gate_cargo_test` | 595 / 595 |
+| `gate_vitest` | 1857 / 1857 across 225 files |
+| `gate_high_priority_focus` | 108 / 108 across 15 files |
+| `gate_sidecar_check` | green; live Anthropic round trip remains opt-in/external |
+| `gate_cargo_test` | 600 passed / 0 failed / 3 intentionally ignored or manual |
 | `gate_ci` | **none — there is no CI** |
-| `findings_domain` (§2) | 92 (`F-2.x-NN`) — 87 `STATUS: OPEN`, 5 `STATUS: RESOLVED` |
-| `findings_ux_ledger` (§3) | 43 (`UX-NN`) |
-| `findings_visual` (§4) | per-screenshot, 14 screens |
-| `findings_flows` (§5) | 65 (`W-NN`, `P-NN`, `A-NN`, `D-NN`, `B-NN`) |
-| `audit_ledger` (§11) | 218 items swept across 64 docs · 182 still valid · 15 critical |
-| `owner_decisions` | D1–D5 — all decided **and** implemented 2026-07-30 |
+| `historical_findings` (§2-§5) | 2026-07-30 baseline; original status tokens retained as evidence, not the live backlog |
+| `historical_audit_ledger` (§11) | 218 items swept across 64 docs; use §0.3 and `backlog.md` for current disposition |
+| `owner_decisions` | D1-D5 and Workspace/Agents Option B decided and implemented; Undo remains a separate owner decision |
+| `release_readiness` | 0 failures / 6 warnings; signing, notarization, updater signing/config, and `latest.json` remain absent |
 
 ### 0.2 ID scheme and grep recipes
 
@@ -45,9 +85,13 @@ Read this section first. Everything below it is evidence.
 | `D<n>` | owner decision (D1–D5) | §3.1 |
 | `W-`, `P-`, `A-`, `D-`, `B-` `<nn>` | creation / panes / agents / deletion / buttons flow finding | §5.3 |
 
-- Every finding block or row carries a status token. `STATUS: OPEN` or a `[Resolved]` / `[Partly resolved]` badge followed by the resolving commit sha.
-- `grep -n "STATUS: OPEN" state-of-the-ade-2026-07-30.md` → every unresolved §2 finding.
-- `grep -n "\[Resolved\]" state-of-the-ade-2026-07-30.md` → every closed flow finding with its sha.
+- Every historical finding block or row carries the status token it had during
+  the 2026-07-30/31 audit. Those tokens are evidence, not the live backlog.
+- `grep -n "STATUS: OPEN" state-of-the-ade-2026-07-30.md` finds historically
+  open §2 findings that must be reconciled through §0.3 and `backlog.md` before
+  acting.
+- `grep -n "\[Resolved\]" state-of-the-ade-2026-07-30.md` finds flow findings
+  already closed during the original audit pass.
 - `grep -n "NEW 2026-07-30" state-of-the-ade-2026-07-30.md` → findings discovered after first publication.
 - `grep -n "NEW 2026-07-31" state-of-the-ade-2026-07-30.md` → findings opened by the 2026-07-31 loops.
 - Resolving commits referenced by this document, in order: `d5cfe8b`, `a8abf54`, `531fbec`, `2898946`, `86cfac3`, `c3906c7`, `8cc2217`, `7cad08b`, `073cbf8`, `35dcb54`, `d8fb78e`, `422ab94`.
@@ -62,28 +106,34 @@ Read this section first. Everything below it is evidence.
 
 ### 0.3 Open items — the actionable list
 
-Ordered by what blocks a decision first, then by blast radius. Each row names where the evidence lives.
+Ordered by decision dependency and release impact. Source-complete items that
+still need real/package proof remain here so they cannot be mistaken for fully
+closed releases.
 
-| # | Open item | Why it is still open | Ref |
+| # | Current item | Why it is still open | Authority |
 |---|---|---|---|
-| 1 | **No undo for any destructive action.** Confirmation is the only safety net. | Needs an owner design decision before code: **(a)** soft-delete + restore (every store gains a tombstone and a restore path; durable, touches persistence) or **(b)** time-boxed undo toast (deferred commit for N seconds; cheap, no persistence change, no recovery after the window). Deliberately deferred in `7cad08b` — it touches every store. | UX-25 · D-12 · F-2.6-06 |
-| 2 | **`WorkspacePane` terminal tile "Close pane" kills the PTY with no confirmation.** RE-CONFIRMED OPEN 2026-07-30 after `7cad08b`. | The chrome de-duplication loop rebuilt the tile menus around this control without adding a confirm. Already catalogued — the equivalent kill through Fleet delete carries a full typed confirm modal. | §5.3 P-04 · D-09 |
-| 3 | ~~**Codex sessions default to `--dangerously-bypass-approvals-and-sandbox`.**~~ **CLOSED `422ab94`** — the `api-openai-codex` provider and its `openai-codex.ts` sidecar were deleted, so no API conversation can reach the flag. What survives is the *PTY* workspace pane's per-agent `BYPASS_FLAGS` map, which is opt-in per workspace (`workspace.bypassPermissions`, default `false`) and never a default. | Residual tracked as F-2.5-12. | F-2.5-01 · F-2.5-12 |
-| 4 | **No CI, unsigned installers, no auto-updater, no crash telemetry.** | The quality ladder is discipline-only at 177k LOC. | §2.7 |
-| 5 | **`src/components/views/IssueDetailView.tsx` is dead code.** RE-CONFIRMED OPEN 2026-07-30 after `7cad08b`. | Unmounted near-duplicate superseded by `IssueDetail`; only self-references. The issue-deletion work in `7cad08b` went into `IssueDetail`, leaving this file untouched and still unreachable. Delete-or-keep decision. | §5.3 B-11 · D-06 |
-| 6 | **Duplicate `CancelPendingButton`** rendered twice at once in `PendingApprovalsSection` and the composer row, plus a third count badge. | Same action, two live controls, one pane. | §5.3 A-02 |
-| 7 | **Four-controls-one-action: remaining legs.** `Ctrl+N` and the `/new` slash command still reach conversation creation by separate routes with different semantics. | The two sidebar legs were de-duplicated (`c3906c7` for `FleetSidebar`, `7cad08b` for `AgentSidebar`); the keyboard and slash-command legs were not. | §5.3 A-01 · A-05 · A-07 · A-12 |
-| 8 | **No Rust test for `remove_remote_integration_worktree`.** | Needs a live SSH host — the same gap that already applies to every remote worktree function. | §2.4 |
-| 9 | **Two pre-existing `cargo fmt` drifts** in `src-tauri/src/commands/agent_sidecar/supervisor.rs` and `src-tauri/src/commands/mod.rs`. | Predate this loop; `cargo fmt` is not gated. | §2.7 |
-| 10 | **No "don't ask again" preference for the app-close confirmation.** | Deliberate: no preference surface exists for it yet. Tracked in `backlog.md`; no finding row of its own. | backlog |
-| 11 | **Six-spellings label sweep** across `WelcomeScreen`, `ProjectInfoCard`, `OnboardingPane`. | Cosmetic residue of the creation-flow rename. | §5.3 W-09 · B-13 |
-| 12 | **`useServerConnection` and `ConnectionProgress` are unreferenced.** | Kept deliberately; needs a keep-or-delete decision. | §5.3 |
-| 13 | **MS4 and the two unaddressed MS1 items.** Responsive/accessibility semantics, Gitea capability + repo-switch tests, packaged local/SSH and 800px→ultrawide visual matrix; Running Agents / Side Chat cancellation acknowledgment; clearing repo/PR detail across repo and host switches. | Scoped out of every loop so far. | §3.4 |
-| 14 | **Agent profiles with an explicit `allowedTools` list cannot use `edit_file`.** NEW 2026-07-31. | `edit_file` shipped in `422ab94` as a new in-process tool. Profiles that pin a tool list (`profileStore.ts` ships one at `["read_file", "list_directory", "grep"]`, plus `SCOUT_ALLOWED_TOOLS`) are allow-lists, so the new name is absent until each list is edited. Silent: the profile just never edits. | F-2.1-14 |
-| 15 | **A failed edit can render a phantom diff row.** Pre-existing, made visible by `edit_file`'s ambiguity errors. NEW 2026-07-31. | `ToolCallRenderer.tsx:39` routes edit tool calls into the diff layer when `status === "done" **or** "error"`, and the frontend renders a first-match preview the backend explicitly refused to write. Affects Claude Code's `Edit` too. | F-2.1-15 |
-| 16 | **The Ollama model picker still offers tool-incapable models for agent tiles.** NEW 2026-07-31. | `422ab94` added a backend `/api/show` capability pre-flight that fails a tool-carrying request in one clear line, but `/api/tags` — what the picker lists from — returns no capability data. Gating the picker needs a per-model `/api/show` probe. The remaining LM1 item. | F-2.3-15 |
-| 17 | **WI-5 "Switch provider" is not implemented for retired-row conversations.** NEW 2026-07-31. P2. | Conversations on the dropped `api-openai-codex` id load read-only and are told what to use instead — the shipped minimum. There is no action that moves such a conversation onto `api-openai-agents`. | F-2.3-16 · `dev/oauth-removal-plan.md` WI-5 |
-| 18 | **`flight_cost.rs` still strips the `api-` prefix — deliberately.** NEW 2026-07-31, recorded so it is not "fixed". | The flight-launch P1 in `422ab94` removed prefix-stripping from every *routing* site. `flight_cost.rs`'s strip is a cost-attribution **discriminator**, not a routable provider id, and must keep matching historical rows. | F-2.4-15 |
+| 1 | **Remote Agents Sprint 0 is paused.** | Owner must choose authentication provider, E2EE timing, and code/repository location before implementation. | `dev/remoteagents/09-open-decisions.md` |
+| 2 | **Distribution trust: CI, signing, notarization, updater.** | Release readiness is 0 failures / 6 warnings, but installers remain unsigned, updater configuration/signing and `latest.json` are absent, and no hosted CI gate exists. | `ROADMAP.md` R2 · release runbooks |
+| 3 | **Current-package proof matrix.** | The 2026-08-01 source gates are green, but no package was built from the working tree. Existing v0.10.2 bundles predate it. | `dev/proof-audit-2026-08-01.md` |
+| 4 | **Global Undo needs an owner design decision.** | Choose durable soft-delete/restore or a time-boxed undo toast; confirmations remain the current safety net. | UX-25 · D-12 · `backlog.md` |
+| 5 | **Flight supervision release-like proof.** | RG8/CG9/CI9/AP9 still require packaged local and disposable pinned-SSH matrices. | `dev/bridgemind/*-loop.md` |
+| 6 | **PacketAgent real W9 interoperability.** | Consumer source/fixtures pass; closure needs a separately running URL/token/workspace, close/relaunch durability, and remaining PacketAgent product slices. | `dev/bridgemind/packetagent-handoff-loop.md` |
+| 7 | **PacketCode published-release proof.** | Sibling source and doctor pass; signed multi-platform artifacts, clean-machine install/upgrade/rollback, packaged PacketADE launch, and PacketAgent compatibility remain. | `dev/bridgemind/packetcode-bridgecode-loop.md` |
+| 8 | **Settings and SSH external proof.** | P1 source is complete; run packaged OS-keyring behavior and live pinned-host password authentication. Stable scoped MCP IDs, active-project identity, profile validation, and consolidated diagnostics remain bounded P2 work. | `dev/workspace-agent-settings-decision-2026-07-29.md` |
+| 9 | **GitHub/Gitea packaged authority proof.** | Source guards and focused tests pass. Run real repository/PR transitions plus a slow-write/host-switch overlap because Rust selects the process-global host at command start. | `backlog.md` Git-host section |
+| 10 | **Issue-to-Flight mirroring proof.** | Source planner/store integration passes; packaged create/adopt/update/pull/conflict/restart/revoked-auth matrices need disposable GitHub and Gitea repositories. | `dev/issue-flight-mirror-design.md` |
+| 11 | **Memory, MCP, and provenance environment proof.** | Source implementations pass; real editor watch storms, configured local/pinned-SSH MCP servers, provider parity, crash/reload/version-skew, YOLO, and packaged visual checks remain. | BridgeMind loop ledgers |
+| 12 | **Dictation hardware/platform proof.** | Source hardening is complete, but this host has zero active capture endpoints; Windows device-loss/default/USB/Bluetooth and packaged macOS/Linux matrices remain. | `dev/bridgemind/dictation-repair-hardening-loop.md` |
+| 13 | **Monitor packaged/multi-display proof.** | Source route/capability tests pass and launch errors are visible; packaged lifecycle, stale-state, accessibility, and WebView-to-Rust denial proof remain. | `dev/send-to-monitor-plan.md` |
+| 14 | **Main-shell MS4 and bounded cleanup.** | Responsive/accessibility and 800px-to-ultrawide packaged review remain, plus naming polish, Ctrl+N versus `/new` semantics, and explicit keep/delete decisions for dead or unreferenced code. | `dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md` |
+| 15 | **Local-model and retired-provider follow-up.** | Gate Ollama picker rows by tool capability and decide whether to add WI-5 provider migration for conversations on the retired Codex chat-provider id. | `dev/local-model-routing.md` · `dev/oauth-removal-plan.md` |
+
+Closed by the 2026-08-01 source loop and no longer open: unconfirmed terminal-
+pane kill, duplicate cancel-pending controls, Anthropic edit correlation, Agent
+Stop acknowledgement, Side Chat cancellation, Monitor failure visibility,
+repo/host-context invalidation, unenforced Settings controls, authoritative
+autonomy persistence, and writable SSH-password lifecycle. Exact proof is in
+`dev/proof-audit-2026-08-01.md`.
 
 ### 0.4 Resolution timeline
 
@@ -102,10 +152,21 @@ Ordered by what blocks a decision first, then by blast radius. Each row names wh
 | `35dcb54` | 2026-07-31 | **Owner decision:** the cost *reporting* surface removed (`CostDashboardView`, `LiveSpendChip`, Settings Usage Analytics card, per-conversation dollars, `/usage`). Guardrails kept as a safety control — caps rehomed to `BudgetGuardrailsCard`, the poll to `startCostGuardrailMonitor()` |
 | `d8fb78e` | 2026-07-31 | CE6 prompt caching + its proof instruments · CE9 OpenAI-compat `cached_tokens` / `prompt_cache_key` · **WI-1** auxiliary routing off subscription OAuth (`core/aux_llm.rs`, `forward_start` deleted) — closes F-2.1-05 · historical repricing (`core/reprice.rs`, $158.88 → $52.96) · MiniMax host + `reasoning_details` round-trip |
 | `422ab94` | 2026-07-31 | Sidecar re-authenticated on API keys (`api-claude-oauth` kept, relabelled; `api-openai-codex` dropped) — closes F-2.5-01 · CE14 targeted `edit_file` · LM1 Ollama native `/api/chat` with `num_ctx` + `keep_alive` · Flight-launch P1 provider-id mapping |
+| working tree on `148375d` | 2026-08-01 | Terminal-pane confirmation; exact Anthropic edit correlation; acknowledgement-bound Agent Stop and Side Chat; Monitor error visibility; cancel-pending de-duplication; local/SSH/repository/Git-host authority guards; truthful Settings saves; hidden unenforced controls; OS-keyring SSH password lifecycle; proof and documentation reconciliation. Not commit- or package-bound. |
 
 ---
 
 ## 1. Executive Summary
+
+> **2026-08-01 status note.** The assessment below explains the original audit
+> and is retained as evidence. Its forward-looking claims are superseded by
+> §0.0-§0.4. In particular, the terminal-pane confirmation, Anthropic edit-
+> approval correlation, acknowledgement-bound Agent Stop/Side Chat behavior,
+> Git/repository authority corrections, Settings P1 authority/security work,
+> and their source tests are now complete. The present bottleneck is no longer
+> those source defects; it is commit/package-bound and real-environment proof,
+> distribution trust, the Undo decision, bounded MS4/P2 cleanup, and the three
+> Remote Agents Sprint-0 decisions.
 
 At its six-month midpoint, PacketADE is a real product, not a prototype. The engineering quality in its hardest subsystems — atomic state persistence with corruption recovery, a concurrency-correct agent turn lifecycle, battle-hardened xterm/PTY handling, a versioned sidecar protocol with restart supervision, and above-average SSH security — is well beyond what solo desktop projects usually achieve. Its breadth is its moat: a seven-provider chat matrix (eight until `422ab94`) mixing hosted API keys with local models, SSH-remote execution for both terminals and agent tools, worktree-isolated parallel Flights with cost rollup, a memory layer, an MCP hub, and Windows-native support. No competitor bundles all of this.
 
@@ -145,7 +206,7 @@ The review found the weaknesses cluster in three bands, none of them structural 
 > - **No Flight recovery across restarts:** a crash mid-flight leaves zombie attempts spinning forever, and failed attempts destroy their uncommitted work. Rated critical by the flights review; still open.
 > - **The quality ladder is discipline-only:** at 177k LOC with no CI, one skipped `pnpm check` ships regressions silently. The bug fleet's findings — clustered in untested lifecycle seams — are direct evidence.
 > - **Distribution is stuck:** unsigned, updater-less releases mean every update is a manual 78 MB SmartScreen-flagged install. This caps any user base at approximately one.
-> - **Approving a gated write on the flagship Claude subscription provider hangs the turn forever** (the Anthropic `pending_edit` event omits the required `toolUseId`) — a one-line fix identified by the sidecar review but outside the 16-bug fix scope; still open.
+> - ~~**Approving a gated write on the flagship Claude Agent SDK provider hangs the turn forever** because the Anthropic `pending_edit` event omitted the required `toolUseId`.~~ **Source-closed 2026-08-01:** the protocol requires the ID, the provider forwards the exact SDK value and fails closed when absent, and a dedicated smoke covers the correlation. Live approval remains external proof.
 >
 
 #### What was fixed this session
@@ -392,7 +453,7 @@ The weaknesses are architectural: everything lives in one `state.v1.json` fully 
 
 The most architecturally interesting part of PacketADE: a versioned NDJSON stdio protocol (v11) connecting a Rust supervisor to a Node sidecar hosting **two** real providers — Claude Agent SDK and OpenAI Agents SDK, both on API keys since `422ab94` — plus five in-process Rust providers sharing an OpenAI-compat core. *(Codex CLI exec was the third until `422ab94` deleted `openai-codex.ts`, `codex-mcp.ts`, `mcp-trust-proxy.ts`, and three smoke gates; findings scoped to that file are stamped below.)* Fundamentals are strong: one event contract keeps the frontend transport-agnostic, the protocol file carries an inline changelog, restart supervision is rate-limited with persisted lifetime stats, and the MCPH4 frozen-trust-snapshot design (immutable per-session authority, denial floors, a Codex trust proxy) is genuinely well thought out.
 
-The two systemic weaknesses were: (1) the protocol conflates advisory and terminal errors, and the supervisor treated every error as session death — bricking live conversations on routine failures (fixed this session); and (2) cancel/edit-approval lifecycle correctness in the Anthropic provider — `cancel()` aborting the session-lifetime query (fixed this session) and `pending_edit` omitting the mandatory `toolUseId` so gated write approvals can never resolve (**still open**). The 14 smoke gates are better than typical glue coverage but run against the echo provider — exactly the class of bug that shipped has no coverage.
+The two systemic weaknesses were: (1) the protocol conflated advisory and terminal errors, and the supervisor treated every error as session death — bricking live conversations on routine failures (fixed in the original audit); and (2) cancel/edit-approval lifecycle correctness in the Anthropic provider — `cancel()` aborting the session-lifetime query (fixed in the original audit) and `pending_edit` omitting the mandatory `toolUseId`. **The second item is source-closed in the 2026-08-01 working tree** with exact-ID forwarding, fail-closed behavior, and a dedicated deterministic smoke. A live provider approval remains external proof.
 
 #### Strengths
 
@@ -404,11 +465,11 @@ The two systemic weaknesses were: (1) the protocol conflates advisory and termin
 
 #### Problems (ranked)
 
-**[F-2.3-01] Critical — Anthropic pending_edit omits toolUseId — gated write approvals can never resolve**
+**[F-2.3-01] Critical · SOURCE RESOLVED 2026-08-01 — Anthropic pending_edit correlation**
 
 - FILE: `agent-sidecar/src/providers/anthropic.ts`
-- STATUS: OPEN
-- DETAIL: The edit resolver is parked under the tool-use id, but the emitted event carries no id; the frontend responds with `""`, the lookup misses, and the SDK stalls on the write tool forever. v9 made the id mandatory for exactly this; the Anthropic emitter was never updated. One-line fix; the echo-only smoke test is why it was not caught.
+- STATUS: SOURCE RESOLVED in the working tree on `148375d`; live-provider proof open
+- DETAIL: The audit found that the edit resolver was parked under the tool-use id while the emitted event carried no id. The protocol now requires a non-empty `toolUseId`, the Anthropic emitter forwards the exact SDK ID, absent correlation fails closed and visibly, and `anthropic-edit-correlation-smoke.mjs` covers the round trip.
 
 **[F-2.3-02] High — Supervisor treats every sidecar error event as session-terminal, bricking live sessions on advisory errors**
 
@@ -503,7 +564,7 @@ The two systemic weaknesses were: (1) the protocol conflates advisory and termin
 #### Recommendations
 
 - Add a terminal/advisory distinction on the wire and a regression test that ownership survives advisory errors (the handler fix shipped; the protocol flag should follow).
-- Ship `toolUseId` on Anthropic `pending_edit` (one line) and a `restart_sidecar` command with a status-chip action.
+- `toolUseId` correlation is source-complete as of 2026-08-01. The separate `restart_sidecar` command/status-chip action remains follow-up.
 - Real-provider integration smoke gates behind env-gated credentials: edit-approval round-trip, cancel-then-continue, error-then-send.
 - Adopt a real test runner (node:test) for the sidecar; generate Rust protocol structs from protocol.ts (or shared JSON Schema) to end hand-duplication drift.
 - Word-boundary MCP trust heuristics; enforce path floors against real arguments in the openai-agents execute path.
@@ -912,11 +973,17 @@ These were the highest-leverage pending calls in the product — requested on 20
 
 [Implemented 2026-07-30] **All five decisions were made — and implemented — the same day as this expansion.** The planned sequence **D1 → D3 → D4 → D2+D5** was executed exactly, in four commits (`a8abf54`, `531fbec`, `2898946`, `86cfac3`), each gated green, with the test suite growing from 1,260 to 1,363 tests across 166 → 179 files. The findings each decision resolves are now closed; full record with implementation discoveries in §10.5.
 
-**Adjacent but not one of the five:** the settings-decision doc's Decision 6 (remove/disable the placebo settings — UX-05/06/07/19) was **approved in principle on 07-29 but never executed**; the placebo controls were verified still live on 07-30. It needs execution, not a decision. **Update 2026-07-31:** UX-07 was closed in `d8fb78e` — not by removal but by giving the card real authority over auxiliary-task routing, which the OAuth compliance work required anyway. UX-05, UX-06 and UX-19 remain unexecuted.
+**Adjacent but not one of the five:** the settings-decision doc's Decision 6 (remove/disable the placebo settings — UX-05/06/07/19) was approved on 07-29. **Current disposition:** UX-07 gained real runtime authority in `d8fb78e`; the 2026-08-01 working tree hides the unenforced UX-05 controls, completes the OS-keyring-only UX-06 password lifecycle, and hides the unused UX-19 rail preference. Packaged OS-keyring/live SSH proof remains open.
 
 ### 3.2 Section B — Unified Finding Table
 
 Severity is the highest claimed by any source (A29 P0→critical, P1→high, P2→medium; CR and VA as stated). Sources: **A** = 07-29 audit docs, **C** = code review, **V** = visual audit. Merged rows cite every source that found them. Rows marked [Fixed] closed on 2026-07-30 with the decision implementations; all others remain open. **Counts at reconciliation:** 43 deduped rows from ~53 raw findings · Critical 9 · High 19 · Medium 13 · Low 2 · cross-source merges 6 (UX-07, UX-13, UX-14, UX-15, UX-22, UX-24).
+
+**2026-08-01 closure overlay:** the historical rows below retain their original
+reconciliation wording. UX-05, UX-06, UX-13, UX-16, UX-17's Stop/Monitor legs,
+UX-18, UX-19, and UX-21 are now source-resolved in the working tree. The
+remaining current interpretation is in §0.3 and `backlog.md`; do not reopen
+those rows from the old `Still-valid` column.
 
 | ID | Sev | Finding | Src | Blocked by | Validity (07-30) |
 |---|---|---|---|---|---|
@@ -1140,7 +1207,7 @@ Method: code-reading against the current tree, per-flow, with a button inventory
 >
 > **`7cad08b` — cleanup holes, startup, issues, chrome.** The residue the previous two loops named as still open was closed except where it needs an owner decision. **Worktree cleanup stopped lying:** `cancel_flight_attempt` and `mark_attempt_status` now return a `WorktreeCleanupOutcome` instead of a `warn!`, and failures are data, not `Err` — the attempt is still cancelled while the existing `FlightCleanupFailure[]` toast finally covers them. `mark_attempt_status`'s SSH arm, found to be doing nothing but logging, now resolves the saved `ServerConfig` with fingerprint pinning like cancel does. **Cooperative integration worktrees are no longer abandoned:** new `cleanup_flight_integration_worktree` removes the `.pkt-flight-integrations/<flightId>` tree local or remote from the flight-delete fan-out, with its dirty state probed and named in the confirm *separately* from the attempt counts; the integration branch is removed with safe `git branch -d`, never `-D`, because it can be the only ref to merged-but-unlanded attempt work — a refusal is reported in `branchRetained` and the branch survives. **Startup restores the last view** (see UX-09, F-2.1-06). **Issues and comments are deletable** behind `ConfirmDeleteIssueModal`, which names the flight it unlinks, the workspace session that keeps running, and the counts of comments, acceptance criteria, and dependency links that go with it; a real linkage bug was fixed on the way — the flight unlink previously fired only when the deleted issue itself carried a `flightId`, so a flight holding a drifted id kept it forever. **Chrome de-duplicated:** `AgentSidebar` dropped its header "+", and `ConversationTile`'s **three** kebabs (tile chrome, a "More controls" toggle, and the overflow menu's own trigger) merged into one menu with every action preserved and the lazy-mount economy intact; the close (X) tooltip was lying because the same component mounts in two places where closing means different things, so labels are now per-mount-site and state the real consequence. No confirm was added to the tile close — closing destroys nothing and is one click to reverse.
 >
-> **Still open from this chapter:** **no undo anywhere** — blocked on an owner design decision (soft-delete + restore vs a time-boxed undo toast; see §0.3 item 1), deliberately deferred because it touches every store. `WorkspacePane`'s terminal-tile "Close pane" still **kills a live PTY with no confirmation** (P-04, D-09) — re-confirmed open after the chrome loop rebuilt the menu around it. `IssueDetailView.tsx` is still dead code (B-11). The duplicate `CancelPendingButton` (A-02) and the remaining legs of four-controls-one-action — `Ctrl+N` and the `/new` slash command (A-01, A-05, A-07, A-12) — are untouched. Plus the six-spellings label sweep (W-09, B-13) and the keep-or-delete decision on `useServerConnection` / `ConnectionProgress`. Per-finding status is stamped in the tables below.
+> **Current residue from this chapter:** **no undo anywhere** — blocked on an owner design decision (soft-delete + restore vs a time-boxed undo toast; see §0.3 item 4). `IssueDetailView.tsx` remains a keep/delete candidate (B-11); `Ctrl+N` and `/new` retain different creation semantics; naming polish and the `useServerConnection` / `ConnectionProgress` keep-or-delete decision remain. The 2026-08-01 working tree closes the live-PTY confirmation and duplicate `CancelPendingButton` findings; the dated tables below retain the original audit evidence.
 >
 
 ### 5.1 Headline findings
@@ -2235,16 +2302,37 @@ The sweep below was taken before `c3906c7`, `8cc2217`, and `7cad08b`. These rows
 
 ## 12. Recommended Next 90 Days
 
+### 12.0 Current order — status pass 2026-08-01
+
+1. Commit the reviewed working tree, build a fresh package from that exact
+   revision, and bind proof to its version and hashes.
+2. Run the packaged/local matrices that need no product decision: terminal-
+   pane close, Agent Stop, Side Chat, Monitor launch failure, Settings save
+   failure, OS-keyring lifecycle, local Git-host switching, and responsive/
+   accessibility review.
+3. Designate disposable GitHub, Gitea, and pinned SSH fixtures, then close the
+   external authority, Issue-to-Flight, Flight supervision, MCP/provider,
+   provenance, and real-host password gates without touching real user data.
+4. Acquire signing/notarization credentials, wire the updater and `latest.json`,
+   and add hosted CI for the already-green local quality ladder.
+5. Decide Undo, then complete the bounded Settings/MS4/local-model cleanup in
+   §0.3 instead of reopening already-closed source work.
+6. Make the three Remote Agents Sprint-0 decisions. Only then start the relay,
+   PWA, and desktop feature-flag implementation.
+
+The remainder of §12 is the original 2026-07-30 recommendation narrative. It
+is preserved for rationale and sequence history; §12.0 is authoritative now.
+
 The data supports a clear order: **implement the five decided decisions (D1→D3→D4→D2+D5)**, lock in what was fixed, close the trust seams, unblock distribution, then start the frontier bets whose value compounds with time. Do not invert this — every frontier item assumes a foundation that does not silently lose work, and every week without CI risks re-breaking the 15 defects just repaired. The decisions are made and the MS waves are unblocked; every week implementation slips, 43 verified UX findings slip with it.
 
-- [Done 2026-07-30] **The five decided decisions are implemented** (D1 `a8abf54` → D3 `531fbec` → D4 `2898946` → D2+D5 `86cfac3`), taking the UX P0 quartet with them — P0-1 by D1, P0-2 and P0-3 by D2, P0-4 by D3, plus P1-5/P1-7 by D5 and P1-9 by D4. Gates green throughout; suite 1,260 → 1,363 tests (§10.5). **Still owed from this item:** execute Decision 6 — remove/disable the placebo settings already approved for removal (UX-05/06/19; **UX-07 closed 2026-07-31 in `d8fb78e`**, wired rather than removed).
+- [Done 2026-07-30] **The five decided decisions are implemented** (D1 `a8abf54` → D3 `531fbec` → D4 `2898946` → D2+D5 `86cfac3`), taking the UX P0 quartet with them — P0-1 by D1, P0-2 and P0-3 by D2, P0-4 by D3, plus P1-5/P1-7 by D5 and P1-9 by D4. Gates green throughout; suite 1,260 → 1,363 tests (§10.5). **Decision 6 is also source-complete as of 2026-08-01:** UX-05/06/19 were hidden or completed, and UX-07 was wired rather than removed.
 - **The remaining standalone quick wins** (explicitly scoped out of D1–D5, each an afternoon or less): the Ctrl+K terminal/editable-target guard plus an xterm key handler (UX-08); close-confirmation with live-session counts and honoring the persisted `selectedView` (UX-09); Escape-close opt-ins on `LaunchAsyncFlightModal` and `NewIssueForm` (UX-24) with sticky picked targets (UX-23); and the Issues-board grid fix so six columns fit or scroll rather than wrap (UX-27).
 
   **Status 2026-07-30:** all of these shipped — UX-08 and UX-09's close-confirmation half in `c3906c7`, UX-24/UX-23 and the Issues-board grid in `c3906c7`, and UX-09's persisted-view half in `7cad08b`. What remains from the quick-win bucket is the xterm custom key handler and undo (see §0.3 item 1).
 - **New — the top creation-flow fixes (§5).** Highest signal first: (a) make the instant path (Ctrl+N / Fleet "New session") honor the same contract as the modal, or route it *to* the modal — today it creates the empty-`projectPath` workspace the modal explicitly forbids; (b) de-duplicate the header-"+"-plus-footer-CTA pairs in `FleetSidebar` and `AgentSidebar` (one create control per surface); (c) add Workspace and Agent rows to the "+ New" toolbar menu and fix its tooltip, so the app's two most discoverable entry points can create the app's primary objects; (d) reserve "session" for PTY/conversation sessions and say "workspace" everywhere else (converges with D4's registry); (e) put a confirmation on live SSH-server delete and retire the dead `ServersView.tsx` that holds the only existing confirm — the review's one critical.
 - **Green the gates and commit.** Run the six verification gates (§10.3), land the session's diff, and tag it. Nothing else proceeds on an unverified base.
 - **CI first — it is the cheapest insurance in this report.** One push-triggered workflow: `pnpm lint`, `vitest run`, `cargo test`. The local-gates philosophy stays true; CI becomes the net for skipped runs. Add clippy + rustfmt in the same PR while the ladder is open.
-- **Close the four open trust items:** ~~(1) Codex "auto" → workspace-write sandbox~~ — **closed `422ab94`** by deleting the Codex provider; what is left of it is a warning chip on bypassed *PTY* panes (F-2.5-12); (2) `toolUseId` on Anthropic `pending_edit` — one line, unbricks gated writes on the flagship provider, **re-verified still open at `422ab94`**; (3) `restart_sidecar` command + chip action; (4) stash-before-remove on failed attempt worktrees. All are small, all are trust-critical.
+- **Trust-item status:** (1) Codex chat-provider auto-bypass closed in `422ab94` by removing that provider; (2) Anthropic `pending_edit` `toolUseId` correlation is source-closed in the 2026-08-01 working tree; (3) `restart_sidecar` command + chip action and (4) stash-before-remove on failed attempt worktrees remain follow-up.
 - ~~**Kill the top three daily rage-inducers:**~~ terminal-safe shortcut guards and close-confirmation with live-session counts shipped in `c3906c7`; selected-view restore shipped in `7cad08b`. **Remaining from this line:** an xterm custom key handler for the terminal-safe guard.
 - **Truth pass:** fix or hide the Prompt Library send-to-terminal. **Done since:** the routing card was wired in `d8fb78e`, and CLAUDE.md is current as of 2026-07-31 (protocol v11, the seven-row provider table, the `api-claude-oauth`-is-not-OAuth note, the removed Cost Dashboard). Still owed there: GitHub auth, worktree paths, and the dead `layoutStore` pane convention. The `protocol.ts` / `agent_sidecar/mod.rs` inline changelogs still stop at v10 (F-2.3-13).
 

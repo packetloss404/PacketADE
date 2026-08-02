@@ -34,7 +34,9 @@ Composer/store convergence.
   no active capture endpoint, so run the packaged default/USB/Bluetooth,
   44.1/48 kHz, fast-PTT, cancel, disconnect, repeated phrase, first-model-load,
   history, in-app, clipboard, and external-app matrix when a microphone is
-  connected or enabled.
+  connected or enabled. Rechecked 2026-08-01: Windows still reports zero active
+  capture endpoints; the focused store/target source tests pass. See
+  [`dev/proof-audit-2026-08-01.md`](./dev/proof-audit-2026-08-01.md).
 - **P2 — packaged cross-platform dictation matrix.** Source prerequisites are
   present (`NSMicrophoneUsageDescription`, Debian `libasound2`, stable device
   IDs, bounded doctor/recovery, safe native targets). Verify macOS microphone
@@ -128,13 +130,13 @@ them up before that gate clears.
 > Process-tree kill (S1), keyPath hygiene (S2), remote-git polish + confined
 > per-file diff (S3), backend-cancel fingerprint pinning (S4), resume live-config
 > (S5), clone-to-remote (S6), and portable `realpath`→`readlink` confinement
-> fallback (S8) all landed and merged. Only the environment-blocked items below
-> remain.
+> fallback (S8) all landed and merged. S11 (Codex-over-SSH) was retired when
+> the `api-openai-codex` chat provider was removed in July 2026; PTY Codex CLI
+> sessions remain supported and are not sidecar sessions. The surviving Claude
+> Agent SDK and OpenAI Agents SDK remote-provider matrix is tracked in
+> [`dev/sidecar-over-ssh-verification.md`](./dev/sidecar-over-ssh-verification.md).
+> Only the environment-blocked items below remain.
 
-- **P2 — Live Codex-over-SSH smoke (S11).** Still needs one real remote host
-  with remote Codex auth + installed sidecar. Follow
-  `dev/sidecar-over-ssh-verification.md` step 12. Environment-gated (no SSH
-  server configured in the dev env).
 - **P3 — Windows-OpenSSH remote hosts (S9).** `ssh_check_remote_path` and the
   remote git scaffolding assume a POSIX remote shell (`[ -e ... ]`, `dirname`,
   heredocs); they break where the remote default shell is cmd.exe/PowerShell.
@@ -243,7 +245,11 @@ Deferred items called out in `dev/multi-platform-build.md` and
   (PacketAgent W9 publishes attention events but no approval-response route);
   task/conversation source builders; richer attention/cost projection; and a
   packaged evidence/artifact return-and-land matrix. PacketAgent continues to
-  own durable execution after PacketADE closes.
+  own durable execution after PacketADE closes. The 2026-08-01 proof refresh
+  passed PacketADE's focused package consumer tests plus PacketAgent's package,
+  trust, event, lifecycle, and serialized process-reconstruction fixtures; the
+  real separately running close/relaunch gate correctly remains open. See
+  [`dev/proof-audit-2026-08-01.md`](./dev/proof-audit-2026-08-01.md).
 
 ### Runtime audit (2026-07-19)
 
@@ -334,33 +340,28 @@ still loads legacy data losslessly.
   launch environments. The sibling PacketCode source now supplies the home and
   doctor contracts, checksum-verifying Windows installer, structured bounded
   loop decisions, per-server MCP restart, feature-truth audit, and hardening
-  ledger. PC5 still requires published signed artifacts and clean-machine
-  install/upgrade/rollback proof; PC9 continues the lower-priority PacketCode
-  hardening queue; PC10 awaits the separate PacketAgent compatibility contract
-  and a packaged cross-repo smoke. BridgeCode was discontinued and remains only
-  a historical workflow benchmark.
+  ledger. PCH3, PCH4, and PCH5 are now closed in the sibling repository, so
+  PC9's local source-hardening queue is complete. PC5 still requires published
+  signed artifacts and clean-machine install/upgrade/rollback proof; PC10
+  awaits PacketCode consumption of PacketAgent's already-published W9 contract
+  and a packaged cross-repo smoke. BridgeCode was discontinued and remains
+  only a historical workflow benchmark. The 2026-08-01 refresh ran the clean
+  sibling Go suite and its source-tree `doctor --json`; see
+  [`dev/proof-audit-2026-08-01.md`](./dev/proof-audit-2026-08-01.md).
 
-### PacketCode remaining hardening
+### PacketCode external proof remaining
 
-These PacketCode-owned items are duplicated here intentionally so PacketADE's
-master ledger does not hide them behind the broad PC9 status. The implementation
+PacketCode's local PCH1–PCH5 source hardening is closed. The implementation
 source of truth is
 `D:\projects\packetcode\docs\bridgecode-plus-hardening-loop-2026-07-27.md`.
 
-- **P2 — versioned workflow verifier/retry (PCH3).** Let a workflow declare a
-  verifier prompt/provider/model, versioned pass contract, and retry cap.
-  Missing or malformed verdicts never pass, and retries count against token and
-  agent budgets.
-- **P2 — abandoned-job reconcile/resubmit (PCH4).** After restart, show the old
-  job as recovered/cancelled with its evidence intact and offer an explicit
-  bounded resubmit from saved input. Never claim that the dead process resumed.
-- **P3 — Streamable HTTP MCP trust contract (PCH5).** Design explicit network
-  targets, credentials, redirect/origin rules, output provenance, and approval
-  scopes before enabling remote MCP transport in PacketCode.
+- **✅ Closed in PacketCode — PCH3/PCH4/PCH5.** Versioned workflow
+  verifier/retry landed at `4a8f671`; abandoned-job reconcile/resubmit landed
+  at `ac758fe`; and the fail-closed Streamable HTTP MCP trust contract landed
+  at `2a9e32d`. The complete sibling `go test ./...` gate passes at `9f3364a`.
 - **External release gates (PCH6–PCH8).** Publish signed stable/preview builds,
   run clean-machine install/update/rollback and packaged PacketADE smoke, then
-  consume PacketAgent's versioned contract when its active separate project
-  publishes it.
+  consume PacketAgent's published versioned W9 contract.
 
 ## GitHub pane v0.9+ (from v0.8 deferrals)
 
@@ -381,7 +382,9 @@ source of truth is
   Run the packaged GitHub + Gitea matrix (create/adopt/update/pull/conflict,
   hidden-window pause, restart, and revoked-auth recovery). Flight tasks do not
   yet own labels, so v1 preserves host labels rather than inventing a second
-  local label model.
+  local label model. The 2026-08-01 focused source suite passes; GitHub CLI auth
+  exists, but no real issues were mutated and Gitea/package proof remains open.
+  See [`dev/proof-audit-2026-08-01.md`](./dev/proof-audit-2026-08-01.md).
 
 ## Git host providers — GitHub + Gitea/Forgejo (dual-config)
 
@@ -426,22 +429,28 @@ source of truth is
   and permission-gated MCP access are implemented. Complete MH8/MH9 by running
   the real editor/watch-storm/partial-write/rename/restart matrix plus
   empty/large/dirty/gitignored packaged-project smoke on available platforms.
-  PacketADE deliberately does not edit `.gitignore`.
+  PacketADE deliberately does not edit `.gitignore`. Focused repository,
+  retrieval, capture, UI, and MCP tests passed again on 2026-08-01; that is not
+  external-editor or packaged evidence. See
+  [`dev/proof-audit-2026-08-01.md`](./dev/proof-audit-2026-08-01.md).
 
 ## Local-First MCP Hub (BridgeMCP response)
 
 - **P2 — live/packaged MCP Hub proof.** MCPH1–MCPH7 source work is complete:
   lossless config inventory, official review-before-add catalog, stdio doctor,
-  frozen per-session trust in protocol v11 and in-process providers, and the
-  Codex CLI trust proxy that exposes only the frozen allowlisted server/tool
-  surface and re-checks path/write denial floors at call time. The Hub also has
+  and frozen per-session trust in protocol v11 and in-process providers. The
+  Hub also has
   redacted audit, explicit reconnect, and suite resources for Flights, Issues,
   coordination, reviews, Memory, workspaces, and PacketCode health. Complete
-  MCPH3/MCPH8 with a real Codex CLI plus local/SSH crash/reload/version-skew,
+  MCPH3/MCPH8 with the surviving sidecar/in-process providers plus local/SSH
+  crash/reload/version-skew,
   offline install/removal, trust downgrade/reconnect, remote-profile parity,
   and packaged provider smoke. Streamable HTTP/SSE config is preserved but the
   local doctor probes stdio only; stdio child-process network access is not an
-  OS sandbox.
+  OS sandbox. The 2026-08-01 sidecar check passed remote-project, config,
+  frozen-trust, and remote-from-filesystem smokes; no configured SSH server or
+  live remote MCP/provider runtime was available. See
+  [`dev/proof-audit-2026-08-01.md`](./dev/proof-audit-2026-08-01.md).
 
 ## Trust and provenance
 
@@ -451,7 +460,10 @@ source of truth is
   downstream Flight/Memory/reviewer/coordination lineage, and bounded redacted
   audit are implemented. Complete TP8 with live local/SSH and all-provider
   transport parity, MCP remote, restart, YOLO, and packaged visual/manual
-  smoke. Do not weaken denial floors to make a provider pass.
+  smoke. Do not weaken denial floors to make a provider pass. Focused envelope,
+  policy, UI, and sidecar trust gates passed again on 2026-08-01; the live
+  transports remain unclaimed. See
+  [`dev/proof-audit-2026-08-01.md`](./dev/proof-audit-2026-08-01.md).
 
 ## Rust audit follow-ups (from v0.9.2 / v0.9.3 Phase C+D waves)
 
@@ -474,6 +486,9 @@ Only unresolved follow-ups remain here; shipped audit work is in `CHANGELOG.md`.
   PTY/API-agent/approval/write/deploy/secret mutation. Run the packaged
   multi-display matrix, verify the Monitor window closes with the main process
   on each platform, and add packaged WebView-to-Rust denial integration proof.
+  Route/capability source tests passed on 2026-08-01 and the host sees two
+  displays, but no current package was launched, so the manual gate remains
+  open; see [`dev/proof-audit-2026-08-01.md`](./dev/proof-audit-2026-08-01.md).
   Approval/Cost monitors,
   saved bounds, multiple simultaneous Monitor windows, and PTY attachment stay
   later; terminal mirroring must not mount or own the live PTY.
@@ -513,6 +528,9 @@ engine or persisted conversation panes as cleanup.
   old conversation panes remain readable. Cold start launches no hidden PTYs;
   selecting a Workspace starts only its panes; navigation preserves live PTYs;
   Codex resolves to its CLI wrapper rather than the Store desktop app.
+  The 2026-08-01 focused Workspace/remote-routing tests passed; PacketADE still
+  has zero configured SSH servers, so this does not close the SSH slice. See
+  [`dev/proof-audit-2026-08-01.md`](./dev/proof-audit-2026-08-01.md).
 - **P0 — WA3: source COMPLETE; manual local/SSH and external-runtime proof
   open.** Typed handoffs now connect Workspace, Agents, PacketCode, Flight
   Deck, PacketAgent, Git endings, terminal attach, and Monitor without cloning
@@ -529,20 +547,21 @@ engine or persisted conversation panes as cleanup.
   conversation/approval/persistence ownership behind a single-writer broker or
   versioned Rust state before allowing a second interactive WebView. The
   current Rust-restricted read-only Monitor does not prove multi-writer safety.
-- **P1 — enforce or remove placebo Settings controls.** AI Provider Routing
-  has no production consumer; Agent right-rail collapse is unused; PacketADE
-  MCP-provider scope/tool checkboxes are not passed to or enforced by Rust.
-  Default Agent launch location is now consumed by the Agents launcher. Hide or
-  disable the remaining placebo controls until their effective runtime policies
-  are observable.
-- **P1 — complete or hide SSH password configuration.** Settings offers
-  Password auth but cannot write/delete the keyring secret. Add secure
-  set/delete plus host-key/auth/base-path Test, or remove the option from new
-  server setup. Never persist the password in frontend state or DTOs.
-- **P1 — make safety-setting persistence authoritative.** Flight/autonomy
-  settings currently report Saved before the unawaited backend write completes.
-  Add awaitable revisioned saves, dirty/saved/error UI, and race-proof draft
-  handling.
+- **✅ Implemented 2026-08-01 — remove remaining placebo Settings controls.**
+  AI Provider Routing and Default Agent launch location remain because their
+  runtime consumers are real. The unused Agent right-rail collapse preference
+  and the unenforced PacketADE MCP-provider scope/tool controls are hidden;
+  Allow writes remains exposed because it is enforced.
+- **✅ Source implemented 2026-08-01 — secure SSH password configuration.**
+  Password set/delete uses the OS keyring, server-record and credential writes
+  have compensating rollback, credential-manager errors stay visible, and no
+  password enters `ServerConfig`, Zustand persistence, or logs. Every
+  connection-affecting edit invalidates old Test success. Packaged OS-keyring
+  and live pinned-host password-authentication proof remain open.
+- **✅ Implemented 2026-08-01 — authoritative safety-setting persistence.**
+  Flight/autonomy settings now use serialized, revision-fenced awaited saves,
+  authoritative rollback, and truthful Saving/Saved/Error UI, including rapid
+  trailer edits.
 - **P2 — Settings identity and navigation correctness.** Typed section/CLI deep
   links are complete. Use stable scoped MCP server IDs, show the real active
   local/SSH Workspace in Project settings, and validate provider-aware profile
@@ -570,23 +589,27 @@ for implementation.
   Hide/Close plus the wired Markdown viewer (`86cfac3`), and local-only
   actions are gated on SSH conversations (`531fbec`). See the shipped entry in
   the 2026-07-30 State of the ADE section below.
-- **P1 — make the global New menu truthful.** The route registry landed in
-  `2898946` and unified Left Rail, command palette, Status Strip labels,
-  hotkeys, and Dictation's route identity, so the remaining piece is the
-  creation surface itself: the "+ New" menu still offers only Flight and
-  Issue, and the Ctrl+K palette still offers no creation at all. Tracked with
-  the creation-flow follow-ups.
-- **P1 — correct shell project and Git-host context.** SSH can show or mutate a
-  stale local project/branch; Gitea capability flags do not gate every
-  GitHub-only action; repo/host switches can retain old PR detail. Use typed
-  local/SSH context and clear/capability-gate every dependent surface.
-- **P1 — make operational controls honest.** Agent Stop can report idle before
-  cancellation succeeds; Git says review is required without enforcing it;
-  Flight Monitor failure can be silent; Side Chat requests lack request
-  identity/cancel. (The "today's spend includes old hydrated conversations"
-  finding is resolved by deletion — the live-spend chip and Cost Dashboard that
-  computed that sum were removed on 2026-07-31; the budget guardrails now read
-  the backend spend figures with no live re-add.)
+- **✅ Resolved — make the global New menu truthful.** The route registry landed
+  in `2898946`; the "+ New" menu and Ctrl+K palette now both open the canonical
+  New Workspace form alongside Flight and Issue creation. Focused Toolbar,
+  CommandPalette, and Workspace launch tests cover the shared request path.
+- **✅ Source implemented 2026-08-01 — correct shell project and Git-host
+  context.** SSH no longer displays or mutates the retained local path/branch;
+  remote workspaces cannot inherit a local repository; Git-host/repository
+  changes invalidate stale detail, caches, reads, and mutations; host activation
+  is serialized/latest-wins; and GitHub-only AI/check/draft/inline-comment
+  actions are capability-gated. Independent review found no remaining concrete
+  P1/P2 source defect. Real GitHub/Gitea package proof and the slow-write/host-
+  switch stress case remain external.
+- **✅ Implemented 2026-08-01 — make operational controls honest.** Agent Stop
+  now stays visibly `Stopping` until `done { cancelled: true }` or `error`
+  acknowledges the request; Git review copy no longer claims enforcement it
+  does not perform; Flight Monitor launch failures surface a toast; and Side
+  Chat uses request-scoped events plus an explicit backend cancellation path.
+  Focused tests pass; record the final integrated gate in the 2026-08-01 proof
+  audit before calling the working tree released. (The former live-spend chip
+  and Cost Dashboard were removed on 2026-07-31; budget guardrails continue to
+  read backend spend figures without a live re-add.)
 - **P2 — align labels and accessibility.** Rename shell GitHub to Git Hosts,
   Fleet to Workspaces, VT to Dictation, and misleading handoff actions; remove
   the two-ellipsis Agent header; add navigation/tab/menu ARIA and responsive
@@ -599,7 +622,7 @@ Canonical plan and decision record:
 supersedes the staging in §4.
 
 **SHIPPED 2026-07-31.** No API-agent row uses a Claude.ai / ChatGPT
-subscription login any more. The Claude Agent SDK row was *re-authenticated*
+subscription login any more. The Claude Agent SDK row was _re-authenticated_
 with the `api-key-anthropic` keyring entry rather than gated or deleted —
 Anthropic's legal-and-compliance page directs Agent SDK developers to use API
 key auth, so the SDK is the sanctioned path and only the credential was wrong.
@@ -720,10 +743,11 @@ shared pricing table, and all token accounting are untouched.
   grow the file by one newline per edit. Remote work keeps whole-file writes —
   i.e. remote agents still pay the exact output cost CE14 removed locally.
   Fixing the heredoc newline is the prerequisite.
-- **P2 — CE3 remainder: cache-write tokens on the Codex sub-agent bucket.**
-  `SubAgentTokenBucket` has no `cacheWriteTokens`, so a multi-agent Codex turn
-  under-reports the most expensive token class to the guardrails once caching
-  makes it non-zero. Hard prerequisite of CE6.
+- **P3 — historical CE3 compatibility: cache-write tokens on the retired Codex
+  sub-agent bucket.** `SubAgentTokenBucket` has no `cacheWriteTokens`, but
+  `api-openai-codex` no longer produces live MultiAgentV2 summaries. Preserve
+  the old discriminator/read compatibility; add the field only if imported
+  historical data or a future adapter can actually supply cache-write totals.
 - **P3 (was P2) — CE1: Codex cached-token double-count.** Rust passed `input`
   and `cached` as separate additive arguments; OpenAI's `cached_tokens` is a
   subset of prompt tokens, so Codex rows are overstated ~2–2.6x at typical hit
@@ -791,11 +815,13 @@ the normal priority scheme.
   macOS/Linux (`claudetools-bash/statusline/`, bash + `jq`/`bc`, with
   installer). Not part of the PacketADE build; noted here so the ledger does
   not lose cross-repo work.
-- **P2 — adopt State of the ADE review recommendations.** Triage the review's
-  recommendations into concrete backlog items (see
+- **✅ Refreshed 2026-08-01 — adopt State of the ADE review recommendations.**
+  The report's current actionable set is reconciled with this ledger; see
   `docs/reports/state-of-the-ade-2026-07-30.md` — the agent-facing edition and
   the source of truth; `…-2026-07-30.pdf` is the human edition with the same
-  content. The HTML edition was retired 2026-07-30).
+  content. Section 0 is authoritative; the dated deep-dive status tokens remain
+  evidence rather than a second live backlog. The HTML edition was retired
+  2026-07-30.
 - **✅ Shipped — same-day review expansion into the consolidated 6-month
   ledger.** The report now carries three new chapters: the reconciled UX
   Ledger (07-29 main-shell audit + code review + rendered visual audit → five
@@ -1001,11 +1027,10 @@ the normal priority scheme.
     nothing in persistence changes, and there is no recovery once the window
     closes. (a) is the durable answer and the larger build; (b) is an afternoon
     and covers the common misclick.
-  - **NEW — `WorkspacePane`'s terminal tile "Close pane" kills the PTY with no
-    confirmation.** A destructive-without-confirm path not previously
-    catalogued in this backlog entry; re-confirmed open after the chrome loop
-    rebuilt the tile menus around that control. It is the last such path left
-    after the confirm sweep. (Report §5.3 P-04 / D-09.)
+  - **✅ Implemented 2026-08-01 — `WorkspacePane` terminal-pane confirmation.**
+    "Close pane" now opens the shared typed confirmation and names the live PTY
+    consequence before stopping the process and removing the pane. Focused
+    component coverage proves cancel and confirm paths.
   - **NEW — `src/components/views/IssueDetailView.tsx` is dead code:** an
     unmounted duplicate superseded by `IssueDetail`, with only self-references.
     The issue-deletion work went into `IssueDetail` and left this file
@@ -1017,8 +1042,10 @@ the normal priority scheme.
     `src-tauri/src/commands/agent_sidecar/supervisor.rs` and
     `src-tauri/src/commands/mod.rs`. They predate `7cad08b` and were left
     untouched so its diff stayed reviewable. `cargo fmt` is still not gated.
-  - The duplicate `CancelPendingButton` rendered twice at once in
-    `PendingApprovalsSection` and the composer row, plus a third count badge.
+  - **✅ Implemented 2026-08-01 — cancel-pending chrome de-duplicated.** The
+    composer owns the one canonical `CancelPendingButton`; the duplicate
+    permission-section and rollup actions were removed while per-item Allow/Deny
+    and bulk Allow/Deny remain.
   - The four-controls-one-action finding's remaining legs: `Ctrl+N` and the
     `/new` slash command still reach conversation creation by separate routes
     with different semantics. Both sidebar legs are now de-duplicated.
@@ -1027,11 +1054,12 @@ the normal priority scheme.
     and `OnboardingPane`.
   - `useServerConnection` and `ConnectionProgress` are now unreferenced; kept
     deliberately, but they need a keep-or-delete decision.
-  MS4 (responsive/accessibility semantics, Gitea capability and repo-switch
-  tests, packaged local/SSH and 800px-to-ultrawide visual matrix) and the two
-  unaddressed MS1 items (Running Agents / Side Chat cancellation
-  acknowledgment, clearing repo/PR detail across repo and host switches) remain
-  open alongside these.
+    MS4 (responsive/accessibility semantics, Gitea capability and repo-switch
+    tests, packaged local/SSH and 800px-to-ultrawide visual matrix) remains open.
+    Running Agents and Side Chat cancellation acknowledgement, plus repository/
+    host authority invalidation, were implemented and independently reviewed in
+    the 2026-08-01 working tree. Real GitHub/Gitea package proof and the bounded
+    slow-write/host-switch stress case remain open.
 - **P3 — sweep remaining historical Gemini references.** Comments/aliases kept
   intentionally for load-compat (`agentStore.ts`, `workspaceStore.ts`) stay;
   audit stray descriptive mentions (e.g. `src/agents/packetcode.ts`
@@ -1055,7 +1083,7 @@ only what the sections above do not already carry.
   is a source-level fence against reintroducing the strip, and **it was
   verified to fail when the bug is put back**.
 - **P3 — `flight_cost.rs` keeps its `api-` strip deliberately.** It produces a
-  cost-attribution *discriminator*, not a routable provider id, and must keep
+  cost-attribution _discriminator_, not a routable provider id, and must keep
   matching keys already written into historical rollups. Recorded so a future
   consistency sweep does not "fix" it and split historical spend. The
   `api-claude-oauth` ↔ `claude-oauth` pairing in
@@ -1083,8 +1111,8 @@ only what the sections above do not already carry.
   `assertCostGuardrailsAllowLaunch`, so an overstated history was tripping
   budget caps at about a third of the spend actually authorized. Flight rollups
   are the known exception, tracked above.
-- **Still open and re-verified at `422ab94`:** the Anthropic `pending_edit`
-  event still omits `toolUseId`, so gated write approvals still hang the turn
-  on the Claude Agent SDK row (report F-2.3-01). The provider re-auth touched
-  `anthropic.ts` but not this emitter. It remains the cheapest high-value fix
-  in the report.
+- **✅ Implemented 2026-08-01 — Anthropic edit correlation.** The Claude Agent
+  SDK `pending_edit` event now carries the exact non-empty `toolUseId` consumed
+  by `edit_response`, so gated writes resolve the correct parked hook. The
+  dedicated `sidecar:anthropic-edit-correlation-smoke` is part of
+  `sidecar:check` and passes; final integrated gates remain to be recorded.

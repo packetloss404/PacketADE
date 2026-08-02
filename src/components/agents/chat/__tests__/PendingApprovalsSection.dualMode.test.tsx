@@ -29,14 +29,9 @@ vi.mock("../../PendingApprovalsRollup", () => ({
 vi.mock("../../PermissionPrompt", () => ({
   PermissionPrompt: () => <div data-testid="prompt" />,
 }));
-vi.mock("../CancelPendingButton", () => ({
-  CancelPendingButton: () => <button type="button">cancel</button>,
-}));
-
 import { PendingApprovalsSection } from "@/components/agents/chat/PendingApprovalsSection";
 
 const respondPermission = vi.fn().mockResolvedValue(undefined);
-const cancelPendingTools = vi.fn();
 const appendAllowedToolPattern = vi.fn();
 
 function makePermission(id: string, name = "bash"): PendingPermission {
@@ -60,7 +55,6 @@ function renderSection({
       conversationId={conversationId}
       pendingPermissions={pendingPermissions}
       respondPermission={respondPermission}
-      cancelPendingTools={cancelPendingTools}
       appendAllowedToolPattern={appendAllowedToolPattern}
       keyboardScopeActive={keyboardScopeActive}
     />,
@@ -143,7 +137,6 @@ describe("PendingApprovalsSection Y/N focus gate (P3-S1)", () => {
           conversationId="conv-armed"
           pendingPermissions={[makePermission("perm-armed")]}
           respondPermission={respondPermission}
-          cancelPendingTools={cancelPendingTools}
           appendAllowedToolPattern={appendAllowedToolPattern}
           keyboardScopeActive={true}
         />
@@ -152,7 +145,6 @@ describe("PendingApprovalsSection Y/N focus gate (P3-S1)", () => {
           conversationId="conv-inactive"
           pendingPermissions={[makePermission("perm-inactive")]}
           respondPermission={respondPermission}
-          cancelPendingTools={cancelPendingTools}
           appendAllowedToolPattern={appendAllowedToolPattern}
           keyboardScopeActive={false}
         />

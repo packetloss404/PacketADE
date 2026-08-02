@@ -1,8 +1,8 @@
 # PacketCode Integration & BridgeCode-Plus — Cross-Repo Loop
 
 Created: 2026-07-27
-Status: implementation complete through source-checkout gates; published
-release, clean-machine, and PacketAgent compatibility gates remain
+Status: local source hardening complete through PCH5; published release,
+clean-machine, and PacketAgent compatibility gates remain
 Product decision: **Option B — independent install channel plus explicit
 executable and data-home overrides**
 
@@ -83,7 +83,7 @@ Status values: `queued` → `in-progress` → `gated` → `closed`.
 | **PC6** | PacketADE | Detect/install/update flow | Add platform-aware PacketCode install/update actions, then re-detect and run the integration probe. Failures preserve configured paths and show exact recovery instructions. | Detector/PTY/modal tests and manual platform matrix | PC3–PC5 | closed |
 | **PC7** | PacketADE | Correct launch environment | PacketCode panes launch the resolved executable in the intended project with only the configured `PACKETCODE_HOME` override. Local, SSH, spaces, `.exe`/`.cmd`, restart, and invalid-path cases behave predictably. | PTY argument/env integration tests and smoke fixtures | PC4, PC6 | closed |
 | **PC8** | PacketCode | BridgeCode feature-truth audit | Exercise every BridgeCode-comparable claim and PacketCode differentiator through code inspection, focused tests, and release-like smoke runs. Mark present/partial/missing/broken with evidence. | Versioned truth matrix; no README-only “shipped” claims | PC1 | closed |
-| **PC9** | PacketCode | Hardening loops from audit | Convert every partial/broken high-value workflow into bounded dependency-ordered loops, then run them through provider, permissions, session, agent, MCP, TUI, and release gates. | Per-loop acceptance tests plus full Go/PTY gates | PC8 | in-progress — PCH1/PCH2/**PCH4** closed; PCH3 and PCH5 specified and queued; PCH6–PCH8 remain `external-gate` |
+| **PC9** | PacketCode | Hardening loops from audit | Convert every partial/broken high-value workflow into bounded dependency-ordered loops, then run them through provider, permissions, session, agent, MCP, TUI, and release gates. | Per-loop acceptance tests plus full Go/PTY gates | PC8 | closed for local source — PCH1–PCH5 closed; PCH6–PCH8 remain `external-gate` |
 | **PC10** | Both | Suite handoff and end-to-end proof | PacketADE can install/detect/configure/launch PacketCode; PacketCode can receive scoped project/task context; durable continuation routes to PacketAgent rather than pretending a TUI survives closure. | Cross-repo smoke run and version-compatibility fixtures | PC7, PC9 | gated |
 
 ## Sequencing
@@ -108,3 +108,13 @@ the two repositories are tested together.
 - Missing and weak workflows have completed implementation loops and regression
   tests.
 - PacketCode remains independently installable and usable without PacketADE.
+
+## 2026-08-01 proof refresh
+
+The sibling PacketCode ledger now closes PCH3 at `4a8f671`, PCH4 at
+`ac758fe`, and PCH5 at `2a9e32d`. Its complete `go test ./...` suite passes at
+clean `main` `9f3364a`, and the source-tree executable returns schema-v1
+`doctor --json` with overall `status: ok` through `go run`. It reports a dev build
+and is not installed on `PATH`, so PC5 signed/clean-machine proof and PC10's
+packaged PacketAgent smoke remain open. Full evidence:
+[`proof-audit-2026-08-01.md`](../proof-audit-2026-08-01.md).

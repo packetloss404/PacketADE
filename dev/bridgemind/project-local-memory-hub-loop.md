@@ -89,3 +89,10 @@ MH1 -> MH2 -> MH3 -> MH6 -> MH8 -> MH9
 - MCP consumers receive the same scoped truth without bypassing write policy.
 - No cloud memory service, vector database, or standalone PacketMemory app is
   required.
+
+## 2026-08-01 proof refresh
+
+Focused repository, retrieval, capture, Memory UI, and MCP integration tests
+pass in the **22-file / 124-test** proof set. No external editor/watch storm or
+current packaged restart/rename matrix was run, so MH8/MH9 remain gated. See
+[`proof-audit-2026-08-01.md`](../proof-audit-2026-08-01.md).

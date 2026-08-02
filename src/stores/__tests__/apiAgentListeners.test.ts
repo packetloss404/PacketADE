@@ -87,6 +87,32 @@ function makeMessage(overrides: Partial<AgentMessage> = {}): AgentMessage {
   };
 }
 
+function makeActiveConversation(id: string): AgentConversation {
+  return {
+    id,
+    title: "Streaming",
+    agent: "api-openai",
+    projectPath: "D:/projects/example",
+    status: "active",
+    messages: [
+      makeMessage({
+        id: `${id}-assistant`,
+        role: "assistant",
+        content: "working",
+        isStreaming: true,
+      }),
+    ],
+    queuedMessages: [],
+    sessionId: id,
+    rawOutput: "",
+    createdAt: 1,
+    updatedAt: 1,
+    mode: "api",
+    provider: "openai",
+    model: "gpt-4o",
+  };
+}
+
 function messageShape(message: AgentMessage) {
   return {
     role: message.role,
@@ -462,6 +488,57 @@ describe("Stop with a queued message does not re-send it (G33)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("keeps Stop visibly pending until the backend acknowledges cancellation", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { installApiAgentListeners } = await import("@/stores/apiAgentListeners");
+    useAgentTaskStore.setState({
+      conversations: [makeActiveConversation("conv-stopping")],
+      selectedConversationId: null,
+      cancellingConversationIds: new Set(),
+    });
+    await installApiAgentListeners("conv-stopping");
+
+    await useAgentTaskStore.getState().cancelActiveConversation("conv-stopping");
+
+    // A resolved command only proves Rust/sidecar accepted the cancel request.
+    const pending = useAgentTaskStore.getState();
+    expect(pending.cancellingConversationIds.has("conv-stopping")).toBe(true);
+    expect(pending.conversations[0]?.status).toBe("active");
+    expect(pending.conversations[0]?.messages.some((message) => message.isStreaming)).toBe(true);
+
+    listeners.get("api-agent:done:conv-stopping")?.({
+      payload: {
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        cancelled: true,
+      },
+    });
+
+    const acknowledged = useAgentTaskStore.getState();
+    expect(acknowledged.cancellingConversationIds.has("conv-stopping")).toBe(false);
+    expect(acknowledged.conversations[0]?.status).toBe("idle");
+    expect(acknowledged.conversations[0]?.messages.some((message) => message.isStreaming)).toBe(false);
+  });
+
+  it("keeps the conversation active when the backend rejects Stop", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    invokeMock.mockRejectedValueOnce(new Error("cancel transport unavailable"));
+    useAgentTaskStore.setState({
+      conversations: [makeActiveConversation("conv-stop-failed")],
+      selectedConversationId: null,
+      cancellingConversationIds: new Set(),
+    });
+
+    await useAgentTaskStore.getState().cancelActiveConversation("conv-stop-failed");
+
+    const failed = useAgentTaskStore.getState();
+    expect(failed.cancellingConversationIds.has("conv-stop-failed")).toBe(false);
+    expect(failed.conversations[0]?.status).toBe("active");
+    expect(failed.conversations[0]?.messages.some((message) => message.isStreaming)).toBe(true);
   });
 
   it("does not drain the queue when a cancelled done arrives without Stop clearing it first", async () => {

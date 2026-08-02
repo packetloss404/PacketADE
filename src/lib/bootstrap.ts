@@ -46,7 +46,13 @@ function registerFlightCostListener(): void {
         .getState()
         .applyBackendCostDelta(payload.flightId, payload.totalTokens ?? 0, payload.costUsd ?? 0);
     },
-  );
+  ).catch((err) => {
+    // Registration can fail outside Tauri (tests/browser preview) or during
+    // an early native startup failure. Do not leak an unhandled rejection,
+    // and allow a later initializeApp call to retry the subscription.
+    flightCostListenerRegistered = false;
+    logSwallowed("bootstrap.flightCostListener")(err);
+  });
 }
 
 /** A path inside the app's own build output is never a real project to launch

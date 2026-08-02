@@ -210,7 +210,12 @@ Checkpoint:
 
 ## Acceptance Test
 
-A user with PacketADE desktop running on Windows signs into Packet Cloud, enables Remote Agents, opens the PWA on iPhone, signs in, requests access, approves on desktop, starts an `api-openai-codex` or `api-claude-oauth` conversation against `D:\projects\PacketADE`, receives streaming output, approves one risky tool, cancels or completes the run, and then opens the same conversation on desktop.
+A user with PacketADE desktop running on Windows signs into Packet Cloud,
+enables Remote Agents, opens the PWA on iPhone, signs in, requests access,
+approves on desktop, starts an `api-openai-agents` or `api-claude-oauth`
+(historical id for the API-key-backed Claude Agent SDK row) conversation against
+`D:\projects\PacketADE`, receives streaming output, approves one risky tool,
+cancels or completes the run, and then opens the same conversation on desktop.
 
 Pass criteria:
 
@@ -259,4 +264,3 @@ Mitigation: PWA displays capability. Use API-key providers for SSH until sidecar
 Risk: mobile and relay choke on large payloads.
 
 Mitigation: inline cap, encrypted R2 references, mobile summaries first.
-

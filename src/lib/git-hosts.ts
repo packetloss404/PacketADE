@@ -48,6 +48,8 @@ export interface GitHostCapabilities {
   activityFeed: boolean;
   /** Inline PR reviews + review comments (both hosts, via G11). */
   prReviews: boolean;
+  /** Author line-anchored review comments. Gitea's model is incompatible. */
+  inlineReviewComments: boolean;
   /** AI assist (investigate / PR description / review / catch-up / triage).
    *  These query api.github.com directly, so they're GitHub-only. */
   aiAssist: boolean;
@@ -59,6 +61,7 @@ export const GIT_HOST_CAPABILITIES: Record<GitHostKind, GitHostCapabilities> = {
     checkRuns: true,
     activityFeed: true,
     prReviews: true,
+    inlineReviewComments: true,
     aiAssist: true,
   },
   gitea: {
@@ -66,6 +69,7 @@ export const GIT_HOST_CAPABILITIES: Record<GitHostKind, GitHostCapabilities> = {
     checkRuns: false,
     activityFeed: false,
     prReviews: true,
+    inlineReviewComments: false,
     aiAssist: false,
   },
 };

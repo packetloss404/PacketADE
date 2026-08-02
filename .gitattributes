@@ -7,3 +7,7 @@
 # Windows batch scripts require CRLF (none exist today; rule is future-proofing)
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# Generated human-readable reports are binary artifacts. Do not pass them
+# through Windows' system-level `astextplain` diff driver.
+*.pdf -text -diff

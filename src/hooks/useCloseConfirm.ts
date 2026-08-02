@@ -70,10 +70,12 @@ export function useCloseConfirm(): CloseConfirmController {
   const cancel = useCallback(() => setPending(null), []);
 
   const confirm = useCallback(() => {
-    setPending(null);
-    void Promise.resolve(getCurrentWindow().destroy()).catch((err) =>
-      console.warn("[useCloseConfirm.destroy] failed:", err),
-    );
+    // Keep the confirmation visible until Tauri accepts the destroy command.
+    // A missing/invalid capability must not make the dialog disappear while
+    // leaving the window alive, which looks exactly like a dead button.
+    void Promise.resolve(getCurrentWindow().destroy())
+      .then(() => setPending(null))
+      .catch((err) => console.warn("[useCloseConfirm.destroy] failed:", err));
   }, []);
 
   return { pending, cancel, confirm };

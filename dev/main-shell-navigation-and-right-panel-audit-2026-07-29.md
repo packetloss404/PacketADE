@@ -12,8 +12,9 @@ That delivered **MS1, MS2, and MS3**. Gates were green at every step —
 `src/lib/__tests__/bootstrap.test.ts` reproduces on a clean tree.)
 
 A follow-up loop then landed as `c3906c7` (deletion safety, keyboard/exit
-safety, modal/board fixes, and unified creation flows), with gates at `pnpm
-build` green, ESLint at zero errors, and Vitest 1466 passing across 194 files.
+safety, modal/board fixes, and unified creation flows), with gates at
+`pnpm build` green, ESLint at zero errors, and Vitest 1466 passing across 194
+files.
 Within this document it resolves **finding 10** and **MS3 step 4**; the rest of
 that loop addressed findings from the State of the ADE report's Creation,
 Opening & Deletion Flows chapter, which this audit does not cover.
@@ -21,11 +22,11 @@ Opening & Deletion Flows chapter, which this audit does not cover.
 Findings **P0-1, P0-2, P0-3, P0-4, P1-5, P1-7, P1-9, and 10 are RESOLVED**. The
 remaining P1 and P2 findings below are untouched and still open.
 
-**MS4 (product polish and proof) remains**, plus the MS1 items that were not
-part of the five decisions: cancellation acknowledgment for Running Agents and
-Side Chat (finding 12/13), and clearing repository/PR detail state across repo
-and host switches (finding 11). MS3's Git Hosts renaming and action-label
-corrections are enabled by the registry but still not done.
+**MS4 (product polish and proof) remains.** The 2026-08-01 working tree closes
+the cancellation/feedback portion of findings 12/13; final integrated gates are
+pending. Clearing repository/PR detail state across repo and host switches
+(finding 11) remains open. MS3's Git Hosts renaming and action-label corrections
+are enabled by the registry but still not done.
 
 Scope: PacketADE's main application shell, not the Settings information
 architecture
@@ -54,15 +55,15 @@ This audit is a source and test review. It did not change product behavior.
 
 ## Recommended shell responsibility map
 
-| Shell area      | Recommended responsibility                                                                 |
-| --------------- | ------------------------------------------------------------------------------------------ |
+| Shell area      | Recommended responsibility                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------- |
 | Title bar       | PacketADE identity and native window controls                                               |
 | Primary rail    | Workspaces, Agents, Flight Deck, Issues, Memory, Git Hosts; Settings anchored at the bottom |
 | Global toolbar  | Command palette, truthful global New menu, operational status, Agents, spend, project scope |
 | Surface sidebar | Workspace list, Agent conversations, or Flights—never mixed ownership                       |
 | Main canvas     | Active terminal, chat, board, list, or detail surface                                       |
 | Right dock      | One surface-owned Inspector, Editor, Git, Preview, Review, or Files presentation at a time  |
-| Status strip    | Active-surface context, relevant project/branch, dictation, and infrastructure health        |
+| Status strip    | Active-surface context, relevant project/branch, dictation, and infrastructure health       |
 
 ## P0 findings — correctness and safety
 
@@ -340,6 +341,12 @@ Evidence:
 - `src/components/workspace/GitDashboard.tsx:697-719`
 - `src/components/views/FlightsView.tsx:692-697`
 
+**Status update 2026-08-01:** resolved in the current working tree. Stop holds
+`Stopping` until backend `done`/`error` acknowledgement; the removed live-spend
+surface no longer makes the hydrated-today claim; Git copy now describes review
+context instead of promising enforcement; and Monitor-open rejection displays
+a toast. Focused source tests pass; final integrated/package gates remain.
+
 ### 13. Side chat requests are not isolated
 
 Closing Side Chat removes frontend listeners but does not cancel its backend
@@ -354,6 +361,11 @@ Evidence:
 - `src-tauri/src/commands/side_chat.rs:113-178`
 
 Recommendation: add request IDs to events and a cancellation command.
+
+**Status update 2026-08-01:** implemented. Side Chat now owns a request id,
+filters every event by that id, invokes an explicit Rust cancellation command,
+and keeps `Stopping` visible until acknowledgement. Focused store tests cover
+close/cancel and stale-event isolation; final integrated gates remain.
 
 ## P2 findings — clarity, alignment, and accessibility
 
@@ -383,17 +395,17 @@ Recommendation: add request IDs to events and a cancellation command.
 
 ## Right-panel wiring matrix
 
-| Feature                        | Verdict                   | Notes                                                                 |
-| ------------------------------ | ------------------------- | --------------------------------------------------------------------- |
-| Inspector Overview             | Wired                     | Conversation metadata and aggregate change summary render             |
-| Inspector collapse/resize      | Wired and tested          | Pointer and keyboard resize clamp and persist                         |
-| Plan                           | Wired but duplicated      | Multiple mounts; blank Inspector state before a plan                  |
-| Preview                        | Partially broken          | Hide/close ownership, conversation scope, and SSH filesystem are wrong |
-| Diff/Review                    | Wired but duplicated      | Overlay and Inspector compete; applied SSH file operations unsafe     |
-| Files                          | Partially wired           | Local browse works; file-to-Preview callback absent; SSH blocked       |
-| Workspace Git                 | Local/remote aware        | Fixed width and can compete with Editor/Inspector                     |
-| Workspace Editor              | Production-unreachable    | No `openFile` producer; dirty close protection absent                 |
-| Monitor                        | Wired, explicitly read-only | Agent and Flight routes reach the Rust-leased secondary window      |
+| Feature                   | Verdict                     | Notes                                                                  |
+| ------------------------- | --------------------------- | ---------------------------------------------------------------------- |
+| Inspector Overview        | Wired                       | Conversation metadata and aggregate change summary render              |
+| Inspector collapse/resize | Wired and tested            | Pointer and keyboard resize clamp and persist                          |
+| Plan                      | Wired but duplicated        | Multiple mounts; blank Inspector state before a plan                   |
+| Preview                   | Partially broken            | Hide/close ownership, conversation scope, and SSH filesystem are wrong |
+| Diff/Review               | Wired but duplicated        | Overlay and Inspector compete; applied SSH file operations unsafe      |
+| Files                     | Partially wired             | Local browse works; file-to-Preview callback absent; SSH blocked       |
+| Workspace Git             | Local/remote aware          | Fixed width and can compete with Editor/Inspector                      |
+| Workspace Editor          | Production-unreachable      | No `openFile` producer; dirty close protection absent                  |
+| Monitor                   | Wired, explicitly read-only | Agent and Flight routes reach the Rust-leased secondary window         |
 
 The matrix records the state at audit time (2026-07-29). As of the 2026-07-30
 implementation, Preview is conversation-scoped with authoritative Hide/Close,
@@ -422,7 +434,9 @@ for width. The Plan and Diff/Review duplication in finding 6 is unchanged.
 2. ~~Gate local-only Inspector and handoff actions for SSH.~~ Done — `531fbec`.
 3. ~~Make Preview state conversation-scoped and make Hide/Close
    authoritative.~~ Done — `86cfac3`.
-4. Add cancellation acknowledgment for Running Agents and Side Chat. **Open.**
+4. ~~Add cancellation acknowledgment for Running Agents and Side Chat.~~
+   Implemented and focused-tested in the 2026-08-01 working tree; final
+   integrated gates pending.
 5. Clear repository/PR detail state across repo and host switches. **Open.**
 
 ### MS2 — one right dock (delivered 2026-07-30, `86cfac3`)

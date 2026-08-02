@@ -60,6 +60,8 @@ interface PRModalProps {
    *  opening the modal while reading an issue auto-links it. Defaults
    *  to no seed. */
   initialLinkedIssues?: number[];
+  allowAiAssist?: boolean;
+  allowDraft?: boolean;
 }
 
 type PublishStep = "reviewers" | "labels" | "milestone";
@@ -70,6 +72,8 @@ export function PRModal({
   onSubmit,
   isLoading,
   initialLinkedIssues,
+  allowAiAssist = true,
+  allowDraft = true,
 }: PRModalProps) {
   // v0.8-E: AI description generator needs the selected repo for the
   // backend GitHub fetch. The button stays disabled while head/base/repo
@@ -86,9 +90,7 @@ export function PRModal({
   const [base, setBase] = useState("main");
   const [draft, setDraft] = useState(defaultDraftPrs);
 
-  const [linkedIssues, setLinkedIssues] = useState<number[]>(
-    initialLinkedIssues ?? [],
-  );
+  const [linkedIssues, setLinkedIssues] = useState<number[]>(initialLinkedIssues ?? []);
 
   // v0.8 spec: seed `linkedIssues` from the initial prop on modal open.
   // The PRModal is mounted/unmounted via `showPRModal` in GitHubView, so
@@ -173,16 +175,11 @@ export function PRModal({
   }, [branches]);
 
   // Open issues only — closed issues can't be auto-closed by a new PR.
-  const openIssues = useMemo(
-    () => issues.filter((i) => i.state === "open"),
-    [issues],
-  );
+  const openIssues = useMemo(() => issues.filter((i) => i.state === "open"), [issues]);
 
   function buildBody(): string {
     if (linkedIssues.length === 0) return body;
-    const prefix = linkedIssues
-      .map((n) => `Closes #${n}`)
-      .join(", ");
+    const prefix = linkedIssues.map((n) => `Closes #${n}`).join(", ");
     return `${prefix}\n\n${body}`;
   }
 
@@ -200,7 +197,7 @@ export function PRModal({
         await githubSetPrReviewers(owner, repo, prNumber, reviewers);
         set("reviewers", "ok");
       } catch (e) {
-        set("reviewers", "error", typeof e === "string" ? e : (e as Error)?.message ?? "failed");
+        set("reviewers", "error", typeof e === "string" ? e : ((e as Error)?.message ?? "failed"));
       }
     }
     if (labels.length > 0) {
@@ -209,7 +206,7 @@ export function PRModal({
         await githubSetPrLabels(owner, repo, prNumber, labels);
         set("labels", "ok");
       } catch (e) {
-        set("labels", "error", typeof e === "string" ? e : (e as Error)?.message ?? "failed");
+        set("labels", "error", typeof e === "string" ? e : ((e as Error)?.message ?? "failed"));
       }
     }
     if (milestone != null) {
@@ -218,14 +215,14 @@ export function PRModal({
         await githubSetPrMilestone(owner, repo, prNumber, milestone);
         set("milestone", "ok");
       } catch (e) {
-        set("milestone", "error", typeof e === "string" ? e : (e as Error)?.message ?? "failed");
+        set("milestone", "error", typeof e === "string" ? e : ((e as Error)?.message ?? "failed"));
       }
     }
   }
 
   async function handleSubmit() {
     try {
-      const json = await onSubmit(title, buildBody(), head, base, draft);
+      const json = await onSubmit(title, buildBody(), head, base, allowDraft && draft);
       const pr = JSON.parse(json) as { number?: number; html_url?: string };
       setResult(pr.html_url || "PR created successfully");
       if (pr.number) {
@@ -240,20 +237,16 @@ export function PRModal({
     <div className="flex items-center justify-end gap-2">
       <button
         onClick={onClose}
-        className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
+        className="px-3 py-1.5 text-xs text-text-secondary transition-colors hover:text-text-primary"
       >
         Cancel
       </button>
       <button
         onClick={handleSubmit}
         disabled={!title.trim() || !head.trim() || isLoading}
-        className="px-4 py-1.5 text-xs bg-accent-purple/15 text-accent-purple border border-accent-purple/30 rounded font-medium hover:bg-accent-purple/25 transition-colors disabled:opacity-50"
+        className="bg-accent-purple/15 border-accent-purple/30 hover:bg-accent-purple/25 rounded border px-4 py-1.5 text-xs font-medium text-accent-purple transition-colors disabled:opacity-50"
       >
-        {isLoading
-          ? "Creating..."
-          : draft
-            ? "Create draft PR"
-            : "Create PR"}
+        {isLoading ? "Creating..." : allowDraft && draft ? "Create draft PR" : "Create PR"}
       </button>
     </div>
   );
@@ -266,19 +259,19 @@ export function PRModal({
       footer={footer}
       width="w-[640px] max-w-[95vw]"
     >
-      <div className="px-5 py-4 flex flex-col gap-3">
+      <div className="flex flex-col gap-3 px-5 py-4">
         <input
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="PR title"
-          className="w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-purple"
+          className="w-full rounded border border-bg-border bg-bg-primary px-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:border-accent-purple focus:outline-none"
         />
         {/* v0.8-E: AI-generated description button mounts directly above
             the description textarea so the user can one-click generate
             then edit. Disabled until head/base/repo are all populated. */}
         {/* v0.8-E: pr desc button mount */}
-        {selectedRepo && (
+        {allowAiAssist && selectedRepo && (
           <PRDescriptionButton
             owner={selectedRepo.owner}
             repo={selectedRepo.repo}
@@ -294,7 +287,7 @@ export function PRModal({
           onChange={(e) => setBody(e.target.value)}
           placeholder="Description..."
           rows={4}
-          className="w-full bg-bg-primary border border-bg-border rounded px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-purple resize-none"
+          className="w-full resize-none rounded border border-bg-border bg-bg-primary px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:border-accent-purple focus:outline-none"
         />
 
         {/* Head + Base branch pickers */}
@@ -318,18 +311,20 @@ export function PRModal({
         </div>
 
         {/* Draft toggle */}
-        <label className="flex items-center gap-2 text-[11px] text-text-secondary cursor-pointer">
-          <input
-            type="checkbox"
-            checked={draft}
-            onChange={(e) => setDraft(e.target.checked)}
-            className="accent-accent-purple"
-          />
-          <span>Open as draft</span>
-          <span className="text-text-muted text-[10px]">
-            · Skips reviewer auto-request until marked ready
-          </span>
-        </label>
+        {allowDraft && (
+          <label className="flex cursor-pointer items-center gap-2 text-[11px] text-text-secondary">
+            <input
+              type="checkbox"
+              checked={draft}
+              onChange={(e) => setDraft(e.target.checked)}
+              className="accent-accent-purple"
+            />
+            <span>Open as draft</span>
+            <span className="text-[10px] text-text-muted">
+              · Skips reviewer auto-request until marked ready
+            </span>
+          </label>
+        )}
 
         {/* Linked issues */}
         <PickerField
@@ -343,9 +338,7 @@ export function PRModal({
           selectedKeys={linkedIssues.map(String)}
           onToggle={(key) => {
             const n = Number(key);
-            setLinkedIssues((cur) =>
-              cur.includes(n) ? cur.filter((x) => x !== n) : [...cur, n],
-            );
+            setLinkedIssues((cur) => (cur.includes(n) ? cur.filter((x) => x !== n) : [...cur, n]));
           }}
           emptyHint="No open issues"
           searchPlaceholder="Search issues…"
@@ -381,9 +374,7 @@ export function PRModal({
           }))}
           selectedKeys={labels}
           onToggle={(key) =>
-            setLabels((cur) =>
-              cur.includes(key) ? cur.filter((x) => x !== key) : [...cur, key],
-            )
+            setLabels((cur) => (cur.includes(key) ? cur.filter((x) => x !== key) : [...cur, key]))
           }
           emptyHint="No labels"
           searchPlaceholder="Search labels…"
@@ -404,7 +395,7 @@ export function PRModal({
         />
 
         {result && (
-          <div className="text-[11px] text-accent-green bg-accent-green/10 rounded px-3 py-2">
+          <div className="bg-accent-green/10 rounded px-3 py-2 text-[11px] text-accent-green">
             {result}
           </div>
         )}
@@ -414,9 +405,17 @@ export function PRModal({
           stepStatus.labels !== "idle" ||
           stepStatus.milestone !== "idle") && (
           <div className="flex flex-col gap-1 rounded border border-bg-border bg-bg-primary px-3 py-2 text-[11px]">
-            <StepRow label="Requesting reviewers" status={stepStatus.reviewers} error={stepError.reviewers} />
+            <StepRow
+              label="Requesting reviewers"
+              status={stepStatus.reviewers}
+              error={stepError.reviewers}
+            />
             <StepRow label="Applying labels" status={stepStatus.labels} error={stepError.labels} />
-            <StepRow label="Setting milestone" status={stepStatus.milestone} error={stepError.milestone} />
+            <StepRow
+              label="Setting milestone"
+              status={stepStatus.milestone}
+              error={stepError.milestone}
+            />
           </div>
         )}
       </div>
@@ -453,8 +452,8 @@ function BranchPicker({
   }, [branches, filter]);
 
   return (
-    <div className="flex-1 relative">
-      <label className="text-[10px] text-text-muted mb-1 uppercase tracking-wider flex items-center gap-1">
+    <div className="relative flex-1">
+      <label className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-text-muted">
         <GitBranch size={9} />
         {label}
       </label>
@@ -469,11 +468,11 @@ function BranchPicker({
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         placeholder={loading ? "Loading branches…" : placeholder}
-        className="w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 pr-7 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-purple"
+        className="w-full rounded border border-bg-border bg-bg-primary px-3 py-1.5 pr-7 text-xs text-text-primary placeholder:text-text-muted focus:border-accent-purple focus:outline-none"
       />
       <ChevronDown
         size={11}
-        className="absolute right-2 top-[26px] text-text-muted pointer-events-none"
+        className="pointer-events-none absolute right-2 top-[26px] text-text-muted"
       />
       {open && filtered.length > 0 && (
         <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded border border-bg-border bg-bg-secondary shadow-lg">
@@ -550,11 +549,11 @@ function PickerField({
 
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[10px] text-text-muted uppercase tracking-wider flex items-center gap-1">
+      <label className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-text-muted">
         {icon}
         {label}
       </label>
-      <div className="flex flex-wrap items-center gap-1 rounded border border-bg-border bg-bg-primary px-2 py-1 min-h-[28px]">
+      <div className="flex min-h-[28px] flex-wrap items-center gap-1 rounded border border-bg-border bg-bg-primary px-2 py-1">
         {selectedOptions.length === 0 && (
           <button
             type="button"
@@ -567,7 +566,7 @@ function PickerField({
         {selectedOptions.map((o) => (
           <span
             key={o.key}
-            className="inline-flex items-center gap-1 rounded border border-accent-purple/30 bg-accent-purple/10 px-1.5 py-0.5 text-[10px] text-accent-purple"
+            className="border-accent-purple/30 bg-accent-purple/10 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] text-accent-purple"
             style={
               o.color
                 ? {
@@ -578,19 +577,9 @@ function PickerField({
                 : undefined
             }
           >
-            {o.avatar && (
-              <img
-                src={o.avatar}
-                alt=""
-                className="h-3 w-3 rounded-full"
-              />
-            )}
+            {o.avatar && <img src={o.avatar} alt="" className="h-3 w-3 rounded-full" />}
             {o.label}
-            <button
-              type="button"
-              onClick={() => onToggle(o.key)}
-              className="hover:opacity-80"
-            >
+            <button type="button" onClick={() => onToggle(o.key)} className="hover:opacity-80">
               <X size={9} />
             </button>
           </span>
@@ -612,7 +601,7 @@ function PickerField({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={searchPlaceholder}
-            className="w-full bg-transparent border-b border-bg-border px-3 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none"
+            className="w-full border-b border-bg-border bg-transparent px-3 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none"
           />
           <div className="max-h-44 overflow-y-auto">
             {filtered.length === 0 ? (
@@ -630,9 +619,7 @@ function PickerField({
                     }`}
                   >
                     <span className="flex items-center gap-2 truncate">
-                      {o.avatar && (
-                        <img src={o.avatar} alt="" className="h-3 w-3 rounded-full" />
-                      )}
+                      {o.avatar && <img src={o.avatar} alt="" className="h-3 w-3 rounded-full" />}
                       {o.color && (
                         <span
                           className="inline-block h-2 w-2 rounded-full"
@@ -643,9 +630,7 @@ function PickerField({
                     </span>
                     {selected && <span className="text-[10px]">✓</span>}
                     {o.secondary && !selected && (
-                      <span className="truncate text-[10px] text-text-muted">
-                        {o.secondary}
-                      </span>
+                      <span className="truncate text-[10px] text-text-muted">{o.secondary}</span>
                     )}
                   </button>
                 );
@@ -687,14 +672,14 @@ function SinglePicker({
   const selected = options.find((o) => o.key === selectedKey);
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[10px] text-text-muted uppercase tracking-wider flex items-center gap-1">
+      <label className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-text-muted">
         {icon}
         {label}
       </label>
       <select
         value={selectedKey ?? ""}
         onChange={(e) => onSelect(e.target.value === "" ? null : e.target.value)}
-        className="w-full bg-bg-primary border border-bg-border rounded px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-accent-purple"
+        className="w-full rounded border border-bg-border bg-bg-primary px-2 py-1 text-xs text-text-primary focus:border-accent-purple focus:outline-none"
       >
         <option value="">— None —</option>
         {options.map((o) => (
@@ -706,9 +691,7 @@ function SinglePicker({
       {selected?.secondary && (
         <span className="text-[10px] text-text-muted">{selected.secondary}</span>
       )}
-      {options.length === 0 && (
-        <span className="text-[10px] text-text-muted">{emptyHint}</span>
-      )}
+      {options.length === 0 && <span className="text-[10px] text-text-muted">{emptyHint}</span>}
     </div>
   );
 }

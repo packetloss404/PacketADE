@@ -9,8 +9,14 @@ development build was compiled from `main` on 2026-07-30; see
 [`HANDOFF.md`](./HANDOFF.md#latest-windows-build) for the exact artifacts and
 hashes.
 
+![PacketADE Workspace running Claude Code and PacketCode side by side](./docs/screenshots/workspace-claude-packetcode.png)
+
+_An actual native PacketADE capture: PacketCode and Claude Code running their real TUIs side by side._
+
 ## Documentation Map
 
+- [`docs/reports/state-of-the-ade-2026-07-30.md`](./docs/reports/state-of-the-ade-2026-07-30.md) — primary AI-readable State of the ADE living record; Section 0 is the current 2026-08-01 authority.
+- [`docs/reports/state-of-the-ade-2026-07-30.pdf`](./docs/reports/state-of-the-ade-2026-07-30.pdf) — identical paginated human edition.
 - [`HANDOFF.md`](./HANDOFF.md) — exact restart point, completed decisions,
   current owner questions, build evidence, and guardrails.
 - [`ROADMAP.md`](./ROADMAP.md) — current product direction and release path.
@@ -21,17 +27,18 @@ hashes.
 - [`marketing/`](./marketing/) — press-kit assets: one-pager PDF, hero poster, social banner, and the design-philosophy note.
 - `AGENTS.md` / `CLAUDE.md` — local agent-facing repository instructions (generated and intentionally gitignored).
 
-The current product conversation is the reviewed—but not yet
-implemented—main-shell/right-dock decision pass. Workspace/Agents restructuring
-and the six-group Settings information architecture are complete; Remote Agents
-remains paused at its three Sprint-0 decisions.
+The main-shell/right-dock decisions, Workspace/Agents restructuring, and the
+six-group Settings information architecture are implemented. Remaining shell
+work is the explicit MS4 packaged/responsive proof and the smaller residue in
+[`backlog.md`](./backlog.md); Remote Agents remains paused at its three Sprint-0
+decisions.
 
 ## What It Does
 
-- Create and supervise structured conversations with eight coding-agent providers
-  in the first-class **Agents** surface — Claude Code subscription, Codex
-  subscription, OpenAI Agents SDK, four API-key providers, and local Ollama all
-  normalize into one event contract
+- Create and supervise structured conversations with seven API-agent providers
+  in the first-class **Agents** surface — Claude Agent SDK/API, OpenAI
+  API/Agents SDK, MiniMax, OpenRouter, and local Ollama all normalize into one
+  event contract
 - Run PacketCode, Claude Code, Codex CLI, OpenCode, and plain shells in
   CLI-first **Workspaces** with persistent draggable mosaics
 - Launch and supervise larger units of work from the **Flight Deck** — a single-screen master-detail flight control surface
@@ -39,6 +46,25 @@ remains paused at its three Sprint-0 decisions.
 - Connect to remote servers via SSH and run agent sessions over the wire
 - Keep project context close with auto-learning memory, history, and git-host integration (GitHub + self-hosted Gitea/Forgejo)
 - Manage MCP servers, inspect crashes, and run code-quality scans from the same UI
+
+## Screenshots
+
+### Agent command center
+
+![PacketADE Agents view with the conversation sidebar and new-agent composer](./docs/reports/visual-audit-2026-07-30/04-agents-empty-1920.png)
+
+| Flight planning and supervised launch                                                                                                                   | CLI clients and installation recovery                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ![PacketADE Flight launch dialog with planning and execution-supervision controls](./docs/reports/visual-audit-2026-07-30/13-modal-new-flight-1280.png) | ![PacketADE Workspaces and Terminal settings showing detected CLI clients](./docs/reports/visual-audit-2026-07-30/11-settings-cli-clients-1920.png) |
+
+### Issue board
+
+![PacketADE issue board with Flight, label, epic, workspace, and assignee filters](./docs/reports/visual-audit-2026-07-30/05-issues-board-1920.png)
+
+These captures show the current rendered UI using PacketADE's deterministic
+web-mode fixture. The full viewport set, method, and environment limitations
+are documented in the
+[`2026-07-30 visual audit`](./docs/reports/visual-audit-2026-07-30/findings.md).
 
 ## Supported Agents
 
@@ -313,10 +339,10 @@ The Claude Agent SDK and OpenAI Agents SDK providers run in a Node sidecar that 
   read-only authority. Non-overridable floors block credentials,
   outside-workspace paths, and protected publish/merge/deploy tools. A local
   stdio child is not an OS network sandbox, so its own package/runtime
-  configuration still matters. Codex subscription conversations receive a
-  generated local trust proxy through Codex CLI's MCP config; only the frozen
-  allowlisted servers/tools are advertised, and write/path denial floors are
-  re-checked on every forwarded call.
+  configuration still matters. The API-key-backed Claude Agent SDK and OpenAI
+  Agents SDK providers, plus the in-process providers, enforce the frozen
+  snapshot. The retired Codex chat-provider trust proxy is not part of the
+  current runtime.
 - PacketADE's loopback provider organizes scoped resources for Flights, Issues,
   coordination, review, global/project Memory, workspaces, and PacketCode
   integration health. It remains loopback-only with bearer/origin controls;
@@ -403,11 +429,16 @@ The sidecar work is complete across the original four v2 tiers and the v3–v11 
 - **v10 — explicit `cancelled` terminal marker:** the `done` event carries a `cancelled` flag so a user-cancelled turn is distinguished from a natural completion, giving the frontend exactly-once cancelled-terminal semantics across idle / active / post-completion cancels.
 - **v11 — frozen MCP trust authority:** PacketADE-managed MCP servers receive a
   per-session read/write/network/root/tool snapshot with conservative legacy
-  migration and non-overridable denial floors. Anthropic Subscription, OpenAI
-  Agents SDK, and in-process providers enforce it directly. Codex CLI receives
-  the same authority through a generated local MCP trust proxy.
-- **Codex absorption:** Codex `todo_list` items map to the existing `plan_block` event; `reasoning_tokens` + `cached_input_tokens` flow into `turn_summary` so GPT-5.5 spend is accounted for correctly against the budget guardrails; `turn_summary.address` carries the MultiAgentV2 sub-agent path (`/root/agent_a` etc.) so child token totals attribute to a per-address bucket on the conversation instead of the root.
-- **OpenAI Agents SDK provider:** `api-openai-agents` runs in the sidecar with the same OpenAI API key as `api-openai`, preserving the existing Agents pane event contract while leaving the stable Rust OpenAI API provider and Codex subscription provider untouched. The default `auto` mode requires approval before `bash` / `write_file`.
+  migration and non-overridable denial floors. The API-key-backed Claude Agent
+  SDK and OpenAI Agents SDK providers, plus the in-process providers, enforce it
+  directly. The former Codex chat-provider proxy was removed with that provider.
+- **Retired Codex adapter compatibility:** historical Codex `todo_list`, token,
+  and sub-agent-address events remain readable in saved conversation and cost
+  data, but no current API-agent row launches `codex exec`.
+- **OpenAI Agents SDK provider:** `api-openai-agents` runs in the sidecar with
+  the same OpenAI API key as `api-openai`, preserving the existing Agents pane
+  event contract alongside the stable Rust OpenAI API provider. The default
+  `auto` mode requires approval before `bash` / `write_file`.
 - **Standalone exe sidecar fix:** the Tauri shell plugin on Windows resolves `app.shell().sidecar("node")` to `<exe_dir>/node-<target-triple>.exe`, and the call is gated by an explicit `shell:allow-execute` capability entry. `build.rs` now copies `binaries/node-<triple>.<ext>` into the cargo output directory at compile time, and `capabilities/default.json` grants the `node` sidecar entry — so running `target/<profile>/packetade.exe` directly (without installing the MSI/NSIS) no longer reports the sidecar as down.
 - See [`agent-sidecar/README.md`](./agent-sidecar/README.md) for sidecar internals and [`dev/updater-setup.md`](./dev/updater-setup.md) for signing / release channel configuration.
 
@@ -500,7 +531,7 @@ PacketADE/
       claude/                  # Claude CLI integration helpers
       session/                 # Session DTOs and shared session helpers
 
-  agent-sidecar/               # Node sidecar for subscription + OpenAI Agents SDK providers
+  agent-sidecar/               # Node sidecar for API-key-backed Agent SDK providers
   scripts/                     # Build, sidecar, schema-check, and bundling scripts
   e2e/                         # Playwright tests
   docs/                        # Documentation site assets

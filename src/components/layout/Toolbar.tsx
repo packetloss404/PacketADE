@@ -1,5 +1,16 @@
 import { useState, useRef, useEffect, lazy, Suspense } from "react";
-import { FolderOpen, Wrench, Mic, Search, Plus, ChevronDown, Target, Ticket, LayoutGrid, Bookmark } from "lucide-react";
+import {
+  FolderOpen,
+  Wrench,
+  Mic,
+  Search,
+  Plus,
+  ChevronDown,
+  Target,
+  Ticket,
+  LayoutGrid,
+  Bookmark,
+} from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { SidecarStatusChip } from "./SidecarStatusChip";
 import { RunningAgentsChip } from "./RunningAgentsChip";
@@ -22,7 +33,7 @@ import { TERMINAL_AGENTS } from "@/lib/agent-catalog";
 const LaunchAsyncFlightModal = lazy(() =>
   import("@/components/flights/LaunchAsyncFlightModal").then((m) => ({
     default: m.LaunchAsyncFlightModal,
-  }))
+  })),
 );
 
 /**
@@ -101,6 +112,7 @@ export function Toolbar() {
     // clear the choice will rebind THAT workspace's project folder. With
     // no workspace, we don't silently write the fallback — we let the
     // user choose whether to create a workspace or just stash the path.
+    if (activeWorkspace?.serverId) return;
     const titled = activeWorkspace
       ? `Change folder for "${activeWorkspace.name}"`
       : "Open project folder";
@@ -125,11 +137,7 @@ export function Toolbar() {
   }
 
   function handleCreateWorkspaceFromPicker(path: string) {
-    const id = createWorkspace(
-      basenameOfPath(path),
-      [getPreferredWorkspaceCli()],
-      path,
-    );
+    const id = createWorkspace(basenameOfPath(path), [getPreferredWorkspaceCli()], path);
     setPendingPickedPath(null);
     // Land the user on the workspace view so the new workspace's panes
     // become visible immediately — otherwise the create is invisible.
@@ -144,25 +152,27 @@ export function Toolbar() {
   }
 
   return (
-    <div className="flex items-center h-9 px-3 bg-bg-secondary border-b border-bg-border gap-2">
+    <div className="flex h-9 items-center gap-2 border-b border-bg-border bg-bg-secondary px-3">
       {/* Left section: search + global "New" dropdown */}
       <div className="flex items-center gap-2">
         {/* Ctrl+K Search chip — opens the command palette */}
         <button
           onClick={() => setCommandPaletteOpen(true)}
-          className="flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-bg-secondary border border-bg-border text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition-colors"
+          className="flex items-center gap-1.5 rounded border border-bg-border bg-bg-secondary px-2 py-0.5 text-xs text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary"
           title="Search and navigate (Ctrl+K)"
         >
           <Search size={12} />
           <span>Search</span>
-          <span className="text-[9px] text-text-muted bg-bg-primary px-1 rounded font-mono">Ctrl+K</span>
+          <span className="rounded bg-bg-primary px-1 font-mono text-[9px] text-text-muted">
+            Ctrl+K
+          </span>
         </button>
 
         {/* Global "+ New" dropdown */}
         <div className="relative" ref={newMenuRef}>
           <button
             onClick={() => setShowNewMenu((v) => !v)}
-            className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs border border-bg-border transition-colors ${
+            className={`flex items-center gap-1 rounded border border-bg-border px-2 py-0.5 text-xs transition-colors ${
               showNewMenu
                 ? "bg-bg-elevated text-text-primary"
                 : "bg-bg-secondary text-text-secondary hover:bg-bg-elevated hover:text-text-primary"
@@ -175,24 +185,33 @@ export function Toolbar() {
           </button>
 
           {showNewMenu && (
-            <div className="absolute top-full left-0 mt-1 w-52 bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1">
+            <div className="absolute left-0 top-full z-50 mt-1 w-52 rounded-lg border border-bg-border bg-bg-secondary py-1 shadow-xl">
               {/* The app's top-level object belongs in the app's top-level
                   create menu. Opens the full creation form on the Workspace
                   surface (one modal owner — see workspaceStore.creationRequest). */}
               <DropdownItem
                 icon={<LayoutGrid size={12} className="text-accent-green" />}
                 label="New Workspace"
-                onClick={() => { openWorkspaceCreationModal(); setShowNewMenu(false); }}
+                onClick={() => {
+                  openWorkspaceCreationModal();
+                  setShowNewMenu(false);
+                }}
               />
               <DropdownItem
                 icon={<Target size={12} className="text-accent-green" />}
                 label="New Flight"
-                onClick={() => { setShowNewFlight(true); setShowNewMenu(false); }}
+                onClick={() => {
+                  setShowNewFlight(true);
+                  setShowNewMenu(false);
+                }}
               />
               <DropdownItem
                 icon={<Ticket size={12} className="text-accent-amber" />}
                 label="New Issue"
-                onClick={() => { setShowNewIssue(true); setShowNewMenu(false); }}
+                onClick={() => {
+                  setShowNewIssue(true);
+                  setShowNewMenu(false);
+                }}
               />
             </div>
           )}
@@ -210,7 +229,7 @@ export function Toolbar() {
             mid-stream. Click to inspect / jump / stop. */}
         <RunningAgentsChip />
 
-        <div className="w-px h-4 bg-bg-border self-center" />
+        <div className="h-4 w-px self-center bg-bg-border" />
 
         {/* Optional Tools (modules) dropdown — primary nav lives in LeftRail */}
         {/* D4: modules that are aliases of a first-class shell route (Dictation)
@@ -224,7 +243,7 @@ export function Toolbar() {
             <div className="relative" ref={toolsMenuRef}>
               <button
                 onClick={() => setShowToolsMenu(!showToolsMenu)}
-                className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
+                className={`flex items-center gap-1.5 rounded px-2 py-0.5 text-xs transition-colors ${
                   isModuleView(activeView)
                     ? "bg-bg-elevated text-accent-green"
                     : "bg-bg-elevated text-text-secondary hover:text-accent-green"
@@ -236,7 +255,7 @@ export function Toolbar() {
               </button>
 
               {showToolsMenu && (
-                <div className="absolute top-full right-0 mt-1 w-48 bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1">
+                <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border border-bg-border bg-bg-secondary py-1 shadow-xl">
                   {toolbarModules.map((mod) => {
                     const Icon = mod.icon;
                     return (
@@ -244,7 +263,10 @@ export function Toolbar() {
                         key={mod.id}
                         icon={<Icon size={12} className={mod.iconColor} />}
                         label={mod.name}
-                        onClick={() => { setActiveView(moduleViewId(mod.id)); setShowToolsMenu(false); }}
+                        onClick={() => {
+                          setActiveView(moduleViewId(mod.id));
+                          setShowToolsMenu(false);
+                        }}
                       />
                     );
                   })}
@@ -257,7 +279,7 @@ export function Toolbar() {
         {/* Dictation (VT) button */}
         <button
           onClick={() => setActiveView("dictation")}
-          className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
+          className={`flex items-center gap-1.5 rounded px-2 py-0.5 text-xs transition-colors ${
             activeView === "dictation"
               ? "bg-bg-elevated text-accent-purple"
               : "bg-bg-elevated text-text-secondary hover:text-accent-purple"
@@ -268,19 +290,25 @@ export function Toolbar() {
           <span>VT</span>
         </button>
 
-        <div className="w-px h-4 bg-bg-border self-center" />
+        <div className="h-4 w-px self-center bg-bg-border" />
 
         {/* Open project folder */}
         {(() => {
-          const folderTooltip = activeWorkspace
-            ? `Project: ${projectPath || "(unset)"} (${activeWorkspace.name}) — click to change`
-            : projectPath
-              ? `Default folder: ${projectPath} — no workspace open. Click to change or create one.`
-              : "No workspace open — click to create one";
+          const activeProjectPath = activeWorkspace?.serverId
+            ? (activeWorkspace.remoteProjectPath ?? activeWorkspace.projectPath)
+            : projectPath;
+          const folderTooltip = activeWorkspace?.serverId
+            ? `Remote project: ${activeProjectPath || "(unset)"} (${activeWorkspace.name}) — change it in Workspace settings`
+            : activeWorkspace
+              ? `Project: ${activeProjectPath || "(unset)"} (${activeWorkspace.name}) — click to change`
+              : projectPath
+                ? `Default folder: ${projectPath} — no workspace open. Click to change or create one.`
+                : "No workspace open — click to create one";
           return (
             <button
               onClick={handleOpenFolder}
-              className="flex items-center px-2 py-0.5 bg-bg-elevated rounded text-xs text-text-secondary hover:text-text-primary transition-colors"
+              disabled={Boolean(activeWorkspace?.serverId)}
+              className="flex items-center rounded bg-bg-elevated px-2 py-0.5 text-xs text-text-secondary transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-text-secondary"
               title={folderTooltip}
               aria-label={folderTooltip}
             >
@@ -288,7 +316,6 @@ export function Toolbar() {
             </button>
           );
         })()}
-
       </div>
 
       {/* Modals */}
@@ -303,9 +330,7 @@ export function Toolbar() {
           />
         </Suspense>
       )}
-      {showNewIssue && (
-        <NewIssueForm defaultStatus="todo" onClose={() => setShowNewIssue(false)} />
-      )}
+      {showNewIssue && <NewIssueForm defaultStatus="todo" onClose={() => setShowNewIssue(false)} />}
       {pendingPickedPath && (
         <FolderPickerFollowUp
           pickedPath={pendingPickedPath}
@@ -314,7 +339,6 @@ export function Toolbar() {
           onCancel={() => setPendingPickedPath(null)}
         />
       )}
-
     </div>
   );
 }
@@ -343,10 +367,15 @@ function FolderPickerFollowUp({
       width="w-[460px]"
       closeOnEscape
     >
-      <div className="px-5 py-4 flex flex-col gap-4">
+      <div className="flex flex-col gap-4 px-5 py-4">
         <div>
-          <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Selected folder</div>
-          <div className="bg-bg-primary border border-bg-border rounded px-3 py-2 text-xs text-text-primary font-mono truncate" title={pickedPath}>
+          <div className="mb-1 text-[10px] uppercase tracking-wider text-text-muted">
+            Selected folder
+          </div>
+          <div
+            className="truncate rounded border border-bg-border bg-bg-primary px-3 py-2 font-mono text-xs text-text-primary"
+            title={pickedPath}
+          >
             {pickedPath}
           </div>
         </div>
@@ -357,12 +386,14 @@ function FolderPickerFollowUp({
           <button
             type="button"
             onClick={onCreateWorkspace}
-            className="flex items-start gap-3 px-3 py-3 bg-bg-primary border border-bg-border rounded text-left hover:border-accent-green/40 hover:bg-accent-green/5 transition-colors"
+            className="hover:border-accent-green/40 hover:bg-accent-green/5 flex items-start gap-3 rounded border border-bg-border bg-bg-primary px-3 py-3 text-left transition-colors"
           >
-            <LayoutGrid size={14} className="text-accent-green flex-shrink-0 mt-0.5" />
+            <LayoutGrid size={14} className="mt-0.5 flex-shrink-0 text-accent-green" />
             <span className="flex flex-col">
-              <span className="text-[12px] font-medium text-text-primary">Create new workspace</span>
-              <span className="text-[10px] text-text-muted mt-0.5">
+              <span className="text-[12px] font-medium text-text-primary">
+                Create new workspace
+              </span>
+              <span className="mt-0.5 text-[10px] text-text-muted">
                 Open a workspace here with {preferredCliLabel()} pane. You can adjust agents later.
               </span>
             </span>
@@ -370,13 +401,16 @@ function FolderPickerFollowUp({
           <button
             type="button"
             onClick={onSetDefault}
-            className="flex items-start gap-3 px-3 py-3 bg-bg-primary border border-bg-border rounded text-left hover:border-accent-amber/40 hover:bg-accent-amber/5 transition-colors"
+            className="hover:border-accent-amber/40 hover:bg-accent-amber/5 flex items-start gap-3 rounded border border-bg-border bg-bg-primary px-3 py-3 text-left transition-colors"
           >
-            <Bookmark size={14} className="text-accent-amber flex-shrink-0 mt-0.5" />
+            <Bookmark size={14} className="mt-0.5 flex-shrink-0 text-accent-amber" />
             <span className="flex flex-col">
-              <span className="text-[12px] font-medium text-text-primary">Set as default for next workspace</span>
-              <span className="text-[10px] text-text-muted mt-0.5">
-                Remember this path so the next workspace you create starts here. No workspace is opened now.
+              <span className="text-[12px] font-medium text-text-primary">
+                Set as default for next workspace
+              </span>
+              <span className="mt-0.5 text-[10px] text-text-muted">
+                Remember this path so the next workspace you create starts here. No workspace is
+                opened now.
               </span>
             </span>
           </button>
@@ -384,7 +418,7 @@ function FolderPickerFollowUp({
         <div className="flex justify-end">
           <button
             onClick={onCancel}
-            className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
+            className="px-3 py-1.5 text-xs text-text-secondary transition-colors hover:text-text-primary"
           >
             Cancel
           </button>

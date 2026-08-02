@@ -6,9 +6,10 @@
 > account sign-in, and the live sidecar protocol version in
 > `agent-sidecar/src/protocol.ts`.
 >
-> Note: PacketADE now has **eight** API-agent providers (an OpenAI Agents SDK
-> row was added 2026-05-12 alongside the existing seven). Existing event
-> contract unchanged.
+> Current correction (2026-08-01): PacketADE has **seven** API-agent rows. The
+> OpenAI Agents SDK row remains, the Claude Agent SDK row now uses an API key,
+> and the former `api-openai-codex` subscription row is retired. The shared
+> `api-agent:*` event contract remains the integration boundary.
 
 ## 1. Current agent stack — state map
 
@@ -56,28 +57,31 @@
 
 ## 2. Mobile surface area mapping
 
-| Mobile need | Existing Rust command | New command needed? | Protocol envelope |
-|---|---|---|---|
-| (a) List active conversations | None — frontend holds it in Zustand. `load_conversations` (`conversations.rs:49`) returns persisted JSONs. | **Yes** — `mobile_list_conversations()` returning summary objects (id, title, model, status, lastMessage, updatedAt). | `{type:"conversations", items:[…]}` |
-| (b) Stream live | None — events are Tauri-process-local. | **Yes** — `mobile_subscribe(sessionId)` hooks the same `app_handle.listen` Rust-side and pipes `api-agent:*` events to WebSocket. | Pass-through of existing payloads with `event: "api-agent:chunk", sessionId, payload: …` |
-| (c) Approve/deny permission | `respond_permission` (`api_agent.rs:653`), `respond_edit` (`api_agent.rs:721`) | No — wrap. | `{type:"respond_permission", sessionId, toolId, decision}` |
-| (d) Send follow-up | `send_api_agent_message` (`api_agent.rs:489`) | No — wrap. | `{type:"send_message", sessionId, content, attachments?}` |
-| (e) Push on attention | None. | **Yes** — `mobile_register_device(token)`, plus internal "attention" emitter triggering on `permission_request` / `pending_edit` / `error` events. | Relay → APNs / Web Push API. |
+| Mobile need                   | Existing Rust command                                                                                      | New command needed?                                                                                                                                | Protocol envelope                                                                        |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| (a) List active conversations | None — frontend holds it in Zustand. `load_conversations` (`conversations.rs:49`) returns persisted JSONs. | **Yes** — `mobile_list_conversations()` returning summary objects (id, title, model, status, lastMessage, updatedAt).                              | `{type:"conversations", items:[…]}`                                                      |
+| (b) Stream live               | None — events are Tauri-process-local.                                                                     | **Yes** — `mobile_subscribe(sessionId)` hooks the same `app_handle.listen` Rust-side and pipes `api-agent:*` events to WebSocket.                  | Pass-through of existing payloads with `event: "api-agent:chunk", sessionId, payload: …` |
+| (c) Approve/deny permission   | `respond_permission` (`api_agent.rs:653`), `respond_edit` (`api_agent.rs:721`)                             | No — wrap.                                                                                                                                         | `{type:"respond_permission", sessionId, toolId, decision}`                               |
+| (d) Send follow-up            | `send_api_agent_message` (`api_agent.rs:489`)                                                              | No — wrap.                                                                                                                                         | `{type:"send_message", sessionId, content, attachments?}`                                |
+| (e) Push on attention         | None.                                                                                                      | **Yes** — `mobile_register_device(token)`, plus internal "attention" emitter triggering on `permission_request` / `pending_edit` / `error` events. | Relay → APNs / Web Push API.                                                             |
 
 ## 3. Three architecture options
 
 ### Option A — Embed WebSocket server in Rust core (`core/mobile_relay.rs`)
+
 - **Pros:** Lowest latency. Reuses existing event bus directly. Zero third-party infra.
 - **Cons:** Requires LAN reachability + port punch. mDNS/Bonjour discovery is fiddly inside iOS sandbox. Useless from a coffee shop. **APNs still needed for wake** — and APNs requires a cloud endpoint, so this option doesn't avoid hosting; it adds a redundant LAN path.
 - **Codebase fit:** Easy. New file `src-tauri/src/core/mobile_relay.rs`. Tauri's `Emitter`/`Listener` already export events to listen on. Add `tokio-tungstenite` or `axum`.
 
 ### Option B — Cloud relay (PacketADE relay service) [CHOSEN]
+
 - **Pros:** Works from anywhere. Push naturally lives on same host. Pairing token model well understood. Scales to multiple devices per desktop.
 - **Cons:** Infra to maintain. Latency cost on every chunk (desktop → relay → phone). Trust boundary: compromised relay sees every chunk unless E2E.
 - **Codebase fit:** Same `mobile_relay.rs` shape, but outbound client. Reuses same event subscription.
 - **External dep:** small WS server. We have our own infra to host on.
 
 ### Option C — Tunnel-as-a-service (Tailscale Funnel / Cloudflare Tunnel / ngrok)
+
 - **Pros:** Reuses Option A code. Punches NAT without us hosting.
 - **Cons:** Requires user to install/configure third-party tool. Doesn't solve push. Tailscale Funnel exposes to public Internet with its own auth that doesn't compose with ours. Operationally messy.
 - **Codebase fit:** Same as Option A.
@@ -87,14 +91,16 @@
 Ship `core/mobile_relay.rs` as a local WebSocket server (Option A) AND a thin self-hosted relay that does **only**: (1) push token forwarding, (2) NAT-pierce pairing when both ends are remote. Relay never sees plaintext — desktop and phone exchange a symmetric key during pairing and encrypt frames end-to-end. Relay is just a switchboard.
 
 Rationale:
+
 - Hard work is already in Rust: `Emitter`/`Listener` plus `forward_*` methods are the building blocks. WebSocket fan-out is ~300 lines.
 - Tauri sidecar architecture proves we can run a long-lived background task supervised by the Rust core. `SidecarManager` (`agent_sidecar.rs:354`) is the template.
-- Push needs *something* hosted regardless. Once that exists, having it also act as a fallback relay is a free win.
+- Push needs _something_ hosted regardless. Once that exists, having it also act as a fallback relay is a free win.
 - SSH-hardening playbook (host-key pinning, explicit "trust this device" gate) ports directly to "trust this phone". Precedent in `ServerFormModal` + `ssh_pin_host`.
 
 ## 5. iOS speaks to the RUST CORE, not the sidecar
 
 The sidecar is an internal implementation detail of provider routing. Re-emitting the `api-agent:*` event envelope over WS is the right abstraction:
+
 - Frontend already proves the contract works (`installApiAgentListeners` at `agentTaskStore.ts:395` is the reference consumer).
 - Both backends converge on this shape — phone gets one schema, not two.
 - Session resume just plumbs `resumeToken` (already in the `done` payload) plus the locally-persisted transcript. When the phone reconnects, `mobile_subscribe(sessionId)` re-attaches listeners; if session was idle, send `mobile_get_transcript(sessionId)` to backfill.
@@ -117,9 +123,10 @@ The phone protocol is the existing event protocol with a transport wrapper:
 
 **Today's desktop path:** `bash` tool call → `api_agent.rs:1280–1382` parks a `oneshot` in `pending_permissions`, emits `api-agent:permission-request:<sid>`, `AgentChatPane` renders `PermissionPrompt`, user clicks Allow, frontend calls `respond_permission` → `api_agent.rs:653` → `tx.send(decision)` unblocks the loop.
 
-**Mobile path** (**reusable** in bold, *new* in italic):
+**Mobile path** (**reusable** in bold, _new_ in italic):
+
 1. Sidecar/in-process emits **`api-agent:permission-request:<sid>`** with **`PermissionRequestPayload`** (`api_agent.rs:159`).
-2. *`mobile_relay`* has a global listener for `api-agent:*` events on every owned session; on `permission-request` it (a) forwards WS frame to subscribed phone, AND (b) flags session as "attention-needed" and calls *push API* with notification.
+2. _`mobile_relay`_ has a global listener for `api-agent:*` events on every owned session; on `permission-request` it (a) forwards WS frame to subscribed phone, AND (b) flags session as "attention-needed" and calls _push API_ with notification.
 3. Push delivers (mutable-content so the client can fetch + render before showing notification).
 4. PWA foregrounds, opens WS (if not already), sends `{type:"subscribe", sessionId}` — relay catches it up with any buffered events since last `ack`.
 5. User taps Allow → PWA sends `{type:"respond_permission", sessionId, toolId, decision:"allow_once"}` → relay invokes existing **`respond_permission`** Tauri command → existing oneshot fires → existing agent loop resumes.
@@ -137,6 +144,7 @@ See `v0-plan.md` for the full plan. Quick summary:
 **Out:** New conversations from phone · MCP config edits · profile editing · multi-pane · file browsing · voice input · attachments · worktree/SSH selection.
 
 **New Rust modules:**
+
 - `src-tauri/src/core/mobile_relay.rs` — WS lifecycle (mirror of `SidecarManager`).
 - `src-tauri/src/core/mobile_protocol.rs` — `MobileRequest` / `MobileEvent` envelope types.
 - `src-tauri/src/core/mobile_pairing.rs` — token issuance, fingerprint pinning per device (analog of `ssh_pin_host`).
@@ -145,6 +153,7 @@ See `v0-plan.md` for the full plan. Quick summary:
 **New sidecar protocol additions:** none. Mobile never talks to the sidecar.
 
 **Frontend additions (desktop side):**
+
 - `src/components/views/MobileView.tsx` — pairing QR, device list, revoke button.
 - `src/stores/mobileStore.ts` — paired-device list, persisted under `packetade:mobile-devices`.
 - A new `AppView` enum entry `"mobile"` in `appStore.ts`.
@@ -154,7 +163,7 @@ See `v0-plan.md` for the full plan. Quick summary:
 - **Pairing must be an explicit gesture.** Same as `host_fingerprint` pinning — no TOFU. Phone fingerprint shown on desktop; user must tap "Trust this device". Mirror `ssh_fetch_fingerprint` / `ssh_pin_host` UX.
 - **Long-term device keys in OS keyring**, scheme `mobile-device-<id>`, service `KEYRING_SERVICE`. Parallels `ssh-<ServerConfig.id>` (`commands/ssh_keys.rs`).
 - **Transport.** TLS even on LAN (self-signed cert per desktop install, fingerprint surfaced in pairing). For cloud-relay path, relay sees only ciphertext.
-- **Secret handling.** API keys NEVER leave the desktop. Phone receives streamed *output* only.
+- **Secret handling.** API keys NEVER leave the desktop. Phone receives streamed _output_ only.
 - **Per-device capability scope:** `read_only` (subscribe + list), `respond` (+permission/edit decisions), `send` (+message), `full` (+new conversation). Default v0: `respond` only.
 - **Audit log.** Every mobile-originated action lands in `~/.packetade/mobile-audit.log` (append-only, JSON-lines). Parallels `commands/usage.rs`.
 - **Rate limits.** Per-device cap on `send_message` (e.g. 30/min). Defense against compromised phone. Implement with `tokio::sync::Semaphore` or token bucket in `mobile_relay.rs`.

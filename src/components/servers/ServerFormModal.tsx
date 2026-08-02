@@ -1,19 +1,33 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Server, ShieldCheck, AlertTriangle, Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
-import { sshFetchFingerprint, sshPinHost, type HostKey } from "@/lib/tauri";
+import {
+  getSshPasswordExists,
+  sshCheckRemotePath,
+  sshFetchFingerprint,
+  sshPinHost,
+  type HostKey,
+} from "@/lib/tauri";
+import { generateId } from "@/lib/storage";
 import { isSafeKeyPath, UNSAFE_KEYPATH_MESSAGE } from "@/lib/sshKeyPath";
 import type { ServerConfig } from "@/types/server";
 
 interface ServerFormModalProps {
   onClose: () => void;
-  onSubmit: (config: Omit<ServerConfig, "id" | "installedAgents">) => void;
+  onSubmit: (submission: ServerFormSubmission) => Promise<void>;
   initial?: ServerConfig;
+}
+
+export interface ServerFormSubmission {
+  serverId: string;
+  config: Omit<ServerConfig, "id" | "installedAgents">;
+  passwordAction: { kind: "keep" } | { kind: "set"; password: string } | { kind: "delete" };
 }
 
 type VerifyPhase = "idle" | "fetching" | "review" | "pinned" | "error";
 
 export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalProps) {
+  const [serverId] = useState(() => initial?.id ?? generateId("srv"));
   const [name, setName] = useState(initial?.name ?? "");
   const [host, setHost] = useState(initial?.host ?? "");
   const [port, setPort] = useState(initial?.port ?? 22);
@@ -23,6 +37,33 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
   );
   const [keyPath, setKeyPath] = useState(initial?.keyPath ?? "");
   const [remotePath, setRemotePath] = useState(initial?.remotePath ?? "");
+  const [password, setPassword] = useState("");
+  const [passwordLookup, setPasswordLookup] = useState<"checking" | "stored" | "missing" | "error">(
+    initial ? "checking" : "missing",
+  );
+  const [credentialAccessError, setCredentialAccessError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [testStatus, setTestStatus] = useState<"idle" | "testing" | "passed" | "failed">("idle");
+  const [testMessage, setTestMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!initial) return;
+    void getSshPasswordExists(initial.id)
+      .then((exists) => {
+        if (!cancelled) setPasswordLookup(exists ? "stored" : "missing");
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setPasswordLookup("error");
+          setCredentialAccessError(error instanceof Error ? error.message : String(error));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initial]);
 
   // Host-key pinning state
   const [hostFingerprint, setHostFingerprint] = useState<string | undefined>(
@@ -40,9 +81,23 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
   const needsVerification =
     !!trimmedHost && (!hostFingerprint || hostChangedFromInitial) && verifyPhase !== "pinned";
 
+  function invalidateConnectionTest() {
+    setTestStatus("idle");
+    setTestMessage(null);
+  }
+
+  function invalidatePinnedEndpoint() {
+    setHostFingerprint(undefined);
+    setVerifyPhase("idle");
+    setVerifyError(null);
+    setDiscoveredKeys([]);
+    invalidateConnectionTest();
+  }
+
   async function handleVerify() {
     if (!trimmedHost) return;
     setVerifyError(null);
+    invalidateConnectionTest();
     setVerifyPhase("fetching");
     try {
       const keys = await sshFetchFingerprint(trimmedHost, port);
@@ -54,7 +109,7 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
       setDiscoveredKeys(keys);
       setVerifyPhase("review");
     } catch (e) {
-      setVerifyError(typeof e === "string" ? e : (e as Error)?.message ?? "Lookup failed");
+      setVerifyError(typeof e === "string" ? e : ((e as Error)?.message ?? "Lookup failed"));
       setVerifyPhase("error");
     }
   }
@@ -64,8 +119,9 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
       await sshPinHost(trimmedHost, port, key.key);
       setHostFingerprint(key.fingerprint);
       setVerifyPhase("pinned");
+      invalidateConnectionTest();
     } catch (e) {
-      setVerifyError(typeof e === "string" ? e : (e as Error)?.message ?? "Pin failed");
+      setVerifyError(typeof e === "string" ? e : ((e as Error)?.message ?? "Pin failed"));
       setVerifyPhase("error");
     }
   }
@@ -73,39 +129,97 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
   // S2: reject key paths with control/shell-special bytes before they reach argv.
   const keyPathInvalid = authMethod === "key" && !isSafeKeyPath(keyPath.trim());
 
-  function handleSubmit() {
+  const passwordRequired =
+    authMethod === "password" &&
+    password.length === 0 &&
+    !(initial?.authMethod === "password" && passwordLookup === "stored");
+
+  async function handleTestConnection() {
+    if (!hostFingerprint || passwordRequired || keyPathInvalid) return;
+    setTestStatus("testing");
+    setTestMessage(null);
+    try {
+      const result = await sshCheckRemotePath({
+        targetId: initial ? serverId : null,
+        host: trimmedHost,
+        port,
+        user: username.trim(),
+        authMethod,
+        keyPath: authMethod === "key" ? keyPath.trim() || null : null,
+        password: authMethod === "password" ? password || null : null,
+        hostFingerprint,
+        remotePath: remotePath.trim() || ".",
+      });
+      if (!result.exists || !result.isDirectory) {
+        throw new Error(
+          "Authentication succeeded, but the configured remote path is not a directory.",
+        );
+      }
+      setTestStatus("passed");
+      setTestMessage(
+        result.isGitRepo
+          ? "Connected. The remote path is a Git repository."
+          : "Connected. The remote path is reachable.",
+      );
+    } catch (error) {
+      setTestStatus("failed");
+      setTestMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleSubmit() {
     if (!name.trim() || !host.trim() || !username.trim()) return;
     if (needsVerification) return; // gate save until pinned
     if (keyPathInvalid) return;
-    onSubmit({
-      name: name.trim(),
-      host: host.trim(),
-      port,
-      username: username.trim(),
-      authMethod,
-      keyPath: authMethod === "key" ? keyPath.trim() || undefined : undefined,
-      remotePath: remotePath.trim() || undefined,
-      hostFingerprint,
-    });
-    onClose();
+    if (passwordRequired) return;
+    setSaving(true);
+    setSubmitError(null);
+    try {
+      await onSubmit({
+        serverId,
+        config: {
+          name: name.trim(),
+          host: host.trim(),
+          port,
+          username: username.trim(),
+          authMethod,
+          keyPath: authMethod === "key" ? keyPath.trim() || undefined : undefined,
+          remotePath: remotePath.trim() || undefined,
+          hostFingerprint,
+        },
+        passwordAction:
+          authMethod === "password" && password
+            ? { kind: "set", password }
+            : initial?.authMethod === "password" && authMethod !== "password"
+              ? { kind: "delete" }
+              : { kind: "keep" },
+      });
+      onClose();
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSaving(false);
+    }
   }
 
   const footer = (
     <div className="flex items-center justify-end gap-2">
       <button
         onClick={onClose}
-        className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
+        className="px-3 py-1.5 text-xs text-text-secondary transition-colors hover:text-text-primary"
       >
         Cancel
       </button>
       <button
-        onClick={handleSubmit}
+        onClick={() => void handleSubmit()}
         disabled={
+          saving ||
           !name.trim() ||
           !host.trim() ||
           !username.trim() ||
           needsVerification ||
-          keyPathInvalid
+          keyPathInvalid ||
+          passwordRequired
         }
         title={
           needsVerification
@@ -114,9 +228,9 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
               ? UNSAFE_KEYPATH_MESSAGE
               : undefined
         }
-        className="px-4 py-1.5 text-xs bg-accent-green/15 text-accent-green border border-accent-green/30 rounded font-medium hover:bg-accent-green/25 transition-colors disabled:opacity-40"
+        className="bg-accent-green/15 border-accent-green/30 hover:bg-accent-green/25 rounded border px-4 py-1.5 text-xs font-medium text-accent-green transition-colors disabled:opacity-40"
       >
-        {initial ? "Save" : "Add Server"}
+        {saving ? "Saving…" : initial ? "Save" : "Add Server"}
       </button>
     </div>
   );
@@ -129,7 +243,7 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
       width="w-[480px]"
       footer={footer}
     >
-      <div className="p-4 space-y-3">
+      <div className="space-y-3 p-4">
         <div className="flex flex-col gap-1">
           <label className="text-[11px] font-medium text-text-secondary">Name</label>
           <input
@@ -137,7 +251,7 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="My Server"
-            className="bg-bg-primary text-xs text-text-primary px-3 py-2 rounded border border-bg-border outline-none focus:border-accent-green/50"
+            className="focus:border-accent-green/50 rounded border border-bg-border bg-bg-primary px-3 py-2 text-xs text-text-primary outline-none"
           />
         </div>
 
@@ -147,9 +261,12 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
             <input
               type="text"
               value={host}
-              onChange={(e) => setHost(e.target.value)}
+              onChange={(e) => {
+                setHost(e.target.value);
+                invalidatePinnedEndpoint();
+              }}
               placeholder="192.168.1.100 or dev.example.com"
-              className="bg-bg-primary text-xs text-text-primary px-3 py-2 rounded border border-bg-border outline-none focus:border-accent-green/50"
+              className="focus:border-accent-green/50 rounded border border-bg-border bg-bg-primary px-3 py-2 text-xs text-text-primary outline-none"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -157,8 +274,11 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
             <input
               type="number"
               value={port}
-              onChange={(e) => setPort(Number(e.target.value) || 22)}
-              className="bg-bg-primary text-xs text-text-primary px-3 py-2 rounded border border-bg-border outline-none focus:border-accent-green/50"
+              onChange={(e) => {
+                setPort(Number(e.target.value) || 22);
+                invalidatePinnedEndpoint();
+              }}
+              className="focus:border-accent-green/50 rounded border border-bg-border bg-bg-primary px-3 py-2 text-xs text-text-primary outline-none"
             />
           </div>
         </div>
@@ -168,20 +288,26 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
           <input
             type="text"
             value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            onChange={(e) => {
+              setUsername(e.target.value);
+              invalidateConnectionTest();
+            }}
             placeholder="ubuntu"
-            className="bg-bg-primary text-xs text-text-primary px-3 py-2 rounded border border-bg-border outline-none focus:border-accent-green/50"
+            className="focus:border-accent-green/50 rounded border border-bg-border bg-bg-primary px-3 py-2 text-xs text-text-primary outline-none"
           />
         </div>
 
         <div className="flex flex-col gap-1">
           <label className="text-[11px] font-medium text-text-secondary">Authentication</label>
-          <div className="flex rounded-lg border border-bg-border overflow-hidden">
+          <div className="flex overflow-hidden rounded-lg border border-bg-border">
             {(["agent", "key", "password"] as const).map((m) => (
               <button
                 key={m}
-                onClick={() => setAuthMethod(m)}
-                className={`flex-1 py-1.5 text-xs font-medium transition-colors border-r last:border-r-0 border-bg-border ${
+                onClick={() => {
+                  setAuthMethod(m);
+                  invalidateConnectionTest();
+                }}
+                className={`flex-1 border-r border-bg-border py-1.5 text-xs font-medium transition-colors last:border-r-0 ${
                   authMethod === m
                     ? "bg-accent-green/15 text-accent-green"
                     : "bg-bg-primary text-text-muted hover:text-text-secondary"
@@ -199,14 +325,17 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
             <input
               type="text"
               value={keyPath}
-              onChange={(e) => setKeyPath(e.target.value)}
+              onChange={(e) => {
+                setKeyPath(e.target.value);
+                invalidateConnectionTest();
+              }}
               placeholder="~/.ssh/id_rsa"
               aria-invalid={keyPathInvalid}
               aria-describedby={keyPathInvalid ? "keypath-error" : undefined}
-              className={`bg-bg-primary text-xs text-text-primary font-mono px-3 py-2 rounded border outline-none ${
+              className={`rounded border bg-bg-primary px-3 py-2 font-mono text-xs text-text-primary outline-none ${
                 keyPathInvalid
                   ? "border-accent-red/60 focus:border-accent-red"
-                  : "border-bg-border focus:border-accent-green/50"
+                  : "focus:border-accent-green/50 border-bg-border"
               }`}
             />
             {keyPathInvalid && (
@@ -217,16 +346,59 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
           </div>
         )}
 
+        {authMethod === "password" && (
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="server-password"
+              className="text-[11px] font-medium text-text-secondary"
+            >
+              Password
+            </label>
+            <input
+              id="server-password"
+              type="password"
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setSubmitError(null);
+                invalidateConnectionTest();
+              }}
+              autoComplete="new-password"
+              placeholder={
+                passwordLookup === "stored"
+                  ? "Stored in OS credential manager"
+                  : passwordLookup === "checking"
+                    ? "Checking OS credential manager…"
+                    : "Required"
+              }
+              aria-invalid={passwordRequired}
+              className="focus:border-accent-green/50 rounded border border-bg-border bg-bg-primary px-3 py-2 text-xs text-text-primary outline-none"
+            />
+            <p className="text-[10px] text-text-muted">
+              Stored only in the OS credential manager. Leave blank to keep the saved password.
+            </p>
+            {credentialAccessError && (
+              <p role="alert" className="text-[10px] text-accent-red">
+                Could not access the saved credential: {credentialAccessError}. Enter a password to
+                replace it, or retry after unlocking the OS credential manager.
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-col gap-1">
           <label className="text-[11px] font-medium text-text-secondary">
-            Default Remote Path <span className="text-text-muted font-normal">(optional)</span>
+            Default Remote Path <span className="font-normal text-text-muted">(optional)</span>
           </label>
           <input
             type="text"
             value={remotePath}
-            onChange={(e) => setRemotePath(e.target.value)}
+            onChange={(e) => {
+              setRemotePath(e.target.value);
+              invalidateConnectionTest();
+            }}
             placeholder="/home/ubuntu/projects/my-app"
-            className="bg-bg-primary text-xs text-text-primary font-mono px-3 py-2 rounded border border-bg-border outline-none focus:border-accent-green/50"
+            className="focus:border-accent-green/50 rounded border border-bg-border bg-bg-primary px-3 py-2 font-mono text-xs text-text-primary outline-none"
           />
         </div>
 
@@ -246,9 +418,7 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
           </div>
 
           {verifyPhase === "pinned" && hostFingerprint && !hostChangedFromInitial && (
-            <div className="text-[10px] font-mono text-text-muted break-all">
-              {hostFingerprint}
-            </div>
+            <div className="break-all font-mono text-[10px] text-text-muted">{hostFingerprint}</div>
           )}
 
           {(verifyPhase === "idle" || verifyPhase === "error" || hostChangedFromInitial) && (
@@ -256,7 +426,7 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
               type="button"
               disabled={!trimmedHost || verifyPhase === "fetching"}
               onClick={handleVerify}
-              className="self-start px-2.5 py-1 text-[11px] bg-accent-blue/15 text-accent-blue border border-accent-blue/30 rounded font-medium hover:bg-accent-blue/25 transition-colors disabled:opacity-40"
+              className="bg-accent-blue/15 border-accent-blue/30 hover:bg-accent-blue/25 self-start rounded border px-2.5 py-1 text-[11px] font-medium text-accent-blue transition-colors disabled:opacity-40"
             >
               {hostChangedFromInitial && verifyPhase !== "fetching"
                 ? "Re-verify host key"
@@ -273,11 +443,11 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
 
           {verifyPhase === "review" && discoveredKeys.length > 0 && (
             <div className="flex flex-col gap-2">
-              <div className="flex items-start gap-1.5 text-[10px] text-accent-yellow">
+              <div className="text-accent-yellow flex items-start gap-1.5 text-[10px]">
                 <AlertTriangle size={11} className="mt-0.5 flex-shrink-0" />
                 <span>
-                  If you don't recognise this fingerprint, do <strong>not</strong>{" "}
-                  proceed — verify it out-of-band with the server operator.
+                  If you don't recognise this fingerprint, do <strong>not</strong> proceed — verify
+                  it out-of-band with the server operator.
                 </span>
               </div>
               {discoveredKeys.map((k) => (
@@ -292,12 +462,12 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
                     <button
                       type="button"
                       onClick={() => handleTrust(k)}
-                      className="px-2 py-0.5 text-[10px] bg-accent-green/15 text-accent-green border border-accent-green/30 rounded hover:bg-accent-green/25 transition-colors"
+                      className="bg-accent-green/15 border-accent-green/30 hover:bg-accent-green/25 rounded border px-2 py-0.5 text-[10px] text-accent-green transition-colors"
                     >
                       Trust this host
                     </button>
                   </div>
-                  <div className="text-[10px] font-mono text-text-primary break-all">
+                  <div className="break-all font-mono text-[10px] text-text-primary">
                     {k.fingerprint}
                   </div>
                 </div>
@@ -305,10 +475,39 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
             </div>
           )}
 
-          {verifyError && (
-            <div className="text-[10px] text-accent-red">{verifyError}</div>
-          )}
+          {verifyError && <div className="text-[10px] text-accent-red">{verifyError}</div>}
         </div>
+
+        {verifyPhase === "pinned" && (
+          <div className="rounded border border-bg-border bg-bg-primary p-3">
+            <button
+              type="button"
+              onClick={() => void handleTestConnection()}
+              disabled={
+                testStatus === "testing" || !username.trim() || keyPathInvalid || passwordRequired
+              }
+              className="bg-accent-blue/15 border-accent-blue/30 hover:bg-accent-blue/25 rounded border px-2.5 py-1 text-[11px] font-medium text-accent-blue transition-colors disabled:opacity-40"
+            >
+              {testStatus === "testing" ? "Testing…" : "Test host, auth, and path"}
+            </button>
+            {testMessage && (
+              <p
+                role={testStatus === "failed" ? "alert" : "status"}
+                className={`mt-2 text-[10px] ${
+                  testStatus === "failed" ? "text-accent-red" : "text-accent-green"
+                }`}
+              >
+                {testMessage}
+              </p>
+            )}
+          </div>
+        )}
+
+        {submitError && (
+          <p role="alert" className="text-[10px] text-accent-red">
+            Could not save server: {submitError}
+          </p>
+        )}
       </div>
     </Modal>
   );

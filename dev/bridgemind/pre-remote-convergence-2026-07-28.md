@@ -5,6 +5,12 @@ runtime gates isolated**
 
 Baseline: **v0.10.2**
 
+> **Provider correction (2026-08-01):** this is a dated convergence record.
+> References below to the former Codex subscription chat provider and its MCP
+> trust proxy describe the July 28 runtime only. `api-openai-codex` and that
+> proxy were removed on July 31; the current live/packaged matrix covers the
+> API-key-backed Claude Agent SDK, OpenAI Agents SDK, and in-process providers.
+
 ## Scope and stop boundary
 
 This record closes the locally executable portion of the user-confirmed
@@ -60,22 +66,22 @@ publication, secret change, or protected-branch bypass was performed.
 
 ## Verification evidence
 
-| Gate                                | Result                                                                                                                        |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm format:check`                 | pass                                                                                                                          |
-| `pnpm lint`                         | pass, 0 errors; 9 existing Fast Refresh warnings                                                                              |
-| `pnpm test`                         | pass, 156 files / 1,207 tests                                                                                                 |
-| `pnpm build`                        | pass, production frontend                                                                                                     |
-| `pnpm e2e`                          | pass, 7/7 Chromium web-mode smokes                                                                                            |
-| `pnpm run sidecar:check`            | pass, protocol v11 and deterministic provider/MCP smokes                                                                      |
-| Live Anthropic multi-turn           | gated; two 60-second attempts produced no terminal event, deterministic suite now requires `PACKETADE_LIVE_ANTHROPIC_SMOKE=1` |
-| `cargo fmt --check`                 | pass                                                                                                                          |
-| `cargo check`                       | pass; existing ts-rs `missionId` alias warning only                                                                           |
-| `cargo test --no-run`               | pass; both Rust test executables compiled                                                                                     |
+| Gate                                | Result                                                                                                                           |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm format:check`                 | pass                                                                                                                             |
+| `pnpm lint`                         | pass, 0 errors; 9 existing Fast Refresh warnings                                                                                 |
+| `pnpm test`                         | pass, 156 files / 1,207 tests                                                                                                    |
+| `pnpm build`                        | pass, production frontend                                                                                                        |
+| `pnpm e2e`                          | pass, 7/7 Chromium web-mode smokes                                                                                               |
+| `pnpm run sidecar:check`            | pass, protocol v11 and deterministic provider/MCP smokes                                                                         |
+| Live Anthropic multi-turn           | gated; two 60-second attempts produced no terminal event, deterministic suite now requires `PACKETADE_LIVE_ANTHROPIC_SMOKE=1`    |
+| `cargo fmt --check`                 | pass                                                                                                                             |
+| `cargo check`                       | pass; existing ts-rs `missionId` alias warning only                                                                              |
+| `cargo test --no-run`               | pass; both Rust test executables compiled                                                                                        |
 | `pnpm check:tauri-schema`           | pass after adding a linker-level Common Controls v6 manifest dependency; the native schema and Rust unit-test executables launch |
-| `pnpm tauri build`                  | pass; unsigned Windows standalone EXE, MSI, and NSIS installer                                                                |
-| `pnpm run release:readiness:report` | 0 failures, 6 expected signing/updater warnings                                                                               |
-| `git diff --check`                  | pass; CRLF future-normalization warnings only                                                                                 |
+| `pnpm tauri build`                  | pass; unsigned Windows standalone EXE, MSI, and NSIS installer                                                                   |
+| `pnpm run release:readiness:report` | 0 failures, 6 expected signing/updater warnings                                                                                  |
+| `git diff --check`                  | pass; CRLF future-normalization warnings only                                                                                    |
 
 ## Unsigned local artifacts
 

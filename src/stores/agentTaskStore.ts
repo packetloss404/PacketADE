@@ -496,6 +496,8 @@ interface AgentTaskStore {
   // --- Conversation state ---
   conversations: AgentConversation[];
   selectedConversationId: string | null;
+  /** Session ids whose Stop command has been sent but not yet acknowledged. */
+  cancellingConversationIds: Set<string>;
 
   setSelectedRepo: (repo: string | null) => void;
 
@@ -643,6 +645,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   // --- Conversation state ---
   conversations: [],
   selectedConversationId: null,
+  cancellingConversationIds: new Set(),
 
   setSelectedRepo: (repo) => set({ selectedRepo: repo }),
 
@@ -1232,34 +1235,51 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   },
 
   cancelActiveConversation: async (id) => {
-    // Clear the queue and settle the conversation SYNCHRONOUSLY, before the
-    // backend cancel can emit its `api-agent:done` — otherwise the done
-    // listener drains the queue and re-sends the very message the user was
-    // cancelling (G33). Dropping `queued:true` bubbles prevents a bubble
-    // stuck forever in "queued".
+    if (get().cancellingConversationIds.has(id)) return;
+
+    // Clear the queue SYNCHRONOUSLY before the backend cancel can emit its
+    // `api-agent:done` — otherwise the done listener drains the queue and
+    // re-sends the very message the user was cancelling (G33). Keep the turn
+    // active and its streaming marker intact until Rust acknowledges Stop;
+    // reporting Idle before that invoke resolves made a failed cancellation
+    // look successful.
     let updated: AgentConversation | undefined;
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const messages = c.messages
-          .filter((m) => !m.queued)
-          .map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m));
-        const next: AgentConversation = {
-          ...c,
-          messages,
-          queuedMessages: [],
-          status: "idle",
-          updatedAt: Date.now(),
-        };
-        updated = next;
-        return next;
-      }),
-    }));
+    set((s) => {
+      const cancellingConversationIds = new Set(s.cancellingConversationIds);
+      cancellingConversationIds.add(id);
+      return {
+        cancellingConversationIds,
+        conversations: s.conversations.map((c) => {
+          if (c.id !== id) return c;
+          const messages = c.messages.filter((m) => !m.queued);
+          const next: AgentConversation = {
+            ...c,
+            messages,
+            queuedMessages: [],
+            updatedAt: Date.now(),
+          };
+          updated = next;
+          return next;
+        }),
+      };
+    });
     if (updated) scheduleSave(updated);
+
     try {
       await invoke("cancel_api_agent_session", { sessionId: id });
+      // IPC success means the cancel command was accepted by Rust (and, for a
+      // sidecar session, queued to its writer) — not that the provider has
+      // stopped. `api-agent:done { cancelled: true }` is the authoritative
+      // acknowledgement and clears the stopping state in apiAgentListeners.
     } catch (e) {
-      console.warn("cancel_api_agent_session failed:", e);
+      set((s) => {
+        const cancellingConversationIds = new Set(s.cancellingConversationIds);
+        cancellingConversationIds.delete(id);
+        return { cancellingConversationIds };
+      });
+      // The conversation intentionally remains active. The Stop control
+      // becomes available again instead of falsely claiming the agent is idle.
+      console.warn("cancel_api_agent_session failed; conversation remains active:", e);
     }
   },
 

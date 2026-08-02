@@ -19,10 +19,7 @@ import { test, expect } from "./setup/fixtures";
  * drawn from these captures.
  */
 
-const OUT_ROOT = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "visual-audit-output",
-);
+const OUT_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "visual-audit-output");
 
 const VIEWPORTS = [
   { width: 1920, height: 1080 },
@@ -41,11 +38,7 @@ async function snap(page: Page, dir: string, name: string) {
 }
 
 /** Tolerant step: capture-or-log, never fail the run. */
-async function auditStep(
-  info: TestInfo,
-  label: string,
-  fn: () => Promise<void>,
-): Promise<void> {
+async function auditStep(info: TestInfo, label: string, fn: () => Promise<void>): Promise<void> {
   await test.step(label, async () => {
     try {
       await fn();
@@ -96,9 +89,9 @@ for (const vp of VIEWPORTS) {
 
       await auditStep(info, "workspace (empty/onboarding)", async () => {
         await railTo(page, "Workspace");
-        await expect(
-          page.getByRole("heading", { name: "Welcome to PacketADE" }),
-        ).toBeVisible({ timeout: 10_000 });
+        await expect(page.getByRole("heading", { name: "Welcome to PacketADE" })).toBeVisible({
+          timeout: 10_000,
+        });
         await snap(page, dir, "02-workspace-empty");
       });
 
@@ -124,9 +117,9 @@ for (const vp of VIEWPORTS) {
 
       await auditStep(info, "issues board", async () => {
         await railTo(page, "Issues");
-        await expect(
-          page.getByPlaceholder("Filter by label, agent, flight…"),
-        ).toBeVisible({ timeout: 10_000 });
+        await expect(page.getByPlaceholder("Filter by label, agent, flight…")).toBeVisible({
+          timeout: 10_000,
+        });
         await snap(page, dir, "05-issues");
       });
 
@@ -185,16 +178,19 @@ for (const vp of VIEWPORTS) {
       for (const [label, file] of groups) {
         await auditStep(info, `settings group: ${label}`, async () => {
           await robustClick(page, page.getByRole("button", { name: label, exact: true }));
-          await expect(
-            page.getByRole("heading", { name: label, exact: true }),
-          ).toBeVisible({ timeout: 5_000 });
+          await expect(page.getByRole("heading", { name: label, exact: true })).toBeVisible({
+            timeout: 5_000,
+          });
           await snap(page, dir, file);
         });
       }
 
       // A representative sub-tab inside a group (CLI Clients).
       await auditStep(info, "settings sub-tab: CLI Clients", async () => {
-        await robustClick(page, page.getByRole("button", { name: "Workspaces & Terminal", exact: true }));
+        await robustClick(
+          page,
+          page.getByRole("button", { name: "Workspaces & Terminal", exact: true }),
+        );
         await robustClick(page, page.getByRole("button", { name: "CLI Clients", exact: true }));
         await snap(page, dir, "17-settings-cli-clients");
       });

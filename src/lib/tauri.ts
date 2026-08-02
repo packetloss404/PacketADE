@@ -1059,6 +1059,12 @@ export async function getSshPasswordExists(targetId: string): Promise<boolean> {
   return invoke<boolean>("get_ssh_password_exists", { targetId });
 }
 
+/** Store a remote-server password in the OS credential store. The password is
+ * never part of `ServerConfig` or any persisted frontend state. */
+export async function setSshPassword(serverId: string, password: string): Promise<void> {
+  return invoke("set_ssh_password", { serverId, password });
+}
+
 /**
  * Purge the OS-keyring password for a server (current + legacy service).
  * Called when a `ServerConfig` is deleted — otherwise the secret outlives the
@@ -3437,10 +3443,18 @@ export async function getFileHeadContent(
   return invoke<string | null>("get_file_head_content", { projectPath, relPath });
 }
 
-// Side chat — fire-and-forget. Listen for `side-chat:done` / `side-chat:error`
-// for the result; see src/lib/events.ts for the event names.
-export async function askSideChatStream(question: string, context: string): Promise<void> {
-  return invoke("ask_side_chat_stream", { question, context });
+// Side chat — fire-and-forget, but request-scoped. Every stream event carries
+// `requestId`; closing/stopping the overlay cancels only that request.
+export async function askSideChatStream(
+  requestId: string,
+  question: string,
+  context: string,
+): Promise<void> {
+  return invoke("ask_side_chat_stream", { requestId, question, context });
+}
+
+export async function cancelSideChatStream(requestId: string): Promise<boolean> {
+  return invoke<boolean>("cancel_side_chat_stream", { requestId });
 }
 
 // === Sidecar lifecycle (v2 Tier 2 slice B) =================================

@@ -1,9 +1,9 @@
 # Sidecar-over-SSH Verification
 
 Read-only verification plan for the Remote Workspace Completeness track. This
-document is scoped to Sidecar-over-SSH provider parity: subscription providers
-must run provider work on the SSH host, while the desktop keeps the same
-`api-agent:*` event contract.
+document is scoped to Sidecar-over-SSH provider parity: the API-key-backed
+Claude Agent SDK and OpenAI Agents SDK rows must run provider work on the SSH
+host, while the desktop keeps the same `api-agent:*` event contract.
 
 ## Current Behavior
 
@@ -77,7 +77,7 @@ Use one Unix SSH host with a pinned host key and a real git checkout.
    `PACKETADE_REMOTE_SIDECAR_PATH` pointing at the remote entry path.
 4. Confirm `node` is on the remote PATH, or start PacketADE with
    `PACKETADE_REMOTE_NODE_PATH` set to the remote Node binary path.
-5. Start a conversation tile in a remote workspace with **Anthropic (Subscription)**
+5. Start a conversation tile in a remote workspace with **Claude Agent SDK (API)**
    against the SSH project.
 6. Verify the local sidecar safety-net error does not appear:
    "Remote SSH workspace metadata reached the local sidecar".
@@ -92,20 +92,19 @@ Use one Unix SSH host with a pinned host key and a real git checkout.
     idle state without leaving the session stuck active.
 11. Resume the same conversation and confirm the stored remote server id,
     remote path, port, key path, and host fingerprint are used.
-12. Repeat the smoke with **OpenAI (ChatGPT Plus/Pro)** — Codex routes through
-    the remote sidecar today (no per-provider SSH gate; `codex exec` runs
-    natively on the host where the sidecar runs). Preconditions: `~/.codex/auth.json`
-    present on the remote host (`codex login` there), and the sidecar built under
-    `~/.packetade/agent-sidecar`. Confirm a multi-turn conversation resumes
-    correctly (the `codex exec resume` rollout file lives on the remote host, so
-    cross-turn resume stays on one host). This step is the only remaining
-    Codex-over-SSH verification — the routing itself is regression-locked in
-    `agentCatalog.test.ts` and `agent_sidecar/mod.rs`.
+12. Repeat the smoke with **OpenAI Agents SDK (API)**. It shares the same
+    provider-agnostic remote-sidecar route but receives its API key transiently
+    from PacketADE's keyring. Confirm a multi-turn conversation, permission
+    request, pending edit, cancellation, and resume all stay bound to the remote
+    project. The retired `api-openai-codex` / `codex exec` chat provider is not
+    part of this matrix; Codex CLI remains available separately as a PTY-backed
+    Workspace session.
 
-Current verification state (2026-07-19): automated route, remote-project, and
-protocol checks pass. The live step 12 remains pending because this development
-profile contains no configured SSH server; it requires a real pinned Unix host
-with remote Codex auth and the installed sidecar.
+Current verification state (2026-08-01): automated route, remote-project,
+protocol, ordering, and MCP trust checks pass. The live provider matrix remains
+pending because this development profile contains no configured SSH server; it
+requires a real pinned Unix host with the installed sidecar and the relevant
+API keys configured in PacketADE.
 
 ## Failure Modes To Watch
 
@@ -120,3 +119,12 @@ with remote Codex auth and the installed sidecar.
   existing `api-agent:*` UI event channels.
 - `close_session` or `cancel` only touching the local sidecar manager while the
   remote process keeps running.
+
+## 2026-08-01 proof refresh
+
+`pnpm sidecar:check` passes the remote-project, protocol, ordering, MCP trust,
+and remote-MCP-from-filesystem smokes; the focused remote picker and Workspace
+decoupling tests pass too. PacketADE still has zero configured SSH servers, and
+the remote Node/sidecar overrides are absent. The live provider matrix therefore
+remains a real environment gate rather than an automated claim. See
+[`proof-audit-2026-08-01.md`](./proof-audit-2026-08-01.md).
