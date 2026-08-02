@@ -45,5 +45,10 @@ pub const TEMP_DIR_PREFIX: &str = "packetade";
 /// Internal environment variable used by the self-reinvoked SSH askpass helper.
 pub const SSH_ASKPASS_FILE_ENV: &str = "PACKETADE_ASKPASS_FILE";
 
+/// Internal environment used by the self-reinvoked Claude status-line helper.
+pub const CLAUDE_STATUSLINE_HELPER_ENV: &str = "PACKETADE_STATUSLINE_HELPER";
+pub const CLAUDE_STATUSLINE_DIR_ENV: &str = "PACKETADE_STATUSLINE_DIR";
+pub const CLAUDE_STATUSLINE_SENTINEL: &str = "__packetade_claude_statusline";
+
 /// Branded HTTP referer for OpenRouter attribution.
 pub const BRAND_URL: &str = "https://packetade.dev";

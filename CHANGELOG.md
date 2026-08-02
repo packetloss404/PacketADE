@@ -26,6 +26,18 @@ task list.
 - Dedicated coding-CLI panes remain unchanged; SSH Terminal panes open the
   remote host's login shell.
 
+### Fixed — Claude Code native status line (2026-08-02)
+
+- Claude Code panes now receive a PacketADE-owned, session-scoped status-line
+  collector through Claude's supported `--settings` option. The native pane
+  bar no longer depends on a separately installed `claude-code-tools` script
+  or a user-edited `~/.claude/settings.json`.
+- The collector refreshes the existing model/context/cost state every five
+  seconds and works when Claude invokes it through either Windows PowerShell
+  or Git Bash. Global Claude settings are left untouched.
+- A visible collecting state occupies the native status row until Claude
+  emits the first session snapshot instead of making the bar disappear.
+
 ### Changed — API agents now use API keys, never subscription logins (2026-07-31)
 
 PacketADE no longer signs API agents in with a Claude.ai or ChatGPT

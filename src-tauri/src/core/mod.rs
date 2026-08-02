@@ -4,6 +4,7 @@ pub mod agents_md;
 // WI-1 — the auxiliary LLM seam every non-agentic feature routes through.
 pub mod aux_llm;
 pub mod brand;
+pub mod claude_statusline;
 // v0.8.8 quality ai: hand-authored prompts for the Code Quality AI features
 // (explain-error + summarize-run). Kept next to `github_ai_prompts` so prompt
 // iteration doesn't churn the command surface.

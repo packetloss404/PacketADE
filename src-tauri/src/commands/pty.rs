@@ -16,6 +16,8 @@ use tokio::process::Command as TokioCommand;
 use tokio::time::timeout;
 use uuid::Uuid;
 
+use crate::core::brand::{CLAUDE_STATUSLINE_DIR_ENV, CLAUDE_STATUSLINE_HELPER_ENV};
+
 fn pty_output_event(session_id: &str) -> String {
     format!("pty:output:{}", session_id)
 }
@@ -660,7 +662,14 @@ pub fn create_pty_session(
     }
 
     // Clear env vars that make Claude think it's inside another session
-    if command == "claude" {
+    if program == "claude" {
+        // PacketADE owns the native Claude status bar. Inject a session-local
+        // collector through Claude's supported `--settings` seam instead of
+        // requiring users to install a script or edit ~/.claude/settings.json.
+        // User settings remain loaded; this additional object overrides only
+        // statusLine for the PacketADE-launched process.
+        cmd.arg("--settings");
+        cmd.arg(crate::core::claude_statusline::settings_json());
         cmd.env_remove("CLAUDECODE");
         cmd.env_remove("CLAUDE_CODE_ENTRYPOINT");
         // The app manages claude's lifecycle; an auto-update mid-session can swap
@@ -684,6 +693,18 @@ pub fn create_pty_session(
         for (key, value) in extra_env {
             cmd.env(key, value);
         }
+    }
+
+    if program == "claude" {
+        let helper = std::env::current_exe()
+            .map_err(|error| format!("Could not resolve the Claude status-line helper: {error}"))?;
+        let state_dir = crate::core::claude_statusline::default_state_dir().ok_or_else(|| {
+            "Could not resolve the Claude status-line state directory".to_string()
+        })?;
+        // Apply internal values after pane-supplied env so they cannot be
+        // redirected by persisted Workspace state.
+        cmd.env(CLAUDE_STATUSLINE_HELPER_ENV, helper);
+        cmd.env(CLAUDE_STATUSLINE_DIR_ENV, state_dir);
     }
 
     // Spawn the child process in the PTY

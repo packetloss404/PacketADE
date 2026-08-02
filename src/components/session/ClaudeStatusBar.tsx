@@ -11,7 +11,16 @@ export function ClaudeStatusBar({ projectPath }: ClaudeStatusBarProps) {
   const [hovered, setHovered] = useState(false);
 
   if (!data) {
-    return null;
+    return (
+      <div
+        className="flex select-none items-center gap-2 border-t border-bg-border bg-bg-secondary px-3 text-[11px] text-text-muted"
+        style={{ height: 20, minHeight: 20 }}
+        aria-label="Claude Code status"
+      >
+        <span className="text-accent-blue">Claude Code</span>
+        <span>Collecting session status…</span>
+      </div>
+    );
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
@@ -37,7 +46,7 @@ export function ClaudeStatusBar({ projectPath }: ClaudeStatusBarProps) {
 
   return (
     <div
-      className="flex items-center gap-3 px-3 text-[11px] bg-bg-secondary border-t border-bg-border select-none"
+      className="flex select-none items-center gap-3 border-t border-bg-border bg-bg-secondary px-3 text-[11px]"
       style={{ height: 20, minHeight: 20, opacity: isStale ? 0.5 : 1 }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}

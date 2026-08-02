@@ -17,5 +17,9 @@ fn main() {
         std::process::exit(code);
     }
 
+    if let Some(code) = packetade_lib::core::claude_statusline::helper_main() {
+        std::process::exit(code);
+    }
+
     packetade_lib::run()
 }
