@@ -2,9 +2,9 @@
 
 Last updated: 2026-08-01 (Workspace/Agents and Settings IA are complete; the
 five main-shell/right-dock decisions and MS1–MS3 are implemented; the
-highest-priority operational-honesty residue is implemented in the current
-working tree and awaits final integrated gates; Remote Agents remains preserved
-at its Sprint-0 decision gate)
+highest-priority operational-honesty residue is committed, pushed, fully
+source-gated, and compiled into fresh unsigned Windows bundles; Remote Agents
+remains preserved at its Sprint-0 decision gate)
 
 > **2026-07-30 — State of the ADE review completed.** The State of the ADE
 > review ran to
@@ -25,8 +25,9 @@ at its Sprint-0 decision gate)
 > restore, issue and comment deletion, chrome de-duplication (Vitest 1581
 > across 200 files, `cargo test` 452 with 2 ignored). The 2026-08-01 follow-up
 > added the missing terminal-pane confirmation and made Agent Stop, Side Chat,
-> and Monitor failure feedback truthful; focused gates pass and final integrated
-> gates are pending. Remaining: MS4 polish/proof and **undo** (an owner design
+> and Monitor failure feedback truthful. Commit `fd8c226` is pushed, the full
+> source gates pass, and fresh unsigned Windows app/MSI/NSIS artifacts exist.
+> Remaining: manual packaged/MS4 proof and **undo** (an owner design
 > decision: soft-delete + restore vs a time-boxed undo toast).
 
 `ROADMAP.md` is the short product-direction document. It says what matters now

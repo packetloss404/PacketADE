@@ -1,8 +1,8 @@
 # Implemented-Feature Proof Audit — 2026-08-01
 
-Status: final integrated source-level gates refreshed. Real-runtime,
-credentialed-host, hardware, cross-platform, commit-bound, and current-package
-gates remain explicitly open.
+Status: final integrated source gates and a commit-bound unsigned Windows build
+are refreshed. Real-runtime, credentialed-host, hardware, cross-platform,
+signed-release, and manual packaged-acceptance gates remain explicitly open.
 
 This audit covers the features described in the master backlog as implemented
 but awaiting real or packaged proof. It does not promote an automated fixture
@@ -10,14 +10,15 @@ to packaged or live evidence.
 
 ## Revisions and environment
 
-- PacketADE source-audit base: `148375d` plus the integrated 2026-08-01 working
-  tree. No commit was requested or created, so this remains mutable source
-  evidence and must not be treated as release evidence.
+- PacketADE source/package revision: pushed `main` commit
+  `fd8c22643715572c89365e7a21bf3c7f06fd57f4`. The documentation-only package
+  evidence update follows that source commit; the binaries remain bound to
+  `fd8c226`.
 - PacketCode: clean `main` at `9f3364a`.
 - PacketAgent: clean `main` at `f71021c`.
 - Host: Windows. PacketADE has zero configured SSH servers and the shell has no
-  PacketADE remote-sidecar override. Two displays are visible, but no current
-  packaged build was launched during this source audit.
+  PacketADE remote-sidecar override. Two displays are visible. A current
+  package was compiled but not launched for the manual acceptance matrices.
 - Audio: Windows reports zero active capture endpoints, so a physical Dictation
   acceptance run is not possible on this host today.
 - Git hosts: `gh auth status` succeeds for GitHub. `tea` is not installed. The
@@ -36,21 +37,22 @@ to packaged or live evidence.
 | PacketADE high-priority focus set            | `pnpm exec vitest run src/components/workspace/__tests__/WorkspacePane.test.tsx src/stores/__tests__/sideChatStore.test.ts src/stores/__tests__/apiAgentListeners.test.ts src/components/agents/__tests__/AgentChatPane.stopping.test.tsx src/components/layout/__tests__/RunningAgentsChip.stopping.test.tsx src/components/agents/composer/__tests__/Composer.test.tsx src/components/agents/chat/__tests__/PendingApprovalsSection.dualMode.test.tsx src/components/layout/__tests__/ToolbarNewMenu.test.tsx src/stores/__tests__/githubStoreHostContext.test.ts src/lib/__tests__/git-hosts.test.ts src/components/views/github/__tests__/IssueList.test.tsx src/components/views/github/__tests__/PRList.test.tsx src/stores/__tests__/orchestrationSettingsStore.test.ts src/components/views/tools/__tests__/PlaceboSettingsControls.test.tsx src/components/views/tools/__tests__/ServersSettingsCard.test.tsx` | **PASS: 15 files / 108 tests**. Covers pane close, Side Chat and Agent Stop acknowledgement, pending-action ownership, Workspace/Git authority, host capability gates, Settings persistence, hidden placebo controls, and SSH-password UI flow. |
 | Anthropic pending-edit correlation           | `pnpm run sidecar:anthropic-edit-correlation-smoke`                                                                                                                                                                                                                                                            | **PASS** — `pending_edit` carries the exact non-empty `toolUseId` required by `edit_response`.                                                                                                                                                                                                                                                          |
 | Sidecar, remote routing, and MCP trust       | `pnpm sidecar:check`                                                                                                                                                                                                                                                                                           | **PASS on the final integrated working tree.** Build plus deterministic echo, remote-project, registry, protocol, ordering, approval gating, Anthropic edit correlation, MCP config/trust/remote-config, and API-key smokes passed. The opt-in live Anthropic round-trip remains skipped unless `PACKETADE_LIVE_ANTHROPIC_SMOKE` is set.            |
+| Windows Tauri package                       | `pnpm tauri build` at `fd8c226`; `pnpm sidecar:install` afterward                                                                                                                                                                                                                                              | **PASS** — optimized app plus MSI and NSIS bundles completed; sidecar development dependencies were restored. App SHA-256 `47E04DD3B439B467E81E0CA0DB1ECF7C58786A6724ABDC496FEE09E1F0373A14`; MSI `4BA6DC0F3FD492D32633D207DB3A33CFF4C5BFF295D73D51A702480AC4D7660D`; NSIS `872129D74DE1F5E2A42ABAC39FC46D0E703BC2EAA5A5FC066FBD3E0E4B6E37B7`. All are unsigned. |
 | PacketAgent W9 package/trust                 | **PENDING COMMAND TRANSCRIPTION** — rerun the exact `node --import tsx --test ...` invocation for `src/workers/package/contract.test.ts` and `src/workers/package/trust.test.ts` before publishing this as a reproducible gate.                                                                                | Reported source audit: **11 / 11**.                                                                                                                                                                                                                                                                                                                     |
 | PacketAgent W9 events/routes/restart fixture | **PENDING COMMAND TRANSCRIPTION** — preserve the exact file list used for the 25-test route/lifecycle/serialized-restart selection. The checked standalone handoff command is `node --import tsx --test src/worker-package-handoff-gate.test.ts`.                                                              | Reported source audit: **25 / 25; 1 live interoperability test skipped** because the required base URL, bearer token, and workspace ID are unset. The serialized disconnect/process-reconstruction fixture passed.                                                                                                                                      |
 | PacketCode source                            | `go test ./...` at `9f3364a`                                                                                                                                                                                                                                                                                   | **PASS** across all packages                                                                                                                                                                                                                                                                                                                            |
 | PacketCode machine contract                  | `go run ./cmd/packetcode --version` and `go run ./cmd/packetcode doctor --json` at `9f3364a`                                                                                                                                                                                                                   | **PASS**: schema v1, overall `status: ok`, Windows/amd64, writable default home, and ready configured providers. It reports a source/dev build and is not installed on `PATH`; this is not PC5 clean-machine or signed-release proof.                                                                                                                   |
 | Release prerequisites                        | `pnpm release:readiness:report`                                                                                                                                                                                                                                                                                | **0 failures, 6 warnings**. Existing Windows bundles were found, but Authenticode, macOS signing/notarization, updater signing, updater configuration, and `latest.json` remain unavailable.                                                                                                                                                            |
 
-The repository-wide frontend/Rust/sidecar suites passed for the integrated
-working tree. This proves source contracts without claiming a commit-bound
-revision, real-host behavior, or packaged behavior.
+The repository-wide frontend/Rust/sidecar suites and a commit-bound Windows
+package build passed. This proves source compilation and installer production,
+not manual packaged behavior, real-host behavior, or signed-release trust.
 
 ## Current proof disposition
 
 | Product slice                        | What is proved now                                                                                                                                                                              | What still blocks closure                                                                                                                                                                                                     |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Highest-priority operational honesty | Focused and repository-wide tests cover terminal-pane confirmation, request-scoped Side Chat cancellation, Agent Stop acknowledgement state, stopping UI, Git authority, and Settings safety; the sidecar correlation/trust suite passes | A commit-bound revision and current package; Monitor failure feedback, OS-keyring behavior, pinned SSH, and real Git-host behavior still need packaged/live proof |
+| Highest-priority operational honesty | Focused and repository-wide tests cover terminal-pane confirmation, request-scoped Side Chat cancellation, Agent Stop acknowledgement state, stopping UI, Git authority, and Settings safety; the sidecar correlation/trust suite and unsigned Windows package build pass | Manual packaged interaction; Monitor failure feedback, OS-keyring behavior, pinned SSH, and real Git-host behavior still need packaged/live proof |
 | PacketAgent W9                       | Canonical package digest compatibility, trust, lifecycle routes, ordered events, acknowledgements, SSE resume, and serialized process-reconstruction fixture                                    | A configured live PacketAgent URL/token/workspace; PacketADE close/relaunch against that runtime; remaining PH2/PH3/PH6–PH9 product slices; typed return-and-land matrix                                                      |
 | PacketCode                           | PacketADE detector/contract tests, clean sibling Go suite, and local dev-binary doctor contract                                                                                                 | Published signed artifacts; clean-machine install/upgrade/rollback; packaged PacketADE launch; PacketCode consumption of PacketAgent's published W9 contract and compatibility smoke                                          |
 | Issue ⇄ Flight                       | 36-test pure/source mirror planner and the focused integration set                                                                                                                              | Explicit disposable GitHub and Gitea repositories, both credentials, packaged create/adopt/update/pull/conflict/restart/revoked-auth run                                                                                      |
@@ -78,5 +80,5 @@ PC10's cross-product PacketAgent smoke remain.
   unredacted remote configuration.
 - A fixture restart is source evidence; only a real separately running
   PacketAgent process proves PacketADE-close durability.
-- Existing old bundles do not prove the current working tree. Re-run packaged
-  matrices after the next executable is compiled.
+- The fresh `fd8c226` binaries prove compilation/bundling only. Run and record
+  the packaged matrices before promoting any related runtime gate to closed.

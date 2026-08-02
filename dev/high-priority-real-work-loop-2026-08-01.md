@@ -114,8 +114,9 @@ rechecked PacketADE plus the PacketAgent and PacketCode siblings, and found no
 falsely closed external gate. A separate documentation peer identified stale
 provider, retired-S11, and newly closed-source claims; those contradictions were
 corrected. Final integrated counts are recorded after the repository-wide
-gates; a commit revision and current-package evidence remain intentionally open
-because this loop does not create either artifact.
+gates. A subsequent explicit handoff committed/pushed the source as `fd8c226`
+and produced fresh unsigned Windows app/MSI/NSIS artifacts from that revision;
+manual packaged acceptance remains open.
 
 ## Exit gates
 
@@ -140,5 +141,7 @@ Final integrated source results:
 The exact commands, warning disposition, and external-proof matrix are in
 `dev/proof-audit-2026-08-01.md`.
 
-No commit, tag, installer, push, live external mutation, or Remote Agents work
-is implied by this loop.
+This loop itself implied no commit, tag, installer, push, live external
+mutation, or Remote Agents work. The owner subsequently requested the
+`fd8c226` commit/push and unsigned Windows build; no tag or external-runtime
+mutation was added.

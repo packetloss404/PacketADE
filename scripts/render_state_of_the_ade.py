@@ -637,7 +637,7 @@ def page_furniture(canvas, doc):
         canvas.setFont(FONT, 7.3)
         canvas.setFillColor(MUTED)
         canvas.drawRightString(
-            width - doc.rightMargin, height - 0.39 * inch, "status 2026-08-01 \u00b7 base 148375d + WT"
+            width - doc.rightMargin, height - 0.39 * inch, "status 2026-08-01 \u00b7 package source fd8c226"
         )
     canvas.setStrokeColor(LINE)
     canvas.line(doc.leftMargin, 0.48 * inch, width - doc.rightMargin, 0.48 * inch)
@@ -678,8 +678,8 @@ def render(source: Path, destination: Path):
     doc.addPageTemplates([PageTemplate(id="main", frames=[frame], onPage=page_furniture)])
 
     meta = [
-        [("Report", "2026-07-30 living record"), ("Status pass", "2026-08-01"), ("Base", "148375d + working tree")],
-        [("Version", "0.10.2 \u00b7 protocol v11"), ("Source proof", "vitest 1857/225 \u00b7 Rust 600"), ("Release proof", "package/signing/external gates open")],
+        [("Report", "2026-07-30 living record"), ("Status pass", "2026-08-01"), ("Package source", "fd8c226 on pushed main")],
+        [("Version", "0.10.2 \u00b7 protocol v11"), ("Source proof", "vitest 1857/225 \u00b7 Rust 600"), ("Windows build", "app + MSI + NSIS \u00b7 unsigned")],
     ]
 
     toc = TableOfContents()

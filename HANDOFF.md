@@ -40,7 +40,12 @@ fixtures to live/package claims. Canonical evidence:
   live-provider, and cross-platform gates therefore remain open.
 - Release readiness reports **0 failures / 6 warnings**: signing/notarization,
   updater signing/configuration, and `latest.json` are absent. Existing bundles
-  predate the current working tree and are not proof of it.
+  were superseded by the fresh `fd8c226` Windows build recorded below; that
+  proves bundling, not manual packaged behavior or release trust.
+- The reviewed source was committed and pushed to `main` as `fd8c226`. A fresh
+  unsigned Windows app, MSI, and NSIS setup EXE were then built from that exact
+  revision, hashed, and followed by restoration of sidecar development
+  dependencies.
 
 ## Prior pass — 2026-07-31 (Packet Control adoption)
 
@@ -302,7 +307,8 @@ working tree:**
 - **`WorkspacePane`'s terminal tile "Close pane" now uses the shared typed
   confirmation.** It names the live PTY/CLI consequence, Cancel preserves the
   pane, and confirmation stops the process before removing the pane. Focused
-  component coverage passes; final integrated gates are pending.
+  component coverage, final integrated gates, and the `fd8c226` unsigned
+  Windows package build pass; manual packaged interaction remains.
 
 **Then the smaller residue:**
 
@@ -457,19 +463,18 @@ recorded in
 
 ## Latest Windows build
 
-On 2026-07-30, `pnpm tauri build` succeeded from the State of the ADE review
-commit `d5cfe8b` (16 verified bug fixes, Gemini CLI removal, docs overhaul). Sidecar
-development dependencies were restored after the production prune and the
-repository was left clean.
+On 2026-08-01, `pnpm tauri build` succeeded from pushed `main` commit
+`fd8c22643715572c89365e7a21bf3c7f06fd57f4`. Sidecar development dependencies
+were restored after the production prune.
 
 This is a post-tag local development rebuild that still uses version `0.10.2`;
 it is not a newly tagged public release.
 
 | Artifact                         |       Size | SHA-256                                                            |
 | -------------------------------- | ---------: | ------------------------------------------------------------------ |
-| `packetade.exe`                  |  42.63 MiB | `D28FFCD355933F280A4C348DB26C77C53D61C9983B07858DBFA79DDD0E84E7E8` |
-| `PacketADE_0.10.2_x64-setup.exe` |  84.47 MiB | `F1B19D36B84338FC495EC1591EC3E66437A118C87617A4EFC27239C68B3BF0E7` |
-| `PacketADE_0.10.2_x64_en-US.msi` | 131.90 MiB | `A79B995A927AF4D91E74BD682122C32ED27CF8CBAE99779312EBF11D654A09C8` |
+| `packetade.exe`                  |  43.59 MiB | `47E04DD3B439B467E81E0CA0DB1ECF7C58786A6724ABDC496FEE09E1F0373A14` |
+| `PacketADE_0.10.2_x64-setup.exe` |  84.64 MiB | `872129D74DE1F5E2A42ABAC39FC46D0E703BC2EAA5A5FC066FBD3E0E4B6E37B7` |
+| `PacketADE_0.10.2_x64_en-US.msi` | 132.16 MiB | `4BA6DC0F3FD492D32633D207DB3A33CFF4C5BFF295D73D51A702480AC4D7660D` |
 
 Local paths:
 
@@ -479,7 +484,16 @@ Local paths:
 
 All three artifacts are unsigned.
 
+The build completed with the known non-failing Vite chunk/dynamic-import,
+stale Browserslist, and `ts-rs` serde-alias warnings.
+
 ## Last verified gates
+
+The `fd8c226` source/package pass is the current authority: **225 frontend test
+files / 1,857 tests**, **15 focused files / 108 tests**, **600 Rust tests passed
+with 3 intentionally ignored/manual**, deterministic sidecar checks passing,
+ESLint at zero errors with nine existing Fast Refresh warnings, production web
+build passing, and both Windows installer formats compiled successfully.
 
 Every commit in this sequence ran the frontend gates before landing:
 

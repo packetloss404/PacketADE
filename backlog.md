@@ -1115,4 +1115,5 @@ only what the sections above do not already carry.
   SDK `pending_edit` event now carries the exact non-empty `toolUseId` consumed
   by `edit_response`, so gated writes resolve the correct parked hook. The
   dedicated `sidecar:anthropic-edit-correlation-smoke` is part of
-  `sidecar:check` and passes; final integrated gates remain to be recorded.
+  `sidecar:check`; final integrated gates and the `fd8c226` unsigned Windows
+  package build pass. Live-provider approval remains external proof.

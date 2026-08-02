@@ -5,7 +5,8 @@
 PacketADE is a Tauri v2 desktop app that brings AI coding agents, planning, issue tracking, memory, and workspace management into a single native environment. It is built for running real development workflows across multiple agent CLIs without leaving the app.
 
 Current source release: **v0.10.2** (2026-07-28). A fresh unsigned Windows
-development build was compiled from `main` on 2026-07-30; see
+development build was compiled from pushed `main` commit `fd8c226` on
+2026-08-01; see
 [`HANDOFF.md`](./HANDOFF.md#latest-windows-build) for the exact artifacts and
 hashes.
 

@@ -365,7 +365,9 @@ Recommendation: add request IDs to events and a cancellation command.
 **Status update 2026-08-01:** implemented. Side Chat now owns a request id,
 filters every event by that id, invokes an explicit Rust cancellation command,
 and keeps `Stopping` visible until acknowledgement. Focused store tests cover
-close/cancel and stale-event isolation; final integrated gates remain.
+close/cancel and stale-event isolation. Final integrated gates and the
+`fd8c226` unsigned Windows package build pass; manual packaged interaction
+remains.
 
 ## P2 findings — clarity, alignment, and accessibility
 

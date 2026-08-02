@@ -8,7 +8,7 @@ register. The human edition is state-of-the-ade-2026-07-30.pdf and carries
 identical content. The former HTML edition was retired 2026-07-30.
 -->
 
-**Document type:** living record · **Report date:** 2026-07-30 · **Last status pass:** 2026-08-01 against `148375d` plus the integrated working tree
+**Document type:** living record · **Report date:** 2026-07-30 · **Last status pass:** 2026-08-01 against packaged source commit `fd8c226`
 **Human edition:** [`state-of-the-ade-2026-07-30.pdf`](./state-of-the-ade-2026-07-30.pdf) — same content, paginated, 5 embedded screenshots.
 **Screenshots:** referenced by relative path under [`visual-audit-2026-07-30/`](./visual-audit-2026-07-30/); regenerate with `e2e/visual-audit.spec.ts`.
 
@@ -51,8 +51,10 @@ The current product state is:
 - Remote Agents is preserved but paused. Do not begin implementation until the
   owner resolves authentication provider, E2EE timing, and code/repository
   location.
-- No 2026-08-01 commit, tag, or installer was created by the source/proof loop.
-  Existing v0.10.2 bundles predate this working tree.
+- The reviewed source is committed and pushed at `fd8c226`. A fresh unsigned
+  v0.10.2 Windows application, MSI, and NSIS setup EXE were built from that
+  exact revision; hashes and paths are recorded in `HANDOFF.md`. No new tag or
+  public release was created.
 
 ### 0.1 State vector
 
@@ -60,7 +62,7 @@ The current product state is:
 |---|---|
 | `report_date` | 2026-07-30 |
 | `repo` | `D:\projects\PacketADE` |
-| `main_head` | `148375d` plus the integrated 2026-08-01 working tree (not commit-bound) |
+| `source_package_head` | `fd8c226` on pushed `main` |
 | `app_version` | 0.10.2 · sidecar protocol v11 |
 | `chat_providers` | **7** (`api-openai-codex` dropped in `422ab94`; was 8) |
 | `loc_reviewed` | ~177k (frontend + Rust + sidecar) |
@@ -74,6 +76,7 @@ The current product state is:
 | `historical_findings` (§2-§5) | 2026-07-30 baseline; original status tokens retained as evidence, not the live backlog |
 | `historical_audit_ledger` (§11) | 218 items swept across 64 docs; use §0.3 and `backlog.md` for current disposition |
 | `owner_decisions` | D1-D5 and Workspace/Agents Option B decided and implemented; Undo remains a separate owner decision |
+| `windows_package` | fresh unsigned app/MSI/NSIS built from `fd8c226`; hashes in `HANDOFF.md` |
 | `release_readiness` | 0 failures / 6 warnings; signing, notarization, updater signing/config, and `latest.json` remain absent |
 
 ### 0.2 ID scheme and grep recipes
@@ -114,7 +117,7 @@ closed releases.
 |---|---|---|---|
 | 1 | **Remote Agents Sprint 0 is paused.** | Owner must choose authentication provider, E2EE timing, and code/repository location before implementation. | `dev/remoteagents/09-open-decisions.md` |
 | 2 | **Distribution trust: CI, signing, notarization, updater.** | Release readiness is 0 failures / 6 warnings, but installers remain unsigned, updater configuration/signing and `latest.json` are absent, and no hosted CI gate exists. | `ROADMAP.md` R2 · release runbooks |
-| 3 | **Current-package proof matrix.** | The 2026-08-01 source gates are green, but no package was built from the working tree. Existing v0.10.2 bundles predate it. | `dev/proof-audit-2026-08-01.md` |
+| 3 | **Packaged acceptance matrix.** | Fresh unsigned Windows app/MSI/NSIS artifacts now exist for `fd8c226`; manual launch, lifecycle, accessibility, denial, credential, and real-host matrices remain. | `dev/proof-audit-2026-08-01.md` |
 | 4 | **Global Undo needs an owner design decision.** | Choose durable soft-delete/restore or a time-boxed undo toast; confirmations remain the current safety net. | UX-25 · D-12 · `backlog.md` |
 | 5 | **Flight supervision release-like proof.** | RG8/CG9/CI9/AP9 still require packaged local and disposable pinned-SSH matrices. | `dev/bridgemind/*-loop.md` |
 | 6 | **PacketAgent real W9 interoperability.** | Consumer source/fixtures pass; closure needs a separately running URL/token/workspace, close/relaunch durability, and remaining PacketAgent product slices. | `dev/bridgemind/packetagent-handoff-loop.md` |
@@ -152,7 +155,7 @@ autonomy persistence, and writable SSH-password lifecycle. Exact proof is in
 | `35dcb54` | 2026-07-31 | **Owner decision:** the cost *reporting* surface removed (`CostDashboardView`, `LiveSpendChip`, Settings Usage Analytics card, per-conversation dollars, `/usage`). Guardrails kept as a safety control — caps rehomed to `BudgetGuardrailsCard`, the poll to `startCostGuardrailMonitor()` |
 | `d8fb78e` | 2026-07-31 | CE6 prompt caching + its proof instruments · CE9 OpenAI-compat `cached_tokens` / `prompt_cache_key` · **WI-1** auxiliary routing off subscription OAuth (`core/aux_llm.rs`, `forward_start` deleted) — closes F-2.1-05 · historical repricing (`core/reprice.rs`, $158.88 → $52.96) · MiniMax host + `reasoning_details` round-trip |
 | `422ab94` | 2026-07-31 | Sidecar re-authenticated on API keys (`api-claude-oauth` kept, relabelled; `api-openai-codex` dropped) — closes F-2.5-01 · CE14 targeted `edit_file` · LM1 Ollama native `/api/chat` with `num_ctx` + `keep_alive` · Flight-launch P1 provider-id mapping |
-| working tree on `148375d` | 2026-08-01 | Terminal-pane confirmation; exact Anthropic edit correlation; acknowledgement-bound Agent Stop and Side Chat; Monitor error visibility; cancel-pending de-duplication; local/SSH/repository/Git-host authority guards; truthful Settings saves; hidden unenforced controls; OS-keyring SSH password lifecycle; proof and documentation reconciliation. Not commit- or package-bound. |
+| `fd8c226` | 2026-08-01 | Terminal-pane confirmation; exact Anthropic edit correlation; acknowledgement-bound Agent Stop and Side Chat; Monitor error visibility; cancel-pending de-duplication; local/SSH/repository/Git-host authority guards; truthful Settings saves; hidden unenforced controls; OS-keyring SSH password lifecycle; proof and documentation reconciliation. Pushed to `main` and compiled into fresh unsigned Windows app/MSI/NSIS artifacts. |
 
 ---
 
@@ -2304,8 +2307,9 @@ The sweep below was taken before `c3906c7`, `8cc2217`, and `7cad08b`. These rows
 
 ### 12.0 Current order — status pass 2026-08-01
 
-1. Commit the reviewed working tree, build a fresh package from that exact
-   revision, and bind proof to its version and hashes.
+1. **Done 2026-08-01:** commit and push the reviewed source as `fd8c226`, build
+   fresh Windows app/MSI/NSIS artifacts from that revision, and bind the hashes
+   in `HANDOFF.md` and the proof audit.
 2. Run the packaged/local matrices that need no product decision: terminal-
    pane close, Agent Stop, Side Chat, Monitor launch failure, Settings save
    failure, OS-keyring lifecycle, local Git-host switching, and responsive/
