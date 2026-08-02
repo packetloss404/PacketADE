@@ -12,10 +12,13 @@ feature pattern, adapted for PacketADE's existing `api-agent:*` event contract.
 
 ## Decision log (latest first)
 
+- **2026-08-02** — The canonical Remote Agents plan selected the standalone
+  Rust service at `D:\projects\packet-relay`. Packet Cloud remains the product
+  surface, but its relay implementation is no longer Cloudflare-based.
 - **2026-05-27** — Superseded by the Remote Agents plan in
-  `dev/remoteagents/`: cloud relay is Packet Cloud/Cloudflare-based,
-  sign-in is account-first (no QR primary flow), PWA comes before any native
-  iOS/TestFlight work, and all provider secrets stay on the desktop.
+  `dev/remoteagents/`: that revision proposed a Cloudflare-based Packet Cloud
+  relay. The provider choice was superseded on 2026-08-02; account-first sign-in,
+  PWA-first delivery, and desktop-owned provider secrets remain current.
 - **2026-05-12** — Direction set: build as a **PWA first**, native SwiftUI later
   if needed. Reuses existing React components, avoids App Store / TestFlight
   gatekeeping, supports Web Push since iOS 16.4. See
@@ -31,16 +34,16 @@ feature pattern, adapted for PacketADE's existing `api-agent:*` event contract.
 
 ## Files in this folder
 
-| File | Purpose |
-|---|---|
-| `README.md` | This index + decision log. |
-| `research-claude-code-ios.md` | How Claude Code's iOS "Remote Control" actually works (cloud-relayed via Anthropic API, QR pairing, APNs). |
-| `research-competitors.md` | Mobile companion patterns across the AI-coding-agent market (Cursor, Codex, Devin, Replit, etc.) with verdicts. |
-| `research-ios-stack.md` | iOS framework / transport / pairing / push tradeoffs. Native SwiftUI vs React Native vs PWA. |
-| `architecture-fit.md` | How the iOS client maps onto PacketADE's existing Rust core + sidecar + frontend stack. Specific file refs and module sketches. |
-| `distribution-and-pwa.md` | TestFlight vs personal provisioning vs PWA distribution options; PWA fidelity analysis for matching Claude's look and feel. |
-| `v0-plan.md` | Concrete v0 MVP: in-scope, out-of-scope, build order, new Rust modules. |
-| `mock.html` | Static visual mock of the 4 key PWA screens (conversation list, chat view, permission sheet, pairing). |
+| File                          | Purpose                                                                                                                         |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `README.md`                   | This index + decision log.                                                                                                      |
+| `research-claude-code-ios.md` | How Claude Code's iOS "Remote Control" actually works (cloud-relayed via Anthropic API, QR pairing, APNs).                      |
+| `research-competitors.md`     | Mobile companion patterns across the AI-coding-agent market (Cursor, Codex, Devin, Replit, etc.) with verdicts.                 |
+| `research-ios-stack.md`       | iOS framework / transport / pairing / push tradeoffs. Native SwiftUI vs React Native vs PWA.                                    |
+| `architecture-fit.md`         | How the iOS client maps onto PacketADE's existing Rust core + sidecar + frontend stack. Specific file refs and module sketches. |
+| `distribution-and-pwa.md`     | TestFlight vs personal provisioning vs PWA distribution options; PWA fidelity analysis for matching Claude's look and feel.     |
+| `v0-plan.md`                  | Concrete v0 MVP: in-scope, out-of-scope, build order, new Rust modules.                                                         |
+| `mock.html`                   | Static visual mock of the 4 key PWA screens (conversation list, chat view, permission sheet, pairing).                          |
 
 ## Open questions still to settle
 

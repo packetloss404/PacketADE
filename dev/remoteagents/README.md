@@ -1,7 +1,7 @@
 # PacketADE Remote Agents
 
 Status: planning package for implementation
-Last updated: 2026-06-15
+Last updated: 2026-08-02
 
 This directory is the canonical implementation brief for **PacketADE Remote Agents**: a cloud-relayed, PWA-first way to use PacketADE Agents from a phone while the desktop app keeps ownership of providers, models, secrets, workspaces, MCP config, permissions, and execution.
 
@@ -17,7 +17,7 @@ All your PacketADE agents, providers, models, profiles, workspaces, and approval
 - **Mobile app: PWA first.** Native iOS via TestFlight is a later track after relay, auth, and mobile UX prove out.
 - **Transport: WebSocket relay.** Foreground real-time channel is bidirectional WebSocket. Web Push is for notifications only.
 - **MVP scope: API agents only.** Remote raw PTY and full desktop command control are explicitly out of v1.
-- **Cloud provider recommendation: Cloudflare Workers + Durable Objects + D1 + R2 + Queues.**
+- **Relay implementation: the standalone Rust service at `D:\projects\packet-relay`.** PacketADE extends that service with its versioned host/device protocol, HTTPS control plane, durable replay, auth, audit, and Web Push; it does not create a Cloudflare relay implementation.
 
 ## Why This Shape
 
@@ -69,7 +69,8 @@ The plan incorporates current product and platform research:
 
 - OpenAI Codex mobile/remote-agent pattern: [Work with Codex from anywhere](https://openai.com/index/work-with-codex-from-anywhere/)
 - Claude Code remote-control pattern: [Claude Code Remote Control](https://code.claude.com/docs/en/remote-control)
-- Cloudflare Durable Object WebSocket coordination: [Durable Objects WebSocket best practices](https://developers.cloudflare.com/durable-objects/best-practices/websockets/)
+- Tokio bounded-channel behavior used by `packet-relay`: [Tokio `mpsc`](https://docs.rs/tokio/latest/tokio/sync/mpsc/index.html)
+- Tungstenite WebSocket limits used by `packet-relay`: [`WebSocketConfig`](https://docs.rs/tungstenite/latest/tungstenite/protocol/struct.WebSocketConfig.html)
 - MDN PWA installability: [Making PWAs installable](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Making_PWAs_installable)
 - MDN WebSocket API: [WebSocket API](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API)
 - MDN WebAuthn/passkeys: [Web Authentication API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Authentication_API)

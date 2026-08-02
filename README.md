@@ -31,8 +31,9 @@ _An actual native PacketADE capture: PacketCode and Claude Code running their re
 The main-shell/right-dock decisions, Workspace/Agents restructuring, and the
 six-group Settings information architecture are implemented. Remaining shell
 work is the explicit MS4 packaged/responsive proof and the smaller residue in
-[`backlog.md`](./backlog.md); Remote Agents remains paused at its three Sprint-0
-decisions.
+[`backlog.md`](./backlog.md); Remote Agents has selected the standalone Rust
+`packet-relay` service and remains paused on its two unresolved Sprint-0
+decisions: auth provider and the E2EE launch gate.
 
 ## What It Does
 

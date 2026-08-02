@@ -42,7 +42,12 @@
         background: var(--bg);
         color: var(--text);
         font-family:
-          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
           sans-serif;
         font-size: 16px;
         line-height: 1.55;
@@ -54,9 +59,7 @@
 
       .page-shell {
         min-height: 100vh;
-        background:
-          linear-gradient(180deg, rgba(64, 217, 147, 0.05), transparent 360px),
-          var(--bg);
+        background: linear-gradient(180deg, rgba(64, 217, 147, 0.05), transparent 360px), var(--bg);
       }
 
       .topbar {
@@ -698,8 +701,8 @@
         border-radius: 5px;
         color: var(--green);
         background: rgba(0, 0, 0, 0.24);
-        font-family: "Cascadia Code", "Fira Code", ui-monospace, SFMono-Regular, Consolas,
-          monospace;
+        font-family:
+          "Cascadia Code", "Fira Code", ui-monospace, SFMono-Regular, Consolas, monospace;
         font-size: 0.92em;
       }
 
@@ -814,10 +817,10 @@
             <div class="eyebrow">Implementation brief / 2026-05-26</div>
             <h1 id="page-title">Use every PacketADE agent from your phone.</h1>
             <p class="lede">
-              Remote Agents makes the desktop app an online agent host. The phone signs into
-              Packet Cloud, controls trusted desktops through a secure relay, and uses the exact
-              providers, models, profiles, workspaces, MCP setup, and approvals already configured
-              in PacketADE.
+              Remote Agents makes the desktop app an online agent host. The phone signs into Packet
+              Cloud, controls trusted desktops through a secure relay, and uses the exact providers,
+              models, profiles, workspaces, MCP setup, and approvals already configured in
+              PacketADE.
             </p>
             <div class="hero-actions">
               <a class="button primary" href="./README.md">Open Canonical Docs</a>
@@ -839,14 +842,19 @@
                 <span class="signal-icon">2</span>
                 <span>
                   <strong>Desktop owns execution</strong>
-                  <span>The cloud relays commands; local providers, tools, and secrets stay local.</span>
+                  <span
+                    >The cloud relays commands; local providers, tools, and secrets stay
+                    local.</span
+                  >
                 </span>
               </li>
               <li>
                 <span class="signal-icon">3</span>
                 <span>
                   <strong>PWA first, iOS later</strong>
-                  <span>Validate the product loop in the browser, then pursue TestFlight/native.</span>
+                  <span
+                    >Validate the product loop in the browser, then pursue TestFlight/native.</span
+                  >
                 </span>
               </li>
             </ul>
@@ -870,7 +878,7 @@
               explicitly reopens them.
             </p>
           </div>
-          <div class="grid cols-4">
+          <div class="cols-4 grid">
             <article class="card">
               <h3>Cloud relay</h3>
               <p>Phone connects through Packet Cloud, not local network discovery.</p>
@@ -896,8 +904,11 @@
               <p>No raw PTY, deploy controls, full mobile IDE, or remote shell in MVP.</p>
             </article>
             <article class="card">
-              <h3>Cloudflare stack</h3>
-              <p>Workers, Durable Objects, D1, R2, Queues, and analytics are the default.</p>
+              <h3>Standalone Rust relay</h3>
+              <p>
+                <code>D:\projects\packet-relay</code>, PostgreSQL, encrypted artifact references,
+                and a durable outbox are the default.
+              </p>
             </article>
             <article class="card">
               <h3>Narrow protocol</h3>
@@ -917,25 +928,51 @@
               online through the relay.
             </p>
           </div>
-          <div class="grid cols-2">
+          <div class="cols-2 grid">
             <article class="card">
               <h3>Meeting checklist</h3>
               <ul class="decision-list">
                 <li><span class="check">1</span><span>Assign six owners and branches.</span></li>
-                <li><span class="check">2</span><span>Pick auth provider or choose dev auth for Sprint 1.</span></li>
-                <li><span class="check">3</span><span>Agree on cloud namespace and domain placeholders.</span></li>
-                <li><span class="check">4</span><span>Freeze Sprint 1 protocol field names.</span></li>
-                <li><span class="check">5</span><span>Create <code>codex/remote-agents-integration</code>.</span></li>
+                <li>
+                  <span class="check">2</span
+                  ><span>Pick auth provider or choose dev auth for Sprint 1.</span>
+                </li>
+                <li>
+                  <span class="check">3</span
+                  ><span>Agree on cloud namespace and domain placeholders.</span>
+                </li>
+                <li>
+                  <span class="check">4</span><span>Freeze Sprint 1 protocol field names.</span>
+                </li>
+                <li>
+                  <span class="check">5</span
+                  ><span>Create <code>codex/remote-agents-integration</code>.</span>
+                </li>
               </ul>
             </article>
             <article class="card">
               <h3>Build-start checklist</h3>
               <ul class="decision-list">
-                <li><span class="check">6</span><span>Create the <code>remoteProtocolVersion = 1</code> fixture package.</span></li>
-                <li><span class="check">7</span><span>Confirm PWA path: default <code>remoteagents/pwa</code>.</span></li>
-                <li><span class="check">8</span><span>Use mocked crypto for smoke only while real E2EE vectors start.</span></li>
-                <li><span class="check">9</span><span>Create fake desktop and fake PWA simulators.</span></li>
-                <li><span class="check">10</span><span>Keep feature flag off until release gates pass.</span></li>
+                <li>
+                  <span class="check">6</span
+                  ><span>Create the <code>remoteProtocolVersion = 1</code> fixture package.</span>
+                </li>
+                <li>
+                  <span class="check">7</span
+                  ><span>Confirm PWA path: default <code>remoteagents/pwa</code>.</span>
+                </li>
+                <li>
+                  <span class="check">8</span
+                  ><span>Use mocked crypto for smoke only while real E2EE vectors start.</span>
+                </li>
+                <li>
+                  <span class="check">9</span
+                  ><span>Create fake desktop and fake PWA simulators.</span>
+                </li>
+                <li>
+                  <span class="check">10</span
+                  ><span>Keep feature flag off until release gates pass.</span>
+                </li>
               </ul>
             </article>
           </div>
@@ -967,12 +1004,12 @@
 
             <article class="node center">
               <span class="node-label">Packet Cloud Relay</span>
-              <span class="node-title">Worker + HostRoom Durable Object</span>
+              <span class="node-title">Rust packet-relay + host-room router</span>
               <div class="flow-line">WSS both ways</div>
               <ul class="node-list">
-                <li>D1: accounts, devices, hosts, ACL, audit</li>
-                <li>R2: encrypted attachments and large artifacts</li>
-                <li>Queues: push, audit fanout, dead letters</li>
+                <li>PostgreSQL: accounts, devices, tickets, replay, audit</li>
+                <li>Object storage: encrypted large artifacts by reference</li>
+                <li>Durable outbox: push, audit fanout, dead letters</li>
                 <li>Replay: bounded encrypted event buffers</li>
               </ul>
             </article>
@@ -989,10 +1026,12 @@
             </article>
           </div>
 
-          <div class="grid cols-3" style="margin-top: 16px">
+          <div class="cols-3 grid" style="margin-top: 16px">
             <article class="card">
               <h3>Cloud can see</h3>
-              <p>Account, host, device, channel, type, timestamps, size, sequence, audit metadata.</p>
+              <p>
+                Account, host, device, channel, type, timestamps, size, sequence, audit metadata.
+              </p>
             </article>
             <article class="card">
               <h3>Cloud cannot see</h3>
@@ -1016,27 +1055,69 @@
               dangerous surfaces out.
             </p>
           </div>
-          <div class="grid cols-2">
+          <div class="cols-2 grid">
             <article class="card">
               <h3>Include</h3>
               <ul class="decision-list">
-                <li><span class="check">+</span><span>Packet account sign-in and desktop device approval.</span></li>
-                <li><span class="check">+</span><span>Host, workspace, provider, model, and profile discovery.</span></li>
-                <li><span class="check">+</span><span>Start, continue, send, cancel, retry, and set model for API-agent conversations.</span></li>
-                <li><span class="check">+</span><span>Stream existing <code>api-agent:*</code> events to the phone.</span></li>
-                <li><span class="check">+</span><span>Approve once, deny, apply/reject edits, and cancel pending tools from mobile.</span></li>
-                <li><span class="check">+</span><span>Push notifications for approvals, completion, and failure.</span></li>
+                <li>
+                  <span class="check">+</span
+                  ><span>Packet account sign-in and desktop device approval.</span>
+                </li>
+                <li>
+                  <span class="check">+</span
+                  ><span>Host, workspace, provider, model, and profile discovery.</span>
+                </li>
+                <li>
+                  <span class="check">+</span
+                  ><span
+                    >Start, continue, send, cancel, retry, and set model for API-agent
+                    conversations.</span
+                  >
+                </li>
+                <li>
+                  <span class="check">+</span
+                  ><span>Stream existing <code>api-agent:*</code> events to the phone.</span>
+                </li>
+                <li>
+                  <span class="check">+</span
+                  ><span
+                    >Approve once, deny, apply/reject edits, and cancel pending tools from
+                    mobile.</span
+                  >
+                </li>
+                <li>
+                  <span class="check">+</span
+                  ><span>Push notifications for approvals, completion, and failure.</span>
+                </li>
               </ul>
             </article>
             <article class="card">
               <h3>Exclude</h3>
               <ul class="decision-list">
-                <li><span class="check" style="background: var(--rose)">-</span><span>Raw PTY control or arbitrary shell submission.</span></li>
-                <li><span class="check" style="background: var(--rose)">-</span><span>Cloud-stored provider secrets or provider calls from cloud.</span></li>
-                <li><span class="check" style="background: var(--rose)">-</span><span>Full file browser, full IDE, deploy controls, or team/org sharing.</span></li>
-                <li><span class="check" style="background: var(--rose)">-</span><span>Native iOS/TestFlight before PWA proof.</span></li>
-                <li><span class="check" style="background: var(--rose)">-</span><span>Mobile <code>allow_always</code> until step-up auth exists.</span></li>
-                <li><span class="check" style="background: var(--rose)">-</span><span>WebRTC/LAN direct path in v1.</span></li>
+                <li>
+                  <span class="check" style="background: var(--rose)">-</span
+                  ><span>Raw PTY control or arbitrary shell submission.</span>
+                </li>
+                <li>
+                  <span class="check" style="background: var(--rose)">-</span
+                  ><span>Cloud-stored provider secrets or provider calls from cloud.</span>
+                </li>
+                <li>
+                  <span class="check" style="background: var(--rose)">-</span
+                  ><span>Full file browser, full IDE, deploy controls, or team/org sharing.</span>
+                </li>
+                <li>
+                  <span class="check" style="background: var(--rose)">-</span
+                  ><span>Native iOS/TestFlight before PWA proof.</span>
+                </li>
+                <li>
+                  <span class="check" style="background: var(--rose)">-</span
+                  ><span>Mobile <code>allow_always</code> until step-up auth exists.</span>
+                </li>
+                <li>
+                  <span class="check" style="background: var(--rose)">-</span
+                  ><span>WebRTC/LAN direct path in v1.</span>
+                </li>
               </ul>
             </article>
           </div>
@@ -1082,22 +1163,34 @@
                 </div>
               </div>
             </div>
-            <div class="grid cols-2">
+            <div class="cols-2 grid">
               <article class="card">
                 <h3>Conversation cards</h3>
-                <p>Text, thinking collapsed by default, tool cards, permission cards, pending edit summaries, plan blocks, token totals, done/error states.</p>
+                <p>
+                  Text, thinking collapsed by default, tool cards, permission cards, pending edit
+                  summaries, plan blocks, token totals, done/error states.
+                </p>
               </article>
               <article class="card">
                 <h3>Reconnect model</h3>
-                <p>PWA stores cursors in IndexedDB, reconnects over WebSocket, replays encrypted events, and falls back to a desktop snapshot.</p>
+                <p>
+                  PWA stores cursors in IndexedDB, reconnects over WebSocket, replays encrypted
+                  events, and falls back to a desktop snapshot.
+                </p>
               </article>
               <article class="card">
                 <h3>Push stance</h3>
-                <p>Use Web Push to wake the user for approvals and completion. Do not rely on background sockets, especially on iOS.</p>
+                <p>
+                  Use Web Push to wake the user for approvals and completion. Do not rely on
+                  background sockets, especially on iOS.
+                </p>
               </article>
               <article class="card">
                 <h3>Native later</h3>
-                <p>After PWA beta, evaluate TestFlight/iOS for APNs, Keychain, stronger background behavior, and better device trust UX.</p>
+                <p>
+                  After PWA beta, evaluate TestFlight/iOS for APNs, Keychain, stronger background
+                  behavior, and better device trust UX.
+                </p>
               </article>
             </div>
           </div>
@@ -1119,41 +1212,67 @@
               <span class="sprint-tag">Sprint 0</span>
               <div>
                 <h3>Foundations and decisions</h3>
-                <p>Protocol schemas, repo layout, feature flag, Worker/PWA skeletons, auth decision, encryption gate.</p>
+                <p>
+                  Protocol schemas, repo layout, feature flag, Rust relay/PWA skeletons, auth
+                  decision, encryption gate.
+                </p>
               </div>
-              <div class="checkpoint">Checkpoint: shared protocol builds; desktop compiles with remote flag off.</div>
+              <div class="checkpoint">
+                Checkpoint: shared protocol builds; desktop compiles with remote flag off.
+              </div>
             </article>
             <article class="sprint">
               <span class="sprint-tag">Sprint 1</span>
               <div>
                 <h3>Relay and host presence</h3>
-                <p>Worker routes, HostRoomDO, D1 schema, desktop outbound WebSocket, PWA host list.</p>
+                <p>
+                  Rust HTTP/WS routes, host-room router, PostgreSQL schema, desktop outbound
+                  WebSocket, PWA host list.
+                </p>
               </div>
-              <div class="checkpoint">Checkpoint: trusted PWA sees desktop online; revoked device cannot subscribe.</div>
+              <div class="checkpoint">
+                Checkpoint: trusted PWA sees desktop online; revoked device cannot subscribe.
+              </div>
             </article>
             <article class="sprint">
               <span class="sprint-tag">Sprint 2</span>
               <div>
                 <h3>Provider/workspace/profile snapshots</h3>
-                <p>Desktop exports what it can run: providers, models, auth status, profiles, workspaces.</p>
+                <p>
+                  Desktop exports what it can run: providers, models, auth status, profiles,
+                  workspaces.
+                </p>
               </div>
-              <div class="checkpoint">Checkpoint: PWA can choose a real workspace and ready provider without secrets in logs.</div>
+              <div class="checkpoint">
+                Checkpoint: PWA can choose a real workspace and ready provider without secrets in
+                logs.
+              </div>
             </article>
             <article class="sprint">
               <span class="sprint-tag">Sprint 3</span>
               <div>
                 <h3>Backend conversation service</h3>
-                <p>Move enough lifecycle into Rust so phone-created conversations are first-class on desktop.</p>
+                <p>
+                  Move enough lifecycle into Rust so phone-created conversations are first-class on
+                  desktop.
+                </p>
               </div>
-              <div class="checkpoint">Checkpoint: start on phone, see stream on phone and desktop, cancel from phone.</div>
+              <div class="checkpoint">
+                Checkpoint: start on phone, see stream on phone and desktop, cancel from phone.
+              </div>
             </article>
             <article class="sprint">
               <span class="sprint-tag">Sprint 4</span>
               <div>
                 <h3>Mobile conversation UX</h3>
-                <p>Needs Me, Active, New, History, Hosts, event cards, approvals, reconnect, IndexedDB cursors.</p>
+                <p>
+                  Needs Me, Active, New, History, Hosts, event cards, approvals, reconnect,
+                  IndexedDB cursors.
+                </p>
               </div>
-              <div class="checkpoint">Checkpoint: lock phone, reopen, resume stream; approval unblocks desktop agent.</div>
+              <div class="checkpoint">
+                Checkpoint: lock phone, reopen, resume stream; approval unblocks desktop agent.
+              </div>
             </article>
             <article class="sprint">
               <span class="sprint-tag">Sprint 5</span>
@@ -1161,15 +1280,21 @@
                 <h3>Push, audit, security hardening</h3>
                 <p>Web Push, audit rows, revocation, origin validation, rate limits, E2EE gate.</p>
               </div>
-              <div class="checkpoint">Checkpoint: new phone needs desktop approval; revocation cuts active socket.</div>
+              <div class="checkpoint">
+                Checkpoint: new phone needs desktop approval; revocation cuts active socket.
+              </div>
             </article>
             <article class="sprint">
               <span class="sprint-tag">Sprint 6</span>
               <div>
                 <h3>Beta polish and release</h3>
-                <p>Load test, browser matrix, failure runbook, staged deploy, private beta allowlist.</p>
+                <p>
+                  Load test, browser matrix, failure runbook, staged deploy, private beta allowlist.
+                </p>
               </div>
-              <div class="checkpoint">Checkpoint: 30-minute remote session with disconnects passes on iOS and Android.</div>
+              <div class="checkpoint">
+                Checkpoint: 30-minute remote session with disconnects passes on iOS and Android.
+              </div>
             </article>
           </div>
           <div class="north-star" aria-label="North star acceptance test">
@@ -1177,8 +1302,8 @@
             <span>
               An iPhone PWA starts a real PacketADE API-agent conversation against
               <code>D:\projects\PacketADE</code>, streams within 2 seconds of desktop events,
-              approves one risky tool, completes or cancels the run, and the same conversation
-              opens on desktop.
+              approves one risky tool, completes or cancels the run, and the same conversation opens
+              on desktop.
             </span>
           </div>
         </section>
@@ -1197,38 +1322,54 @@
           <div class="team-grid">
             <article class="agent-card">
               <span class="agent-number">1</span>
-              <h3>Cloud Relay And Data</h3>
-              <p>Worker, D1 migrations, HostRoomDO, routing, replay, audit, revocation disconnect.</p>
+              <h3>Rust Relay And Data</h3>
+              <p>
+                Packet Relay module, PostgreSQL migrations, host-room routing, replay, audit,
+                revocation disconnect.
+              </p>
               <div class="risk">Risk: replay and revocation correctness.</div>
             </article>
             <article class="agent-card">
               <span class="agent-number">2</span>
               <h3>Desktop Remote Gateway</h3>
-              <p><code>remote_agents</code> module, outbound WebSocket, host registration, kill switch, status events.</p>
+              <p>
+                <code>remote_agents</code> module, outbound WebSocket, host registration, kill
+                switch, status events.
+              </p>
               <div class="risk">Risk: overexposing desktop commands.</div>
             </article>
             <article class="agent-card">
               <span class="agent-number">3</span>
               <h3>Backend Conversation Service</h3>
-              <p>Create/send/cancel/retry wrappers, persistence, local desktop events, approval bridge.</p>
+              <p>
+                Create/send/cancel/retry wrappers, persistence, local desktop events, approval
+                bridge.
+              </p>
               <div class="risk">Critical path: remote conversations must be first-class.</div>
             </article>
             <article class="agent-card">
               <span class="agent-number">4</span>
               <h3>PWA</h3>
-              <p>Vite/React app shell, host list, new agent flow, chat cards, approvals, reconnect state.</p>
+              <p>
+                Vite/React app shell, host list, new agent flow, chat cards, approvals, reconnect
+                state.
+              </p>
               <div class="risk">Risk: iOS background and push limits.</div>
             </article>
             <article class="agent-card">
               <span class="agent-number">5</span>
               <h3>Security/Auth</h3>
-              <p>Passkeys/magic link, PKCE, trusted devices, revocation, origin checks, E2EE proof.</p>
+              <p>
+                Passkeys/magic link, PKCE, trusted devices, revocation, origin checks, E2EE proof.
+              </p>
               <div class="risk">Risk: auth shortcuts becoming permanent.</div>
             </article>
             <article class="agent-card">
               <span class="agent-number">6</span>
               <h3>QA, Protocol, Docs, Release</h3>
-              <p>Shared schemas, fake relay harness, contract tests, Playwright, release checklist.</p>
+              <p>
+                Shared schemas, fake relay harness, contract tests, Playwright, release checklist.
+              </p>
               <div class="risk">Risk: missing cross-lane integration failures.</div>
             </article>
           </div>
@@ -1245,18 +1386,27 @@
               identity, device trust, desktop policy, and encrypted payloads separate.
             </p>
           </div>
-          <div class="grid cols-3">
+          <div class="cols-3 grid">
             <article class="card">
               <h3>Auth</h3>
-              <p>Passkey first, magic-link fallback, desktop PKCE via system browser, short-lived access tokens, rotating refresh tokens.</p>
+              <p>
+                Passkey first, magic-link fallback, desktop PKCE via system browser, short-lived
+                access tokens, rotating refresh tokens.
+              </p>
             </article>
             <article class="card">
               <h3>Trust</h3>
-              <p>Same-account devices still need desktop approval. Trust grants bind account, host, device, keys, scope, and signature.</p>
+              <p>
+                Same-account devices still need desktop approval. Trust grants bind account, host,
+                device, keys, scope, and signature.
+              </p>
             </article>
             <article class="card">
               <h3>Encryption</h3>
-              <p>Internal dev may use plaintext. External beta requires encrypted agent, approval, file, and control payloads.</p>
+              <p>
+                Internal dev may use plaintext. External beta requires encrypted agent, approval,
+                file, and control payloads.
+              </p>
             </article>
           </div>
           <div class="table-wrap" style="margin-top: 16px">
@@ -1271,27 +1421,39 @@
               <tbody>
                 <tr>
                   <td>Provider secrets</td>
-                  <td>No API keys, OAuth files, MCP env, SSH keys, or raw local env in cloud/PWA logs.</td>
+                  <td>
+                    No API keys, OAuth files, MCP env, SSH keys, or raw local env in cloud/PWA logs.
+                  </td>
                   <td>Security + QA</td>
                 </tr>
                 <tr>
                   <td>Authorization</td>
-                  <td>Object-level checks for every account, host, device, conversation, and command.</td>
+                  <td>
+                    Object-level checks for every account, host, device, conversation, and command.
+                  </td>
                   <td>Cloud + Security</td>
                 </tr>
                 <tr>
                   <td>Revocation</td>
-                  <td>Revoked active device loses WebSocket within 5 seconds and desktop rejects frames.</td>
+                  <td>
+                    Revoked active device loses WebSocket within 5 seconds and desktop rejects
+                    frames.
+                  </td>
                   <td>Relay + Desktop</td>
                 </tr>
                 <tr>
                   <td>Mobile approval</td>
-                  <td>MVP allows <code>allow_once</code> or deny only; mobile <code>allow_always</code> is rejected.</td>
+                  <td>
+                    MVP allows <code>allow_once</code> or deny only; mobile
+                    <code>allow_always</code> is rejected.
+                  </td>
                   <td>PWA + Desktop</td>
                 </tr>
                 <tr>
                   <td>Audit</td>
-                  <td>Every mutating command produces redacted local and cloud metadata audit rows.</td>
+                  <td>
+                    Every mutating command produces redacted local and cloud metadata audit rows.
+                  </td>
                   <td>Desktop + Cloud</td>
                 </tr>
               </tbody>
@@ -1309,30 +1471,48 @@
               The beta exit criteria are about correctness, authorization, and mobile reliability.
             </p>
           </div>
-          <div class="grid cols-3">
+          <div class="cols-3 grid">
             <article class="card">
               <h3>Protocol</h3>
-              <p>Schema tests, version rejection, payload caps, idempotency keys, encrypted-required channels.</p>
+              <p>
+                Schema tests, version rejection, payload caps, idempotency keys, encrypted-required
+                channels.
+              </p>
             </article>
             <article class="card">
               <h3>Relay</h3>
-              <p>Connect/disconnect, replay, duplicate command ignore, slow-client coalescing, revoked socket close.</p>
+              <p>
+                Connect/disconnect, replay, duplicate command ignore, slow-client coalescing,
+                revoked socket close.
+              </p>
             </article>
             <article class="card">
               <h3>Desktop</h3>
-              <p>Provider snapshot redaction, remote command validation, conversation persistence, approval routing.</p>
+              <p>
+                Provider snapshot redaction, remote command validation, conversation persistence,
+                approval routing.
+              </p>
             </article>
             <article class="card">
               <h3>PWA</h3>
-              <p>Mobile Playwright flow for sign-in, host selection, stream, approval, cancel, reconnect.</p>
+              <p>
+                Mobile Playwright flow for sign-in, host selection, stream, approval, cancel,
+                reconnect.
+              </p>
             </article>
             <article class="card">
               <h3>Manual mobile</h3>
-              <p>iPhone Home Screen PWA, iPhone browser tab, Android installed PWA, Android browser tab.</p>
+              <p>
+                iPhone Home Screen PWA, iPhone browser tab, Android installed PWA, Android browser
+                tab.
+              </p>
             </article>
             <article class="card">
               <h3>Acceptance run</h3>
-              <p>30-minute remote session with disconnects; stream and approval under 2 seconds after desktop event.</p>
+              <p>
+                30-minute remote session with disconnects; stream and approval under 2 seconds after
+                desktop event.
+              </p>
             </article>
           </div>
         </section>
@@ -1348,30 +1528,47 @@
               before private beta.
             </p>
           </div>
-          <div class="grid cols-3">
+          <div class="cols-3 grid">
             <article class="card">
               <h3>Auth provider</h3>
-              <p>Use managed passkey/magic-link auth, build it, or use dev auth for Sprint 1 only.</p>
+              <p>
+                Use managed passkey/magic-link auth, build it, or use dev auth for Sprint 1 only.
+              </p>
             </article>
             <article class="card">
               <h3>Encryption timing</h3>
-              <p>Plaintext is internal-smoke only. External beta requires E2EE frames and test vectors.</p>
+              <p>
+                Plaintext is internal-smoke only. External beta requires E2EE frames and test
+                vectors.
+              </p>
             </article>
             <article class="card">
               <h3>Code location</h3>
-              <p>Default to <code>remoteagents/shared</code>, <code>remoteagents/relay-worker</code>, and <code>remoteagents/pwa</code>.</p>
+              <p>
+                Keep <code>remoteagents/shared</code> and <code>remoteagents/pwa</code> here; extend
+                the sibling <code>D:\projects\packet-relay</code> repository.
+              </p>
             </article>
             <article class="card">
               <h3>Persistence shape</h3>
-              <p>Use minimal Rust remote snapshots now; move full conversation schema backend-native later.</p>
+              <p>
+                Use minimal Rust remote snapshots now; move full conversation schema backend-native
+                later.
+              </p>
             </article>
             <article class="card">
               <h3>Native iOS</h3>
-              <p>Revisit after PWA beta, with APNs, Keychain, backgrounding, and TestFlight needs in view.</p>
+              <p>
+                Revisit after PWA beta, with APNs, Keychain, backgrounding, and TestFlight needs in
+                view.
+              </p>
             </article>
             <article class="card">
               <h3>Security conflict</h3>
-              <p>Where docs disagree, the stricter rule wins: mobile MVP can approve once or deny only.</p>
+              <p>
+                Where docs disagree, the stricter rule wins: mobile MVP can approve once or deny
+                only.
+              </p>
             </article>
           </div>
         </section>

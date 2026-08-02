@@ -4,15 +4,14 @@
 
 ```mermaid
 flowchart LR
-  PWA["Mobile PWA\nremote.packetade.app"] <--> Relay["Packet Cloud Relay\nCloudflare Worker"]
-  Relay <--> Room["HostRoom Durable Object\none per desktop host"]
-  Desktop["PacketADE Desktop\nremote_agents service"] <--> Room
+  PWA["Mobile PWA\nremote.packetade.app"] <--> Relay["Packet Relay\nRust/Tokio service"]
+  Desktop["PacketADE Desktop\nremote_agents service"] <--> Relay
   Desktop --> API["api_agent.rs\nin-process providers"]
   Desktop --> Sidecar["Node sidecar\nsubscription/API SDK providers"]
   Desktop --> Local["Local files, SSH, MCP,\nkeyring, OAuth files"]
-  Relay --> D1["D1\naccounts/devices/hosts/audit"]
-  Relay --> R2["R2\nattachments/artifacts"]
-  Relay --> Q["Queues\npush/audit/dead letters"]
+  Relay --> DB["PostgreSQL\naccounts/devices/replay/audit/outbox"]
+  Relay --> Blob["S3-compatible object storage\nencrypted large artifacts"]
+  Relay --> Push["Web Push\nVAPID sender + durable outbox"]
 ```
 
 ## Execution Ownership
@@ -30,7 +29,7 @@ Desktop PacketADE is the agent host. It:
 - responds to approvals
 - owns secrets
 
-Cloud relay:
+Rust relay:
 
 - authenticates accounts/devices/hosts
 - routes envelopes
@@ -48,21 +47,38 @@ PWA:
 - receives push notifications
 - does not have provider secrets
 
-## Recommended Cloud Stack
+## Recommended Relay Stack
 
-### Cloudflare Workers
+### Standalone `packet-relay` service
 
-HTTP and WebSocket entrypoint:
+The relay is the sibling repository at `D:\projects\packet-relay`. It is a
+standalone Rust 1.83 application built on Tokio and Tungstenite, with bounded
+connection/message limits and existing bridge, broadcast, and authenticated-room
+protocols. PacketADE must add a separate, versioned host/device protocol without
+breaking those compatibility modes.
+
+The current binary is a transport baseline, not a finished PacketADE backend. At
+this planning revision it has no account control plane, WebSocket tickets,
+Origin policy, durable replay, multiple devices per host, Web Push, audit store,
+or horizontally coordinated state. Those are implementation requirements below,
+not assumptions.
+
+Extend the Rust service with HTTP and WebSocket entrypoints:
 
 - `/auth/*` for passkey/magic-link/OIDC flows if self-hosted
 - `/api/*` for host/device metadata
 - `/ws/host` for desktop outbound WebSocket
 - `/ws/device` for PWA WebSocket
 - `/push/*` for Web Push subscription management
+- `/healthz`, `/readyz`, and `/metrics` for operations
 
-### Durable Objects
+TLS terminates at the hosting proxy, matching the relay's existing deployment
+model. Public deployments expose only HTTPS/WSS.
 
-Use one `HostRoomDO` per desktop host id.
+### In-process host router
+
+Use one Rust host-room actor/state entry per desktop host id. It owns live socket
+coordination while durable state remains outside the process.
 
 Responsibilities:
 
@@ -75,11 +91,13 @@ Responsibilities:
 - keep bounded replay buffer
 - coalesce stream chunks for slow clients
 - handle resume after reconnect
-- emit audit/notification jobs
+- write audit/notification outbox rows
 
-Cloudflare Durable Objects are designed for unique stateful coordination, and their WebSocket hibernation support is a fit for many long-lived idle host connections.
+The v1 deployment remains deliberately single-instance because live routing is
+process-local. A later scaling milestone may add a broker/coordination layer, but
+the protocol must not depend on one hosting provider.
 
-### D1
+### PostgreSQL
 
 Relational metadata:
 
@@ -93,8 +111,15 @@ Relational metadata:
 - provider/model snapshot metadata
 - audit log
 - push subscriptions
+- encrypted replay events and acknowledged cursors
+- single-use WebSocket tickets
+- durable notification/dead-letter outbox
 
-### R2
+PostgreSQL is the deployed system of record. Local development may use an
+isolated disposable database, but production behavior must be tested against
+PostgreSQL rather than a different persistence model.
+
+### S3-compatible object storage
 
 Large binary or semi-large payloads:
 
@@ -104,7 +129,11 @@ Large binary or semi-large payloads:
 - optional encrypted transcript exports
 - future diff artifacts if they exceed envelope size caps
 
-### Queues
+Attachments remain deferred for the first relay/host-presence checkpoint. The
+protocol uses opaque `artifactId` references so the backend is not tied to an
+object-storage vendor.
+
+### Rust background workers and durable outbox
 
 Async work:
 
@@ -113,6 +142,10 @@ Async work:
 - dead-lettered remote commands
 - analytics/billing rollups
 - offline command expiry cleanup
+
+The relay process claims outbox rows with bounded retries and idempotency keys.
+No separate queue product is required for v1; a future queue can consume the
+same outbox contract if load justifies it.
 
 ## Why WebSocket
 
@@ -156,11 +189,13 @@ Future PWA:
 
 ```text
 remoteagents/pwa/
-remoteagents/relay-worker/
 remoteagents/shared/
+D:\projects\packet-relay/   # independently built/deployed Rust service
 ```
 
-The exact app folder can move, but the cloud/PWA/shared protocol should stay outside `src-tauri` so it can build independently of Tauri.
+The exact PWA/shared folder can move, but the PWA/shared protocol should stay
+outside `src-tauri` so it can build independently of Tauri. Relay changes land
+in the standalone repository and are contract-tested against the shared schemas.
 
 ## Current PacketADE Touchpoints
 
@@ -275,7 +310,7 @@ Stores:
 - host private key
 - remote refresh token
 
-### Cloud
+### Relay service
 
 Stores:
 
@@ -303,15 +338,15 @@ Stores:
 - Up to 5 mobile/browser clients per host.
 - Up to 20 active conversations visible in PWA.
 - Replay buffer per conversation: 1,000 events or 24 hours, whichever comes first.
-- Max relay envelope payload: 256 KB inline.
-- Larger payloads go to R2 by reference.
+- Max relay envelope payload: 64 KiB inline, matching `packet-relay`'s security ceiling.
+- Larger payloads use encrypted object-storage references.
 - Slow stream clients receive coalesced chunk batches.
 
 ## Failure Modes
 
 ### Desktop Disconnects
 
-- Durable Object marks host offline.
+- The Rust host router marks the host offline and persists last-seen state.
 - Devices receive `host.offline`.
 - Push is not sent for normal disconnect unless sessions were active.
 - Commands may be rejected or queued with TTL depending on command type.
@@ -319,13 +354,13 @@ Stores:
 ### Mobile Disconnects
 
 - Desktop continues running.
-- Durable Object buffers encrypted events.
+- The relay persists encrypted replay events in PostgreSQL.
 - PWA reconnects with `resume_after`.
 - If replay is too old, PWA requests a fresh conversation snapshot from desktop.
 
 ### Relay Restart
 
-- Durable Object hibernation/storage preserves enough state for reconnect.
+- PostgreSQL preserves replay cursors/events; live sockets reconnect to the restarted Rust process.
 - Both desktop and PWA reconnect with cursors.
 - Commands are idempotent by command id.
 
@@ -334,4 +369,3 @@ Stores:
 - Desktop PacketADE remains fully functional locally.
 - PWA shows offline.
 - No remote execution occurs.
-

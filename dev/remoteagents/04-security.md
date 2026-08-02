@@ -329,7 +329,7 @@ Mitigations:
 - object-level ACL checks
 - single-use WebSocket tickets
 
-### Compromised Cloud Worker/DB
+### Compromised Relay Host/Database
 
 Risk: relay metadata exposure, command manipulation.
 
@@ -338,7 +338,7 @@ Mitigations:
 - encrypted content payloads before external beta
 - desktop validates command schema and device ACL claims
 - audit mismatch detection
-- no provider secrets in cloud
+- no provider secrets in relay storage or logs
 
 ### Malicious Device On Same Account
 

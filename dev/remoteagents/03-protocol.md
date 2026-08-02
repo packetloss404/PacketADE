@@ -10,6 +10,18 @@
 - Supports encrypted opaque payloads.
 - Does not expose raw Tauri commands.
 
+## `packet-relay` Binding
+
+The production transport is the standalone Rust service at
+`D:\projects\packet-relay`. PacketADE adds the `/ws/host` and `/ws/device`
+routes plus the HTTPS control plane described below. Its envelopes remain
+distinct from the existing `desktop_hello`, `mobile_hello`, broadcast, and room
+messages so extracting the relay does not silently break inherited clients.
+
+The shared protocol schemas are authoritative across PacketADE Desktop, the
+PWA, and the Rust relay. The relay validates routing metadata and ciphertext
+shape but never imports PacketADE's Tauri command surface.
+
 ## Envelope
 
 Relay-visible fields are for routing, sequencing, abuse controls, and audit metadata. They must not contain prompts, transcript text, tool arguments, edit content, API keys, OAuth material, or raw local environment values.
@@ -69,7 +81,7 @@ export type RemotePayloadV1 =
 
 ## Sequence Rules
 
-- `HostRoomDO` assigns monotonically increasing `seq` per `{hostId, conversationId}` for events traveling from desktop to devices.
+- The Rust host router assigns monotonically increasing `seq` per `{hostId, conversationId}` for events traveling from desktop to devices and persists replay records before acknowledging them.
 - Device commands include `idempotencyKey`.
 - Desktop keeps a short processed-command cache by idempotency key.
 - PWA stores last processed `seq` per conversation in IndexedDB.
@@ -219,7 +231,7 @@ Returns only desktops owned by the current account:
 }
 ```
 
-Cloud verifies same-account ownership, creates a pending access request, and routes it to the desktop.
+The relay service verifies same-account ownership, creates a pending access request, and routes it to the desktop.
 
 ### Decide Device Access
 
@@ -247,7 +259,7 @@ Desktop sends a signed decision:
 }
 ```
 
-Cloud writes revocation, closes active relay sockets, and notifies the desktop so its local trust store rejects future frames.
+The relay service persists revocation, closes active relay sockets, and notifies the desktop so its local trust store rejects future frames.
 
 ### Mint WebSocket Ticket
 
@@ -272,6 +284,9 @@ Returns a 60-second, single-use ticket:
 ```
 
 Tickets are bound to account, desktop, device, role, capabilities, and device public key.
+
+Ticket state is stored in PostgreSQL and consumed atomically so a ticket cannot
+be replayed across Rust relay processes or after a restart.
 
 ## WebSocket Paths
 
@@ -362,7 +377,7 @@ export type ConversationStartCommand = {
   permissionMode?: "auto" | "ask_for_risky" | "allow_all" | "deny_all";
   approveWrites?: boolean;
   enabledMcpServerIds?: string[] | null;
-  attachments?: Array<{ r2Key: string; mediaType: string; sha256: string }>;
+  attachments?: Array<{ artifactId: string; mediaType: string; sha256: string }>;
 };
 ```
 
@@ -431,7 +446,10 @@ export type AgentEventPayload =
   | { kind: "thinking"; payload: { text: string } }
   | { kind: "thinking-stop"; payload: unknown }
   | { kind: "tool-start"; payload: { id: string; name: string; input?: unknown } }
-  | { kind: "tool-result"; payload: { id: string; name: string; content: string; is_error: boolean; input: string } }
+  | {
+      kind: "tool-result";
+      payload: { id: string; name: string; content: string; is_error: boolean; input: string };
+    }
   | { kind: "permission-request"; payload: PendingPermission }
   | { kind: "pending-edit"; payload: PendingEditSummary }
   | { kind: "plan-block"; payload: { items: AgentPlanItem[] } }
@@ -441,7 +459,7 @@ export type AgentEventPayload =
   | { kind: "error"; payload: { message: string } };
 ```
 
-`pending-edit` should not send huge full-file content inline by default. For MVP mobile, send a summary plus optional encrypted R2 reference when content is large.
+`pending-edit` should not send huge full-file content inline by default. For MVP mobile, send a summary plus an optional encrypted `artifactId` reference when content is large. Every serialized relay envelope must remain at or below the Rust service's 64 KiB inline ceiling.
 
 ## Approval Commands
 
@@ -456,7 +474,7 @@ export type RespondEditCommand = {
   conversationId: string;
   toolId: string;
   decision: "apply" | "reject";
-  mergedContentRef?: { r2Key: string; sha256: string };
+  mergedContentRef?: { artifactId: string; sha256: string };
   mergedContentInline?: string;
 };
 

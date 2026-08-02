@@ -9,31 +9,32 @@ This is the kickoff plan for a six-agent team. Each agent owns a separate write 
 - Do not send provider secrets to cloud or PWA.
 - Keep protocol changes in shared schemas first.
 - Every mutating remote command needs idempotency.
-- Every cloud route/message needs auth and object-level authorization.
+- Every relay route/message needs auth and object-level authorization.
 - Feature flag everything behind `remoteAgents.enabled`.
 - Keep MVP API-agent only.
 
-## Agent 1 - Cloud Relay And Data
+## Agent 1 - Rust Relay And Data
 
 Owns:
 
-- `remoteagents/relay-worker`
-- D1 migrations
-- Durable Object room
-- Queue producers
-- cloud test harness
+- the sibling `D:\projects\packet-relay` repository
+- PostgreSQL migrations
+- in-process host-room router
+- durable outbox workers
+- relay test harness
 
 Tasks:
 
-- Worker project scaffold.
-- `HostRoomDO` with host/device sockets.
+- Feature-isolated PacketADE module in the existing Rust service.
+- Host-room router with host/device sockets.
 - Auth middleware stub.
 - Host registration.
 - Device subscription.
 - Routing and replay buffer.
-- D1 tables.
+- PostgreSQL tables and migrations.
 - Audit insert path.
 - Revocation disconnect.
+- Regression coverage for existing bridge/broadcast/room clients.
 
 First checkpoint:
 
@@ -113,7 +114,7 @@ First checkpoint:
 
 Owns:
 
-- auth design implementation across cloud/PWA/desktop
+- auth design implementation across relay/PWA/desktop
 - token validation
 - device approval/revocation
 - payload encryption spike
@@ -156,14 +157,14 @@ Tasks:
 
 First checkpoint:
 
-- one command validates against shared schema in Worker, PWA, and desktop tests.
+- one command validates against the shared schema in Rust relay, PWA, and desktop tests.
 
 ## Parallelization Plan
 
 Day 1:
 
 - Agent 6 creates shared protocol package first.
-- Agent 1 starts Worker/DO scaffold using draft protocol.
+- Agent 1 starts the isolated Rust relay module using the draft protocol.
 - Agent 2 starts desktop module behind flag.
 - Agent 4 starts PWA shell with mocked protocol.
 - Agent 5 starts auth/ACL threat model and dev-auth stub.
@@ -201,19 +202,19 @@ Day 5:
 
 1. Assign owners and branches.
 2. Pick the auth provider for v1 or explicitly choose dev auth for Sprint 1.
-3. Agree on cloud namespace and domain placeholders.
+3. Agree on relay deployment namespace, database, and domain placeholders.
 4. Freeze Sprint 1 protocol field names.
 5. Create the integration branch, recommended `codex/remote-agents-integration`.
 6. Create the `remoteProtocolVersion = 1` fixture package.
 7. Decide whether PWA lives in `remoteagents/pwa` or another workspace path.
 8. Start with mocked crypto for smoke only while real E2EE test vectors are built.
-9. Create a fake desktop and fake PWA simulator so cloud/PWA/desktop lanes can test independently.
+9. Create a fake desktop and fake PWA simulator so relay/PWA/desktop lanes can test independently.
 10. End the meeting with one visible target: "trusted PWA sees desktop host online."
 
 ## Merge Order
 
 1. Shared protocol schemas.
-2. Cloud relay skeleton.
+2. Rust relay PacketADE skeleton.
 3. Desktop feature flag and no-op remote module.
 4. PWA skeleton.
 5. Host presence.

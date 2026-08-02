@@ -127,18 +127,20 @@ Recommendation:
 - Rate limit per account, per desktop, per device, per IP, and per action class.
 - Apply tighter limits to sign-in, access requests, push sends, and start-session.
 
-### Cloudflare Durable Objects
+### Cloudflare Durable Objects (evaluated alternative)
 
 Durable Objects can act as WebSocket servers and coordinate multiple clients in one stateful object. Hibernation can keep WebSocket clients connected while reducing idle cost.
 
 Source: [Cloudflare Durable Objects WebSockets docs](https://developers.cloudflare.com/durable-objects/best-practices/websockets/)
 
-Recommendation:
+Disposition (owner decision 2026-08-02):
 
-- Use one Durable Object per desktop host for v1.
-- Route phone and desktop WebSockets through that object.
-- Store only routing metadata and small replay buffers, not plaintext transcripts.
-- Keep the relay replaceable: the desktop bridge and PWA should speak a neutral protocol that can also run over a Rust relay later.
+- Do not implement the PacketADE relay on Cloudflare.
+- Preserve the useful host-room, bounded replay, and hibernation lessons as
+  provider-neutral requirements.
+- Implement those requirements in the standalone Rust service at
+  `D:\projects\packet-relay` with PostgreSQL-backed durable state.
+- Keep the desktop/PWA protocol relay-neutral and contract-tested.
 
 ### Web Push And iOS PWA Constraints
 
@@ -221,17 +223,27 @@ Reasoning:
 
 ### Cloudflare DO vs Rust Relay
 
-Decision: **Cloudflare Durable Objects for v1; keep protocol relay-neutral.**
+Decision (superseded 2026-08-02): **Use the standalone Rust `packet-relay`
+service for v1; keep the protocol relay-neutral.**
 
 Reasoning:
 
-- Durable Objects are made for stateful WebSocket coordination.
-- PWA hosting, API, relay, and push can live in one deploy surface.
-- A six-agent team can divide work cleanly.
+- Packet Relay already exists as an independently buildable Rust/Tokio service
+  with bounded WebSocket, connection, message, queue, and session limits.
+- Owning the relay avoids a second provider-specific implementation and keeps
+  deployment portable.
+- The service can preserve its inherited bridge/broadcast/room protocols while
+  adding a separately versioned PacketADE host/device surface.
+- PostgreSQL provides durable tickets, replay, audit, and outbox state while
+  active socket routing stays simple and single-instance for v1.
 
-Fallback:
+Required evolution before PacketADE beta:
 
-- Rust `axum` relay on Fly.io/Render with Postgres/Redis if Cloudflare constraints block a requirement.
+- HTTPS auth/control plane and short-lived single-use WebSocket tickets.
+- Origin validation, device ACL/revocation, and multiple devices per host.
+- PostgreSQL migrations for identity metadata, replay, cursor, audit, and outbox state.
+- Web Push and encrypted artifact references.
+- Reconnect/load/security gates without weakening the 64 KiB inline ceiling.
 
 ## Source Index
 

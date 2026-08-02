@@ -22,9 +22,19 @@ API agents only. Raw PTY remote control is not in MVP.
 
 WebSocket relay for real-time control. Web Push for notifications only.
 
-### Cloud Architecture
+### Relay Architecture
 
-Cloudflare Workers + Durable Objects + D1 + R2 + Queues is the recommended default.
+Use the standalone Rust service at `D:\projects\packet-relay`. Extend it with
+PacketADE-specific HTTP/WebSocket routes, PostgreSQL persistence, durable replay
+and outbox processing, Web Push, audit, and object-storage references. Do not
+build a second relay on Cloudflare.
+
+### Code Location
+
+The relay remains an independently built/deployed sibling repository at
+`D:\projects\packet-relay`. Shared protocol schemas and the PWA begin under
+PacketADE's `remoteagents/` workspace so desktop and mobile can evolve in
+lockstep. Contract fixtures gate changes across both repositories.
 
 ## Open Decisions
 
@@ -32,13 +42,13 @@ Cloudflare Workers + Durable Objects + D1 + R2 + Queues is the recommended defau
 
 Options:
 
-- build passkey/magic-link auth on Workers
-- use Clerk/Auth0/Stytch/Supabase Auth and integrate with Workers
-- use Cloudflare Access for internal beta only
+- build passkey/magic-link auth in the Rust relay backed by PostgreSQL
+- use a product-grade OIDC/passkey provider and validate its tokens in the Rust relay
+- use a compile/runtime-gated dev identity provider for internal smoke tests only
 
 Recommendation:
 
-- internal prototype can use dev auth or Cloudflare Access
+- internal prototype can use explicitly dev-only auth
 - private beta should use a product-grade passkey/magic-link provider or a carefully scoped in-house implementation
 
 Decision owner: Security/Auth agent.
@@ -57,21 +67,6 @@ Recommendation:
 - require encrypted agent/approval/file payloads before external private beta
 
 Decision owner: project owner plus Security/Auth agent.
-
-### Code Location
-
-Options:
-
-- `remoteagents/relay-worker`, `remoteagents/pwa`, `remoteagents/shared`
-- separate repos for cloud/PWA
-- packages under `apps/`
-
-Recommendation:
-
-- start in this repo under `remoteagents/` for velocity and protocol lockstep
-- split later if deployment/security boundaries need it
-
-Decision owner: implementation lead.
 
 ### Backend Conversation Persistence Shape
 
@@ -106,10 +101,22 @@ Decision owner: project owner after PWA beta.
 
 ## Decision Log
 
-Dated record of the three Sprint-0 BLOCKING kickoff decisions. All three gate
-any Remote Agents scaffolding: no `remoteagents/` code is created until each is
-resolved. This log is independent of the Remote-Agents-priority research
-question; recording the scaffold here is harmless and does not authorize work.
+Dated record of the Sprint-0 kickoff decisions. Auth and payload-encryption
+timing remain blocking. Relay/code location was resolved by the owner on
+2026-08-02; no Cloudflare relay scaffold should be created.
+
+### 2026-08-02 — Rust Packet Relay selected
+
+**Relay architecture and code location** — Resolved.
+
+- Use and extend the standalone Rust service at `D:\projects\packet-relay`.
+- Keep PacketADE host/device messages separate from inherited relay protocols.
+- Use PostgreSQL for durable account/device/ticket/replay/audit/outbox state.
+- Keep live routing single-instance for v1; require explicit coordination work
+  before horizontal scaling.
+- Keep `remoteagents/shared` and `remoteagents/pwa` in PacketADE initially.
+- Cloudflare Workers, Durable Objects, D1, R2, and Queues are not the target
+  implementation.
 
 ### 2026-06-15 — Sprint-0 kickoff decisions
 
@@ -125,14 +132,14 @@ question; recording the scaffold here is harmless and does not authorize work.
 - Resolution / date: _pending_.
 - Decision owner: project owner plus Security/Auth agent.
 
-**(c) Code location (in-repo `remoteagents/` vs `apps/` vs separate repo)** — Open.
+**(c) Code location (in-repo `remoteagents/` vs `apps/` vs separate repo)** — Resolved 2026-08-02.
 
-- See "Code Location" under Open Decisions for options and recommendation.
-- Resolution / date: _pending_.
+- Relay: standalone `D:\projects\packet-relay` repository.
+- PWA/shared schemas: PacketADE `remoteagents/` workspace initially.
 - Decision owner: implementation lead.
 
-Note: all three above are BLOCKING — each must be resolved before any
-scaffolding begins.
+Note: decisions (a) and (b) remain BLOCKING. Decision (c) is closed and must not
+be reopened implicitly by creating a provider-specific relay scaffold.
 
 ## Deferred Decisions
 
@@ -143,4 +150,3 @@ scaffolding begins.
 - remote PTY policy
 - mobile file browser depth
 - long-term transcript retention
-

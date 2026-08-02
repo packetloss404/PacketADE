@@ -22,7 +22,7 @@ The test plan must cover all three before beta.
 - encrypted-required channels enforced in beta mode
 - command/event discriminated unions exhaustive
 
-### Cloud Worker
+### Rust Relay HTTP/Auth
 
 - auth middleware accepts valid token
 - auth middleware rejects expired token
@@ -32,7 +32,7 @@ The test plan must cover all three before beta.
 - rate limit counters
 - audit row generated
 
-### Durable Object
+### Rust Host Router And Replay Store
 
 - host connect/disconnect
 - device connect/disconnect
@@ -73,7 +73,7 @@ The test plan must cover all three before beta.
 Create a local test harness:
 
 ```text
-fake-pwa <-> relay-worker dev <-> fake-desktop
+fake-pwa <-> packet-relay dev <-> fake-desktop
 ```
 
 Scenarios:
@@ -153,7 +153,7 @@ Required before private beta:
 - command with mismatched account id rejected
 - command without idempotency key rejected
 - payload over limit rejected
-- provider secrets absent from cloud logs
+- provider secrets absent from relay logs
 - SSH key paths absent from snapshots
 - MCP env values absent from snapshots
 - audit log records every mutating command
@@ -177,8 +177,9 @@ Metrics:
 - reconnect recovery time
 - dropped event count
 - duplicate command count
-- Durable Object memory/CPU
-- queue backlog
+- Rust relay process RSS/CPU
+- per-connection outbound queue pressure
+- PostgreSQL replay/outbox backlog
 
 ## Manual Mobile Matrix
 
@@ -233,14 +234,14 @@ PWA:
 - Playwright mobile tests
 - Lighthouse PWA smoke
 
-Worker:
+Rust relay (`D:\projects\packet-relay`):
 
-- lint
-- typecheck
-- unit tests
-- Miniflare/Durable Object tests
-- D1 migration tests
-- deploy dry run
+- `cargo fmt --all -- --check`
+- `cargo clippy --locked --all-targets -- -D warnings`
+- `cargo test --locked`
+- PostgreSQL migration and restart/replay integration tests
+- Docker build and container smoke test
+- deployment dry run
 
 ## Beta Exit Criteria
 
@@ -251,5 +252,4 @@ Worker:
 - all mutating remote commands audited
 - remote disabled path leaves desktop behavior unchanged
 - revocation tested during active stream
-- no provider secrets observed in cloud/PWA logs
-
+- no provider secrets observed in relay/PWA logs

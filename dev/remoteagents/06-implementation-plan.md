@@ -11,8 +11,9 @@ Goal: lock protocol, repo layout, feature flag, and team contracts.
 Deliverables:
 
 - Create `remoteagents/shared` with protocol schemas.
-- Create `remoteagents/relay-worker` skeleton.
 - Create `remoteagents/pwa` skeleton.
+- Add a feature-isolated PacketADE protocol/control-plane skeleton to the
+  standalone Rust repo at `D:\projects\packet-relay`.
 - Add desktop feature flag: `remoteAgents.enabled`.
 - Add docs link from `dev/README.md`.
 - Decide auth provider build-vs-buy for v1.
@@ -21,7 +22,8 @@ Deliverables:
 Checkpoint:
 
 - Shared protocol package builds.
-- Worker dev server starts.
+- `packet-relay` starts locally with its existing protocols intact and the
+  PacketADE routes feature-gated.
 - PWA dev server starts.
 - Desktop compiles with remote feature flag off.
 - Six-agent ownership map is posted.
@@ -30,14 +32,15 @@ Checkpoint:
 
 Goal: desktop and PWA can sign into dev auth, connect to the relay, and see host presence.
 
-Cloud:
+Rust relay (`D:\projects\packet-relay`):
 
-- Worker routes.
-- `HostRoomDO`.
-- D1 schema for accounts, hosts, devices, ACL, audit.
+- HTTPS control-plane and `/ws/host` + `/ws/device` routes.
+- In-process host-room router.
+- PostgreSQL migrations for accounts, hosts, devices, ACL, tickets, replay, and audit.
 - WebSocket upgrade auth.
 - Heartbeats.
 - Host online/offline state.
+- Existing bridge/broadcast/room compatibility tests remain green.
 
 Desktop:
 
@@ -72,7 +75,7 @@ Desktop:
 - profile snapshot.
 - remote status card in PacketADE Tools/Settings.
 
-Cloud:
+Rust relay:
 
 - route encrypted or plaintext dev snapshots.
 - cache metadata snapshot for fast host list display.
@@ -133,7 +136,7 @@ PWA:
 - reconnect and replay.
 - IndexedDB cursors/drafts.
 
-Cloud:
+Rust relay:
 
 - replay buffer.
 - sequence assignment.
@@ -151,10 +154,10 @@ Checkpoint:
 
 Goal: private-beta safety baseline.
 
-Cloud:
+Rust relay:
 
 - Web Push subscriptions.
-- notification queue.
+- durable notification outbox and bounded Rust sender task.
 - audit log.
 - rate limits.
 - origin validation.
@@ -263,4 +266,5 @@ Mitigation: PWA displays capability. Use API-key providers for SSH until sidecar
 
 Risk: mobile and relay choke on large payloads.
 
-Mitigation: inline cap, encrypted R2 references, mobile summaries first.
+Mitigation: preserve the relay's 64 KiB inline ceiling, use encrypted
+`artifactId` references for larger content, and render mobile summaries first.

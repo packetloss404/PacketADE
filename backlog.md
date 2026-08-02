@@ -94,17 +94,19 @@ after that pass or explicit owner reprioritization. Its relay reuses the same
 `api-agent:*` / respond to prompts / cancel" envelope remains a stable future
 input.
 
-**Blocked on Sprint-0 decisions.** [`dev/remoteagents/09-open-decisions.md`](./dev/remoteagents/09-open-decisions.md)
-records three Sprint-0 BLOCKING decisions — auth provider choice,
-payload-encryption timing, and code location — all still marked "Open" as of
-that doc's 2026-06-15 last touch (four weeks stale as of this writing). Per
-that doc, no `remoteagents/` code should be written until each is resolved.
-The P1 items below are the target backlog once Sprint-0 unblocks; do not pick
-them up before that gate clears.
+**Blocked on two Sprint-0 decisions.** [`dev/remoteagents/09-open-decisions.md`](./dev/remoteagents/09-open-decisions.md)
+still requires an auth-provider choice and a payload-encryption launch gate.
+The owner resolved relay architecture and code location on 2026-08-02: extend
+the standalone Rust service at `D:\projects\packet-relay`; do not create a
+Cloudflare relay. The P1 items below are the target backlog once the two
+remaining gates close; do not start product scaffolding before that gate clears.
 
-- **P1 — Packet Cloud relay MVP.** Implement the Worker/Durable Object relay,
-  desktop connector, host/session routing, reconnect semantics, and relay
-  observability described in `02-architecture.md` and `03-protocol.md`.
+- **P1 — Packet Cloud relay MVP.** Extend `D:\projects\packet-relay` with the
+  PacketADE host/device WebSocket protocol, HTTPS ticket/control plane,
+  PostgreSQL-backed auth/replay/audit/outbox state, desktop connector,
+  reconnect semantics, Web Push, and relay observability described in
+  `02-architecture.md` and `03-protocol.md`. Preserve existing relay protocol
+  compatibility and its 64 KiB inline security ceiling.
 - **P1 — Account sign-in + desktop device trust.** Ship Packet account auth,
   device enrollment, desktop-side approval, revocation, and audit trail. QR is
   optional later; it is not the primary flow.

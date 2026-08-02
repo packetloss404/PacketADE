@@ -8,7 +8,7 @@ PacketADE Remote Agents lets a signed-in user start, monitor, steer, approve, ca
 
 "My desktop PacketADE is an online agent host. My phone signs into Packet Cloud and controls that host."
 
-The user should not have to think about relay sockets, Durable Objects, provider routing, sidecar processes, or local ports.
+The user should not have to think about relay sockets, Packet Relay deployment, provider routing, sidecar processes, or local ports.
 
 ## Primary Personas
 
@@ -152,4 +152,3 @@ Remote Agents should feel more like Codex/Claude mobile remote control than like
 - compact cards, not terminal logs
 - desktop-owned secrets and tools
 - mobile as an intent and decision surface
-

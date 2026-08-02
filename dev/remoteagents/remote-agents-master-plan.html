@@ -29,7 +29,12 @@
         --shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
         --radius: 8px;
         font-family:
-          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
           sans-serif;
       }
 
@@ -156,8 +161,7 @@
         border-bottom: 1px solid var(--line-soft);
         background:
           linear-gradient(145deg, rgba(69, 212, 138, 0.08), transparent 44%),
-          linear-gradient(330deg, rgba(88, 199, 229, 0.08), transparent 46%),
-          var(--bg);
+          linear-gradient(330deg, rgba(88, 199, 229, 0.08), transparent 46%), var(--bg);
       }
 
       .hero-copy {
@@ -790,11 +794,10 @@
         <span class="kicker">Planning review - generated 2026-05-27</span>
         <h1>PacketADE Remote Agents: one reviewable plan.</h1>
         <p>
-          This single-file HTML distills the roadmap, backlog, Remote Agents planning
-          package, public docs, and implementation runbooks into one browser-friendly
-          review document. The north star is simple: a phone controls a trusted desktop
-          PacketADE host while providers, models, secrets, MCP config, files, and tools
-          stay on that desktop.
+          This single-file HTML distills the roadmap, backlog, Remote Agents planning package,
+          public docs, and implementation runbooks into one browser-friendly review document. The
+          north star is simple: a phone controls a trusted desktop PacketADE host while providers,
+          models, secrets, MCP config, files, and tools stay on that desktop.
         </p>
         <div class="hero-actions">
           <a class="button primary" href="#review-checklist">Start review</a>
@@ -857,41 +860,41 @@
               <div class="section-label">01 - Executive snapshot</div>
               <h2>What we are building</h2>
               <p class="section-lede">
-                Remote Agents turns the desktop app into an online agent host that a
-                signed-in phone can safely control through Packet Cloud.
+                Remote Agents turns the desktop app into an online agent host that a signed-in phone
+                can safely control through Packet Cloud.
               </p>
             </div>
             <a class="source-pill" href="./01-product-scope.md">01-product-scope.md</a>
           </div>
 
-          <div class="grid three">
+          <div class="three grid">
             <article class="card">
               <h3>Product promise</h3>
               <p>
-                All PacketADE agents, providers, models, profiles, workspaces, and
-                approvals from a phone while secrets and tools stay on desktop.
+                All PacketADE agents, providers, models, profiles, workspaces, and approvals from a
+                phone while secrets and tools stay on desktop.
               </p>
             </article>
             <article class="card">
               <h3>Primary mental model</h3>
               <p>
-                "My desktop PacketADE is an online agent host. My phone signs into
-                Packet Cloud and controls that host."
+                "My desktop PacketADE is an online agent host. My phone signs into Packet Cloud and
+                controls that host."
               </p>
             </article>
             <article class="card">
               <h3>Success shape</h3>
               <p>
-                Start or continue API-agent conversations, stream events, approve
-                prompts, cancel, retry, and recover after reconnect.
+                Start or continue API-agent conversations, stream events, approve prompts, cancel,
+                retry, and recover after reconnect.
               </p>
             </article>
           </div>
 
           <div class="callout">
-            <strong>The defining boundary:</strong> Packet Cloud routes and audits. It
-            does not call OpenAI, Anthropic, Ollama, MCP servers, local files, SSH, or
-            shell tools. The desktop remains the execution authority.
+            <strong>The defining boundary:</strong> Packet Cloud routes and audits. It does not call
+            OpenAI, Anthropic, Ollama, MCP servers, local files, SSH, or shell tools. The desktop
+            remains the execution authority.
           </div>
         </section>
 
@@ -901,14 +904,14 @@
               <div class="section-label">02 - Product shape</div>
               <h2>MVP, non-goals, and user journeys</h2>
               <p class="section-lede">
-                The MVP is intentionally narrow enough to ship, test, and secure. It is
-                not a cloud coding environment and not remote desktop.
+                The MVP is intentionally narrow enough to ship, test, and secure. It is not a cloud
+                coding environment and not remote desktop.
               </p>
             </div>
             <a class="source-pill" href="./01-product-scope.md">Scope doc</a>
           </div>
 
-          <div class="grid two">
+          <div class="two grid">
             <article class="card">
               <h3>MVP includes</h3>
               <ul>
@@ -937,12 +940,12 @@
             </article>
           </div>
 
-          <div class="grid three" style="margin-top: 14px">
+          <div class="three grid" style="margin-top: 14px">
             <article class="card">
               <h3>First-time setup</h3>
               <p>
-                Enable Remote Agents in desktop, sign into Packet Cloud, register host,
-                sign into PWA, request access, approve on desktop, open host dashboard.
+                Enable Remote Agents in desktop, sign into Packet Cloud, register host, sign into
+                PWA, request access, approve on desktop, open host dashboard.
               </p>
             </article>
             <article class="card">
@@ -955,8 +958,8 @@
             <article class="card">
               <h3>Approve while away</h3>
               <p>
-                Desktop emits the existing permission event, relay forwards it, push wakes
-                the user, and mobile sends a narrow approval response.
+                Desktop emits the existing permission event, relay forwards it, push wakes the user,
+                and mobile sends a narrow approval response.
               </p>
             </article>
           </div>
@@ -968,9 +971,9 @@
               <div class="section-label">03 - Roadmap and backlog</div>
               <h2>How this fits the current plan</h2>
               <p class="section-lede">
-                Remote Agents is the flagship R0 track. The rest of the roadmap keeps
-                release readiness, sidecar-over-SSH, MCP transport, and product hardening
-                visible without stealing the current focus.
+                Remote Agents is the flagship R0 track. The rest of the roadmap keeps release
+                readiness, sidecar-over-SSH, MCP transport, and product hardening visible without
+                stealing the current focus.
               </p>
             </div>
             <a class="source-pill" href="../../ROADMAP.md">ROADMAP.md</a>
@@ -1013,10 +1016,13 @@
             </tbody>
           </table>
 
-          <div class="grid four" style="margin-top: 14px">
+          <div class="four grid" style="margin-top: 14px">
             <article class="card">
               <h3>P1 relay MVP</h3>
-              <p>Worker/Durable Object relay, desktop connector, routing, reconnect, observability.</p>
+              <p>
+                Standalone Rust packet-relay service, desktop connector, routing, durable replay,
+                reconnect, observability.
+              </p>
             </article>
             <article class="card">
               <h3>P1 auth and trust</h3>
@@ -1039,9 +1045,9 @@
               <div class="section-label">04 - Architecture</div>
               <h2>Desktop-owned execution through a cloud relay</h2>
               <p class="section-lede">
-                Cloudflare Workers, Durable Objects, D1, R2, and Queues are the default
-                recommendation. The protocol should remain relay-neutral enough to move to
-                a Rust relay later if needed.
+                The standalone Rust service at <code>D:\projects\packet-relay</code> is the default.
+                PostgreSQL owns durable identity, ticket, replay, audit, and outbox state while the
+                protocol remains hosting-provider-neutral.
               </p>
             </div>
             <a class="source-pill" href="./02-architecture.md">02-architecture.md</a>
@@ -1054,12 +1060,15 @@
                 <p>Signs in, stores device key and cursors, sends commands, renders streams.</p>
               </div>
               <div class="flow-node accent-cyan">
-                <h3>Worker API</h3>
+                <h3>Rust Relay API</h3>
                 <p>Auth, metadata routes, WebSocket tickets, push subscriptions.</p>
               </div>
               <div class="flow-node accent-amber">
-                <h3>HostRoom DO</h3>
-                <p>One room per desktop host; routes commands/events and replay buffers.</p>
+                <h3>Host-room router</h3>
+                <p>
+                  One in-process room per desktop host; routes commands/events while PostgreSQL
+                  stores replay.
+                </p>
               </div>
               <div class="flow-node accent-green">
                 <h3>Desktop Gateway</h3>
@@ -1071,12 +1080,14 @@
               </div>
             </div>
 
-            <div class="grid three">
+            <div class="three grid">
               <article class="card">
                 <h3>Cloud owns</h3>
                 <ul>
                   <li>Account, host, device, ACL metadata.</li>
-                  <li>Encrypted replay buffer and R2 references.</li>
+                  <li>
+                    Encrypted PostgreSQL replay buffer and vendor-neutral artifact references.
+                  </li>
                   <li>Audit rows, rate limits, revocation, push jobs.</li>
                 </ul>
               </article>
@@ -1101,8 +1112,8 @@
 
           <div class="callout">
             <strong>Key desktop refactor:</strong> create a backend
-            <code>RemoteConversationService</code> so phone-created conversations become
-            first-class desktop conversations instead of being owned only by React store state.
+            <code>RemoteConversationService</code> so phone-created conversations become first-class
+            desktop conversations instead of being owned only by React store state.
           </div>
         </section>
 
@@ -1112,21 +1123,27 @@
               <div class="section-label">05 - Protocol</div>
               <h2>Narrow, versioned, auditable envelopes</h2>
               <p class="section-lede">
-                The relay sees routing metadata only. Prompts, transcripts, tool inputs,
-                diffs, local paths where possible, and approval details move inside
-                encrypted payloads before external beta.
+                The relay sees routing metadata only. Prompts, transcripts, tool inputs, diffs,
+                local paths where possible, and approval details move inside encrypted payloads
+                before external beta.
               </p>
             </div>
             <a class="source-pill" href="./03-protocol.md">03-protocol.md</a>
           </div>
 
-          <div class="grid two">
+          <div class="two grid">
             <article class="card">
               <h3>Allowed command surface</h3>
               <ul>
                 <li>List hosts, workspaces, providers, models, profiles, conversations.</li>
-                <li>Start, continue, cancel, retry, close, and change model for API-agent conversations.</li>
-                <li>Stream existing <code>api-agent:*</code> events as wrapped <code>agent.event</code> payloads.</li>
+                <li>
+                  Start, continue, cancel, retry, close, and change model for API-agent
+                  conversations.
+                </li>
+                <li>
+                  Stream existing <code>api-agent:*</code> events as wrapped
+                  <code>agent.event</code> payloads.
+                </li>
                 <li>Respond to permission requests and pending edits.</li>
                 <li>Cancel pending tools and observe cost/status summaries.</li>
               </ul>
@@ -1138,7 +1155,9 @@
                 <li>No raw PTY control in v1.</li>
                 <li>No cloud-side provider secrets.</li>
                 <li>No arbitrary shell command submission outside agent permission flow.</li>
-                <li>No mobile <code>allow_always</code> until step-up auth and stronger risk UI exist.</li>
+                <li>
+                  No mobile <code>allow_always</code> until step-up auth and stronger risk UI exist.
+                </li>
               </ul>
             </article>
           </div>
@@ -1153,26 +1172,27 @@ Production rule:
   agent, approval, file, and control payloads require ciphertext + signature.</code></pre>
           </div>
 
-          <div class="grid three" style="margin-top: 14px">
+          <div class="three grid" style="margin-top: 14px">
             <article class="card">
               <h3>Sequencing</h3>
               <p>
-                Durable Object assigns monotonic event sequence numbers per host and
-                conversation. PWA resumes with last processed cursor.
+                The Rust host router assigns monotonic event sequence numbers per host and
+                conversation and persists replay before acknowledgement. PWA resumes with its last
+                processed cursor.
               </p>
             </article>
             <article class="card">
               <h3>Idempotency</h3>
               <p>
-                Mutating device commands carry an idempotency key; desktop keeps a
-                processed-command cache to avoid duplicate prompts.
+                Mutating device commands carry an idempotency key; desktop keeps a processed-command
+                cache to avoid duplicate prompts.
               </p>
             </article>
             <article class="card">
               <h3>Snapshots</h3>
               <p>
-                Provider, workspace, profile, and conversation snapshots are generated by
-                desktop; the PWA does not duplicate provider catalogs.
+                Provider, workspace, profile, and conversation snapshots are generated by desktop;
+                the PWA does not duplicate provider catalogs.
               </p>
             </article>
           </div>
@@ -1184,15 +1204,15 @@ Production rule:
               <div class="section-label">06 - Security</div>
               <h2>High-risk infrastructure from day one</h2>
               <p class="section-lede">
-                Remote Agents controls an agent that can read, write, run commands, use
-                API credentials, and call MCP tools. The security design treats that as
-                the central fact, not an edge case.
+                Remote Agents controls an agent that can read, write, run commands, use API
+                credentials, and call MCP tools. The security design treats that as the central
+                fact, not an edge case.
               </p>
             </div>
             <a class="source-pill" href="./04-security.md">04-security.md</a>
           </div>
 
-          <div class="grid three">
+          <div class="three grid">
             <article class="card">
               <h3>Identity</h3>
               <ul>
@@ -1222,7 +1242,7 @@ Production rule:
             </article>
           </div>
 
-          <div class="grid two" style="margin-top: 14px">
+          <div class="two grid" style="margin-top: 14px">
             <article class="card">
               <h3>Private beta launch gate</h3>
               <ul>
@@ -1239,10 +1259,9 @@ Production rule:
               <h3>Provider secret isolation</h3>
               <p>
                 The PWA can receive auth status such as <code>ready</code>,
-                <code>login_required</code>, <code>missing_key</code>, or
-                <code>service_down</code>. It must never receive API keys, OAuth files,
-                MCP environment variables, SSH private keys, local env vars, or raw shell
-                profile data.
+                <code>login_required</code>, <code>missing_key</code>, or <code>service_down</code>.
+                It must never receive API keys, OAuth files, MCP environment variables, SSH private
+                keys, local env vars, or raw shell profile data.
               </p>
             </article>
           </div>
@@ -1254,14 +1273,14 @@ Production rule:
               <div class="section-label">07 - PWA</div>
               <h2>Mobile as intent and decision surface</h2>
               <p class="section-lede">
-                The PWA should open directly into work after sign-in. It is a compact
-                agent-control surface, not a marketing site and not a terminal wall.
+                The PWA should open directly into work after sign-in. It is a compact agent-control
+                surface, not a marketing site and not a terminal wall.
               </p>
             </div>
             <a class="source-pill" href="./05-pwa.md">05-pwa.md</a>
           </div>
 
-          <div class="grid four">
+          <div class="four grid">
             <article class="card">
               <h3>Needs Me</h3>
               <p>Approvals, pending edits, failed runs, blocked conversations.</p>
@@ -1280,7 +1299,7 @@ Production rule:
             </article>
           </div>
 
-          <div class="grid two" style="margin-top: 14px">
+          <div class="two grid" style="margin-top: 14px">
             <article class="card">
               <h3>Conversation cards</h3>
               <ul>
@@ -1311,8 +1330,8 @@ Production rule:
               <div class="section-label">08 - Implementation plan</div>
               <h2>Seven checkpoints to private beta</h2>
               <p class="section-lede">
-                Sprints are written as checkpoints, not calendar promises. Sprint 0 and
-                Sprint 1 can start in parallel once the six-agent team is assigned.
+                Sprints are written as checkpoints, not calendar promises. Sprint 0 and Sprint 1 can
+                start in parallel once the six-agent team is assigned.
               </p>
             </div>
             <a class="source-pill" href="./06-implementation-plan.md">06-implementation-plan.md</a>
@@ -1323,9 +1342,14 @@ Production rule:
               <div class="sprint-num">Sprint 0</div>
               <div>
                 <h3>Foundations and decisions</h3>
-                <p>Protocol schemas, repo layout, feature flag, PWA/worker skeletons, auth/encryption decisions.</p>
+                <p>
+                  Protocol schemas, repo layout, feature flag, PWA/Rust-relay skeletons,
+                  auth/encryption decisions.
+                </p>
               </div>
-              <div class="checkpoint">Checkpoint: shared protocol, worker, PWA, and desktop feature flag all build.</div>
+              <div class="checkpoint">
+                Checkpoint: shared protocol, packet-relay, PWA, and desktop feature flag all build.
+              </div>
             </article>
             <article class="sprint">
               <div class="sprint-num">Sprint 1</div>
@@ -1333,7 +1357,9 @@ Production rule:
                 <h3>Relay and host presence</h3>
                 <p>Desktop and PWA connect to relay and see host online/offline state.</p>
               </div>
-              <div class="checkpoint">Checkpoint: phone sees desktop online; unauthorized device cannot subscribe.</div>
+              <div class="checkpoint">
+                Checkpoint: phone sees desktop online; unauthorized device cannot subscribe.
+              </div>
             </article>
             <article class="sprint">
               <div class="sprint-num">Sprint 2</div>
@@ -1341,7 +1367,9 @@ Production rule:
                 <h3>Provider, workspace, profile snapshots</h3>
                 <p>Phone can see what desktop can run without leaking secrets.</p>
               </div>
-              <div class="checkpoint">Checkpoint: PWA picker mirrors desktop auth/model/workspace state.</div>
+              <div class="checkpoint">
+                Checkpoint: PWA picker mirrors desktop auth/model/workspace state.
+              </div>
             </article>
             <article class="sprint">
               <div class="sprint-num">Sprint 3</div>
@@ -1349,31 +1377,46 @@ Production rule:
                 <h3>Backend conversation service</h3>
                 <p>Phone-created conversations become first-class PacketADE conversations.</p>
               </div>
-              <div class="checkpoint">Checkpoint: stream appears on desktop and PWA; cancel from PWA stops run.</div>
+              <div class="checkpoint">
+                Checkpoint: stream appears on desktop and PWA; cancel from PWA stops run.
+              </div>
             </article>
             <article class="sprint">
               <div class="sprint-num">Sprint 4</div>
               <div>
                 <h3>Mobile conversation UX</h3>
-                <p>Needs Me, Active, New Agent, chat cards, approvals, replay, IndexedDB cursors/drafts.</p>
+                <p>
+                  Needs Me, Active, New Agent, chat cards, approvals, replay, IndexedDB
+                  cursors/drafts.
+                </p>
               </div>
-              <div class="checkpoint">Checkpoint: phone lock/reopen resumes stream; approval unblocks desktop agent.</div>
+              <div class="checkpoint">
+                Checkpoint: phone lock/reopen resumes stream; approval unblocks desktop agent.
+              </div>
             </article>
             <article class="sprint">
               <div class="sprint-num">Sprint 5</div>
               <div>
                 <h3>Push, audit, security hardening</h3>
-                <p>Web Push, audit log, rate limits, revocation, desktop device UI, encryption gate.</p>
+                <p>
+                  Web Push, audit log, rate limits, revocation, desktop device UI, encryption gate.
+                </p>
               </div>
-              <div class="checkpoint">Checkpoint: revocation kills active socket; every mutating command is audited.</div>
+              <div class="checkpoint">
+                Checkpoint: revocation kills active socket; every mutating command is audited.
+              </div>
             </article>
             <article class="sprint">
               <div class="sprint-num">Sprint 6</div>
               <div>
                 <h3>Beta polish and release</h3>
-                <p>Generated protocol docs, load test, mobile matrix, failure runbook, staged deploy.</p>
+                <p>
+                  Generated protocol docs, load test, mobile matrix, failure runbook, staged deploy.
+                </p>
               </div>
-              <div class="checkpoint">Checkpoint: 30-minute remote session with disconnects passes on iOS and Android.</div>
+              <div class="checkpoint">
+                Checkpoint: 30-minute remote session with disconnects passes on iOS and Android.
+              </div>
             </article>
           </div>
         </section>
@@ -1384,8 +1427,8 @@ Production rule:
               <div class="section-label">09 - Six-agent team</div>
               <h2>Parallel ownership map</h2>
               <p class="section-lede">
-                Each agent owns a separate write area to reduce conflicts. Protocol
-                changes happen in shared schemas first.
+                Each agent owns a separate write area to reduce conflicts. Protocol changes happen
+                in shared schemas first.
               </p>
             </div>
             <a class="source-pill" href="./07-six-agent-runbook.md">07-six-agent-runbook.md</a>
@@ -1393,24 +1436,36 @@ Production rule:
 
           <div class="agent-board">
             <article class="agent-card">
-              <h3>Cloud Relay And Data <b>Agent 1</b></h3>
-              <p>Worker, D1, Durable Object room, queues, replay, audit, revocation disconnect.</p>
+              <h3>Rust Relay And Data <b>Agent 1</b></h3>
+              <p>
+                Packet Relay module, PostgreSQL, host-room router, durable outbox, replay, audit,
+                revocation disconnect.
+              </p>
             </article>
             <article class="agent-card">
               <h3>Desktop Remote Gateway <b>Agent 2</b></h3>
-              <p>Rust remote module, relay client, host registration, kill switch, status events.</p>
+              <p>
+                Rust remote module, relay client, host registration, kill switch, status events.
+              </p>
             </article>
             <article class="agent-card">
               <h3>Backend Conversation Service <b>Agent 3</b></h3>
-              <p>Remote create/send/cancel/retry/model wrappers, persistence, local events, approvals.</p>
+              <p>
+                Remote create/send/cancel/retry/model wrappers, persistence, local events,
+                approvals.
+              </p>
             </article>
             <article class="agent-card">
               <h3>PWA <b>Agent 4</b></h3>
-              <p>React PWA shell, auth UI, host list, New Agent flow, conversation cards, IndexedDB.</p>
+              <p>
+                React PWA shell, auth UI, host list, New Agent flow, conversation cards, IndexedDB.
+              </p>
             </article>
             <article class="agent-card">
               <h3>Security/Auth <b>Agent 5</b></h3>
-              <p>Auth provider choice, PKCE, device trust, revocation, origin checks, E2EE spike.</p>
+              <p>
+                Auth provider choice, PKCE, device trust, revocation, origin checks, E2EE spike.
+              </p>
             </article>
             <article class="agent-card">
               <h3>QA, Protocol, Docs <b>Agent 6</b></h3>
@@ -1419,9 +1474,9 @@ Production rule:
           </div>
 
           <div class="callout">
-            <strong>First visible target:</strong> a trusted PWA sees a desktop host online.
-            The first 90 minutes should assign owners, pick auth path for Sprint 1, freeze
-            protocol field names, and create the integration branch.
+            <strong>First visible target:</strong> a trusted PWA sees a desktop host online. The
+            first 90 minutes should assign owners, pick auth path for Sprint 1, freeze protocol
+            field names, and create the integration branch.
           </div>
         </section>
 
@@ -1431,21 +1486,20 @@ Production rule:
               <div class="section-label">10 - Testing</div>
               <h2>Correctness, security, and mobile reliability</h2>
               <p class="section-lede">
-                The test plan is shaped around three failure classes: duplicated/lost
-                agent state, unauthorized or leaky remote control, and unreliable mobile
-                reconnect/push behavior.
+                The test plan is shaped around three failure classes: duplicated/lost agent state,
+                unauthorized or leaky remote control, and unreliable mobile reconnect/push behavior.
               </p>
             </div>
             <a class="source-pill" href="./08-testing.md">08-testing.md</a>
           </div>
 
-          <div class="grid three">
+          <div class="three grid">
             <article class="card">
               <h3>Unit and contract</h3>
               <ul>
                 <li>Shared protocol parses valid frames and rejects unknown versions.</li>
                 <li>Mutating commands require idempotency keys.</li>
-                <li>Worker ACL, origin validation, rate limits, audit rows.</li>
+                <li>Rust relay ACL, origin validation, rate limits, audit rows.</li>
                 <li>Desktop validates commands and redacts snapshots.</li>
                 <li>PWA reducers dedupe events and expire outbox TTL.</li>
               </ul>
@@ -1453,7 +1507,7 @@ Production rule:
             <article class="card">
               <h3>Integration and E2E</h3>
               <ul>
-                <li>Fake PWA to relay-worker dev to fake desktop harness.</li>
+                <li>Fake PWA to packet-relay dev to fake desktop harness.</li>
                 <li>Real desktop with fake provider for deterministic streams.</li>
                 <li>Desktop plus PWA: start, stream, follow-up, approval, cancel.</li>
                 <li>Playwright mobile viewports for host list, chat, approval, reconnect.</li>
@@ -1473,13 +1527,12 @@ Production rule:
           <details style="margin-top: 14px">
             <summary>Acceptance test in one paragraph</summary>
             <div>
-              A user with PacketADE desktop running on Windows signs into Packet Cloud,
-              enables Remote Agents, opens the PWA on iPhone, signs in, requests access,
-              approves on desktop, starts an <code>api-openai-codex</code> or
-              <code>api-claude-oauth</code> conversation against
-              <code>D:\projects\PacketADE</code>, receives streaming output, approves one
-              risky tool, cancels or completes the run, and then opens the same
-              conversation on desktop.
+              A user with PacketADE desktop running on Windows signs into Packet Cloud, enables
+              Remote Agents, opens the PWA on iPhone, signs in, requests access, approves on
+              desktop, starts an <code>api-openai-codex</code> or
+              <code>api-claude-oauth</code> conversation against <code>D:\projects\PacketADE</code>,
+              receives streaming output, approves one risky tool, cancels or completes the run, and
+              then opens the same conversation on desktop.
             </div>
           </details>
         </section>
@@ -1490,14 +1543,14 @@ Production rule:
               <div class="section-label">11 - Open decisions</div>
               <h2>What still needs an owner call</h2>
               <p class="section-lede">
-                Several product-shaping choices are locked. A few implementation choices
-                should be decided during Sprint 0 or by the named owner.
+                Several product-shaping choices are locked. A few implementation choices should be
+                decided during Sprint 0 or by the named owner.
               </p>
             </div>
             <a class="source-pill" href="./09-open-decisions.md">09-open-decisions.md</a>
           </div>
 
-          <div class="grid two">
+          <div class="two grid">
             <article class="card">
               <h3>Locked</h3>
               <ul>
@@ -1506,7 +1559,7 @@ Production rule:
                 <li>PWA first; native iOS/TestFlight later.</li>
                 <li>API agents only in MVP.</li>
                 <li>WebSocket relay for foreground control; Web Push for notifications.</li>
-                <li>Cloudflare Workers plus Durable Objects are the recommended default.</li>
+                <li>The standalone Rust packet-relay service is the selected implementation.</li>
               </ul>
             </article>
             <article class="card">
@@ -1514,7 +1567,9 @@ Production rule:
               <ul>
                 <li>Auth provider: build passkey/magic link or use Clerk/Auth0/Stytch/Supabase.</li>
                 <li>Encryption timing details: exact internal-dev to private-beta gate.</li>
-                <li>Code location finalization under <code>remoteagents/</code> or app workspace.</li>
+                <li>
+                  Code location finalization under <code>remoteagents/</code> or app workspace.
+                </li>
                 <li>Backend conversation persistence shape for MVP vs post-MVP.</li>
                 <li>Native iOS strategy after PWA beta.</li>
               </ul>
@@ -1528,8 +1583,8 @@ Production rule:
               <div class="section-label">12 - Owner review</div>
               <h2>Questions to answer before kickoff</h2>
               <p class="section-lede">
-                This is the practical checklist for reviewing the plan before handing it
-                to a six-agent implementation team.
+                This is the practical checklist for reviewing the plan before handing it to a
+                six-agent implementation team.
               </p>
             </div>
             <a class="source-pill" href="./07-six-agent-runbook.md">Runbook</a>
@@ -1545,31 +1600,46 @@ Production rule:
             <div class="review-item">
               <div>
                 <strong>Do we want an auth vendor for private beta?</strong>
-                <p>Passkeys plus magic-link fallback are preferred; username/password should stay out unless unavoidable.</p>
+                <p>
+                  Passkeys plus magic-link fallback are preferred; username/password should stay out
+                  unless unavoidable.
+                </p>
               </div>
             </div>
             <div class="review-item">
               <div>
                 <strong>Is E2EE a hard external-beta gate?</strong>
-                <p>The docs say yes. Internal plaintext can move fast, but external users require encrypted agent/approval/file frames.</p>
+                <p>
+                  The docs say yes. Internal plaintext can move fast, but external users require
+                  encrypted agent/approval/file frames.
+                </p>
               </div>
             </div>
             <div class="review-item">
               <div>
                 <strong>Are we comfortable excluding raw PTY from v1?</strong>
-                <p>This keeps scope and risk manageable while still delivering the core remote-agent loop.</p>
+                <p>
+                  This keeps scope and risk manageable while still delivering the core remote-agent
+                  loop.
+                </p>
               </div>
             </div>
             <div class="review-item">
               <div>
                 <strong>Can Sprint 3 own the backend conversation refactor?</strong>
-                <p>This is the main product architecture risk. Without it, phone-created runs will feel bolted on.</p>
+                <p>
+                  This is the main product architecture risk. Without it, phone-created runs will
+                  feel bolted on.
+                </p>
               </div>
             </div>
             <div class="review-item">
               <div>
                 <strong>What is the first demo?</strong>
-                <p>The clean demo is a trusted PWA seeing desktop online, then starting a real API-agent conversation and approving one prompt.</p>
+                <p>
+                  The clean demo is a trusted PWA seeing desktop online, then starting a real
+                  API-agent conversation and approving one prompt.
+                </p>
               </div>
             </div>
           </div>
@@ -1581,8 +1651,8 @@ Production rule:
               <div class="section-label">13 - Source map</div>
               <h2>Where this page came from</h2>
               <p class="section-lede">
-                This HTML is a review surface. The Markdown files below remain the
-                canonical source of truth for implementation details.
+                This HTML is a review surface. The Markdown files below remain the canonical source
+                of truth for implementation details.
               </p>
             </div>
             <a class="source-pill" href="../README.md">dev/README.md</a>
@@ -1650,10 +1720,16 @@ Production rule:
               </tr>
               <tr>
                 <td><a href="./research-brief.md">research-brief.md</a></td>
-                <td>Competitor, auth, relay, PWA, WebSocket, push, and encryption research synthesis.</td>
+                <td>
+                  Competitor, auth, relay, PWA, WebSocket, push, and encryption research synthesis.
+                </td>
               </tr>
               <tr>
-                <td><a href="../../docs/index.html">docs/index.html</a>, <a href="../../docs/roadmap.html">docs/roadmap.html</a>, <a href="../../docs/packetade-manual.html">docs/packetade-manual.html</a></td>
+                <td>
+                  <a href="../../docs/index.html">docs/index.html</a>,
+                  <a href="../../docs/roadmap.html">docs/roadmap.html</a>,
+                  <a href="../../docs/packetade-manual.html">docs/packetade-manual.html</a>
+                </td>
                 <td>Public website/manual language now aligned with this plan.</td>
               </tr>
             </tbody>
@@ -1663,7 +1739,8 @@ Production rule:
     </main>
 
     <footer class="footer">
-      PacketADE Remote Agents master plan. Single-file review page; canonical details live in Markdown.
+      PacketADE Remote Agents master plan. Single-file review page; canonical details live in
+      Markdown.
     </footer>
   </body>
 </html>
