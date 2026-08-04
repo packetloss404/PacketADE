@@ -1,7 +1,7 @@
 # Gitea / Forgejo Support — Scoped Loop
 
 Created: 2026-07-25
-Backlog: [`../backlog.md`](../backlog.md) → new "Git host providers (GitHub + Gitea/Forgejo)".
+Backlog: [`../../backlog.md`](../../backlog.md) → current Git-host proof and parity items.
 Shape: same gated-loop cadence as [`memory-v9-loop.md`](./memory-v9-loop.md)
 (discrete, independently-gated items; per-item commit; verify → record).
 

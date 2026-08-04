@@ -1,235 +1,96 @@
-# Dev Planning Docs
+# PacketADE Development Plans
 
-Last updated: 2026-08-01
+Last reconciled: 2026-08-03
 
-This directory holds **active** planning docs with outstanding work items plus the engineering reference docs that used to live in `docs/`. Completed docs have been moved to `dev/archive/`.
+This directory contains active implementation plans, proof runbooks, research,
+and historical evidence. It is not a second backlog.
 
-## Planning Ownership
+Use these documents in order:
 
-Use these as the trust anchors before reading older plan files:
+1. [`../HANDOFF.md`](../HANDOFF.md) - exact restart state and release artifacts
+2. [`../backlog.md`](../backlog.md) - only live item-level task register
+3. [`../ROADMAP.md`](../ROADMAP.md) - product direction and ordering
+4. [`../docs/reports/state-of-the-ade-2026-07-30.md`](../docs/reports/state-of-the-ade-2026-07-30.md), Section 0 - current consolidated audit state
+5. A plan below only when executing its linked backlog item
 
-| Area                                 | Canonical owner                                                                                                                                                                                                                      | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| State of the ADE                     | [`../docs/reports/state-of-the-ade-2026-07-30.md`](../docs/reports/state-of-the-ade-2026-07-30.md), [`PDF`](../docs/reports/state-of-the-ade-2026-07-30.pdf)                                                                         | **PRIMARY CURRENT REPORT** — Section 0 carries the 2026-08-01 AI-readable authority, exact source/proof disposition, current actionable list, and resolution timeline; the PDF is the identical human edition.                                                                                                                                                                                                                                                                                     |
-| Session restart point                | [`../HANDOFF.md`](../HANDOFF.md)                                                                                                                                                                                                     | **CURRENT** — implemented main-shell/right-dock decisions, current source fixes, environment gates, latest Windows build evidence, guardrails, and recommended first prompt.                                                                                                                                                                                                                                                                                                                       |
-| Live task register                   | [`../backlog.md`](../backlog.md)                                                                                                                                                                                                     | Single source for outstanding work. The July P1/P2 hardening loop is complete.                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| Implemented-feature proof audit      | [`proof-audit-2026-08-01.md`](./proof-audit-2026-08-01.md)                                                                                                                                                                           | **CURRENT** — final integrated source counts and `fd8c226` unsigned Windows package evidence, plus an honest matrix of the manual packaged, real-runtime, credential, hardware, signing, and cross-platform gates that remain.                                                                                                                                                                                                                                                                     |
-| High-priority real-work loop         | [`high-priority-real-work-loop-2026-08-01.md`](./high-priority-real-work-loop-2026-08-01.md)                                                                                                                                         | **SOURCE COMPLETE / EXTERNAL PROOF OPEN** — operational truth, Git/repository authority, Settings persistence/security, independent peer review, and exact exit gates.                                                                                                                                                                                                                                                                                                                             |
-| Release priorities                   | [`../ROADMAP.md`](../ROADMAP.md)                                                                                                                                                                                                     | Short current summary; detailed plans stay in this folder.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| **Current product contract**         | [`workspace-agents-restructuring-goal.md`](./workspace-agents-restructuring-goal.md)                                                                                                                                                 | **COMPLETE** — CLI/PacketCode-first Workspaces, first-class same-window Agents, attachment producers retired, saved-pane compatibility preserved, and detachable interactivity deferred pending a single-writer contract.                                                                                                                                                                                                                                                                          |
-| Workspace/Agents WA0 contract        | [`workspace-agents-wa0-route-contract.md`](./workspace-agents-wa0-route-contract.md)                                                                                                                                                 | **LOCKED** — authoritative current/target route matrix, creation ownership, compatibility policy, handoff authority boundaries, detachable-window gate, and WA1–WA4 implementation proof.                                                                                                                                                                                                                                                                                                          |
-| Workspace/Agents WA3 evidence        | [`workspace-agents-wa3-handoff-evidence.md`](./workspace-agents-wa3-handoff-evidence.md)                                                                                                                                             | **SOURCE COMPLETE** — typed identity-preserving Workspace, Agent, PacketCode, Git, Flight, PacketAgent, and Monitor handoffs; manual local/SSH and live external-runtime proof remain.                                                                                                                                                                                                                                                                                                             |
-| Workspace/Agents WA4 decision        | [`workspace-agents-wa4-dogfood-gate.md`](./workspace-agents-wa4-dogfood-gate.md)                                                                                                                                                     | **COMPLETE** — owner retired new Workspace conversation attachments; all producers/materializers are removed while saved panes remain load-compatible.                                                                                                                                                                                                                                                                                                                                             |
-| Workspace/Agents completion audit    | [`workspace-agents-completion-audit-2026-07-29.md`](./workspace-agents-completion-audit-2026-07-29.md)                                                                                                                               | **COMPLETE** — requirement-by-requirement ownership, attachment-removal, hydration, compatibility, handoff, and external-runtime matrix.                                                                                                                                                                                                                                                                                                                                                           |
-| Workspace/Agents + Settings evidence | [`workspace-agent-settings-decision-2026-07-29.md`](./workspace-agent-settings-decision-2026-07-29.md)                                                                                                                               | Six-group Settings IA **APPROVED AND IMPLEMENTED** with lossless sub-tabs, search, scope badges, and typed recovery routes; the 2026-08-01 P1 placebo/persistence/SSH-password source corrections are complete, with packaged/live proof open.                                                                                                                                                                                                                                                     |
-| Main shell and right-panel audit     | [`main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./main-shell-navigation-and-right-panel-audit-2026-07-29.md)                                                                                                           | **REVIEW COMPLETE** — independent source audit of main navigation, toolbar/status actions, tabs, labels, right-side panel ownership/alignment, remote boundaries, and feature wiring; owner decisions and implementation remain open.                                                                                                                                                                                                                                                              |
-| Remote/mobile agent access           | [`remoteagents/README.md`](./remoteagents/README.md)                                                                                                                                                                                 | Supersedes the older `mobile/` investigation for phone/PWA work.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Multi-monitor operations             | [`send-to-monitor-plan.md`](./send-to-monitor-plan.md)                                                                                                                                                                               | V1 SOURCE COMPLETE — one reusable read-only Agent/Flight Monitor with backend lease, separate shell, narrow plugin capability, and Rust application-command allowlist; packaged multi-display/denial proof and later surfaces remain.                                                                                                                                                                                                                                                              |
-| Competitor landscape                 | [`competitors.md`](./competitors.md)                                                                                                                                                                                                 | Master competitor index (12 peers). Deep dives: [`bridgemind/bridgespace-competitive-brief.md`](./bridgemind/bridgespace-competitive-brief.md), [`bridgemind/bridgeswarm-teardown.md`](./bridgemind/bridgeswarm-teardown.md). Provider/auth abstraction is the moat the field lacks.                                                                                                                                                                                                               |
-| Pre-Remote-Agents loop queue         | [`bridgemind/pre-remote-agents-loop-queue.md`](./bridgemind/pre-remote-agents-loop-queue.md)                                                                                                                                         | LOCALLY CONVERGED — source work, full local gates, and unsigned Windows bundles are complete; exact environment/external-runtime proof remains isolated in [`bridgemind/pre-remote-convergence-2026-07-28.md`](./bridgemind/pre-remote-convergence-2026-07-28.md).                                                                                                                                                                                                                                 |
-| Flight escalation loop               | [`bridgemind/flight-escalation-loop.md`](./bridgemind/flight-escalation-loop.md)                                                                                                                                                     | SHIPPED E1–E9 — assisted escalation (Option B): automatic detection/recommendation with user-approved retry or reassignment.                                                                                                                                                                                                                                                                                                                                                                       |
-| Reviewer Gate loop                   | [`bridgemind/reviewer-gate-loop.md`](./bridgemind/reviewer-gate-loop.md)                                                                                                                                                             | IMPLEMENTED — RG1–RG7 closed; RG8 retains release-like local/SSH/manual smoke.                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| Cooperative Flight graph             | [`bridgemind/cooperative-flight-graph-loop.md`](./bridgemind/cooperative-flight-graph-loop.md)                                                                                                                                       | IMPLEMENTED — CG1–CG8 closed; CG9 retains final landing and release-like local/SSH/manual smoke.                                                                                                                                                                                                                                                                                                                                                                                                   |
-| YOLO autonomy overlay                | [`bridgemind/autonomy-policy-loop.md`](./bridgemind/autonomy-policy-loop.md)                                                                                                                                                         | IMPLEMENTED — AP1–AP8 closed; AP9 retains adversarial and release-like smoke.                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Coordination inbox loop              | [`bridgemind/coordination-inbox-loop.md`](./bridgemind/coordination-inbox-loop.md)                                                                                                                                                   | IMPLEMENTED — CI1–CI8 closed; CI9 retains release-like API/PTY/MCP/local/SSH smoke.                                                                                                                                                                                                                                                                                                                                                                                                                |
-| PacketAgent handoff loop             | [`bridgemind/packetagent-handoff-loop.md`](./bridgemind/packetagent-handoff-loop.md)                                                                                                                                                 | W9 CONSUMER SOURCE IMPLEMENTED — frozen fixture/digest compatibility, keyring connection, Flight deploy/activate/reconnect/control/evidence projection; live cross-repo close/restart and missing approval-response contract remain.                                                                                                                                                                                                                                                               |
-| PacketCode integration loop          | [`bridgemind/packetcode-bridgecode-loop.md`](./bridgemind/packetcode-bridgecode-loop.md)                                                                                                                                             | SOURCE INTEGRATION IMPLEMENTED — PC1–PC4/PC6–PC9 closed; published release, clean-machine, and PacketAgent compatibility gates remain.                                                                                                                                                                                                                                                                                                                                                             |
-| Project-local Memory Hub             | [`bridgemind/project-local-memory-hub-loop.md`](./bridgemind/project-local-memory-hub-loop.md)                                                                                                                                       | MH1–MH7 SOURCE COMPLETE — Markdown repository, graph/health, unified retrieval, provenance capture, UI, and scoped MCP are implemented; packaged editor/watch interoperability is gated.                                                                                                                                                                                                                                                                                                           |
-| Local-first MCP Hub                  | [`bridgemind/local-first-mcp-hub-loop.md`](./bridgemind/local-first-mcp-hub-loop.md)                                                                                                                                                 | SOURCE COMPLETE — reviewed catalog, diagnostics, protocol-v11 frozen trust for surviving API-agent providers, audit/reconnect, suite resources, and unified UI; real local/SSH and packaged MCPH3/MCPH8 proof remains.                                                                                                                                                                                                                                                                             |
-| Dictation repair loop                | [`bridgemind/dictation-repair-hardening-loop.md`](./bridgemind/dictation-repair-hardening-loop.md)                                                                                                                                   | DV1–DV16 SOURCE COMPLETE — stable device doctor, bounded capture, opt-in shortcut trust, safe editor/PTY insertion, packaging metadata, and private telemetry added; physical/package matrix and DV17 are gated.                                                                                                                                                                                                                                                                                   |
-| Trust and provenance loop            | [`bridgemind/trust-provenance-loop.md`](./bridgemind/trust-provenance-loop.md)                                                                                                                                                       | TP1–TP7 SOURCE COMPLETE — shared envelope, ingestion/persistence, UI, risky-action gates, downstream lineage, and redacted audit are implemented; packaged provider/SSH parity is gated.                                                                                                                                                                                                                                                                                                           |
-| GitHub pane v0.9+ loop               | [`github-pane-v9-loop.md`](./github-pane-v9-loop.md)                                                                                                                                                                                 | SHIPPED GP1–GP7; the follow-on Issue⇄Flight P0–P3 source is now complete and awaits packaged GitHub/Gitea proof.                                                                                                                                                                                                                                                                                                                                                                                   |
-| Issue ⇄ Flight mirroring             | [`issue-flight-mirror-design.md`](./issue-flight-mirror-design.md)                                                                                                                                                                   | P0–P3 source implemented; packaged GitHub/Gitea proof remains (GP7 gate).                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| SSH & remote workspaces loop         | [`ssh-remote-loop.md`](./ssh-remote-loop.md)                                                                                                                                                                                         | SHIPPED S1–S8 plus the native S7 wire rename (`serverId`, legacy aliases retained). S9/S10 remain environment-gated; historical Codex chat-provider gate S11 is retired.                                                                                                                                                                                                                                                                                                                           |
-| SSH workspace parity                 | [`sidecar-over-ssh-verification.md`](./sidecar-over-ssh-verification.md)                                                                                                                                                             | Rescoped 2026-08-01 to the surviving API-key-backed Claude Agent SDK and OpenAI Agents SDK rows. The retired Codex chat-provider gate was removed; live pinned-host proof remains.                                                                                                                                                                                                                                                                                                                 |
-| Local model routing (Ollama-first)   | [`local-model-routing.md`](./local-model-routing.md)                                                                                                                                                                                 | **IN PROGRESS (2026-07-31).** LM1 shipped except picker gating — native `/api/chat` with per-model `num_ctx` and `keep_alive`; LM3 partial and LM5 done via the OAuth work; LM7 needs re-specifying because its target view was deleted. Decision record rejecting a Cursor-style gateway/own-model stack still stands.                                                                                                                                                                            |
-| API-agent auth: OAuth → API keys     | [`oauth-removal-plan.md`](./oauth-removal-plan.md)                                                                                                                                                                                   | **DONE 2026-07-31, but not by the plan — read §-1 first.** The Claude Agent SDK row was re-authenticated with an API key rather than removed; `api-openai-codex` was dropped. WI-5 ("switch provider" for retired conversations) is the one item still open. §1.2 onward is a blast-radius map, not instructions.                                                                                                                                                                                  |
-| Packet Control (evidence layer)      | [`packet-control-loop.md`](./packet-control-loop.md)                                                                                                                                                                                 | **PROPOSED 2026-07-31 — not started.** CTL1–CTL9: evidence manifest plus terminal verification (local + SSH). Adopted from packetcode's `PACKETCOMPUTERS.md`, which keeps the Packet Computers half. CTL1 is the anti-drift item — it must project onto PacketAgent's `ValidationEvidenceRecord` so PH8 and Control share one format. Owner decisions D1–D3 ratified 2026-07-31: deterministic verdicts with recorded authority, user-initiated runs only, capped retention with reported pruning. |
-| Cost efficiency loop                 | [`cost-efficiency-loop.md`](./cost-efficiency-loop.md)                                                                                                                                                                               | **IN PROGRESS (2026-07-31).** CE2/CE6/CE9/CE14 done, CE5 cut, CE3/CE4 re-scoped to temporary instrumentation, CE20 superseded. Records the owner decision that removed the cost _reporting_ surface while keeping guardrails as a control. Caching effect is modelled, not yet measured live.                                                                                                                                                                                                      |
-| Build and release ops                | [`multi-platform-build.md`](./multi-platform-build.md), [`updater-setup.md`](./updater-setup.md), [`local-quality-gates.md`](./local-quality-gates.md), [`beta-distribution-trust-runbook.md`](./beta-distribution-trust-runbook.md) | Operational runbooks, not feature backlogs.                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| v0.10.2 release record               | [`release-v0.10.2.md`](./release-v0.10.2.md)                                                                                                                                                                                         | Windows x64 build gates, artifact sizes/hashes, unsigned status, and known non-failing warnings.                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Historical plans                     | [`archive/`](./archive/)                                                                                                                                                                                                             | Cold storage; do not treat as current unless an active doc links to a specific artifact as background.                                                                                                                                                                                                                                                                                                                                                                                             |
+Do not treat status tokens inside dated audits or files under `archive/` as live
+work. Completed work belongs in `CHANGELOG.md`.
 
-### Recently archived — 2026-07-30
+## Current release and proof
 
-The State of the ADE review consolidation moved fourteen completed/historical
-root-level
-files into [`archive/`](./archive/). Their final states are recorded in the
-docs themselves; the short version:
+| Document                                                                     | Status                                                                                                                                                                                    |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`release-v0.10.3.md`](./release-v0.10.3.md)                                 | **CURRENT RELEASE RECORD** - tagged source, final gates, Windows artifacts, hashes, and known unsigned status                                                                             |
+| [`proof-audit-2026-08-01.md`](./proof-audit-2026-08-01.md)                   | **DATED SNAPSHOT** - exact August 1 source/package proof; superseded for current counts and package identity by v0.10.3, but still authoritative for why each external gate remained open |
+| [`local-quality-gates.md`](./local-quality-gates.md)                         | Current local gate commands and release-check composition                                                                                                                                 |
+| [`beta-distribution-trust-runbook.md`](./beta-distribution-trust-runbook.md) | Signing/updater/release-candidate runbook                                                                                                                                                 |
+| [`multi-platform-build.md`](./multi-platform-build.md)                       | Windows/macOS/Linux prerequisites and build flow                                                                                                                                          |
+| [`updater-setup.md`](./updater-setup.md)                                     | Tauri updater runbook; updater is not enabled                                                                                                                                             |
+| [`release-v0.10.2.md`](./release-v0.10.2.md)                                 | Historical immutable release record                                                                                                                                                       |
 
-- **Shipped loops (all gates closed):** `gitea-support-loop.md` (G1–G14),
-  `memory-v9-loop.md` (M1–M10), `mcp-provider-transport.md` (N3 read-only MCP
-  server; records the cut/deferred tools),
-  `reliability-low-fix-loop-2026-07-19.md` (all 30 findings closed; the
-  Windows loader follow-up landed 2026-07-29).
-- **Completed July hardening loop:** `p1-p2-fix-loop-spec.md`,
-  `p1-p2-fix-loop.workflow.js`, `session-resume-2026-07-19.md`.
-- **Superseded design/audit snapshots:** `conversation-tile-design.md`
-  (superseded by the Workspace/Agents restructuring),
-  `consensus-ux-consolidation-plan.md` (program executed),
-  `codebase-state-2026-07-16.md` (dated snapshot),
-  `code-review-2026-05-31.md`, `code-review-2026-06-07.md`,
-  `rename-audit-report-2026-06-15.html`,
-  `packetade-other-plans-rundown.html`.
+## Current product contracts
 
-Outstanding items those docs surfaced live in [`../backlog.md`](../backlog.md),
-not in the archived files.
+| Area                         | Canonical document                                                                                                         | Status                                                                                                                    |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Workspace/Agents             | [`workspace-agents-restructuring-goal.md`](./workspace-agents-restructuring-goal.md)                                       | **COMPLETE** - CLI/PacketCode-first Workspaces; first-class same-window Agents; no new Workspace conversation attachments |
+| Route/compatibility contract | [`workspace-agents-wa0-route-contract.md`](./workspace-agents-wa0-route-contract.md)                                       | **LOCKED; WA1-WA4 COMPLETE**                                                                                              |
+| Handoff evidence             | [`workspace-agents-wa3-handoff-evidence.md`](./workspace-agents-wa3-handoff-evidence.md)                                   | Source complete; local/SSH/external-runtime proof remains                                                                 |
+| Attachment retirement        | [`workspace-agents-wa4-dogfood-gate.md`](./workspace-agents-wa4-dogfood-gate.md)                                           | **COMPLETE** - `Open alongside Workspace` retired; saved panes preserved                                                  |
+| Completion audit             | [`workspace-agents-completion-audit-2026-07-29.md`](./workspace-agents-completion-audit-2026-07-29.md)                     | **COMPLETE**                                                                                                              |
+| Settings                     | [`workspace-agent-settings-decision-2026-07-29.md`](./workspace-agent-settings-decision-2026-07-29.md)                     | Six-group IA and P1 authority/security complete; bounded P2 and packaged/live proof remain                                |
+| Main shell/right dock        | [`main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./main-shell-navigation-and-right-panel-audit-2026-07-29.md) | Decisions implemented; MS4 accessibility/responsive proof and bounded residue remain                                      |
 
-### Verification checkpoint — 2026-07-30
+The former Tile program is archived under
+[`archive/tile-program/`](./archive/tile-program/). It executed useful substrate
+work, but its final Agents-tab-retirement direction was explicitly superseded
+by the current Workspace/Agents contract. Do not resume it.
 
-The Settings/main-shell source passes `pnpm format:check`, `pnpm lint` (zero
-errors; nine existing Fast Refresh warnings), all 1,261 Vitest tests,
-`pnpm build`, and all eight Playwright web-mode smokes. The earlier full
-deterministic sidecar and Rust gates remain recorded in
-[`bridgemind/pre-remote-convergence-2026-07-28.md`](./bridgemind/pre-remote-convergence-2026-07-28.md).
-On 2026-07-30, `pnpm tauri build` from functional commit `a7feb4a` produced
-fresh unsigned v0.10.2 Windows EXE/MSI/NSIS artifacts and
-`pnpm sidecar:install` restored development dependencies. Exact hashes and the
-post-tag-build distinction are in [`../HANDOFF.md`](../HANDOFF.md#latest-windows-build).
-Live microphone/SSH/provider/external-editor, surviving-provider MCP, PacketAgent,
-other-platform, signing, updater, and manual packaged proof remain open exactly
-where the loop ledgers say they do.
+## Active implementation and proof plans
 
-### Verification checkpoint — 2026-07-30 (planning-doc consolidation)
+| Track                    | Canonical document                                                                                 | Current boundary                                                                                                    |
+| ------------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Remote Agents            | [`remoteagents/README.md`](./remoteagents/README.md)                                               | Next major networked product; standalone Rust relay selected; auth and E2EE decisions block implementation          |
+| Remote provider parity   | [`sidecar-over-ssh-verification.md`](./sidecar-over-ssh-verification.md)                           | Surviving Claude Agent SDK/OpenAI Agents SDK pinned-SSH matrix remains                                              |
+| SSH/workspaces           | [`ssh-remote-loop.md`](./ssh-remote-loop.md)                                                       | S1-S8 shipped; Windows-OpenSSH and larger streamed transfers remain later/environment-gated                         |
+| Flight Reviewer          | [`bridgemind/reviewer-gate-loop.md`](./bridgemind/reviewer-gate-loop.md)                           | Source/automated proof complete; RG8 packaged local/SSH/manual gate remains                                         |
+| Cooperative Flights      | [`bridgemind/cooperative-flight-graph-loop.md`](./bridgemind/cooperative-flight-graph-loop.md)     | Source/automated proof complete; CG9 landing/release-like gate remains                                              |
+| Coordination Inbox       | [`bridgemind/coordination-inbox-loop.md`](./bridgemind/coordination-inbox-loop.md)                 | Source/automated proof complete; CI9 real-runtime matrix remains                                                    |
+| Bounded YOLO             | [`bridgemind/autonomy-policy-loop.md`](./bridgemind/autonomy-policy-loop.md)                       | Source/automated proof complete; AP9 adversarial/release-like matrix remains                                        |
+| PacketAgent handoff      | [`bridgemind/packetagent-handoff-loop.md`](./bridgemind/packetagent-handoff-loop.md)               | W9 consumer source complete; live close/restart and contract/UI slices remain                                       |
+| PacketCode integration   | [`bridgemind/packetcode-bridgecode-loop.md`](./bridgemind/packetcode-bridgecode-loop.md)           | Source hardening complete; published signed release and cross-product proof remain                                  |
+| Project Memory           | [`bridgemind/project-local-memory-hub-loop.md`](./bridgemind/project-local-memory-hub-loop.md)     | MH1-MH7 source complete; MH8/MH9 editor/package proof remains                                                       |
+| MCP Hub                  | [`bridgemind/local-first-mcp-hub-loop.md`](./bridgemind/local-first-mcp-hub-loop.md)               | Source complete; MCPH3/MCPH8 local/SSH/provider/package proof remains                                               |
+| Trust/provenance         | [`bridgemind/trust-provenance-loop.md`](./bridgemind/trust-provenance-loop.md)                     | TP1-TP7 source complete; TP8 environment proof remains                                                              |
+| Dictation                | [`bridgemind/dictation-repair-hardening-loop.md`](./bridgemind/dictation-repair-hardening-loop.md) | DV1-DV16 source complete; physical/package matrix remains                                                           |
+| Issue-to-Flight          | [`issue-flight-mirror-design.md`](./issue-flight-mirror-design.md)                                 | P0-P3 source complete; packaged GitHub/Gitea proof remains                                                          |
+| Monitor                  | [`send-to-monitor-plan.md`](./send-to-monitor-plan.md)                                             | Read-only Agent/Flight v1 source complete; packaged multi-display/denial proof remains                              |
+| Local model routing      | [`local-model-routing.md`](./local-model-routing.md)                                               | In progress: Ollama picker gating, auxiliary routing, optional compatible endpoint, and re-scoped measurement       |
+| API-agent auth cleanup   | [`oauth-removal-plan.md`](./oauth-removal-plan.md)                                                 | Credential migration complete; explicit retired-conversation provider switch remains                                |
+| Cost controls/efficiency | [`cost-efficiency-loop.md`](./cost-efficiency-loop.md)                                             | Reporting surface removed; caching/edit improvements partly complete; live measurement and bounded edit debt remain |
+| Packet Control           | [`packet-control-loop.md`](./packet-control-loop.md)                                               | Proposed, not started; shared evidence contract must precede implementation                                         |
+| PacketBBS                | [`features-packetbbs-terminal.md`](./features-packetbbs-terminal.md)                               | Proposed later, bounded non-secret connection preset                                                                |
 
-State of the ADE review consolidation of this directory: every root-level
-`dev/*.md`
-header was re-read and classified ACTIVE / REFERENCE / ARCHIVED against its own
-status line; the fourteen files listed under "Recently archived" above were
-`git mv`-ed into `archive/`, and links in kept docs (`ssh-remote-loop.md`,
-`github-pane-v9-loop.md`, `workspace-agent-settings-decision-2026-07-29.md`,
-`../backlog.md`, `../ROADMAP.md`) were repointed. Docs with open gates —
-GP7 packaged proof, Issue⇄Flight packaged proof, S9/S10, surviving-provider
-remote parity, Monitor packaged
-proof, the bounded main-shell residue, Settings external proof, and
-the `local-model-routing.md` plan — remain in the root and in the table
-above. `oauth-removal-plan.md` and `cost-efficiency-loop.md` were created after
-that sweep and were added to the table on 2026-07-31. No archived doc's content was edited.
+## Research and reference
 
-## Reference
-
-Technical runbooks and how-tos. Not backlog items themselves (those live in [`/backlog.md`](../backlog.md)), but the docs the backlog points at.
-
-- `local-quality-gates.md` — preflight / full-check pipeline, individual gate commands
-- `multi-platform-build.md` — macOS / Linux / Windows prerequisites + build flow + cross-compile notes
-- `beta-distribution-trust-runbook.md` — beta release trust gates, signing/updater credential checks, and release-candidate flow
-- `sidecar-over-ssh-verification.md` — test and manual checklist for Sidecar-over-SSH provider parity
-- `updater-setup.md` — runbook for wiring up the Tauri v2 auto-updater (currently not enabled)
-- `bridgemind/swarm-orchestration-plan.md` — shipped human-in-the-loop escalation design record
-- `bridgemind/packetade-mcp-server-plan.md` / `archive/mcp-provider-transport.md` — shipped PacketADE MCP-provider design records; future Hub expansion belongs to `bridgemind/local-first-mcp-hub-loop.md`
-- `ssh-tech-debt.md` — redirect to `/backlog.md` (left for old links)
-
-> Dated `code-review-YYYY-MM-DD.md` audit artifacts now live in `archive/`; actionable items from them land in `/backlog.md`.
-
-## Active (Outstanding Items)
-
-### Current goal and decision gates
-
-- The five main-shell/right-dock decisions and their P1 source cleanup are
-  implemented. Remaining MS4/package/accessibility and product choices are in
-  [`../HANDOFF.md`](../HANDOFF.md),
-  [`../backlog.md`](../backlog.md), and
-  [`main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./main-shell-navigation-and-right-panel-audit-2026-07-29.md).
-- Workspace/Agents restructuring is complete. The canonical contract and
-  evidence are in
-  [`workspace-agents-restructuring-goal.md`](./workspace-agents-restructuring-goal.md),
-  [`workspace-agents-wa0-route-contract.md`](./workspace-agents-wa0-route-contract.md),
-  and
-  [`workspace-agents-completion-audit-2026-07-29.md`](./workspace-agents-completion-audit-2026-07-29.md).
-  SSH and external-runtime sign-off remain separate release gates.
-- Remote Agents selected the standalone Rust service at
-  `D:\projects\packet-relay`; auth provider and E2EE timing remain as the two
-  blocking Sprint-0 choices.
-- The six-group Settings information architecture and 2026-08-01 P1
-  authority/security corrections are source-complete. Packaged OS-keyring/live
-  SSH proof and the bounded P2 follow-up remain in
-  [`workspace-agent-settings-decision-2026-07-29.md`](./workspace-agent-settings-decision-2026-07-29.md)
-  and [`../backlog.md`](../backlog.md).
-- Flight Deck Option B is implemented: upfront read-only
-  `AgentConversation`-backed planning with an explicit apply step. The old
-  autonomous Planner v1 remains historical, not a restoration candidate.
-- Distribution remains blocked on Windows and macOS signing credentials.
-- The mechanical G33/F53/G01/Unix-SSH/G09 hardening loop and deploy-backend cleanup are complete.
-- The 30 low-rated Reliability audit findings are closed; `backlog.md` no longer carries them.
-
-### Flight Planner (archived — backend amputated 2026-07-11)
-
-The Flight Planner planning docs are now in [`archive/`](./archive/). The Rust
-flight-planner backend's fate was resolved and executed: the shared executor
-money path was extracted into `commands/flight_cost.rs`, then the
-genuinely-dead planner command family, prompts, journal, and the sidecar's
-in-process planner MCP surface were deleted (sidecar protocol bumped to v7).
-See [`../backlog.md`](../backlog.md#flight-deck) for the current audit and
-remaining decisions. Do not resume this work from the archived docs — they describe the
-deleted v1 planner surface.
-
-The live Flight Deck is the smaller worktree-attempt system
-(`flightStore.ts` + `asyncFlightStore.ts` + `commands/flight_attempts.rs`), not
-the archived autonomous Planner. A 2026-07-19 audit verified that separation and
-fixed launch-persistence, pre-cleanup draft-PR publishing, and SSH terminal
-cleanup races. Option B subsequently added a lightweight explicit planning step
-on the normal `AgentConversation` contract; plans are user-applied and attempts
-remain user-launched. Do not restore archived Planner v1.
-
-- `archive/flight-planner-v1-acceptance-runbook.md` — manual sign-off runbook (v1, deleted backend)
-- `archive/flight-planner-reliability-continuity-pack.md` — reliability + continuity contract for Flight Planner journals (deleted backend)
-- `archive/flight-planner-plan.md` and `archive/flight-planner-spike-retro.md` — locked v1 design/reference (deleted backend)
-
-### Workspace UX
-
-- `zen-workspace/features-git-workspace.md` and
-  `zen-workspace/features-prompt-library.md` remain design/history references;
-  direct review-packet diff opening and command-palette prompt launch are now
-  implemented.
-- `features-packetbbs-terminal.md` scopes a future non-secret PacketBBS
-  connection preset: bounded `/healthz` probe plus safe Web/Telnet launch,
-  without shared auth, databases, privileged web embedding, or availability
-  coupling.
-
-### Remote Agents
-
-- `remoteagents/README.md` — PWA Remote Agents plan using the standalone Rust `packet-relay` service, with architecture, security, protocol, implementation sprints, and six-agent runbook
-
-### Monitor Windows
-
-- `send-to-monitor-plan.md` — implemented v1 Agent/Flight Monitor record plus
-  later Approval/Cost, multi-window, saved-bounds, and PTY-attachment work
-
-### Superseded / Research
-
-- `mobile/README.md` — prior mobile companion investigation, superseded for implementation by `remoteagents/README.md`
-- `archive/v0.8-github-and-memory.md` — historical v0.8 plan (archived); current open items belong in `/backlog.md`
+- [`competitors.md`](./competitors.md) indexes the competitive research.
+- [`bridgemind/bridgespace-competitive-brief.md`](./bridgemind/bridgespace-competitive-brief.md)
+  and [`bridgemind/bridgeswarm-teardown.md`](./bridgemind/bridgeswarm-teardown.md)
+  are product/landscape references, not task registers.
+- [`mobile/README.md`](./mobile/README.md) is explicitly superseded for
+  implementation by `remoteagents/`; keep it only as earlier research.
+- [`zen-workspace/`](./zen-workspace/) contains shipped feature/history notes.
+- [`spike-macos-keychain-namespacing.md`](./spike-macos-keychain-namespacing.md)
+  remains an environment-gated Mac research task.
 
 ## Archive
 
-`dev/archive/` contains completed planning docs preserved for historical reference. Many archived files intentionally keep the former PacketCode name because they describe research and decisions made before the rename:
+[`archive/`](./archive/) is cold storage for completed, superseded, or dated
+planning material. Notable boundaries:
 
-- `archive/backlog.md`, `archive/cross-competitor-map.md`, `archive/positioning-notes.md`, `archive/priority-resolution.md`
-- `archive/agents-tab-modernization-plan.md` — 314-finding review that seeded the Agents-tab Waves 1–4 (surface since folded into the tile composer)
-- `archive/flight-planner-plan.md`, `archive/flight-planner-spike-retro.md`, `archive/flight-planner-v1-acceptance-runbook.md`, `archive/flight-planner-reliability-continuity-pack.md` — Flight Planner v1 design/reference/runbooks (backend amputated 2026-07-11, see `/backlog.md`)
-- `archive/v0.8-github-and-memory.md` — locked v0.8 GitHub + Memory design/scope
-- `archive/sprints-2026-06-15.md` — post-rename sprint plan; residual open items folded into `/backlog.md`
-- `archive/moat/` — memory layer, insights, deploy, scaffold, analytics, cost unification specs, and the retired Cost Dashboard plan (surface removed 2026-07-31)
-- `archive/bridgemind/` — gap analysis, workspace editor scale, positioning notes
-- `archive/quadcode/` — gap analysis, terminal features, AI platform features
-- `archive/zen-workspace/` — workspace model plan, gap analysis, research, project-workspaces feature spec
-- `archive/vibetotext/` — sprint plan, features spec, README
-
-Added 2026-07-30 (State of the ADE review consolidation — see "Recently archived" above for one-line summaries):
-
-- `archive/gitea-support-loop.md`, `archive/memory-v9-loop.md`, `archive/mcp-provider-transport.md`, `archive/reliability-low-fix-loop-2026-07-19.md` — shipped loops, all gates closed
-- `archive/p1-p2-fix-loop-spec.md`, `archive/p1-p2-fix-loop.workflow.js`, `archive/session-resume-2026-07-19.md` — completed July P1/P2 hardening loop
-- `archive/conversation-tile-design.md`, `archive/consensus-ux-consolidation-plan.md` — superseded/executed 2026-07 UX design programs
-- `archive/codebase-state-2026-07-16.md` — dated codebase snapshot (protocol/version facts have drifted; do not cite)
-- `archive/code-review-2026-05-31.md`, `archive/code-review-2026-06-07.md` — point-in-time audit artifacts; outstanding items live in [`/backlog.md`](../backlog.md)
-- `archive/rename-audit-report-2026-06-15.html`, `archive/packetade-other-plans-rundown.html` — historical HTML reports
-
-## Tracks (All Implemented)
-
-All five product tracks have been implemented:
-
-- **W** — Workspace Foundation (workspace-per-project) ✅
-- **X** — Workspace UX (templates, editor, git, prompts) ✅
-- **S** — Swarm Orchestration (roles, ownership, coordination) ✅
-- **M** — MCP Provider (frontend + Rust MCP server transport) ✅ (N3 shipped)
-- **T** — TUI Evolution (polling, search, leader key) ✅
+- Flight Planner v1 documents describe a deleted runtime; do not restore it.
+- `archive/tile-program/` describes the superseded plan to retire Agents into
+  Workspace conversation tiles. The current product contract reversed that
+  direction while preserving saved-pane compatibility.
+- Reliability low-finding and July P1/P2 loop documents are complete.
+- Historical code reviews and positioning documents may explain decisions but
+  do not create work outside `../backlog.md`.

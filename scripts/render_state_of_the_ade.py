@@ -555,7 +555,7 @@ def cover(meta: list[str]) -> list:
         )
     )
     summary = Paragraph(
-        '<font name="%s" size="12">The original seven-domain review plus the 2026-08-02 '
+        '<font name="%s" size="12">The original seven-domain review plus the 2026-08-03 '
         "source, proof, Settings, Git-authority, operational-truth, and terminal-shell status pass. Section 0 "
         "is current; the detailed July audit remains preserved as dated evidence.</font>" % FONT,
         ParagraphStyle(
@@ -637,7 +637,7 @@ def page_furniture(canvas, doc):
         canvas.setFont(FONT, 7.3)
         canvas.setFillColor(MUTED)
         canvas.drawRightString(
-            width - doc.rightMargin, height - 0.39 * inch, "status 2026-08-02 \u00b7 v0.10.3 package 61e0669"
+            width - doc.rightMargin, height - 0.39 * inch, "status 2026-08-03 \u00b7 v0.10.3 package 61e0669"
         )
     canvas.setStrokeColor(LINE)
     canvas.line(doc.leftMargin, 0.48 * inch, width - doc.rightMargin, 0.48 * inch)
@@ -662,7 +662,7 @@ def render(source: Path, destination: Path):
         bottomMargin=0.64 * inch,
         title=TITLE,
         author="PacketADE engineering review",
-        subject="Living State of the ADE report, status pass 2026-08-02",
+        subject="Living State of the ADE report, status pass 2026-08-03",
     )
     frame = Frame(
         doc.leftMargin,
@@ -678,7 +678,7 @@ def render(source: Path, destination: Path):
     doc.addPageTemplates([PageTemplate(id="main", frames=[frame], onPage=page_furniture)])
 
     meta = [
-        [("Report", "2026-07-30 living record"), ("Status pass", "2026-08-02"), ("Last package", "61e0669 \u00b7 unsigned")],
+        [("Report", "2026-07-30 living record"), ("Status pass", "2026-08-03"), ("Last package", "61e0669 \u00b7 unsigned")],
         [("Version", "0.10.3 \u00b7 protocol v11"), ("Source proof", "vitest 1875/229 \u00b7 Rust 606"), ("Release tag", "v0.10.3")],
     ]
 

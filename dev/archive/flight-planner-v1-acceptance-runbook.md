@@ -5,7 +5,7 @@ release of the Flight Planner work-stream
 ([`flight-planner-plan.md`](./flight-planner-plan.md)).
 
 Status: **active manual acceptance runbook**. Current open Flight Planner work
-belongs in [`../backlog.md`](../backlog.md); the locked design remains reference.
+belongs in [`../../backlog.md`](../../backlog.md); the locked design remains reference.
 For the dedicated reliability sprint, pair this manual runbook with
 [`flight-planner-reliability-continuity-pack.md`](./flight-planner-reliability-continuity-pack.md).
 

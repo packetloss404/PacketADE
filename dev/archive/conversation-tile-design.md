@@ -5,7 +5,7 @@
 > same-window GUI-agent surface, makes Workspace CLI/PacketCode-first, creates
 > no new Workspace conversation panes or wrapper Workspaces, and preserves the
 > tile renderer only for old saved layouts. The canonical direction is
-> [`workspace-agents-restructuring-goal.md`](./workspace-agents-restructuring-goal.md).
+> [`workspace-agents-restructuring-goal.md`](../workspace-agents-restructuring-goal.md).
 
 Produced by a 15-agent two-team design pass (Alpha: product-design lens; Bravo: staff-engineering lens) with cross-examination, defense, and moderator synthesis. Prerequisite context: the completed 20-item consolidation program (dev/consensus-ux-consolidation-plan.md) and the 4-agent strategic panel that fixed the direction: the standalone Agents tab retires; the agent conversation becomes a workspace tile type; Workspaces become the single primary surface.
 

@@ -426,7 +426,7 @@ This is the single most important finding in this document.
 `dev/sidecar-over-ssh-verification.md` (rescope to `openai-agents`);
 `dev/cost-efficiency-loop.md` (SPIKE-2 targets an `api-claude-oauth` session);
 `dev/local-model-routing.md` and `backlog.md:549-556` (see §7.4);
-`dev/tile-program/*`, `dev/remoteagents/06-implementation-plan.md`,
+`dev/archive/tile-program/*`, `dev/remoteagents/06-implementation-plan.md`,
 `dev/mobile/architecture-fit.md`, `dev/spike-macos-keychain-namespacing.md`.
 `CHANGELOG.md` is shipped history — do not rewrite it.
 

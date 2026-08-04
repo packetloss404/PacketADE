@@ -16,12 +16,14 @@ _An actual native PacketADE capture: PacketCode and Claude Code running their re
 
 ## Documentation Map
 
-- [`docs/reports/state-of-the-ade-2026-07-30.md`](./docs/reports/state-of-the-ade-2026-07-30.md) — primary AI-readable State of the ADE living record; Section 0 is the current 2026-08-02 authority.
+- [`docs/reports/state-of-the-ade-2026-07-30.md`](./docs/reports/state-of-the-ade-2026-07-30.md) — primary AI-readable State of the ADE living record; Section 0 is the current 2026-08-03 authority.
 - [`docs/reports/state-of-the-ade-2026-07-30.pdf`](./docs/reports/state-of-the-ade-2026-07-30.pdf) — identical paginated human edition.
 - [`HANDOFF.md`](./HANDOFF.md) — exact restart point, completed decisions,
   current owner questions, build evidence, and guardrails.
 - [`ROADMAP.md`](./ROADMAP.md) — current product direction and release path.
 - [`backlog.md`](./backlog.md) — master ledger for outstanding work.
+- [`dev/release-v0.10.3.md`](./dev/release-v0.10.3.md) — immutable tagged-source,
+  gate, artifact, and hash record for the current release.
 - [`dev/README.md`](./dev/README.md) — planning index, active implementation briefs, runbooks, and archive.
 - [`dev/remoteagents/README.md`](./dev/remoteagents/README.md) — canonical Remote Agents plan.
 - [`CHANGELOG.md`](./CHANGELOG.md) — shipped history only.

@@ -8,7 +8,7 @@ register. The human edition is state-of-the-ade-2026-07-30.pdf and carries
 identical content. The former HTML edition was retired 2026-07-30.
 -->
 
-**Document type:** living record · **Report date:** 2026-07-30 · **Last status pass:** 2026-08-02 against tagged release source `61e0669` (`v0.10.3`)
+**Document type:** living record · **Report date:** 2026-07-30 · **Last status pass:** 2026-08-03 documentation consolidation; functional/package authority remains tagged release source `61e0669` (`v0.10.3`)
 **Human edition:** [`state-of-the-ade-2026-07-30.pdf`](./state-of-the-ade-2026-07-30.pdf) — same content, paginated, 5 embedded screenshots.
 **Screenshots:** referenced by relative path under [`visual-audit-2026-07-30/`](./visual-audit-2026-07-30/); regenerate with `e2e/visual-audit.spec.ts`.
 
@@ -16,7 +16,7 @@ identical content. The former HTML edition was retired 2026-07-30.
 
 Read this section first. Everything below it is evidence.
 
-### 0.0 Current authority — 2026-08-02
+### 0.0 Current authority — 2026-08-03
 
 This section supersedes stale status language in the dated deep-dive below.
 Use [`../../backlog.md`](../../backlog.md) for the item-level task register,
@@ -77,7 +77,7 @@ The current product state is:
 |---|---|
 | `report_date` | 2026-07-30 |
 | `repo` | `D:\projects\PacketADE` |
-| `current_source_head` | `61e0669` (`v0.10.3` release source; later evidence-only documentation commit does not change the package) |
+| `current_source_head` | `main` after the 2026-08-03 evidence-only documentation consolidation; functional/package source remains `61e0669` (`v0.10.3`) |
 | `last_windows_package_source` | `61e0669` |
 | `app_version` | 0.10.3 · sidecar protocol v11 |
 | `chat_providers` | **7** (`api-openai-codex` dropped in `422ab94`; was 8) |
@@ -180,14 +180,14 @@ autonomy persistence, and writable SSH-password lifecycle. Exact proof is in
 
 ## 1. Executive Summary
 
-> **2026-08-02 status note.** The assessment below explains the original audit
+> **2026-08-03 status note.** The assessment below explains the original audit
 > and is retained as evidence. Its forward-looking claims are superseded by
 > §0.0-§0.4. In particular, the terminal-pane confirmation, Anthropic edit-
 > approval correlation, acknowledgement-bound Agent Stop/Side Chat behavior,
 > Git/repository authority corrections, Settings P1 authority/security work,
 > and their source tests are now complete. The present bottleneck is no longer
 > those source defects; it is interactive packaged and real-environment proof,
-> distribution trust, the Undo decision, bounded MS4/P2 cleanup, and the three
+> distribution trust, the Undo decision, bounded MS4/P2 cleanup, and the two
 > Remote Agents Sprint-0 decisions.
 
 At its six-month midpoint, PacketADE is a real product, not a prototype. The engineering quality in its hardest subsystems — atomic state persistence with corruption recovery, a concurrency-correct agent turn lifecycle, battle-hardened xterm/PTY handling, a versioned sidecar protocol with restart supervision, and above-average SSH security — is well beyond what solo desktop projects usually achieve. Its breadth is its moat: a seven-provider chat matrix (eight until `422ab94`) mixing hosted API keys with local models, SSH-remote execution for both terminals and agent tools, worktree-isolated parallel Flights with cost rollup, a memory layer, an MCP hub, and Windows-native support. No competitor bundles all of this.
@@ -2285,7 +2285,7 @@ The sweep below was taken before `c3906c7`, `8cc2217`, and `7cad08b`. These rows
 | 06-implementation-plan.md plan | All sprints 0-6 unstarted (foundations, relay/presence, snapshots, backend conversation service, mobile UX, push/audit/hardening, beta release) | [High] | No relay worker, PWA, remote_agents Rust module, or remoteAgents.enabled feature flag anywhere in the tree |
 | 09-open-decisions.md decision-record | Backend conversation persistence shape for remote creation (minimal Rust DTO/snapshot for MVP vs fully backend-native post-MVP) | [Medium] | Listed under Open Decisions with only a recommendation; conversation persistence remains frontend-owned opaque JSON (agentConversationPersistence.ts) — becomes actionable at Remote Agents Sprint 3 |
 | README.md plan | Open question 7: does the desktop's pending approval oneshot survive a delayed (minutes-later) phone approval delivered after push? Doc asks for a code check in commands/api_agent.rs before committing | [Medium] | The remoteagents package (03-protocol sequencing/idempotency, Sprint 3 'route mobile approval responses') does not explicitly answer approval-timeout/oneshot-survival semantics; this technical check carries forward to Remote Agents Sprint 3/5 and is not recorded anywhere in the live plan |
-| plan.md plan | Program status ambiguity + doc hygiene: the tile-program directory carries no COMPLETE/SUPERSEDED banner, is absent from dev/README.md's ownership table, and was not archived in the 2026-07-30 consolidation, while its authoritative spec (conversation-tile-design.md) is archived with a SUPERSEDED banner | [Medium] | The program executed (sessionIndex.ts, sessionGlue.ts, gitPublish.ts, worktreeLifecycle.ts, ConversationTile.tsx, FleetSidebar.tsx, merge_conversation_branch in commands/git.rs all exist), but the 2026-07-29 Workspace/Agents restructuring then reversed its core direction — AgentsView restored as a first-class view (appStore.ts:20), WA4 removed new conversation attachments/materializers/draft tile, tile renderer kept only for old saved layouts. A reader of dev/tile-program/ today gets no signal any of this happened; the directory should be archived with a superseded note |
+| plan.md plan | Program status ambiguity + doc hygiene: the Tile program executed useful substrate work, but its final Agents-tab-retirement direction was reversed by the Workspace/Agents contract | [Medium] | **Resolved 2026-08-03:** moved to `dev/archive/tile-program/` with an explicit superseded banner and current-authority links. Do not resume it; Agents remains first-class and new Workspace conversation attachments remain retired. |
 | p1-p2-fix-loop-spec.md loop | Hard kills / force-quit skip RunEvent::Exit leaving orphaned sidecar children; named fast-follow: persistent ~/.packetade/sidecar-active-pids startup-reap registry mirroring reap_orphaned_pty_children — plus detached:true bash shells (openai-agents.ts:932) surviving group-kill and the unix shell-sidecar fallback killing a single pid only | [Medium] | src-tauri/src/lib.rs:164-167 reaps only orphaned PTY children (core::pty::reap_orphaned_pty_children); no sidecar-active-pids registry or sidecar-orphan reap exists anywhere in src-tauri, and grep of backlog.md finds no entry carrying this fast-follow — it fell through the archival crack. This is the one genuinely live unaddressed item found in the archive |
 | 09-open-decisions.md decision-record | Native iOS strategy (Swift vs React Native vs Capacitor vs Tauri mobile) — explicitly deferred until after PWA beta | [Low] | PWA beta has not started; ROADMAP.md:114 keeps 'Native iOS / TestFlight: evaluate after the PWA relay' as a Later item |
 | 09-open-decisions.md decision-record | Deferred-decisions bundle: team/org access model, cloud runner mode, billing model, WebRTC/LAN direct mode, remote PTY policy, mobile file-browser depth, long-term transcript retention | [Low] | No newer doc resolves any of these; entire feature remains pre-Sprint-0 |
@@ -2320,7 +2320,7 @@ The sweep below was taken before `c3906c7`, `8cc2217`, and `7cad08b`. These rows
 - **Resolved in code:** All ❌ rows (PacketCode MCP, swarm orchestration, workspace-per-project) (positioning-notes.md — All three shipped as Tracks M/S/W per dev/README.md 'Tracks (All Implemented)' and the live MCP server (N3); voice returned as the Dictation module. Strategy theses themselves (local-first, Windows-first) remain the live positioning and are restated in current docs)
 - **Superseded:** Caveat: 6 single-verifier refutations from the throttled run flagged 'spot-check before discarding' (code-review-2026-06-07.md — The 37 G-findings subsequently went through a full 3-vote panel (31 confirmed / 6 refuted, recorded in the doc itself); confirmed findings were closed by the completed P1/P2 loop and the 30-finding Reliability-low loop; the 2026-07-30 State of the ADE review then re-hunted bugs independently (16 fixed). Except for the sidecar-orphan residual recorded under p1-p2-fix-loop-spec.md above, nothing from these reviews remains unaddressed)
 
-**Reading the ledger:** the dominant pattern is not forgotten work but *environment-gated proof* — packaged/SSH/live-credential matrices (RG8, CG9, AP9, CI9, TP8, MH8/9, MCPH3/8, S11, dictation microphone, PacketCode/PacketAgent cross-repo gates) that cannot run on this dev host. The genuinely dropped items are rare and now recorded: the sidecar-orphan startup-reap fast-follow from the archived P1/P2 loop, the approval-oneshot-survival check carried over from the mobile research, and the tile-program directory's missing supersession banner.
+**Reading the ledger:** the dominant pattern is not forgotten work but *environment-gated proof* — packaged/SSH/live-credential matrices (RG8, CG9, AP9, CI9, TP8, MH8/9, MCPH3/8, surviving-provider SSH parity, dictation microphone, PacketCode/PacketAgent cross-repo gates) that cannot run on this dev host. The Tile program's missing supersession state was resolved by the 2026-08-03 documentation consolidation.
 
 ## 12. Recommended Next 90 Days
 

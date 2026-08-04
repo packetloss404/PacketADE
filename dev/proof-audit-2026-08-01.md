@@ -1,5 +1,12 @@
 # Implemented-Feature Proof Audit — 2026-08-01
 
+> **Dated evidence.** This document remains authoritative for the exact
+> 2026-08-01 environment checks and for why each real/package gate stayed open.
+> It is superseded for current source counts, release identity, and Windows
+> artifact hashes by [`release-v0.10.3.md`](./release-v0.10.3.md),
+> [`../HANDOFF.md`](../HANDOFF.md), and Section 0 of the State of the ADE. Do
+> not rewrite the historical `fd8c226` results below as if they were v0.10.3.
+
 Status: final integrated source gates and a commit-bound unsigned Windows build
 are refreshed. Real-runtime, credentialed-host, hardware, cross-platform,
 signed-release, and manual packaged-acceptance gates remain explicitly open.

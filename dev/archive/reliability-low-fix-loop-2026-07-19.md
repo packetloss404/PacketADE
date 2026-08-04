@@ -2,7 +2,7 @@
 
 Started: 2026-07-19  
 Source audit: [`code-review-2026-06-07.md`](./code-review-2026-06-07.md)  
-Backlog status: [`../backlog.md`](../backlog.md#reliability-audit-follow-ups) — cleared
+Backlog status: [`../../backlog.md`](../../backlog.md#completed-boundaries) — cleared
 
 ## Objective
 

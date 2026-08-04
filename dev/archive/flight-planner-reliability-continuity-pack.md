@@ -14,8 +14,8 @@ Primary references:
 
 - [`flight-planner-plan.md`](./flight-planner-plan.md)
 - [`flight-planner-v1-acceptance-runbook.md`](./flight-planner-v1-acceptance-runbook.md)
-- [`local-quality-gates.md`](./local-quality-gates.md)
-- [`../backlog.md`](../backlog.md)
+- [`local-quality-gates.md`](../local-quality-gates.md)
+- [`../../backlog.md`](../../backlog.md)
 
 ## Scope
 

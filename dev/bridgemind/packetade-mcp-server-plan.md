@@ -3,7 +3,7 @@
 Last updated: 2026-06-15
 
 Status: **strategy/reference**. The implementation owner for deferred transport
-work is [`../mcp-provider-transport.md`](../mcp-provider-transport.md); keep
+work is [`../archive/mcp-provider-transport.md`](../archive/mcp-provider-transport.md); keep
 this file for product context and BridgeMind positioning.
 
 > **2026-07-28 product update:** the transport described here shipped under N3.
@@ -18,7 +18,7 @@ The Phase-1 **frontend store is live**: tool/resource definitions ship today in
 [`src/stores/mcpProviderStore.ts`](../../src/stores/mcpProviderStore.ts)
 (`PROVIDER_TOOLS`), which is the canonical source of truth for the exposed tool
 names below. Only the **backend transport is deferred** — see
-[`../mcp-provider-transport.md`](../mcp-provider-transport.md). The "Frontend
+[`../archive/mcp-provider-transport.md`](../archive/mcp-provider-transport.md). The "Frontend
 only" / "Frontend definitions done" rows therefore mean *implemented but not yet
 wired to a server*, not unstarted.
 
@@ -173,7 +173,7 @@ defined in `PROVIDER_TOOLS` (`src/stores/mcpProviderStore.ts`):
 
 These names are exact as shipped in the live frontend store. That already makes
 PacketADE materially useful as an MCP provider once the transport
-([`../mcp-provider-transport.md`](../mcp-provider-transport.md)) lands.
+([`../archive/mcp-provider-transport.md`](../archive/mcp-provider-transport.md)) lands.
 
 ## Open Questions
 

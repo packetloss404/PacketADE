@@ -1,8 +1,8 @@
 # Memory v0.9+ — Scoped Loop
 
 Created: 2026-07-24
-Backlog: [`../backlog.md`](../backlog.md) → "Memory v0.9+ (from v0.8 deferrals)".
-Shape: same loop cadence as [`bridgemind/flight-escalation-loop.md`](./bridgemind/flight-escalation-loop.md)
+Backlog: [`../../backlog.md`](../../backlog.md) → current Memory proof and later-retrieval items.
+Shape: same loop cadence as [`bridgemind/flight-escalation-loop.md`](../bridgemind/flight-escalation-loop.md)
 (discrete, independently-gated items; per-item commit; verify → record).
 
 ## Objective

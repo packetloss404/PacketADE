@@ -1,7 +1,7 @@
 # Flight Planner — Locked Design (v1)
 
 Locked v1 reference for the autonomous Flight Planner work-stream. For current
-outstanding work, use [`../backlog.md`](../backlog.md). For manual release
+outstanding work, use [`../../backlog.md`](../../backlog.md). For manual release
 sign-off, use
 [`flight-planner-v1-acceptance-runbook.md`](./flight-planner-v1-acceptance-runbook.md).
 For the focused reliability hardening sprint after v1 feature completion, use
