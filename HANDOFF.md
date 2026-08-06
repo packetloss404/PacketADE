@@ -82,6 +82,16 @@ Paths:
 All three artifacts are unsigned. Exact immutable evidence is also in
 [`dev/release-v0.10.3.md`](./dev/release-v0.10.3.md).
 
+## 2026-08-05 Fable 5 deep review
+
+A seven-team review of the whole repo ran on 2026-08-05:
+[`docs/reports/fable5-review-2026-08-05.md`](./docs/reports/fable5-review-2026-08-05.md)
+(human edition with screenshots: `.html` sibling). Twelve consolidated P1
+findings are registered in `backlog.md` under "Fable 5 review findings"; the
+review's Windows-only v1.0.0 definition and two-week plan are owner decision
+4 in `backlog.md`. The public `docs/*.html` site was repaired to v0.10.3 truth
+in the same pass.
+
 ## Decide before starting major work
 
 1. **Remote Agents auth provider.** Product-grade OIDC/passkey service versus a

@@ -38,6 +38,26 @@ task list.
 - A visible collecting state occupies the native status row until Claude
   emits the first session snapshot instead of making the bar disappear.
 
+### Fixed — runtime authority and operational truth (2026-08-01)
+
+A correctness pass over the places where PacketADE's UI could report something
+the runtime had not actually done.
+
+- Closing a Terminal pane now confirms before destroying live work.
+- Anthropic edit tool calls correlate exactly by `toolUseId`, so a diff can no
+  longer be attributed to the wrong edit.
+- Agent Stop and Side Chat cancellation now wait for the runtime's
+  acknowledgement instead of optimistically clearing the UI.
+- Monitor surfaces its own failures rather than silently showing stale state.
+- Cancel-pending ownership has a single canonical owner across both transports.
+- Repository and Git-host authority changes invalidate stale sessions instead of
+  letting a previous host's token remain in effect.
+- Settings persistence reports the truth: controls that were not enforced are
+  now hidden rather than shown as active.
+- SSH passwords follow a full OS-keyring set/delete lifecycle.
+- The sidecar protocol advanced to v11, freezing per-session MCP trust
+  authority at session start on both transports.
+
 ### Changed — API agents now use API keys, never subscription logins (2026-07-31)
 
 PacketADE no longer signs API agents in with a Claude.ai or ChatGPT
@@ -158,7 +178,7 @@ All five quietly used your Claude subscription login.
   60–80%; the longer the turn, the bigger the share.
 - **The trade-off, stated plainly.** Writing to the cache costs about 25% more
   than plain input, so a single question you ask and then abandon is slightly
-  *more* expensive than before. The cache pays for itself from the second step
+  _more_ expensive than before. The cache pays for itself from the second step
   onward, which is the overwhelming majority of real agent work.
 - **Caching sticks for five minutes, and every reuse resets that clock.** A turn
   that keeps working never falls out of cache. Come back to a conversation after
@@ -179,7 +199,7 @@ All five quietly used your Claude subscription login.
   `https://api.minimaxi.com/v1`, since a key is valid against only one host.
   (The Ollama field lives in the same card and is unchanged.)
 - **MiniMax M3 lost its train of thought between tool calls.** M3 reasons
-  *between* tool steps, and MiniMax's API requires the model's reasoning to be
+  _between_ tool steps, and MiniMax's API requires the model's reasoning to be
   handed back with each follow-up request to keep that chain intact. PacketADE
   was dropping it, so every tool result arrived with the model's own prior
   reasoning erased — which made M3 look far weaker at multi-step work than it
@@ -222,7 +242,7 @@ All five quietly used your Claude subscription login.
   record is priced at the rates in effect on **its own date**, so a turn that
   predates a scheduled rate change keeps that era's rate.
 - **Why it matters even though the Cost Dashboard is gone.** Those numbers are
-  no longer *reported* anywhere, but they are still what the budget guardrails
+  no longer _reported_ anywhere, but they are still what the budget guardrails
   hard-stop on. A 3x-overstated history makes a daily or monthly cap block a
   launch at about a third of the spend you actually authorised. Repricing is
   what keeps the caps honest.
@@ -659,7 +679,7 @@ remains deliberately deferred (do it only if keyword misses are measured).
 
 - **Remote (SSH) sessions now use the remote host's MCP config, not your local
   one (S8-Phase-B — behavior change).** Previously a remote session inherited
-  your *local* MCP configuration (and in practice only local *global* HTTP/SSE
+  your _local_ MCP configuration (and in practice only local _global_ HTTP/SSE
   servers actually reached the remote). Now the remote sidecar sources its **own**
   config from the remote host — `~/.claude/settings.json` + the project's
   `.mcp.json` — and runs every server (stdio included) from there. **Action
@@ -772,7 +792,7 @@ remains deliberately deferred (do it only if keyword misses are measured).
   bearer token + `Origin` validation + loopback bind. `src-tauri/src/mcp_server/`.
 - **Swarm escalation suggestions (N2).** When a flight's agent attempts fail,
   the coordination timeline now records an informational `task_failed` event per
-  failed attempt, and when a flight becomes *stuck* — every attempt terminal
+  failed attempt, and when a flight becomes _stuck_ — every attempt terminal
   (failed/cancelled), at least one failed, and none succeeded — it adds a single
   `escalation` suggestion prompting you to reassign, revise the prompt, or review
   the failures. The suggestion **suggests, never acts**: nothing is reassigned
@@ -820,7 +840,7 @@ remains deliberately deferred (do it only if keyword misses are measured).
   aggregate "Review before commit" banner opens the same panel.
 - **Proactive cost-threshold notifications (ROADMAP N5).** With budget
   guardrails already hard-gating launches, spend now also raises a notification
-  as it *approaches* a limit — firing on an upward guardrail transition
+  as it _approaches_ a limit — firing on an upward guardrail transition
   (`ok→warning`, `warning→limit`, or an `ok→limit` spike), gated by a new
   "Cost threshold alerts" toggle. Detection runs on the 30s analytics poll (not
   the spend-chip render), seeds each scope's baseline silently so launching
@@ -920,7 +940,7 @@ shipped data-loss / orchestration-trust review fixes.
   header, lazy overflow, lifecycle states, auto-zoom-on-review, and a
   multi-stream perf gate.
 - **FleetSidebar** — one unified session list replacing the old workspace and
-  agent sidebars: running + idle rows, virtualized long lists, a *needs-you*
+  agent sidebars: running + idle rows, virtualized long lists, a _needs-you_
   group pinned to the top for conversations awaiting an approval or answer,
   self-cleaning on close, and a fixed status vocabulary. `sessionStatus` is a
   single-truth rollup, with a net-new `focusPaneRequest` mechanism.
@@ -1027,7 +1047,7 @@ A two-team subagent review of the whole codebase surfaced one recurring theme: t
 #### Resource & lifecycle
 
 - **Reap orphaned processes/tasks on abnormal termination** (`53e6d46`): added `kill_on_drop(true)` to the tool-runtime bash/ssh/gh spawns and the MCP handshake spawn (`tool_runtime.rs`, `tool_runtime_ssh.rs`, `tool_pull_request.rs`, `mcp_client.rs`) so a timed-out child is reaped instead of orphaned; `api_agent.rs` aborts the detached provider stream task on cancel (was leaking the upstream HTTP connection and pushing into a closed channel); the Node sidecar bash tool now kills the whole process group/tree (POSIX detached + negative-PID SIGKILL, Windows `taskkill /T`) instead of SIGTERM to the shell alone.
-- **Evict dead MCP clients from the connection pool** (`85d9206`): `McpConnectionPool` had no eviction, so once a cached server's child died every later `tools/list` / `tools/call` failed until restart — and via `resolve_mcp_name`'s `?`, one dead server broke *all* tool calls. Connection-level errors now evict (`Arc::ptr_eq`-guarded so a healthy respawn isn't wiped); `list_tools` retries once, `call_tool` evicts without retry to avoid double-executing a mutating tool.
+- **Evict dead MCP clients from the connection pool** (`85d9206`): `McpConnectionPool` had no eviction, so once a cached server's child died every later `tools/list` / `tools/call` failed until restart — and via `resolve_mcp_name`'s `?`, one dead server broke _all_ tool calls. Connection-level errors now evict (`Arc::ptr_eq`-guarded so a healthy respawn isn't wiped); `list_tools` retries once, `call_tool` evicts without retry to avoid double-executing a mutating tool.
 
 #### Data durability
 
@@ -1118,7 +1138,7 @@ Follow-on cleanup wave after the v0.9.0 agent-pane overhaul. Big files split int
 
 #### W-wave splits
 
-- **W2**: `src-tauri/src/commands/agent_sidecar.rs` → 6 focused sub-modules (supervisor, forward_*, lifetime stats, etc.).
+- **W2**: `src-tauri/src/commands/agent_sidecar.rs` → 6 focused sub-modules (supervisor, forward\_\*, lifetime stats, etc.).
 - **W3**: `src/stores/orchestrationStore.ts` → scheduler + state substores; 3 bare catches surfaced.
 - **W4**: `GitHubView` InvestigationPanel extract (1,848 → ~1,570 LoC).
 - **W5**: `MissionsView` adopted `useShallow` grouping; `useFlightChat` got `subscribeToFlightChatStream` + `sendMessage` extractions.
@@ -1158,33 +1178,40 @@ Major refactor + UX wave targeting the API-agent surface. The two largest files 
 Eliminates the long-standing drift between the global `useLayoutStore.projectPath` and per-workspace `useWorkspaceStore.workspaces[].projectPath`. The active workspace is now the canonical source; `useLayoutStore.projectPath` is kept in sync via a subscription mirror.
 
 #### Store refactor
+
 - `layoutStore.setProjectPath(p)` is now a **write-through**: with an active local workspace, it updates that workspace's `projectPath` and persists via `saveWorkspacesSlice`. With no active workspace, it writes to a new internal `fallbackProjectPath` field.
 - `installWorkspaceProjectPathSync()` registers a `useWorkspaceStore.subscribe(...)` at module init (via `queueMicrotask` to dodge the existing circular import) that mirrors the active workspace's path into `useLayoutStore.projectPath`. Remote workspaces (`serverId` set) skip the mirror to preserve the previous local path.
 - Public API preserved: `useLayoutStore((s) => s.projectPath)`, `getState().projectPath`, and `setProjectPath(p)` all work unchanged. No consumer migrations required.
 
 #### Toolbar folder picker
+
 - With an active workspace: picker title reads "Change folder for '{workspaceName}'"; tooltip shows project path + active workspace name.
 - With no active workspace: picker shows a follow-up modal asking whether to create a new workspace at the picked path OR set it as the default for the next workspace.
 - Folder icon button now has `aria-label` for screen readers.
 
 #### Settings ProjectInfoCard
+
 - Shows "Active: {workspaceName}" context line + explainer copy.
 - With no active workspace: replaces the path input with a "Create workspace" CTA showing the last-used folder.
 - Raw `text-red-400` token violation on the Clear button replaced with `text-accent-red`.
 
 #### Capture-on-open for in-flight modals
+
 Defends against workspace switches mid-edit:
+
 - `SpecImportModal` captures `projectPath` on `open` transition.
 - `CommitModal` captures `projectPath` on `open` transition; also blocks submit when captured path is empty + surfaces an amber hint.
 - `NewFlightModal` captures `projectPath` on mount.
 - `IssueBoard` snapshots `projectPath` on Import-Spec click (parent-level guard).
 
 #### WorkspaceCreationModal empty-state
+
 - Browse button always available alongside the recents dropdown.
 - Auto-jumps to the OS picker when no recents exist.
 - Save gated on a non-empty selected path so the persisted workspace never has `projectPath: ""`.
 
 #### Peer-reviewed
+
 4-agent big-session review pass caught issues that are addressed in v0.8.7 above (the projectPath refactor itself produced no P0s — the peer review only flagged behavior changes worth documenting: `ScaffoldView` and `Settings > Browse` now rebind the active workspace silently, which is the intended new behavior).
 
 ## [0.8.7] - 2026-05-16
@@ -1194,6 +1221,7 @@ Defends against workspace switches mid-edit:
 Single big drop covering five themes. Built by ~20 parallel agents + 4-agent peer review + 2 fix passes.
 
 #### CLI catalog: Install / Browse / Coming Soon
+
 - `installCommand` flag annotates 7 catalog entries (claude-code / codex / gemini / opencode / copilot / qwen / qoder) with a stable one-line install command. Clicking Install spawns a one-shot terminal workspace running the command.
 - `browseRequired` flag annotates **PacketCode** as Browse-only — user picks the binary via OS file picker (`.exe` filter on Windows, no filter on POSIX). Path persists in a new `cliOverrideStore`.
 - `comingSoon` flag on devin / kimi / cursor / mistral / deepseek — surfaces as a "Coming Soon" pill instead of an install button.
@@ -1202,26 +1230,31 @@ Single big drop covering five themes. Built by ~20 parallel agents + 4-agent pee
 - Fixed: Windows `.cmd` wrapper version probes were returning nothing because `probe_version` ran against the unresolved binary name; now uses the resolved path.
 
 #### Toolbar overhaul
+
 - **Theme toggle removed from Toolbar** — Settings > General > Theme is the canonical control.
 - **Review button → Bell at far right** — `accent-red` with count badge when there's pending work, `text-muted` otherwise. Icon is now `Bell` (notifications semantics) rather than `ShieldCheck`.
 - Final right-side order: Sidecar | Running | Spend | div | Quality | div | Modules | VT | div | Git | Folder | div | Bell.
 
 #### Flight (Mission) delete
+
 - Inline trash icon on each Mission row (hover-revealed) with two-step confirm + 3s auto-revert.
 - Confirm copy escalates to "Active work — delete?" when the flight has running attempts or queued/approval tasks.
 - `flightStore.deleteFlight` cascades to clear `Issue.flightId` back-references for every linked issue.
 
 #### API-agent → Review queue wiring
+
 - `api-agent:permission-request` events now fire `fireTaskApprovalNeeded` via a new `flightStore.findTaskBySessionId` reverse-lookup. Tasks bound to a conversation (`Task.sessionId === AgentConversation.id`) get flipped to `approval_needed` and surface in the Toolbar Bell + ReviewQueueView.
 - Same wiring for `pending-edit` events — was a missing-handler P0 caught by peer review.
 - Both handlers gated on conversation existence so a deleted conversation can't flip a stale task.
 
 #### Code Quality deep dive — backend
+
 - `quality_runner.rs` — new live-streaming check runner with per-check `kill_on_drop`, 3s/300s timeouts (path probe / check run), `quality:chunk:{run_id}` / `quality:check-start` / `quality:check-done` / `quality:done` events, `cancel_quality_run` Tauri command, FIFO run-history eviction by `started_at`, natural-exit prioritized over cancel signals in the post-exit race window.
 - `code_quality_autofix.rs` — ESLint --fix / Prettier --write / `cargo fix` / `pnpm audit --fix`, each with a confirm-modal in the UI. Streams via `quality-fix:chunk:{run_id}`. Includes a duplicate-run-id rejection registry (P0 fix from peer review) + `cancel_quality_fix`.
 - `code_quality_ai_prompts.rs` — anti-injection envelope on every user-supplied tool output (XML-ish tags + system-prompt warning); per-check + total byte caps with two-pass shrink.
 
 #### Code Quality deep dive — frontend
+
 - Per-check tabs with sticky status badge (idle/queued/running/passed/failed/cancelled/skipped/errored).
 - In-house ANSI renderer (no new deps) with SGR + 256-color + truecolor support, line-level filter, `path:line:col` click-to-copy.
 - Last-5-runs history dropdown keyed on normalised project path.
@@ -1230,10 +1263,12 @@ Single big drop covering five themes. Built by ~20 parallel agents + 4-agent pee
 - AutoFix re-analyze nonce chain so the modal refreshes after each fix.
 
 #### Shared
+
 - `Modal` wrapper gained `closeOnEscape` / `headerExtra` / `fullscreen` props.
 - `agent.rs` gained `probe_version_at(path)` for absolute-path version probes + `is_executable_file(path)` POSIX exec-bit check.
 
 #### Process
+
 - 4 parallel implementation agents per major slice + 2-agent peer review per slice + final 4-agent big-session peer review (spec/UX + correctness/races + cross-slice integration + regression).
 - ~20 implementation agents total across the session.
 - Peer review caught 4 P0s and 11 P1s, all fixed before this commit:
@@ -1251,6 +1286,7 @@ Two underused Toolbar buttons demoted to lower-friction surfaces. Both
 features stay alive; they just stop competing for prime chrome real estate.
 
 #### Deploy
+
 - Removed the Rocket-icon Deploy button from the Toolbar.
 - New entry "**New deploy run**" added to the global "+ New" dropdown
   (Toolbar left-side, alongside New Claude/Codex/Mission/Issue).
@@ -1258,6 +1294,7 @@ features stay alive; they just stop competing for prime chrome real estate.
 - DeployView itself unchanged.
 
 #### Prompts
+
 - Removed the BookOpen-icon Prompts button + `<PromptLibrary>` modal mount
   from the Toolbar. The Toolbar no longer carries a Prompts surface.
 - **Slash-command expansion** added inside `AgentInputArea`: typing `/`
@@ -1278,10 +1315,11 @@ features stay alive; they just stop competing for prime chrome real estate.
   affordances live in the modal.
 
 #### Process
+
 - 2 parallel agents (Deploy demote + Prompts overhaul) + 1 peer reviewer
-  + 2 fix-touches (PTY `\r` consistency, Rocket icon color separated
-  from the adjacent Ticket's amber so the +New rows don't visually
-  conflate).
+  - 2 fix-touches (PTY `\r` consistency, Rocket icon color separated
+    from the adjacent Ticket's amber so the +New rows don't visually
+    conflate).
 
 ## [0.8.5] - 2026-05-16
 
@@ -1292,6 +1330,7 @@ human-orchestrated CLI agents in Workspace panes**. Complements Missions
 (autonomous) and Agents (free-form chat).
 
 #### Spec import
+
 - New `issues_extract_from_spec` Tauri command (one-shot Claude OAuth
   sidecar session) reads a pasted spec / PRD / design doc and returns
   structured Issue drafts: title + body + labels + acceptance criteria +
@@ -1304,12 +1343,13 @@ human-orchestrated CLI agents in Workspace panes**. Complements Missions
   anti-injection envelope on the user-supplied spec.
 
 #### Send to Workspace (and the close-loop)
+
 - New `sendIssueToWorkspace` orchestrator action:
   1. Provisions an Issue-bound worktree via the new
      `create_issue_worktree` Tauri command.
   2. Installs a `prepare-commit-msg` hook in that worktree that
      idempotently appends `Fixes #{n}` and `Run-By: PacketADE issue
-     I-{id}` trailers to every commit made inside.
+I-{id}` trailers to every commit made inside.
   3. Spins up a workspace (one `claude-code` pane) at the worktree path
      and seeds the conversation with the Issue title + body + acceptance
      criteria.
@@ -1323,28 +1363,32 @@ human-orchestrated CLI agents in Workspace panes**. Complements Missions
   session.
 
 #### Auto-Done on Fixes-#N trailer
+
 - `git_commit` Tauri command now parses commit-message trailers via a
   word-boundary-anchored regex. Recognises `Fixes`/`Closes`/`Resolves`,
   case-insensitive, start-of-line only, optional colon, rejects
   `#42foo`, dedupes, multiple trailers per message all parse.
 - Emits `issue-watcher:fixed` events with `{issueId, ticketId,
-  issueNumber, commitSha, commitSubject}` payload.
+issueNumber, commitSha, commitSubject}` payload.
 - Frontend listener auto-flips matching Issue to `done` and appends a
   system audit comment `Auto-closed by commit {sha7}: {commit_subject}`.
 
 #### Frontend ↔ backend persistence sync
+
 - Every issueStore mutation now funnels through a `saveState` chokepoint
   that writes both the localStorage fast cache AND the Rust
   `PersistedState.issues` via the existing `save_issues_slice` command.
   Without this, the trailer parser couldn't resolve `#N` to an Issue.
 
 #### CommitModal Issue-aware autofill
+
 - When the active workspace is bound to an Issue, the CommitModal opens
   with `Fixes #{n}\n\n` pre-seeded in the message textarea and a "🔗
   Linked to Issue #N: {title}" hint above. One-shot per open — never
   overwrites typing. Caret placed after the seeded line.
 
 #### IssueDetail + filters + smarter columns
+
 - New `IssueDetail` modal: markdown body, acceptance-criteria checklist,
   assignee inline editor, dependency lists, linked workspace pill, full
   status grid, inline comment thread + composer.
@@ -1358,9 +1402,10 @@ human-orchestrated CLI agents in Workspace panes**. Complements Missions
   draft PR.
 
 #### Process
+
 - 4 parallel implementation agents (spec import / Send to Workspace /
   Fixes-#N watcher / IssueDetail polish) → 2-agent peer review (spec/UX
-  + correctness) → 2 fix agents addressing two P0s:
+  - correctness) → 2 fix agents addressing two P0s:
   1. `sendIssueToWorkspace` didn't invoke the worktree provisioner, so
      the auto-Done loop was dead end-to-end. Wired via new Tauri
      command + frontend integration.
@@ -1374,6 +1419,7 @@ human-orchestrated CLI agents in Workspace panes**. Complements Missions
   linkage is recorded consistently.
 
 ### Deferred
+
 - No "from spec import on {date}" badge yet — `specImportBatchId` is
   stamped but not surfaced visually.
 - IssueDetail still exposes all 9 legacy `IssueStatus` values in the
@@ -1389,6 +1435,7 @@ after a reference screenshot the user shared. Tier 1 of the broader
 native install recipes) deferred.
 
 #### Backend (`src-tauri/src/commands/agent.rs`, `core/agent.rs`)
+
 - New `detect_cli_catalog([{id, binary}]) → [{id, installed, version, path}]`
   Tauri command. Each entry's PATH lookup + version probe run truly
   concurrently via `tokio::process::Command` + `join_all`.
@@ -1402,6 +1449,7 @@ native install recipes) deferred.
   back-compat callers don't pay the new latency.
 
 #### Catalog (`src/lib/cli-catalog.ts`)
+
 13 entries, each with a brand color + lucide icon, in this order:
 Claude Code, Codex CLI, Devin for Terminal, Gemini CLI, OpenCode,
 **PacketCode** (placed immediately adjacent to OpenCode in the 2-column
@@ -1412,7 +1460,9 @@ Helpers: `brandClasses(color)` for icon/dot color tokens,
 `getCliBinaries()` for the bulk-detection payload.
 
 #### UI (`src/components/views/tools/CliAgentsCard.tsx` +
+
 `src/components/views/tools/CliCatalogHeader.tsx`)
+
 - 2-column responsive card grid. Each card: 32×32 brand icon swatch +
   name + version (or "not installed") + status dot.
 - Click a card to select it. Click again to deselect. Click another to
@@ -1426,6 +1476,7 @@ Helpers: `brandClasses(color)` for icon/dot color tokens,
   collapsible "Advanced" section below the grid (closed by default).
 
 #### Process
+
 - 4 parallel implementation agents (backend / catalog / grid / header) +
   2-agent peer review (spec/UX + correctness).
 - Reviewer-caught P0: original `resolve_path` was synchronous and
@@ -1436,6 +1487,7 @@ Helpers: `brandClasses(color)` for icon/dot color tokens,
   test output bleeding across selections. All fixed.
 
 ### Deferred (Tier 2)
+
 - PATH issue diagnosis + repair (per-OS rabbit hole — Windows registry /
   shell rc files / etc.)
 - Native install recipes per CLI (npm / winget / brew / curl-pipe — each
@@ -1451,6 +1503,7 @@ Shipped in two commits with peer-review rounds, plus a final consolidated
 review pass before push.
 
 #### Commit 1 (`4710028`) — dedupes + Ctrl+K + global "+ New"
+
 - **Dropped the redundant Costs button.** `LiveSpendChip` is now the sole
   cost-navigation surface; clicking it routes to the Cost Dashboard. Chip and
   dashboard both read from `useAnalyticsStore.data` so they agree on today.
@@ -1473,6 +1526,7 @@ review pass before push.
   New Issue.
 
 #### Commit 2 (`4ba3562`) — polish
+
 - **Icon sizes normalized to 12** across the Toolbar; only intentional
   outlier is the +New caret ChevronDown at size={10}.
 - **Cluster dividers** between Status / Action / Tooling / Project chip
@@ -1500,14 +1554,16 @@ review pass before push.
   search affordance, not a competing button.
 
 #### Architecture
+
 - 8 implementation agents (4 per commit) + 4 peer reviewers (2 per commit)
-  + 1 final consolidated review pass. ~14 agent runs total.
+  - 1 final consolidated review pass. ~14 agent runs total.
 - One P0 caught + fixed: `gitCommit` returns raw `git commit -m` stdout
   (multi-line `[branch sha7] subject\n …`), not a SHA — the modal now
   parses the short sha out via regex and falls back to a label-only
   "Committed" if no match.
 
 ### Backlog (deferred)
+
 - Modal lacks Escape-to-close (cross-cutting — affects every modal).
 - Theme toggle still exists in both Toolbar and Settings (intentional —
   Toolbar is a power-user one-click).
@@ -1527,6 +1583,7 @@ work merited but never got, and regroups Settings from 18 flat sections into
 15 sensibly-stacked tabs.
 
 #### Bug fixes
+
 - **Composer-mode label clarified.** Settings > Agents > "Launch default"
   silently shared its backing store with the per-conversation chip in the
   agent input bar — flipping the chip permanently changed the global
@@ -1543,6 +1600,7 @@ work merited but never got, and regroups Settings from 18 flat sections into
   control. Toolbar toggle preserved as the high-frequency action.
 
 #### Missing v0.8 settings shipped
+
 - **GitHub tab (new).** Token status / Rotate / Disconnect, default merge
   strategy (merge/squash/rebase), require-confirmation toggle for
   destructive PR actions, "default new PRs to draft", and "publish Mission
@@ -1572,6 +1630,7 @@ work merited but never got, and regroups Settings from 18 flat sections into
   `sign_out_provider` backend command that removes the credential file).
 
 #### Settings IA reorganization
+
 - 18 flat sections → 15 grouped tabs: **General** (Theme, Notifications),
   **Workspace**, **Agents** (CLI + Settings + Profiles stacked),
   **AI Providers** (API Keys + Subscriptions + Endpoints stacked),
@@ -1583,6 +1642,7 @@ work merited but never got, and regroups Settings from 18 flat sections into
 - Every prior setting reachable; no functional regressions.
 
 ### Architecture
+
 - 2 commits (`936990a` fix + this one). Built by 6 parallel agents
   (3 round-1 fix + 3 round-2 controls/IA) with explicit file ownership.
 - Frontend-only changes for most controls; Rust side touched for the
@@ -1600,6 +1660,7 @@ into a real daily-loop surface, plus the deferred memory inline-integration
 work from the v0.7 backlog.
 
 #### GitHub — parity layer
+
 - **PR lifecycle actions.** Merge (merge / squash / rebase), close, reopen,
   convert-to-draft / mark-ready-for-review on every PR detail. State-aware
   buttons surface only what's valid for the current PR state.
@@ -1624,6 +1685,7 @@ work from the v0.7 backlog.
     MemoryEvent against the active project.
 
 #### GitHub — AI features
+
 - **PR description generator.** One-shot Claude call inside the PR creation
   modal generates a structured description from diff + commits + linked
   issues. User can edit before submitting.
@@ -1638,6 +1700,7 @@ work from the v0.7 backlog.
   per call. User picks what to apply.
 
 #### GitHub — flow polish
+
 - **PR creation modal upgrades.** Branch picker autocompletion (with the
   default branch + recent branches sorted first), draft toggle, "Closes #N"
   autofill seeded from the active issue, reviewer / label / milestone
@@ -1650,6 +1713,7 @@ work from the v0.7 backlog.
   pills) and line-comment threads grouped by file.
 
 #### Mission Planner ↔ GitHub
+
 - **"Publish attempts as draft PRs" Flight option.** When toggled on, every
   attempt that completes successfully pushes its worktree branch to origin
   and opens a draft PR titled `[Flight {title}] Attempt {id}` with the
@@ -1665,6 +1729,7 @@ work from the v0.7 backlog.
   alone).
 
 #### Memory inline surfaces
+
 - **AgentInputArea context-preview chevron.** A small collapsible above the
   input that lists the memories about to be injected into the next user
   turn. Live-reactive to the memory store.
@@ -1707,6 +1772,7 @@ work from the v0.7 backlog.
   half-closing.
 
 ### Architecture
+
 - 29 new files, 27 modified. ~10.9K LOC delta.
 - Design + scope locked in [`dev/archive/v0.8-github-and-memory.md`](./dev/archive/v0.8-github-and-memory.md).
 - Built by 8 parallel implementation agents → 2-agent peer-review pass
@@ -1715,6 +1781,7 @@ work from the v0.7 backlog.
   during the parallel ramp), then commit.
 
 ### Deferred to v0.9 / v1.1
+
 - **Authored** PR line comments + threads (read-only viewing shipped now;
   composing new threads remains).
 - **Notifications inbox** (`/notifications` integration).
@@ -1735,6 +1802,7 @@ session per mission, callable tool surface, journal, safety rails,
 context compaction.
 
 #### Highlights
+
 - **Spec-mode chat.** Click "Start a mission" → talk to a Sonnet 4.6
   planner about what you want to build. Hit Launch when ready.
 - **Autonomous decomposition.** The planner breaks your spec into
@@ -1762,6 +1830,7 @@ context compaction.
   hit the context wall.
 
 #### Architecture
+
 - 10 epics shipped (E1–E8 + E10) over ~14K LOC across the Rust
   backend, agent-sidecar (Node), and React frontend.
 - Sidecar protocol bumped 4 → 6 (typed `inject_user_turn` +
@@ -1773,7 +1842,9 @@ context compaction.
 - 9 commits, ~70 new tests (Rust unit + vitest + sidecar smokes).
 
 #### Deferred to v1.1
+
 See [`backlog.md`](./backlog.md) for the full list. Headlines:
+
 - Helper planner (one-shot Opus 4.7 spawn for huge scopes).
 - Back-port milestone-gating + collision-detection to the
   async-attempts execution path.
@@ -1783,6 +1854,7 @@ See [`backlog.md`](./backlog.md) for the full list. Headlines:
 - Crash-resilient planner sessions across app restarts.
 
 #### Documentation
+
 - `dev/archive/flight-planner-plan.md` — locked design spec.
 - `dev/archive/flight-planner-spike-retro.md` — spike findings.
 - `dev/archive/flight-planner-v1-acceptance-runbook.md` — manual
@@ -1795,6 +1867,7 @@ See [`backlog.md`](./backlog.md) for the full list. Headlines:
 ### Added — SSH hardening & remote workspaces (Phases 1–3)
 
 #### Phase 1 — security & correctness
+
 - **Sidecar SSH guard** — selecting an SSH target with `api-claude-oauth` or
   `api-openai-codex` now returns a clear error rather than silently running
   locally; matching frontend UI gate disables SSH selector when a sidecar
@@ -1818,6 +1891,7 @@ See [`backlog.md`](./backlog.md) for the full list. Headlines:
   (`src-tauri/src/core/execution.rs`).
 
 #### Phase 2 — consolidate SSH stacks
+
 - **Unified `ServerConfig` + `SshTarget`** onto a single canonical
   `ServerConfig` model. Deleted `src/types/ssh.ts`,
   `src/stores/sshTargetStore.ts`, `src/components/agents/SshConnectModal.tsx`.
@@ -1834,6 +1908,7 @@ See [`backlog.md`](./backlog.md) for the full list. Headlines:
   silently degrading to TOFU.
 
 #### Phase 3 — remote workspaces
+
 - **"Location: Local / Remote (SSH)" step in `WorkspaceCreationModal`** —
   pick a registered server (fingerprint-verified), enter remote project path,
   see a live probe of existence / is-directory / is-git-repo.
@@ -1863,6 +1938,7 @@ See [`backlog.md`](./backlog.md) for the full list. Headlines:
 - **Phase 1 host-key pinning is honored** by all four new commands.
 
 ### Fixed — remote-workspace consumer gaps
+
 - **`CodeQualityModal`** short-circuits with "not yet supported on remote
   workspaces" message; toolbar Quality button disabled with tooltip when
   the active workspace is remote
@@ -1878,6 +1954,7 @@ See [`backlog.md`](./backlog.md) for the full list. Headlines:
   yet" message (landed earlier in Phase 3.1).
 
 ### Added — polish & integrations
+
 - **PacketCode CLI** wired as a built-in agent.
 - **Dictation** — global hotkeys, focus-aware insertion, OS-level plugin.
 - **Workspace boot performance** — local cache of workspaces, deferred
@@ -1888,11 +1965,13 @@ See [`backlog.md`](./backlog.md) for the full list. Headlines:
   of an open workspace.
 
 ### Removed
+
 - `src/types/ssh.ts`, `src/stores/sshTargetStore.ts`,
   `src/components/agents/SshConnectModal.tsx` (consolidated into
   `ServerConfig`).
 
 ### Tests
+
 - All 197 vitest tests pass (incl. new `workspaceStore` cases).
 - All 164 cargo `--lib` tests pass (incl. clone-validator unit tests and
   host-key pinning regression tests).
@@ -1909,6 +1988,7 @@ Warp; followed by a 4-agent deep-dive on the OpenAI "Codex for (almost)
 everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 
 #### Tier 1 — visible polish
+
 - Drag-drop and clipboard-paste images in the launcher (5 MB cap, removable thumbnail chips); image blocks land in the SDK content array on send
 - `SessionHealthBar` in chat header: model · context % gauge · cumulative tokens · session $ · git branch
 - Mid-turn steering: `Tab` queues a follow-up; `Alt+.` / `Alt+,` nudge the model toward thorough / fast within the same provider
@@ -1918,6 +1998,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - One-time onboarding overlay on first Agents-view visit
 
 #### Tier 2 — killer features
+
 - Persistent dockable `PlanPanel` parsing Anthropic SDK `TodoWrite` and the markdown `task_list` tool
 - `PendingApprovalsRollup` with "Apply / Reject / Cancel all" when 2+ pending writes or permissions stack up
 - `/review` spawns a Reviewer subagent fed a unified diff of the parent conversation's pending writes — returns 🛑 Blockers / ⚠️ Concerns / 💡 Nits
@@ -1927,6 +2008,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - `RunningAgentsChip` in toolbar with live count of streaming agents, click-to-jump and stop
 
 #### Tier 3 — sidecar protocol v3 → v4 + frontend
+
 - Sidecar `PROTOCOL_VERSION` bumped 2 → 4
 - New events: `plan_block` (structured TodoWrite mirror), `tool_output_extended` (Bash exit code + stdout/stderr; Write/Edit modified paths), `turn_summary` (running tokens between turns)
 - New requests: `set_permission_mode`, `set_model`, `retry`, `cancel_pending_tools` (drains parked permission/edit prompts as denied without killing the loop)
@@ -1937,6 +2019,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - Worktree-per-conversation toggle in launcher (`.pkt-worktrees/<convId>` on a fresh `pkt/<convId>` branch)
 
 #### Codex Spring 2026 absorption (A1–A5 + B1–B9)
+
 - Codex `todo_list` items map to the existing `plan_block` event so PlanPanel works for Codex too
 - `reasoning_tokens` + `cached_input_tokens` from `usage` flow through `turn_summary` and roll into `aggregateConversationCost` (was: under-reporting GPT-5.5 spend)
 - Codex MultiAgentV2 sub-agent attribution: `turn_summary.address` (`/root/agent_a` etc.) routes child tokens into a per-address bucket on the conversation; CostDashboard rolls every bucket into the total
@@ -1952,20 +2035,24 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - Plan-with-Claude → Execute-with-Codex one-click handoff: PlanPanel "Hand off to Codex →" button when parent is Claude AND Codex auth is `ready`; spawns a fresh Codex conversation seeded with `buildHandoffPrompt(parent)` (distilled spec + plan + discussion summary, capped at 12 KiB); `parentConversationId` field wires a "← back to plan" link in the child's chat header
 
 #### Follow-ups (F1–F10)
+
 - Auto-resume hydrated conversations: extracted listener block into `installApiAgentListeners` helper; `sendMessage` routes the first post-restart send through `resumeApiConversation` with the stored `resumeToken`
 - In-process providers honor `mergedContent` for per-hunk diff acceptance (parity with sidecar Anthropic)
 - Anthropic sidecar emits `tool_output_extended` (Bash exit code + stdout/stderr; Write/Edit modifiedPaths) and `turn_summary` (running per-message tokens for live SessionHealthBar updates)
 
 ### Fixed
+
 - **macOS title bar shows native traffic-light controls** — config switched to `decorations: true` + `titleBarStyle: "Overlay"` + `hiddenTitle: true`; `lib.rs` setup hook strips decorations at runtime on Windows + Linux so the custom chrome stays the only chrome there. `TitleBar.tsx` detects macOS via userAgent, hides the Win-style min/max/close cluster, reserves 78 px of left padding for the traffic-light area
 - **Standalone `target/<profile>/packetade.exe` reported "Sidecar down"** — two stacked bugs:
   - Capability gate: `app.shell().sidecar("node")` is rejected by Tauri's permission layer unless an explicit `shell:allow-execute` entry lists `node` with `sidecar: true` (added in `74e6ba9`)
   - Per-triple Node binary missing: Tauri's shell plugin on Windows resolves `sidecar("node")` to `<exe_dir>/node-<target-triple>.exe`, not generic `node.exe`; `build.rs` now copies `binaries/node-<triple>.<ext>` into the cargo output directory at compile time (added in `8f49083`)
 
 ### Removed
+
 - `.github/workflows/{build,ci,release}.yml` — builds and releases run locally; no GitHub Actions CI in this repo
 
 ### Sidecar protocol
+
 - At this release, the sidecar protocol advanced to v4. v4 added `cancel_pending_tools` request. v3 added typed `attachments` on `start_session` / `send_message`, `mergedContent` on `edit_response`, `batchId`/`batchSize` on `permission_request`, `resumeToken` on `done`, plus `plan_block` / `tool_output_extended` / `turn_summary` events. Old sidecars reply "Unknown request type" to v3+ requests; supervisor warns on version mismatch (does not refuse)
 
 ---
@@ -1975,6 +2062,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 ### Added
 
 #### Flight Deck — Mission Control Redesign
+
 - Single-screen master-detail layout replaces the old list + drill-in pair
 - Status-grouped flight list on the left (Attention, Active, Review, Draft, Done, Cancelled)
 - Attention group auto-surfaces paused, failed, and approval-needed flights
@@ -1985,12 +2073,14 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - "Try the AI planner →" CTA on the empty Flight Deck to surface the planner chat
 
 #### Workspace Persistence
+
 - Workspace view stays mounted across tab switches (Flights / Issues / Tools) — PTY sessions, scrollback, and agent state persist
 - All active workspaces mount simultaneously with `display: none` toggling; switching workspaces shows different terminal sets without restarting CLIs
 - Workspace creation from a flight now persists the `flightId` through `commitWorkspaces` (was silently dropping it before)
 - Flight `projectPath` falls back to the global project path when empty, written back to the flight for consistency
 
 #### First-Run Onboarding
+
 - 3-step onboarding pane on a fresh launch: Open Folder → Pick Agents → Open Workspace / Flight Deck / Skip
 - `AgentDetectionList` component showing installed / not-found / checking states for each AI CLI
 - Install hint links beside each not-found CLI (Claude Code, Codex, Gemini, OpenCode docs)
@@ -1998,18 +2088,21 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - Onboarding completion persisted in `localStorage` (`packetcode:onboarding-complete`)
 
 #### Mosaic Tiling System
+
 - React Mosaic-based draggable pane tiling replaces the fixed CSS grid
 - Layout presets: 1×1, 1×2, 2×1, 2×2, 2×3, 3×2 — available in the main toolbar when a workspace is active
 - Per-pane drag handle, minimize, and restore via `MosaicTile` wrapper
 - Mosaic tree built from workspace pane count with sensible default preset
 
 #### DTO Layer
+
 - Rust API DTO module (`src-tauri/src/api/`) decoupling internal types from the TS serialization contract
 - Generated TypeScript schema types (`src/generated/tauri-schema.ts`)
 - Typed event name helpers (`src/lib/events.ts`)
 - All Tauri commands and frontend stores refactored to use DTOs, eliminating manual snake_case/camelCase conversion
 
 #### UI Polish
+
 - Unified per-pane header bar: drag grip, status dot, agent icon + name, CLI pill, restart button — consolidated from three separate bars (MosaicTile drag handle, WorkspacePane agent header, TerminalHeader)
 - Richer tooltips on all right-side toolbar buttons (Review, Theme, Cost, Deploy, Quality, Git, Project, Profile, Pane layout)
 - Profile button now reads "Profile: Auto (Optimized)" with a descriptive tooltip
@@ -2019,6 +2112,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - Cursor-inspired dark theme restyle
 
 ### Fixed
+
 - **CMD window flashes on Windows** — `detect_agent` now uses `hide_window` so the `where` probes don't pop console windows; removed redundant safety-net `useEffect` in WorkspaceCreationModal
 - **Memory leaking across projects** — `getContextForSession` now takes the current project path and refuses to return context scanned from a different project; memory store stamps `projectPath` on scan
 - **Model names** — Claude model aliases updated to un-dated identifiers (`claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`) so they always resolve to the latest version
@@ -2031,6 +2125,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - **Disabled not-installed agents in WorkspaceCreationModal** — buttons now show `opacity-50 cursor-not-allowed` with install links instead of silently failing when clicked
 
 ### Changed
+
 - `"mission"` route removed from `AppView`; `MissionWorkspaceView.tsx` deleted — the Flight Deck is now the single entry point for flight management
 - `BroadcastBar` component deleted; broadcast feature removed entirely
 - Workspace toolbar, broadcast bar, and mosaic preset bar consolidated into the main toolbar
@@ -2047,6 +2142,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 ### Added
 
 #### Missions System
+
 - Mission domain model with types, Zustand store, and localStorage persistence
 - `missionStore` with CRUD operations, issue/session linking, and status rollup computation
 - `missionId` field on issues with backward-compatible migration for existing data
@@ -2064,15 +2160,18 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - Delete confirmation dialog for missions
 
 #### Shared Utilities
+
 - `src/lib/time.ts` — shared `relativeTime()` function (consolidated from 3 duplicate implementations)
 - `src/lib/mission-colors.ts` — shared mission status, priority, and issue status color/label constants
 
 ### Fixed
+
 - `useMemo` dependency array in CostDashboardView (pre-existing lint error)
 - MissionControl → MissionsView navigation now syncs selected mission via store
 - Consistent naming: "New Mission" / "Create Mission" labels, capitalized priorities, proper issue status labels
 
 ### Changed
+
 - `CoreView` type expanded with `"missions"` and `"mission_control"`
 - Toolbar gains Missions tab (top-level) and Control button (right section)
 - Issue interface gains `missionId: string | null` with migration
@@ -2085,6 +2184,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 ### Added
 
 #### MCP Server Integration Hub
+
 - View, add, edit, and delete MCP server configurations
 - Global scope (`~/.claude/settings.json`) and project scope (`.mcp.json`)
 - Server list grouped by scope with toggle, edit, and delete controls
@@ -2092,6 +2192,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - Registered as a module (category: integration, icon: Plug, enabled by default)
 
 #### Project Template Scaffolding
+
 - "New Project" wizard with 3-step flow: template selection, configuration, result
 - 6 built-in templates: Next.js, React+Vite, Python FastAPI, Rust CLI, Node Express, Blank
 - Automatic tool availability detection (node, cargo, python)
@@ -2101,6 +2202,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - Registered as a module (category: utility, icon: FolderPlus, enabled by default)
 
 #### Deploy Pipeline
+
 - Core deploy view with toolbar button (Rocket icon)
 - Auto-detects deploy configs from `packetcode.deploy.json`, `package.json` scripts, `vercel.json`, `netlify.toml`, and `Dockerfile`
 - Custom deploy config creation and persistence in `packetcode.deploy.json`
@@ -2109,11 +2211,13 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - Config cards with one-click deploy and history sidebar
 
 #### Rust Backend
+
 - `mcp.rs` — 3 commands: `read_mcp_servers`, `write_mcp_server`, `delete_mcp_server`
 - `scaffold.rs` — 2 commands: `scaffold_project`, `check_scaffold_tools`
 - `deploy.rs` — 2 commands: `read_deploy_config`, `create_deploy_config`
 
 ### Changed
+
 - Added `"deploy"` to `CoreView` union type
 - Updated Toolbar with Deploy button in right section
 - Welcome Screen now shows "New Project" button when scaffold module is enabled
@@ -2126,6 +2230,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 ### Added
 
 #### Core IDE
+
 - Tauri v2 desktop application with custom dark theme
 - Multi-pane session layout with resizable panels
 - PTY-based terminal emulation using xterm.js and portable-pty
@@ -2136,6 +2241,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - Git branch display in toolbar and status bar
 
 #### AI Sessions
+
 - Claude Code CLI integration with full PTY terminal
 - OpenAI Codex CLI integration with full PTY terminal
 - New Session modal with CLI toggle, model selector, and prompt input
@@ -2145,6 +2251,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - Session history view
 
 #### Agent Profiles
+
 - 5 built-in agent profiles: Auto (Optimized), Speed Runner, Thorough Reviewer, Security Auditor, Refactor Pro
 - Custom profile creation with name, description, icon, color, system prompt, and default model
 - Profile selector in New Session modal — auto-fills model and prepends system prompt
@@ -2152,6 +2259,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - Profile management (create/edit/delete) in Tools > Settings
 
 #### Issue Tracker
+
 - Kanban board with 6 columns: To Do, In Progress, QA, Done, Blocked, Needs Human
 - Issue creation with title, description, priority, labels, epic, and acceptance criteria
 - Drag-and-drop between columns
@@ -2161,6 +2269,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - Spec2Tick: AI-powered spec parsing into structured tickets
 
 #### GitHub Integration
+
 - Personal access token authentication
 - Repository browser (30 most recently updated repos)
 - Open issues list with search and label filtering
@@ -2170,6 +2279,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - Pull request creation modal (title, body, head/base branch)
 
 #### Memory Layer
+
 - File Map: AI codebase scan generating 1-line file summaries
 - Session History: AI-powered session summarization with key decisions and modified files
 - Learned Patterns: AI-extracted recurring patterns with category (architecture, convention, preference, pitfall) and confidence scores
@@ -2178,12 +2288,14 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - Persistent storage in localStorage
 
 #### AI Tools
+
 - Vibe Architect: interactive AI project scaffolding and architecture design
 - Insights Chat: conversational codebase Q&A with Claude
 - Ideation Scanner: AI-generated feature ideas, improvements, and suggestions
 - Code Quality: on-demand AI code quality analysis
 
 #### UI/UX
+
 - Welcome screen with quick-start actions
 - Tools dropdown menu in toolbar with all features
 - Status bar with session info and Claude/Codex status lines

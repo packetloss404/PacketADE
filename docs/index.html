@@ -4,9 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>PacketADE — Your agent fleet. One flight deck.</title>
-<meta name="description" content="PacketADE is a local-first desktop Agent Development Environment: multi-CLI workspaces (Claude Code, Codex CLI, OpenCode, PacketCode), an eight-provider agent picker, Flight Deck orchestration with parallel worktree attempts, SSH remote workspaces, an MCP hub, project memory, issue tracking with GitHub and Gitea sync, dictation, and cost analytics — in one native Tauri app." />
+<meta name="description" content="PacketADE is a local-first desktop Agent Development Environment: multi-CLI workspaces (Claude Code, Codex CLI, OpenCode, PacketCode), a seven-provider bring-your-own-API-key agent picker, Flight Deck orchestration with parallel worktree attempts, SSH remote workspaces, an MCP hub, project memory, issue tracking with GitHub and Gitea sync, dictation, and enforced budget guardrails — in one native Tauri app." />
 <meta property="og:title" content="PacketADE — Your agent fleet. One flight deck." />
-<meta property="og:description" content="A local-first desktop ADE for orchestrating AI software work: CLI and API agents, Flight Deck orchestration with parallel worktree attempts, SSH remotes, MCP hub, memory, issues, dictation, and cost tracking." />
+<meta property="og:description" content="A local-first desktop ADE for orchestrating AI software work: CLI and API agents, Flight Deck orchestration with parallel worktree attempts, SSH remotes, MCP hub, memory, issues, dictation, and budget guardrails." />
 <meta property="og:image" content="https://packetade.app/screenshot.png" />
 <meta property="og:url" content="https://packetade.app" />
 <link rel="canonical" href="https://packetade.app" />
@@ -240,7 +240,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   <div class="hero-logo reveal" aria-hidden="true">P&gt;_</div>
   <h1 class="reveal" style="--delay:0.05s">Packet<span class="gradient-text">ADE</span></h1>
   <p class="hero-tagline reveal" style="--delay:0.12s">Your agent fleet. One flight deck.</p>
-  <p class="hero-lead reveal" style="--delay:0.2s">A local-first desktop <strong>Agent Development Environment</strong>. Run coding-agent CLIs in multi-pane workspaces, hold structured conversations across eight provider backends, and orchestrate larger units of work as <strong>Flights</strong> with parallel worktree attempts &mdash; on your machine or over SSH.</p>
+  <p class="hero-lead reveal" style="--delay:0.2s">A local-first desktop <strong>Agent Development Environment</strong>. Run coding-agent CLIs in multi-pane workspaces, hold structured conversations across seven API-key provider backends, and orchestrate larger units of work as <strong>Flights</strong> with parallel worktree attempts &mdash; on your machine or over SSH.</p>
   <div class="hero-buttons reveal" style="--delay:0.28s">
     <a href="https://github.com/packetloss404/PacketADE/releases" class="btn-primary">Download</a>
     <a href="packetade-manual.html" class="btn-outline">Read the Manual</a>
@@ -250,7 +250,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
     <span class="tag-chip">Tauri v2</span>
     <span class="tag-chip">Local-First</span>
     <span class="tag-chip">BYOK</span>
-    <span class="tag-chip">8 Provider Rows</span>
+    <span class="tag-chip">7 Provider Rows</span>
     <span class="tag-chip">Open Source</span>
   </div>
   <div class="hero-screenshot reveal" style="--delay:0.42s">
@@ -275,9 +275,9 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
       <h2>One native app for real agent-driven development</h2>
     </div>
     <div class="what-body reveal" style="--delay:0.1s">
-      <p>PacketADE combines two complementary execution styles in a single desktop window. <strong>PTY-backed CLI sessions</strong> run Claude Code, Codex CLI, OpenCode, PacketCode, or a plain shell in draggable workspace panes, driven by each CLI&rsquo;s own interface. <strong>GUI/API agents</strong> in the Agents view hold durable structured conversations &mdash; streaming responses, tool calls, permission gating, plan review, and per-hunk diff acceptance &mdash; against eight provider backends that all normalize into one event contract.</p>
-      <p>Above both sits the <strong>Flight Deck</strong>: define a Flight, refine its plan in a read-only agent conversation, then launch one or more local or SSH agents against isolated git worktrees and supervise every attempt from a single master-detail surface. Issues, project memory, MCP configuration, git-host integration, dictation, and cost tracking live in the same app.</p>
-      <p>Everything stays on your machine: API keys in the OS keyring, transcripts and memory on local disk, execution local or over SSH connections you configure. There is no hosted service &mdash; bring your own subscriptions and keys.</p>
+      <p>PacketADE combines two complementary execution styles in a single desktop window. <strong>PTY-backed CLI sessions</strong> run Claude Code, Codex CLI, OpenCode, PacketCode, or a plain shell in draggable workspace panes, driven by each CLI&rsquo;s own interface. <strong>GUI/API agents</strong> in the Agents view hold durable structured conversations &mdash; streaming responses, tool calls, permission gating, plan review, and per-hunk diff acceptance &mdash; against seven API-key provider backends that all normalize into one event contract.</p>
+      <p>Above both sits the <strong>Flight Deck</strong>: define a Flight, refine its plan in a read-only agent conversation, then launch one or more local or SSH agents against isolated git worktrees and supervise every attempt from a single master-detail surface. Issues, project memory, MCP configuration, git-host integration, dictation, and budget guardrails live in the same app.</p>
+      <p>Everything stays on your machine: API keys in the OS keyring, transcripts and memory on local disk, execution local or over SSH connections you configure. There is no hosted service &mdash; API agents run on API keys you supply, and terminal panes use whatever logins the CLIs you launch already have.</p>
     </div>
   </div>
 </section>
@@ -296,15 +296,15 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
         </div>
         <h3>Multi-CLI Workspaces</h3>
-        <p>Run <strong>Claude Code</strong>, <strong>Codex CLI</strong>, <strong>OpenCode</strong>, <strong>PacketCode</strong>, and plain shells side by side in persistent draggable pane mosaics, with per-CLI status lines and saved layouts that hydrate dormant &mdash; nothing launches until you open the workspace.</p>
+        <p>Run <strong>Claude Code</strong>, <strong>Codex CLI</strong>, <strong>OpenCode</strong>, <strong>PacketCode</strong>, and plain shells side by side in persistent draggable pane mosaics, with per-CLI status lines and saved layouts that hydrate dormant &mdash; nothing launches until you open the workspace. Raw terminals choose their own shell &mdash; PowerShell 7, Windows PowerShell, Command Prompt, Git Bash, WSL, or Auto &mdash; and every pane header shows the shell it actually resolved to.</p>
       </div>
 
       <div class="feature-card reveal" style="--delay:0.05s">
         <div class="feature-icon purple" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         </div>
-        <h3>Eight-Row Agent Picker</h3>
-        <p>Structured conversations with <strong>Anthropic</strong> (subscription or API), <strong>OpenAI</strong> (ChatGPT, API, or Agents SDK), <strong>MiniMax</strong>, <strong>OpenRouter</strong>, and local <strong>Ollama</strong> &mdash; each row with a live auth badge, one shared composer, one event contract.</p>
+        <h3>Seven-Row Agent Picker</h3>
+        <p>Structured conversations with the <strong>Claude Agent SDK</strong>, <strong>Claude API</strong>, <strong>OpenAI API</strong>, <strong>OpenAI Agents SDK</strong>, <strong>MiniMax</strong>, <strong>OpenRouter</strong>, and local <strong>Ollama</strong> &mdash; each row with a live auth badge, one shared composer, one event contract. Every row authenticates with your own API key; Ollama needs none.</p>
       </div>
 
       <div class="feature-card reveal" style="--delay:0.1s">
@@ -359,8 +359,8 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <div class="feature-icon amber" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         </div>
-        <h3>Cost Analytics</h3>
-        <p>A Cost Dashboard aggregates persisted spend plus live in-session costs across every provider, a toolbar spend chip tracks today&rsquo;s total, and executor token costs roll up onto their Flights.</p>
+        <h3>Budget Guardrails</h3>
+        <p>Daily, monthly, per-session, per-provider, and per-Flight spend caps, with a warning threshold and a hard stop that blocks a launch that would go over budget. Spend is measured to <em>enforce</em> those limits &mdash; PacketADE deliberately ships no cost dashboard and no running dollar readout.</p>
       </div>
 
     </div>
@@ -371,8 +371,8 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
 <section class="status" id="status">
   <div class="container">
     <div class="status-panel reveal">
-      <h2>Current status <span class="ver">v0.10.2</span></h2>
-      <p class="status-intro">PacketADE is in active development and dogfooded daily. Here is exactly where distribution stands today &mdash; no surprises after you download.</p>
+      <h2>Current status <span class="ver">v0.10.3</span></h2>
+      <p class="status-intro">PacketADE is in active development and dogfooded daily. Here is exactly where distribution stands today &mdash; no surprises after you download. Last updated 2026-08-06 against v0.10.3.</p>
       <div class="status-list">
         <div class="status-item ok">
           <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
@@ -388,7 +388,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         </div>
         <div class="status-item ok">
           <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
-          <div><strong>Bring your own auth.</strong> <span>PacketADE has no hosted service &mdash; it uses your existing Claude / ChatGPT subscriptions via their CLIs, or your own API keys stored in the OS keyring. Ollama runs fully local with no key at all.</span></div>
+          <div><strong>Bring your own keys.</strong> <span>PacketADE has no hosted service. Every agent row in the Agents view authenticates with an API key stored in your OS keyring &mdash; there is no Claude.ai or ChatGPT subscription login for API agents. Terminal panes running the <code>claude</code> or <code>codex</code> CLIs keep those tools&rsquo; own subscription logins. Ollama runs fully local with no key at all.</span></div>
         </div>
       </div>
     </div>

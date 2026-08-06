@@ -5,8 +5,9 @@
 PacketADE is a Tauri v2 desktop app that brings AI coding agents, planning, issue tracking, memory, and workspace management into a single native environment. It is built for running real development workflows across multiple agent CLIs without leaving the app.
 
 Current source release: **v0.10.3** (2026-08-02), tagged from pushed `main`
-commit `61e0669`. Fresh unsigned Windows app, NSIS, and MSI artifacts were
-compiled from that exact revision; see
+commit `61e0669`; `main` has since advanced with documentation-only commits —
+the tagged tree is the shipped source. Fresh unsigned Windows app, NSIS, and
+MSI artifacts were compiled from that exact revision; see
 [`HANDOFF.md`](./HANDOFF.md#latest-windows-build) for the exact artifacts and
 hashes.
 
@@ -18,6 +19,7 @@ _An actual native PacketADE capture: PacketCode and Claude Code running their re
 
 - [`docs/reports/state-of-the-ade-2026-07-30.md`](./docs/reports/state-of-the-ade-2026-07-30.md) — primary AI-readable State of the ADE living record; Section 0 is the current 2026-08-03 authority.
 - [`docs/reports/state-of-the-ade-2026-07-30.pdf`](./docs/reports/state-of-the-ade-2026-07-30.pdf) — identical paginated human edition.
+- [`docs/reports/fable5-review-2026-08-05.md`](./docs/reports/fable5-review-2026-08-05.md) — the 2026-08-05 seven-team deep review and v1.0.0 plan (`.html` sibling is the human edition with screenshots).
 - [`HANDOFF.md`](./HANDOFF.md) — exact restart point, completed decisions,
   current owner questions, build evidence, and guardrails.
 - [`ROADMAP.md`](./ROADMAP.md) — current product direction and release path.
@@ -120,7 +122,7 @@ the row to pick when you want Claude Code's own agent harness — the targeted
 edit tool, structured plan blocks, real permission modes, and `~/.claude`
 settings sourcing — rather than the leaner in-process `api-claude` runtime.
 
-Auth status is probed live and shown as a badge next to each row (`ready` / `missing_key` / `service_down`). Most API-key providers run in-process in Rust; the Claude Agent SDK and OpenAI Agents SDK providers run in the Node sidecar. Each session can be launched with agent-specific arguments and model selections exposed through the UI.
+Auth status is probed live and shown as a badge next to each row (`ready` / `missing_key` / `service_down`; the same probe also returns `login_required` / `coming_soon` for the PTY CLI launch gate). Most API-key providers run in-process in Rust; the Claude Agent SDK and OpenAI Agents SDK providers run in the Node sidecar. Each session can be launched with agent-specific arguments and model selections exposed through the UI.
 
 > The `api-openai-codex` row (OpenAI ChatGPT Plus/Pro via `codex exec`) was
 > removed on 2026-07-31. Existing conversations on it still open and read
@@ -147,8 +149,8 @@ handoffs, and deep links never materialize wrapper Workspaces.
 
 - **Live status in the tile header**: model · context % gauge · cumulative tokens · session $ · git branch
 - **Drag-drop and clipboard-paste images** into the launcher (5 MB cap, removable thumbnail chips); image blocks land in the SDK content array on send
-- **Keyboard**: `Shift+Tab` cycles a single mode chip (`default | plan | manual | yolo`); `Ctrl/Cmd+N` starts a new Agent while in Agents and a new empty Workspace elsewhere; `Ctrl+Shift+1` jumps to Agents and `Ctrl+Shift+W` jumps to Workspace. Bare `Tab` is unbound in the composer (it only picks a highlighted popover row when one is open)
-- **Slash commands**: `/plan /permissions /model /compact /review /usage /history /clear /new /help` plus saved prompt templates as native `/<slug>` commands and project skills
+- **Keyboard**: `Ctrl+K` opens the app-wide **command palette** (search and navigate everything — the primary navigation affordance); `Shift+Tab` cycles a single mode chip (`default | plan | manual | yolo`); `Ctrl/Cmd+N` starts a new Agent while in Agents and a new empty Workspace elsewhere; `Ctrl+Shift+1` jumps to Agents, `Ctrl+Shift+W` jumps to Workspace, and `Ctrl+Shift+O` cycles the transcript view mode. Route chords match on physical key, so they survive non-QWERTY layouts. Bare `Tab` is unbound in the composer (it only picks a highlighted popover row when one is open)
+- **Slash commands**: `/plan /permissions /model /compact /review /history /clear /new /help` plus saved prompt templates as native `/<slug>` commands and project skills
 - **`@`-mention files and sources** in the composer via a file-mention popover, so you can pull specific files into a turn without pasting paths
 - **Header context badges**: provider auth (live `provider-auth:changed`), linked Flight with click-to-jump, and an MCP `N/M` server toggle dropdown. A separate **memory toggle** in the header overflow menu carries a tooltip previewing the actual injected memory context
 - **Persistent Plan / Todo panel** docked above the chat scroll, parsing Anthropic SDK `TodoWrite` (structured `plan_block` events) plus the markdown `task_list` tool with a fallback parser
@@ -158,11 +160,11 @@ handoffs, and deep links never materialize wrapper Workspaces.
 - **Plan-first mode**: launching with the Plan posture keeps the model read-only until it proposes a plan; the plan is approved inline in the transcript (structured `TodoWrite`) and approving lifts plan-mode so execution runs
 - **Inline Restore**: rewind the thread to an earlier point directly from the transcript (Claude-Code-style rewind), with no separate checkpoint panel
 - **Side Chat overlay**: a floating ask-a-side-question panel that streams an answer without disturbing the main thread
-- **Explicit handoffs**: open the same project in Workspace, show the same
-  conversation alongside CLI sessions, attach a separate terminal, review a
-  bounded PacketCode payload before copying it, open the authoritative Git
-  ending, link one durable conversation reference to a Flight, or continue in
-  an external editor/CLI
+- **Explicit handoffs**: open the project folder in the OS, open the same
+  **project** in Workspace (never the conversation), attach a separate
+  terminal, review a bounded PacketCode payload before copying it, open the
+  authoritative Git ending, link one durable conversation reference to a
+  Flight, or continue in an external editor/CLI
 - **Send to Monitor**: route a conversation to a separate Rust-restricted
   read-only operations window without duplicating its session or exposing
   composer/approval controls
@@ -173,7 +175,7 @@ handoffs, and deep links never materialize wrapper Workspaces.
 - **Backgroundable agent tray** in the toolbar showing a live count of streaming agents with click-to-jump and stop
 - **Hover-`+` Codex-App-style diff comments**: per-line `+` button in the diff view opens an inline composer; queued comments fold into the next user turn as a `File comments:` preamble
 - **Composer-mode segmented control** (Local / Worktree) at "send" time picks where the conversation runs — Local edits the project tree, Worktree runs on a fresh branch in `.pkt-worktrees/`; the choice also sets the global default
-- **Right-rail tabbed mode** with Inspector / Plan / Preview / Diff / Files tabs in a single 340 px column — lighter alternative to the full mosaic split for smaller screens; persisted toggle
+- **Right dock** — one resizable column (260–720 px, 340 px default, persisted per surface and clamped against the live viewport) showing one panel at a time. Agents docks Inspector / Plan / Preview / Diff / Files / Editor; Workspace docks Editor / Git. Nothing else in the shell renders a fixed-width right panel
 - **Smart-approval prefix proposals**: permission prompts compute a sensible allowlist rule (e.g. `Bash(git push:*)`) and let you accept it with one click — closes the "approval fatigue" footgun
 - **Cross-tool unified Project Rules editor** in `Settings → Workspaces & Terminal → Project Rules` reads + writes both `AGENTS.md` and `CLAUDE.md` on save so a single rule set works for both Claude Code and Codex
 - **Plan-with-Claude → Execute-with-OpenAI** one-click handoff: PlanPanel "Hand off to OpenAI" button spawns a fresh OpenAI Agents SDK conversation seeded with the distilled spec + plan; "← back to plan" link in the child's chat header
@@ -316,7 +318,13 @@ The Claude Agent SDK and OpenAI Agents SDK providers run in a Node sidecar that 
 
 ### Code Quality
 
-- A dedicated quality module surface for running code-quality scans alongside the Dictation module
+- Language, complexity, and test breakdowns with per-category scores, donut
+  charts, and an Overview / Complexity / Languages / Tests tab layout
+- Auto-detected per-project checks (lint, typecheck, tests, cargo, ruff) run
+  live with streaming ANSI output, cancellation, and persisted run history
+- Streamed AI run summaries and per-finding explanations
+- One-click **auto-fix** with its own review panel, backed by a dedicated Rust
+  command family (`quality_runner.rs`, `code_quality_autofix.rs`)
 
 ### Git Host Integration (GitHub + Gitea/Forgejo)
 
@@ -366,7 +374,14 @@ The Claude Agent SDK and OpenAI Agents SDK providers run in a Node sidecar that 
   integration health. It remains loopback-only with bearer/origin controls;
   there is no hosted PacketMCP service.
 - Local crash report browsing and cleanup
-- Agent profile management and AI routing configuration
+- Agent profile management and **auxiliary-LLM routing**: per-task-class
+  provider/model selection so background AI work (naming, summaries, insights)
+  can run on a cheaper or local model than the primary agents
+- **Custom provider endpoints** for OpenAI-compatible hosts you run yourself
+- **Multi-account CLI logins**: named per-CLI accounts (separate
+  `CLAUDE_CONFIG_DIR` / `CODEX_HOME` homes) with a per-session picker, so work
+  and personal subscriptions never collide
+- **Light/dark theme switching** in `Settings → General → Preferences`
 - Prompt template library
 - Local Whisper dictation with OS-global hotkeys and focus-aware transcript insertion (see [Dictation](#dictation--voice-to-text))
 
@@ -492,12 +507,28 @@ Windows release workstation redirects it to `packetade-build`).
 
 ### Quality Checks
 
+The two composite ladders are the real gates — run these before claiming green:
+
+```bash
+pnpm preflight       # format check + lint + unit tests + web build
+pnpm check           # preflight + e2e + sidecar:check + Tauri schema + Rust check/tests
+pnpm sidecar:check   # 14 chained sidecar build/protocol/provider smoke gates
+```
+
+Individual rungs are also available directly:
+
 ```bash
 pnpm lint
 pnpm test
 pnpm build
 pnpm e2e
+pnpm check:tauri-schema
+pnpm rust:test
 ```
+
+Release builds additionally use `pnpm release:gate` (bundling correctness,
+strict mode adds clean-tree/signing checks) and `pnpm release:readiness`
+(environment/credential probes).
 
 ### Rust Checks
 

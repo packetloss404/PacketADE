@@ -69,6 +69,11 @@ by the current Workspace/Agents contract. Do not resume it.
 | Cost controls/efficiency | [`cost-efficiency-loop.md`](./cost-efficiency-loop.md)                                             | Reporting surface removed; caching/edit improvements partly complete; live measurement and bounded edit debt remain |
 | Packet Control           | [`packet-control-loop.md`](./packet-control-loop.md)                                               | Proposed, not started; shared evidence contract must precede implementation                                         |
 | PacketBBS                | [`features-packetbbs-terminal.md`](./features-packetbbs-terminal.md)                               | Proposed later, bounded non-secret connection preset                                                                |
+| 2026-08-01 P1 pass       | [`high-priority-real-work-loop-2026-08-01.md`](./high-priority-real-work-loop-2026-08-01.md)       | Evidence record for the runtime-authority correctness pass (`fd8c226`); source and review complete                  |
+| GitHub pane v9 residue   | [`github-pane-v9-loop.md`](./github-pane-v9-loop.md)                                               | Scoped GitHub-pane deferrals; remaining work is tracked in `../backlog.md`                                          |
+
+The packaged Flight-supervision matrices (RG8/CG9/CI9/AP9) share one evidence
+file: [`bridgemind/flight-supervision-proof-2026-07-28.md`](./bridgemind/flight-supervision-proof-2026-07-28.md).
 
 ## Research and reference
 
@@ -78,7 +83,8 @@ by the current Workspace/Agents contract. Do not resume it.
   are product/landscape references, not task registers.
 - [`mobile/README.md`](./mobile/README.md) is explicitly superseded for
   implementation by `remoteagents/`; keep it only as earlier research.
-- [`zen-workspace/`](./zen-workspace/) contains shipped feature/history notes.
+- Shipped zen-workspace feature/history notes now live in
+  [`archive/zen-workspace/`](./archive/zen-workspace/).
 - [`spike-macos-keychain-namespacing.md`](./spike-macos-keychain-namespacing.md)
   remains an environment-gated Mac research task.
 

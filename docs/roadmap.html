@@ -303,12 +303,12 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   <div class="container">
     <span class="hero-eyebrow reveal">The PacketADE Roadmap</span>
     <h1 class="reveal" style="--delay:0.05s">Twelve tracks.<br><span class="gradient-text">Honest status labels.</span></h1>
-    <p class="hero-lead reveal" style="--delay:0.1s">Where PacketADE actually stands, pulled straight from <code>ROADMAP.md</code> and <code>backlog.md</code> as of the 2026-07-30 State of the ADE review &mdash; the pass that overhauled the root docs and removed Gemini CLI support from the PTY surface. PacketADE wraps PTY coding CLIs &mdash; Claude Code, Codex CLI, OpenCode, PacketCode, and plain shells &mdash; plus eight API chat providers into one local-first desktop ADE. Most tracks below are <em>source complete</em>: the code is merged and locally tested, and what remains is packaged or live-environment proof. Two things are genuinely blocked or paused, and we say so.</p>
+    <p class="hero-lead reveal" style="--delay:0.1s">Where PacketADE actually stands, pulled straight from <code>ROADMAP.md</code> and <code>backlog.md</code>, last reconciled 2026-08-06 against v0.10.3. PacketADE wraps PTY coding CLIs &mdash; Claude Code, Codex CLI, OpenCode, PacketCode, and plain shells &mdash; plus seven API-key chat providers into one local-first desktop ADE. Most tracks below are <em>source complete</em>: the code is merged and locally tested, and what remains is packaged or live-environment proof. The present bottleneck is proof and distribution, not another broad source-feature wave &mdash; and two things are genuinely blocked or paused, and we say so.</p>
 
     <div class="headline-stats reveal" style="--delay:0.2s">
       <div class="headline-stat">
-        <div class="v green">v0.10.2</div>
-        <div class="k">Current release &middot; 2026-07-28 &middot; unsigned, manual-install</div>
+        <div class="v green">v0.10.3</div>
+        <div class="k">Current release &middot; 2026-08-02 &middot; unsigned, manual-install</div>
       </div>
       <div class="headline-stat">
         <div class="v blue">12</div>
@@ -319,8 +319,8 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <div class="k">Vitest tests passing at last verification checkpoint</div>
       </div>
       <div class="headline-stat">
-        <div class="v amber">8</div>
-        <div class="k">API provider rows with live auth badges</div>
+        <div class="v amber">7</div>
+        <div class="k">API-key provider rows with live auth badges</div>
       </div>
     </div>
   </div>
@@ -377,7 +377,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
           <span class="tc-prio">P1</span>
         </div>
         <h3 class="tc-title">Remote Agents: PWA + Packet Cloud relay</h3>
-        <p class="tc-body">Supervise your desktop agents from a phone: a PWA over a cloud relay, with providers, secrets, files, and execution staying on the desktop. Preserved, not canceled &mdash; deliberately paused at three Sprint-0 decisions (auth provider, E2EE timing, code location). No relay code gets written until those are resolved.</p>
+        <p class="tc-body">Supervise your desktop agents from a phone: a PWA over a cloud relay, with providers, secrets, files, and execution staying on the desktop. Preserved, not canceled. The relay is a standalone Rust <code>packet-relay</code> service &mdash; that choice is made. Implementation stays deliberately paused at the two remaining Sprint-0 decisions: the auth provider and the E2EE launch gate. No relay code gets written until those are resolved.</p>
         <div class="tc-footer"><a href="https://github.com/packetloss404/PacketADE/blob/main/dev/remoteagents/README.md" target="_blank" rel="noopener">Plan &rarr;</a></div>
       </article>
 
@@ -521,7 +521,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
     <div class="section-header next reveal">
       <span class="eyebrow"><span class="dot"></span>Next &middot; the decision queue</span>
       <h2>D1&ndash;D14: what happens in what order</h2>
-      <p>The "Next" table from <code>ROADMAP.md</code>, verbatim in substance. Several rows are already complete and kept for context; the open ones are mostly environment-gated proof runs, plus two decision gates and one external blocker.</p>
+      <p>The "Next" table from <code>ROADMAP.md</code>, verbatim in substance. Several rows are already complete and kept for context; the open ones are mostly environment-gated proof runs, plus two decision gates and one external blocker. Four things sit at the front of the queue on the way to v1.0: interactive acceptance of the packaged v0.10.3 Windows build, distribution trust (hosted CI, signing credentials, notarization, updater), resolving the Remote Agents auth and E2EE decisions, and choosing the Global Undo recovery path.</p>
     </div>
 
     <div class="queue-table reveal" style="--delay:0.05s">
@@ -535,7 +535,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <div class="q-id">D1</div>
         <div class="q-track">Remote Agents Sprint 0</div>
         <div class="q-status"><span class="tc-status paused">Paused</span></div>
-        <div class="q-next">After the main-shell decision pass (or explicit reprioritization): decide auth provider, E2EE timing, and code location before writing code.</div>
+        <div class="q-next">Code location is settled &mdash; a standalone Rust <code>packet-relay</code> service. Two owner decisions still gate Sprint 0: the auth provider and the E2EE launch gate.</div>
       </div>
       <div class="queue-row">
         <div class="q-id">D2</div>
@@ -643,7 +643,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
     <div class="section-header history reveal">
       <span class="eyebrow"><span class="dot"></span>Shipped foundation</span>
       <h2>How we got here</h2>
-      <p>The Flight Deck worktree-attempt runtime, Reviewer Gate, cooperative Flight graphs, Coordination Inbox, bounded autonomy, PacketCode source integration, workspace panes, Issues, GitHub + Gitea/Forgejo hosts, project Memory, dictation, cost analytics and guardrails, API-agent conversations on sidecar protocol v11, PacketADE-as-MCP-server, MCP over SSH, and Codex-over-SSH are all shipped. Full notes per version live in <a href="https://github.com/packetloss404/PacketADE/blob/main/CHANGELOG.md" target="_blank" rel="noopener">CHANGELOG.md</a>. One honest note: the autonomous "Planner v1" that headlined v0.7.0 was deliberately removed in July 2026 &mdash; today's Flight planning is a smaller, explicit conversation-backed step where the user applies the plan and launches attempts.</p>
+      <p>The Flight Deck worktree-attempt runtime, Reviewer Gate, cooperative Flight graphs, Coordination Inbox, bounded autonomy, PacketCode source integration, workspace panes, Issues, GitHub + Gitea/Forgejo hosts, project Memory, dictation, enforced budget guardrails, API-agent conversations on sidecar protocol v11, PacketADE-as-MCP-server, MCP over SSH, and Codex-over-SSH are all shipped. Full notes per version live in <a href="https://github.com/packetloss404/PacketADE/blob/main/CHANGELOG.md" target="_blank" rel="noopener">CHANGELOG.md</a>. One honest note: the autonomous "Planner v1" that headlined v0.7.0 was deliberately removed in July 2026 &mdash; today's Flight planning is a smaller, explicit conversation-backed step where the user applies the plan and launches attempts.</p>
     </div>
 
     <div class="history-table reveal" style="--delay:0.05s">
@@ -653,7 +653,17 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <div class="history-title">Headline</div>
       </div>
       <div class="history-row">
-        <div class="history-version">Unreleased</div>
+        <div class="history-version flagship">v0.10.3</div>
+        <div class="history-date">2026-08-02</div>
+        <div class="history-title"><strong>Selectable terminal shells + self-bootstrapping Claude status bar</strong> &mdash; raw Terminal panes choose PowerShell 7, Windows PowerShell, Cmd, Git Bash, WSL, or Auto with pane&rarr;Workspace&rarr;app precedence and effective-shell pane headers; Claude Code panes get a native model/context bar via a session-scoped <code>--settings</code> collector, leaving global Claude settings untouched</div>
+      </div>
+      <div class="history-row">
+        <div class="history-version">v0.10.3</div>
+        <div class="history-date">2026-07-31</div>
+        <div class="history-title"><strong>API keys everywhere; cost reporting retired</strong> &mdash; every API agent moved off subscription logins onto API keys ("Anthropic (Subscription)" became "Claude Agent SDK (API)"; the Codex chat provider was removed and its conversations are read-only), the Cost Dashboard and spend chip were removed in favour of enforced budget guardrails, and a targeted edit tool plus an Ollama context-window fix landed</div>
+      </div>
+      <div class="history-row">
+        <div class="history-version">v0.10.3</div>
         <div class="history-date">2026-07-30</div>
         <div class="history-title"><strong>State of the ADE review wave</strong> &mdash; Gemini CLI support removed (saved panes reopen as plain terminals), PacketAgent W9 handoff consumer, Issue&#8596;Flight mirroring, read-only Monitor windows, Codex MCP trust proxy</div>
       </div>

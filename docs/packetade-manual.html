@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>PacketADE Manual | User Guide</title>
-<meta name="description" content="User manual for PacketADE v0.10 — the local-first desktop Agent Development Environment. Workspaces, Agents, Flight Deck, Issues, Memory, MCP, SSH remotes, dictation, and cost tracking." />
+<meta name="description" content="User manual for PacketADE v0.10.3 — the local-first desktop Agent Development Environment. Workspaces, Agents, Flight Deck, Issues, Memory, MCP, SSH remotes, dictation, and budget guardrails." />
 <link rel="canonical" href="https://packetade.app/packetade-manual.html" />
 <link rel="icon" type="image/png" href="favicon.png" />
 <style>
@@ -261,7 +261,7 @@ footer.manual-foot a{color:var(--text-secondary)}
         <li><a href="#ch3-ssh">Connect an SSH server</a></li>
         <li><a href="#ch3-mcp">Configure MCP</a></li>
         <li><a href="#ch3-dictation">Use dictation</a></li>
-        <li><a href="#ch3-costs">Track costs</a></li>
+        <li><a href="#ch3-budgets">Stay inside a budget</a></li>
       </ul>
     </li>
     <li class="ch-item">
@@ -297,7 +297,8 @@ footer.manual-foot a{color:var(--text-secondary)}
     <h1>PacketADE <span>Manual</span></h1>
     <p class="lede">How to install PacketADE, wire up your providers, and run real development work through Workspaces, Agents, and the Flight Deck. Task-oriented where possible, honest about limits everywhere.</p>
     <div class="meta">
-      <span>v0.10.2</span>
+      <span>v0.10.3</span>
+      <span>Last updated 2026-08-06</span>
       <span>Apache 2.0</span>
       <span>Tauri v2 &middot; React 19 &middot; Rust &middot; Node sidecar</span>
       <span>Local-first &middot; BYOK</span>
@@ -314,9 +315,9 @@ footer.manual-foot a{color:var(--text-secondary)}
 <p>PacketADE is a local-first desktop <strong>Agent Development Environment</strong>: a single native app for running and supervising AI software work. It connects two complementary execution styles:</p>
 <ul class="bullet-list">
   <li><strong>PTY-backed CLI sessions</strong> — real terminals in draggable workspace mosaics, running Claude Code, Codex CLI, OpenCode, PacketCode, or a plain shell.</li>
-  <li><strong>GUI/API agent conversations</strong> — durable structured chats in the Agents view with streaming, tool calls, permission gating, inline diffs, plans, review, and git worktree endings. Eight provider rows: Anthropic subscription and API, OpenAI ChatGPT/API/Agents SDK, MiniMax, OpenRouter, and local Ollama.</li>
+  <li><strong>GUI/API agent conversations</strong> — durable structured chats in the Agents view with streaming, tool calls, permission gating, inline diffs, plans, review, and git worktree endings. Seven provider rows, every one of them on an API key you supply: Claude Agent SDK, Claude (API), OpenAI (API), OpenAI Agents SDK, MiniMax, OpenRouter, and local Ollama.</li>
 </ul>
-<p>Above the sessions sit the organizing surfaces: <strong>Flights</strong> (units of delegated work on the Flight Deck), an <strong>Issues</strong> kanban board with AI spec import, a project <strong>Memory</strong> layer, git-host integration (GitHub plus self-hosted Gitea/Forgejo), an MCP hub, SSH remotes, local Whisper dictation, and cross-provider cost tracking.</p>
+<p>Above the sessions sit the organizing surfaces: <strong>Flights</strong> (units of delegated work on the Flight Deck), an <strong>Issues</strong> kanban board with AI spec import, a project <strong>Memory</strong> layer, git-host integration (GitHub plus self-hosted Gitea/Forgejo), an MCP hub, SSH remotes, local Whisper dictation, and enforced budget guardrails.</p>
 <p>Everything stays on your machine: API keys in the OS keyring, conversations and history under <code>~/.packetade</code>, execution on your hardware (or your SSH hosts). There is no PacketADE cloud service and no telemetry.</p>
 
 <div class="callout callout-info">
@@ -349,14 +350,19 @@ pnpm tauri build    # production build (also fetches Node + builds the sidecar)<
 <table class="ref-table">
   <thead><tr><th>Provider</th><th>What you need</th><th>How to set it up</th></tr></thead>
   <tbody>
-    <tr><td>Anthropic (Subscription)</td><td>Claude Pro/Max subscription + Claude Code CLI</td><td>Run <code>claude login</code> in any terminal, or click <strong>Log in</strong> on the provider row — PacketADE opens a one-shot login terminal in a modal. Credentials live in <code>~/.claude/.credentials.json</code>.</td></tr>
-    <tr><td>OpenAI (ChatGPT Plus/Pro)</td><td>ChatGPT subscription + Codex CLI</td><td>Run <code>codex login</code>, or click <strong>Log in</strong> on the row. Credentials live in <code>~/.codex/auth.json</code>.</td></tr>
-    <tr><td>Claude (API), OpenAI (API), OpenAI Agents SDK, MiniMax, OpenRouter</td><td>An API key for the vendor</td><td>Paste the key in <em>Settings &rarr; Agents &amp; Models &rarr; Providers &amp; Models</em>. Keys are stored in the OS keyring (service <code>packetade</code>), never in files.</td></tr>
+    <tr><td>Claude Agent SDK (API), Claude (API)</td><td>An Anthropic API key</td><td>Paste the key in <em>Settings &rarr; Agents &amp; Models &rarr; Providers &amp; Models</em>. Both rows read the same keyring entry.</td></tr>
+    <tr><td>OpenAI (API), OpenAI Agents SDK (API), MiniMax, OpenRouter</td><td>An API key for the vendor</td><td>Paste the key in <em>Settings &rarr; Agents &amp; Models &rarr; Providers &amp; Models</em>. Keys are stored in the OS keyring (service <code>packetade</code>), never in files.</td></tr>
+    <tr><td><em>Terminal CLI panes</em> — <code>claude</code>, <code>codex</code></td><td>Whatever the CLI itself needs, typically a Claude or ChatGPT subscription</td><td>Run <code>claude login</code> / <code>codex login</code> in any terminal, or use <em>Settings &rarr; AI Providers &rarr; Subscriptions</em>. Credentials live in <code>~/.claude/.credentials.json</code> and <code>~/.codex/auth.json</code>. These logins drive terminal panes only — never an API agent.</td></tr>
     <tr><td>Ollama</td><td>Ollama installed and running locally</td><td>No key. PacketADE probes <code>localhost:11434</code> and lists your pulled models automatically. This is the fastest zero-cost path to a working agent.</td></tr>
   </tbody>
 </table>
 
-<p>A file watcher monitors the Claude and Codex credential files, so badges flip to <span class="pill pill-green">ready</span> on their own moments after a login completes — no restart needed. See <a href="#ch4-auth">Troubleshooting &rsaquo; Auth badges</a> for what each badge state means.</p>
+<p>A file watcher monitors the Claude and Codex credential files, so the launch gate for those <em>terminal CLI</em> sessions flips to <span class="pill pill-green">ready</span> on its own moments after a login completes — no restart needed. See <a href="#ch4-auth">Troubleshooting &rsaquo; Auth badges</a> for what each badge state means.</p>
+
+<div class="callout callout-info">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>API agents never use a subscription login.</strong> Every row in the Agents provider picker authenticates with an API key. Anthropic's <a href="https://code.claude.com/docs/en/legal-and-compliance" target="_blank" rel="noopener">legal and compliance policy</a> states that it does not permit third-party developers to offer Claude.ai login or to route requests through Free, Pro, or Max plan credentials on behalf of their users, and the Claude Agent SDK directs developers to API-key authentication instead — so PacketADE kept the SDK and changed only the credential. Running the <code>claude</code> or <code>codex</code> CLI in a terminal pane is ordinary end-user use of those tools and keeps its own subscription login.</div>
+</div>
 
 <h3 class="section-title" id="ch1-first-workspace">Your first workspace</h3>
 <p>PacketADE opens to a Welcome screen when nothing is active.</p>
@@ -369,11 +375,11 @@ pnpm tauri build    # production build (also fetches Node + builds the sidecar)<
 <p>Workspaces remember their panes, layout, and settings across restarts. A workspace can also be bound to an SSH server, in which case its sessions run on the remote host (see <a href="#ch3-ssh">Connect an SSH server</a>).</p>
 
 <h3 class="section-title" id="ch1-orientation">Finding your way around</h3>
-<p>The <strong>left rail</strong> pins six views — Workspace, Agents, Flight Deck, Issues, Memory, GitHub — with the Settings gear at the bottom. Three more surfaces (Session History, Cost Dashboard, Dictation) are reached from the command palette, keyboard shortcuts, the toolbar mic button, or the status strip's live-spend chip.</p>
+<p>The <strong>left rail</strong> pins six views — Workspace, Agents, Flight Deck, Issues, Memory, GitHub — with the Settings gear at the bottom. Two more surfaces (Session History and Dictation) are reached from the command palette, keyboard shortcuts, or the toolbar mic button.</p>
 <ul class="bullet-list">
   <li><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>K</kbd></span> opens the <strong>command palette</strong> — views, prompt templates, and tool modules, all searchable.</li>
   <li><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>W</kbd></span> Workspace &middot; <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>1</kbd></span> Agents &middot; <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>2</kbd></span> Flight Deck. Full list in the <a href="#ch5-keys">shortcut reference</a>.</li>
-  <li>The <strong>status strip</strong> along the bottom shows the current view, running agents, live session spend, and a sidecar health chip when the sidecar is unhealthy.</li>
+  <li>The <strong>status strip</strong> along the bottom shows the current view, running agents, and a sidecar health chip when the sidecar is unhealthy.</li>
 </ul>
 
 <div class="callout callout-tip">
@@ -391,14 +397,16 @@ pnpm tauri build    # production build (also fetches Node + builds the sidecar)<
 <h3 class="section-title" id="ch2-workspaces">Workspaces</h3>
 <p>A workspace is a project workroom: a folder (local or on an SSH host) plus a persistent mosaic of terminal panes. Workspaces are deliberately <strong>CLI-first</strong> — the session picker offers only PTY sessions (Terminal, Claude Code, Codex CLI, OpenCode, PacketCode). Structured GUI-agent conversations are created in the Agents view, not here; older saved layouts that contain conversation panes still load for compatibility.</p>
 <p>Each pane is a real terminal driven by the CLI's own UI. PacketADE adds status bars for the CLIs it understands (Claude, Codex, OpenCode), install detection with recovery hints, and — when PacketCode is installed — marks it as the recommended CLI. Panes, models, and toggles are remembered per workspace.</p>
+<p>Plain <strong>Terminal</strong> panes let you choose the shell: Auto-detect, PowerShell 7, Windows PowerShell, Command Prompt, Git Bash, WSL (with a specific distribution), Bash, Zsh, or an allowlisted custom shell. The choice resolves in <strong>pane &rarr; Workspace &rarr; app</strong> order, so a per-session override beats the active workspace's default, which beats the app default; leaving everything untouched falls through to Auto. Each pane header shows the shell it actually resolved to. Dedicated coding-CLI panes are unaffected, and SSH Terminal panes open the remote host's login shell.</p>
+<p>Claude Code panes also get a native model/context status bar with no setup: PacketADE passes Claude its own session-scoped status-line collector through the supported <code>--settings</code> option, so you don't need a separately installed statusline script and your global <code>~/.claude/settings.json</code> is left untouched.</p>
 <p>The workspace header also hosts the <strong>Git dashboard</strong> slide-out: branch state, and the worktree lifecycle actions for conversations that ended with pending work (see <a href="#ch4-git">Git endings</a>).</p>
 
 <h3 class="section-title" id="ch2-agents">Agents conversations</h3>
-<p>The Agents view owns GUI-agent work: creating conversations, the cross-project conversation and attention list, one large active conversation, and its inspector. A conversation is a durable, structured thread with an API or subscription provider.</p>
-<p>Two backends serve these conversations behind <strong>one event contract</strong>: most API-key providers run in-process in Rust; the two subscription providers and the OpenAI Agents SDK run in a bundled Node sidecar. The frontend cannot tell the difference, and neither will you — every conversation gets the same streaming, tool cards, permission prompts, per-hunk diff acceptance, plan panel, and cost accounting.</p>
+<p>The Agents view owns GUI-agent work: creating conversations, the cross-project conversation and attention list, one large active conversation, and its inspector. A conversation is a durable, structured thread with one of the seven API providers.</p>
+<p>Two backends serve these conversations behind <strong>one event contract</strong>: most providers run in-process in Rust; the Claude Agent SDK and OpenAI Agents SDK rows run in a bundled Node sidecar. The frontend cannot tell the difference, and neither will you — every conversation gets the same streaming, tool cards, permission prompts, per-hunk diff acceptance, and plan panel.</p>
 <p>Key mechanics:</p>
 <ul class="bullet-list">
-  <li><strong>Modes</strong> — a single chip cycles <code>default</code> / <code>plan</code> / <code>manual</code> / <code>deny</code> / <code>yolo</code> with <span class="kbd-row"><kbd>Shift</kbd><span class="plus">+</span><kbd>Tab</kbd></span>. Plan mode keeps the model read-only until you approve its proposed plan inline; manual asks before risky tools; deny blocks all writes; yolo skips permission prompts. Providers that can't pause for approvals (Codex <code>exec</code>) show only three honest sandbox postures instead: <em>Read-only</em>, <em>Workspace-write</em>, and <em>Full access</em>.</li>
+  <li><strong>Modes</strong> — a single chip cycles <code>default</code> / <code>plan</code> / <code>manual</code> / <code>deny</code> / <code>yolo</code> with <span class="kbd-row"><kbd>Shift</kbd><span class="plus">+</span><kbd>Tab</kbd></span>. Plan mode keeps the model read-only until you approve its proposed plan inline; manual asks before risky tools; deny blocks all writes; yolo skips permission prompts. Every provider can pause for per-tool approval.</li>
   <li><strong>Pending edits</strong> — file writes arrive as reviewable diffs. Accept whole files or individual hunks; batch "Apply all / Reject all" rollups appear when 2+ prompts stack up.</li>
   <li><strong>Worktree endings</strong> — a conversation that wrote code can hand off to git explicitly: the ReviewBar's Finish flow opens the workspace git panel scoped to that conversation's worktree, with Merge back / Create PR / Discard / Keep.</li>
   <li><strong>Extras</strong> — slash commands, <code>@</code>-file mentions, image attachments (drag or paste, 5&nbsp;MB cap), a Side Chat overlay for side questions, inline transcript restore (rewind), and a <code>/review</code> reviewer subagent that critiques pending writes.</li>
@@ -446,6 +454,7 @@ pnpm tauri build    # production build (also fetches Node + builds the sidecar)<
   <li>Open the <strong>Workspace</strong> view (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd>) with an active workspace.</li>
   <li>Click <strong>Add Session</strong> in the workspace header (or use the inline picker in an empty workspace).</li>
   <li>Pick one of the five session types: <strong>Terminal</strong>, <strong>Claude Code</strong>, <strong>Codex CLI</strong>, <strong>OpenCode</strong>, or <strong>PacketCode</strong>. Uninstalled CLIs show an install hint; PacketCode shows a guided setup link. For SSH-bound workspaces, availability reflects what's installed on the remote host.</li>
+  <li>For a plain <strong>Terminal</strong>, optionally override the shell for just this pane. Settings detects which shells and WSL distributions are installed, links the official install guidance where relevant, and offers a bounded test probe under <em>Settings &rarr; Workspaces &amp; Terminal &rarr; Workspace defaults</em>.</li>
   <li>The pane spawns with the CLI live. Drag panes to rearrange the mosaic; panes persist across view switches and app restarts.</li>
 </ol>
 <div class="callout callout-info">
@@ -456,11 +465,11 @@ pnpm tauri build    # production build (also fetches Node + builds the sidecar)<
 <h3 class="section-title" id="ch3-api">Start an API-agent conversation</h3>
 <ol class="step-list">
   <li>Open <strong>Agents</strong> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>).</li>
-  <li>In the launcher, pick a provider row — eight rows grouped by vendor, each with a live auth badge. Pick a model, an optional agent profile, and a project.</li>
-  <li>Optionally set the mode chip (<kbd>Shift</kbd>+<kbd>Tab</kbd> cycles <code>default / plan / manual / deny / yolo</code>; Codex shows sandbox postures instead) and attach images (drag-drop or paste, 5&nbsp;MB each).</li>
+  <li>In the launcher, pick a provider row — seven rows grouped by vendor, each with a live auth badge. Pick a model, an optional agent profile, and a project.</li>
+  <li>Optionally set the mode chip (<kbd>Shift</kbd>+<kbd>Tab</kbd> cycles <code>default / plan / manual / deny / yolo</code>) and attach images (drag-drop or paste, 5&nbsp;MB each).</li>
   <li>Type your prompt — use <code>/</code> for commands and saved templates, <code>@</code> to mention files — and send.</li>
 </ol>
-<p>During the run you'll see streamed text, thinking indicators, tool cards with outputs, permission prompts (unless yolo), and pending-edit diffs you can accept per hunk. The header shows model, context-percent gauge, cumulative tokens, session cost, and git branch. When writes settle, use the ReviewBar to review everything, then <strong>Finish &rarr; Commit…</strong> to open the git ending surface.</p>
+<p>During the run you'll see streamed text, thinking indicators, tool cards with outputs, permission prompts (unless yolo), and pending-edit diffs you can accept per hunk. The header shows model, context-percent gauge, cumulative tokens, and git branch. When writes settle, use the ReviewBar to review everything, then <strong>Finish &rarr; Commit…</strong> to open the git ending surface.</p>
 <p><kbd>Ctrl</kbd>+<kbd>N</kbd> starts a new conversation while you're in Agents.</p>
 
 <h3 class="section-title" id="ch3-plan">Plan a Flight (Option B planning)</h3>
@@ -523,14 +532,16 @@ pnpm tauri build    # production build (also fetches Node + builds the sidecar)<
 </ol>
 <p>Notes: OS-global shortcuts are an explicit opt-in (both shortcuts are re-bindable); transcripts auto-paste into the focused PacketADE field, with an optional system-wide paste into whatever app is foregrounded; a custom dictionary biases transcription toward your jargon; language can be fixed or auto-detected; recordings are capped (configurable, 10–1800&nbsp;s). The view also keeps a history with analytics — WPM, streaks, top words.</p>
 
-<h3 class="section-title" id="ch3-costs">Track costs</h3>
-<p>Every API-agent turn reports token usage, and PacketADE rolls it up in three places:</p>
+<h3 class="section-title" id="ch3-budgets">Stay inside a budget</h3>
+<p>PacketADE measures what your agents spend, but it deliberately does <strong>not</strong> report it back to you. There is no cost dashboard, no toolbar spend chip, and no per-turn dollar figure — a reporting surface has to be maintained, re-verified against changing vendor rates, and trusted, and spend <em>control</em> was judged worth that while a spend <em>report</em> was not. Token counts are still shown per turn and per session.</p>
+<p>Cost survives as a control input. Configure the limits under <em>Settings &rarr; Automation &rarr; Flights &amp; Autonomy</em>, in the <strong>Budget guardrails</strong> section:</p>
 <ul class="bullet-list">
-  <li><strong>In the conversation</strong> — the tile header shows cumulative tokens and session dollars live; <code>/usage</code> jumps to the dashboard.</li>
-  <li><strong>The Cost Dashboard</strong> — open it from the status strip's live-spend chip. Filter by source/provider, scan daily spend bars and the per-model usage table (cache-aware token columns), and set a monthly overall limit plus per-provider limits.</li>
-  <li><strong>Per flight</strong> — attempts roll token costs up onto their flight, so a flight's detail pane answers "what did this piece of work cost?" across every agent that touched it.</li>
+  <li><strong>Spend caps</strong> — daily, monthly, per-session, per-provider, and per-Flight limits.</li>
+  <li><strong>Warning threshold</strong> — a notification fires as spend approaches a limit, on a background refresh that does not depend on any view being open.</li>
+  <li><strong>Hard stop</strong> — a launch that would put you over a cap is blocked outright, not merely flagged.</li>
+  <li><strong>Bounded-autonomy ceiling</strong> — a Flight running under bounded autonomy carries its own cost limit and halts when it reaches it.</li>
 </ul>
-<p>Subscription-provider sessions (Claude OAuth, ChatGPT) don't bill per token; their usage still appears in the roll-ups but costs your subscription, not your API budget.</p>
+<p>Attempts still roll their token costs up onto their Flight. That rollup is what a per-Flight cap is enforced against, and it is what the flight detail pane reports.</p>
 </section>
 
 <!-- ===== CHAPTER 4: TROUBLESHOOTING ===== -->
@@ -544,7 +555,7 @@ pnpm tauri build    # production build (also fetches Node + builds the sidecar)<
   <thead><tr><th>Badge</th><th>Meaning</th><th>Fix</th></tr></thead>
   <tbody>
     <tr><td><span class="pill pill-green">ready</span></td><td>Provider is usable now.</td><td>—</td></tr>
-    <tr><td><span class="pill pill-amber">login_required</span></td><td>OAuth credentials missing or expired with no refresh token.</td><td>Click <strong>Log in</strong> on the row (opens a one-shot <code>claude login</code> / <code>codex login</code> terminal) or run the login in any terminal. The badge updates automatically when the credential file changes.</td></tr>
+    <tr><td><span class="pill pill-amber">login_required</span></td><td><em>Terminal CLI sessions only.</em> The <code>claude</code> / <code>codex</code> CLI credentials are missing, or expired with no refresh token. API-agent rows never report this state — they use API keys.</td><td>Run <code>claude login</code> / <code>codex login</code> in any terminal. The launch gate updates automatically when the credential file changes.</td></tr>
     <tr><td><span class="pill pill-amber">missing_key</span></td><td>No API key in the OS keyring for this provider.</td><td>Add the key under <em>Settings &rarr; Agents &amp; Models &rarr; Providers &amp; Models</em>.</td></tr>
     <tr><td><span class="pill pill-red">service_down</span></td><td>The provider's local service isn't reachable — for Ollama, the daemon isn't answering on <code>localhost:11434</code>.</td><td>Start the service (e.g. launch Ollama) and re-check.</td></tr>
     <tr><td><span class="pill pill-muted">coming_soon</span></td><td>Provider row exists but isn't wired up.</td><td>—</td></tr>
@@ -556,12 +567,12 @@ pnpm tauri build    # production build (also fetches Node + builds the sidecar)<
 </div>
 
 <h3 class="section-title" id="ch4-sidecar">Sidecar status</h3>
-<p>Subscription providers and the OpenAI Agents SDK run in a supervised Node sidecar. When it's healthy the status chip is <em>hidden</em>; you'll only see it when something is wrong:</p>
+<p>The Claude Agent SDK and OpenAI Agents SDK rows run in a supervised Node sidecar. When it's healthy the status chip is <em>hidden</em>; you'll only see it when something is wrong:</p>
 <table class="ref-table">
   <thead><tr><th>Chip</th><th>Meaning</th><th>Fix</th></tr></thead>
   <tbody>
     <tr><td>sidecar restarting (n/3)</td><td>The sidecar process exited and the supervisor is relaunching it (up to 3 tries). The tooltip carries the last error.</td><td>Usually self-heals. If it keeps cycling, check the tooltip's error.</td></tr>
-    <tr><td>sidecar down</td><td>Restart budget exhausted; sidecar-backed providers are unavailable. In-process providers (Claude API, OpenAI API, MiniMax, OpenRouter, Ollama) keep working.</td><td>Restart the app. In dev, ensure <code>agent-sidecar/dist/index.js</code> is built and <code>node</code> is on PATH; the env vars <code>PACKETADE_SIDECAR_PATH</code> / <code>PACKETADE_NODE_PATH</code> override entry-point resolution.</td></tr>
+    <tr><td>sidecar down</td><td>Restart budget exhausted; the two sidecar-backed rows are unavailable. In-process providers (Claude API, OpenAI API, MiniMax, OpenRouter, Ollama) keep working.</td><td>Restart the app. In dev, ensure <code>agent-sidecar/dist/index.js</code> is built and <code>node</code> is on PATH; the env vars <code>PACKETADE_SIDECAR_PATH</code> / <code>PACKETADE_NODE_PATH</code> override entry-point resolution.</td></tr>
   </tbody>
 </table>
 <p>A protocol-version mismatch between the app and the sidecar logs a warning but is non-fatal.</p>
@@ -612,9 +623,8 @@ pnpm tauri build    # production build (also fetches Node + builds the sidecar)<
 <table class="ref-table">
   <thead><tr><th>Picker row</th><th>Internal id</th><th>Backend</th><th>Auth</th></tr></thead>
   <tbody>
-    <tr><td>Anthropic (Subscription)</td><td><code>api-claude-oauth</code></td><td>Sidecar &rarr; Claude Agent SDK</td><td><code>~/.claude/.credentials.json</code> OAuth</td></tr>
+    <tr><td>Claude Agent SDK (API)</td><td><code>api-claude-oauth</code></td><td>Sidecar &rarr; Claude Agent SDK</td><td>Keyring: Anthropic API key</td></tr>
     <tr><td>Claude (API)</td><td><code>api-claude</code></td><td>In-process Rust</td><td>Keyring: Anthropic API key</td></tr>
-    <tr><td>OpenAI (ChatGPT Plus/Pro)</td><td><code>api-openai-codex</code></td><td>Sidecar &rarr; <code>codex exec</code></td><td><code>~/.codex/auth.json</code> OAuth</td></tr>
     <tr><td>OpenAI (API)</td><td><code>api-openai</code></td><td>In-process Rust</td><td>Keyring: OpenAI API key</td></tr>
     <tr><td>OpenAI Agents SDK (API)</td><td><code>api-openai-agents</code></td><td>Sidecar &rarr; OpenAI Agents SDK</td><td>Keyring: OpenAI API key</td></tr>
     <tr><td>MiniMax</td><td><code>api-minimax</code></td><td>In-process Rust</td><td>Keyring: MiniMax API key</td></tr>
@@ -622,6 +632,13 @@ pnpm tauri build    # production build (also fetches Node + builds the sidecar)<
     <tr><td>Ollama</td><td><code>api-ollama</code></td><td>In-process Rust</td><td>None — local daemon on <code>localhost:11434</code></td></tr>
   </tbody>
 </table>
+</div>
+
+<p><code>api-claude-oauth</code> is a historical internal id, not an OAuth row — it is the Claude Agent SDK running in the sidecar on your Anthropic API key. The id is unchanged so that persisted conversations keep resolving. It is the row to pick when you want Claude Code's own harness (targeted edit tool, structured plan blocks, real permission modes, <code>~/.claude</code> settings sourcing) rather than the leaner in-process <code>api-claude</code> runtime.</p>
+
+<div class="callout callout-info">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>The <code>api-openai-codex</code> row was removed on 2026-07-31.</strong> It ran <code>codex exec</code> on a ChatGPT subscription, and without that subscription it offered nothing over OpenAI Agents SDK (API), which reaches the same models with your OpenAI API key. Existing Codex conversations still open and read normally with their full transcript, diffs, plan, and tool history; they are marked read-only, and sending a new turn tells you the provider is gone rather than failing cryptically. They are never silently re-pointed at another vendor's key. The Codex <em>CLI</em> remains fully supported as a terminal pane.</div>
 </div>
 
 <h3 class="section-title" id="ch5-clis">PTY CLI table</h3>
@@ -669,7 +686,6 @@ pnpm tauri build    # production build (also fetches Node + builds the sidecar)<
     <tr><td><code>/model</code></td><td>Switch model</td></tr>
     <tr><td><code>/compact</code></td><td>Compact the conversation context</td></tr>
     <tr><td><code>/review</code></td><td>Spawn a read-only reviewer subagent over pending writes; returns blockers / concerns / nits with file:line citations</td></tr>
-    <tr><td><code>/usage</code></td><td>Open the Cost Dashboard</td></tr>
     <tr><td><code>/history</code> &middot; <code>/clear</code> &middot; <code>/new</code> &middot; <code>/help</code></td><td>History, clear thread, new conversation, help</td></tr>
     <tr><td><code>/&lt;slug&gt;</code></td><td>Saved prompt templates and project skills surface as native commands</td></tr>
   </tbody>
@@ -680,11 +696,11 @@ pnpm tauri build    # production build (also fetches Node + builds the sidecar)<
   <thead><tr><th>Group</th><th>Sections</th></tr></thead>
   <tbody>
     <tr><td>General</td><td>Preferences (theme, notifications, global keyboard behavior)</td></tr>
-    <tr><td>Workspaces &amp; Terminal</td><td>Workspace defaults &middot; CLI Clients &middot; Remote Hosts (SSH) &middot; Project Rules</td></tr>
-    <tr><td>Agents &amp; Models</td><td>Agent behavior (profiles, cleanup, failover) &middot; Providers &amp; Models (keys, subscriptions, endpoints)</td></tr>
-    <tr><td>Automation</td><td>Flights &amp; Autonomy &middot; Task Role Defaults &middot; PacketAgent</td></tr>
+    <tr><td>Workspaces &amp; Terminal</td><td>Workspace defaults (including the local terminal shell) &middot; CLI Clients &middot; Remote Hosts (SSH) &middot; Project Rules</td></tr>
+    <tr><td>Agents &amp; Models</td><td>Agent behavior (profiles, cleanup, failover) &middot; Providers &amp; Models (API keys, CLI subscription logins, endpoints, provider routing)</td></tr>
+    <tr><td>Automation</td><td>Flights &amp; Autonomy (including Budget guardrails) &middot; Task Role Defaults &middot; PacketAgent</td></tr>
     <tr><td>Integrations &amp; Data</td><td>Git Hosts (GitHub / Gitea / Forgejo) &middot; MCP &middot; Issues &middot; Memory &middot; Dictation &middot; Modules</td></tr>
-    <tr><td>Security &amp; Diagnostics</td><td>Trust &amp; Diagnostics (provenance, crashes, release status, history, cost, prompts)</td></tr>
+    <tr><td>Security &amp; Diagnostics</td><td>Trust &amp; Diagnostics (provenance, crashes, release status, history, prompts)</td></tr>
   </tbody>
 </table>
 <p>Settings has full-text search, and each section carries scope badges (App / Project / Workspace / New sessions / New conversations / New Flights) telling you what a change affects.</p>
@@ -712,13 +728,13 @@ tool-output-extended · turn-summary · mcp-sources · done · error</code></pre
   <dt>OS keyring</dt><dd>Service <code>packetade</code>: provider API keys and SSH passwords (<code>ssh-&lt;serverId&gt;</code> entries). Legacy <code>packetcode</code> entries are read and migrated.</dd>
   <dt>Log directory</dt><dd><code>%APPDATA%\PacketADE</code> on Windows; <code>~/Library/Application Support/PacketADE</code> on macOS.</dd>
   <dt>localStorage</dt><dd>UI store persistence under the <code>packetade:*</code> prefix (legacy <code>packetcode:*</code> keys read only for migration).</dd>
-  <dt>~/.claude, ~/.codex</dt><dd>OAuth credentials owned by the Claude Code / Codex CLIs. PacketADE watches them but never writes them.</dd>
+  <dt>~/.claude, ~/.codex</dt><dd>Subscription credentials owned by the Claude Code / Codex CLIs, used by terminal panes only. PacketADE watches them but never writes them. API agents do not read them.</dd>
   <dt>Git-host token</dt><dd>Backend memory only — not persisted; reconnect after each app restart.</dd>
 </dl>
 
 <div class="callout callout-info">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-  <div class="callout-body"><strong>Accuracy note.</strong> This manual is written against the PacketADE v0.10.2 source. Where behavior depends on environments we can't verify from source (packaged-build specifics on every OS, remote-host edge cases), the manual says so rather than guessing. Corrections welcome via GitHub issues.</div>
+  <div class="callout-body"><strong>Accuracy note.</strong> This manual is written against the PacketADE v0.10.3 source, last reviewed 2026-08-06. Where behavior depends on environments we can't verify from source (packaged-build specifics on every OS, remote-host edge cases), the manual says so rather than guessing. Corrections welcome via GitHub issues.</div>
 </div>
 </section>
 
@@ -730,7 +746,7 @@ tool-output-extended · turn-summary · mcp-sources · done · error</code></pre
 </button>
 
 <footer class="manual-foot">
-  <span>PacketADE Manual &middot; v0.10.2 &middot; Apache 2.0</span>
+  <span>PacketADE Manual &middot; v0.10.3 &middot; Apache 2.0</span>
   <span><a href="index.html">Home</a> &middot; <a href="roadmap.html">Roadmap</a> &middot; <a href="https://github.com/packetloss404/PacketADE" target="_blank" rel="noopener">GitHub</a></span>
 </footer>
 
