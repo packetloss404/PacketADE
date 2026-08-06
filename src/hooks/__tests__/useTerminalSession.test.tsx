@@ -47,6 +47,7 @@ vi.mock("@/lib/notifications", () => ({
   notifySessionError: vi.fn(),
 }));
 
+import { listen } from "@tauri-apps/api/event";
 import {
   createPtySession,
   killPty,
@@ -55,6 +56,7 @@ import {
   writePty,
 } from "@/lib/tauri";
 
+const mockListen = vi.mocked(listen);
 const mockCreatePtySession = vi.mocked(createPtySession);
 const mockKillPty = vi.mocked(killPty);
 const mockListPtySessions = vi.mocked(listPtySessions);
@@ -292,6 +294,106 @@ describe("useTerminalSession", () => {
     expect(result.current.alive).toBe(false);
 
     unmount();
+  });
+
+  // The pane can be closed while `createPtySession` is still in flight. The
+  // unmount cleanup reads `sessionIdRef`, which is still null at that point, so
+  // without an explicit mounted check the resolved spawn leaves a live agent
+  // process with no owner — and writes the dead pane's session into layoutStore.
+  it("reaps the PTY when the pane unmounts mid-spawn", async () => {
+    let resolveSpawn: (id: string) => void = () => {};
+    mockCreatePtySession.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveSpawn = resolve;
+        }),
+    );
+
+    const { ref: xtermRef } = createTerminalRef();
+    const { ref: fitAddonRef } = createFitAddonRef();
+    const sessionIdRef = { current: null } as RefObject<string | null>;
+    const onSessionCreated = vi.fn();
+
+    const hook = renderHook(() =>
+      useTerminalSession({
+        paneId: "pane-unmount-mid-spawn",
+        cliCommand: "claude",
+        projectPath: "/project-a",
+        xtermRef,
+        fitAddonRef,
+        sessionIdRef,
+        onSessionCreated,
+      }),
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+      await Promise.resolve();
+    });
+    expect(mockCreatePtySession).toHaveBeenCalledTimes(1);
+
+    hook.unmount();
+    expect(mockKillPty).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveSpawn("sess-orphan");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockKillPty).toHaveBeenCalledWith("sess-orphan");
+    expect(sessionIdRef.current).toBeNull();
+    expect(onSessionCreated).not.toHaveBeenCalled();
+  });
+
+  it("drops both PTY listeners when the pane unmounts while they are subscribing", async () => {
+    // Typed as `(): void` so they satisfy `UnlistenFn` — a bare `vi.fn()` is a
+    // Mock, which does not match that signature under `tsc`.
+    const outputUnlisten = vi.fn(() => {});
+    const exitUnlisten = vi.fn(() => {});
+    let releaseOutputListen: () => void = () => {};
+    mockListen
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseOutputListen = () => resolve(outputUnlisten);
+          }),
+      )
+      .mockImplementationOnce(async () => exitUnlisten);
+
+    const { ref: xtermRef } = createTerminalRef();
+    const { ref: fitAddonRef } = createFitAddonRef();
+    const sessionIdRef = { current: null } as RefObject<string | null>;
+
+    const hook = renderHook(() =>
+      useTerminalSession({
+        paneId: "pane-unmount-mid-listen",
+        cliCommand: "claude",
+        projectPath: "/project-a",
+        xtermRef,
+        fitAddonRef,
+        sessionIdRef,
+      }),
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(sessionIdRef.current).toBe("sess-1");
+
+    hook.unmount();
+
+    await act(async () => {
+      releaseOutputListen();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(outputUnlisten).toHaveBeenCalledTimes(1);
+    expect(exitUnlisten).toHaveBeenCalledTimes(1);
   });
 
   it("emits session ended once when a manual kill races the PTY exit", async () => {

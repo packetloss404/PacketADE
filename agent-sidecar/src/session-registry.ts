@@ -118,8 +118,11 @@ export class SessionRegistry {
       emit({ type: "mcp_sources", sessionId: req.sessionId, ...summary });
     }
     // MCPH4: omitted legacy authority migrates to conservative read-only
-    // defaults. An explicit empty snapshot grants no MCP servers.
-    const trustedMcp = applyMcpTrustSnapshot(
+    // defaults. An explicit empty snapshot grants no MCP servers. F6: this
+    // also probes each granted server for its real tool surface, so a
+    // read-only session's allowlist reflects the servers' own readOnlyHint
+    // annotations rather than a guess made from tool names.
+    const trustedMcp = await applyMcpTrustSnapshot(
       req.mcpServers ?? {},
       req.mcpTrustSnapshot ?? undefined,
       req.projectPath,

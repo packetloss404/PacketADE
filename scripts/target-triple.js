@@ -70,9 +70,16 @@ export function detectHostTarget(platform = process.platform, arch = process.arc
  *
  * Priority (mirrors fetch-node.js's documented contract):
  *   1. CLI `--target=<triple>` anywhere in `argv`
- *   2. Env `TAURI_TARGET`
- *   3. Env `TAURI_ENV_TARGET_TRIPLE` (set by Tauri during beforeBuildCommand)
+ *   2. Env `TAURI_ENV_TARGET_TRIPLE` (injected by Tauri for beforeBuildCommand)
+ *   3. Env `TAURI_TARGET` (manual override for standalone script runs)
  *   4. Host detection (process.platform + process.arch)
+ *
+ * `TAURI_ENV_TARGET_TRIPLE` outranks `TAURI_TARGET` because it is what the
+ * build actually compiles for. When both are set and disagree this throws
+ * rather than picking one: a stale `TAURI_TARGET` export in the shell would
+ * otherwise silently redirect fetch-node, prune-sidecar, and release-gate to
+ * the same wrong triple, so every consumer would agree with itself and the
+ * gate could not detect that the bundle ships the wrong native binaries.
  *
  * Throws on an unknown/unsupported triple from any source, and when the
  * host cannot be detected as a supported triple.
@@ -83,18 +90,32 @@ export function resolveTarget({ argv = process.argv, env = process.env } = {}) {
       return assertSupported(arg.slice("--target=".length), "--target=");
     }
   }
-  if (env.TAURI_TARGET) {
-    return assertSupported(env.TAURI_TARGET, "TAURI_TARGET env");
+  const injected = env.TAURI_ENV_TARGET_TRIPLE?.trim();
+  const override = env.TAURI_TARGET?.trim();
+  if (injected && override) {
+    assertSupported(injected, "TAURI_ENV_TARGET_TRIPLE env");
+    assertSupported(override, "TAURI_TARGET env");
+    if (injected !== override) {
+      throw new Error(
+        `conflicting target triples: TAURI_ENV_TARGET_TRIPLE='${injected}' ` +
+          `(injected by Tauri) but TAURI_TARGET='${override}'. Unset the stale ` +
+          `TAURI_TARGET export, or pass --target=<triple> to state the intent ` +
+          `explicitly.`,
+      );
+    }
   }
-  if (env.TAURI_ENV_TARGET_TRIPLE) {
-    return assertSupported(env.TAURI_ENV_TARGET_TRIPLE, "TAURI_ENV_TARGET_TRIPLE env");
+  if (injected) {
+    return assertSupported(injected, "TAURI_ENV_TARGET_TRIPLE env");
+  }
+  if (override) {
+    return assertSupported(override, "TAURI_TARGET env");
   }
   const host = detectHostTarget();
   if (!host) {
     throw new Error(
       `could not auto-detect a supported target for ` +
         `platform=${process.platform} arch=${process.arch}. ` +
-        `Pass --target=<triple>, set TAURI_TARGET, or set TAURI_ENV_TARGET_TRIPLE. ` +
+        `Pass --target=<triple> or set TAURI_TARGET. ` +
         `Supported targets: ${SUPPORTED_TRIPLES.join(", ")}`,
     );
   }

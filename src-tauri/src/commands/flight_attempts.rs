@@ -963,6 +963,47 @@ async fn cleanup_attempt_worktree(
     cleanup_attempt_worktree_with(attempt_id, target, ssh).await
 }
 
+/// Best-effort worktree sweep for the attempts that
+/// `core::orchestrator::recover_flights_on_startup` demoted to `Failed`
+/// because a restart interrupted them.
+///
+/// Startup recovery is synchronous and runs before the Tauri runtime, so it
+/// can only fix the persisted status; the worktree it leaves behind (plus its
+/// `pkt/*` branch) needs an async pass. Failures are logged and swallowed —
+/// the user can still remove a stale worktree by hand, and a git error here
+/// must not take the app down on launch.
+pub async fn sweep_interrupted_attempts(
+    interrupted: Vec<crate::core::orchestrator::InterruptedAttempt>,
+) {
+    if interrupted.is_empty() {
+        return;
+    }
+    info!(
+        count = interrupted.len(),
+        "Sweeping worktrees for attempts interrupted by a previous run"
+    );
+    for entry in interrupted {
+        let outcome = cleanup_attempt_worktree(&entry.attempt_id, &entry.target).await;
+        if outcome.removed {
+            info!(
+                flight = %entry.flight_id,
+                attempt = %entry.attempt_id,
+                path = %outcome.worktree_path,
+                "Removed the worktree of an interrupted attempt"
+            );
+        } else {
+            warn!(
+                flight = %entry.flight_id,
+                attempt = %entry.attempt_id,
+                path = %outcome.worktree_path,
+                deferred = outcome.deferred,
+                error = outcome.error.as_deref().unwrap_or(""),
+                "Could not remove the worktree of an interrupted attempt"
+            );
+        }
+    }
+}
+
 /// Cancel an attempt: close its session, mark it cancelled, remove its
 /// worktree.
 ///
@@ -1128,6 +1169,48 @@ pub async fn set_flight_publish_attempts_as_prs(
                 .find(|f| f.id == flight_id)
                 .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
             flight.publish_attempts_as_prs = enabled;
+            flight.updated_at = now_ms();
+            Ok(())
+        })();
+        std::future::ready(result)
+    })
+    .await
+}
+
+/// Persist an attempt's Reviewer Gate record.
+///
+/// The gate is **backend-owned**, like every other attempt lifecycle field.
+/// `merge_attempts_for_frontend_save` keeps the backend's copy of an attempt
+/// that already exists and takes only independently-derived counters from a
+/// whole-slice frontend save, so a `review_gate` authored by the frontend
+/// store was discarded on the very next save. `update_attempt_status` then
+/// read a field it could never receive and refused every gated acceptance
+/// with "Reviewer Gate has not produced a verdict". The reviewer runtime
+/// therefore writes through here, under `with_state_lock`, and the merge
+/// preserves what this command wrote.
+///
+/// `review_gate: None` clears the record (used when a retry restarts the
+/// reviewer from scratch).
+#[tauri::command]
+pub async fn set_attempt_review_gate(
+    flight_id: String,
+    attempt_id: String,
+    review_gate: Option<crate::api::AttemptReviewGateDto>,
+) -> Result<(), String> {
+    let gate = review_gate.map(Into::into);
+    storage::with_state_lock(move |state| {
+        let result: Result<(), String> = (|| {
+            let flight = state
+                .flights
+                .iter_mut()
+                .find(|f| f.id == flight_id)
+                .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
+            let attempt = flight
+                .attempts
+                .iter_mut()
+                .find(|a| a.id == attempt_id)
+                .ok_or_else(|| format!("Attempt '{}' not found", attempt_id))?;
+            attempt.review_gate = gate;
             flight.updated_at = now_ms();
             Ok(())
         })();
@@ -1595,5 +1678,219 @@ mod tests {
         assert_eq!(attempt.status, AttemptStatus::Failed);
         assert!(attempt.completed_at.is_some());
         assert_eq!(attempt.error_message.as_deref(), Some("provider failed"));
+    }
+
+    // --- F1: Reviewer Gate acceptance, end to end through real storage -----
+
+    fn unique_temp_dir(tag: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!("packetade-gate-{}-{}", tag, nanos));
+        std::fs::create_dir_all(&dir).expect("create unique temp dir");
+        dir
+    }
+
+    fn gated_flight() -> Flight {
+        let mut flight = flight_with_attempt(local_attempt(
+            "attempt-1",
+            "D:\\Repo",
+            AttemptStatus::Reviewing,
+        ));
+        flight.review_gate_policy = Some(crate::core::flight::ReviewGatePolicy {
+            enabled: true,
+            reviewer_agent_config_id: "api-claude".to_string(),
+            reviewer_model: None,
+            acceptance_criteria: Vec::new(),
+        });
+        flight
+    }
+
+    fn gate_dto(status: crate::api::ReviewGateStatusDto) -> crate::api::AttemptReviewGateDto {
+        crate::api::AttemptReviewGateDto {
+            status,
+            reviewer_conversation_id: Some("review-1".to_string()),
+            reviewer_agent_config_id: Some("api-claude".to_string()),
+            reviewer_model: None,
+            report: None,
+            error_message: None,
+            started_at: Some(1),
+            completed_at: Some(2),
+            overridden_at: None,
+            override_reason: None,
+        }
+    }
+
+    fn stored_attempt(flight_id: &str, attempt_id: &str) -> Attempt {
+        storage::load_state()
+            .flights
+            .into_iter()
+            .find(|f| f.id == flight_id)
+            .expect("flight present")
+            .attempts
+            .into_iter()
+            .find(|a| a.id == attempt_id)
+            .expect("attempt present")
+    }
+
+    /// The gap that hid F1: nothing covered gated acceptance. With the gate
+    /// enabled, acceptance is blocked until a verdict exists, blocked again
+    /// when that verdict is not a pass, and only then allowed — and the
+    /// verdict has to survive the frontend's whole-slice flight save that
+    /// runs constantly in between.
+    #[tokio::test]
+    async fn gated_acceptance_blocks_until_a_verdict_is_persisted() {
+        let dir = unique_temp_dir("accept");
+        let _guard = storage::redirect_data_dir_for_test(dir.clone());
+        storage::save_flights(vec![gated_flight()])
+            .await
+            .expect("seed gated flight");
+
+        // 1. No verdict yet — acceptance is refused.
+        let err = update_attempt_status("flight-1", "attempt-1", AttemptStatus::Completed, None)
+            .await
+            .expect_err("acceptance must be blocked without a verdict");
+        assert!(err.contains("has not produced a verdict"), "{err}");
+
+        // 2. A non-passing verdict is still refused.
+        set_attempt_review_gate(
+            "flight-1".to_string(),
+            "attempt-1".to_string(),
+            Some(gate_dto(crate::api::ReviewGateStatusDto::ChangesRequested)),
+        )
+        .await
+        .expect("gate write should succeed");
+        let err = update_attempt_status("flight-1", "attempt-1", AttemptStatus::Completed, None)
+            .await
+            .expect_err("changes_requested must not unblock acceptance");
+        assert!(
+            err.contains("must pass or have a recorded override"),
+            "{err}"
+        );
+
+        // 3. A passing verdict persists across the frontend's flight save…
+        set_attempt_review_gate(
+            "flight-1".to_string(),
+            "attempt-1".to_string(),
+            Some(gate_dto(crate::api::ReviewGateStatusDto::Passed)),
+        )
+        .await
+        .expect("gate write should succeed");
+        let mut frontend_snapshot = gated_flight();
+        frontend_snapshot.attempts[0].review_gate = None;
+        storage::save_flights(vec![frontend_snapshot])
+            .await
+            .expect("frontend whole-slice save");
+        assert!(
+            stored_attempt("flight-1", "attempt-1")
+                .review_gate
+                .is_some(),
+            "the persisted verdict must survive a frontend flight save"
+        );
+
+        // 4. …and acceptance now goes through.
+        update_attempt_status("flight-1", "attempt-1", AttemptStatus::Completed, None)
+            .await
+            .expect("a passing gate must allow acceptance");
+        assert_eq!(
+            stored_attempt("flight-1", "attempt-1").status,
+            AttemptStatus::Completed
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An override is only an override when the user actually recorded a
+    /// reason for it — a bare `overridden` status must not unblock acceptance.
+    #[tokio::test]
+    async fn gated_acceptance_requires_a_reason_on_an_override() {
+        let dir = unique_temp_dir("override");
+        let _guard = storage::redirect_data_dir_for_test(dir.clone());
+        storage::save_flights(vec![gated_flight()])
+            .await
+            .expect("seed gated flight");
+
+        let mut bare = gate_dto(crate::api::ReviewGateStatusDto::Overridden);
+        bare.overridden_at = None;
+        bare.override_reason = None;
+        set_attempt_review_gate("flight-1".to_string(), "attempt-1".to_string(), Some(bare))
+            .await
+            .expect("gate write should succeed");
+        let err = update_attempt_status("flight-1", "attempt-1", AttemptStatus::Completed, None)
+            .await
+            .expect_err("an unreasoned override must not unblock acceptance");
+        assert!(
+            err.contains("must pass or have a recorded override"),
+            "{err}"
+        );
+
+        let mut recorded = gate_dto(crate::api::ReviewGateStatusDto::Overridden);
+        recorded.overridden_at = Some(9);
+        recorded.override_reason = Some("Reviewer stalled; risk accepted.".to_string());
+        set_attempt_review_gate(
+            "flight-1".to_string(),
+            "attempt-1".to_string(),
+            Some(recorded),
+        )
+        .await
+        .expect("gate write should succeed");
+        update_attempt_status("flight-1", "attempt-1", AttemptStatus::Completed, None)
+            .await
+            .expect("a reasoned override must allow acceptance");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Clearing the record (what a reviewer retry does) puts the attempt back
+    /// behind the gate rather than leaving a stale pass in place.
+    #[tokio::test]
+    async fn clearing_the_review_gate_reblocks_acceptance() {
+        let dir = unique_temp_dir("clear");
+        let _guard = storage::redirect_data_dir_for_test(dir.clone());
+        storage::save_flights(vec![gated_flight()])
+            .await
+            .expect("seed gated flight");
+
+        set_attempt_review_gate(
+            "flight-1".to_string(),
+            "attempt-1".to_string(),
+            Some(gate_dto(crate::api::ReviewGateStatusDto::Passed)),
+        )
+        .await
+        .expect("gate write should succeed");
+        set_attempt_review_gate("flight-1".to_string(), "attempt-1".to_string(), None)
+            .await
+            .expect("clearing the gate should succeed");
+
+        assert!(stored_attempt("flight-1", "attempt-1")
+            .review_gate
+            .is_none());
+        let err = update_attempt_status("flight-1", "attempt-1", AttemptStatus::Completed, None)
+            .await
+            .expect_err("a cleared gate must re-block acceptance");
+        assert!(err.contains("has not produced a verdict"), "{err}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn set_attempt_review_gate_rejects_unknown_ids() {
+        let dir = unique_temp_dir("unknown");
+        let _guard = storage::redirect_data_dir_for_test(dir.clone());
+        storage::save_flights(vec![gated_flight()])
+            .await
+            .expect("seed gated flight");
+
+        let err = set_attempt_review_gate(
+            "flight-1".to_string(),
+            "attempt-missing".to_string(),
+            Some(gate_dto(crate::api::ReviewGateStatusDto::Passed)),
+        )
+        .await
+        .expect_err("an unknown attempt id must be reported");
+        assert!(err.contains("attempt-missing"), "{err}");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

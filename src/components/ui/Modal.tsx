@@ -1,6 +1,23 @@
 import { X } from "lucide-react";
-import { useEffect } from "react";
-import type { ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useRef } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import { isTopModal, registerModal, unregisterModal } from "@/lib/modalStack";
+
+/** Nesting depth of the enclosing Modal. A dialog rendered inside another
+ *  dialog's children outranks it on the modal stack — see `lib/modalStack`. */
+const ModalDepthContext = createContext(0);
+
+/** Deliberately no visibility filtering: jsdom reports every element as
+ *  unrendered, and a trap that silently finds nothing is worse than one that
+ *  occasionally cycles through an off-screen control. */
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
 
 interface ModalProps {
   onClose: () => void;
@@ -43,6 +60,21 @@ export function Modal({
   closeDisabled = false,
   closeOnEscape = true,
 }: ModalProps) {
+  const parentDepth = useContext(ModalDepthContext);
+  const depth = parentDepth + 1;
+  const id = useId();
+  const titleId = `${id}-title`;
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Join the modal stack for the whole mounted lifetime, regardless of
+  // `closeOnEscape` / `closeDisabled`: a dialog that declines Escape still owns
+  // it while it is on top, and must not let the dialog underneath act instead.
+  // Declared first so it lands before the Escape listener below.
+  useEffect(() => {
+    registerModal(id, depth);
+    return () => unregisterModal(id);
+  }, [id, depth]);
+
   // Escape-to-close. Skipped when an unbreakable op is in flight or when the
   // caller opts out. Listens on the window so it works regardless of focus
   // target inside the modal — including text inputs, which is what users
@@ -58,47 +90,109 @@ export function Modal({
       // field editor, the command palette, a live dictation capture — marks
       // it handled. One Escape must only unwind one layer.
       if (e.defaultPrevented) return;
+      // Nested dialogs: only the top-most one unwinds.
+      if (!isTopModal(id)) return;
       e.preventDefault();
       e.stopPropagation();
       onClose();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [closeOnEscape, closeDisabled, onClose]);
+  }, [closeOnEscape, closeDisabled, onClose, id]);
+
+  // Move focus into the dialog on open and hand it back to whatever had it on
+  // close. Passive effect (not layout) so a consumer's `autoFocus` has already
+  // landed by the time this runs and we can leave it alone.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    if (!container.contains(document.activeElement)) {
+      const first = container.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+      (first ?? container).focus();
+    }
+    return () => {
+      if (
+        previouslyFocused &&
+        previouslyFocused !== document.body &&
+        document.contains(previouslyFocused)
+      ) {
+        previouslyFocused.focus();
+      }
+    };
+  }, []);
+
+  // Tab trap. Bound to the container rather than the window so a nested dialog
+  // handles its own Tab first; the outer instance sees the bubbled event but
+  // yields because it is no longer top-most.
+  const handleContainerKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Tab") return;
+    if (!isTopModal(id)) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const focusable = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+    if (focusable.length === 0) {
+      e.preventDefault();
+      container.focus();
+      return;
+    }
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+    const outside = !active || active === container || !container.contains(active);
+
+    if (e.shiftKey) {
+      if (outside || active === first) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else if (outside || active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
 
   const containerClasses = fullscreen
     ? "bg-bg-secondary border border-bg-border rounded-lg w-[96vw] h-[94vh] overflow-hidden flex flex-col"
     : `bg-bg-secondary border border-bg-border rounded-lg ${width} max-h-[85vh] overflow-hidden flex flex-col`;
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className={containerClasses}>
-        <div className="flex items-center justify-between px-5 py-3 border-b border-bg-border">
-          <div className="flex items-center gap-2 min-w-0">
-            {icon}
-            <h2 className="text-sm font-semibold text-text-primary truncate">{title}</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div
+        ref={containerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        onKeyDown={handleContainerKeyDown}
+        className={`${containerClasses} focus:outline-none`}
+      >
+        <ModalDepthContext.Provider value={depth}>
+          <div className="flex items-center justify-between border-b border-bg-border px-5 py-3">
+            <div className="flex min-w-0 items-center gap-2">
+              {icon}
+              <h2 id={titleId} className="truncate text-sm font-semibold text-text-primary">
+                {title}
+              </h2>
+            </div>
+            <div className="flex flex-shrink-0 items-center gap-1">
+              {headerExtra}
+              <button
+                onClick={onClose}
+                disabled={closeDisabled}
+                aria-label="Close"
+                title={closeDisabled ? "Cannot close while busy" : "Close (Esc)"}
+                className={`p-1 transition-colors ${closeDisabled ? "cursor-not-allowed text-text-faint opacity-40" : "text-text-muted hover:text-text-primary"}`}
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-1 flex-shrink-0">
-            {headerExtra}
-            <button
-              onClick={onClose}
-              disabled={closeDisabled}
-              aria-label="Close"
-              title={closeDisabled ? "Cannot close while busy" : "Close (Esc)"}
-              className={`p-1 transition-colors ${closeDisabled ? "text-text-faint cursor-not-allowed opacity-40" : "text-text-muted hover:text-text-primary"}`}
-            >
-              <X size={16} />
-            </button>
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          {children}
-        </div>
-        {footer && (
-          <div className="px-5 py-3 border-t border-bg-border">
-            {footer}
-          </div>
-        )}
+          <div className="flex-1 overflow-y-auto">{children}</div>
+          {footer && <div className="border-t border-bg-border px-5 py-3">{footer}</div>}
+        </ModalDepthContext.Provider>
       </div>
     </div>
   );

@@ -292,13 +292,7 @@ pub fn resolve_aux_route(
         .iter()
         .enumerate()
         .filter(|(_, c)| c.needs_api_key && configured.iter().any(|k| k == c.provider))
-        .map(|(index, c)| {
-            (
-                aux_rank_cost(c.default_model).unwrap_or(f64::MAX),
-                index,
-                c,
-            )
-        })
+        .map(|(index, c)| (aux_rank_cost(c.default_model).unwrap_or(f64::MAX), index, c))
         .collect();
 
     ranked.sort_by(|a, b| {
@@ -678,9 +672,12 @@ mod tests {
         // anthropic is declared first, openai second — but claude-haiku-4-5
         // (1.00 / 5.00) beats o4-mini (1.10 / 4.40) on the representative
         // workload, and o4-mini wins nothing by being declared later.
-        let anthropic_only =
-            resolve_aux_route(AuxTaskClass::SpecImport, &AuxOverrides::new(), &configured(&["openai"]))
-                .expect("a route");
+        let anthropic_only = resolve_aux_route(
+            AuxTaskClass::SpecImport,
+            &AuxOverrides::new(),
+            &configured(&["openai"]),
+        )
+        .expect("a route");
         assert_eq!(anthropic_only.provider, "openai");
 
         let both = resolve_aux_route(
@@ -730,7 +727,9 @@ mod tests {
             // it names one only to say it is not used.
             assert!(!err.contains("claude-oauth"), "{}", err);
             assert!(
-                err.contains("does not route these features through a Claude or ChatGPT subscription login"),
+                err.contains(
+                    "does not route these features through a Claude or ChatGPT subscription login"
+                ),
                 "{}",
                 err
             );
@@ -778,9 +777,12 @@ mod tests {
                 model: None,
             },
         );
-        let route =
-            resolve_aux_route(AuxTaskClass::SpecImport, &overrides, &configured(&["openai"]))
-                .expect("a route");
+        let route = resolve_aux_route(
+            AuxTaskClass::SpecImport,
+            &overrides,
+            &configured(&["openai"]),
+        )
+        .expect("a route");
         assert_eq!(route.model, "o4-mini");
     }
 
@@ -837,8 +839,8 @@ mod tests {
                 model: Some("qwen3:32b".to_string()),
             },
         );
-        let route =
-            resolve_aux_route(AuxTaskClass::CodeQualitySummarize, &overrides, &[]).expect("a route");
+        let route = resolve_aux_route(AuxTaskClass::CodeQualitySummarize, &overrides, &[])
+            .expect("a route");
         assert_eq!(route.provider, "ollama");
     }
 
@@ -852,8 +854,12 @@ mod tests {
                 model: Some("".to_string()),
             },
         );
-        let route = resolve_aux_route(AuxTaskClass::PrReview, &overrides, &configured(&["anthropic"]))
-            .expect("a route");
+        let route = resolve_aux_route(
+            AuxTaskClass::PrReview,
+            &overrides,
+            &configured(&["anthropic"]),
+        )
+        .expect("a route");
         assert_eq!(route.provider, "anthropic");
         assert!(!route.explicit);
     }

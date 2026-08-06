@@ -11,7 +11,8 @@ Use these documents in order:
 2. [`../backlog.md`](../backlog.md) - only live item-level task register
 3. [`../ROADMAP.md`](../ROADMAP.md) - product direction and ordering
 4. [`../docs/reports/state-of-the-ade-2026-07-30.md`](../docs/reports/state-of-the-ade-2026-07-30.md), Section 0 - current consolidated audit state
-5. A plan below only when executing its linked backlog item
+5. [`../docs/reports/fable5-review-2026-08-05.md`](../docs/reports/fable5-review-2026-08-05.md) - the 2026-08-05 seven-team deep review, its twelve P1 findings, and the v1.0.0 scope and plan
+6. A plan below only when executing its linked backlog item
 
 Do not treat status tokens inside dated audits or files under `archive/` as live
 work. Completed work belongs in `CHANGELOG.md`.
@@ -25,6 +26,7 @@ work. Completed work belongs in `CHANGELOG.md`.
 | [`local-quality-gates.md`](./local-quality-gates.md)                         | Current local gate commands and release-check composition                                                                                                                                 |
 | [`beta-distribution-trust-runbook.md`](./beta-distribution-trust-runbook.md) | Signing/updater/release-candidate runbook                                                                                                                                                 |
 | [`multi-platform-build.md`](./multi-platform-build.md)                       | Windows/macOS/Linux prerequisites and build flow                                                                                                                                          |
+| [`macos-release-plan.md`](./macos-release-plan.md)                           | **ACTIVE PLAN** - owns macOS code signing, notarization, entitlements, the arm64 bundle decision, and the macOS acceptance matrix; macOS targets v1.1                                     |
 | [`updater-setup.md`](./updater-setup.md)                                     | Tauri updater runbook; updater is not enabled                                                                                                                                             |
 | [`release-v0.10.2.md`](./release-v0.10.2.md)                                 | Historical immutable release record                                                                                                                                                       |
 
@@ -86,7 +88,10 @@ file: [`bridgemind/flight-supervision-proof-2026-07-28.md`](./bridgemind/flight-
 - Shipped zen-workspace feature/history notes now live in
   [`archive/zen-workspace/`](./archive/zen-workspace/).
 - [`spike-macos-keychain-namespacing.md`](./spike-macos-keychain-namespacing.md)
-  remains an environment-gated Mac research task.
+  states why Claude Code's macOS Keychain namespacing matters and what we do
+  with each outcome. It is no longer environment-gated: the runnable procedure
+  and pass/fail criteria are §6 of
+  [`macos-release-plan.md`](./macos-release-plan.md).
 
 ## Archive
 

@@ -169,10 +169,7 @@ function wildcardToRegExp(pattern: string): RegExp {
   return new RegExp(`^${escaped.replace(/\*/g, ".*").replace(/\?/g, ".")}$`);
 }
 
-function buildUserInput(
-  text: string,
-  attachments?: ImageAttachment[],
-): string | AgentInputItem[] {
+function buildUserInput(text: string, attachments?: ImageAttachment[]): string | AgentInputItem[] {
   if (!attachments || attachments.length === 0) return text;
   return [
     {
@@ -214,6 +211,44 @@ function resumeMessagesToAgentItems(messages: ResumeMessage[] | undefined): Agen
     });
 }
 
+/**
+ * `MCPServerStdio` that re-runs the trust decision at invocation time.
+ *
+ * The SDK's `toolFilter` hook runs once, while LISTING tools, and is handed no
+ * arguments — so the snapshot's `outside_workspace` floor (which is entirely a
+ * statement about argument values) could never fire for this provider. The
+ * Anthropic provider gets this right because its `PreToolUse` hook sees the
+ * live input; this override gives the OpenAI path the same check.
+ *
+ * A denial is returned as tool-visible text rather than thrown, so the model
+ * reads why it was refused and can pick a different approach instead of the
+ * run collapsing into an opaque tool error.
+ */
+export class TrustEnforcingMcpServerStdio extends MCPServerStdio {
+  constructor(
+    private readonly serverName: string,
+    private readonly snapshots: StartSessionRequest["mcpTrustSnapshot"],
+    options: ConstructorParameters<typeof MCPServerStdio>[0],
+  ) {
+    super(options);
+  }
+
+  override async callTool(
+    toolName: string,
+    args: Record<string, unknown> | null,
+    meta?: Record<string, unknown> | null,
+  ) {
+    const denial = mcpToolDenial(this.serverName, toolName, args ?? {}, this.snapshots);
+    if (denial) {
+      logStderr(`MCP call denied: ${this.serverName}/${toolName} — ${denial}`);
+      return [{ type: "text" as const, text: denial }];
+    }
+    return meta === undefined
+      ? await super.callTool(toolName, args)
+      : await super.callTool(toolName, args, meta);
+  }
+}
+
 export class OpenAIAgentsProvider implements ProviderHandler {
   private sessionId = "";
   private projectPath = "";
@@ -228,10 +263,7 @@ export class OpenAIAgentsProvider implements ProviderHandler {
   private queue: QueuedTurn[] = [];
   private running = false;
   private interruptedState: RunState<unknown, Agent> | null = null;
-  private pendingApprovals = new Map<
-    string,
-    { item: RunToolApprovalItem; name: string }
-  >();
+  private pendingApprovals = new Map<string, { item: RunToolApprovalItem; name: string }>();
   private pendingEdits = new Map<string, PendingEdit>();
   private autoAllowedTools = new Set<string>();
   private emittedToolStarts = new Set<string>();
@@ -269,20 +301,13 @@ export class OpenAIAgentsProvider implements ProviderHandler {
     setDefaultOpenAIKey(req.apiKey);
     setTracingDisabled(true);
 
-    this.mcpServers = this.buildMcpServers(
-      req.mcpServers ?? {},
-      req.mcpTrustSnapshot,
-    );
+    this.mcpServers = this.buildMcpServers(req.mcpServers ?? {}, req.mcpTrustSnapshot);
     this.session = new MemorySession({
       sessionId: req.sessionId,
       initialItems: resumeMessagesToAgentItems(req.resumeMessages),
     });
     this.agent = this.buildAgent();
-    this.enqueue(
-      buildUserInput(req.initialMessage, req.attachments),
-      req.initialMessage,
-      emit,
-    );
+    this.enqueue(buildUserInput(req.initialMessage, req.attachments), req.initialMessage, emit);
   }
 
   async sendMessage(req: SendMessageRequest, emit: Emit): Promise<void> {
@@ -312,8 +337,7 @@ export class OpenAIAgentsProvider implements ProviderHandler {
     } else {
       // Deny-and-continue: fold the user's steering text (when given) into
       // the rejection message so the model is redirected, not just refused.
-      const reason =
-        typeof req.reason === "string" ? req.reason.trim() : "";
+      const reason = typeof req.reason === "string" ? req.reason.trim() : "";
       this.interruptedState.reject(pending.item, {
         message:
           reason.length > 0
@@ -344,10 +368,7 @@ export class OpenAIAgentsProvider implements ProviderHandler {
     });
   }
 
-  async cancelPendingTools(
-    _req: CancelPendingToolsRequest,
-    emit: Emit,
-  ): Promise<void> {
+  async cancelPendingTools(_req: CancelPendingToolsRequest, emit: Emit): Promise<void> {
     this.emitCurrent = emit;
     for (const [id, pending] of this.pendingEdits.entries()) {
       clearTimeout(pending.timer);
@@ -390,10 +411,7 @@ export class OpenAIAgentsProvider implements ProviderHandler {
     }
   }
 
-  async setPermissionMode(
-    req: SetPermissionModeRequest,
-    _emit: Emit,
-  ): Promise<void> {
+  async setPermissionMode(req: SetPermissionModeRequest, _emit: Emit): Promise<void> {
     switch (req.mode) {
       case "plan":
         this.planMode = true;
@@ -464,26 +482,17 @@ export class OpenAIAgentsProvider implements ProviderHandler {
           "Read the contents of a file. Returns the file text. Use this to understand existing code before making changes.",
         parameters: ReadFileParams,
         execute: async (input, _context, details) =>
-          this.executeWithEvents(
-            "read_file",
-            input,
-            details,
-            () => this.readFile(input),
-          ),
+          this.executeWithEvents("read_file", input, details, () => this.readFile(input)),
       }),
       write_file: tool({
         name: "write_file",
         description:
           "Write content to a file. Creates the file if it doesn't exist, or overwrites it. Creates parent directories as needed.",
         parameters: WriteFileParams,
-        needsApproval: async (_context, input) =>
-          this.needsPermission("write_file", input),
+        needsApproval: async (_context, input) => this.needsPermission("write_file", input),
         execute: async (input, _context, details) =>
-          this.executeWithEvents(
-            "write_file",
-            input,
-            details,
-            () => this.writeFile(input, toolCallId(details, "write_file")),
+          this.executeWithEvents("write_file", input, details, () =>
+            this.writeFile(input, toolCallId(details, "write_file")),
           ),
       }),
       list_directory: tool({
@@ -492,12 +501,7 @@ export class OpenAIAgentsProvider implements ProviderHandler {
           "List files and directories in a given path. Returns names with [DIR] prefix for directories.",
         parameters: ListDirectoryParams,
         execute: async (input, _context, details) =>
-          this.executeWithEvents(
-            "list_directory",
-            input,
-            details,
-            () => this.listDirectory(input),
-          ),
+          this.executeWithEvents("list_directory", input, details, () => this.listDirectory(input)),
       }),
       bash: tool({
         name: "bash",
@@ -547,13 +551,16 @@ export class OpenAIAgentsProvider implements ProviderHandler {
           )
         : undefined;
       servers.push(
-        new MCPServerStdio({
+        new TrustEnforcingMcpServerStdio(name, snapshots, {
           name,
           command: value.command,
           args,
           env,
           cwd: this.projectPath,
           cacheToolsList: true,
+          // Listing-time filter. It sees no arguments, so it can only apply
+          // the name-based half of the trust decision; the path floor is
+          // re-evaluated per invocation in `callTool` below.
           toolFilter: async (_context, tool) =>
             mcpToolDenial(name, tool.name, {}, snapshots) === null,
         }),
@@ -562,11 +569,7 @@ export class OpenAIAgentsProvider implements ProviderHandler {
     return servers;
   }
 
-  private enqueue(
-    input: string | AgentInputItem[],
-    userText: string,
-    emit: Emit,
-  ): void {
+  private enqueue(input: string | AgentInputItem[], userText: string, emit: Emit): void {
     this.emitCurrent = emit;
     const turn = { input, userText };
     this.queue.push(turn);
@@ -611,7 +614,7 @@ export class OpenAIAgentsProvider implements ProviderHandler {
         stream: true,
         signal: this.abort.signal,
         maxTurns: 25,
-        session: fromInterruptedState ? undefined : this.session ?? undefined,
+        session: fromInterruptedState ? undefined : (this.session ?? undefined),
       });
 
       for await (const event of result) {
@@ -661,10 +664,7 @@ export class OpenAIAgentsProvider implements ProviderHandler {
     if (data.type === "response_done" && isRecord(data.response)) {
       this.recordUsage(data.response.usage);
     }
-    if (
-      data.type === "reasoning_text_delta" &&
-      typeof data.delta === "string"
-    ) {
+    if (data.type === "reasoning_text_delta" && typeof data.delta === "string") {
       this.emitCurrent?.({
         type: "thinking",
         sessionId: this.sessionId,
@@ -800,19 +800,12 @@ export class OpenAIAgentsProvider implements ProviderHandler {
     if (name === "write_file" && this.approveWrites) return false;
     // 'auto' (the default mode) now gates risky tools the same as
     // 'ask_for_risky': pause for an explicit approval before running.
-    return (
-      this.permissionMode === "ask_for_risky" || this.permissionMode === "auto"
-    );
+    return this.permissionMode === "ask_for_risky" || this.permissionMode === "auto";
   }
 
-  private async resolveInsideProject(
-    requestedPath: string,
-    mustExist: boolean,
-  ): Promise<string> {
+  private async resolveInsideProject(requestedPath: string, mustExist: boolean): Promise<string> {
     const candidate = path.resolve(
-      path.isAbsolute(requestedPath)
-        ? requestedPath
-        : path.join(this.projectPath, requestedPath),
+      path.isAbsolute(requestedPath) ? requestedPath : path.join(this.projectPath, requestedPath),
     );
 
     if (mustExist || (await exists(candidate))) {
@@ -850,9 +843,7 @@ export class OpenAIAgentsProvider implements ProviderHandler {
     const stat = await fsPromises.stat(filePath);
     if (!stat.isFile()) throw new Error(`'${input.path}' is not a file`);
     if (stat.size > MAX_FILE_SIZE) {
-      throw new Error(
-        `File too large (${stat.size} bytes, limit ${MAX_FILE_SIZE} bytes)`,
-      );
+      throw new Error(`File too large (${stat.size} bytes, limit ${MAX_FILE_SIZE} bytes)`);
     }
     return fsPromises.readFile(filePath, "utf8");
   }

@@ -9,6 +9,7 @@ import {
   getGitStatus,
   getGitStatusRemote,
   markAttemptStatus,
+  mergeConversationBranch,
   setAttemptDraftPr,
   summarizeFlight,
   gitPushRemote,
@@ -223,6 +224,23 @@ interface AsyncFlightStore {
    * via `launchAsync`. The failed record is kept for history.
    */
   reassignAttempt: (flightId: string, attemptId: string, newAgentConfigId: string) => Promise<void>;
+
+  /**
+   * F2: land an accepted attempt's branch into the base checkout by
+   * squash-merging it, reusing the same `merge_conversation_branch` command the
+   * Agents worktree bar uses. Safe to run after acceptance: the accept path
+   * removes the worktree but keeps `pkt/<attemptId>`, and the Rust side treats
+   * an absent worktree as clean. Rejects the merge when the base checkout is
+   * dirty or the merge conflicts, leaving both trees untouched.
+   */
+  landAttempt: (flightId: string, attemptId: string) => Promise<AttemptLandResult>;
+
+  /**
+   * F2: open a draft PR for an attempt's branch on demand, rather than only via
+   * the pre-launch "publish attempts as draft PRs" checkbox. Same pipeline the
+   * automatic publish uses, so the PR number lands on `Attempt.draftPrNumber`.
+   */
+  publishAttemptPr: (flightId: string, attemptId: string) => Promise<void>;
 
   retryReviewGate: (flightId: string, attemptId: string) => Promise<void>;
   overrideReviewGate: (flightId: string, attemptId: string, reason: string) => Promise<void>;
@@ -461,6 +479,19 @@ async function integrateCooperativeAttempt(flight: Flight, attempt: Attempt): Pr
 }
 
 /**
+ * Where to run the branch push from. A terminal attempt has already had its
+ * worktree force-removed by `mark_attempt_status`, but the `pkt/<attemptId>`
+ * branch survives in the base repo (Rust passes `delete_branch: false`), so a
+ * post-hoc publish pushes from the base checkout instead. Non-terminal
+ * attempts keep pushing from the worktree exactly as before.
+ */
+export function attemptPushPath(attempt: Attempt): string {
+  return TERMINAL_ATTEMPT_STATUSES.has(attempt.status)
+    ? attempt.target.basePath
+    : attempt.target.worktreePath;
+}
+
+/**
  * v0.8-G: post-attempt publish pipeline. Called only for attempts on
  * Flights with `publishAttemptsAsPrs == true` that finish in a clean
  * state. Pushes the attempt's worktree branch to `origin`, opens a
@@ -496,7 +527,7 @@ async function publishAttemptAsDraftPr(flight: Flight, attempt: Attempt): Promis
   // different repo/host than `selectedRepo`, the push lands on one repo and the
   // PR create runs against another (surfaced as a push/create-stage error, not
   // silent). Cross-repo publish is out of scope for GP5.
-  const worktreePath = attempt.target.worktreePath;
+  const worktreePath = attemptPushPath(attempt);
   let remotePush: (() => Promise<void>) | undefined;
   if (attempt.target.kind === "ssh") {
     const server = useServerStore.getState().getServer(attempt.target.serverId);
@@ -997,7 +1028,9 @@ async function cleanupSshAttemptWorktree(
 /** Probe one attempt's worktree for uncommitted work. Never throws: an
  *  unreadable tree reports `unknown`, which the confirm words as "could not be
  *  checked" rather than pretending it was clean. */
-async function inspectAttemptWorktree(attempt: Attempt): Promise<AttemptWorktreeCleanliness> {
+export async function inspectAttemptWorktree(
+  attempt: Attempt,
+): Promise<AttemptWorktreeCleanliness> {
   try {
     if (attempt.target.kind === "local") {
       const status = await getGitStatus(attempt.target.worktreePath);
@@ -1130,6 +1163,86 @@ export function describeFlightDeleteImpact(impact: FlightDeleteImpact | null): s
     );
   }
   return [...lines, ...describeIntegrationImpact(impact)];
+}
+
+/** Which way the user is settling an attempt from the tile. */
+export type AttemptDecision = "accept" | "reject";
+
+/**
+ * F2: what Accept / Reject actually destroy. Both transitions are terminal, and
+ * both reach `git worktree remove --force` in `mark_attempt_status` — so both
+ * are owed the same up-front accounting the Flight delete confirm already gives.
+ *
+ * Pure, so the wording is testable without a git repo. `cleanliness === null`
+ * means the dirty probe is still running and says so rather than rendering a
+ * reassuring empty callout.
+ */
+export function describeAttemptDecisionImpact(
+  decision: AttemptDecision,
+  attempt: Attempt,
+  cleanliness: AttemptWorktreeCleanliness | null,
+  flight?: Flight,
+): string[] {
+  if (cleanliness === null) return ["Checking this attempt's worktree for uncommitted work…"];
+
+  const lines: string[] = [];
+  if (decision === "accept") {
+    lines.push("The attempt is marked completed and its agent session is closed.");
+  } else {
+    lines.push("The attempt is marked failed and its agent session is closed.");
+  }
+  lines.push(`Its git worktree ${attempt.target.worktreePath} is force-removed.`);
+
+  if (cleanliness === "dirty") {
+    lines.push(
+      `That worktree has uncommitted changes right now — they are destroyed, and a later Land only takes what is committed on ${attempt.branch}.`,
+    );
+  } else if (cleanliness === "unknown") {
+    lines.push(
+      "The worktree could not be checked for uncommitted changes, so anything unsaved there may be destroyed.",
+    );
+  }
+
+  if (decision === "accept") {
+    if (flight?.publishAttemptsAsPrs && !attempt.draftPrNumber) {
+      lines.push(`A draft PR for ${attempt.branch} is opened before the worktree is removed.`);
+    }
+    lines.push(
+      `Branch ${attempt.branch} is kept — use Land or Open PR on this tile afterwards to merge it.`,
+    );
+  } else {
+    lines.push(`Branch ${attempt.branch} is kept, so the work is still recoverable from git.`);
+  }
+  return lines;
+}
+
+/**
+ * F2: whether this attempt's branch can be landed straight into the base
+ * checkout. `merge_conversation_branch` is local-only, so an SSH attempt has to
+ * go through a PR instead of an in-app merge.
+ */
+export function attemptLandability(attempt: Attempt): { allowed: boolean; reason: string } {
+  if (attempt.target.kind === "ssh") {
+    return {
+      allowed: false,
+      reason:
+        "Landing merges into the local checkout; this attempt ran on an SSH host. Open a PR for its branch instead.",
+    };
+  }
+  if (!TERMINAL_ATTEMPT_STATUSES.has(attempt.status)) {
+    return { allowed: false, reason: "Accept or reject this attempt before landing its branch." };
+  }
+  return {
+    allowed: true,
+    reason: `Squash-merge ${attempt.branch} into the current branch of ${attempt.target.basePath}.`,
+  };
+}
+
+/** Outcome of `landAttempt`, worded for the tile. */
+export interface AttemptLandResult {
+  landed: boolean;
+  commitSha?: string;
+  message: string;
 }
 
 /** The integration worktree is removed by the same delete, so it is named on
@@ -1490,6 +1603,64 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     // Flight-completion memory capture. Runs on the terminal-success
     // transition regardless of which attempt outcome triggered it.
     captureFlightCompletionOnTransition(flightId, statusBefore);
+  },
+
+  landAttempt: async (flightId, attemptId) => {
+    const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
+    const attempt = flight?.attempts?.find((a) => a.id === attemptId);
+    if (!flight || !attempt) throw new Error("This attempt no longer exists.");
+
+    const gate = attemptLandability(attempt);
+    if (!gate.allowed) throw new Error(gate.reason);
+
+    // Squash by default, matching the Agents worktree bar: an attempt branch is
+    // a throwaway line of agent commits, not history worth preserving.
+    const outcome = await mergeConversationBranch(attempt.target.basePath, attempt.branch, true);
+    if (outcome.nothingToLand) {
+      return {
+        landed: false,
+        message: `Nothing to land — ${attempt.branch} has no commits the checkout doesn't already have. The branch is left in place.`,
+      };
+    }
+    return {
+      landed: true,
+      commitSha: outcome.commitSha,
+      message: `Landed ${attempt.branch} as ${outcome.commitSha.slice(0, 8)}${
+        outcome.branchDeleted ? " and deleted the branch" : ""
+      }.`,
+    };
+  },
+
+  publishAttemptPr: async (flightId, attemptId) => {
+    const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
+    const attempt = flight?.attempts?.find((a) => a.id === attemptId);
+    if (!flight || !attempt) throw new Error("This attempt no longer exists.");
+    if (attempt.draftPrNumber) {
+      throw new Error(`Draft PR #${attempt.draftPrNumber} is already open for ${attempt.branch}.`);
+    }
+
+    // Share the dedupe map with the automatic post-accept publish so a manual
+    // click during an in-flight automatic publish joins it instead of opening a
+    // second PR for the same branch.
+    let publish = publishingAttempts.get(attemptId);
+    if (!publish) {
+      publish = publishAttemptAsDraftPr(flight, attempt).finally(() => {
+        publishingAttempts.delete(attemptId);
+      });
+      publishingAttempts.set(attemptId, publish);
+    }
+    await publish;
+
+    // The automatic pipeline deliberately swallows publish failures onto the
+    // attempt so a flaky push can't undo an earned status. A manual click is
+    // owed the failure directly.
+    const after = useFlightStore
+      .getState()
+      .flights.find((f) => f.id === flightId)
+      ?.attempts?.find((a) => a.id === attemptId);
+    if (!after?.draftPrNumber) {
+      throw new Error(after?.errorMessage ?? "The draft PR was not opened.");
+    }
   },
 
   reassignAttempt: async (flightId, attemptId, newAgentConfigId) => {

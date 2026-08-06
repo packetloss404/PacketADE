@@ -32,20 +32,21 @@ feature wave.
 
 ## Now
 
-| Track                       | Priority | Current state                                               | Next action                                                                                                  |
-| --------------------------- | -------: | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Packaged Windows acceptance |       P1 | v0.10.3 app/NSIS/MSI compiled; interactive matrix open      | Dogfood real Terminal panes, Claude statusline, close/lifecycle, Monitor, accessibility, and denial behavior |
-| Distribution trust          |       P1 | 0 failures / 6 readiness warnings; artifacts unsigned       | Add hosted CI; acquire Windows/macOS credentials; wire notarization and updater                              |
-| Remote Agents decisions     |       P1 | Rust relay/code location decided; implementation paused     | Choose auth provider and E2EE launch gate                                                                    |
-| Global Undo                 |       P1 | Confirmations and cleanup are implemented; no recovery path | Choose durable soft-delete/restore or a time-boxed delayed-delete toast                                      |
-| Flight supervision proof    |       P1 | Reviewer/graph/inbox/YOLO source complete                   | Run packaged local and disposable pinned-SSH matrices                                                        |
-| PacketAgent handoff proof   |       P1 | W9 consumer source and fixtures pass                        | Run separately hosted close/relaunch/reconnect and evidence-return matrix                                    |
-| PacketCode release proof    |       P1 | Source integration and doctor contract pass                 | Publish signed artifacts; run clean-machine upgrade/rollback and compatibility smoke                         |
-| Dictation proof             |       P1 | DV1-DV16 source complete                                    | Run real microphone plus macOS/Linux package matrices                                                        |
-| Settings/MS4 cleanup        |       P2 | P1 correctness is complete                                  | Stable IDs/active identity/profile validation, diagnostics, ARIA, labels, and responsive overflow            |
-| Git/Memory/MCP/Trust proof  |       P2 | Source implementations pass                                 | Run real GitHub/Gitea, editor-watch, provider, MCP, SSH, restart, and visual matrices                        |
-| Terminal shell proof        |       P2 | Source, package compile, detection, and command probes pass | Run interactive pane, persistence, unavailable-profile, CLI, and SSH matrix                                  |
-| Monitor proof               |       P2 | Read-only Agent/Flight v1 source complete                   | Run packaged multi-display lifecycle and Rust-denial proof                                                   |
+| Track                       | Priority | Current state                                                                                                    | Next action                                                                                                                                           |
+| --------------------------- | -------: | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Packaged Windows acceptance |       P1 | v0.10.3 app/NSIS/MSI compiled; interactive matrix open                                                           | Dogfood real Terminal panes, Claude statusline, close/lifecycle, Monitor, accessibility, and denial behavior                                          |
+| Distribution trust          |       P1 | 0 failures / 6 readiness warnings; artifacts unsigned                                                            | Add hosted CI; acquire Windows Authenticode and Apple Developer ID credentials in parallel on day 0; wire notarization and updater                    |
+| macOS release               |       P1 | Builds, bundles a DMG, and runs from source on real hardware; never signed, notarized, or interactively accepted | Enroll in the Apple Developer Program now; run the unsigned acceptance matrix in the 1.0 buffer; ship arm64 DMG in v1.1 (`dev/macos-release-plan.md`) |
+| Remote Agents decisions     |       P1 | Rust relay/code location decided; implementation paused                                                          | Choose auth provider and E2EE launch gate                                                                                                             |
+| Global Undo                 |       P1 | Confirmations and cleanup are implemented; no recovery path                                                      | Choose durable soft-delete/restore or a time-boxed delayed-delete toast                                                                               |
+| Flight supervision proof    |       P1 | Reviewer/graph/inbox/YOLO source complete                                                                        | Run packaged local and disposable pinned-SSH matrices                                                                                                 |
+| PacketAgent handoff proof   |       P1 | W9 consumer source and fixtures pass                                                                             | Run separately hosted close/relaunch/reconnect and evidence-return matrix                                                                             |
+| PacketCode release proof    |       P1 | Source integration and doctor contract pass                                                                      | Publish signed artifacts; run clean-machine upgrade/rollback and compatibility smoke                                                                  |
+| Dictation proof             |       P1 | DV1-DV16 source complete                                                                                         | Run real microphone plus macOS/Linux package matrices                                                                                                 |
+| Settings/MS4 cleanup        |       P2 | P1 correctness is complete                                                                                       | Stable IDs/active identity/profile validation, diagnostics, ARIA, labels, and responsive overflow                                                     |
+| Git/Memory/MCP/Trust proof  |       P2 | Source implementations pass                                                                                      | Run real GitHub/Gitea, editor-watch, provider, MCP, SSH, restart, and visual matrices                                                                 |
+| Terminal shell proof        |       P2 | Source, package compile, detection, and command probes pass                                                      | Run interactive pane, persistence, unavailable-profile, CLI, and SSH matrix                                                                           |
+| Monitor proof               |       P2 | Read-only Agent/Flight v1 source complete                                                                        | Run packaged multi-display lifecycle and Rust-denial proof                                                                                            |
 
 ## Next
 
@@ -59,7 +60,9 @@ After the immediately available proof gates:
    Rust `packet-relay` service.
 5. Land a private PWA/relay alpha with desktop-owned execution, narrow audited
    commands, device trust, reconnect/replay, approvals, and attention push.
-6. Acquire distribution credentials and publish signed, updateable builds.
+6. Acquire distribution credentials and publish signed, updateable builds:
+   Windows Authenticode for v1.0.0, then the signed and notarized macOS arm64
+   DMG for v1.1 per [`dev/macos-release-plan.md`](./dev/macos-release-plan.md).
 
 ## Later
 
@@ -74,7 +77,8 @@ After the immediately available proof gates:
 - Additional Gitea authoring/checks parity, semantic Memory retrieval when
   measured misses justify it, and alternate Dictation engines after real
   benchmarks.
-- Snap/Flatpak and cross-compilation when distribution demand warrants them.
+- Linux packaging proof, macOS x86_64 alongside arm64, and Snap/Flatpak when
+  distribution demand warrants them.
 
 ## Remote Agents v1 boundary
 

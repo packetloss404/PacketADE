@@ -464,9 +464,11 @@ mod tests {
 
         // Anthropic's buckets are already disjoint — subtracting would
         // under-bill.
-        assert!(!pricing_for("claude-opus-4-8")
-            .unwrap()
-            .input_includes_cache_read);
+        assert!(
+            !pricing_for("claude-opus-4-8")
+                .unwrap()
+                .input_includes_cache_read
+        );
         assert_eq!(
             billable_input_tokens("claude-opus-4-8", 4_000, 3_000),
             4_000
@@ -658,7 +660,9 @@ mod tests {
             5.0
         );
         assert_eq!(
-            pricing_for("claude-opus-4").expect("retired 4").input_per_mtok,
+            pricing_for("claude-opus-4")
+                .expect("retired 4")
+                .input_per_mtok,
             15.0
         );
         // gpt-5.5 must not fall through to the gpt-5 family row's identical

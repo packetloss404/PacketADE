@@ -113,7 +113,7 @@ Output format:
 /// store also tracks its own `pinned` state in-memory for snappy UI; this
 /// command keeps the persisted record authoritative across restarts.
 #[tauri::command]
-pub fn toggle_pinned_pattern(pattern_id: String) -> Result<Option<bool>, String> {
+pub async fn toggle_pinned_pattern(pattern_id: String) -> Result<Option<bool>, String> {
     info!(pattern_id = %pattern_id, "Toggling pinned flag on pattern");
-    storage::toggle_pinned_pattern(&pattern_id)
+    storage::toggle_pinned_pattern(&pattern_id).await
 }

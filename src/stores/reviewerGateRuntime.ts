@@ -9,13 +9,10 @@ import {
   REVIEWER_ALLOWED_TOOLS,
 } from "@/lib/reviewerGate";
 import { getDefaultModel } from "@/lib/api-models";
+import { setAttemptReviewGate } from "@/lib/tauri";
 import { derivedArtifactProvenance } from "@/lib/provenance";
 import { requestConversationSave } from "@/stores/agentConversationPersistence";
-import {
-  resolveRetiredApiAgent,
-  useAgentTaskStore,
-  type AgentCli,
-} from "@/stores/agentTaskStore";
+import { resolveRetiredApiAgent, useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useServerStore } from "@/stores/serverStore";
 import type { Attempt, AttemptReviewGate, Flight, ReviewGateReport } from "@/types/flight";
@@ -36,7 +33,21 @@ function currentAttempt(flightId: string, attemptId: string): Attempt | undefine
   return currentFlight(flightId)?.attempts?.find((attempt) => attempt.id === attemptId);
 }
 
-function patchReviewGate(flightId: string, attemptId: string, gate: AttemptReviewGate): void {
+/**
+ * Write the gate to the store for immediate UI, and to the backend for
+ * persistence.
+ *
+ * The backend write is not optional. `reviewGate` is an attempt lifecycle
+ * field, and the Rust snapshot merge keeps its own copy of an existing
+ * attempt — so a gate that only ever reached `flightStore` was dropped on the
+ * next flight save, and `markAttemptStatus("completed")` then rejected every
+ * gated acceptance with "Reviewer Gate has not produced a verdict".
+ */
+async function patchReviewGate(
+  flightId: string,
+  attemptId: string,
+  gate: AttemptReviewGate,
+): Promise<void> {
   const flight = currentFlight(flightId);
   if (!flight?.attempts) return;
   useFlightStore.getState().updateFlight(flightId, {
@@ -44,6 +55,13 @@ function patchReviewGate(flightId: string, attemptId: string, gate: AttemptRevie
       attempt.id === attemptId ? { ...attempt, reviewGate: gate } : attempt,
     ),
   });
+  try {
+    await setAttemptReviewGate(flightId, attemptId, gate);
+  } catch (error) {
+    // Non-fatal for the UI, but it means acceptance will stay blocked, so it
+    // must be visible rather than swallowed.
+    console.error(`Failed to persist the Reviewer Gate verdict for attempt ${attemptId}:`, error);
+  }
 }
 
 function detachReviewerListeners(conversationId: string): void {
@@ -85,7 +103,7 @@ function finishReviewer(flightId: string, attemptId: string, conversationId: str
       ),
     };
     const status = reportStatus(report);
-    patchReviewGate(flightId, attemptId, {
+    void patchReviewGate(flightId, attemptId, {
       ...attempt.reviewGate,
       status,
       report,
@@ -109,7 +127,7 @@ function finishReviewer(flightId: string, attemptId: string, conversationId: str
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    patchReviewGate(flightId, attemptId, {
+    void patchReviewGate(flightId, attemptId, {
       ...attempt.reviewGate,
       status: "error",
       errorMessage: message,
@@ -151,7 +169,7 @@ async function installReviewerListeners(
     const attempt = currentAttempt(flightId, attemptId);
     if (!attempt || attempt.reviewGate?.reviewerConversationId !== conversationId) return;
     const message = event.payload?.message?.trim() || "The reviewer session failed.";
-    patchReviewGate(flightId, attemptId, {
+    void patchReviewGate(flightId, attemptId, {
       ...attempt.reviewGate,
       status: "error",
       errorMessage: message,
@@ -202,11 +220,10 @@ export async function startReviewGate(
   // `getDefaultModel` on a retired id returns "" (an empty model string is
   // how this used to reach the backend).
   const substituted = reviewerAgent !== policy.reviewerAgentConfigId;
-  const reviewerModel =
-    (substituted ? "" : policy.reviewerModel) || getDefaultModel(reviewerAgent);
+  const reviewerModel = (substituted ? "" : policy.reviewerModel) || getDefaultModel(reviewerAgent);
   const conversationId = `review-${crypto.randomUUID()}`;
   const startedAt = Date.now();
-  patchReviewGate(flightId, attemptId, {
+  await patchReviewGate(flightId, attemptId, {
     status: "running",
     reviewerConversationId: conversationId,
     reviewerAgentConfigId: reviewerAgent,
@@ -296,7 +313,7 @@ export async function startReviewGate(
     const message = error instanceof Error ? error.message : String(error);
     const fresh = currentAttempt(flightId, attemptId);
     if (fresh?.reviewGate?.reviewerConversationId === conversationId) {
-      patchReviewGate(flightId, attemptId, {
+      await patchReviewGate(flightId, attemptId, {
         ...fresh.reviewGate,
         status: "error",
         errorMessage: message,
@@ -318,7 +335,7 @@ export async function startReviewGate(
 export async function retryReviewGate(flightId: string, attemptId: string): Promise<void> {
   const attempt = currentAttempt(flightId, attemptId);
   if (!attempt?.reviewGate) return;
-  patchReviewGate(flightId, attemptId, {
+  await patchReviewGate(flightId, attemptId, {
     status: "pending",
     reviewerAgentConfigId: attempt.reviewGate.reviewerAgentConfigId,
     reviewerModel: attempt.reviewGate.reviewerModel,
@@ -336,7 +353,7 @@ export async function overrideReviewGate(
   if (normalized.length > 2_000) throw new Error("The override reason is too long.");
   const attempt = currentAttempt(flightId, attemptId);
   if (!attempt?.reviewGate || attempt.reviewGate.status === "passed") return;
-  patchReviewGate(flightId, attemptId, {
+  await patchReviewGate(flightId, attemptId, {
     ...attempt.reviewGate,
     status: "overridden",
     overriddenAt: Date.now(),
@@ -403,7 +420,7 @@ export async function syncReviewerGateRuns(
       if (conversation?.status === "done") {
         finishReviewer(flight.id, attempt.id, gate.reviewerConversationId);
       } else if (conversation?.status === "failed") {
-        patchReviewGate(flight.id, attempt.id, {
+        await patchReviewGate(flight.id, attempt.id, {
           ...gate,
           status: "error",
           errorMessage: "The reviewer session failed or was interrupted. Retry the reviewer.",

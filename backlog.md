@@ -32,6 +32,12 @@ These are the only current product decisions blocking implementation.
    the signing-identity application (Azure Trusted Signing plus an OV
    fallback) is the critical path and should start immediately either way. See
    [`docs/reports/fable5-review-2026-08-05.md`](./docs/reports/fable5-review-2026-08-05.md).
+   The "1.0 is NOT macOS" line is scheduled rather than abandoned: macOS builds
+   and runs on real hardware today, and
+   [`dev/macos-release-plan.md`](./dev/macos-release-plan.md) targets a signed,
+   notarized arm64 DMG for v1.1. Its only day-0 dependency is Apple Developer
+   Program enrollment, which must start alongside the Windows signing
+   application.
 
 Remote Agents relay architecture and code location are already decided: extend
 the standalone Rust service at `D:\projects\packet-relay`; keep shared schemas
@@ -44,11 +50,30 @@ The source behind these slices is implemented. Keep them open until the named
 environment or packaged matrix has actually run.
 
 - **P1 - Distribution trust and hosted gates.** Add hosted CI; acquire Windows
-  Authenticode and Apple Developer ID credentials; wire macOS notarization,
-  Tauri updater signing/configuration, and hosted `latest.json`. Current Windows
+  Authenticode and Apple Developer ID credentials **in parallel on day 0**; wire
+  Tauri updater signing/configuration and hosted `latest.json`. Current Windows
   artifacts are unsigned. See
   [`dev/beta-distribution-trust-runbook.md`](./dev/beta-distribution-trust-runbook.md)
-  and [`dev/updater-setup.md`](./dev/updater-setup.md).
+  and [`dev/updater-setup.md`](./dev/updater-setup.md). macOS signing,
+  notarization, and entitlements are owned end to end by
+  [`dev/macos-release-plan.md`](./dev/macos-release-plan.md).
+- **P1 - macOS v1.1 release.** Enroll in the Apple Developer Program
+  (Individual); create the Developer ID Application certificate and an App Store
+  Connect API key and back the private key up twice. Run the unsigned macOS
+  acceptance matrix during the 1.0 fix buffer, then fix the blockers: no
+  entitlements file, `bundle.macOS` carries only `minimumSystemVersion`,
+  `dictation/delivery.rs:40-48` hard-fails off Windows, CMake missing from the
+  documented macOS prerequisites, and `build.rs:16-21` treats a missing bundled
+  Node as a warning. Ship a signed + notarized + stapled arm64 DMG.
+  See [`dev/macos-release-plan.md`](./dev/macos-release-plan.md).
+- **P2 - macOS terminal shell defaults.** Auto resolves to bash on macOS
+  (`src/agents/terminal.ts:4,9`; `TerminalShellSettingsCard.tsx:163`), where
+  `/bin/bash` is the 2007 GPLv2 freeze and zsh has been the login shell since
+  Catalina; posix profiles pass no login-shell args
+  (`src/lib/terminalShells.ts:219-222`, unlike git-bash at `:206-211`), so
+  `~/.zshrc`-defined aliases and env are missing. Nothing reads `$SHELL`.
+  fish/nu/xonsh are never probed on posix despite the backend allowlist and the
+  UI copy promising them.
 - **P1 - Packaged application acceptance.** Run v0.10.3 launch, lifecycle,
   accessibility, denial, credential, and real-host matrices. Build success is
   not interactive acceptance. See
@@ -68,8 +93,10 @@ environment or packaged matrix has actually run.
 - **P1 - Dictation hardware/platform matrix.** Run default/USB/Bluetooth,
   44.1/48 kHz, fast-PTT, cancel, disconnect, repeated phrase, first-model-load,
   history, in-app, clipboard, and opt-in external-paste tests on Windows with an
-  active microphone. Then run packaged macOS permission/accessibility and Linux
-  ALSA/PipeWire plus X11/Wayland matrices.
+  active microphone. Then run the Linux ALSA/PipeWire plus X11/Wayland matrices.
+  macOS microphone permission, TCC behaviour, and the `systemWidePaste` gap are
+  items MAC-13 to MAC-15 of the acceptance matrix in
+  [`dev/macos-release-plan.md`](./dev/macos-release-plan.md).
 - **P2 - Local Terminal shell matrix.** In the v0.10.3 package, exercise Auto,
   PowerShell 7, Windows PowerShell, Command Prompt, Git Bash, WSL,
   unavailable-profile recovery, app/workspace/pane persistence and hydration,
@@ -105,9 +132,10 @@ environment or packaged matrix has actually run.
 - **P3 - PTY orphan-reaper live verification.** After the reaper is actually
   wired (see the Fable 5 P1), verify orphan reaping in a packaged build.
   (Folded from `docs/deferred-work.md`.)
-- **P3 - Additional platform packaging.** Snap/Flatpak and cross-compilation
-  remain deferred until the release matrix demands them; native runners are the
-  current supported build path.
+- **P3 - Additional platform packaging.** Snap/Flatpak remain deferred until the
+  release matrix demands them. macOS `x86_64-apple-darwin` is a fast-follow to
+  the v1.1 arm64 DMG only if a user asks; it cross-compiles on an Apple Silicon
+  Mac and needs no new machinery. Linux packaging is still unproven.
 
 ## Bounded source work
 
@@ -208,6 +236,94 @@ citations is in
   `ServerFormModal`, attempt listeners, the PTY pattern parser).
 - **P3 - Brand-literal sweep.** Replace the 43 hardcoded `packetade:` storage
   keys and 7 `packetade://` URIs with `storageKey()`/`URI_SCHEME`.
+- **P1 - Rehearse the Phase-3 release gates before the release window.** A
+  2026-08-06 dry run against the known-good v0.10.3 artifacts already reduces
+  the strict gate to exactly the two scheduled blockers — Authenticode
+  credentials and updater configuration — plus a dirty tree, with no
+  environmental noise. What that run could not cover is the nine quality gates
+  themselves, which were skipped. Run one full `release:readiness` from a
+  **Windows shell** (where Cargo is on PATH) on a quiet machine before
+  2026-08-17, so the reserved fix buffer is not spent distinguishing real
+  failures from tooling artifacts. Note also that `release:gate` has passed
+  standalone but has never yet run inside a real `pnpm tauri build`.
+- **P1 - Release gates report false failures when run from WSL.** Three
+  independent traps, all confirmed on this machine, all of which would burn
+  time during the release window: `hostTarget()` reads `os.platform()`, so WSL
+  reports `linux` and the script demands Linux bundles for a Windows-only
+  release (fixed — `PACKETADE_RELEASE_TARGET` is now validated and its
+  provenance is printed); `cargo` is not on the WSL path, so `rust:check`,
+  `rust:test`, and `check:tauri-schema` fail with `cargo: not found`; and the
+  bundle-root lookup used to fall through to `src-tauri/target` whenever
+  `cargo metadata` could not run — the same missing-Cargo cause — so readiness
+  reported missing artifacts for a release that had built correctly (fixed:
+  the root now resolves from `CARGO_TARGET_DIR`, then `.cargo/config.toml`,
+  then `cargo metadata`, translating Windows paths under WSL, and prints its
+  provenance). The remaining item is the Rust gates: run release gates from
+  the Windows shell, or put the MSVC toolchain on the WSL path. See
+  `dev/local-quality-gates.md`.
+- **P2 - Remote sidecar receives the API key before the protocol floor can
+  refuse it.** The SSH handshake arrives after `start_session` is already on
+  the wire, so a pre-v11 remote sidecar gets the provider key before the
+  version floor can reject it. The session is killed on its `ready`, but
+  closing this properly needs a handshake-before-start redesign of the remote
+  path. Pair it with requiring a pinned `host_fingerprint` before any remote
+  sidecar start.
+- **P2 - Sidecar cold start takes 18-29 s on this checkout.** Module-load
+  measurement attributes ~25.5 s of it to `providers/openai-agents.js` alone
+  (pre-existing, unrelated to the MCP trust work). Four spawn-based smokes
+  (`protocol`, `registry`, `remote-project`, `remote-mcp-fromfs`) time out
+  against their 3-5 s `ready` budgets as a result. Re-run them on a native
+  filesystem to separate DrvFs cost from real load cost, then either lazy-load
+  the OpenAI SDK behind first use or raise the budgets deliberately.
+- **P3 - A landed attempt does not remember that it landed.** The attempt tile
+  reports "Landed `pkt/…` as `abc1234`" in component state only, so the fact
+  disappears on remount. Persisting it needs a new field on the Rust `Attempt`
+  struct. Re-clicking Land is already safe — the merge returns `nothingToLand`
+  and the tile says so rather than claiming a second landing.
+- **P2 - Several test timeouts are too tight for this filesystem.** A full
+  suite run on 2026-08-06 returned 1,631 passed / 10 failed, and **every one of
+  the ten was a timeout or a platform assumption, not a regression** — but that
+  makes a clean run impossible here, so a real failure would be easy to miss.
+  The source-fence tests (`workspace-agents-boundaries`, `confirm-idiom`) walk
+  all of `src/` synchronously and need 5-49 s against a 5 s default;
+  `sessionContract` pays a cold-import cost; and
+  `persistenceMigration`'s "moduleStore ignores a persisted 'ideation' entry"
+  carries its own hardcoded `15_000` budget while taking ~27 s on DrvFs. All
+  pass when given room. Raise the budgets for the filesystem-walking tests,
+  and consider `--pool=threads` as the repo default: the forks pool hits
+  vitest's hardcoded 60 s worker-boot timeout under load. Note the fences are
+  vitest files — run them with `npx vitest run <path>`, not bare `node`.
+- **P3 - Onboarding overlay now suppresses view-switch chords.** The modal
+  stack correctly blocks `Ctrl+Shift+<chord>` navigation while any dialog is
+  open, but `AgentsOnboarding` renders a `Modal` for the one-time welcome
+  overlay, so a first-run user's chords do nothing until they dismiss it.
+  Consistent with the rule and harmless, but decide whether a dismissible
+  non-destructive overlay should be exempt.
+- **P3 - Two component tests only pass on a Windows runner.**
+  `AddSessionPicker` and `TerminalShellSettingsCard` assert Windows shell
+  profiles, but `src/lib/terminalShells.ts:37-38` derives the platform from
+  `navigator.userAgent`, which resolves to `posix` under jsdom on a Linux or
+  WSL runner. Pre-existing and unrelated to the modal work, but it means the
+  component suite is not green cross-platform — relevant once CI exists.
+- **P3 - MCP Hub capability snapshot drops tool annotations.**
+  `McpCapabilitySnapshot.tools` (`src/types/mcp.ts`) carries only
+  `{name, description}`, so `defaultMcpTrustProfile` still derives its default
+  allowlist from the name heuristic. Enforcement is unaffected (the sidecar
+  probe and the Rust live listing both read `readOnlyHint` directly), but the
+  Hub shows the user a less accurate picture than the runtime enforces.
+- **P3 - Reviewer Gate report provenance does not persist.** The TypeScript
+  `ReviewGateReport` carries an optional `provenance` envelope; the Rust
+  `ReviewGateReportDto` has no such field, so the verdict now survives a
+  restart but its provenance does not. Strictly better than the pre-fix state
+  (nothing persisted at all) and consistent with coordination events, but
+  closing it means adding the field to `core/flight.rs` and `api/mod.rs` and
+  regenerating bindings.
+- **P3 - Windows startup PTY reaper.** The crash-recovery sweep is deliberately
+  Unix-only: a `.cmd`-wrapped CLI records `cmd.exe` in the pid registry, so a
+  recycled pid would match the recorded image name and tree-kill an unrelated
+  console. Pane-close and app-exit reaping do work on Windows, so only a hard
+  crash strands a child. If crash-orphans prove real in practice, add a
+  stronger identity token (process creation time) before building the sweep.
 - **P3 - Dead code and hygiene.** Delete the unreferenced checkpoints command
   module and the other verified-dead commands/wrappers; delete the ~15
   orphaned frontend files (incl. `IssueDetailView.tsx`, the dead twin

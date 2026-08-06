@@ -864,7 +864,10 @@ mod tests {
     #[test]
     fn probe_claude_in_dir_missing_is_login_required_off_macos() {
         let dir = tempfile::tempdir().expect("tempdir");
-        assert_eq!(probe_claude_oauth_in_dir(dir.path()).status, "login_required");
+        assert_eq!(
+            probe_claude_oauth_in_dir(dir.path()).status,
+            "login_required"
+        );
     }
 
     /// macOS: credentials may live in the Keychain, so absence on disk is
@@ -926,7 +929,10 @@ mod tests {
         .expect("write");
         std::fs::write(bad.path().join("auth.json"), codex_auth_json(-60, None)).expect("write");
         assert_eq!(probe_codex_oauth_in_dir(good.path()).status, "ready");
-        assert_eq!(probe_codex_oauth_in_dir(bad.path()).status, "login_required");
+        assert_eq!(
+            probe_codex_oauth_in_dir(bad.path()).status,
+            "login_required"
+        );
     }
 
     #[tokio::test]

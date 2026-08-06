@@ -5,7 +5,7 @@ use std::future::Future;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex as AsyncMutex;
 use tracing::{info, warn};
 
@@ -104,16 +104,19 @@ pub const DEFAULT_MINIMAX_BASE_URL: &str = "https://api.minimax.io/v1";
 static STATE_LOCK: Mutex<()> = Mutex::new(());
 static PROVIDER_SETTINGS_LOCK: Mutex<()> = Mutex::new(());
 
-/// Async-safe critical-section mutex for every state writer. Async callers
-/// hold it across the **entire** load → mutate → save sequence, and sync
-/// slice writers acquire it through a small blocking adapter before taking
-/// `STATE_LOCK`. This gives async and sync writers one shared ordering, so
-/// a stale async full-state save cannot overwrite a sync slice save that
-/// landed between the async load and save.
+/// Async-safe critical-section mutex for every state writer. Callers hold it
+/// across the **entire** load → mutate → save sequence, so a stale full-state
+/// save cannot overwrite a slice save that landed between the load and the
+/// save.
 ///
-/// Async callers that mutate `PersistedState` use [`with_state_lock`]. Sync
-/// state writers in this module must acquire this gate before `STATE_LOCK`;
-/// do not invert that order.
+/// Every writer reachable from a live IPC command acquires this gate
+/// **asynchronously** — [`with_state_lock`], [`update_state_async`], and the
+/// `save_*` slice writers — which is fair FIFO. The two remaining synchronous
+/// writers ([`save_state`], [`update_state`]) run only at startup, before the
+/// runtime serves IPC, and go through [`lock_state_gate_blocking`].
+///
+/// State writers must acquire this gate before `STATE_LOCK`; do not invert
+/// that order.
 static ASYNC_STATE_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, Default)]
@@ -414,20 +417,68 @@ fn save_state_inner(state: &PersistedState) -> Result<(), String> {
     Ok(())
 }
 
+/// Blocking, **fair** acquire of the shared state gate.
+///
+/// Reserved for the synchronous writers that run before the Tauri async
+/// runtime serves IPC (startup migration, cost reprice, flight recovery) and
+/// for `#[test]` code. `blocking_lock` joins the same FIFO wait queue as
+/// `lock().await`.
+///
+/// This used to spin on `try_lock` with a 1 ms sleep. `try_lock` bypasses the
+/// queue and fails while *any* `.lock().await` waiter is parked, so a
+/// spinning caller on the IPC thread could lose indefinitely against a bursty
+/// async writer (e.g. the per-`turn_summary` cost rollup) — 100% of a core, a
+/// frozen UI, no timeout and no error. Every writer that can run while the app
+/// is live now takes the async path instead: [`update_state_async`],
+/// [`with_state_lock`], and the `save_*` slice writers.
+///
+/// # Panics
+/// Tokio panics if this is called from inside a runtime context. That is the
+/// intended guard rail — an IPC-serving writer must not reach this function.
 fn lock_state_gate_blocking() -> tokio::sync::MutexGuard<'static, ()> {
-    loop {
-        if let Ok(guard) = ASYNC_STATE_LOCK.try_lock() {
-            return guard;
-        }
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    ASYNC_STATE_LOCK.blocking_lock()
+}
+
+/// Acquire `STATE_LOCK`, recovering from poisoning rather than failing
+/// forever.
+///
+/// The guarded value is `()`, so a panic while the lock was held cannot have
+/// left anything half-written — `save_state_inner` persists atomically via
+/// `write_with_backup`. Returning `Err("Lock poisoned")` (what this replaced)
+/// made *every* subsequent save fail for the remaining process lifetime, and
+/// most call sites discard the error (`let _ = …` in `flight_attempts` /
+/// `api_agent`), so the user silently lost all persistence from the first
+/// panic onward.
+fn lock_state_mutex() -> std::sync::MutexGuard<'static, ()> {
+    STATE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Same poisoned-lock recovery as [`lock_state_mutex`], for the provider
+/// runtime-settings file.
+fn lock_provider_settings_mutex() -> std::sync::MutexGuard<'static, ()> {
+    PROVIDER_SETTINGS_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
+
+/// Load → mutate → save under `STATE_LOCK`. The caller **must** already hold
+/// the async state gate (`ASYNC_STATE_LOCK`); the two public wrappers below
+/// are the only intended entry points.
+fn update_state_locked<F, R>(mutate: F) -> Result<R, String>
+where
+    F: FnOnce(&mut PersistedState) -> R,
+{
+    let _lock = lock_state_mutex();
+    let mut state = load_state();
+    let result = mutate(&mut state);
+    state.version += 1;
+    save_state_inner(&state)?;
+    Ok(result)
 }
 
 pub fn save_state(state: &PersistedState) -> Result<(), String> {
     let _async_lock = lock_state_gate_blocking();
-    let _lock = STATE_LOCK
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
+    let _lock = lock_state_mutex();
     let mut state = state.clone();
     state.version += 1;
     save_state_inner(&state)
@@ -438,19 +489,31 @@ pub fn save_state(state: &PersistedState) -> Result<(), String> {
 /// fields into the persisted state in a single critical section, instead of
 /// `load_state(); mutate; save_state()` — which exposes a lost-update race
 /// against concurrent slice writers landing between the load and the save.
+///
+/// **Synchronous, and therefore startup-only.** It blocks the calling thread
+/// on the state gate (see [`lock_state_gate_blocking`]) and panics if a Tokio
+/// runtime is active on that thread. Anything reachable from an IPC command
+/// must use [`update_state_async`].
 pub fn update_state<F, R>(mutate: F) -> Result<R, String>
 where
     F: FnOnce(&mut PersistedState) -> R,
 {
     let _async_lock = lock_state_gate_blocking();
-    let _lock = STATE_LOCK
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
-    let mut state = load_state();
-    let result = mutate(&mut state);
-    state.version += 1;
-    save_state_inner(&state)?;
-    Ok(result)
+    update_state_locked(mutate)
+}
+
+/// Async twin of [`update_state`], and the entry point every slice writer
+/// below routes through. Awaits the state gate fairly instead of blocking a
+/// thread on it, so an IPC command can never starve behind async writers.
+///
+/// Like [`with_state_lock`], the gate is held across the whole critical
+/// section — callers MUST NOT re-enter any state writer from inside `mutate`.
+pub async fn update_state_async<F, R>(mutate: F) -> Result<R, String>
+where
+    F: FnOnce(&mut PersistedState) -> R,
+{
+    let _async_lock = ASYNC_STATE_LOCK.lock().await;
+    update_state_locked(mutate)
 }
 
 /// Run an async closure with an exclusive load → mutate → save critical
@@ -467,7 +530,11 @@ where
 ///     mutex is released and the error is propagated unchanged.
 ///   * The mutex is held across the closure's `.await` points, so callers
 ///     MUST NOT re-enter `with_state_lock` from within their closure
-///     (doing so will deadlock).
+///     (doing so will deadlock). The same applies to *any* other state
+///     writer: `update_state_async` awaits the same gate and would deadlock,
+///     and the synchronous `update_state` / `save_state` would livelock the
+///     thread on a gate this task will never release. No call site does this
+///     today; keep it that way.
 ///   * Tokio `Mutex` is fair-ish and not cancellation-safe at the lock
 ///     acquire site — callers that need to abort should drop the future
 ///     *before* it acquires the lock.
@@ -483,9 +550,7 @@ where
     let _guard = ASYNC_STATE_LOCK.lock().await;
     let mut state = load_state();
     let result = action(&mut state).await?;
-    let _lock = STATE_LOCK
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
+    let _lock = lock_state_mutex();
     state.version += 1;
     save_state_inner(&state)?;
     Ok(result)
@@ -500,6 +565,12 @@ fn merge_attempts_for_frontend_save(existing: &[Attempt], incoming: Vec<Attempt>
             // may carry a stale status while Rust is processing done/error or
             // cleanup. Keep the authoritative record, accepting only the
             // frontend's independently-derived usage counters and error text.
+            //
+            // `review_gate` is part of that authoritative record and is
+            // deliberately NOT copied from `candidate`: the Reviewer Gate
+            // verdict gates acceptance in `update_attempt_status`, so it is
+            // written by `set_attempt_review_gate` under the state lock, not
+            // smuggled in on a whole-slice save that may be arbitrarily stale.
             let mut attempt = current.clone();
             attempt.tokens = attempt.tokens.max(candidate.tokens);
             attempt.cost = attempt.cost.max(candidate.cost);
@@ -574,134 +645,88 @@ fn merge_flights_for_frontend_save(existing: &[Flight], incoming: Vec<Flight>) -
         .collect()
 }
 
-pub fn save_flights(flights: Vec<Flight>) -> Result<(), String> {
-    let _async_lock = lock_state_gate_blocking();
-    let _lock = STATE_LOCK
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
-    let mut state = load_state();
-    state.flights = merge_flights_for_frontend_save(&state.flights, flights);
-    state.version += 1;
-    save_state_inner(&state)
+// Slice writers. All of these are reachable from `#[tauri::command]`s that
+// the frontend calls while the app is live, so they are `async` and await the
+// state gate fairly (see `lock_state_gate_blocking` for what the previous
+// synchronous spin cost us).
+
+pub async fn save_flights(flights: Vec<Flight>) -> Result<(), String> {
+    update_state_async(move |state| {
+        state.flights = merge_flights_for_frontend_save(&state.flights, flights);
+    })
+    .await
 }
 
-pub fn save_agents(agents: Vec<AgentConfig>) -> Result<(), String> {
-    let _async_lock = lock_state_gate_blocking();
-    let _lock = STATE_LOCK
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
-    let mut state = load_state();
-    state.agents = agents;
-    state.version += 1;
-    save_state_inner(&state)
+pub async fn save_agents(agents: Vec<AgentConfig>) -> Result<(), String> {
+    update_state_async(move |state| state.agents = agents).await
 }
 
-pub fn save_settings(settings: OrchestratorSettings) -> Result<(), String> {
-    let _async_lock = lock_state_gate_blocking();
-    let _lock = STATE_LOCK
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
-    let mut state = load_state();
-    state.settings = settings;
-    state.version += 1;
-    save_state_inner(&state)
+pub async fn save_settings(settings: OrchestratorSettings) -> Result<(), String> {
+    update_state_async(move |state| state.settings = settings).await
 }
 
-pub fn save_ui(ui: PersistedUiState) -> Result<(), String> {
-    let _async_lock = lock_state_gate_blocking();
-    let _lock = STATE_LOCK
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
-    let mut state = load_state();
-    if let Some(value) = ui.selected_flight_id {
-        state.ui.selected_flight_id = if value.is_empty() { None } else { Some(value) };
-    }
-    if let Some(value) = ui.selected_view {
-        state.ui.selected_view = if value.is_empty() { None } else { Some(value) };
-    }
-    if let Some(value) = ui.theme {
-        state.ui.theme = if value.is_empty() { None } else { Some(value) };
-    }
-    state.version += 1;
-    save_state_inner(&state)
+pub async fn save_ui(ui: PersistedUiState) -> Result<(), String> {
+    update_state_async(move |state| {
+        if let Some(value) = ui.selected_flight_id {
+            state.ui.selected_flight_id = if value.is_empty() { None } else { Some(value) };
+        }
+        if let Some(value) = ui.selected_view {
+            state.ui.selected_view = if value.is_empty() { None } else { Some(value) };
+        }
+        if let Some(value) = ui.theme {
+            state.ui.theme = if value.is_empty() { None } else { Some(value) };
+        }
+    })
+    .await
 }
 
-pub fn save_issues(issues: Vec<Issue>) -> Result<(), String> {
-    let _async_lock = lock_state_gate_blocking();
-    let _lock = STATE_LOCK
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
-    let mut state = load_state();
-    state.issues = issues;
-    state.version += 1;
-    save_state_inner(&state)
+pub async fn save_issues(issues: Vec<Issue>) -> Result<(), String> {
+    update_state_async(move |state| state.issues = issues).await
 }
 
-pub fn save_workspaces(workspaces: Vec<Workspace>) -> Result<(), String> {
-    let _async_lock = lock_state_gate_blocking();
-    let _lock = STATE_LOCK
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
-    let mut state = load_state();
-    state.workspaces = workspaces;
-    state.version += 1;
-    save_state_inner(&state)
+pub async fn save_workspaces(workspaces: Vec<Workspace>) -> Result<(), String> {
+    update_state_async(move |state| state.workspaces = workspaces).await
 }
 
-pub fn save_servers(servers: Vec<ServerConfig>) -> Result<(), String> {
-    let _async_lock = lock_state_gate_blocking();
-    let _lock = STATE_LOCK
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
-    let mut state = load_state();
-    state.servers = servers;
-    state.version += 1;
-    save_state_inner(&state)
+pub async fn save_servers(servers: Vec<ServerConfig>) -> Result<(), String> {
+    update_state_async(move |state| state.servers = servers).await
 }
 
 /// Persist the CLI-account slice: the account records *and* the sticky
 /// per-project defaults that point at them. They travel together because a
 /// default is meaningless without the account it names, and writing them in
 /// one locked pass keeps the two from disagreeing on disk.
-pub fn save_cli_accounts(
+pub async fn save_cli_accounts(
     accounts: Vec<CliAccount>,
     defaults: BTreeMap<String, BTreeMap<String, String>>,
 ) -> Result<(), String> {
-    let _async_lock = lock_state_gate_blocking();
-    let _lock = STATE_LOCK
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
-    let mut state = load_state();
-    state.cli_accounts = accounts;
-    state.cli_account_defaults = defaults;
-    state.version += 1;
-    save_state_inner(&state)
+    update_state_async(move |state| {
+        state.cli_accounts = accounts;
+        state.cli_account_defaults = defaults;
+    })
+    .await
 }
 
-pub fn save_memory(
+pub async fn save_memory(
     events: Vec<serde_json::Value>,
     patterns: Vec<serde_json::Value>,
 ) -> Result<(), String> {
-    let _async_lock = lock_state_gate_blocking();
-    let _lock = STATE_LOCK
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
-    let mut state = load_state();
-    state.memory_events = events;
-    state.memory_patterns = patterns;
-    state.version += 1;
-    save_state_inner(&state)
+    update_state_async(move |state| {
+        state.memory_events = events;
+        state.memory_patterns = patterns;
+    })
+    .await
 }
 
 /// v0.8-H: atomically flip the `pinned` flag on a single LearnedPattern by id.
 /// Returns the new `pinned` value (or `None` if the pattern was not found).
 /// Storing as `serde_json::Value` lets us mutate the field in-place rather
 /// than round-tripping the whole slice — robust across schema additions.
-pub fn toggle_pinned_pattern(pattern_id: &str) -> Result<Option<bool>, String> {
-    let _async_lock = lock_state_gate_blocking();
-    let _lock = STATE_LOCK
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
+pub async fn toggle_pinned_pattern(pattern_id: &str) -> Result<Option<bool>, String> {
+    // Not `update_state_async`: an unknown id must not rewrite the file (and
+    // must not bump `version`), so the save is conditional on a hit.
+    let _async_lock = ASYNC_STATE_LOCK.lock().await;
+    let _lock = lock_state_mutex();
     let mut state = load_state();
     let mut found: Option<bool> = None;
     for entry in state.memory_patterns.iter_mut() {
@@ -819,9 +844,7 @@ pub fn load_saved_ollama_base_url() -> Option<String> {
 }
 
 pub fn save_ollama_base_url(base_url: Option<String>) -> Result<(), String> {
-    let _lock = PROVIDER_SETTINGS_LOCK
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
+    let _lock = lock_provider_settings_mutex();
     let mut settings = load_provider_runtime_settings();
     settings.ollama_base_url = base_url;
     save_provider_runtime_settings(&settings)
@@ -846,9 +869,7 @@ pub fn save_ollama_runtime_options(
     num_ctx_cap: Option<u32>,
     keep_alive: Option<String>,
 ) -> Result<(), String> {
-    let _lock = PROVIDER_SETTINGS_LOCK
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
+    let _lock = lock_provider_settings_mutex();
     let mut settings = load_provider_runtime_settings();
     settings.ollama_num_ctx_cap = num_ctx_cap;
     settings.ollama_keep_alive = keep_alive;
@@ -908,9 +929,7 @@ pub fn load_saved_minimax_base_url() -> Option<String> {
 }
 
 pub fn save_minimax_base_url(base_url: Option<String>) -> Result<(), String> {
-    let _lock = PROVIDER_SETTINGS_LOCK
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
+    let _lock = lock_provider_settings_mutex();
     let mut settings = load_provider_runtime_settings();
     settings.minimax_base_url = base_url;
     save_provider_runtime_settings(&settings)
@@ -1117,6 +1136,68 @@ mod tests {
 
         assert_eq!(merged[0].attempts[0].status, AttemptStatus::Reviewing);
         assert_eq!(merged[0].attempts[0].tokens, 25);
+    }
+
+    fn passed_gate() -> crate::core::flight::AttemptReviewGate {
+        crate::core::flight::AttemptReviewGate {
+            status: crate::core::flight::ReviewGateStatus::Passed,
+            reviewer_conversation_id: Some("review-1".to_string()),
+            reviewer_agent_config_id: Some("api-claude".to_string()),
+            reviewer_model: Some("claude-sonnet".to_string()),
+            report: None,
+            error_message: None,
+            started_at: Some(5),
+            completed_at: Some(6),
+            overridden_at: None,
+            override_reason: None,
+        }
+    }
+
+    /// F1 regression. The Reviewer Gate verdict gates acceptance in
+    /// `update_attempt_status`, and it is written by `set_attempt_review_gate`
+    /// — so a whole-slice frontend save must never erase it. The pre-existing
+    /// merge tests all built `review_gate: None` on both sides, which is
+    /// exactly why the broken ownership went unnoticed.
+    #[test]
+    fn frontend_flight_save_preserves_backend_review_gate() {
+        let mut current = test_flight("flight-1");
+        let mut backend_attempt = test_attempt("attempt-1", AttemptStatus::Reviewing);
+        backend_attempt.review_gate = Some(passed_gate());
+        current.attempts = vec![backend_attempt];
+
+        let mut stale_frontend = test_flight("flight-1");
+        // The frontend store round-trips the attempt with no gate on it.
+        stale_frontend.attempts = vec![test_attempt("attempt-1", AttemptStatus::Reviewing)];
+
+        let merged = merge_flights_for_frontend_save(&[current], vec![stale_frontend]);
+
+        let gate = merged[0].attempts[0]
+            .review_gate
+            .as_ref()
+            .expect("backend review gate must survive a frontend flight save");
+        assert_eq!(gate.status, crate::core::flight::ReviewGateStatus::Passed);
+        assert_eq!(gate.reviewer_conversation_id.as_deref(), Some("review-1"));
+    }
+
+    /// The other half of the same ownership rule: the frontend cannot author a
+    /// verdict by stuffing one into a flight save. `set_attempt_review_gate`
+    /// is the only writer.
+    #[test]
+    fn frontend_flight_save_cannot_author_a_review_gate() {
+        let mut current = test_flight("flight-1");
+        current.attempts = vec![test_attempt("attempt-1", AttemptStatus::Reviewing)];
+
+        let mut stale_frontend = test_flight("flight-1");
+        let mut frontend_attempt = test_attempt("attempt-1", AttemptStatus::Reviewing);
+        frontend_attempt.review_gate = Some(passed_gate());
+        stale_frontend.attempts = vec![frontend_attempt];
+
+        let merged = merge_flights_for_frontend_save(&[current], vec![stale_frontend]);
+
+        assert!(
+            merged[0].attempts[0].review_gate.is_none(),
+            "a frontend flight save must not be able to author a Reviewer Gate verdict"
+        );
     }
 
     #[test]
@@ -1391,8 +1472,8 @@ mod tests {
     /// Also pins that the sticky per-project defaults travel with it — a
     /// default naming an account that did not come back would silently send
     /// the next session to the ambient login.
-    #[test]
-    fn cli_accounts_slice_round_trips_with_sticky_defaults() {
+    #[tokio::test]
+    async fn cli_accounts_slice_round_trips_with_sticky_defaults() {
         let dir = unique_temp_dir("cli-accounts");
         let _guard = redirect_data_dir_for_test(dir.clone());
 
@@ -1413,6 +1494,7 @@ mod tests {
             }],
             defaults,
         )
+        .await
         .expect("save_cli_accounts should succeed");
 
         let loaded = load_state();
@@ -1428,7 +1510,9 @@ mod tests {
         );
 
         // Writing an unrelated slice must not drop the accounts.
-        save_servers(Vec::new()).expect("save_servers should succeed");
+        save_servers(Vec::new())
+            .await
+            .expect("save_servers should succeed");
         let after = load_state();
         assert_eq!(
             after.cli_accounts.len(),

@@ -328,12 +328,16 @@ impl ReasoningAcc {
         };
         let mut fresh = String::new();
         for item in items {
-            let Some(obj) = item.as_object() else { continue };
+            let Some(obj) = item.as_object() else {
+                continue;
+            };
             let index = obj.get("index").and_then(|i| i.as_i64()).unwrap_or(0);
             let slot = self.entries.entry(index).or_default();
             for (key, value) in obj {
                 if REASONING_TEXT_FIELDS.contains(&key.as_str()) {
-                    let Some(fragment) = value.as_str() else { continue };
+                    let Some(fragment) = value.as_str() else {
+                        continue;
+                    };
                     // "data" is opaque/encrypted — accumulate it, but never
                     // surface it as thinking text.
                     if key != "data" {
@@ -342,7 +346,10 @@ impl ReasoningAcc {
                     match slot.get_mut(key) {
                         Some(serde_json::Value::String(existing)) => existing.push_str(fragment),
                         _ => {
-                            slot.insert(key.clone(), serde_json::Value::String(fragment.to_string()));
+                            slot.insert(
+                                key.clone(),
+                                serde_json::Value::String(fragment.to_string()),
+                            );
                         }
                     }
                 } else {

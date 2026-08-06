@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use serde_json::Value;
 use tauri::Emitter;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use super::events::{
     chunk_event, done_event, edit_baseline_event, error_event, mcp_sources_event,
@@ -20,7 +20,7 @@ use super::events::{
 };
 use super::status::SidecarState;
 use super::supervisor::SidecarManager;
-use super::EXPECTED_PROTOCOL_VERSION;
+use super::{protocol_meets_floor, EXPECTED_PROTOCOL_VERSION, MINIMUM_PROTOCOL_VERSION};
 
 impl SidecarManager {
     /// Translate a parsed sidecar event into a Tauri event.
@@ -69,6 +69,50 @@ impl SidecarManager {
                         );
                     }
                 }
+
+                // F7: record the handshake so `forward_start` can gate on it,
+                // and refuse outright below the security floor. A sidecar that
+                // predates v11 silently ignores `mcpTrustSnapshot` and runs
+                // every MCP server unfiltered, so "old but alive" is a worse
+                // outcome than "refused" — it looks like it works.
+                self.record_protocol_handshake(protocol_version.unwrap_or(0));
+                if !protocol_meets_floor(protocol_version) {
+                    let detail = match protocol_version {
+                        Some(proto) => format!(
+                            "The agent sidecar speaks protocol v{proto}, but PacketADE requires \
+                             v{MINIMUM_PROTOCOL_VERSION} or newer. A sidecar this old ignores \
+                             per-session MCP trust rules and would run every MCP server \
+                             unfiltered, so API-agent sessions are disabled. Reinstall PacketADE, \
+                             or clear PACKETADE_SIDECAR_PATH if you set it."
+                        ),
+                        None => format!(
+                            "The agent sidecar completed its handshake without advertising a \
+                             protocol version, so PacketADE cannot confirm it enforces per-session \
+                             MCP trust rules (v{MINIMUM_PROTOCOL_VERSION}+). API-agent sessions \
+                             are disabled. Reinstall PacketADE, or clear PACKETADE_SIDECAR_PATH \
+                             if you set it."
+                        ),
+                    };
+                    error!(
+                        pid,
+                        minimum = MINIMUM_PROTOCOL_VERSION,
+                        got = ?protocol_version,
+                        "refusing to use sidecar below the protocol security floor"
+                    );
+                    let captured_version = version.map(|v| v.to_string());
+                    let captured_pid = if pid == 0 { None } else { Some(pid as u32) };
+                    self.update_status(|s| {
+                        s.state = SidecarState::Incompatible;
+                        s.pid = captured_pid;
+                        s.version = captured_version.clone();
+                        s.last_error = Some(detail.clone());
+                        s.session_start = None;
+                    })
+                    .await;
+                    self.fail_owned_sessions(&detail).await;
+                    return;
+                }
+
                 // Lift the `ready` signal into the lifecycle status so the
                 // frontend chip flips from "restarting" / "not_started" to
                 // "ready" and can surface pid + version on hover.

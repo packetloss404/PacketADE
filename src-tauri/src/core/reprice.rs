@@ -303,7 +303,8 @@ fn reprice_ledger(path: &Path, now_iso: &str, today: &str) -> Result<RepriceStat
     if !path.exists() {
         return Ok(stats);
     }
-    let raw = std::fs::read_to_string(path).map_err(|e| format!("read {}: {}", path.display(), e))?;
+    let raw =
+        std::fs::read_to_string(path).map_err(|e| format!("read {}: {}", path.display(), e))?;
 
     let mut out: Vec<String> = Vec::new();
     for line in raw.lines() {
@@ -497,8 +498,8 @@ fn reprice_conversations(dir: &Path, now_iso: &str, today: &str) -> Result<Repri
         std::fs::copy(&path, backup_root.join(name))
             .map_err(|e| format!("back up {}: {}", path.display(), e))?;
 
-        let serialized =
-            serde_json::to_string(&value).map_err(|e| format!("reserialize conversation: {}", e))?;
+        let serialized = serde_json::to_string(&value)
+            .map_err(|e| format!("reserialize conversation: {}", e))?;
         write_atomic(&path, &serialized)?;
     }
     Ok(stats)
@@ -548,7 +549,10 @@ fn reprice_conversation_value(value: &mut Value, now_iso: &str, stats: &mut Repr
             "cacheWriteTokens",
             "reasoningTokens",
         ];
-        if !fields.iter().any(|k| m.get(*k).map(Value::is_u64) == Some(true)) {
+        if !fields
+            .iter()
+            .any(|k| m.get(*k).map(Value::is_u64) == Some(true))
+        {
             stats.skipped_no_tokens += 1;
             continue;
         }
@@ -678,7 +682,13 @@ mod tests {
             &path,
             format!(
                 "{}\n",
-                ledger_line("claude-opus-4-8", "2026-06-01T10:00:00Z", 1_000_000, 1_000_000, 90.0)
+                ledger_line(
+                    "claude-opus-4-8",
+                    "2026-06-01T10:00:00Z",
+                    1_000_000,
+                    1_000_000,
+                    90.0
+                )
             ),
         )
         .unwrap();
@@ -705,7 +715,13 @@ mod tests {
             &path,
             format!(
                 "{}\n",
-                ledger_line("claude-haiku-4-5", "2026-06-01T10:00:00Z", 1_000_000, 1_000_000, 4.8)
+                ledger_line(
+                    "claude-haiku-4-5",
+                    "2026-06-01T10:00:00Z",
+                    1_000_000,
+                    1_000_000,
+                    4.8
+                )
             ),
         )
         .unwrap();
@@ -715,7 +731,10 @@ mod tests {
         let rows = read_lines(&path);
         assert_eq!(rows[0]["cost_usd"].as_f64().unwrap(), 6.0);
         assert_eq!(rows[0]["cost_usd_before"].as_f64().unwrap(), 4.8);
-        assert!(stats.after_usd > stats.before_usd, "Haiku spend was understated");
+        assert!(
+            stats.after_usd > stats.before_usd,
+            "Haiku spend was understated"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -730,8 +749,20 @@ mod tests {
             &path,
             format!(
                 "{}\n{}\n",
-                ledger_line("MiniMax-M2", "2026-06-01T10:00:00Z", 1_000_000, 1_000_000, 2.6),
-                ledger_line("MiniMax-M2.7", "2026-06-01T10:00:00Z", 1_000_000, 1_000_000, 2.6),
+                ledger_line(
+                    "MiniMax-M2",
+                    "2026-06-01T10:00:00Z",
+                    1_000_000,
+                    1_000_000,
+                    2.6
+                ),
+                ledger_line(
+                    "MiniMax-M2.7",
+                    "2026-06-01T10:00:00Z",
+                    1_000_000,
+                    1_000_000,
+                    2.6
+                ),
             ),
         )
         .unwrap();
@@ -831,8 +862,20 @@ mod tests {
             &path,
             format!(
                 "{}\n{}\n",
-                ledger_line("claude-sonnet-5", "2026-08-15T10:00:00Z", 1_000_000, 0, 15.0),
-                ledger_line("claude-sonnet-5", "2026-09-15T10:00:00Z", 1_000_000, 0, 15.0),
+                ledger_line(
+                    "claude-sonnet-5",
+                    "2026-08-15T10:00:00Z",
+                    1_000_000,
+                    0,
+                    15.0
+                ),
+                ledger_line(
+                    "claude-sonnet-5",
+                    "2026-09-15T10:00:00Z",
+                    1_000_000,
+                    0,
+                    15.0
+                ),
             ),
         )
         .unwrap();
@@ -842,7 +885,11 @@ mod tests {
         let stats = reprice_ledger(&path, "2026-12-01T00:00:00Z", "2026-12-01").unwrap();
         assert_eq!(stats.repriced, 2);
         let rows = read_lines(&path);
-        assert_eq!(rows[0]["cost_usd"].as_f64().unwrap(), 2.0, "introductory window");
+        assert_eq!(
+            rows[0]["cost_usd"].as_f64().unwrap(),
+            2.0,
+            "introductory window"
+        );
         assert_eq!(rows[1]["cost_usd"].as_f64().unwrap(), 3.0, "post-rollover");
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -856,7 +903,13 @@ mod tests {
         // Missing every token bucket, plus an unknown model, plus a malformed
         // line, plus an unusable timestamp.
         let no_tokens = r#"{"ts":"2026-06-01T10:00:00Z","source":"x","model":"claude-opus-4-8","session_id":"s","cost_usd":9.0}"#;
-        let unknown_model = ledger_line("some-unreleased-model", "2026-06-01T10:00:00Z", 100, 100, 7.0);
+        let unknown_model = ledger_line(
+            "some-unreleased-model",
+            "2026-06-01T10:00:00Z",
+            100,
+            100,
+            7.0,
+        );
         let bad_ts = ledger_line("claude-opus-4-8", "nope", 1_000_000, 1_000_000, 90.0);
         let malformed = "{not json";
         std::fs::write(
@@ -878,7 +931,8 @@ mod tests {
             "nothing was rewritten, so the file must be byte-identical"
         );
         assert!(
-            !dir.join(format!("usage.jsonl.pre-reprice-{TODAY}")).exists(),
+            !dir.join(format!("usage.jsonl.pre-reprice-{TODAY}"))
+                .exists(),
             "no backup when nothing changed"
         );
         std::fs::remove_dir_all(&dir).ok();
@@ -894,7 +948,13 @@ mod tests {
             &path,
             format!(
                 "{}\n",
-                ledger_line("claude-sonnet-4-6", "2026-06-01T10:00:00Z", 1_000_000, 1_000_000, 18.0)
+                ledger_line(
+                    "claude-sonnet-4-6",
+                    "2026-06-01T10:00:00Z",
+                    1_000_000,
+                    1_000_000,
+                    18.0
+                )
             ),
         )
         .unwrap();
@@ -915,15 +975,30 @@ mod tests {
         let path = dir.join("usage.jsonl");
         let original = format!(
             "{}\n{}\n",
-            ledger_line("claude-opus-4-8", "2026-06-01T10:00:00Z", 1_000_000, 1_000_000, 90.0),
-            ledger_line("claude-sonnet-4-6", "2026-06-02T10:00:00Z", 1_000_000, 1_000_000, 18.0),
+            ledger_line(
+                "claude-opus-4-8",
+                "2026-06-01T10:00:00Z",
+                1_000_000,
+                1_000_000,
+                90.0
+            ),
+            ledger_line(
+                "claude-sonnet-4-6",
+                "2026-06-02T10:00:00Z",
+                1_000_000,
+                1_000_000,
+                18.0
+            ),
         );
         std::fs::write(&path, &original).unwrap();
 
         let first = reprice_ledger(&path, NOW, TODAY).unwrap();
         assert_eq!(first.repriced, 1);
         let backup = dir.join(format!("usage.jsonl.pre-reprice-{TODAY}"));
-        assert!(backup.exists(), "backup must exist before the rewrite lands");
+        assert!(
+            backup.exists(),
+            "backup must exist before the rewrite lands"
+        );
         assert_eq!(
             std::fs::read_to_string(&backup).unwrap(),
             original,
@@ -956,7 +1031,13 @@ mod tests {
             &path,
             format!(
                 "{}\n",
-                ledger_line("claude-opus-4-8", "2026-06-01T10:00:00Z", 1_000_000, 1_000_000, 90.0)
+                ledger_line(
+                    "claude-opus-4-8",
+                    "2026-06-01T10:00:00Z",
+                    1_000_000,
+                    1_000_000,
+                    90.0
+                )
             ),
         )
         .unwrap();
@@ -965,7 +1046,9 @@ mod tests {
 
         reprice_ledger(&path, NOW, TODAY).unwrap();
         assert_eq!(std::fs::read_to_string(&squatter).unwrap(), "PRECIOUS");
-        assert!(dir.join(format!("usage.jsonl.pre-reprice-{TODAY}-2")).exists());
+        assert!(dir
+            .join(format!("usage.jsonl.pre-reprice-{TODAY}-2"))
+            .exists());
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1018,16 +1101,21 @@ mod tests {
         assert_eq!(stats.repriced, 1);
 
         let after: Value =
-            serde_json::from_str(&std::fs::read_to_string(convs.join("c-1.json")).unwrap()).unwrap();
+            serde_json::from_str(&std::fs::read_to_string(convs.join("c-1.json")).unwrap())
+                .unwrap();
         let m = &after["messages"][0];
         assert_eq!(m["costUsd"].as_f64().unwrap(), 30.0);
         assert_eq!(m["costUsdBefore"].as_f64().unwrap(), 90.0);
         assert_eq!(m["repricedAt"].as_str().unwrap(), NOW);
 
         let backup = dir.join(format!("conversations.pre-reprice-{TODAY}"));
-        assert!(backup.join("c-1.json").exists(), "original must be backed up");
+        assert!(
+            backup.join("c-1.json").exists(),
+            "original must be backed up"
+        );
         let backed: Value =
-            serde_json::from_str(&std::fs::read_to_string(backup.join("c-1.json")).unwrap()).unwrap();
+            serde_json::from_str(&std::fs::read_to_string(backup.join("c-1.json")).unwrap())
+                .unwrap();
         assert_eq!(backed["messages"][0]["costUsd"].as_f64().unwrap(), 90.0);
 
         // Idempotent: second pass sees the marker and does nothing.
@@ -1066,7 +1154,8 @@ mod tests {
 
         reprice_conversations(&convs, NOW, TODAY).unwrap();
         let after: Value =
-            serde_json::from_str(&std::fs::read_to_string(convs.join("c-1.json")).unwrap()).unwrap();
+            serde_json::from_str(&std::fs::read_to_string(convs.join("c-1.json")).unwrap())
+                .unwrap();
         assert!(
             (after["messages"][0]["costUsd"].as_f64().unwrap() - 4.0).abs() < 1e-9,
             "got {}",
@@ -1103,7 +1192,8 @@ mod tests {
 
         reprice_conversations(&convs, NOW, TODAY).unwrap();
         let after: Value =
-            serde_json::from_str(&std::fs::read_to_string(convs.join("c-1.json")).unwrap()).unwrap();
+            serde_json::from_str(&std::fs::read_to_string(convs.join("c-1.json")).unwrap())
+                .unwrap();
         assert_eq!(after["messages"][0]["costUsd"].as_f64().unwrap(), 25.0);
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -1114,18 +1204,29 @@ mod tests {
         let convs = dir.join("conversations");
         std::fs::create_dir_all(&convs).unwrap();
 
-        let mut no_model = conversation("claude-opus-4-8", json!({
-            "id": "m-1", "role": "assistant", "content": "x",
-            "timestamp": JUNE_MS, "inputTokens": 1_000_000, "costUsd": 15.0,
-        }));
+        let mut no_model = conversation(
+            "claude-opus-4-8",
+            json!({
+                "id": "m-1", "role": "assistant", "content": "x",
+                "timestamp": JUNE_MS, "inputTokens": 1_000_000, "costUsd": 15.0,
+            }),
+        );
         no_model.as_object_mut().unwrap().remove("model");
-        std::fs::write(convs.join("a.json"), serde_json::to_string(&no_model).unwrap()).unwrap();
+        std::fs::write(
+            convs.join("a.json"),
+            serde_json::to_string(&no_model).unwrap(),
+        )
+        .unwrap();
 
         let no_tokens = conversation(
             "claude-opus-4-8",
             json!({ "id": "m-1", "role": "assistant", "content": "x", "timestamp": JUNE_MS, "costUsd": 15.0 }),
         );
-        std::fs::write(convs.join("b.json"), serde_json::to_string(&no_tokens).unwrap()).unwrap();
+        std::fs::write(
+            convs.join("b.json"),
+            serde_json::to_string(&no_tokens).unwrap(),
+        )
+        .unwrap();
 
         let a_before = std::fs::read_to_string(convs.join("a.json")).unwrap();
         let b_before = std::fs::read_to_string(convs.join("b.json")).unwrap();
@@ -1134,9 +1235,17 @@ mod tests {
         assert_eq!(stats.repriced, 0);
         assert_eq!(stats.skipped_unknown_model, 1);
         assert_eq!(stats.skipped_no_tokens, 1);
-        assert_eq!(std::fs::read_to_string(convs.join("a.json")).unwrap(), a_before);
-        assert_eq!(std::fs::read_to_string(convs.join("b.json")).unwrap(), b_before);
-        assert!(!dir.join(format!("conversations.pre-reprice-{TODAY}")).exists());
+        assert_eq!(
+            std::fs::read_to_string(convs.join("a.json")).unwrap(),
+            a_before
+        );
+        assert_eq!(
+            std::fs::read_to_string(convs.join("b.json")).unwrap(),
+            b_before
+        );
+        assert!(!dir
+            .join(format!("conversations.pre-reprice-{TODAY}"))
+            .exists());
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1158,7 +1267,10 @@ mod tests {
 
         let stats = reprice_conversations(&convs, NOW, TODAY).unwrap();
         assert_eq!(stats.scanned, 0);
-        assert_eq!(std::fs::read_to_string(chk.join("1_chk_1.json")).unwrap(), snapshot);
+        assert_eq!(
+            std::fs::read_to_string(chk.join("1_chk_1.json")).unwrap(),
+            snapshot
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1188,7 +1300,13 @@ mod tests {
             &ledger,
             format!(
                 "{}\n",
-                ledger_line("claude-opus-4-8", "2026-06-01T10:00:00Z", 1_000_000, 1_000_000, 90.0)
+                ledger_line(
+                    "claude-opus-4-8",
+                    "2026-06-01T10:00:00Z",
+                    1_000_000,
+                    1_000_000,
+                    90.0
+                )
             ),
         )
         .unwrap();
@@ -1197,7 +1315,9 @@ mod tests {
         assert_eq!(stats.repriced, 1);
         assert_eq!(stats.before_usd, 90.0);
         assert_eq!(stats.after_usd, 30.0);
-        assert!(crate::core::storage::load_state().cost_reprice_v1_at.is_some());
+        assert!(crate::core::storage::load_state()
+            .cost_reprice_v1_at
+            .is_some());
 
         // Second launch short-circuits on the flag.
         assert!(
@@ -1211,7 +1331,10 @@ mod tests {
 
     #[test]
     fn iso_date_rejects_garbage_timestamps() {
-        assert_eq!(iso_date("2026-06-01T10:00:00Z").as_deref(), Some("2026-06-01"));
+        assert_eq!(
+            iso_date("2026-06-01T10:00:00Z").as_deref(),
+            Some("2026-06-01")
+        );
         assert_eq!(iso_date("2026-06-01").as_deref(), Some("2026-06-01"));
         assert_eq!(iso_date("nope"), None);
         assert_eq!(iso_date("20260601T10"), None);

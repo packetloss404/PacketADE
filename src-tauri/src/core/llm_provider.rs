@@ -84,9 +84,9 @@ mod tests {
         // `api-` prefix from an agent-config id hands us "claude", which is
         // NOT the id of the Anthropic provider.
         for bogus in ["claude", "api-claude", "claude-oauth", "openai-codex"] {
-            let err = get_provider(bogus)
-                .err()
-                .unwrap_or_else(|| panic!("get_provider must reject the agent-config id '{bogus}'"));
+            let err = get_provider(bogus).err().unwrap_or_else(|| {
+                panic!("get_provider must reject the agent-config id '{bogus}'")
+            });
             assert!(
                 err.contains(bogus),
                 "unknown-provider error must name the offending id, got: {err}"

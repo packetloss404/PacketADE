@@ -6,7 +6,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
@@ -25,7 +25,8 @@ use super::status::{
     SidecarStatusInner,
 };
 use super::{
-    EXPECTED_PROTOCOL_VERSION, MAX_RESTARTS_IN_WINDOW, RESTART_WINDOW, SIDECAR_STATUS_EVENT,
+    protocol_meets_floor, EXPECTED_PROTOCOL_VERSION, MAX_RESTARTS_IN_WINDOW,
+    MINIMUM_PROTOCOL_VERSION, RESTART_WINDOW, SIDECAR_STATUS_EVENT,
 };
 use crate::commands::shared::hide_window_async;
 use crate::commands::ssh_keys;
@@ -147,6 +148,11 @@ pub struct SidecarManager {
     /// per-session arrival order even though the rollup tasks themselves
     /// complete in arbitrary order.
     pub(super) exec_turn_seq: AtomicU64,
+    /// F7 — wire protocol version advertised by the local sidecar's most
+    /// recent `ready` handshake. `0` means no handshake has completed yet.
+    /// `forward_start` waits for this before sending a session, then refuses
+    /// anything below [`super::MINIMUM_PROTOCOL_VERSION`].
+    handshake_protocol: AtomicU32,
     /// Synchronous process bookkeeping used by the Tauri exit hook. These
     /// locks must remain usable after the async runtime begins shutting down.
     local_child: StdMutex<Option<ChildHandle>>,
@@ -175,6 +181,7 @@ impl SidecarManager {
             remote_sessions: Arc::new(Mutex::new(HashMap::new())),
             exec_token_snapshots: Arc::new(Mutex::new(HashMap::new())),
             exec_turn_seq: AtomicU64::new(0),
+            handshake_protocol: AtomicU32::new(0),
             local_child: StdMutex::new(None),
             remote_children: Arc::new(StdMutex::new(HashMap::new())),
             shutting_down: AtomicBool::new(false),
@@ -264,6 +271,79 @@ impl SidecarManager {
     pub async fn current_status(&self) -> SidecarStatus {
         let guard = self.status.lock().await;
         guard.snapshot()
+    }
+
+    /// F7 — record the protocol version from a local `ready` handshake. `0`
+    /// means the sidecar answered without advertising one.
+    pub(super) fn record_protocol_handshake(&self, version: u32) {
+        self.handshake_protocol.store(version, Ordering::SeqCst);
+    }
+
+    /// Clear the recorded handshake. Called when the child dies so a restart
+    /// re-negotiates instead of inheriting the dead process's version.
+    pub(super) fn clear_protocol_handshake(&self) {
+        self.handshake_protocol.store(0, Ordering::SeqCst);
+    }
+
+    /// F7 — emit `api-agent:error:*` on every owned local session. Used when
+    /// the sidecar is alive but refused (protocol below the security floor),
+    /// where the crash paths would otherwise never run.
+    pub(super) async fn fail_owned_sessions(&self, message: &str) {
+        self.fan_out_crash_error(message).await;
+    }
+
+    /// F7 — block a `start_session` unless the local sidecar has handshaken at
+    /// or above [`MINIMUM_PROTOCOL_VERSION`].
+    ///
+    /// The wait exists because `writer_tx` is installed when the child spawns
+    /// but `ready` lands a beat later; without it a session launched in that
+    /// window would skip the check entirely. In practice the handshake is long
+    /// since done — the local sidecar negotiates during app startup — so this
+    /// returns on its first poll.
+    async fn ensure_protocol_floor(&self) -> Result<(), String> {
+        const HANDSHAKE_WAIT: Duration = Duration::from_secs(10);
+        const POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+        let deadline = std::time::Instant::now() + HANDSHAKE_WAIT;
+        loop {
+            let advertised = self.handshake_protocol.load(Ordering::SeqCst);
+            if advertised >= MINIMUM_PROTOCOL_VERSION {
+                return Ok(());
+            }
+            if advertised > 0 {
+                return Err(format!(
+                    "The agent sidecar speaks protocol v{advertised}, but PacketADE requires \
+                     v{MINIMUM_PROTOCOL_VERSION} or newer to enforce per-session MCP trust rules. \
+                     Refusing to start this session. Reinstall PacketADE, or clear \
+                     PACKETADE_SIDECAR_PATH if you set it."
+                ));
+            }
+            let state_is_terminal = {
+                let guard = self.status.lock().await;
+                matches!(guard.state, SidecarState::Down | SidecarState::Incompatible)
+            };
+            if state_is_terminal {
+                return Err(
+                    "The agent sidecar is not running, so PacketADE cannot verify it enforces \
+                     per-session MCP trust rules. Refusing to start this session."
+                        .to_string(),
+                );
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(
+                    "The agent sidecar did not complete its protocol handshake in time, so \
+                     PacketADE cannot verify it enforces per-session MCP trust rules. Refusing \
+                     to start this session."
+                        .to_string(),
+                );
+            }
+            tokio::time::sleep(POLL_INTERVAL).await;
+        }
+    }
+
+    /// Public seam for `protocol.rs`'s `forward_start_inner`.
+    pub(super) async fn assert_protocol_floor(&self) -> Result<(), String> {
+        self.ensure_protocol_floor().await
     }
 
     // -----------------------------------------------------------------------
@@ -597,6 +677,10 @@ impl SidecarManager {
             // emit (no double-emission).
             self.fan_out_crash_error(SIDECAR_RESTART_RECOVERABLE_ERROR)
                 .await;
+
+            // F7: the dead child's negotiated version says nothing about the
+            // one we are about to spawn. Re-negotiate from scratch.
+            self.clear_protocol_handshake();
 
             // Prune restart times outside the window, then check the rate limit.
             let now = Instant::now();
@@ -1026,6 +1110,45 @@ impl SidecarManager {
                                     protocol_version = ?protocol_version,
                                     "remote sidecar ready"
                                 );
+                                // F7: the remote handshake arrives after we
+                                // have already sent `start_session`, so the
+                                // floor check here is a kill switch rather
+                                // than a gate — tear the session down before
+                                // the model can take a turn against a sidecar
+                                // that ignores the MCP trust snapshot.
+                                if !protocol_meets_floor(protocol_version) {
+                                    let message = format!(
+                                        "The sidecar on this SSH host speaks protocol {}, but \
+                                         PacketADE requires v{} or newer to enforce per-session \
+                                         MCP trust rules. This session was stopped. Update \
+                                         PacketADE on the remote host.",
+                                        protocol_version
+                                            .map(|p| format!("v{p}"))
+                                            .unwrap_or_else(|| "an unknown version".to_string()),
+                                        MINIMUM_PROTOCOL_VERSION,
+                                    );
+                                    error!(
+                                        session_id = %session_id,
+                                        minimum = MINIMUM_PROTOCOL_VERSION,
+                                        got = ?protocol_version,
+                                        "refusing remote sidecar below the protocol security floor"
+                                    );
+                                    let _ = self.app_handle.emit(
+                                        &error_event(&session_id),
+                                        ErrorPayload {
+                                            message: message.clone(),
+                                        },
+                                    );
+                                    self.forget_owned_session(&session_id).await;
+                                    self.close_remote_session(&session_id).await;
+                                    let mut waiters = self.oneshot_waiters.lock().await;
+                                    if let Some(mut waiter) = waiters.remove(&session_id) {
+                                        if let Some(sender) = waiter.sender.take() {
+                                            let _ = sender.send(Err(message));
+                                        }
+                                    }
+                                    return;
+                                }
                                 continue;
                             }
                             if event_type == "error" {
@@ -1273,11 +1396,47 @@ async fn stderr_loop(stderr: ChildStderr) {
     }
 }
 
+/// F7 — are developer env overrides honored in this build?
+///
+/// `PACKETADE_SIDECAR_PATH` and `PACKETADE_NODE_PATH` redirect the supervisor
+/// to an arbitrary Node binary and script, and that process is handed live API
+/// keys (`start_session.apiKey`) plus every session's MCP trust snapshot. In a
+/// debug build that is the normal development loop. In a release build it is a
+/// way to substitute the security-critical peer without touching the install,
+/// so it is honored only when the user has opted in explicitly via
+/// `PACKETADE_DEV_SIDECAR=1`.
+fn developer_overrides_allowed() -> bool {
+    overrides_allowed(
+        cfg!(debug_assertions),
+        std::env::var("PACKETADE_DEV_SIDECAR").ok().as_deref(),
+    )
+}
+
+/// Pure form of the rule, so both build modes are testable from a debug build.
+fn overrides_allowed(is_debug_build: bool, opt_in: Option<&str>) -> bool {
+    is_debug_build || matches!(opt_in, Some("1") | Some("true"))
+}
+
+/// Log loudly, once, when a release build is running against an overridden
+/// sidecar or Node binary. This is the only trace an operator gets that the
+/// process receiving their API keys is not the bundled one.
+fn warn_if_override_active_in_release(variable: &str, value: &str) {
+    if cfg!(debug_assertions) {
+        return;
+    }
+    warn!(
+        variable = %variable,
+        value = %value,
+        "SECURITY: release build is using a developer sidecar override — the overridden process \
+         receives live API keys and this session's MCP trust snapshot"
+    );
+}
+
 /// Resolve the path to the sidecar entrypoint.
 ///
 /// Three-branch resolution:
-/// 1. If `PACKETADE_SIDECAR_PATH` is set, use it verbatim (tests, locally-
-///    built sidecars, and escape hatch for broken packaging).
+/// 1. If `PACKETADE_SIDECAR_PATH` is set AND developer overrides are allowed
+///    (debug build, or `PACKETADE_DEV_SIDECAR=1`), use it verbatim.
 /// 2. Otherwise in dev (`cfg!(debug_assertions)`) fall back to
 ///    `<project-root>/agent-sidecar/dist/index.js`. `CARGO_MANIFEST_DIR` in
 ///    dev is `src-tauri/`, so this resolves to the source tree.
@@ -1288,9 +1447,17 @@ async fn stderr_loop(stderr: ChildStderr) {
 /// (`spawn_child`) checks `.exists()` and surfaces a user-readable error
 /// that lists the resolved path.
 fn resolve_sidecar_path(app_handle: &AppHandle) -> PathBuf {
-    // 1. Explicit env override — highest priority.
+    // 1. Explicit env override — highest priority, developer builds only.
     if let Ok(override_path) = std::env::var("PACKETADE_SIDECAR_PATH") {
-        return PathBuf::from(override_path);
+        if developer_overrides_allowed() {
+            warn_if_override_active_in_release("PACKETADE_SIDECAR_PATH", &override_path);
+            return PathBuf::from(override_path);
+        }
+        warn!(
+            path = %override_path,
+            "ignoring PACKETADE_SIDECAR_PATH in a release build — set PACKETADE_DEV_SIDECAR=1 to \
+             opt in; the bundled sidecar will be used instead"
+        );
     }
 
     // 2. Dev fallback — CARGO_MANIFEST_DIR-relative path to the source tree.
@@ -1322,11 +1489,24 @@ fn resolve_sidecar_path(app_handle: &AppHandle) -> PathBuf {
 /// Resolve an explicit Node binary override via `PACKETADE_NODE_PATH`. When
 /// `None` is returned, callers use their default strategy: system `node` in
 /// dev, Tauri shell plugin sidecar in release.
+///
+/// F7: honored only where [`developer_overrides_allowed`] says so — this
+/// selects the interpreter that will receive live API keys.
 fn resolved_node_override() -> Option<PathBuf> {
-    std::env::var("PACKETADE_NODE_PATH")
-        .ok()
-        .map(PathBuf::from)
-        .filter(|p| !p.as_os_str().is_empty())
+    let raw = std::env::var("PACKETADE_NODE_PATH").ok()?;
+    if raw.is_empty() {
+        return None;
+    }
+    if !developer_overrides_allowed() {
+        warn!(
+            path = %raw,
+            "ignoring PACKETADE_NODE_PATH in a release build — set PACKETADE_DEV_SIDECAR=1 to \
+             opt in; the bundled Node runtime will be used instead"
+        );
+        return None;
+    }
+    warn_if_override_active_in_release("PACKETADE_NODE_PATH", &raw);
+    Some(PathBuf::from(raw))
 }
 
 /// Node 24.15 on Windows cannot load a main module path in verbatim form
@@ -1627,8 +1807,14 @@ mod supervisor_tests {
         // former (stale baselines survive crashes otherwise) and keep the
         // latter (remote sessions are untouched by the local crash path).
         let exec_token_snapshots = Arc::new(Mutex::new(HashMap::from([
-            (("local-a".to_string(), String::new()), (3_u64, [10, 20, 30, 40])),
-            (("remote-a".to_string(), String::new()), (7_u64, [1, 2, 3, 4])),
+            (
+                ("local-a".to_string(), String::new()),
+                (3_u64, [10, 20, 30, 40]),
+            ),
+            (
+                ("remote-a".to_string(), String::new()),
+                (7_u64, [1, 2, 3, 4]),
+            ),
         ])));
 
         let mut emitted = Vec::new();
@@ -1723,6 +1909,31 @@ mod supervisor_tests {
                 .map(String::from)
                 .collect::<HashSet<_>>()
         );
+    }
+}
+
+#[cfg(test)]
+mod developer_override_tests {
+    use super::overrides_allowed;
+
+    #[test]
+    fn debug_builds_honor_the_sidecar_overrides() {
+        // The everyday `pnpm tauri dev` loop, with and without the opt-in.
+        assert!(overrides_allowed(true, None));
+        assert!(overrides_allowed(true, Some("1")));
+    }
+
+    #[test]
+    fn release_builds_ignore_the_overrides_unless_opted_in() {
+        // F7: the overridden process receives live API keys and each session's
+        // MCP trust snapshot, so a stray env var in a shipped build must not
+        // be enough to swap it out.
+        assert!(!overrides_allowed(false, None));
+        assert!(!overrides_allowed(false, Some("")));
+        assert!(!overrides_allowed(false, Some("0")));
+        assert!(!overrides_allowed(false, Some("yes")));
+        assert!(overrides_allowed(false, Some("1")));
+        assert!(overrides_allowed(false, Some("true")));
     }
 }
 

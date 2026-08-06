@@ -12,7 +12,7 @@
  *      not run and this script refuses to proceed (exit 1). We do NOT
  *      silently re-run the build — that's the caller's job.
  *   2. Resolves the build's Rust target triple (scripts/target-triple.js;
- *      `--target=` → TAURI_TARGET → TAURI_ENV_TARGET_TRIPLE → host) and
+ *      `--target=` → TAURI_ENV_TARGET_TRIPLE → TAURI_TARGET → host) and
  *      invokes `pnpm -C agent-sidecar install --prod --ignore-scripts`
  *      with pnpm's `supportedArchitectures` temporarily injected into
  *      agent-sidecar/package.json so the TARGET platform's native deps

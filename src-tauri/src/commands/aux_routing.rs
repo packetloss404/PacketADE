@@ -77,8 +77,8 @@ pub async fn get_aux_route_resolutions(
 
     Ok(AuxTaskClass::ALL
         .iter()
-        .map(|task| {
-            match aux_llm::resolve_aux_route(*task, &overrides, &configured) {
+        .map(
+            |task| match aux_llm::resolve_aux_route(*task, &overrides, &configured) {
                 Ok(route) => AuxRouteResolution {
                     task_class: task.id().to_string(),
                     label: task.label().to_string(),
@@ -95,8 +95,8 @@ pub async fn get_aux_route_resolutions(
                     explicit: false,
                     error: Some(error),
                 },
-            }
-        })
+            },
+        )
         .collect())
 }
 

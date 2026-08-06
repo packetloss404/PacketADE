@@ -3,6 +3,7 @@ import { useAppStore } from "@/stores/appStore";
 import { useDictationStore } from "@/stores/dictationStore";
 import { resolveViewHotkey } from "@/lib/viewHotkeys";
 import { isEditableTarget, isTerminalTarget } from "@/lib/keyboardTarget";
+import { isModalOpen } from "@/lib/modalStack";
 
 /**
  * App-shell global keyboard shortcuts. Hoisted out of `App.tsx` so the
@@ -19,8 +20,10 @@ import { isEditableTarget, isTerminalTarget } from "@/lib/keyboardTarget";
  *     yields inside a terminal: Escape there belongs to vim/the shell.
  *   - **Ctrl+Shift+&lt;chord&gt;** — route switching from the D4 route registry,
  *     matched on the PHYSICAL key so the chords survive non-US layouts. Yields
- *     inside a terminal only; text fields don't bind Ctrl+Shift chords, so
- *     navigation stays available while typing in a composer.
+ *     inside a terminal, and while any `ui/Modal` is open — switching views
+ *     unmounts the dialog along with the outgoing view. Text fields don't bind
+ *     Ctrl+Shift chords, so navigation stays available while typing in a
+ *     composer.
  */
 export function useGlobalShortcuts(): void {
   useEffect(() => {
@@ -70,6 +73,10 @@ export function useGlobalShortcuts(): void {
         // Terminals own their keystrokes; text fields don't bind Ctrl+Shift
         // chords, so navigation stays available while typing in a composer.
         if (isTerminalTarget(e)) return;
+        // `App`'s view switch unmounts the outgoing view, which takes any open
+        // dialog and its half-typed form down with it. While a modal is up,
+        // navigation waits for the user to dismiss it.
+        if (isModalOpen()) return;
         const target = resolveViewHotkey(e);
         if (target) {
           e.preventDefault();

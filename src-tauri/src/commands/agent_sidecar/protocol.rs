@@ -144,6 +144,18 @@ impl SidecarManager {
         mcp_trust_snapshot: Value,
         ssh_config: Option<SshConfig>,
     ) -> Result<(), String> {
+        // F7: the v11 `mcpTrustSnapshot` below is only authority if the peer
+        // reading it understands v11. An older sidecar drops the field on the
+        // floor and runs every MCP server unfiltered, so refuse rather than
+        // hand a live API key and an unenforced trust snapshot to a peer that
+        // will quietly ignore half of it.
+        //
+        // SSH sessions negotiate with their own per-session remote sidecar
+        // (checked in `remote_reader_loop` when its `ready` lands); the local
+        // handshake says nothing about them.
+        if ssh_config.is_none() {
+            self.assert_protocol_floor().await?;
+        }
         if let Some(config) = ssh_config.as_ref() {
             self.spawn_remote_sidecar_for_session(&session_id, &provider, config)
                 .await?;

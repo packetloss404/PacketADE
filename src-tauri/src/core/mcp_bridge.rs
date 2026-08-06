@@ -43,14 +43,115 @@ pub struct McpTrustSnapshot {
     pub capability_checked_at: Option<u64>,
 }
 
+/// Word tokens that name a mutation. Matched against the tool name split into
+/// words (`applyPatch` / `apply_patch` / `apply-patch` all tokenize the same),
+/// so this catches names the substring pass below misses without the false
+/// positives a bare `contains("put")` would produce.
+///
+/// Mirrors `MUTATING_TOKENS` in `agent-sidecar/src/mcp-trust.ts`. Keep the two
+/// in lockstep: they are the same floor enforced on two transports.
+const MUTATING_TOKENS: &[&str] = &[
+    "write",
+    "create",
+    "update",
+    "delete",
+    "remove",
+    "move",
+    "rename",
+    "post",
+    "send",
+    "merge",
+    "push",
+    "publish",
+    "archive",
+    "close",
+    "reopen",
+    "assign",
+    "set",
+    "execute",
+    "run",
+    "exec",
+    "edit",
+    "patch",
+    "apply",
+    "commit",
+    "mkdir",
+    "rmdir",
+    "chmod",
+    "chown",
+    "append",
+    "prepend",
+    "put",
+    "save",
+    "store",
+    "modify",
+    "insert",
+    "upsert",
+    "drop",
+    "truncate",
+    "alter",
+    "upload",
+    "install",
+    "uninstall",
+    "mutate",
+    "destroy",
+    "purge",
+    "wipe",
+    "overwrite",
+    "replace",
+    "unlink",
+    "mount",
+    "unmount",
+    "format",
+    "kill",
+    "terminate",
+    "revoke",
+    "grant",
+    "restart",
+    "reset",
+];
+
+/// Split a tool name into lowercase word tokens, breaking on non-alphanumerics
+/// and on camelCase humps.
+fn tool_name_tokens(name: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut previous_lower_or_digit = false;
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            if ch.is_ascii_uppercase() && previous_lower_or_digit && !current.is_empty() {
+                tokens.push(std::mem::take(&mut current));
+            }
+            current.push(ch.to_ascii_lowercase());
+            previous_lower_or_digit = ch.is_ascii_lowercase() || ch.is_ascii_digit();
+        } else if !current.is_empty() {
+            tokens.push(std::mem::take(&mut current));
+            previous_lower_or_digit = false;
+        }
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+    tokens
+}
+
 fn suspected_mutation(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    [
+    let lowered = name.to_ascii_lowercase();
+    // Legacy substring pass — catches glued-together names like `rewriteFile`
+    // whose tokens ("rewrite") are not themselves in the token list.
+    let substring_hit = [
         "write", "create", "update", "delete", "remove", "move", "rename", "post", "send", "merge",
         "push", "publish", "archive", "close", "reopen", "assign", "set", "execute", "run",
     ]
     .iter()
-    .any(|needle| name.contains(needle))
+    .any(|needle| lowered.contains(needle));
+    if substring_hit {
+        return true;
+    }
+    let tokens = tool_name_tokens(name);
+    tokens
+        .iter()
+        .any(|token| MUTATING_TOKENS.contains(&token.as_str()))
 }
 
 fn credential_tool(name: &str) -> bool {
@@ -92,15 +193,27 @@ fn trust_for_server<'a>(
         .find(|snapshot| snapshot.server_name == server)
 }
 
+/// F6 — read-only sessions run an ALLOWLIST, not a denylist.
+///
+/// `read_only_hint` is the tool's own `readOnlyHint` annotation as reported by
+/// its MCP server (`None` when the caller has no listing to consult). When the
+/// session is read-only a tool runs only if the server annotated it read-only
+/// or the user explicitly granted it in `allowed_tool_names`; everything else,
+/// including every tool we simply do not recognize, is refused. The verb floor
+/// (`suspected_mutation`) then applies on top, so an obviously-mutating name
+/// stays blocked even if it somehow reached the allowlist.
 fn trust_allows_advertisement(
     snapshots: Option<&[McpTrustSnapshot]>,
     server: &str,
     tool: &str,
+    read_only_hint: Option<bool>,
 ) -> bool {
     let Some(snapshot) = trust_for_server(snapshots, server) else {
-        // No trust field is a legacy session. Preserve access but migrate it
-        // to read-only behavior by suppressing likely mutations.
-        return !suspected_mutation(tool)
+        // No trust field is a legacy session. Treat it as read-only with no
+        // user grants: only a server-annotated read-only tool that also clears
+        // the floors may run.
+        return read_only_hint == Some(true)
+            && !suspected_mutation(tool)
             && !credential_tool(tool)
             && !protected_publish_tool(tool);
     };
@@ -131,7 +244,17 @@ fn trust_allows_advertisement(
     {
         return false;
     }
-    snapshot.allow_writes || !suspected_mutation(tool)
+    if snapshot.allow_writes {
+        return true;
+    }
+    if suspected_mutation(tool) {
+        return false;
+    }
+    read_only_hint == Some(true)
+        || snapshot
+            .allowed_tool_names
+            .iter()
+            .any(|allowed| allowed == tool)
 }
 
 fn normalize_lexical(path: &Path) -> PathBuf {
@@ -196,10 +319,12 @@ fn enforce_tool_trust(
     server: &str,
     tool: &str,
     args: &Value,
+    read_only_hint: Option<bool>,
 ) -> Result<(), String> {
-    if !trust_allows_advertisement(snapshots, server, tool) {
+    if !trust_allows_advertisement(snapshots, server, tool, read_only_hint) {
         return Err(format!(
-            "MCP tool '{server}/{tool}' is outside this session's frozen read-only authority"
+            "MCP tool '{server}/{tool}' is outside this session's frozen read-only authority. \
+             Allow the tool or enable writes for '{server}' in Settings → MCP Hub."
         ));
     }
     let Some(snapshot) = trust_for_server(snapshots, server) else {
@@ -381,7 +506,12 @@ pub async fn load_mcp_tool_definitions_with_trust(
         match McpConnectionPool::list_tools_for_server(&server).await {
             Ok(tools) => {
                 for t in tools {
-                    if !trust_allows_advertisement(trust_snapshots, &server, &t.name) {
+                    if !trust_allows_advertisement(
+                        trust_snapshots,
+                        &server,
+                        &t.name,
+                        Some(t.is_read_only()),
+                    ) {
                         continue;
                     }
                     let advertised_name = make_tool_name(&server, &t.name);
@@ -432,10 +562,13 @@ pub async fn load_mcp_tool_definitions_with_trust(
 /// Resolve an agent-facing MCP tool name back into the original server/tool
 /// pair. This compares against generated advertisements instead of reversing
 /// slugs, so long names and sanitized names round-trip correctly.
+/// Returns `(server, tool, read_only_hint)`. The hint comes from the live
+/// `tools/list` response, so execution-time trust decisions consult the same
+/// annotation the advertisement pass did rather than re-guessing from the name.
 async fn resolve_mcp_name(
     name: &str,
     enabled_server_ids: Option<&[String]>,
-) -> Result<(String, String), String> {
+) -> Result<(String, String, bool), String> {
     if !name.starts_with(MCP_TOOL_PREFIX) {
         return Err(format!("Tool name '{}' does not start with 'mcp__'", name));
     }
@@ -445,7 +578,8 @@ async fn resolve_mcp_name(
         let tools = McpConnectionPool::list_tools_for_server(&server).await?;
         for tool in tools {
             if make_tool_name(&server, &tool.name) == name {
-                matches.push((server.clone(), tool.name));
+                let read_only = tool.is_read_only();
+                matches.push((server.clone(), tool.name, read_only));
             }
         }
     }
@@ -478,8 +612,8 @@ pub async fn execute_mcp_tool_with_trust(
     enabled_server_ids: Option<&[String]>,
     trust_snapshots: Option<&[McpTrustSnapshot]>,
 ) -> Result<String, String> {
-    let (server, tool) = resolve_mcp_name(name, enabled_server_ids).await?;
-    enforce_tool_trust(trust_snapshots, &server, &tool, args)?;
+    let (server, tool, read_only) = resolve_mcp_name(name, enabled_server_ids).await?;
+    enforce_tool_trust(trust_snapshots, &server, &tool, args, Some(read_only))?;
     McpConnectionPool::call_tool_on_server(&server, &tool, args).await
 }
 
@@ -539,17 +673,20 @@ mod tests {
         assert!(trust_allows_advertisement(
             Some(std::slice::from_ref(&snapshot)),
             "test",
-            "read_file"
+            "read_file",
+            Some(true)
         ));
         assert!(!trust_allows_advertisement(
             Some(std::slice::from_ref(&snapshot)),
             "test",
-            "write_file"
+            "write_file",
+            Some(false)
         ));
         assert!(!trust_allows_advertisement(
             Some(std::slice::from_ref(&snapshot)),
             "test",
-            "read_credentials"
+            "read_credentials",
+            Some(true)
         ));
     }
 
@@ -562,6 +699,7 @@ mod tests {
             "test",
             "read_file",
             &serde_json::json!({ "path": "src/main.rs" }),
+            Some(true),
         )
         .is_ok());
         assert!(enforce_tool_trust(
@@ -569,7 +707,151 @@ mod tests {
             "test",
             "read_file",
             &serde_json::json!({ "path": "../secret.txt" }),
+            Some(true),
         )
         .is_err());
+    }
+
+    /// F6 — the exact names the 2026-08-05 review drove through the old
+    /// 19-word substring denylist and out the other side as "non-mutating".
+    /// Every one of them executed in a session the user had set read-only.
+    const READ_ONLY_BYPASS_NAMES: &[&str] = &[
+        "edit_file",
+        "apply_patch",
+        "commit",
+        "mkdir",
+        "chmod",
+        "exec",
+        "git_commit",
+        "append_to_file",
+        "put_object",
+        "save",
+        "store",
+        "modify",
+        "insert_row",
+        "drop_table",
+    ];
+
+    #[test]
+    fn read_only_session_denies_every_known_bypass_name() {
+        let snapshot = snapshot();
+        assert!(!snapshot.allow_writes);
+        let snapshots = [snapshot];
+        for name in READ_ONLY_BYPASS_NAMES {
+            // Hostile case: the server claims the tool is read-only AND the
+            // user's allowlist contains it. The verb floor still refuses.
+            let mut permissive = snapshots[0].clone();
+            permissive.allowed_tool_names.push((*name).to_string());
+            assert!(
+                !trust_allows_advertisement(
+                    Some(std::slice::from_ref(&permissive)),
+                    "test",
+                    name,
+                    Some(true)
+                ),
+                "read-only session advertised mutating tool '{name}'"
+            );
+            assert!(
+                enforce_tool_trust(
+                    std::slice::from_ref(&permissive).into(),
+                    "test",
+                    name,
+                    &serde_json::json!({}),
+                    Some(true),
+                )
+                .is_err(),
+                "read-only session executed mutating tool '{name}'"
+            );
+        }
+    }
+
+    #[test]
+    fn read_only_session_denies_unannotated_tools_it_was_never_granted() {
+        // Neither obviously mutating nor known read-only: the old code let it
+        // through because no denylist word matched. Unknown must fail closed.
+        let mut snapshot = snapshot();
+        snapshot.capability_checked_at = None;
+        snapshot.allowed_tool_names = vec!["read_file".to_string()];
+        let snapshots = [snapshot];
+        assert!(!trust_allows_advertisement(
+            Some(&snapshots),
+            "test",
+            "query_ledger",
+            None
+        ));
+        assert!(!trust_allows_advertisement(
+            Some(&snapshots),
+            "test",
+            "query_ledger",
+            Some(false)
+        ));
+        // The two ways a tool earns its place: the server's annotation…
+        assert!(trust_allows_advertisement(
+            Some(&snapshots),
+            "test",
+            "query_ledger",
+            Some(true)
+        ));
+        // …or the user's explicit grant.
+        assert!(trust_allows_advertisement(
+            Some(&snapshots),
+            "test",
+            "read_file",
+            None
+        ));
+    }
+
+    #[test]
+    fn write_enabled_session_still_runs_mutating_tools() {
+        // The allowlist inversion is scoped to read-only sessions. A user who
+        // granted writes must not lose their write tools.
+        let mut snapshot = snapshot();
+        snapshot.allow_writes = true;
+        snapshot.capability_checked_at = None;
+        let snapshots = [snapshot];
+        assert!(trust_allows_advertisement(
+            Some(&snapshots),
+            "test",
+            "write_file",
+            Some(false)
+        ));
+        // Denial floors are not overridable by allow_writes.
+        assert!(!trust_allows_advertisement(
+            Some(&snapshots),
+            "test",
+            "push_release",
+            Some(false)
+        ));
+    }
+
+    #[test]
+    fn legacy_sessions_without_a_snapshot_are_read_only_too() {
+        // No trust field at all (a pre-v11 persisted session). Only a
+        // server-annotated read-only tool may run.
+        assert!(trust_allows_advertisement(
+            None,
+            "test",
+            "read_file",
+            Some(true)
+        ));
+        assert!(!trust_allows_advertisement(None, "test", "read_file", None));
+        for name in READ_ONLY_BYPASS_NAMES {
+            assert!(
+                !trust_allows_advertisement(None, "test", name, Some(true)),
+                "legacy session advertised mutating tool '{name}'"
+            );
+        }
+    }
+
+    #[test]
+    fn tokenizer_splits_camel_case_and_separators() {
+        assert_eq!(tool_name_tokens("applyPatch"), vec!["apply", "patch"]);
+        assert_eq!(tool_name_tokens("apply_patch"), vec!["apply", "patch"]);
+        assert_eq!(tool_name_tokens("apply-patch"), vec!["apply", "patch"]);
+        assert!(suspected_mutation("applyPatch"));
+        assert!(suspected_mutation("insertRow"));
+        // `put` as a whole word is a mutation; `output` as a substring is not.
+        assert!(suspected_mutation("put_object"));
+        assert!(!suspected_mutation("get_output"));
     }
 }

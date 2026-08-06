@@ -134,8 +134,12 @@ describe("resolveTarget", () => {
     ).toBe("aarch64-apple-darwin");
   });
 
-  it("prefers TAURI_TARGET over TAURI_ENV_TARGET_TRIPLE", () => {
-    expect(
+  it("throws when TAURI_TARGET disagrees with the Tauri-injected triple", () => {
+    // A stale `export TAURI_TARGET=...` used to silently outrank the triple
+    // Tauri actually compiles for, redirecting fetch-node, prune-sidecar, and
+    // release-gate to the same wrong target — so they all agreed with each
+    // other and the gate could not see the mismatch. Refuse to guess.
+    expect(() =>
       resolveTarget({
         argv: ["node", "script.js"],
         env: {
@@ -143,16 +147,37 @@ describe("resolveTarget", () => {
           TAURI_ENV_TARGET_TRIPLE: "x86_64-unknown-linux-gnu",
         },
       }),
-    ).toBe("x86_64-pc-windows-msvc");
+    ).toThrow(/conflicting target triples/);
   });
 
-  it("falls back to TAURI_ENV_TARGET_TRIPLE when nothing higher-priority is set", () => {
+  it("accepts agreeing env vars", () => {
+    expect(
+      resolveTarget({
+        argv: ["node", "script.js"],
+        env: {
+          TAURI_TARGET: "x86_64-unknown-linux-gnu",
+          TAURI_ENV_TARGET_TRIPLE: "x86_64-unknown-linux-gnu",
+        },
+      }),
+    ).toBe("x86_64-unknown-linux-gnu");
+  });
+
+  it("prefers the Tauri-injected TAURI_ENV_TARGET_TRIPLE", () => {
     expect(
       resolveTarget({
         argv: ["node", "script.js"],
         env: { TAURI_ENV_TARGET_TRIPLE: "x86_64-apple-darwin" },
       }),
     ).toBe("x86_64-apple-darwin");
+  });
+
+  it("falls back to TAURI_TARGET when Tauri injects nothing", () => {
+    expect(
+      resolveTarget({
+        argv: ["node", "script.js"],
+        env: { TAURI_TARGET: "x86_64-pc-windows-msvc" },
+      }),
+    ).toBe("x86_64-pc-windows-msvc");
   });
 
   it("throws on an unknown --target= triple", () => {
@@ -195,6 +220,28 @@ describe("release gate target artifacts", () => {
   it("does not retain a host-specific Windows Node prerequisite", () => {
     const source = readFileSync("scripts/release-gate.mjs", "utf8");
     expect(source).not.toContain("node-x86_64-pc-windows-msvc.exe");
-    expect(source).toContain("node-${releaseTarget}");
+    // The staged-runtime path is derived from the resolved target rather than
+    // spelled out, via the shared descriptor in scripts/node-runtime.js.
+    expect(source).toContain("nodeBinaryRelPath(triple)");
+    expect(source).toContain("verifyStagedNodeRuntime(releaseTarget)");
+  });
+
+  it("verifies the staged Node runtime's digest rather than its existence", () => {
+    const source = readFileSync("scripts/release-gate.mjs", "utf8");
+    expect(source).toContain("nodeArchiveSha256(triple)");
+    expect(source).toContain('createHash("sha256")');
+  });
+
+  it("does not accept the updater signing key as code-signing evidence", () => {
+    // TAURI_SIGNING_PRIVATE_KEY is the minisign key for the updater manifest.
+    // It must never appear in the Authenticode / Apple Developer ID credential
+    // lists — that false PASS is what --require-signing exists to prevent.
+    const source = readFileSync("scripts/release-gate.mjs", "utf8");
+    const authenticodeList = source.match(/const authenticodeEnv = \[([\s\S]*?)\]/)?.[1];
+    const appleList = source.match(/const appleEnv = \[([\s\S]*?)\]/)?.[1];
+    expect(authenticodeList).toBeTruthy();
+    expect(appleList).toBeTruthy();
+    expect(authenticodeList).not.toContain("TAURI_SIGNING_PRIVATE_KEY");
+    expect(appleList).not.toContain("TAURI_SIGNING_PRIVATE_KEY");
   });
 });

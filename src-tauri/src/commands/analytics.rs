@@ -217,10 +217,7 @@ fn read_usage_analytics_blocking() -> String {
             // Price at the rates in effect on the session's OWN date, not
             // today's, so a published rate change is never applied
             // retroactively to a session that already happened.
-            let priced_on = session_usage
-                .date
-                .clone()
-                .unwrap_or_else(today_date_string);
+            let priced_on = session_usage.date.clone().unwrap_or_else(today_date_string);
             let cost = crate::commands::pricing::calculate_cost_at(
                 &model,
                 &priced_on,

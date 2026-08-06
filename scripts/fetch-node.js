@@ -16,13 +16,21 @@
  *
  * Target selection (in priority order):
  *   1. CLI `--target=<triple>` or `--all-targets`
- *   2. Env `TAURI_TARGET=<triple>`
- *   3. Env `TAURI_ENV_TARGET_TRIPLE=<triple>`
+ *   2. Env `TAURI_ENV_TARGET_TRIPLE=<triple>` (injected by Tauri)
+ *   3. Env `TAURI_TARGET=<triple>` (manual override)
  *   4. Host detection from `process.platform` + `process.arch`
  *
+ * Authenticity: every archive is verified against a reviewed SHA-256 digest
+ * pinned in `scripts/node-runtime.js`, NOT against the digest list served
+ * alongside it. The live `SHASUMS256.txt` is fetched only as an advisory
+ * cross-check and can never relax the pinned value. See that file's header for
+ * why, and for how to rotate the pins when bumping Node.
+ *
  * Idempotent: if the target binary already exists and its sibling `.sha256`
- * marker records the same nodeVersion + target + on-disk sha256, the download
- * is skipped.
+ * marker records the same nodeVersion + target + pinned archive digest + a
+ * matching on-disk sha256, the download is skipped. The marker is re-validated
+ * against the pinned digest on every run, so a cache poisoned by one bad fetch
+ * does not survive.
  *
  * Node 18+ (uses ESM + node: prefixed stdlib imports). Requires `adm-zip`
  * (for zip) and `tar` (for tar.gz).
@@ -48,63 +56,28 @@ import https from "node:https";
 import AdmZip from "adm-zip";
 import * as tar from "tar";
 
-import { SUPPORTED_TRIPLES, resolveTarget } from "./target-triple.js";
+import { resolveTarget } from "./target-triple.js";
+import {
+  assertNodeDistUrl,
+  NODE_DIST_BASE,
+  NODE_DIST_MAX_REDIRECTS,
+  NODE_SHASUMS_URL,
+  NODE_TARGETS,
+  NODE_VERSION,
+} from "./node-runtime.js";
 
 // ---------------------------------------------------------------------------
-// Pinned constants
+// Pinned constants (see scripts/node-runtime.js)
 // ---------------------------------------------------------------------------
 
-const NODE_VERSION = "24.15.0";
-const SHASUMS_URL = `https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt`;
-const DIST_BASE = `https://nodejs.org/dist/v${NODE_VERSION}`;
+const SHASUMS_URL = NODE_SHASUMS_URL;
+const DIST_BASE = NODE_DIST_BASE;
+const TARGETS = NODE_TARGETS;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const TARGET_DIR = path.resolve(__dirname, "../src-tauri/binaries");
-
-/**
- * Map of supported Rust triples → fetch/extract descriptors.
- *
- * Fields:
- *   distBasename      — Node.js dist archive filename (for URL + SHASUMS lookup)
- *   archive           — "zip" | "tar.gz"
- *   innerBinaryPath   — path within the archive to the node binary
- *   outputFilename    — filename to write under src-tauri/binaries/
- *                       (Tauri externalBin convention: <base>-<triple>[.exe])
- */
-const TARGETS = {
-  "x86_64-pc-windows-msvc": {
-    distBasename: `node-v${NODE_VERSION}-win-x64.zip`,
-    archive: "zip",
-    innerBinaryPath: `node-v${NODE_VERSION}-win-x64/node.exe`,
-    outputFilename: "node-x86_64-pc-windows-msvc.exe",
-  },
-  "x86_64-apple-darwin": {
-    distBasename: `node-v${NODE_VERSION}-darwin-x64.tar.gz`,
-    archive: "tar.gz",
-    innerBinaryPath: `node-v${NODE_VERSION}-darwin-x64/bin/node`,
-    outputFilename: "node-x86_64-apple-darwin",
-  },
-  "aarch64-apple-darwin": {
-    distBasename: `node-v${NODE_VERSION}-darwin-arm64.tar.gz`,
-    archive: "tar.gz",
-    innerBinaryPath: `node-v${NODE_VERSION}-darwin-arm64/bin/node`,
-    outputFilename: "node-aarch64-apple-darwin",
-  },
-  "x86_64-unknown-linux-gnu": {
-    distBasename: `node-v${NODE_VERSION}-linux-x64.tar.gz`,
-    archive: "tar.gz",
-    innerBinaryPath: `node-v${NODE_VERSION}-linux-x64/bin/node`,
-    outputFilename: "node-x86_64-unknown-linux-gnu",
-  },
-  "aarch64-unknown-linux-gnu": {
-    distBasename: `node-v${NODE_VERSION}-linux-arm64.tar.gz`,
-    archive: "tar.gz",
-    innerBinaryPath: `node-v${NODE_VERSION}-linux-arm64/bin/node`,
-    outputFilename: "node-aarch64-unknown-linux-gnu",
-  },
-};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -113,21 +86,49 @@ const TARGETS = {
 /**
  * Follow redirects and fetch a URL. Resolves with a Buffer for small payloads
  * (SHASUMS256.txt) or streams to a write stream for large payloads.
+ *
+ * Redirects are constrained two ways: the destination must stay on an
+ * allow-listed Node.js dist host, and `depth` caps the hop count so a redirect
+ * loop terminates instead of recursing until the stack blows.
  */
-function httpsGet(url, onResponse) {
+function httpsGet(url, onResponse, depth = 0) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, (res) => {
+    let safeUrl;
+    try {
+      safeUrl = assertNodeDistUrl(url, "fetch-node");
+    } catch (err) {
+      reject(err);
+      return;
+    }
+    const req = https.get(safeUrl, (res) => {
       // Handle redirects (nodejs.org has historically used them for cdn/mirrors)
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
-        const next = new URL(res.headers.location, url).toString();
-        httpsGet(next, onResponse).then(resolve, reject);
+        if (depth >= NODE_DIST_MAX_REDIRECTS) {
+          reject(
+            new Error(
+              `GET ${safeUrl} exceeded ${NODE_DIST_MAX_REDIRECTS} redirects ` +
+                `(last hop pointed at ${res.headers.location})`,
+            ),
+          );
+          return;
+        }
+        let next;
+        try {
+          next = assertNodeDistUrl(new URL(res.headers.location, safeUrl).toString(), "fetch-node");
+        } catch (err) {
+          reject(err);
+          return;
+        }
+        httpsGet(next, onResponse, depth + 1).then(resolve, reject);
         return;
       }
       if (res.statusCode !== 200) {
         res.resume();
         reject(
-          new Error(`GET ${url} failed with status ${res.statusCode} ${res.statusMessage ?? ""}`),
+          new Error(
+            `GET ${safeUrl} failed with status ${res.statusCode} ${res.statusMessage ?? ""}`,
+          ),
         );
         return;
       }
@@ -139,7 +140,7 @@ function httpsGet(url, onResponse) {
     });
     req.on("error", reject);
     req.setTimeout(120_000, () => {
-      req.destroy(new Error(`Request to ${url} timed out after 120s`));
+      req.destroy(new Error(`Request to ${safeUrl} timed out after 120s`));
     });
   });
 }
@@ -176,8 +177,12 @@ function sha256File(filePath) {
 }
 
 /**
- * Parse SHASUMS256.txt — each line is `<hex>  <filename>`. Returns the
- * hex digest for the given basename, or throws.
+ * Parse SHASUMS256.txt — each line is `<hex>  <filename>`. Returns the hex
+ * digest for the given basename, or `null` when absent.
+ *
+ * This list is advisory only: it arrives over the same channel as the archive
+ * it describes, so it is used to cross-check the pinned digest, never to
+ * supply one.
  */
 function findShasum(shasumsText, basename) {
   const lines = shasumsText.split(/\r?\n/);
@@ -190,7 +195,7 @@ function findShasum(shasumsText, basename) {
       return parts[0].toLowerCase();
     }
   }
-  throw new Error(`Could not find sha256 entry for ${basename} in SHASUMS256.txt`);
+  return null;
 }
 
 function fail(message, cause) {
@@ -205,22 +210,16 @@ function log(message) {
   process.stdout.write(`fetch-node: ${message}\n`);
 }
 
+function warn(message) {
+  process.stderr.write(`fetch-node: WARNING ${message}\n`);
+}
+
 // ---------------------------------------------------------------------------
 // Target selection (shared resolver in scripts/target-triple.js)
 // ---------------------------------------------------------------------------
-
-// Drift guard: TARGETS (fetch/extract descriptors) must cover exactly the
-// triples the shared resolver supports.
-{
-  const local = Object.keys(TARGETS).sort().join(",");
-  const shared = [...SUPPORTED_TRIPLES].sort().join(",");
-  if (local !== shared) {
-    fail(
-      `TARGETS in fetch-node.js has drifted from SUPPORTED_TRIPLES in ` +
-        `target-triple.js (local: ${local}; shared: ${shared})`,
-    );
-  }
-}
+//
+// The TARGETS-vs-SUPPORTED_TRIPLES drift guard now lives in node-runtime.js
+// and runs at import, so release-gate.mjs gets the same protection.
 
 function printHelp() {
   const supported = Object.keys(TARGETS)
@@ -237,8 +236,8 @@ function printHelp() {
       `  --help              Show this help and exit.\n\n` +
       `Target selection (priority):\n` +
       `  1. --target / --all-targets CLI flag\n` +
-      `  2. TAURI_TARGET environment variable\n` +
-      `  3. TAURI_ENV_TARGET_TRIPLE environment variable\n` +
+      `  2. TAURI_ENV_TARGET_TRIPLE environment variable (injected by Tauri)\n` +
+      `  3. TAURI_TARGET environment variable (manual override)\n` +
       `  4. Host-detected target (process.platform + process.arch)\n\n` +
       `Supported targets:\n${supported}\n`,
   );
@@ -266,8 +265,8 @@ function resolveTargets(args) {
   if (args.all) {
     return Object.keys(TARGETS);
   }
-  // Shared resolver: --target= → TAURI_TARGET → TAURI_ENV_TARGET_TRIPLE →
-  // host detection; throws on unknown/undetectable targets.
+  // Shared resolver: --target= → TAURI_ENV_TARGET_TRIPLE → TAURI_TARGET →
+  // host detection; throws on unknown/undetectable/conflicting targets.
   try {
     return [resolveTarget({ argv: process.argv, env: process.env })];
   } catch (err) {
@@ -275,6 +274,16 @@ function resolveTargets(args) {
   }
 }
 
+/**
+ * Decide whether the already-staged binary for `triple` can be trusted without
+ * re-downloading.
+ *
+ * The marker is never taken at its word: it is only accepted when the archive
+ * digest it records equals the digest pinned in node-runtime.js. That is what
+ * stops the cache from being self-referential — a binary staged from a poisoned
+ * download records the attacker's digest, which no longer matches the pin, so
+ * it is discarded and re-fetched instead of being trusted forever.
+ */
 function cachedTargetStatus(triple) {
   const entry = TARGETS[triple];
   const outputPath = path.join(TARGET_DIR, entry.outputFilename);
@@ -296,6 +305,17 @@ function cachedTargetStatus(triple) {
       typeof marker.sha256 !== "string"
     ) {
       return { valid: false, outputPath, reason: "marker is for a different version/layout" };
+    }
+
+    if (marker.archiveSha256 !== entry.archiveSha256) {
+      return {
+        valid: false,
+        outputPath,
+        reason:
+          `staged binary came from an archive whose sha256 ` +
+          `(${String(marker.archiveSha256).slice(0, 12)}...) does not match the ` +
+          `pinned digest (${entry.archiveSha256.slice(0, 12)}...)`,
+      };
     }
 
     const actual = sha256File(outputPath);
@@ -382,12 +402,23 @@ async function processTarget(triple, shasumsText) {
   const outputPath = path.join(TARGET_DIR, entry.outputFilename);
   const markerPath = `${outputPath}.sha256`;
 
-  // Look up the expected archive sha256 from the live SHASUMS.
-  let expectedArchiveSha;
-  try {
-    expectedArchiveSha = findShasum(shasumsText, entry.distBasename);
-  } catch (err) {
-    fail(`[${triple}] could not locate sha256 for ${entry.distBasename}`, err);
+  // The pinned digest is the trust anchor. The live SHASUMS list — fetched over
+  // the same channel as the archive — is only ever a cross-check.
+  const expectedArchiveSha = entry.archiveSha256;
+  const upstreamSha = shasumsText ? findShasum(shasumsText, entry.distBasename) : null;
+  if (upstreamSha === null) {
+    warn(
+      `[${triple}] no SHASUMS256.txt entry for ${entry.distBasename} to cross-check ` +
+        `against; continuing on the pinned digest`,
+    );
+  } else if (upstreamSha !== expectedArchiveSha) {
+    fail(
+      `[${triple}] SHASUMS256.txt reports sha256 ${upstreamSha} for ` +
+        `${entry.distBasename}, but scripts/node-runtime.js pins ` +
+        `${expectedArchiveSha}. Either upstream was tampered with or the pin is ` +
+        `stale — resolve this by hand (re-verify SHASUMS256.txt.sig with GPG) ` +
+        `before building.`,
+    );
   }
 
   const cached = cachedTargetStatus(triple);
@@ -427,11 +458,11 @@ async function processTarget(triple, shasumsText) {
         // ignore
       }
       throw new Error(
-        `downloaded archive sha256 ${archiveSha} does not match ` +
-          `SHASUMS256.txt (${expectedArchiveSha})`,
+        `downloaded archive sha256 ${archiveSha} does not match the digest ` +
+          `pinned in scripts/node-runtime.js (${expectedArchiveSha})`,
       );
     }
-    log(`[${triple}] archive sha256 verified`);
+    log(`[${triple}] archive sha256 verified against pinned digest`);
 
     log(`[${triple}] extracting ${entry.innerBinaryPath}`);
     let binaryBuf;
@@ -525,24 +556,32 @@ async function main() {
 
   mkdirSync(TARGET_DIR, { recursive: true });
 
+  // Every staged binary is re-validated against the pinned archive digest here,
+  // so a cache hit means "matches the reviewed pin", not merely "matches
+  // whatever we recorded last time".
   const cachedStatuses = triples.map((triple) => [triple, cachedTargetStatus(triple)]);
   if (cachedStatuses.every(([, status]) => status.valid)) {
-    log(`all requested targets already present; skipping ${SHASUMS_URL}`);
+    log(`all requested targets already present and match pinned digests`);
     for (const [triple, status] of cachedStatuses) {
       reportOutcome(triple, status.outputPath, false);
     }
     return;
   }
 
-  // Fetch SHASUMS256.txt once and reuse across all targets.
-  log(`fetching ${SHASUMS_URL}`);
-  let shasumsBuf;
+  // Fetch SHASUMS256.txt once and reuse across all targets. This is a
+  // cross-check against the pinned digests, not the source of them, so a
+  // failure to fetch it is a warning rather than a hard stop — suppressing it
+  // cannot help an attacker get a different archive past the pin.
+  log(`fetching ${SHASUMS_URL} (cross-check)`);
+  let shasumsText = null;
   try {
-    shasumsBuf = await fetchBuffer(SHASUMS_URL);
+    shasumsText = (await fetchBuffer(SHASUMS_URL)).toString("utf8");
   } catch (err) {
-    fail(`failed to fetch SHASUMS256.txt`, err);
+    warn(
+      `could not fetch SHASUMS256.txt (${err instanceof Error ? err.message : String(err)}); ` +
+        `continuing with the pinned digests from scripts/node-runtime.js`,
+    );
   }
-  const shasumsText = shasumsBuf.toString("utf8");
 
   for (const triple of triples) {
     // Sequential — keeps network load friendly and logs readable.

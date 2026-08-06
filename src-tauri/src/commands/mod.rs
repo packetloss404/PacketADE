@@ -28,8 +28,8 @@ pub mod flight_cost;
 pub mod issues;
 pub mod mcp;
 pub mod memory;
-pub mod monitor_windows;
 pub mod minimax;
+pub mod monitor_windows;
 pub mod ollama;
 pub mod packet_agent;
 pub mod pricing;
@@ -101,8 +101,13 @@ pub fn is_within_workspace_for_write(path: &str, workspace: &str) -> Result<(), 
         .ok_or_else(|| format!("Path '{}' has no parent directory", path))?;
     let canonical_workspace = std::fs::canonicalize(workspace)
         .map_err(|e| format!("Cannot resolve workspace '{}': {}", workspace, e))?;
-    let canonical_parent = std::fs::canonicalize(parent)
-        .map_err(|e| format!("Parent directory does not exist: {}: {}", parent.display(), e))?;
+    let canonical_parent = std::fs::canonicalize(parent).map_err(|e| {
+        format!(
+            "Parent directory does not exist: {}: {}",
+            parent.display(),
+            e
+        )
+    })?;
     if !canonical_parent.starts_with(&canonical_workspace) {
         return Err(format!(
             "Path '{}' is outside the workspace '{}'",

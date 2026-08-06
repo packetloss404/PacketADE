@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
 import { resolveTarget, sidecarPlatformPackage } from "./target-triple.js";
+import { NODE_VERSION, nodeArchiveSha256, nodeBinaryRelPath } from "./node-runtime.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -159,11 +161,69 @@ if (releaseTarget) {
     }
   }
 
-  const nodeRel = `src-tauri/binaries/node-${releaseTarget}${isWindowsTarget ? ".exe" : ""}`;
-  if (exists(nodeRel)) {
-    pass("Target Node runtime fetched", nodeRel);
+  // The staged Node runtime is embedded in the installer as an externalBin and
+  // is code-signed along with it, so "the file exists" is not a useful gate —
+  // any binary sitting at that path would ship. Re-verify it against the
+  // reviewed digest pinned in scripts/node-runtime.js.
+  verifyStagedNodeRuntime(releaseTarget);
+}
+
+function verifyStagedNodeRuntime(triple) {
+  const label = "Bundled Node runtime verified";
+  const nodeRel = nodeBinaryRelPath(triple);
+  const nodeAbs = path.join(root, nodeRel);
+  const markerRel = `${nodeRel}.sha256`;
+  const markerAbs = `${nodeAbs}.sha256`;
+
+  if (!fs.existsSync(nodeAbs)) {
+    fail(label, `${nodeRel} missing — run pnpm run fetch-node for ${triple}`);
+    return;
+  }
+  if (!fs.existsSync(markerAbs)) {
+    fail(
+      label,
+      `${markerRel} missing — cannot prove ${nodeRel} is the reviewed Node ` +
+        `${NODE_VERSION} runtime; re-run pnpm run fetch-node`,
+    );
+    return;
+  }
+
+  let marker;
+  try {
+    marker = JSON.parse(fs.readFileSync(markerAbs, "utf8"));
+  } catch (err) {
+    fail(label, `${markerRel} is unreadable: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  const pinnedArchiveSha = nodeArchiveSha256(triple);
+  const onDiskSha = createHash("sha256").update(fs.readFileSync(nodeAbs)).digest("hex");
+  const problems = [];
+
+  if (marker.nodeVersion !== NODE_VERSION) {
+    problems.push(`marker records Node ${marker.nodeVersion}, pinned version is ${NODE_VERSION}`);
+  }
+  if (marker.target !== triple) {
+    problems.push(`marker records target ${marker.target}, build target is ${triple}`);
+  }
+  if (marker.archiveSha256 !== pinnedArchiveSha) {
+    problems.push(
+      `runtime was extracted from an archive with sha256 ` +
+        `${String(marker.archiveSha256).slice(0, 16)}..., not the pinned ` +
+        `${pinnedArchiveSha.slice(0, 16)}...`,
+    );
+  }
+  if (onDiskSha !== marker.sha256) {
+    problems.push(
+      `on-disk sha256 ${onDiskSha.slice(0, 16)}... does not match the marker's ` +
+        `${String(marker.sha256).slice(0, 16)}... — the binary changed after it was fetched`,
+    );
+  }
+
+  if (problems.length === 0) {
+    pass(label, `${nodeRel} — Node ${NODE_VERSION}, sha256 ${onDiskSha.slice(0, 16)}...`);
   } else {
-    fail("Target Node runtime fetched", `${nodeRel} missing — run pnpm run fetch-node for ${releaseTarget}`);
+    fail(label, `${problems.join("; ")}. Delete ${nodeRel} and re-run pnpm run fetch-node`);
   }
 }
 
@@ -188,27 +248,91 @@ if (requireClean) {
 }
 
 if (requireSigning) {
-  const windowsSigning = envAny([
+  // Installer code-signing (Windows Authenticode / Apple Developer ID) and
+  // updater signing (Tauri's minisign keypair) are unrelated credentials that
+  // protect different things. TAURI_SIGNING_PRIVATE_KEY is the *updater* key;
+  // it signs the update manifest and says nothing about whether the installer
+  // will carry a trusted publisher signature. Counting it here produced a
+  // "Signing credentials present" PASS on a build with zero Authenticode
+  // configuration — so it is deliberately excluded. Updater signing has its own
+  // check under --require-updater.
+  const windowsBundle = tauri.bundle?.windows ?? {};
+  const macBundle = tauri.bundle?.macOS ?? {};
+
+  const authenticodeConfig = ["certificateThumbprint", "certificatePath", "signCommand"].filter(
+    (key) => typeof windowsBundle[key] === "string" && windowsBundle[key].trim(),
+  );
+  const authenticodeEnv = [
     "WINDOWS_SIGNTOOL_CERT_SHA1",
     "WINDOWS_SIGNING_CERT_PATH",
-    "TAURI_SIGNING_PRIVATE_KEY",
-  ]);
-  const macSigning = envAny([
+    "WINDOWS_CERTIFICATE_THUMBPRINT",
+    "WINDOWS_CERTIFICATE_PATH",
+    "WINDOWS_CODESIGN_CERTIFICATE_PATH",
+    "TAURI_BUNDLER_SIGN_COMMAND",
+    "TAURI_SIGNTOOL_PATH",
+  ].filter((name) => process.env[name]?.trim());
+  const hasAuthenticode = authenticodeConfig.length > 0 || authenticodeEnv.length > 0;
+  const authenticodeDetail = [
+    ...authenticodeConfig.map((key) => `bundle.windows.${key}`),
+    ...authenticodeEnv,
+  ].join(", ");
+
+  const appleConfig = ["signingIdentity", "providerShortName"].filter(
+    (key) => typeof macBundle[key] === "string" && macBundle[key].trim(),
+  );
+  const appleEnv = [
     "APPLE_SIGNING_IDENTITY",
     "APPLE_CERTIFICATE",
+    "APPLE_CERTIFICATE_PATH",
+    "APPLE_TEAM_ID",
     "APPLE_API_KEY",
     "APPLE_API_KEY_PATH",
-  ]);
-  if (windowsSigning || macSigning) {
-    pass(
-      "Signing credentials present",
-      "Found at least one Windows or Apple signing credential hint",
-    );
+  ].filter((name) => process.env[name]?.trim());
+  const hasApple = appleConfig.length > 0 || appleEnv.length > 0;
+  const appleDetail = [...appleConfig.map((key) => `bundle.macOS.${key}`), ...appleEnv].join(", ");
+
+  // Which credential is actually required depends on what is being built.
+  const isWindowsBuild = releaseTarget?.includes("-windows-") ?? false;
+  const isAppleBuild = releaseTarget?.includes("-apple-") ?? false;
+
+  if (isWindowsBuild) {
+    if (hasAuthenticode) {
+      pass("Windows Authenticode credentials", authenticodeDetail);
+    } else {
+      fail(
+        "Windows Authenticode credentials",
+        "no Authenticode certificate configured — set bundle.windows.certificateThumbprint/" +
+          "certificatePath/signCommand in tauri.conf.json, or WINDOWS_SIGNTOOL_CERT_SHA1 / " +
+          "WINDOWS_SIGNING_CERT_PATH / TAURI_BUNDLER_SIGN_COMMAND in the environment. " +
+          "TAURI_SIGNING_PRIVATE_KEY is the updater key and does not count.",
+      );
+    }
+  } else if (isAppleBuild) {
+    if (hasApple) {
+      pass("Apple code-signing credentials", appleDetail);
+    } else {
+      fail(
+        "Apple code-signing credentials",
+        "no Developer ID signal — set bundle.macOS.signingIdentity or APPLE_SIGNING_IDENTITY / " +
+          "APPLE_CERTIFICATE / APPLE_API_KEY. TAURI_SIGNING_PRIVATE_KEY is the updater key and " +
+          "does not count.",
+      );
+    }
   } else {
-    fail(
-      "Signing credentials present",
-      "Set WINDOWS_SIGNTOOL_CERT_SHA1/WINDOWS_SIGNING_CERT_PATH or Apple signing env before a trusted beta",
+    pass(
+      "Installer code-signing credentials",
+      `${releaseTarget ?? "unknown target"} produces unsigned Linux packages; nothing to check`,
     );
+  }
+
+  if ((isWindowsBuild && !hasAuthenticode) || (isAppleBuild && !hasApple)) {
+    if (envAny(["TAURI_SIGNING_PRIVATE_KEY"])) {
+      warn(
+        "Updater key is not a code-signing certificate",
+        "TAURI_SIGNING_PRIVATE_KEY is set but no platform code-signing credential is — " +
+          "the minisign updater keypair signs update manifests, not the installer",
+      );
+    }
   }
 }
 

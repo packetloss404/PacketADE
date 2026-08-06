@@ -2769,7 +2769,11 @@ async fn run_agent_loop(
     );
     let cost = crate::commands::pricing::calculate_cost(
         &model,
-        crate::commands::pricing::billable_input_tokens(&model, total_input_tokens, total_cache_read),
+        crate::commands::pricing::billable_input_tokens(
+            &model,
+            total_input_tokens,
+            total_cache_read,
+        ),
         total_output_tokens,
         total_cache_read,
         total_cache_write,

@@ -68,6 +68,12 @@ export function useTransientPty(opts: UseTransientPtyOptions): UseTransientPtyRe
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finishedRef = useRef(false);
   const mountedRef = useRef(true);
+  // Set synchronously before the spawn await. `sessionIdRef` is only assigned
+  // AFTER `createPtySession` resolves, so guarding on it alone lets a second
+  // `start()` — a dev double-mount of `TransientPtyModal`, whose mount effect
+  // calls `start()` — spawn a second `claude login` PTY and overwrite the ref,
+  // orphaning the first.
+  const startingRef = useRef(false);
 
   const cleanup = useCallback(() => {
     for (const u of unlistenersRef.current) {
@@ -91,7 +97,8 @@ export function useTransientPty(opts: UseTransientPtyOptions): UseTransientPtyRe
   }, []);
 
   const start = useCallback(() => {
-    if (finishedRef.current || sessionIdRef.current) return;
+    if (finishedRef.current || sessionIdRef.current || startingRef.current) return;
+    startingRef.current = true;
     const current = optsRef.current;
     setStatus("spawning");
 
@@ -105,6 +112,7 @@ export function useTransientPty(opts: UseTransientPtyOptions): UseTransientPtyRe
           current.args ?? null,
           current.env ?? null,
         );
+        startingRef.current = false;
         if (!mountedRef.current) {
           void killPty(sid).catch(() => {});
           return;
@@ -144,10 +152,15 @@ export function useTransientPty(opts: UseTransientPtyOptions): UseTransientPtyRe
           }),
         ]);
         unlistenersRef.current = [outputUnlisten, exitUnlisten];
-        if (finishedRef.current) {
+        // Unmount during the two `listen()` calls drains an empty
+        // `unlistenersRef`, so both subscriptions would otherwise survive the
+        // component. The PTY itself was already reaped by the unmount cleanup
+        // (`sessionIdRef` is set above).
+        if (finishedRef.current || !mountedRef.current) {
           outputUnlisten();
           exitUnlisten();
           unlistenersRef.current = [];
+          if (!mountedRef.current) return;
         }
 
         const transcript = await readPtyTranscript(sid).catch(() => null);
@@ -180,6 +193,7 @@ export function useTransientPty(opts: UseTransientPtyOptions): UseTransientPtyRe
           });
         }
       } catch (err) {
+        startingRef.current = false;
         if (!mountedRef.current) return;
         setStatus("error");
         current.onError?.(err);

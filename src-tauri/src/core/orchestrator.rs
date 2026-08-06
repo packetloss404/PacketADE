@@ -62,6 +62,19 @@ impl Default for OrchestratorSettings {
     }
 }
 
+/// Error recorded on an attempt that a restart interrupted. Also the marker
+/// the Flight Deck shows in place of a permanently-`Running` ghost.
+pub const ATTEMPT_INTERRUPTED_BY_RESTART: &str = "Interrupted by app restart";
+
+/// An attempt demoted by [`recover_flights_on_startup`], carried out so the
+/// caller can sweep the worktree it left behind once the async runtime is up.
+#[derive(Debug, Clone)]
+pub struct InterruptedAttempt {
+    pub flight_id: String,
+    pub attempt_id: String,
+    pub target: AttemptTarget,
+}
+
 /// Normalize persisted flights into a safe post-restart state.
 ///
 /// Run once at startup (the legacy task-scheduler command layer was removed;
@@ -71,7 +84,18 @@ impl Default for OrchestratorSettings {
 /// resets those interrupted states to a resumable `Paused`/`Pending` shape and
 /// clears stale session references so the Flight Deck never shows a task stuck
 /// "Running" after a restart.
-pub fn recover_flights_on_startup(flights: &mut [Flight]) {
+///
+/// Attempts get the same treatment, and it is not cosmetic. An API-agent
+/// session does not survive a restart, so a `Queued` / `Provisioning` /
+/// `Running` attempt would otherwise stay in that status forever: its worktree
+/// and `pkt/*` branch leak (teardown only runs on a terminal transition), and
+/// `validate_target_claims_against_active_attempts` blocks every future launch
+/// on that repo + branch with a path-collision error until the user cancels
+/// each ghost by hand. Demoted attempts are returned so the caller can sweep
+/// their worktrees; see `commands::flight_attempts::sweep_interrupted_attempts`.
+pub fn recover_flights_on_startup(flights: &mut [Flight]) -> Vec<InterruptedAttempt> {
+    let mut interrupted_attempts = Vec::new();
+
     for flight in flights {
         flight.linked_session_ids.clear();
 
@@ -90,6 +114,28 @@ pub fn recover_flights_on_startup(flights: &mut [Flight]) {
         }
 
         let mut interrupted = false;
+
+        for attempt in &mut flight.attempts {
+            if !matches!(
+                attempt.status,
+                AttemptStatus::Queued | AttemptStatus::Provisioning | AttemptStatus::Running
+            ) {
+                continue;
+            }
+            attempt.status = AttemptStatus::Failed;
+            if attempt.error_message.is_none() {
+                attempt.error_message = Some(ATTEMPT_INTERRUPTED_BY_RESTART.to_string());
+            }
+            if attempt.completed_at.is_none() {
+                attempt.completed_at = Some(now());
+            }
+            interrupted = true;
+            interrupted_attempts.push(InterruptedAttempt {
+                flight_id: flight.id.clone(),
+                attempt_id: attempt.id.clone(),
+                target: attempt.target.clone(),
+            });
+        }
 
         for ms in &mut flight.milestones {
             if ms.status == MilestoneStatus::Active {
@@ -116,6 +162,8 @@ pub fn recover_flights_on_startup(flights: &mut [Flight]) {
             flight.updated_at = now();
         }
     }
+
+    interrupted_attempts
 }
 
 fn now() -> u64 {
@@ -255,5 +303,122 @@ mod tests {
             .hard_stop_reason
             .as_deref()
             .is_some_and(|reason| reason.contains("Resume explicitly")));
+    }
+
+    // --- F3: attempt reconciliation ----------------------------------------
+
+    fn attempt(id: &str, status: AttemptStatus) -> Attempt {
+        Attempt {
+            id: id.to_string(),
+            flight_id: "flight-1".to_string(),
+            target: AttemptTarget::Local {
+                base_path: "D:/repo".to_string(),
+                worktree_path: format!("D:/repo/.pkt-worktrees/{id}"),
+            },
+            agent_config_id: "api-claude".to_string(),
+            model: "claude-sonnet".to_string(),
+            provider: "claude".to_string(),
+            branch: format!("pkt/{id}"),
+            base_branch: "main".to_string(),
+            session_id: id.to_string(),
+            status,
+            started_at: Some(1),
+            completed_at: None,
+            cost: 0.0,
+            tokens: 0,
+            error_message: None,
+            failure_category: None,
+            review_gate: None,
+            task_id: None,
+            draft_pr_number: None,
+        }
+    }
+
+    /// F3. An attempt's API session does not survive a restart, so leaving one
+    /// `Queued`/`Provisioning`/`Running` leaks its worktree and permanently
+    /// blocks future launches on the same repo+branch through
+    /// `validate_target_claims_against_active_attempts`.
+    #[test]
+    fn recover_demotes_non_terminal_attempts_and_reports_them() {
+        let mut flight = interrupted_flight();
+        flight.attempts = vec![
+            attempt("att-queued", AttemptStatus::Queued),
+            attempt("att-provisioning", AttemptStatus::Provisioning),
+            attempt("att-running", AttemptStatus::Running),
+        ];
+
+        let interrupted = recover_flights_on_startup(std::slice::from_mut(&mut flight));
+
+        assert_eq!(interrupted.len(), 3);
+        assert!(interrupted
+            .iter()
+            .all(|entry| entry.flight_id == "flight-1"));
+        for demoted in &flight.attempts {
+            assert_eq!(demoted.status, AttemptStatus::Failed, "{}", demoted.id);
+            assert_eq!(
+                demoted.error_message.as_deref(),
+                Some(ATTEMPT_INTERRUPTED_BY_RESTART)
+            );
+            assert!(demoted.completed_at.is_some(), "{}", demoted.id);
+        }
+    }
+
+    /// Terminal attempts are already settled: recovery must not restamp them,
+    /// and must not hand them to the worktree sweep (their teardown ran when
+    /// they finished).
+    #[test]
+    fn recover_leaves_terminal_attempts_alone() {
+        let mut flight = interrupted_flight();
+        let mut completed = attempt("att-done", AttemptStatus::Completed);
+        completed.completed_at = Some(42);
+        let mut failed = attempt("att-failed", AttemptStatus::Failed);
+        failed.error_message = Some("provider refused".to_string());
+        flight.attempts = vec![
+            completed,
+            failed,
+            attempt("att-review", AttemptStatus::Reviewing),
+        ];
+
+        let interrupted = recover_flights_on_startup(std::slice::from_mut(&mut flight));
+
+        assert!(interrupted.is_empty());
+        assert_eq!(flight.attempts[0].status, AttemptStatus::Completed);
+        assert_eq!(flight.attempts[0].completed_at, Some(42));
+        assert_eq!(
+            flight.attempts[1].error_message.as_deref(),
+            Some("provider refused")
+        );
+        assert_eq!(flight.attempts[2].status, AttemptStatus::Reviewing);
+    }
+
+    /// A demotion is an interruption: an Active flight carrying one gets
+    /// paused, exactly as an interrupted task does.
+    #[test]
+    fn recover_pauses_a_flight_whose_only_interruption_was_an_attempt() {
+        let mut flight = interrupted_flight();
+        flight.milestones.clear();
+        flight.attempts = vec![attempt("att-running", AttemptStatus::Running)];
+
+        recover_flights_on_startup(std::slice::from_mut(&mut flight));
+
+        assert_eq!(flight.status, FlightStatus::Paused);
+    }
+
+    /// An attempt that failed with its own message keeps it — the restart
+    /// marker must not overwrite a real diagnosis.
+    #[test]
+    fn recover_preserves_an_existing_error_message() {
+        let mut flight = interrupted_flight();
+        let mut running = attempt("att-running", AttemptStatus::Running);
+        running.error_message = Some("rate limited".to_string());
+        flight.attempts = vec![running];
+
+        recover_flights_on_startup(std::slice::from_mut(&mut flight));
+
+        assert_eq!(flight.attempts[0].status, AttemptStatus::Failed);
+        assert_eq!(
+            flight.attempts[0].error_message.as_deref(),
+            Some("rate limited")
+        );
     }
 }

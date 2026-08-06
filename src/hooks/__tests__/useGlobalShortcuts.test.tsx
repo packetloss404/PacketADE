@@ -22,6 +22,7 @@ vi.mock("@/stores/dictationStore", () => ({
 }));
 
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
+import { registerModal, resetModalStack } from "@/lib/modalStack";
 
 function mount(html: string): HTMLElement {
   const host = document.createElement("div");
@@ -44,6 +45,7 @@ describe("useGlobalShortcuts", () => {
   });
   afterEach(() => {
     document.body.innerHTML = "";
+    resetModalStack();
   });
 
   describe("Ctrl+K", () => {
@@ -149,6 +151,23 @@ describe("useGlobalShortcuts", () => {
         host.querySelector("textarea")!,
       );
       expect(setActiveView).not.toHaveBeenCalled();
+    });
+
+    // Switching views unmounts the outgoing view, taking any open dialog — and
+    // the form the user was half way through — down with it, silently.
+    it("does not switch views while a modal is open", () => {
+      renderHook(() => useGlobalShortcuts());
+      registerModal("prompt-library", 1);
+      fireKey({ ctrlKey: true, shiftKey: true, key: "W", code: "KeyW" });
+      expect(setActiveView).not.toHaveBeenCalled();
+    });
+
+    it("switches again once the modal stack empties", () => {
+      renderHook(() => useGlobalShortcuts());
+      registerModal("prompt-library", 1);
+      resetModalStack();
+      fireKey({ ctrlKey: true, shiftKey: true, key: "W", code: "KeyW" });
+      expect(setActiveView).toHaveBeenCalledWith("workspace");
     });
   });
 

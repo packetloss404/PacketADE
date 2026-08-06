@@ -101,6 +101,12 @@ pub(super) enum SidecarState {
     Ready,
     Restarting,
     Down,
+    /// F7: the sidecar completed its handshake but advertised a wire protocol
+    /// below [`super::MINIMUM_PROTOCOL_VERSION`]. It is alive and would happily
+    /// serve sessions — that is precisely the problem, because a pre-v11
+    /// sidecar ignores `mcpTrustSnapshot` as an unknown field and runs every
+    /// forwarded MCP server unfiltered. Sessions are refused in this state.
+    Incompatible,
 }
 
 impl SidecarState {
@@ -110,6 +116,7 @@ impl SidecarState {
             SidecarState::Ready => "ready",
             SidecarState::Restarting => "restarting",
             SidecarState::Down => "down",
+            SidecarState::Incompatible => "incompatible",
         }
     }
 }

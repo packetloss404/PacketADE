@@ -88,11 +88,7 @@ impl SideChatState {
 }
 
 /// Emit a side-chat error and log it.
-fn emit_error(
-    app_handle: &tauri::AppHandle,
-    request_id: &str,
-    message: impl Into<String>,
-) {
+fn emit_error(app_handle: &tauri::AppHandle, request_id: &str, message: impl Into<String>) {
     let message = message.into();
     warn!("side_chat error: {}", message);
     let _ = app_handle.emit(
@@ -272,7 +268,11 @@ pub async fn ask_side_chat_stream(
 
         if total_len == 0 {
             state.finish(&request_id);
-            emit_error(&handle, &request_id, "The model returned an empty response.");
+            emit_error(
+                &handle,
+                &request_id,
+                "The model returned an empty response.",
+            );
             return;
         }
 

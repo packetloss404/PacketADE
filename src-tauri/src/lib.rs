@@ -181,11 +181,19 @@ pub fn run() {
     // abnormal exit (stale Active/Running milestone-task status, dead session
     // ids). Runs after migrate_data_dir so the data dir is resolved. Formerly
     // done inside the (now-removed) shared-orchestrator constructor.
-    if let Err(e) = core::storage::update_state(|state| {
+    // Attempts are reconciled here too: their API sessions do not survive a
+    // restart, so any left Queued/Provisioning/Running is demoted to Failed.
+    // The worktrees they leave behind can only be swept once the async runtime
+    // is up, so recovery hands them back and `.setup()` spawns the sweep.
+    let interrupted_attempts = match core::storage::update_state(|state| {
         core::orchestrator::recover_flights_on_startup(&mut state.flights)
     }) {
-        tracing::warn!("Failed to persist flight recovery on startup: {}", e);
-    }
+        Ok(interrupted) => interrupted,
+        Err(e) => {
+            tracing::warn!("Failed to persist flight recovery on startup: {}", e);
+            Vec::new()
+        }
+    };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -205,7 +213,9 @@ pub fn run() {
         .manage(mcp_server::create_mcp_server_state())
         .manage(commands::monitor_windows::MonitorWindowRegistry::default())
         .manage(commands::project_memory::ProjectMemoryWatchState::default())
-        .manage(std::sync::Arc::new(commands::side_chat::SideChatState::default()))
+        .manage(std::sync::Arc::new(
+            commands::side_chat::SideChatState::default(),
+        ))
         // WI-1 — backend mirror of the auxiliary AI routing settings. Empty
         // until the frontend routing store pushes; an empty map means
         // "auto (cheapest configured API key)", never a subscription login.
@@ -226,6 +236,13 @@ pub fn run() {
             if let Err(e) = commands::auth_watcher::init(&app.handle()) {
                 tracing::warn!("auth_watcher init failed: {}", e);
             }
+
+            // Best-effort teardown of the worktrees belonging to attempts a
+            // previous run left mid-flight (see the recovery pass above).
+            // Detached: git/SSH removal is slow and must not delay the window.
+            tauri::async_runtime::spawn(async move {
+                commands::flight_attempts::sweep_interrupted_attempts(interrupted_attempts).await;
+            });
 
             // Per-platform window chrome. The config sets
             // `decorations: true` + `titleBarStyle: "Overlay"` so macOS
@@ -338,6 +355,7 @@ pub fn run() {
             commands::flight_attempts::mark_attempt_status,
             // v0.8-G pr modal upgrades — async-Flight draft-PR publish
             commands::flight_attempts::set_attempt_draft_pr,
+            commands::flight_attempts::set_attempt_review_gate,
             commands::flight_attempts::set_flight_publish_attempts_as_prs,
             // Unified persisted state
             commands::state::load_persisted_state,
@@ -546,6 +564,13 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
+                // Reap PTY agent process trees BEFORE the sidecar: quitting the
+                // app otherwise leaves every running `claude` / `codex` alive
+                // and permanently unreachable — nothing in the app can find
+                // them once this process is gone.
+                if let Some(manager) = app_handle.try_state::<commands::pty::SharedPtyManager>() {
+                    commands::pty::shutdown_pty_sessions(&manager);
+                }
                 if let Some(manager) = app_handle.try_state::<std::sync::Arc<SidecarManager>>() {
                     manager.shutdown();
                 }

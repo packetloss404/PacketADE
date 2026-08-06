@@ -75,6 +75,36 @@ pub struct McpToolInfo {
     pub description: String,
     #[serde(rename = "inputSchema", alias = "input_schema")]
     pub input_schema: Value,
+    /// MCP tool annotations. `read_only_hint` is the server's own statement
+    /// that a tool has no side effects, and it is what
+    /// `mcp_bridge::trust_allows_advertisement` requires before letting a tool
+    /// run in a read-only session. Absent annotations mean "unknown", which is
+    /// treated as "not read-only".
+    #[serde(default)]
+    pub annotations: Option<McpToolAnnotations>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpToolAnnotations {
+    #[serde(default)]
+    pub read_only_hint: Option<bool>,
+    #[serde(default)]
+    pub destructive_hint: Option<bool>,
+}
+
+impl McpToolInfo {
+    /// True only when the server explicitly annotated this tool read-only and
+    /// did not simultaneously flag it destructive.
+    pub fn is_read_only(&self) -> bool {
+        match &self.annotations {
+            Some(annotations) => {
+                annotations.read_only_hint == Some(true)
+                    && annotations.destructive_hint != Some(true)
+            }
+            None => false,
+        }
+    }
 }
 
 /// One spawned MCP server connection. Owns the child process plus the

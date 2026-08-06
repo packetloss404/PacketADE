@@ -16,11 +16,20 @@ import {
   ShieldCheck,
   MonitorUp,
   PanelsTopLeft,
+  GitMerge,
 } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
-import { useAsyncFlightStore } from "@/stores/asyncFlightStore";
+import {
+  attemptLandability,
+  describeAttemptDecisionImpact,
+  inspectAttemptWorktree,
+  useAsyncFlightStore,
+  type AttemptDecision,
+  type AttemptWorktreeCleanliness,
+} from "@/stores/asyncFlightStore";
 import { useGitHubStore } from "@/stores/githubStore";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { notifyAttemptFailed } from "@/lib/notifications";
 import type { Attempt, AttemptStatus, Flight } from "@/types/flight";
@@ -56,6 +65,8 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
   const sendMessage = useAgentTaskStore((s) => s.sendMessage);
   const cancelAttempt = useAsyncFlightStore((s) => s.cancelAttempt);
   const setAttemptStatus = useAsyncFlightStore((s) => s.setAttemptStatus);
+  const landAttempt = useAsyncFlightStore((s) => s.landAttempt);
+  const publishAttemptPr = useAsyncFlightStore((s) => s.publishAttemptPr);
   const retryReviewGate = useAsyncFlightStore((s) => s.retryReviewGate);
   const overrideReviewGate = useAsyncFlightStore((s) => s.overrideReviewGate);
   const sendReviewFindingsToBuilder = useAsyncFlightStore((s) => s.sendReviewFindingsToBuilder);
@@ -66,6 +77,13 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  // F2: Accept and Reject are both terminal and both force-remove the worktree,
+  // so neither fires until the user confirms against a live dirty-worktree
+  // probe — the same accounting the Flight delete confirm gives.
+  const [decision, setDecision] = useState<AttemptDecision | null>(null);
+  const [cleanliness, setCleanliness] = useState<AttemptWorktreeCleanliness | null>(null);
+  const [landing, setLanding] = useState(false);
+  const [landNote, setLandNote] = useState<string | null>(null);
   const messages = conversation?.messages ?? EMPTY_MESSAGES;
 
   const attemptLabel = attempt.target.kind === "ssh" ? attempt.target.serverId : "local";
@@ -113,6 +131,34 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
       : (attempt.target.basePath.split(/[/\\]/).filter(Boolean).pop() ?? "local");
   const acceptance = reviewerGateAllowsAcceptance(flight, attempt);
   const gate = attempt.reviewGate;
+  const landability = attemptLandability(attempt);
+
+  // Probe the worktree only while a confirm is open. `cleanliness === null`
+  // renders as "checking…" rather than as "nothing will be lost".
+  useEffect(() => {
+    if (!decision) return;
+    let stale = false;
+    setCleanliness(null);
+    void inspectAttemptWorktree(attempt)
+      .then((next) => {
+        if (!stale) setCleanliness(next);
+      })
+      .catch(() => {
+        if (!stale) setCleanliness("unknown");
+      });
+    return () => {
+      stale = true;
+    };
+  }, [decision, attempt.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function confirmDecision() {
+    const pending = decision;
+    setDecision(null);
+    if (!pending) return;
+    await runAction(() =>
+      setAttemptStatus(flight.id, attempt.id, pending === "accept" ? "completed" : "failed"),
+    );
+  }
 
   async function runAction(action: () => Promise<void>) {
     setActionError(null);
@@ -325,6 +371,54 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
           </div>
         )}
 
+        {/* F2: getting accepted work into the codebase. Accepting removes the
+            worktree but keeps `pkt/<attemptId>`, so both actions run off the
+            branch alone and stay available for as long as the attempt does. */}
+        {attempt.status === "completed" && (
+          <div className="border-bg-border/40 flex flex-wrap items-center gap-1 border-t px-2 py-1 text-[10px]">
+            <span className="truncate font-mono text-text-muted" title={attempt.branch}>
+              {attempt.branch}
+            </span>
+            {landNote && <span className="truncate text-accent-green">{landNote}</span>}
+            <span className="ml-auto" />
+            <button
+              onClick={() =>
+                void runAction(async () => {
+                  setLanding(true);
+                  setLandNote(null);
+                  try {
+                    const result = await landAttempt(flight.id, attempt.id);
+                    // "Nothing to land" is not a landing — report it as the
+                    // failure it is rather than as a green confirmation.
+                    if (!result.landed) throw new Error(result.message);
+                    setLandNote(result.message);
+                  } finally {
+                    setLanding(false);
+                  }
+                })
+              }
+              disabled={landing || !landability.allowed}
+              title={landability.reason}
+              className="bg-accent-green/10 border-accent-green/30 hover:bg-accent-green/20 flex items-center gap-1 rounded border px-2 py-0.5 text-accent-green disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              {landing ? <Loader2 size={10} className="animate-spin" /> : <GitMerge size={10} />}
+              {landing ? "Landing…" : "Land"}
+            </button>
+            <button
+              onClick={() => void runAction(() => publishAttemptPr(flight.id, attempt.id))}
+              disabled={Boolean(attempt.draftPrNumber)}
+              title={
+                attempt.draftPrNumber
+                  ? `Draft PR #${attempt.draftPrNumber} is already open for this branch`
+                  : `Push ${attempt.branch} and open a draft PR on the selected GitHub repo`
+              }
+              className="border-accent-purple/30 hover:bg-accent-purple/10 flex items-center gap-1 rounded border px-2 py-0.5 text-accent-purple disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              <GitPullRequest size={10} /> Open PR
+            </button>
+          </div>
+        )}
+
         {/* Action row */}
         <div className="border-bg-border/40 flex items-center justify-end gap-1 border-t px-2 py-1">
           {conversation && (
@@ -358,19 +452,20 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
           {attempt.status === "reviewing" && (
             <>
               <button
-                onClick={() =>
-                  void runAction(() => setAttemptStatus(flight.id, attempt.id, "completed"))
-                }
+                onClick={() => setDecision("accept")}
                 disabled={!acceptance.allowed}
-                title={acceptance.reason}
+                title={
+                  acceptance.allowed
+                    ? "Accept this attempt — confirms before removing its worktree"
+                    : acceptance.reason
+                }
                 className="bg-accent-green/10 border-accent-green/30 hover:bg-accent-green/20 flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] text-accent-green disabled:cursor-not-allowed disabled:opacity-35"
               >
                 <Check size={10} /> Accept
               </button>
               <button
-                onClick={() =>
-                  void runAction(() => setAttemptStatus(flight.id, attempt.id, "failed"))
-                }
+                onClick={() => setDecision("reject")}
+                title="Reject this attempt — confirms before removing its worktree"
                 className="hover:bg-accent-red/10 flex items-center gap-1 rounded border border-bg-border px-2 py-0.5 text-[10px] text-accent-red"
               >
                 <XIcon size={10} /> Reject
@@ -388,6 +483,24 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
           )}
         </div>
       </div>
+
+      {decision && (
+        <ConfirmDeleteModal
+          title={decision === "accept" ? "Accept this attempt?" : "Reject this attempt?"}
+          entityName={attempt.branch}
+          description={
+            decision === "accept"
+              ? "is accepted as this Flight's result. The agent session closes and the attempt's git worktree is force-removed."
+              : "is rejected and marked failed. The agent session closes and the attempt's git worktree is force-removed."
+          }
+          warningTitle={decision === "accept" ? "Accepting this also" : "Rejecting this also"}
+          warnings={describeAttemptDecisionImpact(decision, attempt, cleanliness, flight)}
+          confirmLabel={decision === "accept" ? "Accept attempt" : "Reject attempt"}
+          undoNote="Removing the worktree cannot be undone. The branch is kept."
+          onConfirm={() => void confirmDecision()}
+          onClose={() => setDecision(null)}
+        />
+      )}
     </div>
   );
 }

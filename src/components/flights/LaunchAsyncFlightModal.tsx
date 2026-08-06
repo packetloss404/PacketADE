@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   GitPullRequest,
   Route,
+  Loader2,
   Rocket,
   ShieldAlert,
   ShieldCheck,
@@ -29,6 +30,7 @@ import {
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useOrchestrationSettingsStore } from "@/stores/orchestrationSettingsStore";
 import { selectRecurringErrorHint } from "@/lib/recurringErrorHint";
+import { resolveInitialPublishAsPrs, summarizeLaunchOutcome } from "@/lib/flightLaunch";
 import { MultiTargetPicker, type PickedTarget } from "./MultiTargetPicker";
 import { pickedToSpec } from "./pickedToSpec";
 import type {
@@ -93,7 +95,12 @@ export function LaunchAsyncFlightModal({
   // v0.8-G: per-attempt draft-PR publish toggle. When enabled, the
   // asyncFlightStore pipeline pushes each attempt's branch and opens a
   // draft GitHub PR once it reaches a terminal state.
-  const [publishAsPrs, setPublishAsPrs] = useState(defaultPublishAttemptsAsPrs);
+  // The flight's own setting wins, exactly like every sibling field below.
+  // Seeding from the global default alone meant re-opening this modal to add an
+  // attempt silently rewrote `publishAttemptsAsPrs` on save (`createOrUpdateFlight`).
+  const [publishAsPrs, setPublishAsPrs] = useState(() =>
+    resolveInitialPublishAsPrs(existingFlight, defaultPublishAttemptsAsPrs),
+  );
   const [reviewerEnabled, setReviewerEnabled] = useState(
     existingFlight?.reviewGatePolicy?.enabled ?? false,
   );
@@ -419,6 +426,8 @@ export function LaunchAsyncFlightModal({
     if (!canLaunch) return;
     setLaunching(true);
     setError(null);
+    let launchedFlightId: string | null = null;
+    let attemptIdsBefore = new Set<string>();
     try {
       if (collisionMessage) {
         setError(collisionMessage);
@@ -428,6 +437,8 @@ export function LaunchAsyncFlightModal({
       // "Plan flight" hand-off or the Flights detail pane's empty-attempts
       // state), reuse it instead of minting a disconnected duplicate.
       const flight = createOrUpdateFlight(true);
+      launchedFlightId = flight.id;
+      attemptIdsBefore = new Set((flight.attempts ?? []).map((attempt) => attempt.id));
 
       // The backend appends Attempts to the persisted Flight. Ensure the
       // create/update above has landed first; otherwise a fast launch can see
@@ -439,7 +450,19 @@ export function LaunchAsyncFlightModal({
       onLaunched?.(flight.id);
       onClose();
     } catch (e) {
-      setError(typeof e === "string" ? e : ((e as Error)?.message ?? "Launch failed"));
+      const message = typeof e === "string" ? e : ((e as Error)?.message ?? "Launch failed");
+      // `launchAsync` rehydrates and reattaches attempts that DID provision
+      // before the failure, so count them and say so — otherwise the user is
+      // told the launch failed while agents are live and spending.
+      const launched = launchedFlightId
+        ? (useFlightStore
+            .getState()
+            .flights.find((f) => f.id === launchedFlightId)
+            ?.attempts?.filter((attempt) => !attemptIdsBefore.has(attempt.id)).length ?? 0)
+        : 0;
+      const outcome = summarizeLaunchOutcome(launched, picked.length, message);
+      setError(outcome.text);
+      if (outcome.partial && launchedFlightId) onLaunched?.(launchedFlightId);
     } finally {
       setLaunching(false);
     }
@@ -479,8 +502,10 @@ export function LaunchAsyncFlightModal({
           disabled={!canLaunch}
           className="bg-accent-green/15 border-accent-green/30 hover:bg-accent-green/25 flex items-center gap-1.5 rounded border px-4 py-1.5 text-xs font-medium text-accent-green transition-colors disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <Rocket size={11} />
-          Launch {picked.length || ""} {picked.length === 1 ? "agent" : "agents"}
+          {launching ? <Loader2 size={11} className="animate-spin" /> : <Rocket size={11} />}
+          {launching
+            ? `Provisioning ${picked.length} ${picked.length === 1 ? "agent" : "agents"}…`
+            : `Launch ${picked.length || ""} ${picked.length === 1 ? "agent" : "agents"}`}
         </button>
       </div>
     </div>
@@ -714,6 +739,22 @@ export function LaunchAsyncFlightModal({
               >
                 Open Servers settings →
               </button>
+            </div>
+          </div>
+        )}
+
+        {launching && (
+          <div
+            role="status"
+            className="border-accent-green/25 bg-accent-green/5 flex items-start gap-2 rounded border px-3 py-2 text-[11px] text-text-secondary"
+          >
+            <Loader2 size={12} className="mt-0.5 flex-shrink-0 animate-spin text-accent-green" />
+            <div>
+              Provisioning a git worktree and starting a session for each target, one at a time:{" "}
+              <span className="text-text-primary">
+                {picked.map((target) => target.label).join(", ")}
+              </span>
+              . Targets that come up stay live even if a later one fails.
             </div>
           </div>
         )}

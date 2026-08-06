@@ -1,53 +1,21 @@
+//! PTY transcript persistence and the cross-run orphan registry.
+//!
+//! The live PTY session manager is `commands::pty` — the single owner of
+//! spawning, killing, and Tauri event emission. This module used to carry a
+//! second, channel-based `PtyManager` that nothing ever constructed; the
+//! startup reaper below read a pid registry only that dead manager wrote, so it
+//! reaped nothing for its entire lifetime. It was removed rather than revived,
+//! and `commands::pty` now writes the registry directly.
+
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::PathBuf;
-use std::sync::mpsc;
-use std::sync::{Arc, Mutex, OnceLock};
-use std::thread;
-use tracing::{info, warn};
+use std::sync::{Mutex, OnceLock};
 
-use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
-use uuid::Uuid;
 
-use super::shared::MAX_PTY_WRITE_SIZE;
 use super::storage;
-
-/// Resolve a command name to its actual path, preferring .exe over .cmd on Windows.
-fn resolve_command_path(command: &str) -> String {
-    #[cfg(windows)]
-    {
-        use super::shared::hide_window;
-        let mut where_cmd = std::process::Command::new("where");
-        where_cmd.arg(command);
-        hide_window(&mut where_cmd);
-        if let Ok(output) = where_cmd.output() {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let lines: Vec<&str> = stdout
-                    .lines()
-                    .map(|l| l.trim())
-                    .filter(|l| !l.is_empty())
-                    .collect();
-                if let Some(exe) = lines.iter().find(|l| l.ends_with(".exe")) {
-                    return exe.to_string();
-                }
-                if let Some(cmd_file) = lines.iter().find(|l| l.ends_with(".cmd")) {
-                    return cmd_file.to_string();
-                }
-                if let Some(first) = lines.first() {
-                    return first.to_string();
-                }
-            }
-        }
-        command.to_string()
-    }
-    #[cfg(not(windows))]
-    {
-        command.to_string()
-    }
-}
 
 const PTY_TRANSCRIPT_LIMIT_BYTES: usize = 256 * 1024;
 static PTY_TRANSCRIPT_SEQUENCES: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
@@ -95,29 +63,6 @@ pub(crate) fn decode_terminal_chunk(bytes: &[u8], pending: &mut Vec<u8>) -> Stri
     out
 }
 
-/// Events emitted by PTY sessions via channels
-#[derive(Clone, Debug)]
-pub enum PtyEvent {
-    /// New output data from a session
-    Output { session_id: String, data: String },
-    /// Session has exited
-    Exit {
-        session_id: String,
-        exit_code: Option<i32>,
-        success: bool,
-        killed: bool,
-    },
-}
-
-/// Info about a running PTY session
-#[derive(Clone, Serialize, Debug)]
-pub struct PtySessionInfo {
-    pub id: String,
-    pub project_path: String,
-    pub pid: Option<u32>,
-    pub alive: bool,
-}
-
 #[derive(Clone, Serialize, Debug)]
 pub struct PtyTranscript {
     pub session_id: String,
@@ -125,384 +70,6 @@ pub struct PtyTranscript {
     pub truncated: bool,
     /// Sequence of the newest output record included in `data`.
     pub sequence: u64,
-}
-
-/// Internal state for one PTY session
-struct PtySession {
-    info: PtySessionInfo,
-    killer: Box<dyn ChildKiller + Send + Sync>,
-    writer: Box<dyn Write + Send>,
-    master: Box<dyn MasterPty + Send>,
-    kill_flag: Arc<std::sync::atomic::AtomicBool>,
-}
-
-/// Framework-agnostic PTY session manager.
-/// Output is delivered via an mpsc channel instead of Tauri events.
-pub struct PtyManager {
-    sessions: HashMap<String, PtySession>,
-    event_tx: mpsc::Sender<PtyEvent>,
-}
-
-impl PtyManager {
-    pub fn new(event_tx: mpsc::Sender<PtyEvent>) -> Self {
-        Self {
-            sessions: HashMap::new(),
-            event_tx,
-        }
-    }
-
-    /// Create a new PTY session. Returns the session ID.
-    pub fn create_session(
-        &mut self,
-        project_path: &str,
-        cols: u16,
-        rows: u16,
-        command: &str,
-        args: &[String],
-    ) -> Result<String, String> {
-        let project_dir = std::path::Path::new(project_path);
-        if !project_dir.is_dir() {
-            return Err(format!(
-                "Project path '{}' is not a valid directory",
-                project_path
-            ));
-        }
-
-        info!(command = %command, project_path = %project_path, "Creating PTY session");
-
-        let session_id = Uuid::new_v4().to_string();
-        let pty_system = native_pty_system();
-
-        let pair = pty_system
-            .openpty(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .map_err(|e| format!("Failed to open PTY: {}", e))?;
-
-        // Resolve command on Windows — prefer .exe over .cmd
-        let resolved_command = resolve_command_path(command);
-        let mut cmd = if cfg!(windows) && resolved_command.ends_with(".cmd") {
-            let mut c = CommandBuilder::new("cmd.exe");
-            c.args(&["/c", &resolved_command]);
-            c
-        } else {
-            CommandBuilder::new(&resolved_command)
-        };
-        cmd.cwd(project_path);
-
-        for arg in args {
-            cmd.arg(arg);
-        }
-
-        // Claude-specific env
-        if command == "claude" {
-            cmd.env_remove("CLAUDECODE");
-            cmd.env_remove("CLAUDE_CODE_ENTRYPOINT");
-            cmd.env("FLIGHTDECK", "1");
-        }
-
-        cmd.env("TERM", "xterm-256color");
-        cmd.env("COLORTERM", "truecolor");
-
-        let mut child = pair.slave.spawn_command(cmd).map_err(|e| {
-            format!(
-                "Failed to spawn {} in PTY: {}. Is {} installed?",
-                command, e, command
-            )
-        })?;
-
-        let pid = child.process_id();
-        // Record the pid so a crash/force-quit that can't run cleanup gets swept
-        // on the next launch (see `reap_orphaned_pty_children`).
-        if let Some(pid) = pid {
-            record_spawned_pid(pid, &command);
-        }
-        let killer = child.clone_killer();
-
-        let writer = pair
-            .master
-            .take_writer()
-            .map_err(|e| format!("Failed to take PTY writer: {}", e))?;
-
-        let mut reader = pair
-            .master
-            .try_clone_reader()
-            .map_err(|e| format!("Failed to clone PTY reader: {}", e))?;
-
-        let kill_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
-
-        let info = PtySessionInfo {
-            id: session_id.clone(),
-            project_path: project_path.to_string(),
-            pid,
-            alive: true,
-        };
-
-        if let Some(path) = transcript_path(&session_id) {
-            if let Err(e) = fs::write(&path, "") {
-                tracing::warn!(error = %e, ?path, "failed to initialize PTY transcript file");
-            }
-        }
-        if let Some(path) = transcript_truncated_marker_path(&session_id) {
-            let _ = fs::remove_file(path);
-        }
-
-        let session = PtySession {
-            info: info.clone(),
-            killer,
-            writer,
-            master: pair.master,
-            kill_flag: kill_flag.clone(),
-        };
-
-        self.sessions.insert(session_id.clone(), session);
-
-        // Spawn output reader thread
-        let output_sid = session_id.clone();
-        let output_tx = self.event_tx.clone();
-        let output_kill_flag = kill_flag.clone();
-
-        thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            let mut pending: Vec<u8> = Vec::new();
-            let mut reported_error_kinds = std::collections::HashSet::new();
-            loop {
-                if output_kill_flag.load(std::sync::atomic::Ordering::Relaxed) {
-                    break;
-                }
-
-                match reader.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let data = decode_terminal_chunk(&buf[..n], &mut pending);
-                        append_transcript(&output_sid, &data);
-                        let _ = output_tx.send(PtyEvent::Output {
-                            session_id: output_sid.clone(),
-                            data,
-                        });
-                    }
-                    Err(e) => {
-                        let err_str = e.to_string();
-                        if err_str.contains("broken pipe")
-                            || err_str.contains("The pipe has been ended")
-                            || e.kind() == std::io::ErrorKind::BrokenPipe
-                        {
-                            break;
-                        }
-                        if reported_error_kinds.insert(e.kind()) {
-                            tracing::warn!(
-                                session_id = %output_sid,
-                                error_kind = ?e.kind(),
-                                error = %e,
-                                "PTY reader will retry after a persistent read error"
-                            );
-                        }
-                        thread::sleep(std::time::Duration::from_millis(10));
-                    }
-                }
-            }
-        });
-
-        let wait_sid = session_id.clone();
-        let wait_tx = self.event_tx.clone();
-        let wait_kill_flag = kill_flag;
-
-        thread::spawn(move || {
-            let wait_result = child.wait();
-            let killed = wait_kill_flag.load(std::sync::atomic::Ordering::Relaxed);
-
-            let (exit_code, success) = match wait_result {
-                Ok(status) => {
-                    let exit_code = Some(status.exit_code() as i32);
-                    (exit_code, status.success() && !killed)
-                }
-                Err(e) => {
-                    warn!(session_id = %wait_sid, error = %e, "Failed waiting for PTY child exit");
-                    (None, false)
-                }
-            };
-
-            info!(session_id = %wait_sid, exit_code = ?exit_code, killed, success, "PTY session exited");
-            let _ = wait_tx.send(PtyEvent::Exit {
-                session_id: wait_sid,
-                exit_code,
-                success,
-                killed,
-            });
-        });
-
-        Ok(session_id)
-    }
-
-    /// Write data to a PTY session's stdin.
-    pub fn write(&mut self, session_id: &str, data: &str) -> Result<(), String> {
-        if data.len() > MAX_PTY_WRITE_SIZE {
-            return Err(format!(
-                "PTY write data exceeds max size ({} bytes, limit {})",
-                data.len(),
-                MAX_PTY_WRITE_SIZE
-            ));
-        }
-
-        let session = self
-            .sessions
-            .get_mut(session_id)
-            .ok_or_else(|| format!("PTY session {} not found", session_id))?;
-
-        session
-            .writer
-            .write_all(data.as_bytes())
-            .map_err(|e| format!("Failed to write to PTY: {}", e))?;
-        session
-            .writer
-            .flush()
-            .map_err(|e| format!("Failed to flush PTY: {}", e))?;
-
-        Ok(())
-    }
-
-    /// Resize a PTY session.
-    pub fn resize(&self, session_id: &str, cols: u16, rows: u16) -> Result<(), String> {
-        let session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| format!("PTY session {} not found", session_id))?;
-
-        session
-            .master
-            .resize(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .map_err(|e| format!("Failed to resize PTY: {}", e))?;
-
-        Ok(())
-    }
-
-    /// Kill a PTY session.
-    ///
-    /// Reaps the entire process GROUP, not just the direct child. The PTY spawn
-    /// helper `setsid`s each child into its own session/group, so the child pid
-    /// is the group leader and `kill(-pid, …)` signals every descendant it
-    /// spawned. Without the group kill, workers a CLI agent forks (e.g. an
-    /// `opencode`/`codex` agent's sub-processes, or a wrapped shell's child)
-    /// survive pane close, reparent to launchd, and spin at 100% CPU forever —
-    /// which is exactly how a machine ends up with a pile of orphaned agents.
-    pub fn kill(&mut self, session_id: &str) -> Result<(), String> {
-        if let Some(session) = self.sessions.get_mut(session_id) {
-            info!(session_id = %session_id, "Killing PTY session");
-            session
-                .kill_flag
-                .store(true, std::sync::atomic::Ordering::Relaxed);
-            session.info.alive = false;
-
-            #[cfg(unix)]
-            {
-                // Collect the groups to reap: the setsid leader's group (child
-                // pid == pgid) plus the terminal's current foreground group, in
-                // case job control moved the running command into a distinct one.
-                let mut groups: Vec<libc::pid_t> = Vec::new();
-                if let Some(pid) = session.info.pid {
-                    groups.push(pid as libc::pid_t);
-                }
-                if let Some(fg) = session.master.process_group_leader() {
-                    if !groups.contains(&fg) {
-                        groups.push(fg);
-                    }
-                }
-                for gid in groups {
-                    // Guard against 0/1 (would broadcast to our own group / init).
-                    if gid > 1 {
-                        // SIGTERM the group for a chance to unwind, then SIGKILL
-                        // to guarantee the reap. Negative pid = whole group.
-                        unsafe {
-                            libc::kill(-gid, libc::SIGTERM);
-                            libc::kill(-gid, libc::SIGKILL);
-                        }
-                    }
-                }
-            }
-
-            // Still kill the direct child via portable-pty (handles non-unix and
-            // is a harmless no-op if the group kill already reaped it).
-            if let Err(e) = session.killer.kill() {
-                warn!(session_id = %session_id, error = %e, "Failed to kill PTY child");
-            }
-            Ok(())
-        } else {
-            Err(format!("PTY session {} not found", session_id))
-        }
-    }
-
-    /// Kill a PTY session and wait for the exit event (with timeout).
-    /// Returns Ok(true) if the session exited, Ok(false) if it timed out.
-    pub fn kill_and_wait(
-        &mut self,
-        session_id: &str,
-        timeout: std::time::Duration,
-    ) -> Result<bool, String> {
-        self.kill(session_id)?;
-        // We can't block on the mpsc channel here since we don't own the receiver.
-        // Instead, poll the session's kill_flag and check if the session was removed.
-        let start = std::time::Instant::now();
-        let sid = session_id.to_string();
-        loop {
-            if !self.sessions.contains_key(&sid) {
-                return Ok(true);
-            }
-            if start.elapsed() >= timeout {
-                warn!(session_id = %sid, "PTY kill timed out after {:?}", timeout);
-                // Force remove the session even if it didn't exit cleanly
-                self.sessions.remove(&sid);
-                return Ok(false);
-            }
-            thread::sleep(std::time::Duration::from_millis(50));
-        }
-    }
-
-    /// Kill multiple sessions and wait for all to exit.
-    pub fn kill_sessions_and_wait(
-        &mut self,
-        session_ids: &[String],
-        timeout: std::time::Duration,
-    ) -> Vec<(String, bool)> {
-        // First, send kill signal to all sessions
-        for sid in session_ids {
-            let _ = self.kill(sid);
-        }
-        // Then wait for all to exit
-        let start = std::time::Instant::now();
-        let mut results = Vec::new();
-        for sid in session_ids {
-            let exited = loop {
-                if !self.sessions.contains_key(sid) {
-                    break true;
-                }
-                if start.elapsed() >= timeout {
-                    self.sessions.remove(sid);
-                    break false;
-                }
-                thread::sleep(std::time::Duration::from_millis(50));
-            };
-            results.push((sid.clone(), exited));
-        }
-        results
-    }
-
-    /// List all active sessions.
-    pub fn list(&self) -> Vec<PtySessionInfo> {
-        self.sessions.values().map(|s| s.info.clone()).collect()
-    }
-
-    /// Remove a session from tracking (called when output thread detects exit).
-    pub fn remove_session(&mut self, session_id: &str) {
-        self.sessions.remove(session_id);
-    }
 }
 
 pub fn read_transcript(session_id: &str) -> Result<PtyTranscript, String> {
@@ -556,22 +123,45 @@ fn transcript_truncated_marker_path(session_id: &str) -> Option<PathBuf> {
 /// `<pid>\t<command-basename>`. Consumed by `reap_orphaned_pty_children` on the
 /// NEXT launch to kill any child that survived an abnormal exit (SIGKILL /
 /// crash / force-quit) — those reparent to launchd and otherwise spin at 100%
-/// CPU forever. Clean pane-close already reaps via `kill()`'s group signal; this
-/// is the safety net for exits that can't run cleanup.
+/// CPU forever. Pane close and app exit already reap through
+/// `commands::pty::kill_pty_process_tree`; this is the safety net for exits
+/// that can't run cleanup.
 fn pty_pids_registry_path() -> PathBuf {
     storage::data_dir().join("pty-active-pids")
 }
 
-/// Append a freshly-spawned PTY child pid + its command basename to the registry.
-fn record_spawned_pid(pid: u32, command: &str) {
+/// Append a freshly-spawned PTY child pid + its command basename to the
+/// registry. Called by `commands::pty::create_pty_session` immediately after
+/// the spawn reports a pid.
+pub(crate) fn record_spawned_pid(pid: u32, command: &str) {
+    let path = pty_pids_registry_path();
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "{}", registry_line(pid, command));
+    }
+}
+
+/// One registry record: pid + the basename of the image the child actually
+/// runs. The basename is what `reap_orphaned_pty_children` matches against the
+/// live process, so a recycled pid can never be mistaken for ours.
+fn registry_line(pid: u32, command: &str) -> String {
     let basename = std::path::Path::new(command)
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or(command);
-    let path = pty_pids_registry_path();
-    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
-        let _ = writeln!(f, "{}\t{}", pid, basename);
+    format!("{}\t{}", pid, basename)
+}
+
+/// Inverse of [`registry_line`]. Rejects pids that would signal our own group
+/// (`0`) or init (`1`), and records with no recorded image name.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn parse_registry_line(line: &str) -> Option<(i32, String)> {
+    let mut parts = line.splitn(2, '\t');
+    let pid: i32 = parts.next()?.trim().parse().ok().filter(|p| *p > 1)?;
+    let recorded = parts.next()?.trim();
+    if recorded.is_empty() {
+        return None;
     }
+    Some((pid, recorded.to_string()))
 }
 
 /// Startup sweep: reap any PTY children recorded by a previous run that are
@@ -589,15 +179,9 @@ pub fn reap_orphaned_pty_children() {
     };
     let mut reaped = 0usize;
     for line in contents.lines() {
-        let mut parts = line.splitn(2, '\t');
-        let pid: i32 = match parts.next().and_then(|p| p.trim().parse().ok()) {
-            Some(p) if p > 1 => p,
-            _ => continue,
-        };
-        let recorded = parts.next().unwrap_or("").trim();
-        if recorded.is_empty() {
+        let Some((pid, recorded)) = parse_registry_line(line) else {
             continue;
-        }
+        };
         // Verify pid is alive AND still running the recorded command basename.
         let matches = std::process::Command::new("ps")
             .args(["-o", "comm=", "-p", &pid.to_string()])
@@ -624,7 +208,7 @@ pub fn reap_orphaned_pty_children() {
         }
     }
     if reaped > 0 {
-        warn!(
+        tracing::warn!(
             count = reaped,
             "Reaped orphaned PTY children left by a previous run"
         );
@@ -633,8 +217,16 @@ pub fn reap_orphaned_pty_children() {
     let _ = fs::write(&path, "");
 }
 
+/// Windows has no cross-run sweep. The identity check that makes the Unix
+/// sweep safe does not carry over: a `.cmd`-wrapped CLI's direct child is
+/// `cmd.exe`, so a recycled pid would match the recorded image name and we
+/// would tree-kill an unrelated console. Pane close and the app-exit handler
+/// still reap via `taskkill /T /F`; only a hard crash can strand a child here.
+/// The registry is still cleared so it cannot grow without bound.
 #[cfg(not(unix))]
-pub fn reap_orphaned_pty_children() {}
+pub fn reap_orphaned_pty_children() {
+    let _ = fs::write(pty_pids_registry_path(), "");
+}
 
 fn mark_transcript_truncated(session_id: &str) {
     if let Some(path) = transcript_truncated_marker_path(session_id) {
@@ -686,16 +278,55 @@ pub(crate) fn append_transcript(session_id: &str, data: &str) -> u64 {
     sequence
 }
 
-/// Thread-safe wrapper
-pub type SharedPtyManager = Arc<Mutex<PtyManager>>;
-
-pub fn create_shared_pty_manager(event_tx: mpsc::Sender<PtyEvent>) -> SharedPtyManager {
-    Arc::new(Mutex::new(PtyManager::new(event_tx)))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn registry_line_records_the_spawned_image_basename() {
+        assert_eq!(registry_line(4242, "/usr/local/bin/claude"), "4242\tclaude");
+        assert_eq!(registry_line(4242, "cmd.exe"), "4242\tcmd.exe");
+    }
+
+    #[test]
+    fn registry_line_round_trips_through_the_parser() {
+        let (pid, recorded) =
+            parse_registry_line(&registry_line(4242, "/usr/local/bin/codex")).expect("parse");
+        assert_eq!(pid, 4242);
+        assert_eq!(recorded, "codex");
+    }
+
+    #[test]
+    fn registry_parser_rejects_unsignalable_or_incomplete_records() {
+        // `kill(-0, …)` would broadcast to PacketADE's own group; 1 is init.
+        assert!(parse_registry_line("0\tclaude").is_none());
+        assert!(parse_registry_line("1\tclaude").is_none());
+        assert!(parse_registry_line("4242\t").is_none());
+        assert!(parse_registry_line("4242").is_none());
+        assert!(parse_registry_line("").is_none());
+    }
+
+    #[test]
+    fn record_spawned_pid_appends_a_parseable_registry_entry() {
+        // F5: this registry was written only by a manager nothing constructed,
+        // so the startup reaper always read an empty file. Guard the write.
+        let path = pty_pids_registry_path();
+        let original = fs::read_to_string(&path).unwrap_or_default();
+
+        // A basename no live process can be running, so a stray entry left by a
+        // crashed test run can never match a recycled pid on the next launch.
+        record_spawned_pid(999_001, "/opt/bin/packetade-test-not-a-real-process");
+
+        let contents = fs::read_to_string(&path).expect("registry written");
+        let entry = contents
+            .lines()
+            .filter_map(parse_registry_line)
+            .find(|(pid, _)| *pid == 999_001)
+            .expect("recorded pid present in registry");
+        assert_eq!(entry.1, "packetade-test-not-a-real-process");
+
+        let _ = fs::write(&path, original);
+    }
 
     #[test]
     fn transcript_path_rejects_traversal_attack() {

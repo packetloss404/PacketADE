@@ -6,7 +6,15 @@ import type {
   WorkspaceDto,
 } from "@/generated/tauri-schema";
 import type { AgentConfig } from "@/types/agent";
-import type { Attempt, Flight, Milestone, ReviewType, Task, TaskResult } from "@/types/flight";
+import type {
+  Attempt,
+  AttemptReviewGate,
+  Flight,
+  Milestone,
+  ReviewType,
+  Task,
+  TaskResult,
+} from "@/types/flight";
 import type { Issue } from "@/stores/issueStore";
 import type {
   StatusLineData,
@@ -1262,6 +1270,25 @@ export async function markAttemptStatus(
   // Terminal statuses tear the worktree down and report the outcome; a
   // non-terminal transition returns null (nothing was removed).
   return invoke("mark_attempt_status", { flightId, attemptId, status });
+}
+
+/**
+ * Persist an attempt's Reviewer Gate record.
+ *
+ * The gate is backend-owned like every other attempt lifecycle field: the
+ * Rust snapshot merge keeps its own copy of an existing attempt, so a
+ * `reviewGate` written into a whole-slice flight save is discarded and
+ * `mark_attempt_status("completed")` would never see a verdict. Write through
+ * here instead of relying on `flightStore` persistence.
+ *
+ * Pass `null` to clear the record.
+ */
+export async function setAttemptReviewGate(
+  flightId: string,
+  attemptId: string,
+  reviewGate: AttemptReviewGate | null,
+): Promise<void> {
+  return invoke("set_attempt_review_gate", { flightId, attemptId, reviewGate });
 }
 
 // Git safety check
@@ -3497,7 +3524,10 @@ export type SidecarLifetimeStats = {
 };
 
 export type SidecarStatus = {
-  state: "ready" | "restarting" | "down" | "not_started";
+  /** `incompatible` (F7): the sidecar handshook below the protocol security
+   * floor, so it would run MCP servers without this session's trust rules.
+   * It is alive but refused — sessions will not start against it. */
+  state: "ready" | "restarting" | "down" | "not_started" | "incompatible";
   restart_count: number;
   last_error: string | null;
   pid: number | null;

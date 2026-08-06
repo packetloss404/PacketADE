@@ -49,6 +49,13 @@ export function SidecarStatusChip() {
     dotClass = "text-accent-red";
     label = "sidecar down";
     tooltip = `${status.last_error ?? "Sidecar is down"}\n${lifetimeLine}`;
+  } else if (status.state === "incompatible") {
+    // F7: the sidecar is running but speaks a protocol older than the one that
+    // moved MCP trust onto the wire, so it would run MCP servers unfiltered.
+    // Sessions are refused; the tooltip carries the version detail and the fix.
+    dotClass = "text-accent-red";
+    label = "sidecar incompatible";
+    tooltip = `${status.last_error ?? "Sidecar protocol is too old"}\n${lifetimeLine}`;
   }
 
   return (

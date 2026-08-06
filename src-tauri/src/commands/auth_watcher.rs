@@ -459,12 +459,9 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 if is_state_file_event(path, &state_file) {
                     accounts_dirty = true;
                 }
-                for key in dirty_keys_for_path(
-                    path,
-                    &claude_dir_for_task,
-                    &codex_dir_for_task,
-                    &accounts,
-                ) {
+                for key in
+                    dirty_keys_for_path(path, &claude_dir_for_task, &codex_dir_for_task, &accounts)
+                {
                     dirty.insert(key);
                 }
             }

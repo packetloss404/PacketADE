@@ -92,6 +92,12 @@ review's Windows-only v1.0.0 definition and two-week plan are owner decision
 4 in `backlog.md`. The public `docs/*.html` site was repaired to v0.10.3 truth
 in the same pass.
 
+macOS is no longer out of reach: it builds, bundles a DMG, and runs on real
+hardware today. [`dev/macos-release-plan.md`](./dev/macos-release-plan.md) owns
+signing, entitlements, and notarization end to end and targets a signed arm64
+DMG for v1.1, with Apple Developer enrollment starting alongside the Windows
+signing application.
+
 ## Decide before starting major work
 
 1. **Remote Agents auth provider.** Product-grade OIDC/passkey service versus a

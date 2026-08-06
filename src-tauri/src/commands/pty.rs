@@ -495,20 +495,145 @@ impl PtyManager {
     }
 }
 
-fn signal_pty_kill(
-    session_id: &str,
-    kill_flag: &std::sync::atomic::AtomicBool,
-    killer: &SharedChildKiller,
-) -> std::io::Result<()> {
-    kill_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+/// Process groups to signal when tearing down a PTY session.
+///
+/// The spawned child is `setsid`'d into its own session, so its pid IS its
+/// group id; the terminal's foreground group is collected too in case job
+/// control moved the running command into a distinct one. `0` would broadcast
+/// to our own group and `1` is init, so both are dropped.
+///
+/// Kept pure and pid-typed (rather than `libc::pid_t`) so the selection rules
+/// stay testable on a Windows host.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn pty_kill_group_ids(child_pid: Option<u32>, foreground_leader: Option<i32>) -> Vec<i32> {
+    let mut groups: Vec<i32> = Vec::new();
+    for candidate in [child_pid.map(|pid| pid as i32), foreground_leader]
+        .into_iter()
+        .flatten()
+    {
+        if candidate > 1 && !groups.contains(&candidate) {
+            groups.push(candidate);
+        }
+    }
+    groups
+}
 
-    let mut killer = killer.lock().map_err(|_| {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("PTY child killer mutex poisoned for session {}", session_id),
-        )
-    })?;
-    killer.kill()
+/// `taskkill` arguments that reap a PTY child and everything below it.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn taskkill_tree_args(pid: u32) -> [String; 4] {
+    [
+        "/T".to_string(),
+        "/F".to_string(),
+        "/PID".to_string(),
+        pid.to_string(),
+    ]
+}
+
+/// Terminate a PTY session's ENTIRE process tree.
+///
+/// `portable-pty`'s own killer is not enough. On Unix it sends a bare `SIGHUP`
+/// to the direct child, and every PTY child is a `setsid` session leader, so
+/// descendants never receive it. On Windows a `.cmd`-wrapped CLI is spawned as
+/// `cmd.exe /c codex.cmd`, and `TerminateProcess` on that handle kills only
+/// `cmd.exe`. Either way the real agent survives pane close — untracked, since
+/// the session entry is dropped — and holds the pty slave open, which leaves
+/// this session's reader thread blocked on `read()` forever.
+///
+/// Mirrors the group signalling in `core::pty` and the Windows tree kill in
+/// `commands::agent_sidecar::supervisor::kill_process_tree`.
+fn kill_pty_process_tree(session_id: &str, session: &mut PtySession) {
+    session
+        .kill_flag
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+
+    // Whether a whole-tree signal actually went out. When it did, the
+    // direct-handle kill below is expected to fail against an already-reaped
+    // child and must not be reported as a problem.
+    #[cfg(unix)]
+    let tree_signalled = {
+        let groups = pty_kill_group_ids(
+            session.info.pid,
+            session.master.process_group_leader().map(|pid| pid as i32),
+        );
+        let signalled = !groups.is_empty();
+        for gid in groups {
+            // Negative pid = whole group. SIGTERM for a chance to unwind, then
+            // SIGKILL to guarantee the reap.
+            let group = -(gid as libc::pid_t);
+            unsafe {
+                libc::kill(group, libc::SIGTERM);
+                libc::kill(group, libc::SIGKILL);
+            }
+        }
+        signalled
+    };
+
+    #[cfg(windows)]
+    let tree_signalled = match session.info.pid {
+        Some(pid) => {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            match std::process::Command::new("taskkill")
+                .args(taskkill_tree_args(pid))
+                .creation_flags(CREATE_NO_WINDOW)
+                .status()
+            {
+                Ok(status) => status.success(),
+                Err(e) => {
+                    warn!(session_id = %session_id, error = %e, "taskkill failed for PTY process tree");
+                    false
+                }
+            }
+        }
+        None => false,
+    };
+
+    #[cfg(not(any(unix, windows)))]
+    let tree_signalled = false;
+
+    // Backstop via portable-pty: the only path when no pid was reported, and a
+    // harmless no-op once the tree kill has done the work.
+    match session.killer.lock() {
+        Ok(mut killer) => {
+            if let Err(e) = killer.kill() {
+                if tree_signalled {
+                    tracing::debug!(session_id = %session_id, error = %e, "PTY child already reaped by tree kill");
+                } else {
+                    warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
+                }
+            }
+        }
+        Err(_) => {
+            warn!(session_id = %session_id, "PTY child killer mutex poisoned")
+        }
+    }
+}
+
+/// Tear down every live PTY session's process tree.
+///
+/// Called on app exit: without it, quitting PacketADE leaves every running
+/// `claude` / `codex` agent alive and unreachable — nothing in the app can find
+/// them again once the process is gone.
+pub fn shutdown_pty_sessions(manager: &SharedPtyManager) {
+    // A poisoned manager mutex must not block shutdown; the sessions still
+    // need reaping.
+    let mut sessions: Vec<(String, PtySession)> = match manager.lock() {
+        Ok(mut mgr) => mgr.sessions.drain().collect(),
+        Err(poisoned) => poisoned.into_inner().sessions.drain().collect(),
+    };
+
+    if sessions.is_empty() {
+        return;
+    }
+
+    info!(
+        count = sessions.len(),
+        "Terminating PTY sessions on app exit"
+    );
+    for (session_id, session) in sessions.iter_mut() {
+        session.info.alive = false;
+        kill_pty_process_tree(session_id, session);
+    }
 }
 
 fn wait_for_pty_child_exit(
@@ -636,22 +761,29 @@ pub fn create_pty_session(
     // On Windows, CLIs may be installed as .exe (e.g. claude.exe) or .cmd
     // wrappers (e.g. codex.cmd). Resolution filters GUI app aliases before
     // choosing the matching spawn strategy.
+    // `spawned_program` is the program this PTY's direct child actually runs,
+    // which is not always the resolved CLI: a `.cmd` wrapper runs under
+    // `cmd.exe`. The orphan registry matches on it, so it must name the real
+    // child image.
     #[cfg(windows)]
-    let mut cmd = {
+    let (mut cmd, spawned_program) = {
         let resolved = resolve_windows_command(&command);
         if resolved.to_ascii_lowercase().ends_with(".cmd") {
             // .cmd batch scripts must go through cmd.exe /c
             let mut c = CommandBuilder::new("cmd.exe");
             c.arg("/c");
             c.arg(&resolved);
-            c
+            (c, "cmd.exe".to_string())
         } else {
             // Native .exe — spawn directly
-            CommandBuilder::new(&resolved)
+            (CommandBuilder::new(&resolved), resolved)
         }
     };
     #[cfg(not(windows))]
-    let mut cmd = { CommandBuilder::new(resolve_pinned_cli_binary(&command)) };
+    let (mut cmd, spawned_program) = {
+        let resolved = resolve_pinned_cli_binary(&command);
+        (CommandBuilder::new(&resolved), resolved)
+    };
     cmd.cwd(&project_path);
 
     // Append any extra arguments (e.g. --model)
@@ -717,6 +849,11 @@ pub fn create_pty_session(
 
     let killer: SharedChildKiller = Arc::new(Mutex::new(child.clone_killer()));
     let pid = child.process_id();
+    // Record the pid so a crash / force-quit that never reaches the exit
+    // handler gets swept on the next launch (`reap_orphaned_pty_children`).
+    if let Some(pid) = pid {
+        crate::core::pty::record_spawned_pid(pid, &spawned_program);
+    }
     let child: SharedChild = Arc::new(Mutex::new(child));
 
     let writer = pair
@@ -876,15 +1013,21 @@ pub fn resize_pty(
 
 #[tauri::command]
 pub fn kill_pty(manager: State<'_, SharedPtyManager>, session_id: String) -> Result<(), String> {
-    let mut mgr = lock_mutex(&manager)?;
-    if let Some(mut session) = mgr.sessions.remove(&session_id) {
+    kill_pty_session(&manager, &session_id)
+}
+
+fn kill_pty_session(manager: &SharedPtyManager, session_id: &str) -> Result<(), String> {
+    let mut mgr = lock_mutex(manager)?;
+    if let Some(mut session) = mgr.sessions.remove(session_id) {
         info!(session_id = %session_id, "Killing PTY session");
         session.info.alive = false;
-        if let Err(e) = signal_pty_kill(&session_id, session.kill_flag.as_ref(), &session.killer) {
-            warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
-        }
+        kill_pty_process_tree(session_id, &mut session);
     } else {
-        return Err(format!("PTY session {} not found", session_id));
+        // Not an error: the reader thread removes the entry itself when the
+        // agent exits on its own, so closing a pane whose CLI already quit —
+        // the common case — lands here. `kill_pty_and_wait` has always treated
+        // this as a non-failure too.
+        info!(session_id = %session_id, "PTY session already gone; nothing to kill");
     }
 
     Ok(())
@@ -910,17 +1053,23 @@ pub fn kill_pty_and_wait(
     let timeout = std::time::Duration::from_millis(
         timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS).min(MAX_TIMEOUT_MS),
     );
-    let mut mgr = lock_mutex(&manager)?;
+    kill_pty_session_and_wait(&manager, &session_id, timeout)
+}
+
+fn kill_pty_session_and_wait(
+    manager: &SharedPtyManager,
+    session_id: &str,
+    timeout: std::time::Duration,
+) -> Result<bool, String> {
+    let mut mgr = lock_mutex(manager)?;
     info!(session_id = %session_id, "Killing PTY session and waiting for exit");
-    if let Some(mut session) = mgr.sessions.remove(&session_id) {
+    if let Some(mut session) = mgr.sessions.remove(session_id) {
         session.info.alive = false;
-        if let Err(e) = signal_pty_kill(&session_id, session.kill_flag.as_ref(), &session.killer) {
-            warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
-        }
+        kill_pty_process_tree(session_id, &mut session);
         let child = session.child.clone();
         drop(mgr);
 
-        Ok(wait_for_pty_child_exit(&session_id, &child, timeout))
+        Ok(wait_for_pty_child_exit(session_id, &child, timeout))
     } else {
         Ok(false)
     }
@@ -1500,17 +1649,60 @@ mod tests {
     }
 
     #[test]
-    fn signal_pty_kill_sets_flag_and_uses_killer() {
-        let kill_flag = AtomicBool::new(false);
-        let killed = Arc::new(AtomicBool::new(false));
-        let killer: SharedChildKiller = Arc::new(Mutex::new(Box::new(FakeKiller {
-            killed: killed.clone(),
-        })));
+    fn pty_kill_targets_the_child_process_group_not_just_the_child() {
+        // The child is `setsid`'d, so its pid IS the group id. Signalling the
+        // group is the whole point: a bare kill of the direct child leaves the
+        // agent's descendants alive.
+        assert_eq!(pty_kill_group_ids(Some(4242), None), vec![4242]);
+    }
 
-        signal_pty_kill("session-1", &kill_flag, &killer).expect("signal kill");
+    #[test]
+    fn pty_kill_adds_the_terminal_foreground_group_when_it_differs() {
+        assert_eq!(pty_kill_group_ids(Some(4242), Some(4310)), vec![4242, 4310]);
+        // Job control left the running command in the leader's own group.
+        assert_eq!(pty_kill_group_ids(Some(4242), Some(4242)), vec![4242]);
+    }
 
-        assert!(kill_flag.load(Ordering::Relaxed));
-        assert!(killed.load(Ordering::Relaxed));
+    #[test]
+    fn pty_kill_never_signals_our_own_group_or_init() {
+        // `kill(-0, …)` broadcasts to OUR group and would take down PacketADE
+        // itself; 1 is init.
+        assert!(pty_kill_group_ids(Some(0), Some(1)).is_empty());
+        assert!(pty_kill_group_ids(None, None).is_empty());
+    }
+
+    #[test]
+    fn taskkill_args_terminate_the_whole_child_tree() {
+        // Without /T only `cmd.exe` dies and the wrapped CLI survives.
+        assert_eq!(
+            taskkill_tree_args(4242),
+            ["/T", "/F", "/PID", "4242"].map(String::from)
+        );
+    }
+
+    #[test]
+    fn killing_an_unknown_session_succeeds_instead_of_erroring() {
+        // The reader thread removes the entry itself on EOF, so a pane whose
+        // agent already exited has no entry left by the time the user closes
+        // it. That is the common case, not a failure.
+        let manager = create_shared_pty_manager();
+
+        assert_eq!(kill_pty_session(&manager, "no-such-session"), Ok(()));
+        assert_eq!(
+            kill_pty_session_and_wait(
+                &manager,
+                "no-such-session",
+                std::time::Duration::from_millis(10),
+            ),
+            Ok(false)
+        );
+    }
+
+    #[test]
+    fn shutting_down_with_no_sessions_is_a_no_op() {
+        let manager = create_shared_pty_manager();
+        shutdown_pty_sessions(&manager);
+        assert!(manager.lock().expect("lock manager").sessions.is_empty());
     }
 
     #[test]

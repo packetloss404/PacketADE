@@ -25,9 +25,9 @@ pub fn load_persisted_state() -> Result<PersistedStateDto, String> {
 /// through those dedicated slice commands, never by stuffing them into the DTO
 /// passed here.
 #[tauri::command]
-pub fn save_persisted_state(state: PersistedStateDto) -> Result<(), String> {
+pub async fn save_persisted_state(state: PersistedStateDto) -> Result<(), String> {
     let incoming: crate::core::storage::PersistedState = state.into();
-    storage::update_state(|state| {
+    storage::update_state_async(|state| {
         // Take the on-disk issues/retrospectives aside, overwrite everything
         // else with `incoming`, then put the slice-owned data back — so the
         // incoming DTO's issues/retrospectives are dropped, not persisted.
@@ -43,53 +43,54 @@ pub fn save_persisted_state(state: PersistedStateDto) -> Result<(), String> {
         state.retrospectives = preserved_retros;
         state.cost_reprice_v1_at = preserved_reprice;
     })
+    .await
 }
 
 #[tauri::command]
-pub fn save_flights_slice(flights: Vec<FlightDto>) -> Result<(), String> {
-    storage::save_flights(flights.into_iter().map(Into::into).collect())
+pub async fn save_flights_slice(flights: Vec<FlightDto>) -> Result<(), String> {
+    storage::save_flights(flights.into_iter().map(Into::into).collect()).await
 }
 
 #[tauri::command]
-pub fn save_agents_slice(agents: Vec<AgentConfigDto>) -> Result<(), String> {
-    storage::save_agents(agents.into_iter().map(Into::into).collect())
+pub async fn save_agents_slice(agents: Vec<AgentConfigDto>) -> Result<(), String> {
+    storage::save_agents(agents.into_iter().map(Into::into).collect()).await
 }
 
 #[tauri::command]
-pub fn save_settings_slice(settings: OrchestratorSettingsDto) -> Result<(), String> {
+pub async fn save_settings_slice(settings: OrchestratorSettingsDto) -> Result<(), String> {
     // Persist to disk. Everything that reads settings (e.g. the worktree
     // auto-trailer hook) loads them fresh from disk via `load_state().settings`,
     // so there is no in-memory copy left to keep in sync.
     let settings: OrchestratorSettings = settings.into();
-    storage::save_settings(settings)
+    storage::save_settings(settings).await
 }
 
 #[tauri::command]
-pub fn save_ui_slice(ui: PersistedUiStateDto) -> Result<(), String> {
-    storage::save_ui(ui.into())
+pub async fn save_ui_slice(ui: PersistedUiStateDto) -> Result<(), String> {
+    storage::save_ui(ui.into()).await
 }
 
 #[tauri::command]
-pub fn save_issues_slice(issues: Vec<Issue>) -> Result<(), String> {
-    storage::save_issues(issues)
+pub async fn save_issues_slice(issues: Vec<Issue>) -> Result<(), String> {
+    storage::save_issues(issues).await
 }
 
 #[tauri::command]
-pub fn save_workspaces_slice(workspaces: Vec<WorkspaceDto>) -> Result<(), String> {
-    storage::save_workspaces(workspaces.into_iter().map(Into::into).collect())
+pub async fn save_workspaces_slice(workspaces: Vec<WorkspaceDto>) -> Result<(), String> {
+    storage::save_workspaces(workspaces.into_iter().map(Into::into).collect()).await
 }
 
 #[tauri::command]
-pub fn save_memory_slice(
+pub async fn save_memory_slice(
     memory_events: Vec<serde_json::Value>,
     memory_patterns: Vec<serde_json::Value>,
 ) -> Result<(), String> {
-    storage::save_memory(memory_events, memory_patterns)
+    storage::save_memory(memory_events, memory_patterns).await
 }
 
 #[tauri::command]
-pub fn save_servers_slice(servers: Vec<ServerConfigDto>) -> Result<(), String> {
-    storage::save_servers(servers.into_iter().map(Into::into).collect())
+pub async fn save_servers_slice(servers: Vec<ServerConfigDto>) -> Result<(), String> {
+    storage::save_servers(servers.into_iter().map(Into::into).collect()).await
 }
 
 /// Persist the CLI-account slice (records + sticky per-project defaults).
@@ -100,9 +101,9 @@ pub fn save_servers_slice(servers: Vec<ServerConfigDto>) -> Result<(), String> {
 /// account no longer exists are the store's responsibility to prune before
 /// calling.
 #[tauri::command]
-pub fn save_cli_accounts_slice(
+pub async fn save_cli_accounts_slice(
     accounts: Vec<CliAccountDto>,
     defaults: BTreeMap<String, BTreeMap<String, String>>,
 ) -> Result<(), String> {
-    storage::save_cli_accounts(accounts.into_iter().map(Into::into).collect(), defaults)
+    storage::save_cli_accounts(accounts.into_iter().map(Into::into).collect(), defaults).await
 }

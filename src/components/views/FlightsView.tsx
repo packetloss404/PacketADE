@@ -62,19 +62,6 @@ type GroupKey = "drafting" | "attention" | "active" | "recent";
 
 type DesignDot = "green" | "blue" | "amber" | "red" | "muted" | "accent" | "purple";
 
-const STATUS_DOT: Record<FlightStatus, DesignDot> = {
-  spec: "purple",
-  draft: "muted",
-  planning: "muted",
-  ready: "muted",
-  active: "green",
-  paused: "amber",
-  review: "blue",
-  done: "muted",
-  failed: "red",
-  cancelled: "muted",
-};
-
 const STATUS_LABEL: Record<FlightStatus, string> = {
   spec: "spec",
   draft: "draft",
@@ -103,16 +90,6 @@ const DOT_BG: Record<DesignDot, string> = {
   muted: "bg-text-muted",
   accent: "bg-accent-green",
   purple: "bg-accent-purple",
-};
-
-const DOT_TEXT: Record<DesignDot, string> = {
-  green: "text-accent-green",
-  blue: "text-accent-blue",
-  amber: "text-accent-amber",
-  red: "text-accent-red",
-  muted: "text-text-muted",
-  accent: "text-accent-green",
-  purple: "text-accent-purple",
 };
 
 const PRIORITY_PILL_BG: Record<FlightPriority, string> = {
@@ -467,7 +444,10 @@ function FlightRow({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const dot = STATUS_DOT[status];
+  // Shared with the detail pane below, so selecting a row cannot change the
+  // colour it was already showing (CLAUDE.md: flight status colours live in
+  // `src/lib/flight-colors.ts`).
+  const cfg = FLIGHT_STATUS_CONFIG[status];
   const pulse = status === "active";
   const agents = flightAgentCount(flight);
   const cost = formatCost(flight.totalCost);
@@ -612,10 +592,10 @@ function FlightRow({
           <span className="relative flex h-2 w-2 shrink-0 items-center justify-center">
             {pulse && (
               <span
-                className={`absolute inset-0 rounded-full ${DOT_BG[dot]} animate-ping opacity-60`}
+                className={`absolute inset-0 rounded-full ${cfg.dot} animate-ping opacity-60`}
               />
             )}
-            <span className={`relative h-1.5 w-1.5 rounded-full ${DOT_BG[dot]}`} />
+            <span className={`relative h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
           </span>
           <span className="font-mono text-[10px] text-text-muted">{shortId(flight.id)}</span>
           <span className="flex-1" />
@@ -671,7 +651,7 @@ function FlightRow({
           )}
           <span className="font-mono">{cost}</span>
           <span className="flex-1" />
-          <span className={`capitalize ${DOT_TEXT[dot]}`}>{statusLabel}</span>
+          <span className={`capitalize ${cfg.text}`}>{statusLabel}</span>
         </div>
       </div>
       {confirming && (

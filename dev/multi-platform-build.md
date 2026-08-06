@@ -7,13 +7,13 @@ platform. If you are adding a new target triple, extend this doc.
 
 ## Supported target triples
 
-| OS          | Triple                      | Bundle formats          |
-| ----------- | --------------------------- | ----------------------- |
+| OS          | Triple                      | Bundle formats                 |
+| ----------- | --------------------------- | ------------------------------ |
 | Windows x64 | `x86_64-pc-windows-msvc`    | `.exe` + NSIS + MSI installers |
-| macOS x64   | `x86_64-apple-darwin`       | `.app` + DMG            |
-| macOS ARM64 | `aarch64-apple-darwin`      | `.app` + DMG            |
-| Linux x64   | `x86_64-unknown-linux-gnu`  | AppImage + DEB          |
-| Linux ARM64 | `aarch64-unknown-linux-gnu` | AppImage + DEB (cross)  |
+| macOS x64   | `x86_64-apple-darwin`       | `.app` + DMG                   |
+| macOS ARM64 | `aarch64-apple-darwin`      | `.app` + DMG                   |
+| Linux x64   | `x86_64-unknown-linux-gnu`  | AppImage + DEB                 |
+| Linux ARM64 | `aarch64-unknown-linux-gnu` | AppImage + DEB (cross)         |
 
 Add a target with `rustup target add <triple>` before building.
 
@@ -22,11 +22,18 @@ Add a target with `rustup target add <triple>` before building.
 ### macOS
 
 - Xcode Command Line Tools: `xcode-select --install`
+- **CMake**: `brew install cmake`. Required — `whisper-rs-sys` build-depends on
+  CMake and libclang, and CMake does **not** ship with the Command Line Tools.
+  A clean Mac fails the build at `whisper-rs-sys` without it.
 - Rust stable: `rustup toolchain install stable`
 - Node 24.15 and pnpm (`corepack enable` is enough on recent Node)
-- **Codesigning** is optional for local dev; required for distribution. An
-  Apple Developer ID is needed to sign and later notarize the DMG — see
-  "Not covered here" below.
+- **Codesigning** is optional for local dev and required for distribution.
+  Signing, entitlements, notarization, and the DMG release flow are owned by
+  [`macos-release-plan.md`](./macos-release-plan.md).
+
+Use `pnpm build:macos` rather than `pnpm tauri build` — it wraps the build with
+the DMG scratch-image cleanup and retry that `bundle_dmg.sh`'s flaky Finder
+AppleScript makes necessary.
 
 ### Linux (Debian / Ubuntu)
 
@@ -105,18 +112,31 @@ var to select one explicitly.
 
 ### macOS
 
+macOS builds, bundles a DMG, and runs. What it has never been is signed,
+notarized, or interactively accepted — see
+[`macos-release-plan.md`](./macos-release-plan.md), which owns all of that and
+targets a v1.1 arm64 DMG.
+
 - Unsigned local builds get a Gatekeeper warning the first time the `.app`
-  is launched. The workaround for testing is:
+  is launched. The workaround for **local testing only** is:
 
   ```bash
   xattr -cr /Applications/PacketADE.app
   ```
 
   This removes the quarantine xattr. **Do not ship this workaround to end
-  users** — distribute a signed + notarized DMG instead.
+  users.** On current macOS an unsigned downloaded app cannot be opened by
+  right-click→Open at all; the user must go to System Settings → Privacy &
+  Security. Distribute a signed + notarized + stapled DMG instead.
 
-- DMG signing needs an Apple Developer ID. See the "Not covered here"
-  section at the bottom.
+- Run `pnpm fetch-node` (or `TAURI_TARGET=<darwin triple> pnpm fetch-node`)
+  before building. `build.rs` treats a missing bundled Node as a warning, not an
+  error, so skipping it produces an app whose sidecar is silently dead.
+
+- DMG signing needs an Apple Developer ID. The full flow — enrollment,
+  certificates, entitlements, hardened runtime, `notarytool`, stapling, and
+  verification — is in
+  [`macos-release-plan.md`](./macos-release-plan.md) §4.
 
 ### Linux
 
@@ -133,8 +153,15 @@ var to select one explicitly.
 - Tauri's bundler picks up the right `externalBin` per target using the
   triple-suffixed filename (e.g. `node-aarch64-apple-darwin`). The Node
   fetcher reads `TAURI_TARGET` and downloads the matching Node binary.
-- Cross-compiling **Windows from macOS/Linux** or **macOS from anywhere
-  else** is not supported by this setup. Use a native runner for that OS.
+- Cross-compiling **Windows from macOS/Linux** or **macOS from a non-Mac** is
+  not supported by this setup. Use a native runner for that OS.
+- Cross-compiling **between macOS architectures on a Mac** is ordinary and
+  supported: an Apple Silicon Mac can produce an `x86_64-apple-darwin` bundle
+  with `rustup target add x86_64-apple-darwin` plus
+  `TAURI_TARGET=x86_64-apple-darwin pnpm fetch-node`. PacketADE ships per-arch
+  DMGs rather than a universal binary — there is no universal Node tarball, so
+  universal would mean `lipo`-ing two ~90 MB runtimes. See
+  [`macos-release-plan.md`](./macos-release-plan.md) §5.
 
 ## Installer sizes (for reference)
 
@@ -163,14 +190,19 @@ pruned — `pnpm sidecar:prune` runs automatically in the `prebundle` chain.
   manifests are configured for the release machine. Failures should block a
   beta handoff.
 
+## Covered elsewhere
+
+- **macOS code signing, entitlements, notarization, and stapling** —
+  [`macos-release-plan.md`](./macos-release-plan.md). That document owns them
+  end to end; this one does not defer them anywhere else.
+- **Windows Authenticode setup** — pending a signing identity; tracked in
+  `../backlog.md` and gated by
+  [`beta-distribution-trust-runbook.md`](./beta-distribution-trust-runbook.md).
+- **Auto-update channel signing** — [`updater-setup.md`](./updater-setup.md).
+
 ## Not covered here
 
-These are deliberate out-of-scope items. Each is its own task if / when we
-pursue it:
+Deliberate out-of-scope items. Each is its own task if / when we pursue it:
 
-- Code signing setup (macOS Developer ID, Windows Authenticode)
-- macOS notarization (`notarytool`)
 - Snap and Flatpak packaging for Linux
 - Cross-compiling Windows from macOS or Linux
-- Auto-update channel signing (covered separately in
-  [`dev/updater-setup.md`](./updater-setup.md))

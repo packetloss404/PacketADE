@@ -12,14 +12,8 @@
 //      chips the user accepted.
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  AlertCircle,
-  AlertTriangle,
-  Check,
-  Loader2,
-  Sparkles,
-  X,
-} from "lucide-react";
+import { AlertCircle, AlertTriangle, Check, Loader2, Sparkles } from "lucide-react";
+import { Modal } from "@/components/ui/Modal";
 import type { GitHubIssue, TriageSuggestion } from "@/types/github";
 import { githubAiTriage } from "@/lib/tauri";
 
@@ -183,9 +177,7 @@ export function AITriageDrawer({
       for (const s of suggestions) {
         const row = rows[s.number];
         if (!row?.selected) continue;
-        const labels = s.suggestedLabels.filter(
-          (l) => row.acceptedLabels[l],
-        );
+        const labels = s.suggestedLabels.filter((l) => row.acceptedLabels[l]);
         // Even an empty array is a valid "clear labels" intent — but the
         // user probably didn't mean that. Skip rows where the user
         // unchecked every chip so we don't accidentally wipe labels.
@@ -207,174 +199,18 @@ export function AITriageDrawer({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-bg-secondary border border-bg-border rounded-lg w-[760px] max-h-[85vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-bg-border">
-          <div className="flex items-center gap-2">
-            <Sparkles size={14} className="text-accent-blue" />
-            <h2 className="text-sm font-semibold text-text-primary">
-              AI triage
-            </h2>
-            <span className="text-[10px] text-text-muted">
-              {untriagedIssues.length} untriaged · {selectedNumbers.length}{" "}
-              selected
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 text-text-muted hover:text-text-primary transition-colors"
-          >
-            <X size={14} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-5 py-3">
-          {suggestions.length === 0 ? (
-            // Pre-run: render the selection list.
-            <>
-              <p className="text-[11px] text-text-muted mb-2.5">
-                Select the issues you want the model to triage. All issues
-                with no labels are selected by default; uncheck any you want
-                to skip. Batches of {TRIAGE_BATCH_SIZE} are sent at a time.
-              </p>
-              {untriagedIssues.length === 0 ? (
-                <p className="text-[11px] text-text-muted py-6 text-center">
-                  No untriaged issues — nothing to do.
-                </p>
-              ) : (
-                <ul className="flex flex-col gap-1.5">
-                  {untriagedIssues.map((iss) => {
-                    const row = rows[iss.number] ?? defaultRowState();
-                    return (
-                      <li
-                        key={iss.number}
-                        className="flex items-start gap-2 px-2.5 py-2 border border-bg-border rounded bg-bg-primary"
-                      >
-                        <input
-                          type="checkbox"
-                          className="mt-0.5"
-                          checked={row.selected}
-                          onChange={() => toggleRow(iss.number)}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-baseline gap-1.5">
-                            <span className="text-[10px] text-text-muted tabular-nums">
-                              #{iss.number}
-                            </span>
-                            <span className="text-[11px] text-text-primary leading-snug truncate">
-                              {iss.title}
-                            </span>
-                          </div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </>
-          ) : (
-            // Post-run: render suggestions with per-label chips.
-            <ul className="flex flex-col gap-3">
-              {suggestions.map((s) => {
-                const issue = untriagedIssues.find((i) => i.number === s.number);
-                const row = rows[s.number] ?? defaultRowState();
-                const isDup =
-                  typeof s.duplicateOf === "number" && s.duplicateOf > 0;
-                return (
-                  <li
-                    key={s.number}
-                    className={`border rounded-lg p-3 bg-bg-primary ${
-                      row.selected ? "border-bg-border" : "border-bg-border opacity-50"
-                    }`}
-                  >
-                    <div className="flex items-start gap-2 mb-1.5">
-                      <input
-                        type="checkbox"
-                        className="mt-0.5"
-                        checked={row.selected}
-                        onChange={() => toggleRow(s.number)}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-1.5 flex-wrap">
-                          <span className="text-[10px] text-text-muted tabular-nums">
-                            #{s.number}
-                          </span>
-                          <span className="text-[11.5px] text-text-primary leading-snug font-medium">
-                            {issue?.title ?? `(unknown #${s.number})`}
-                          </span>
-                          <span
-                            className={`text-[9px] px-1.5 py-0.5 rounded-full border font-semibold ${priorityColor(
-                              s.priority,
-                            )}`}
-                          >
-                            {s.priority}
-                          </span>
-                        </div>
-                        <p className="text-[10.5px] text-text-muted mt-1 leading-relaxed">
-                          {s.rationale}
-                        </p>
-                        {isDup && (
-                          <p className="text-[10px] text-accent-orange mt-1 flex items-center gap-1">
-                            <AlertTriangle size={10} />
-                            Looks like a duplicate of #{s.duplicateOf} in this
-                            batch.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    {s.suggestedLabels.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5 ml-6">
-                        {s.suggestedLabels.map((label) => {
-                          const accepted = !!row.acceptedLabels[label];
-                          return (
-                            <button
-                              key={label}
-                              type="button"
-                              onClick={() => toggleLabel(s.number, label)}
-                              className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
-                                accepted
-                                  ? "bg-accent-green/15 text-accent-green border-accent-green/30"
-                                  : "bg-bg-tertiary text-text-muted border-bg-border"
-                              }`}
-                            >
-                              {accepted ? (
-                                <Check size={9} />
-                              ) : (
-                                <span className="w-[9px]" />
-                              )}
-                              {label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="text-[10px] text-text-muted ml-6">
-                        No label suggestions.
-                      </p>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-
-          {error && (
-            <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-accent-red/10 border border-accent-red/20 rounded text-[10.5px] text-accent-red">
-              <AlertCircle size={11} />
-              {error}
-            </div>
-          )}
-
-          {applied && !error && (
-            <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-accent-green/10 border border-accent-green/20 rounded text-[10.5px] text-accent-green">
-              <Check size={11} />
-              Applied selected labels.
-            </div>
-          )}
-        </div>
-
-        <div className="px-5 py-3 border-t border-bg-border flex items-center gap-2">
+    <Modal
+      onClose={onClose}
+      title="AI triage"
+      icon={<Sparkles size={14} className="text-accent-blue" />}
+      width="w-[760px]"
+      headerExtra={
+        <span className="text-[10px] text-text-muted">
+          {untriagedIssues.length} untriaged · {selectedNumbers.length} selected
+        </span>
+      }
+      footer={
+        <div className="flex items-center gap-2">
           <span className="text-[10px] text-text-muted">
             {suggestions.length > 0
               ? `${suggestions.length} suggestion${suggestions.length === 1 ? "" : "s"}`
@@ -384,7 +220,7 @@ export function AITriageDrawer({
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1 text-[10.5px] font-medium text-text-muted hover:text-text-primary transition-colors"
+            className="px-3 py-1 text-[10.5px] font-medium text-text-muted transition-colors hover:text-text-primary"
           >
             Cancel
           </button>
@@ -393,13 +229,9 @@ export function AITriageDrawer({
               type="button"
               onClick={runTriage}
               disabled={running || selectedNumbers.length === 0}
-              className="inline-flex items-center gap-1.5 px-3 py-1 text-[10.5px] font-medium bg-accent-blue/15 text-accent-blue border border-accent-blue/30 rounded hover:bg-accent-blue/25 transition-colors disabled:opacity-50"
+              className="bg-accent-blue/15 border-accent-blue/30 hover:bg-accent-blue/25 inline-flex items-center gap-1.5 rounded border px-3 py-1 text-[10.5px] font-medium text-accent-blue transition-colors disabled:opacity-50"
             >
-              {running ? (
-                <Loader2 size={11} className="animate-spin" />
-              ) : (
-                <Sparkles size={11} />
-              )}
+              {running ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               Run triage
             </button>
           ) : (
@@ -407,18 +239,151 @@ export function AITriageDrawer({
               type="button"
               onClick={applySelected}
               disabled={applying || applied}
-              className="inline-flex items-center gap-1.5 px-3 py-1 text-[10.5px] font-medium bg-accent-green/15 text-accent-green border border-accent-green/30 rounded hover:bg-accent-green/25 transition-colors disabled:opacity-50"
+              className="bg-accent-green/15 border-accent-green/30 hover:bg-accent-green/25 inline-flex items-center gap-1.5 rounded border px-3 py-1 text-[10.5px] font-medium text-accent-green transition-colors disabled:opacity-50"
             >
-              {applying ? (
-                <Loader2 size={11} className="animate-spin" />
-              ) : (
-                <Check size={11} />
-              )}
+              {applying ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
               Apply selected
             </button>
           )}
         </div>
+      }
+    >
+      <div className="px-5 py-3">
+        {suggestions.length === 0 ? (
+          // Pre-run: render the selection list.
+          <>
+            <p className="mb-2.5 text-[11px] text-text-muted">
+              Select the issues you want the model to triage. All issues with no labels are selected
+              by default; uncheck any you want to skip. Batches of {TRIAGE_BATCH_SIZE} are sent at a
+              time.
+            </p>
+            {untriagedIssues.length === 0 ? (
+              <p className="py-6 text-center text-[11px] text-text-muted">
+                No untriaged issues — nothing to do.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-1.5">
+                {untriagedIssues.map((iss) => {
+                  const row = rows[iss.number] ?? defaultRowState();
+                  return (
+                    <li
+                      key={iss.number}
+                      className="flex items-start gap-2 rounded border border-bg-border bg-bg-primary px-2.5 py-2"
+                    >
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={row.selected}
+                        onChange={() => toggleRow(iss.number)}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-[10px] tabular-nums text-text-muted">
+                            #{iss.number}
+                          </span>
+                          <span className="truncate text-[11px] leading-snug text-text-primary">
+                            {iss.title}
+                          </span>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
+        ) : (
+          // Post-run: render suggestions with per-label chips.
+          <ul className="flex flex-col gap-3">
+            {suggestions.map((s) => {
+              const issue = untriagedIssues.find((i) => i.number === s.number);
+              const row = rows[s.number] ?? defaultRowState();
+              const isDup = typeof s.duplicateOf === "number" && s.duplicateOf > 0;
+              return (
+                <li
+                  key={s.number}
+                  className={`rounded-lg border bg-bg-primary p-3 ${
+                    row.selected ? "border-bg-border" : "border-bg-border opacity-50"
+                  }`}
+                >
+                  <div className="mb-1.5 flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={row.selected}
+                      onChange={() => toggleRow(s.number)}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-baseline gap-1.5">
+                        <span className="text-[10px] tabular-nums text-text-muted">
+                          #{s.number}
+                        </span>
+                        <span className="text-[11.5px] font-medium leading-snug text-text-primary">
+                          {issue?.title ?? `(unknown #${s.number})`}
+                        </span>
+                        <span
+                          className={`rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${priorityColor(
+                            s.priority,
+                          )}`}
+                        >
+                          {s.priority}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[10.5px] leading-relaxed text-text-muted">
+                        {s.rationale}
+                      </p>
+                      {isDup && (
+                        <p className="text-accent-orange mt-1 flex items-center gap-1 text-[10px]">
+                          <AlertTriangle size={10} />
+                          Looks like a duplicate of #{s.duplicateOf} in this batch.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {s.suggestedLabels.length > 0 ? (
+                    <div className="ml-6 flex flex-wrap gap-1.5">
+                      {s.suggestedLabels.map((label) => {
+                        const accepted = !!row.acceptedLabels[label];
+                        return (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => toggleLabel(s.number, label)}
+                            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
+                              accepted
+                                ? "bg-accent-green/15 border-accent-green/30 text-accent-green"
+                                : "border-bg-border bg-bg-tertiary text-text-muted"
+                            }`}
+                          >
+                            {accepted ? <Check size={9} /> : <span className="w-[9px]" />}
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="ml-6 text-[10px] text-text-muted">No label suggestions.</p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {error && (
+          <div className="bg-accent-red/10 border-accent-red/20 mt-3 flex items-center gap-2 rounded border px-3 py-2 text-[10.5px] text-accent-red">
+            <AlertCircle size={11} />
+            {error}
+          </div>
+        )}
+
+        {applied && !error && (
+          <div className="bg-accent-green/10 border-accent-green/20 mt-3 flex items-center gap-2 rounded border px-3 py-2 text-[10.5px] text-accent-green">
+            <Check size={11} />
+            Applied selected labels.
+          </div>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }

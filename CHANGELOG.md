@@ -9,6 +9,108 @@ task list.
 
 ## [Unreleased]
 
+### Security — MCP read-only sessions now use an allowlist (2026-08-06)
+
+**This changes behavior you may notice.** A read-only agent session previously
+decided whether an MCP tool could run by checking its name against a list of
+mutating verbs. That list let real write tools through: `edit_file`,
+`apply_patch`, `commit`, `mkdir`, `chmod`, `exec`, `git_commit`,
+`append_to_file`, and `put_object` all executed in sessions users had marked
+read-only.
+
+A tool now runs in a read-only session only if the MCP server annotated it
+`readOnlyHint: true`, or you granted it explicitly in the MCP Hub. Anything
+unrecognized is refused — unknown is not read-only. The verb list survives as a
+floor beneath the allowlist, so an obviously mutating tool stays blocked even
+if a server claims it is read-only.
+
+Many MCP servers publish no annotations at all. Their tools will be denied in
+read-only sessions until you allow them in the MCP Hub or enable writes for
+that session; the denial message names both remedies. This is deliberate: the
+previous behavior silently ignored an explicit user choice.
+
+### Security — the sidecar protocol now has a version floor (2026-08-06)
+
+Protocol v11 moved MCP trust authority into the session start request. A
+sidecar older than v11 does not reject that field — it ignores it and then runs
+every MCP server unfiltered, while appearing to work. Version mismatches were
+previously a log warning.
+
+Sessions are now refused outright when the sidecar advertises a protocol below
+v11, and the status chip reports the incompatibility instead of failing
+silently. Newer-than-expected versions still warn only. The
+`PACKETADE_SIDECAR_PATH` and `PACKETADE_NODE_PATH` overrides now require a
+debug build or an explicit opt-in, because a substituted sidecar receives live
+provider API keys.
+
+### Fixed — process lifecycle, Flight state, and release integrity (2026-08-06)
+
+- Closing a terminal pane, and quitting the app, now terminate the whole agent
+  process tree. Previously only the immediate child was signalled, so
+  `claude` / `codex` processes survived untracked with nothing able to find
+  them. App exit had no PTY cleanup at all, and the startup orphan reaper read
+  a registry that nothing ever wrote to.
+- The Flight Reviewer Gate can now record a verdict. Nothing in the backend
+  ever wrote the field, so enabling the gate blocked acceptance permanently and
+  dead-ended bounded-autonomy graph mode. The verdict is now backend-owned and
+  survives a whole-slice save and a restart.
+- Flight attempts left `Queued` / `Provisioning` / `Running` by a restart are
+  reconciled to `Failed` and their worktrees swept. They previously persisted
+  forever, leaking worktrees and `pkt/*` branches and blocking every future
+  launch on the same path with a collision error.
+- Saving app state no longer spins on the UI thread. Synchronous save commands
+  busy-waited on a lock that async writers could hold indefinitely, which could
+  freeze the app with no timeout and no error. A poisoned lock no longer ends
+  persistence for the rest of the session.
+- Release gates now execute. `release:readiness` previously reported quality
+  gates as passing whenever the npm script _name_ existed, without running
+  anything; `release:gate` accepted the updater signing key as evidence of a
+  code-signing certificate, and never ran automatically during a build.
+- The bundled Node runtime is verified against digests pinned in the repository
+  and GPG-verified against a Node.js release key. The checksum file previously
+  travelled the same unauthenticated channel as the archive it verified, and a
+  self-written cache marker made one bad fetch permanent.
+
+### Added — accepted Flight attempts can now be landed (2026-08-06)
+
+Accepting an attempt used to mark it complete, remove its worktree, and stop —
+leaving the branch unmerged with no way to reach it from the app unless you had
+ticked the draft-PR box before launching.
+
+- A completed attempt now offers **Land** and **Open PR** on its tile. Land
+  squash-merges the branch through the same path the conversation worktree bar
+  uses, so it inherits that path's refusals: it declines on a dirty root
+  checkout, resets on conflict, and reports an empty branch as a failure rather
+  than claiming a landing that did not happen. Land is unavailable for SSH
+  attempts, which route through Open PR instead.
+- Re-opening the launch dialog on an existing flight no longer silently
+  rewrites its "publish attempts as pull requests" setting to the global
+  default.
+- Launching now shows provisioning progress, and a partial launch reports how
+  many agents actually started instead of presenting a total failure while
+  agents run and spend.
+
+### Changed — Accept and Reject on an attempt now confirm first (2026-08-06)
+
+Both actions force-remove the attempt's worktree, destroying uncommitted work,
+and were single unlabelled clicks — while deleting a whole Flight, a rarer and
+more deliberate act, showed a confirmation. Both now confirm, using the same
+live dirty-worktree probe the Flight delete dialog uses, and the dialog states
+what will be destroyed, what will be published, and that the branch is kept so
+Land and Open PR still work afterwards.
+
+### Fixed — modal focus, Escape order, and pane cleanup (2026-08-06)
+
+- Dialogs now trap and restore focus and expose proper dialog semantics to
+  assistive technology. Escape closes the top-most dialog: previously a
+  confirmation opened inside another dialog closed the outer one instead.
+- View-switch keyboard shortcuts no longer fire while a dialog is open, where
+  they could unmount the view and discard a half-typed form without warning.
+- Closing a terminal pane while its session was still starting no longer
+  strands the process, and no longer leaks its output subscriptions.
+- The status dot for a flight no longer changes colour when the row is
+  selected.
+
 ## [0.10.3] - 2026-08-02
 
 ### Added — selectable local terminal shells (2026-08-02)

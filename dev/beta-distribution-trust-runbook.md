@@ -38,15 +38,15 @@ available.
 
 ## Trust Gates
 
-| Gate | Status | Owner notes |
-| --- | --- | --- |
-| Windows executable build | Active | `pnpm tauri build` produces NSIS and MSI installers. |
-| Sidecar + Node embedding | Active | `prebundle` fetches Node, builds sidecar, prunes production deps. |
-| Version drift check | Active | `pnpm run release:gate`. |
-| Signing credential check | Active gate, credentials pending | strict mode fails unless signing env is present. |
-| Updater signing check | Active gate, updater deferred | strict mode fails until updater config and signing key are wired. |
-| Windows SmartScreen reputation | Pending real certificate | requires signed releases and reputation over time. |
-| macOS codesign/notarization | Pending Apple credentials | see `multi-platform-build.md`. |
+| Gate                           | Status                                                      | Owner notes                                                                                                                                                           |
+| ------------------------------ | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Windows executable build       | Active                                                      | `pnpm tauri build` produces NSIS and MSI installers.                                                                                                                  |
+| Sidecar + Node embedding       | Active                                                      | `prebundle` fetches Node, builds sidecar, prunes production deps.                                                                                                     |
+| Version drift check            | Active                                                      | `pnpm run release:gate`.                                                                                                                                              |
+| Signing credential check       | Active gate, credentials pending                            | strict mode fails unless signing env is present.                                                                                                                      |
+| Updater signing check          | Active gate, updater deferred                               | strict mode fails until updater config and signing key are wired.                                                                                                     |
+| Windows SmartScreen reputation | Pending real certificate                                    | requires signed releases and reputation over time.                                                                                                                    |
+| macOS codesign/notarization    | Pending Apple credentials; owned by `macos-release-plan.md` | Enrollment is the day-0 long pole. Entitlements, hardened runtime, `notarytool`, and stapling are specified in [`macos-release-plan.md`](./macos-release-plan.md) §4. |
 
 ## Release Candidate Flow
 

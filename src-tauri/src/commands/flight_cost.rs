@@ -554,7 +554,9 @@ mod hermetic_money_path {
         let mut f = base_flight("flight-exec");
         f.total_cost = 1.5;
         f.total_tokens = 100;
-        storage::save_flights(vec![f]).expect("seed flight to tempdir");
+        storage::save_flights(vec![f])
+            .await
+            .expect("seed flight to tempdir");
 
         accumulate_executor_cost("flight-exec", 300, 0.5)
             .await
@@ -582,7 +584,9 @@ mod hermetic_money_path {
         let dir = unique_temp_dir("exec-first");
         let _guard = storage::redirect_data_dir_for_test(dir.clone());
 
-        storage::save_flights(vec![base_flight("flight-first")]).expect("seed flight to tempdir");
+        storage::save_flights(vec![base_flight("flight-first")])
+            .await
+            .expect("seed flight to tempdir");
 
         accumulate_executor_cost("flight-first", 300, 0.5)
             .await

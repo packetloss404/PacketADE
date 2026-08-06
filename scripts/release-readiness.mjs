@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,7 +12,23 @@ const root = path.resolve(__dirname, "..");
 
 const args = new Set(process.argv.slice(2));
 const reportOnly = args.has("--report-only");
+// Executing the gates is the point of the section, but a status snapshot taken
+// during release setup should not take half an hour. --report-only implies it.
+const skipGates =
+  args.has("--skip-gates") || reportOnly || process.env.PACKETADE_RELEASE_SKIP_GATES === "1";
+const gateTimeoutMs = Number(process.env.PACKETADE_RELEASE_GATE_TIMEOUT_MS ?? 45 * 60 * 1000);
 
+/**
+ * The quality gates, executed in order and gated on exit code.
+ *
+ * These nine are exactly what `pnpm run check` runs, one level down:
+ * `check` = preflight + e2e + sidecar:check + check:tauri-schema + rust:check +
+ * rust:test, and `preflight` = format:check + lint:src + test + build. So
+ * `check` is reported as a row derived from these results rather than executed
+ * — running it as a tenth gate would run everything a second time.
+ * `compositeGateRow` re-derives that relationship from package.json on every
+ * run and refuses to claim the composite if the scripts have drifted.
+ */
 const requiredQualityScripts = [
   ["format:check", "pnpm run format:check"],
   ["lint:src", "pnpm run lint:src"],
@@ -23,8 +39,9 @@ const requiredQualityScripts = [
   ["check:tauri-schema", "pnpm run check:tauri-schema"],
   ["rust:check", "pnpm run rust:check"],
   ["rust:test", "pnpm run rust:test"],
-  ["check", "pnpm run check"],
 ];
+
+const compositeGate = ["check", "pnpm run check"];
 
 const artifactGlobsByTarget = {
   windows: ["release/bundle/nsis/*setup.exe", "release/bundle/msi/*.msi"],
@@ -58,10 +75,90 @@ function hostTarget() {
   }
 }
 
-function cargoTargetDirectory() {
-  if (process.env.CARGO_TARGET_DIR) {
-    return path.resolve(root, process.env.CARGO_TARGET_DIR);
+/**
+ * WSL reports platform "linux", so host detection asks for Linux bundles even
+ * though the build that produced them ran on the Windows side. Detecting it
+ * lets the artifact check explain itself instead of just going red.
+ */
+function isWsl() {
+  return (
+    os.platform() === "linux" &&
+    (Boolean(process.env.WSL_DISTRO_NAME) || /microsoft/i.test(os.release()))
+  );
+}
+
+/**
+ * Translate a Windows path to its WSL mount when we are running under WSL, so
+ * a `target-dir` written for the Windows-side build is reachable from here.
+ * Returns the input unchanged when it is not a drive-letter path.
+ */
+function toWslPath(candidate) {
+  const drive = /^([A-Za-z]):[\\/](.*)$/.exec(candidate);
+  if (!drive || !isWsl()) return candidate;
+  return `/mnt/${drive[1].toLowerCase()}/${drive[2].replaceAll("\\", "/")}`;
+}
+
+/**
+ * Read Cargo's `build.target-dir` out of src-tauri/.cargo/config.toml.
+ *
+ * `cargo metadata` reports this correctly, but it needs Cargo on PATH — and on
+ * this project's WSL side Cargo is the Windows MSVC toolchain and is not.
+ * Parsing the key directly keeps the bundle root correct without Cargo, which
+ * matters because the file is git-excluded and machine-local: nothing else in
+ * the repo records where builds actually land.
+ *
+ * Deliberately targeted matches rather than a TOML parser, but both spellings
+ * Cargo accepts are handled: a `[build]` table, and the dotted `build.target-dir`
+ * form. Missing the dotted form would send readiness back to the default root
+ * and fail a correct release build.
+ */
+function cargoConfigTargetDir() {
+  const configPath = path.join(root, "src-tauri", ".cargo", "config.toml");
+  if (!existsSync(configPath)) return null;
+  try {
+    const text = readFileSync(configPath, "utf8");
+
+    const buildSection = /^\s*\[build\]\s*$([\s\S]*?)(?=^\s*\[|\s*$(?![\s\S]))/m.exec(text);
+    if (buildSection) {
+      const key = /^\s*target[-_]dir\s*=\s*["']([^"']+)["']/m.exec(buildSection[1]);
+      if (key) return key[1];
+    }
+
+    // Dotted form, valid only in the top-level preamble — after a [section]
+    // header the key would belong to that table, not to `build`.
+    const preamble = text.split(/^\s*\[/m)[0];
+    const dotted = /^\s*build\.target[-_]dir\s*=\s*["']([^"']+)["']/m.exec(preamble);
+    return dotted ? dotted[1] : null;
+  } catch {
+    return null;
   }
+}
+
+/**
+ * Resolve where Cargo/Tauri actually write bundles, and record how we know.
+ *
+ * The provenance matters: this repo redirects output to a machine-local
+ * directory, so a readiness run that silently searched the default
+ * `src-tauri/target` would report "no artifacts" after a perfectly good release
+ * build — a false negative, and the mirror image of the false positives this
+ * script was fixed to stop producing.
+ */
+function resolveBundleRoot() {
+  if (process.env.CARGO_TARGET_DIR?.trim()) {
+    return {
+      dir: path.resolve(root, toWslPath(process.env.CARGO_TARGET_DIR.trim())),
+      source: "CARGO_TARGET_DIR",
+    };
+  }
+
+  const configured = cargoConfigTargetDir();
+  if (configured) {
+    return {
+      dir: path.resolve(root, toWslPath(configured)),
+      source: "src-tauri/.cargo/config.toml [build] target-dir",
+    };
+  }
+
   try {
     const output = execFileSync(
       "cargo",
@@ -83,12 +180,13 @@ function cargoTargetDirectory() {
     );
     const metadata = JSON.parse(output);
     if (typeof metadata.target_directory === "string") {
-      return path.resolve(metadata.target_directory);
+      return { dir: path.resolve(toWslPath(metadata.target_directory)), source: "cargo metadata" };
     }
   } catch {
-    // Keep readiness usable on machines where Cargo is not installed yet.
+    // Keep readiness usable on machines where Cargo is not on PATH.
   }
-  return path.join(root, "src-tauri", "target");
+
+  return { dir: path.join(root, "src-tauri", "target"), source: "default (src-tauri/target)" };
 }
 
 function displayPath(absolutePath) {
@@ -98,7 +196,8 @@ function displayPath(absolutePath) {
     : absolutePath;
 }
 
-const cargoTarget = cargoTargetDirectory();
+const bundleRoot = resolveBundleRoot();
+const cargoTarget = bundleRoot.dir;
 
 function findFiles(globPattern) {
   const normalized = globPattern.replaceAll("\\", "/");
@@ -140,19 +239,34 @@ function printSection(title, items) {
 
 const packageJson = readJson("package.json");
 const tauriConfig = readJson("src-tauri/tauri.conf.json");
+const cargoVersion =
+  readFileSync(path.join(root, "src-tauri", "Cargo.toml"), "utf8").match(
+    /^version\s*=\s*"([^"]+)"/m,
+  )?.[1] ?? null;
 const releaseVersion = String(packageJson.version ?? "").trim();
 const scripts = packageJson.scripts ?? {};
 const bundle = tauriConfig.bundle ?? {};
 const macosBundle = bundle.macOS ?? {};
 const windowsBundle = bundle.windows ?? {};
 const updaterConfig = tauriConfig.plugins?.updater ?? {};
-const target = process.env.PACKETADE_RELEASE_TARGET || hostTarget();
+const knownTargets = Object.keys(artifactGlobsByTarget);
+const targetOverride = process.env.PACKETADE_RELEASE_TARGET?.trim();
+const target = targetOverride || hostTarget();
+const targetIsKnown = knownTargets.includes(target);
+const targetSource = targetOverride
+  ? "PACKETADE_RELEASE_TARGET"
+  : `host detection (${os.platform()}${isWsl() ? ", WSL" : ""})`;
 
 const metadata = [
   {
-    status: packageJson.version === tauriConfig.version ? "PASS" : "FAIL",
-    label: "package.json version matches tauri.conf.json",
-    detail: `${packageJson.version} / ${tauriConfig.version}`,
+    // Cargo.toml is the third manifest Tauri reads; release-gate.mjs has always
+    // checked all three, so check all three here too.
+    status:
+      packageJson.version === tauriConfig.version && packageJson.version === cargoVersion
+        ? "PASS"
+        : "FAIL",
+    label: "package.json, tauri.conf.json, and Cargo.toml versions match",
+    detail: `${packageJson.version} / ${tauriConfig.version} / ${cargoVersion ?? "(missing)"}`,
   },
   {
     status: bundle.active ? "PASS" : "FAIL",
@@ -288,29 +402,164 @@ const updater = [
   },
 ];
 
-const artifactPatterns =
-  artifactGlobsByTarget[target] ?? Object.values(artifactGlobsByTarget).flat();
+// An unrecognised target used to fall back to every platform's globs at once,
+// so a typo'd override (or an undetectable host) could be satisfied by a stale
+// bundle for the wrong OS. Refuse to guess instead.
+const artifactPatterns = targetIsKnown ? artifactGlobsByTarget[target] : [];
 const allArtifacts = latestByMtime(artifactPatterns.flatMap(findFiles));
 const artifacts = allArtifacts.filter((file) => path.basename(file).includes(releaseVersion));
+
+// Host detection under WSL asks for Linux bundles for a build that ran on the
+// Windows side. Say so, rather than leaving a red line nobody can act on.
+const wslHint =
+  !targetOverride && isWsl() && target === "linux"
+    ? ". Running under WSL, where Node reports linux — if the bundle was produced by the " +
+      "Windows-side build, set PACKETADE_RELEASE_TARGET=windows"
+    : "";
+
 const artifactSection = [
-  {
-    status: artifacts.length > 0 ? "PASS" : "FAIL",
-    label: `Bundle artifacts for ${target}`,
-    detail: artifacts.length
-      ? artifacts.slice(0, 4).map(displayPath).join(", ")
-      : allArtifacts.length
-        ? `found artifacts, but none match version ${releaseVersion}: ${allArtifacts.slice(0, 4).map(displayPath).join(", ")}`
-        : `expected version ${releaseVersion} artifact from one of ${artifactPatterns.join(", ")}`,
-  },
+  !targetIsKnown
+    ? {
+        status: "FAIL",
+        label: `Bundle artifacts for ${target}`,
+        detail: targetOverride
+          ? `PACKETADE_RELEASE_TARGET="${target}" is not one of ${knownTargets.join(", ")} — refusing to search every platform's artifacts, which can pass on a bundle for the wrong OS`
+          : `could not map host platform ${os.platform()} to a bundle target; set PACKETADE_RELEASE_TARGET to one of ${knownTargets.join(", ")}`,
+      }
+    : {
+        status: artifacts.length > 0 ? "PASS" : "FAIL",
+        label: `Bundle artifacts for ${target}`,
+        detail: artifacts.length
+          ? artifacts.slice(0, 4).map(displayPath).join(", ")
+          : allArtifacts.length
+            ? `found artifacts, but none match version ${releaseVersion}: ${allArtifacts.slice(0, 4).map(displayPath).join(", ")}${wslHint}`
+            : `expected version ${releaseVersion} artifact under ${cargoTarget} (bundle root from ${bundleRoot.source}) matching one of ${artifactPatterns.join(", ")}${wslHint}`,
+      },
 ];
 
-const gates = requiredQualityScripts.map(([scriptName, command]) => ({
-  status: scripts[scriptName] ? "PASS" : "FAIL",
-  label: command,
-  detail: scripts[scriptName]
-    ? `package script "${scriptName}" is defined`
-    : `package script "${scriptName}" is missing`,
-}));
+/** Script names a package script shells out to, e.g. `pnpm run lint:src`. */
+function referencedScripts(body) {
+  return [...String(body ?? "").matchAll(/\bpnpm\s+(?:run\s+)?([A-Za-z][\w:-]*)/g)].map(
+    (m) => m[1],
+  );
+}
+
+/**
+ * Report `pnpm run check` from the results of the gates that constitute it,
+ * but only when package.json still says it is constituted that way.
+ */
+function compositeGateRow(executed) {
+  const [scriptName, command] = compositeGate;
+  if (!scripts[scriptName]) {
+    return { status: "FAIL", label: command, detail: `package script "${scriptName}" is missing` };
+  }
+
+  const leaves = new Set();
+  for (const name of referencedScripts(scripts[scriptName])) {
+    if (name === "preflight" && scripts.preflight) {
+      for (const inner of referencedScripts(scripts.preflight)) leaves.add(inner);
+    } else {
+      leaves.add(name);
+    }
+  }
+  const expected = new Set(requiredQualityScripts.map(([name]) => name));
+  const missing = [...expected].filter((name) => !leaves.has(name));
+  const extra = [...leaves].filter((name) => !expected.has(name));
+  if (missing.length || extra.length) {
+    return {
+      status: "WARN",
+      label: command,
+      detail:
+        `cannot be derived — "${scriptName}" no longer expands to the gates above ` +
+        `(unrun: ${extra.join(", ") || "none"}; not in check: ${missing.join(", ") || "none"}). ` +
+        `Update requiredQualityScripts in scripts/release-readiness.mjs.`,
+    };
+  }
+
+  if (executed.some((row) => row.status === "WARN")) {
+    return {
+      status: "WARN",
+      label: command,
+      detail: "composite of the gates above; not evaluated because some were not executed",
+    };
+  }
+  const failed = executed.filter((row) => row.status === "FAIL");
+  return failed.length
+    ? { status: "FAIL", label: command, detail: `${failed.length} constituent gate(s) failed` }
+    : {
+        status: "PASS",
+        label: command,
+        detail: "composite of the gates above (not re-executed — it runs exactly these)",
+      };
+}
+
+/** Execute one gate and gate on its exit code. */
+function runGate(scriptName, command) {
+  if (!scripts[scriptName]) {
+    return { status: "FAIL", label: command, detail: `package script "${scriptName}" is missing` };
+  }
+  if (skipGates) {
+    return {
+      status: "WARN",
+      label: command,
+      detail: `NOT EXECUTED (${reportOnly ? "--report-only" : "--skip-gates"}) — "${scriptName}" is defined but unverified`,
+    };
+  }
+
+  process.stdout.write(`  ${command} ... `);
+  const startedAt = Date.now();
+  const result = spawnSync("pnpm", ["run", scriptName], {
+    cwd: root,
+    encoding: "utf8",
+    timeout: gateTimeoutMs,
+    maxBuffer: 64 * 1024 * 1024,
+    shell: process.platform === "win32",
+  });
+  const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+
+  if (result.error) {
+    process.stdout.write(`ERROR (${seconds}s)\n`);
+    return {
+      status: "FAIL",
+      label: command,
+      detail: `could not run (${seconds}s): ${result.error.message}`,
+    };
+  }
+  if (result.status === 0) {
+    process.stdout.write(`ok (${seconds}s)\n`);
+    return { status: "PASS", label: command, detail: `exit 0 in ${seconds}s` };
+  }
+
+  process.stdout.write(`FAILED (${seconds}s)\n`);
+  const tail = `${result.stdout ?? ""}${result.stderr ?? ""}`
+    .split("\n")
+    .filter((line) => line.trim())
+    .slice(-25)
+    .join("\n");
+  if (tail) {
+    console.log(tail.replace(/^/gm, "    | "));
+  }
+  const how = result.signal ? `killed by ${result.signal}` : `exit ${result.status}`;
+  return { status: "FAIL", label: command, detail: `${how} after ${seconds}s` };
+}
+
+console.log("PacketADE Release Readiness");
+console.log(`Target: ${target} (from ${targetSource})`);
+console.log(`Bundle root: ${cargoTarget} (from ${bundleRoot.source})`);
+console.log(`Mode: ${reportOnly ? "report-only" : "gate"}`);
+
+if (skipGates) {
+  console.log(
+    `\nQuality gates: NOT EXECUTED — pass no flags to run them (they are the ` +
+      `only evidence the build is actually green).`,
+  );
+} else {
+  console.log(`\nExecuting ${requiredQualityScripts.length} quality gates (this takes a while):`);
+}
+const executedGates = requiredQualityScripts.map(([scriptName, command]) =>
+  runGate(scriptName, command),
+);
+const gates = [...executedGates, compositeGateRow(executedGates)];
 
 const sections = [
   ["Release Metadata", metadata],
@@ -319,10 +568,6 @@ const sections = [
   ["Bundle Artifacts", artifactSection],
   ["Required Quality Gates", gates],
 ];
-
-console.log("PacketADE Release Readiness");
-console.log(`Target: ${target}`);
-console.log(`Mode: ${reportOnly ? "report-only" : "gate"}`);
 
 for (const [title, items] of sections) {
   printSection(title, items);

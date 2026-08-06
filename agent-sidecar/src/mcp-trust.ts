@@ -1,14 +1,111 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  probeMcpServerCapabilities,
+  type McpCapabilityProbe,
+} from "./mcp-capability.js";
 import type { McpTrustSnapshot } from "./protocol.js";
 
+// F6 — read-only enforcement is an ALLOWLIST, not a denylist.
+//
+// A read-only session (`allowWrites === false`) runs a tool only when the tool
+// is known to be safe: either the MCP server annotated it `readOnlyHint: true`
+// (folded into `allowedToolNames` by `applyMcpTrustSnapshot`) or the user
+// explicitly granted it in the MCP Hub. Anything else — including every tool
+// the session has never heard of — is denied. Unknown is not read-only.
+//
+// The verb denylist below survives as an additional FLOOR beneath that
+// allowlist: it catches unambiguously mutating names even when they somehow
+// reach the allowlist. It is deliberately not the primary gate, because a
+// substring blocklist can only ever describe the mutations someone remembered
+// to name (`edit_file`, `apply_patch`, `commit`, `chmod`, `put_object`, … all
+// sailed through the original 19-word list).
+
+/** Legacy substring pass. Catches glued-together names like `rewriteFile`. */
 const MUTATING_TOOL =
   /(?:write|create|update|delete|remove|move|rename|post|send|merge|push|publish|archive|close|reopen|assign|set|execute|run)/i;
+
+/** Token pass. Matched against `read_file` / `readFile` / `read-file` parts. */
+const MUTATING_TOKENS = new Set([
+  "write",
+  "create",
+  "update",
+  "delete",
+  "remove",
+  "move",
+  "rename",
+  "post",
+  "send",
+  "merge",
+  "push",
+  "publish",
+  "archive",
+  "close",
+  "reopen",
+  "assign",
+  "set",
+  "execute",
+  "run",
+  "exec",
+  "edit",
+  "patch",
+  "apply",
+  "commit",
+  "mkdir",
+  "rmdir",
+  "chmod",
+  "chown",
+  "append",
+  "prepend",
+  "put",
+  "save",
+  "store",
+  "modify",
+  "insert",
+  "upsert",
+  "drop",
+  "truncate",
+  "alter",
+  "upload",
+  "install",
+  "uninstall",
+  "mutate",
+  "destroy",
+  "purge",
+  "wipe",
+  "overwrite",
+  "replace",
+  "unlink",
+  "mount",
+  "unmount",
+  "format",
+  "kill",
+  "terminate",
+  "revoke",
+  "grant",
+  "restart",
+  "reset",
+]);
+
 const CREDENTIAL_TOOL = /(?:credential|secret|token|password|keyring|private[_-]?key|auth)/i;
 const PROTECTED_PUBLISH_TOOL = /(?:push|publish|merge|release|deploy|tag|pull[_-]?request)/i;
 const PATH_KEY = /(?:path|file|folder|directory|dir|root|cwd|workspace)/i;
 
 type ServerConfig = Record<string, unknown>;
+
+/** Split a tool name into lowercase word tokens (`getFooBar` → get/foo/bar). */
+function toolNameTokens(name: string): string[] {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+function suspectedMutation(toolName: string): boolean {
+  if (MUTATING_TOOL.test(toolName)) return true;
+  return toolNameTokens(toolName).some((token) => MUTATING_TOKENS.has(token));
+}
 
 function transportOf(server: ServerConfig): "stdio" | "http" | "sse" {
   return server.type === "http" || server.type === "sse" ? server.type : "stdio";
@@ -37,14 +134,25 @@ function defaultSnapshot(
   };
 }
 
-export function applyMcpTrustSnapshot(
+/**
+ * Filter the forwarded MCP servers down to the ones this session's frozen
+ * authority grants, then interrogate each survivor for its real tool surface.
+ *
+ * For a read-only server the probe's `readOnlyHint: true` tools are unioned
+ * into `allowedToolNames`, which is what `mcpToolDenial` gates on. A server
+ * that cannot be probed contributes nothing, so its tools stay denied — the
+ * failure mode is a session that can't reach the server, never a session that
+ * reaches it with unchecked authority.
+ */
+export async function applyMcpTrustSnapshot(
   servers: Record<string, unknown>,
   supplied: McpTrustSnapshot[] | undefined,
   projectPath: string,
-): {
+  probe: McpCapabilityProbe = probeMcpServerCapabilities,
+): Promise<{
   servers: Record<string, unknown>;
   snapshots: McpTrustSnapshot[];
-} {
+}> {
   const entries = Object.entries(servers).filter(
     (entry): entry is [string, ServerConfig] =>
       Boolean(entry[1]) && typeof entry[1] === "object" && !Array.isArray(entry[1]),
@@ -54,15 +162,40 @@ export function applyMcpTrustSnapshot(
     supplied === undefined
       ? entries.map(([name, server]) => defaultSnapshot(name, server, projectPath))
       : supplied;
-  const filtered = Object.fromEntries(
-    entries.filter(([name, server]) => {
-      const snapshot =
-        byName.get(name) ?? snapshots.find((candidate) => candidate.serverName === name);
-      if (!snapshot?.allowReads) return false;
-      return transportOf(server) === "stdio" || snapshot.allowNetwork;
+  const granted = entries.filter(([name, server]) => {
+    const snapshot =
+      byName.get(name) ?? snapshots.find((candidate) => candidate.serverName === name);
+    if (!snapshot?.allowReads) return false;
+    return transportOf(server) === "stdio" || snapshot.allowNetwork;
+  });
+  const filtered = Object.fromEntries(granted);
+
+  // Probe only the servers this session can actually reach, and only when the
+  // read-only allowlist depends on the answer.
+  const grantedByName = new Map(granted);
+  const resolved = await Promise.all(
+    snapshots.map(async (snapshot) => {
+      const server = grantedByName.get(snapshot.serverName);
+      if (!server || snapshot.allowWrites) return snapshot;
+      const result = await probe(snapshot.serverName, server, projectPath);
+      if (!result.ok) {
+        process.stderr.write(
+          `[sidecar] MCP capability probe failed for '${snapshot.serverName}' (${result.error}); ` +
+            `no tools from it will run in this read-only session\n`,
+        );
+        return snapshot;
+      }
+      const readOnly = result.tools
+        .filter((tool) => tool.readOnlyHint)
+        .map((tool) => tool.name);
+      const allowedToolNames = Array.from(
+        new Set([...snapshot.allowedToolNames, ...readOnly]),
+      );
+      return { ...snapshot, allowedToolNames, capabilityCheckedAt: Date.now() };
     }),
   );
-  return { servers: filtered, snapshots };
+
+  return { servers: filtered, snapshots: resolved };
 }
 
 function flattenPathArguments(value: unknown, key = "", output: string[] = []): string[] {
@@ -129,8 +262,22 @@ export function mcpToolDenial(
   ) {
     return "MCP publish/merge/deploy operations are blocked by a non-overridable denial floor.";
   }
-  if (!snapshot.allowWrites && MUTATING_TOOL.test(toolName)) {
-    return `MCP tool '${serverName}/${toolName}' looks mutating, but this session is read-only.`;
+  if (!snapshot.allowWrites) {
+    // Floor first: an unambiguously mutating name is refused even when it
+    // somehow reached the allowlist.
+    if (suspectedMutation(toolName)) {
+      return `MCP tool '${serverName}/${toolName}' looks mutating, but this session is read-only.`;
+    }
+    // Then the allowlist. Reaching here means the tool is neither annotated
+    // `readOnlyHint: true` by its server nor granted by the user, so we cannot
+    // show it is safe — and "cannot show it is safe" is a denial.
+    if (!snapshot.allowedToolNames.includes(toolName)) {
+      return (
+        `MCP tool '${serverName}/${toolName}' is not verified read-only: its server publishes no ` +
+        `readOnlyHint annotation for it and it is not in this session's allowed tool list. ` +
+        `Allow the tool or enable writes for '${serverName}' in Settings → MCP Hub.`
+      );
+    }
   }
   return mcpPathDenial(snapshot, input);
 }

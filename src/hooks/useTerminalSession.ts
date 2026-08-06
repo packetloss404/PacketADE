@@ -88,6 +88,11 @@ export function useTerminalSession({
   const exitRequestedRef = useRef(false);
   const endedSessionIdsRef = useRef(new Set<string>());
   const autoStartTriggeredRef = useRef(false);
+  // Spawning is async and the pane can be closed while it is in flight. Without
+  // this the unmount cleanup reads a still-null `sessionIdRef`, kills nothing,
+  // and the resolved spawn leaves a live `claude`/`codex` process behind with
+  // no owner — plus writes the dead pane's session back into `layoutStore`.
+  const mountedRef = useRef(true);
 
   // Store callbacks in refs so they never destabilize memoised effects.
   const onSessionCreatedRef = useLatestRef(onSessionCreated);
@@ -242,8 +247,16 @@ export function useTerminalSession({
         env ?? null,
       );
 
-      sessionIdRef.current = sessionId;
       if (paneId) panesStarting.delete(paneId);
+      if (!mountedRef.current) {
+        // Pane went away mid-spawn. Reap before touching any ref or store —
+        // the unmount cleanup already ran and will never see this session.
+        // (It already removed the tab we registered above.)
+        await killPty(sessionId).catch(() => {});
+        return;
+      }
+
+      sessionIdRef.current = sessionId;
       setCurrentSessionId(sessionId);
       setAlive(true);
 
@@ -321,6 +334,17 @@ export function useTerminalSession({
         outputUnlisten();
         exitUnlisten();
         unlistenersRef.current = [];
+      }
+      if (!mountedRef.current) {
+        // Unmounted while the two `listen()` calls were in flight, so the
+        // cleanup drained an empty `unlistenersRef`. Drop them here or both
+        // stay subscribed forever, writing into a disposed xterm. The PTY
+        // itself was already reaped by the cleanup — `sessionIdRef` was set
+        // before these awaits.
+        outputUnlisten();
+        exitUnlisten();
+        unlistenersRef.current = [];
+        return;
       }
 
       const transcript = await readPtyTranscript(sessionId).catch(() => null);
@@ -402,7 +426,11 @@ export function useTerminalSession({
 
   // Cleanup on unmount
   useEffect(() => {
+    // Re-armed on every mount: StrictMode's mount/unmount/mount cycle reuses
+    // the same ref instance.
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       for (const fn of unlistenersRef.current) {
         fn();
       }

@@ -40,9 +40,12 @@ pub use supervisor::SidecarManager;
 pub const SIDECAR_PROVIDERS: &[&str] = &["claude-oauth", "openai-agents", "echo"];
 
 /// Wire protocol version this supervisor was built against. Must match
-/// `PROTOCOL_VERSION` in `agent-sidecar/src/protocol.ts`. We log a warning if
-/// the sidecar advertises a different value on its `ready` event, but we do
-/// not refuse to proceed — this is a soft compatibility signal, not a gate.
+/// `PROTOCOL_VERSION` in `agent-sidecar/src/protocol.ts`.
+///
+/// Negotiation is ASYMMETRIC (see [`MINIMUM_PROTOCOL_VERSION`]): a version
+/// ABOVE this one is a warning, because every version through v10 added
+/// optional request types that an older peer rejects loudly and cleanly. A
+/// version BELOW the floor is refused.
 ///
 /// v2 (Tier 3 slice B): added `set_permission_mode`, `set_model`, and `retry`
 /// request types on the wire.
@@ -88,12 +91,50 @@ pub const SIDECAR_PROVIDERS: &[&str] = &["claude-oauth", "openai-agents", "echo"
 ///
 /// v10 (G06/G36): `done` can carry `cancelled`, making user cancellation an
 /// explicit terminal outcome without ending the reusable conversation.
+///
+/// v11 (MCPH4): `start_session` carries `mcpTrustSnapshot` — the frozen,
+/// per-server MCP trust and capability authority for the session. The sidecar
+/// filters transports and tools against it, so later Settings edits cannot
+/// broaden a running session, and a read-only session runs only tools the
+/// server annotated `readOnlyHint` or the user explicitly allowed.
+///
+/// v11 is the reason negotiation stopped being warn-only. Every earlier
+/// version added REQUESTS: send one to a sidecar that predates it and you get
+/// "Unknown request type" back — loud, immediate, and safe. v11 added a FIELD
+/// on an existing request, and an older sidecar does not reject an unknown
+/// JSON field; it ignores it and then runs every forwarded MCP server with no
+/// filtering at all. The user sees a working session. The degradation is
+/// silent and it is a security downgrade, which is why it is a floor and not
+/// a warning.
 pub(super) const EXPECTED_PROTOCOL_VERSION: u32 = 11;
+
+/// Lowest protocol version this supervisor will start sessions against.
+///
+/// A sidecar advertising less than this is marked
+/// [`status::SidecarState::Incompatible`] and every `start_session` is refused
+/// with a message the user can act on. Raise this only when a version
+/// introduces a security-relevant field (as v11 did) — not for ordinary
+/// feature additions, which stay warn-only so mixed-version pairings keep
+/// working.
+pub(super) const MINIMUM_PROTOCOL_VERSION: u32 = 11;
 
 /// Convenience predicate used by slice C to decide whether to call
 /// `forward_*` vs. the existing Rust path.
 pub fn is_sidecar_provider(provider: &str) -> bool {
     SIDECAR_PROVIDERS.contains(&provider)
+}
+
+/// F7 — does a peer's advertised protocol version clear the security floor?
+///
+/// `None` (a `ready` event with no `protocolVersion` at all) does NOT clear it.
+/// A sidecar old enough to omit the field is far older than v11, and "we could
+/// not tell" is the same answer as "no" when the thing we could not tell is
+/// whether MCP trust is enforced.
+///
+/// Shared by the local handshake ([`handler`]), the per-session SSH handshake,
+/// and the `forward_start` gate, so all three refuse on identical terms.
+pub(super) fn protocol_meets_floor(advertised: Option<u32>) -> bool {
+    matches!(advertised, Some(version) if version >= MINIMUM_PROTOCOL_VERSION)
 }
 
 /// Maximum sidecar restarts allowed within `RESTART_WINDOW`.
@@ -137,6 +178,34 @@ mod tests {
         assert!(is_sidecar_provider("openai-agents"));
         assert!(!is_sidecar_provider("api-openai"));
         assert!(!is_sidecar_provider("api-claude"));
+    }
+
+    #[test]
+    fn protocol_floor_refuses_below_v11_and_accepts_at_or_above() {
+        // The whole point of F7: v10 and older silently ignore
+        // `mcpTrustSnapshot`, so they must not serve sessions.
+        assert!(!protocol_meets_floor(Some(1)));
+        assert!(!protocol_meets_floor(Some(10)));
+        assert!(protocol_meets_floor(Some(MINIMUM_PROTOCOL_VERSION)));
+        // Newer than us stays warn-only — a forward-compatible sidecar still
+        // enforces trust, it just knows about requests we do not send.
+        assert!(protocol_meets_floor(Some(EXPECTED_PROTOCOL_VERSION + 5)));
+    }
+
+    #[test]
+    fn protocol_floor_refuses_a_handshake_that_advertises_nothing() {
+        // A pre-handshake build predates v11 by a wide margin. "Unknown" is a
+        // refusal, not a pass.
+        assert!(!protocol_meets_floor(None));
+    }
+
+    #[test]
+    fn the_floor_is_the_version_that_moved_mcp_trust_onto_the_wire() {
+        // If someone bumps EXPECTED without thinking about MINIMUM, this test
+        // is the reminder that raising the floor is a deliberate, separate
+        // decision — it breaks mixed-version pairings on purpose.
+        assert_eq!(MINIMUM_PROTOCOL_VERSION, 11);
+        assert!(EXPECTED_PROTOCOL_VERSION >= MINIMUM_PROTOCOL_VERSION);
     }
 
     #[test]
