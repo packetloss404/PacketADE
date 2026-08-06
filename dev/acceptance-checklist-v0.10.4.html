@@ -1,0 +1,1069 @@
+<title>PacketADE v0.10.4 — Acceptance Walkthrough</title>
+<style>
+  :root {
+    --ground: #f2f4f7;
+    --panel: #ffffff;
+    --panel-2: #e8ecf2;
+    --ink: #10151c;
+    --ink-2: #414c5c;
+    --ink-3: #6d798a;
+    --rule: #d2d9e2;
+    --accent: #b06a00;
+    --accent-ink: #8a5300;
+    --pass: #1a7f4b;
+    --issue: #a86300;
+    --fail: #b3213b;
+    --pass-bg: #1a7f4b14;
+    --issue-bg: #a8630014;
+    --fail-bg: #b3213b12;
+    --shadow: 0 1px 2px rgba(16, 21, 28, 0.07), 0 6px 20px rgba(16, 21, 28, 0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0b0e13;
+      --panel: #141922;
+      --panel-2: #1b212c;
+      --ink: #e6ebf2;
+      --ink-2: #a9b4c4;
+      --ink-3: #7d8899;
+      --rule: #242c39;
+      --accent: #e8a33d;
+      --accent-ink: #f0b45c;
+      --pass: #3ec27e;
+      --issue: #e8a33d;
+      --fail: #f2637e;
+      --pass-bg: #3ec27e1f;
+      --issue-bg: #e8a33d1f;
+      --fail-bg: #f2637e1a;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 26px rgba(0, 0, 0, 0.4);
+    }
+  }
+  :root[data-theme="light"] {
+    --ground: #f2f4f7;
+    --panel: #ffffff;
+    --panel-2: #e8ecf2;
+    --ink: #10151c;
+    --ink-2: #414c5c;
+    --ink-3: #6d798a;
+    --rule: #d2d9e2;
+    --accent: #b06a00;
+    --accent-ink: #8a5300;
+    --pass: #1a7f4b;
+    --issue: #a86300;
+    --fail: #b3213b;
+    --pass-bg: #1a7f4b14;
+    --issue-bg: #a8630014;
+    --fail-bg: #b3213b12;
+    --shadow: 0 1px 2px rgba(16, 21, 28, 0.07), 0 6px 20px rgba(16, 21, 28, 0.05);
+  }
+  :root[data-theme="dark"] {
+    --ground: #0b0e13;
+    --panel: #141922;
+    --panel-2: #1b212c;
+    --ink: #e6ebf2;
+    --ink-2: #a9b4c4;
+    --ink-3: #7d8899;
+    --rule: #242c39;
+    --accent: #e8a33d;
+    --accent-ink: #f0b45c;
+    --pass: #3ec27e;
+    --issue: #e8a33d;
+    --fail: #f2637e;
+    --pass-bg: #3ec27e1f;
+    --issue-bg: #e8a33d1f;
+    --fail-bg: #f2637e1a;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 26px rgba(0, 0, 0, 0.4);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font:
+      15px/1.6 system-ui,
+      "Segoe UI",
+      Roboto,
+      sans-serif;
+    padding-bottom: 80px;
+  }
+  .mono,
+  code {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  code {
+    background: var(--panel-2);
+    padding: 0.08em 0.35em;
+    border-radius: 4px;
+    font-size: 0.86em;
+  }
+  main {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 0 20px;
+  }
+
+  /* header */
+  header {
+    border-bottom: 2px solid var(--rule);
+    padding: 34px 0 18px;
+    margin-bottom: 8px;
+  }
+  .kicker {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    font-weight: 700;
+  }
+  h1 {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: clamp(1.5rem, 3.4vw, 2.1rem);
+    margin: 0.35rem 0 0.5rem;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+  .build {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 20px;
+    font-size: 0.8rem;
+    color: var(--ink-3);
+    font-family: ui-monospace, Consolas, monospace;
+    margin-top: 10px;
+  }
+  .build b {
+    color: var(--ink-2);
+    font-weight: 600;
+  }
+  .lede {
+    color: var(--ink-2);
+    max-width: 68ch;
+    margin: 14px 0 0;
+  }
+
+  /* sticky progress */
+  .bar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--ground);
+    border-bottom: 1px solid var(--rule);
+    padding: 10px 0;
+    margin-bottom: 26px;
+  }
+  .bar-inner {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .meter {
+    flex: 1;
+    min-width: 160px;
+    height: 8px;
+    background: var(--panel-2);
+    border-radius: 99px;
+    overflow: hidden;
+    display: flex;
+  }
+  .meter i {
+    display: block;
+    height: 100%;
+  }
+  .meter .m-pass {
+    background: var(--pass);
+  }
+  .meter .m-issue {
+    background: var(--issue);
+  }
+  .meter .m-fail {
+    background: var(--fail);
+  }
+  .tally {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.78rem;
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .tally b {
+    font-weight: 700;
+  }
+  .tally .t-pass {
+    color: var(--pass);
+  }
+  .tally .t-issue {
+    color: var(--issue);
+  }
+  .tally .t-fail {
+    color: var(--fail);
+  }
+  button.act {
+    font:
+      600 0.78rem/1 ui-monospace,
+      Consolas,
+      monospace;
+    padding: 7px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--rule);
+    background: var(--panel);
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  button.act:hover {
+    border-color: var(--accent);
+    color: var(--accent-ink);
+  }
+  button.act:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* sections */
+  section {
+    margin-bottom: 40px;
+  }
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+  .sec-num {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: var(--accent-ink);
+    letter-spacing: 0.1em;
+  }
+  h2 {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 1.12rem;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .sec-note {
+    color: var(--ink-3);
+    font-size: 0.87rem;
+    margin: 6px 0 16px;
+    max-width: 70ch;
+  }
+  .sec-note strong {
+    color: var(--ink-2);
+  }
+
+  /* items */
+  .item {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--rule);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    box-shadow: var(--shadow);
+    transition: border-left-color 0.15s;
+  }
+  .item[data-state="pass"] {
+    border-left-color: var(--pass);
+    background: linear-gradient(var(--pass-bg), var(--pass-bg)) var(--panel);
+  }
+  .item[data-state="issue"] {
+    border-left-color: var(--issue);
+    background: linear-gradient(var(--issue-bg), var(--issue-bg)) var(--panel);
+  }
+  .item[data-state="fail"] {
+    border-left-color: var(--fail);
+    background: linear-gradient(var(--fail-bg), var(--fail-bg)) var(--panel);
+  }
+  .item-top {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .id {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--ink-3);
+    padding-top: 3px;
+    min-width: 52px;
+  }
+  .body {
+    flex: 1;
+    min-width: 0;
+  }
+  .title {
+    font-weight: 600;
+    margin-bottom: 3px;
+  }
+  .how {
+    color: var(--ink-2);
+    font-size: 0.89rem;
+  }
+  .expect {
+    color: var(--ink-3);
+    font-size: 0.85rem;
+    margin-top: 5px;
+  }
+  .expect b {
+    color: var(--ink-2);
+    font-weight: 600;
+  }
+  .tag {
+    display: inline-block;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--panel-2);
+    color: var(--ink-3);
+    margin-left: 6px;
+    vertical-align: 2px;
+  }
+  .tag.fix {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: var(--accent-ink);
+  }
+
+  .states {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .states button {
+    font:
+      700 0.68rem/1 ui-monospace,
+      Consolas,
+      monospace;
+    padding: 6px 8px;
+    border-radius: 5px;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--ink-3);
+    cursor: pointer;
+  }
+  .states button:hover {
+    border-color: var(--ink-3);
+    color: var(--ink-2);
+  }
+  .states button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .states button[aria-pressed="true"][data-v="pass"] {
+    background: var(--pass);
+    border-color: var(--pass);
+    color: #fff;
+  }
+  .states button[aria-pressed="true"][data-v="issue"] {
+    background: var(--issue);
+    border-color: var(--issue);
+    color: #fff;
+  }
+  .states button[aria-pressed="true"][data-v="fail"] {
+    background: var(--fail);
+    border-color: var(--fail);
+    color: #fff;
+  }
+
+  textarea {
+    width: 100%;
+    margin-top: 10px;
+    min-height: 0;
+    height: 38px;
+    resize: vertical;
+    background: var(--ground);
+    color: var(--ink);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font: inherit;
+    font-size: 0.87rem;
+  }
+  textarea:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+    border-color: transparent;
+  }
+  textarea::placeholder {
+    color: var(--ink-3);
+  }
+
+  .callout {
+    border-left: 3px solid var(--issue);
+    background: var(--issue-bg);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-size: 0.89rem;
+    color: var(--ink-2);
+  }
+  .callout b {
+    color: var(--ink);
+  }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    margin-top: 44px;
+    padding-top: 18px;
+    color: var(--ink-3);
+    font-size: 0.82rem;
+  }
+
+  @media (max-width: 620px) {
+    .item-top {
+      flex-wrap: wrap;
+    }
+    .states {
+      width: 100%;
+      margin-top: 8px;
+    }
+    .states button {
+      flex: 1;
+    }
+  }
+  @media print {
+    .bar,
+    .states,
+    footer button {
+      display: none;
+    }
+    .item {
+      break-inside: avoid;
+      box-shadow: none;
+    }
+    body {
+      background: #fff;
+    }
+  }
+</style>
+
+<div class="bar">
+  <div class="bar-inner">
+    <div class="meter" aria-hidden="true">
+      <i class="m-pass" id="mPass" style="width: 0"></i>
+      <i class="m-issue" id="mIssue" style="width: 0"></i>
+      <i class="m-fail" id="mFail" style="width: 0"></i>
+    </div>
+    <div class="tally" id="tally" role="status">0 / 0 checked</div>
+    <button class="act" id="btnExport">Export findings</button>
+    <button class="act" id="btnReset">Reset</button>
+  </div>
+</div>
+
+<main>
+  <header>
+    <div class="kicker">Preflight · Acceptance walkthrough</div>
+    <h1>PacketADE v0.10.4</h1>
+    <div class="build">
+      <span>commit <b>f4946c4c</b></span>
+      <span>built <b>2026-08-06 16:01</b></span>
+      <span>NSIS <b>FA97DF7B…70C0</b></span>
+      <span>MSI <b>C30F0FBD…249B</b></span>
+      <span><b>unsigned</b></span>
+    </div>
+    <p class="lede">
+      This build is the first to contain the twelve P1 fixes from the 2026-08-05 review. Every one
+      of them is verified by tests and <em>none</em> has been exercised in a packaged app — so
+      section 2 is the part that actually earns its keep. Mark each item, add a note where something
+      is off, then hit <strong>Export findings</strong> and paste the result back into the session.
+    </p>
+  </header>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">01</span>
+      <h2>Install and first run</h2>
+    </div>
+    <p class="sec-note">
+      The installer has never been run — every previous release was bundled and hashed but never
+      installed. Expect a SmartScreen warning: the build is unsigned, and that is the certificate
+      you do not have yet, not a defect.
+    </p>
+    <div id="s1"></div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">02</span>
+      <h2>The twelve fixes, in the real app</h2>
+    </div>
+    <p class="sec-note">
+      <strong>Highest value section.</strong> Each item below is a fix whose only evidence so far is
+      a unit test. The PTY tests, for instance, assert that <code>killPty</code> was called — not
+      that an OS process actually died. That is what you are checking.
+    </p>
+    <div id="s2"></div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">03</span>
+      <h2>Changes that look like bugs but are not</h2>
+    </div>
+    <div class="callout">
+      <b>Do not write these up as defects.</b> Confirm each behaves as described. If one of them
+      annoys you in practice, mark it <em>Issue</em> and say so — that is a design call worth
+      revisiting, not a bug report.
+    </div>
+    <div id="s3"></div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">04</span>
+      <h2>Packaged behaviour</h2>
+    </div>
+    <p class="sec-note">
+      The bundled sidecar and bundled Node are the highest packaging risk in the app — that path is
+      the one most likely to work in dev and break in a package, so do it first.
+    </p>
+    <div id="s4"></div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">05</span>
+      <h2>Surfaces — does it work as designed?</h2>
+    </div>
+    <p class="sec-note">
+      Open each surface and use it the way you normally would. You are looking for anything that
+      contradicts its own design intent, not just crashes.
+    </p>
+    <div id="s5"></div>
+  </section>
+
+  <footer>
+    <p>
+      State is saved in this browser automatically. <strong>Export findings</strong> produces
+      markdown with only the items you marked Issue or Fail, plus every note — paste it back to
+      continue. Generated for commit <code>f4946c4c</code>.
+    </p>
+  </footer>
+</main>
+
+<script>
+  const ITEMS = {
+    s1: [
+      [
+        "I-1",
+        "Install from the NSIS installer",
+        "Run PacketADE_0.10.4_x64-setup.exe. Click through the SmartScreen warning.",
+        "Installs without error. Note anything odd in the installer UI.",
+      ],
+      [
+        "I-2",
+        "First launch",
+        "Launch the installed app (not the dev build).",
+        "Window opens, chrome renders, no error dialog.",
+      ],
+      [
+        "I-3",
+        "Data directory",
+        "Check that your existing sessions, flights, and settings are intact.",
+        "Prior data loads. Nothing was reset by the upgrade.",
+      ],
+      ["I-4", "Relaunch", "Close and reopen the app.", "State restores, including the last view."],
+      [
+        "I-5",
+        "Uninstall entry",
+        "Check Add/Remove Programs shows a sane name and version.",
+        "Reads <b>PacketADE 0.10.4</b>.",
+      ],
+    ],
+    s2: [
+      [
+        "F4/F5",
+        "Closing a pane kills the whole agent tree",
+        "Open a Workspace terminal pane running <code>claude</code> or <code>codex</code>. Note its PID tree in Task Manager. Close the pane.",
+        "<b>No orphaned claude/codex/node processes survive.</b> Previously only the wrapper died.",
+        1,
+      ],
+      [
+        "F4/F5",
+        "Quitting the app kills agent processes",
+        "With at least one live CLI pane, quit PacketADE entirely. Check Task Manager.",
+        "Nothing PacketADE spawned is still running. App exit had no PTY cleanup at all before.",
+        1,
+      ],
+      [
+        "F11",
+        "Closing a pane mid-start does not strand a process",
+        "Open a CLI pane and close it immediately — while it is still starting.",
+        "No stranded process, no console error. This was a real leak.",
+        1,
+      ],
+      [
+        "F1",
+        "Reviewer Gate can actually pass",
+        "Enable the Reviewer Gate on a flight. Run an attempt. Let the reviewer produce a verdict, then Accept.",
+        "<b>Acceptance succeeds.</b> Before this fix the verdict could never persist, so the gate blocked acceptance permanently.",
+        1,
+      ],
+      [
+        "F1",
+        "Reviewer verdict survives a restart",
+        "With a recorded verdict, restart the app and return to the attempt.",
+        "The verdict is still there — no second paid review.",
+        1,
+      ],
+      [
+        "F3",
+        "Restart reconciles a running attempt",
+        "Launch a flight attempt. While it is Running, quit and relaunch the app.",
+        "It comes back <b>Failed — “Interrupted by app restart”</b>, not stuck Running forever.",
+        1,
+      ],
+      [
+        "F3",
+        "A reconciled attempt does not block relaunch",
+        "After the above, launch a new attempt on the same repo and branch.",
+        "It launches. Previously a ghost attempt blocked the path with a collision error forever.",
+        1,
+      ],
+      [
+        "F2",
+        "Accept warns before destroying work",
+        "On a completed attempt, click Accept.",
+        "A confirmation appears naming the worktree, warning about uncommitted work, and stating <b>the branch is kept</b>.",
+        1,
+      ],
+      [
+        "F2",
+        "Reject warns too",
+        "On an attempt, click Reject.",
+        "Same confirmation treatment. Both were unlabelled single clicks before.",
+        1,
+      ],
+      [
+        "F2",
+        "Land appears after acceptance",
+        "Accept an attempt, then look at the tile.",
+        "A <b>Land / Open PR</b> row appears showing the branch name.",
+        1,
+      ],
+      [
+        "F2",
+        "Land actually merges",
+        "Click Land on an attempt with real commits.",
+        "Squash-merges to your base branch. Verify with <code>git log</code>.",
+        1,
+      ],
+      [
+        "F2",
+        "An empty branch reports failure",
+        "Land an attempt whose branch has no commits.",
+        "Reports a failure — <b>not</b> a green “Landed”. Honesty check.",
+        1,
+      ],
+      [
+        "F6",
+        "MCP write tools are refused in a read-only session",
+        "Start an agent session with MCP read-only. Ask it to use a write-capable MCP tool.",
+        "<b>Refused</b>, with a message naming how to allow it. Tools like edit_file and commit used to slip through.",
+        1,
+      ],
+      [
+        "F6",
+        "Write-enabled sessions still work",
+        "Same server, session with writes enabled.",
+        "The tool runs. Confirms enforcement, not blanket blocking.",
+        1,
+      ],
+      [
+        "F10",
+        "The UI does not freeze under load",
+        "Run several agents streaming at once while changing settings and creating flights.",
+        "No lockup, no spinning core. The old lock could starve the UI thread indefinitely.",
+        1,
+      ],
+      [
+        "F12",
+        "Escape closes the inner dialog only",
+        "Open Prompt Library, then trigger its delete confirmation. Press Escape.",
+        "<b>Only the confirmation closes.</b> Previously the whole library closed instead.",
+        1,
+      ],
+      [
+        "F12",
+        "Focus is trapped and restored",
+        "Open any dialog. Press Tab repeatedly, then close it.",
+        "Tab stays inside the dialog; focus returns to the control that opened it.",
+        1,
+      ],
+      [
+        "F12",
+        "View chords cannot destroy a form",
+        "Open a dialog with a half-typed form. Press Ctrl+Shift+1.",
+        "Nothing happens — the view does not switch out from under it.",
+        1,
+      ],
+    ],
+    s3: [
+      [
+        "X-1",
+        "MCP tools may now be denied",
+        "A server that worked yesterday may have tools refused in read-only sessions.",
+        "Expected — most MCP servers publish no read-only annotations. Allow them in the MCP Hub or enable writes.",
+      ],
+      [
+        "X-2",
+        "Onboarding overlay blocks view chords",
+        "On first run, Ctrl+Shift+&lt;digit&gt; does nothing until the welcome overlay is dismissed.",
+        "Expected side effect of the dialog guard. Mark Issue if it bothers you — it is exemptable.",
+      ],
+      [
+        "X-3",
+        "AI triage drawer header moved",
+        "The “N untriaged · N selected” count now sits at the right of the header, not beside the title.",
+        "Expected — from porting the drawer onto the shared dialog.",
+      ],
+    ],
+    s4: [
+      [
+        "P-1",
+        "Bundled sidecar + bundled Node",
+        "Start a Claude Agent SDK or OpenAI Agents SDK conversation and complete a turn with a tool call.",
+        "<b>Highest packaging risk in the app.</b> Works in dev, most likely to break in a package.",
+      ],
+      [
+        "P-2",
+        "In-process providers",
+        "Run a turn on Claude (API), OpenAI (API), MiniMax, or OpenRouter.",
+        "Streams normally.",
+      ],
+      [
+        "P-3",
+        "Terminal shell profiles",
+        "Open raw terminal panes for each: Auto, PowerShell 7, Windows PowerShell, Command Prompt, Git Bash, WSL.",
+        "Each launches, and the pane header names the effective shell (including what Auto resolved to).",
+      ],
+      [
+        "P-4",
+        "Claude Code status bar self-bootstrap",
+        "Open a Claude Code pane in the packaged app.",
+        "The native model/context/cost bar appears without installing any separate script.",
+      ],
+      [
+        "P-5",
+        "OS keyring",
+        "Set and delete an API key, and an SSH password, in Settings.",
+        "Round-trips. Survives an app restart.",
+      ],
+      [
+        "P-6",
+        "Monitor window",
+        "Send a conversation to Monitor. Move it to a second display if you have one.",
+        "Opens read-only; closes with the main app; no stale state.",
+      ],
+      [
+        "P-7",
+        "App close confirmation",
+        "Quit with live work in progress.",
+        "Confirms before destroying it.",
+      ],
+      [
+        "P-8",
+        "Dictation",
+        "Record a short dictation with a real microphone.",
+        "Transcribes. Note latency and accuracy.",
+      ],
+    ],
+    s5: [
+      [
+        "S-1",
+        "Agents",
+        "Create a conversation, use the composer, approvals, plan panel, diffs, review.",
+        "Behaves as designed. Note anything that contradicts intent.",
+      ],
+      [
+        "S-2",
+        "Workspaces",
+        "Create a workspace, add panes, drag the mosaic, reopen it.",
+        "Layout persists and rehydrates.",
+      ],
+      [
+        "S-3",
+        "Flight Deck",
+        "Plan a flight, launch attempts, watch the grid, review a diff.",
+        "Note anything confusing in the modal → plan → launch → attempts → review → merge flow.",
+      ],
+      [
+        "S-4",
+        "Issues",
+        "Create issues, drag between columns, link to a flight, import a spec.",
+        "Board behaves; flight linkage sticks after a restart.",
+      ],
+      [
+        "S-5",
+        "Memory",
+        "Refresh memory, inspect patterns, pin one, check injection.",
+        "Patterns extract and pin.",
+      ],
+      [
+        "S-6",
+        "Git hosts",
+        "Connect GitHub, browse issues and PRs, view a diff.",
+        "Auth persists; panes populate.",
+      ],
+      [
+        "S-7",
+        "Settings",
+        "Walk all six groups. Change things and confirm they take effect.",
+        "No control that is shown but unenforced.",
+      ],
+      [
+        "S-8",
+        "Command palette",
+        "Ctrl+K. Navigate and create things from it.",
+        "Reaches everything it claims to.",
+      ],
+      [
+        "S-9",
+        "Code Quality",
+        "Run a scan; try auto-fix.",
+        "Streams output; the fix panel behaves.",
+      ],
+      [
+        "S-10",
+        "Multi-account CLI",
+        "Switch between named CLI accounts on a pane.",
+        "Right account is used; no silent fallback to ambient login.",
+      ],
+    ],
+  };
+
+  const KEY = "packetade:acceptance:v0.10.4";
+  let state = {};
+  try {
+    state = JSON.parse(localStorage.getItem(KEY) || "{}");
+  } catch (e) {
+    state = {};
+  }
+
+  function save() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(state));
+    } catch (e) {
+      /* private mode */
+    }
+  }
+
+  function keyFor(sec, i) {
+    return sec + ":" + i;
+  }
+
+  function render() {
+    Object.entries(ITEMS).forEach(([sec, rows]) => {
+      const host = document.getElementById(sec);
+      host.innerHTML = "";
+      rows.forEach((row, i) => {
+        const [id, title, how, expect, isFix] = row;
+        const k = keyFor(sec, i);
+        const st = state[k] || {};
+        const el = document.createElement("div");
+        el.className = "item";
+        if (st.v) el.dataset.state = st.v;
+        el.innerHTML =
+          '<div class="item-top">' +
+          '<div class="id">' +
+          id +
+          "</div>" +
+          '<div class="body">' +
+          '<div class="title">' +
+          title +
+          (isFix ? '<span class="tag fix">FIX</span>' : "") +
+          "</div>" +
+          '<div class="how">' +
+          how +
+          "</div>" +
+          '<div class="expect"><b>Expect:</b> ' +
+          expect +
+          "</div>" +
+          "</div>" +
+          '<div class="states" role="group" aria-label="Result for ' +
+          id +
+          '">' +
+          ["pass", "issue", "fail"]
+            .map(
+              (v) =>
+                '<button data-v="' +
+                v +
+                '" aria-pressed="' +
+                (st.v === v) +
+                '">' +
+                v.toUpperCase() +
+                "</button>",
+            )
+            .join("") +
+          "</div>" +
+          "</div>" +
+          '<textarea placeholder="Notes — what happened, what you expected"></textarea>';
+
+        const ta = el.querySelector("textarea");
+        ta.value = st.n || "";
+        ta.addEventListener("input", () => {
+          state[k] = Object.assign({}, state[k], { n: ta.value });
+          save();
+        });
+        el.querySelectorAll(".states button").forEach((b) => {
+          b.addEventListener("click", () => {
+            const v = b.dataset.v;
+            const cur = (state[k] || {}).v;
+            const next = cur === v ? null : v;
+            state[k] = Object.assign({}, state[k], { v: next });
+            save();
+            el.dataset.state = next || "";
+            el.querySelectorAll(".states button").forEach((o) =>
+              o.setAttribute("aria-pressed", String(o.dataset.v === next)),
+            );
+            tally();
+          });
+        });
+        host.appendChild(el);
+      });
+    });
+    tally();
+  }
+
+  function allKeys() {
+    const out = [];
+    Object.entries(ITEMS).forEach(([sec, rows]) =>
+      rows.forEach((_, i) => out.push(keyFor(sec, i))),
+    );
+    return out;
+  }
+
+  function tally() {
+    const ks = allKeys();
+    let p = 0,
+      iss = 0,
+      f = 0;
+    ks.forEach((k) => {
+      const v = (state[k] || {}).v;
+      if (v === "pass") p++;
+      else if (v === "issue") iss++;
+      else if (v === "fail") f++;
+    });
+    const total = ks.length,
+      done = p + iss + f;
+    document.getElementById("mPass").style.width = (p / total) * 100 + "%";
+    document.getElementById("mIssue").style.width = (iss / total) * 100 + "%";
+    document.getElementById("mFail").style.width = (f / total) * 100 + "%";
+    document.getElementById("tally").innerHTML =
+      "<b>" +
+      done +
+      "</b> / " +
+      total +
+      " checked &nbsp; " +
+      '<span class="t-pass">' +
+      p +
+      " pass</span> · " +
+      '<span class="t-issue">' +
+      iss +
+      " issue</span> · " +
+      '<span class="t-fail">' +
+      f +
+      " fail</span>";
+  }
+
+  const SEC_NAMES = {
+    s1: "Install and first run",
+    s2: "The twelve fixes",
+    s3: "Expected behaviour changes",
+    s4: "Packaged behaviour",
+    s5: "Surfaces",
+  };
+
+  function exportMd() {
+    const lines = [
+      "# PacketADE v0.10.4 acceptance walkthrough",
+      "",
+      "Build: commit `f4946c4c`, NSIS `FA97DF7B…70C0`, unsigned.",
+      "",
+    ];
+    let p = 0,
+      iss = 0,
+      f = 0,
+      unchecked = [];
+    Object.entries(ITEMS).forEach(([sec, rows]) => {
+      const hits = [];
+      rows.forEach((row, i) => {
+        const [id, title] = row;
+        const st = state[keyFor(sec, i)] || {};
+        if (st.v === "pass") p++;
+        else if (st.v === "issue") iss++;
+        else if (st.v === "fail") f++;
+        else unchecked.push(id + " " + title);
+        if (st.v === "issue" || st.v === "fail" || (st.n || "").trim()) {
+          hits.push(
+            "- **" +
+              (st.v ? st.v.toUpperCase() : "no verdict") +
+              "** · `" +
+              id +
+              "` " +
+              title +
+              ((st.n || "").trim() ? "\n  - " + st.n.trim().replace(/\n/g, "\n  - ") : ""),
+          );
+        }
+      });
+      if (hits.length) {
+        lines.push("## " + SEC_NAMES[sec], "", hits.join("\n"), "");
+      }
+    });
+    lines.splice(
+      4,
+      0,
+      "Result: **" +
+        p +
+        " pass · " +
+        iss +
+        " issue · " +
+        f +
+        " fail**, " +
+        unchecked.length +
+        " not checked.",
+      "",
+    );
+    if (unchecked.length) {
+      lines.push("## Not checked", "", unchecked.map((u) => "- " + u).join("\n"), "");
+    }
+    if (p + iss + f === 0) lines.push("_Nothing marked yet._", "");
+    return lines.join("\n");
+  }
+
+  document.getElementById("btnExport").addEventListener("click", () => {
+    const md = exportMd();
+    const blob = new Blob([md], { type: "text/markdown" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "packetade-v0.10.4-walkthrough.md";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    if (navigator.clipboard) navigator.clipboard.writeText(md).catch(() => {});
+    const b = document.getElementById("btnExport");
+    const t = b.textContent;
+    b.textContent = "Copied + downloaded";
+    setTimeout(() => {
+      b.textContent = t;
+    }, 1800);
+  });
+
+  document.getElementById("btnReset").addEventListener("click", () => {
+    if (!confirm("Clear every result and note?")) return;
+    state = {};
+    save();
+    render();
+  });
+
+  render();
+</script>
