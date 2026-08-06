@@ -9,6 +9,12 @@ task list.
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-08-06
+
+Closes all twelve P1 findings from the 2026-08-05 deep review. Every fix
+carries test evidence; none has yet been exercised in a packaged build, which
+is what this release exists to make possible.
+
 ### Security — MCP read-only sessions now use an allowlist (2026-08-06)
 
 **This changes behavior you may notice.** A read-only agent session previously
