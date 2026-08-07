@@ -110,6 +110,15 @@ pub struct Workspace {
     /// app default (which itself defaults to Auto).
     #[serde(default)]
     pub terminal_shell: Option<TerminalShellSelection>,
+    /// The user's hand-arranged mosaic tile layout, stored opaquely as the
+    /// react-mosaic tree the frontend owns. `None` ⇒ fall back to the
+    /// pane-count preset, which is what every session did before this field
+    /// existed and what an old binary that strips it degrades to. The backend
+    /// never interprets the shape; the frontend reconciles its leaves against
+    /// the real pane list on load, so a stale or malformed tree cannot render
+    /// a pane twice or lose one.
+    #[serde(default)]
+    pub layout: Option<serde_json::Value>,
 }
 
 #[cfg(test)]
@@ -217,6 +226,7 @@ mod tests {
             remote_project_path: None,
             github_repo: None,
             origin: Some("conversation".to_string()),
+            layout: None,
             terminal_shell: None,
         }
     }

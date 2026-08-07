@@ -35,6 +35,7 @@ import type { CliAccount, CliAccountCli } from "@/types/cliAccount";
 import type { PacketAgentRequest, PacketAgentResponse } from "@/types/packet-agent";
 import type { TerminalShellProbe } from "@/types/terminal-shell";
 import { normalizeTerminalShellSelection } from "@/lib/terminalShells";
+import { isValidMosaicTree } from "@/lib/mosaicPresets";
 
 type WorkspacePaneDtoWithFrontendMetadata = WorkspaceDto["panes"][number] &
   Pick<Workspace["panes"][number], "pinnedCommands">;
@@ -1941,6 +1942,10 @@ function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
     terminalShell: workspace.terminalShell
       ? normalizeTerminalShellSelection(workspace.terminalShell)
       : undefined,
+    // The saved tile arrangement crosses the boundary as opaque JSON (Rust
+    // never interprets it). Shape-validate on the way in; a malformed tree
+    // degrades to undefined and the container falls back to the preset.
+    layout: isValidMosaicTree(workspace.layout) ? workspace.layout : undefined,
   };
 }
 
@@ -1993,6 +1998,9 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDtoWithFrontendMetadata 
     // normal workspace stays byte-identical to the pre-tile shape.
     ...(workspace.origin === "conversation" ? { origin: "conversation" as const } : {}),
     ...(workspace.terminalShell ? { terminalShell: workspace.terminalShell } : {}),
+    // Only workspaces the user has actually arranged carry a layout, so an
+    // untouched workspace stays byte-identical to the pre-persistence shape.
+    ...(workspace.layout ? { layout: workspace.layout } : {}),
   } satisfies WorkspaceDtoWithFrontendMetadata;
 }
 

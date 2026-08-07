@@ -7,6 +7,8 @@ import { useServerStore } from "@/stores/serverStore";
 import { rememberAccountChoice, resolveAccountId } from "@/lib/sessionAccountDefaults";
 import { normalizeTerminalShellSelection } from "@/lib/terminalShells";
 import type { TerminalShellSelection } from "@/types/terminal-shell";
+import { isValidMosaicTree } from "@/lib/mosaicPresets";
+import type { MosaicNode } from "@/types/mosaic";
 
 export interface WorkspaceSessionConfig {
   prompt?: string;
@@ -158,6 +160,18 @@ interface WorkspaceStore {
     workspaceId: string,
     selection: TerminalShellSelection | undefined,
   ) => void;
+  /**
+   * Persist the user's hand-arranged tile layout for one workspace.
+   *
+   * Called from the mosaic's `onRelease` (once per completed drag/resize
+   * gesture, NOT per drag frame) and on pane add/remove. Passing `null` clears
+   * the arrangement so the workspace falls back to the pane-count preset.
+   *
+   * Deliberately does NOT bump `updatedAt`: rearranging tiles is not activity
+   * on the work, and letting it reorder the Fleet list under the user's cursor
+   * mid-drag would be its own bug.
+   */
+  setWorkspaceLayout: (workspaceId: string, layout: MosaicNode<string> | null) => void;
   setZoomedPane: (paneId: string | null) => void;
   /**
    * Tile program (P4-S1): NET-NEW focus+flash plumbing (no such symbol existed
@@ -347,6 +361,13 @@ function normalizePane(raw: unknown): WorkspacePane | null {
 export function normalizePanes(workspaces: Workspace[]): Workspace[] {
   return workspaces.map((w) => ({
     ...w,
+    // The saved tile arrangement comes from the same untrusted sources as the
+    // panes (a blind `JSON.parse` of localStorage, or backend hydration). A
+    // malformed tree degrades to absent, and the container falls back to the
+    // pane-count preset. Leaf ids are NOT checked here — the container
+    // reconciles those against the live pane list, which is the only place
+    // that knows them.
+    layout: isValidMosaicTree(w.layout) ? w.layout : undefined,
     // Legacy alias sweep: retired "gemini" slot entries in the agents list
     // degrade to plain terminals, mirroring normalizePane's pane-level alias.
     agents: Array.isArray(w.agents)
@@ -762,6 +783,22 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       }),
     );
     return newPaneId;
+  },
+
+  setWorkspaceLayout: (workspaceId, layout) => {
+    const current = get().workspaces.find((w) => w.id === workspaceId);
+    if (!current) return;
+    // Cheap identity guard: the container re-asserts the layout after every
+    // pane add/remove, and an unchanged tree would otherwise cost a full
+    // workspaces persist (Tauri IPC + a localStorage JSON.stringify of every
+    // workspace) on each one.
+    const next = layout ?? undefined;
+    if (JSON.stringify(current.layout) === JSON.stringify(next)) return;
+    set(
+      commitWorkspaces((s) => ({
+        workspaces: s.workspaces.map((w) => (w.id === workspaceId ? { ...w, layout: next } : w)),
+      })),
+    );
   },
 
   removePane: (workspaceId, paneId) => {

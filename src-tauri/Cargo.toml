@@ -1,6 +1,6 @@
 [package]
 name = "packetade"
-version = "0.10.4"
+version = "0.10.5"
 description = "PacketADE — Agent Development Environment (IDE + multi-agent orchestration)"
 authors = ["PacketADE"]
 edition = "2021"

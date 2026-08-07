@@ -54,7 +54,14 @@ origin?: string,
 /**
  * Workspace raw-terminal shell override. Absent means app default/Auto.
  */
-terminalShell?: TerminalShellSelectionDto, };
+terminalShell?: TerminalShellSelectionDto,
+/**
+ * Hand-arranged mosaic tile layout, carried opaquely — the react-mosaic
+ * tree is the frontend's shape and the backend never interprets it.
+ * Absent ⇒ the pane-count preset. Inert `#[serde(default)]` mirror of
+ * core `Workspace.layout`.
+ */
+layout?: unknown, };
 
 export type ServerConfigDto = { id: string, name: string, host: string, port: number, username: string, authMethod: string, keyPath: string | null, remotePath: string | null, lastConnectedAt: bigint | null, installedAgents: Array<string>, hostFingerprint: string | null, };
 

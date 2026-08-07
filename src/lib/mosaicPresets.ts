@@ -139,9 +139,141 @@ export function removeFromTree(tree: MosaicNode<string>, id: string): MosaicNode
 
   if (newChildren.length === 0) return null;
 
-  // Percentages sized for the old child count would misplace the remaining
-  // boundaries; omitting them lets MosaicRoot distribute evenly.
+  // Percentages must only be dropped by the split that actually LOST a child —
+  // its array is now the wrong length. Rebuilding every split on the way back
+  // up discarded them everywhere, so closing one tile snapped every other
+  // splitter in the workspace to even, and (since the result is persisted) did
+  // so permanently.
+  if (newChildren.length === tree.children.length) {
+    const unchanged = newChildren.every((child, i) => child === tree.children[i]);
+    if (unchanged) return tree;
+    // A descendant changed but this split's own child count did not, so its
+    // boundaries are still meaningful — carry `splitPercentages` through.
+    return { ...tree, children: newChildren };
+  }
+
   return { type: "split", direction: tree.direction, children: newChildren };
+}
+
+/**
+ * Structurally validate a mosaic tree read from an untrusted source (the
+ * persisted workspace layout, which round-trips through Rust as opaque JSON
+ * and through localStorage as a blind `JSON.parse`).
+ *
+ * Returns the tree only if every node is a shape `MosaicRoot` can render;
+ * anything else degrades to `null`, and the caller falls back to the preset.
+ * This is a SHAPE check only — leaf ids are reconciled against the real pane
+ * list separately, by {@link reconcileLayout}.
+ */
+export function isValidMosaicTree(value: unknown): value is MosaicNode<string> {
+  if (typeof value === "string") return value.length > 0;
+  if (!value || typeof value !== "object") return false;
+  const node = value as Record<string, unknown>;
+  if (node.type === "split") {
+    if (node.direction !== "row" && node.direction !== "column") return false;
+    if (!Array.isArray(node.children) || node.children.length === 0) return false;
+    // `MosaicRoot` feeds `splitPercentages` straight to `splitBoundingBox`, so
+    // a non-array or a wrong-length array yields NaN geometry rather than a
+    // visible error. Absent is fine — the library falls back to an even split.
+    const percentages = node.splitPercentages;
+    if (percentages !== undefined) {
+      if (!Array.isArray(percentages)) return false;
+      if (percentages.length !== node.children.length) return false;
+      if (!percentages.every((p) => typeof p === "number" && Number.isFinite(p))) return false;
+    }
+    return node.children.every((child) => isValidMosaicTree(child));
+  }
+  if (node.type === "tabs") {
+    // An EMPTY tabs node passes `[].every()` but renders a phantom tile that
+    // still claims its share of the workspace, so it is rejected the same way
+    // a childless split is.
+    if (!Array.isArray(node.tabs) || node.tabs.length === 0) return false;
+    if (!node.tabs.every((t) => typeof t === "string" && t)) return false;
+    // `MosaicTabs` indexes `tabs[activeTabIndex]`.
+    const active = node.activeTabIndex;
+    if (active !== undefined) {
+      if (typeof active !== "number" || !Number.isInteger(active)) return false;
+      if (active < 0 || active >= node.tabs.length) return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
+ * True when any split in the tree gives a child (near-)zero width.
+ *
+ * react-mosaic collapses a tile to 0% while it is being dragged, and emits a
+ * release event in that state, so this is how a persist path tells "the user
+ * finished arranging" from "a drag is in flight". A saved 0% pane would render
+ * invisible with no obvious way to recover it.
+ */
+export function hasCollapsedSplit(tree: MosaicNode<string> | null): boolean {
+  if (!tree || typeof tree !== "object") return false;
+  if (!isSplitNode(tree)) return false;
+  const percentages = tree.splitPercentages;
+  if (Array.isArray(percentages) && percentages.some((p) => typeof p === "number" && p < 1)) {
+    return true;
+  }
+  return tree.children.some((child) => hasCollapsedSplit(child));
+}
+
+/**
+ * Fit a saved layout onto the panes that actually exist right now.
+ *
+ * A persisted layout is a CACHE of an arrangement, never the truth about which
+ * panes exist — `workspace.panes` is. Between sessions panes get added, closed,
+ * or dropped by `normalizePanes`, so the saved leaves and the real pane list
+ * routinely disagree. Rather than discarding the user's arrangement whenever
+ * they differ, prune leaves whose pane is gone and append panes the layout
+ * never saw.
+ *
+ * Returns `null` when nothing usable survives, which tells the caller to build
+ * from the preset instead. Guarantees the same invariant `buildPresetTree`
+ * does: the leaves are exactly `paneIds`, once each.
+ */
+export function reconcileLayout(saved: unknown, paneIds: string[]): MosaicNode<string> | null {
+  if (paneIds.length === 0) return null;
+  if (!isValidMosaicTree(saved)) return null;
+
+  const wanted = new Set(paneIds);
+  const savedLeaves = getLeafOrder(saved);
+
+  // `removeFromTree` removes EVERY occurrence of an id, so a duplicate cannot
+  // be pruned selectively — the id is dropped wholesale here and re-appended
+  // once below. (A saved layout can legitimately carry a duplicate: builds
+  // before the `Math.min` fix wrote one at 3 and 5 panes.)
+  const kept = new Set<string>();
+  const drop = new Set<string>();
+  for (const leaf of savedLeaves) {
+    if (!wanted.has(leaf)) drop.add(leaf);
+    else if (kept.has(leaf)) drop.add(leaf);
+    else kept.add(leaf);
+  }
+
+  let tree: MosaicNode<string> | null = saved;
+  for (const id of drop) {
+    if (tree) tree = removeFromTree(tree, id);
+  }
+  // Everything the layout described is gone — there is no arrangement left to
+  // honour, so the caller builds from the preset.
+  if (!tree) return null;
+
+  // Panes the saved layout never knew about — and any id dropped above purely
+  // to de-duplicate it — join at the root.
+  const present = new Set(getLeafOrder(tree));
+  for (const id of paneIds) {
+    if (!present.has(id)) tree = appendPane(tree, id);
+  }
+
+  // Final guarantee, matching `buildPresetTree`: leaves are exactly `paneIds`,
+  // once each. Anything else would mount a pane twice or lose one, so refuse
+  // the layout rather than render it.
+  const leaves = getLeafOrder(tree);
+  if (leaves.length !== paneIds.length || new Set(leaves).size !== paneIds.length) {
+    return null;
+  }
+  return tree;
 }
 
 /**

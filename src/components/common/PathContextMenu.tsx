@@ -1,11 +1,6 @@
 import { useEffect, useRef } from "react";
 import { open } from "@tauri-apps/plugin-shell";
-import {
-  FileText,
-  Copy,
-  AtSign,
-  FolderOpen,
-} from "lucide-react";
+import { FileText, Copy, AtSign, FolderOpen } from "lucide-react";
 import { REMOTE_UNSUPPORTED_TOOLTIP } from "@/lib/remoteConversation";
 import { openInEditor } from "@/lib/openInEditor";
 import { resolveProjectPath } from "@/lib/resolveProjectPath";
@@ -68,7 +63,13 @@ export function PathContextMenu({
       }
     };
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      // Mark the keypress handled. This listener is on `document`, which in the
+      // bubble phase runs BEFORE every window listener, so without this one
+      // Escape unwound two layers at once — closing this menu and also exiting
+      // a zoomed pane behind it.
+      e.preventDefault();
+      onClose();
     };
     // Defer outside-click binding by a tick so the right-click that opened
     // the menu doesn't immediately close it.
@@ -131,13 +132,13 @@ export function PathContextMenu({
       ref={menuRef}
       role="menu"
       aria-label="Path actions"
-      className="fixed z-[1000] min-w-[220px] bg-bg-secondary border border-bg-border rounded-md shadow-lg py-1"
+      className="fixed z-[1000] min-w-[220px] rounded-md border border-bg-border bg-bg-secondary py-1 shadow-lg"
       style={{ left, top }}
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
     >
       <div
-        className="px-3 py-1 text-[10px] text-text-muted truncate border-b border-bg-border mb-1"
+        className="mb-1 truncate border-b border-bg-border px-3 py-1 text-[10px] text-text-muted"
         title={line ? `${path}:${line}` : path}
       >
         {line ? `${path}:${line}` : path}
@@ -151,15 +152,15 @@ export function PathContextMenu({
         title={remote ? REMOTE_UNSUPPORTED_TOOLTIP : undefined}
         onClick={handleOpen}
       >
-        <FileText size={12} className="text-accent-green shrink-0" />
+        <FileText size={12} className="shrink-0 text-accent-green" />
         <span>Open in editor</span>
       </button>
       <button type="button" className={itemClass} onClick={handleCopy}>
-        <Copy size={12} className="text-text-secondary shrink-0" />
+        <Copy size={12} className="shrink-0 text-text-secondary" />
         <span>Copy path</span>
       </button>
       <button type="button" className={itemClass} onClick={handleAttach}>
-        <AtSign size={12} className="text-text-secondary shrink-0" />
+        <AtSign size={12} className="shrink-0 text-text-secondary" />
         <span>Attach as @mention</span>
       </button>
       <button
@@ -170,7 +171,7 @@ export function PathContextMenu({
         title={remote ? REMOTE_UNSUPPORTED_TOOLTIP : undefined}
         onClick={handleShowInExplorer}
       >
-        <FolderOpen size={12} className="text-text-secondary shrink-0" />
+        <FolderOpen size={12} className="shrink-0 text-text-secondary" />
         <span>Show in Explorer</span>
       </button>
     </div>

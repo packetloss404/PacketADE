@@ -90,7 +90,13 @@ export function Tooltip({ content, children, side = "top", delay = 400 }: Toolti
   }, []);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") hide();
+    if (e.key !== "Escape") return;
+    // Only claim the keypress when there is actually a tooltip to dismiss, and
+    // then mark it handled so one Escape does not also unwind the layer behind
+    // it (an open dialog, or a zoomed pane).
+    if (!shown && !coords) return;
+    e.preventDefault();
+    hide();
   };
 
   const child = cloneElement(children as ReactElement<{ "aria-describedby"?: string }>, {
@@ -115,7 +121,7 @@ export function Tooltip({ content, children, side = "top", delay = 400 }: Toolti
           <span
             id={tipId}
             role="tooltip"
-            className={`pointer-events-none fixed z-[60] max-w-xs whitespace-normal bg-bg-elevated border border-line-strong text-text-secondary text-ui px-2 py-1 rounded shadow-lg transition-opacity motion-reduce:transition-none ${shown ? "opacity-100" : "opacity-0"}`}
+            className={`pointer-events-none fixed z-[60] max-w-xs whitespace-normal rounded border border-line-strong bg-bg-elevated px-2 py-1 text-ui text-text-secondary shadow-lg transition-opacity motion-reduce:transition-none ${shown ? "opacity-100" : "opacity-0"}`}
             style={{ left: coords.left, top: coords.top, transform: TRANSFORM[side] }}
           >
             {content}

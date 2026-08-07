@@ -9,6 +9,138 @@ task list.
 
 ## [Unreleased]
 
+## [0.10.5] - 2026-08-07
+
+Workspace quality-of-life work, plus four defects the accompanying pane-system
+review turned up. Two of those defects corrupted live agent sessions on
+completely ordinary paths, so they are the reason this release exists.
+
+### Fixed — the mosaic could render one pane twice, and lose others
+
+`buildPresetTree` addressed fixed preset slots through
+`paneIds[Math.min(i, len - 1)]`. A pane count the preset did not fill therefore
+repeated the last id, and a count past its capacity dropped ids outright:
+
+| panes | tiles rendered | effect                                             |
+| ----- | -------------- | -------------------------------------------------- |
+| 3     | `a b c c`      | pane `c` mounted **twice** — two PTYs for one pane |
+| 5     | `a b c d e e`  | same, for `e`                                      |
+| 7     | `a b c d e f`  | pane 7 had **no tile at all**                      |
+| 8     | `a b c d e f`  | panes 7 and 8 invisible                            |
+
+It fired on a cold rebuild — app restart with 3 panes, or creating a workspace
+with 3 agents. Rows are now chunked from the real id list, so a short last row
+is short and a long list grows more rows.
+
+### Fixed — adding or closing a pane restarted a running agent
+
+`MosaicRoot` flattens each split into a Fragment keyed by path, so a tile that
+changes **depth** is remounted by React — which runs `useTerminalSession`'s
+cleanup (`killPty`) and then auto-starts a fresh PTY. `addToTree` nested the
+last leaf to make room and `removeFromTree` collapsed a single-child split back
+to a bare leaf, so **adding a terminal beside a working `codex` restarted that
+`codex` mid-task**, and closing the middle of three panes restarted the
+right-hand one.
+
+`addToTree` is replaced by `appendPane`, which pushes onto the root split's
+children; `removeFromTree` now keeps single-child splits, which render
+identically (no splitter, full bounds). This also ends the 50/25/12.5/12.5
+sliver cascade — four panes added one at a time now match four created
+together.
+
+### Fixed — zoom stole Escape from dialogs and from terminals
+
+The zoom-exit handler registered when zoom was set, which is before any dialog
+opened afterwards registers its own, and window listeners fire in registration
+order. `defaultPrevented` could therefore never order the two: zoom ran first,
+called `preventDefault`, and `Modal` then bailed on exactly the flag zoom had
+just set. **Zooming a pane and opening any dialog meant Escape closed the zoom
+and left the dialog open.** Zoom now yields to any open modal, to the review
+surface, and to a focused terminal — leaving vim's insert mode no longer
+discards the zoom. A zoom stranded in a workspace the user navigated away from
+is also cleared instead of lingering invisibly.
+
+Because a focused terminal now keeps its Escape, the way out of a zoomed shell
+is the tile's own zoom button; the on-screen hint says so.
+
+The review guard is **scoped** to a review of the pane actually zoomed.
+`reviewStore.open` is a global flag that nothing resets on a view change, so
+reading it unscoped left Escape-to-exit-zoom permanently dead after opening
+review in Agents and switching to Workspace — with the un-exitable zoom and the
+"Press Esc" hint both still on screen. The listener also stands down entirely
+while the Workspace surface is off screen, so Escape pressed in Agents no
+longer un-zooms a hidden pane.
+
+`PathContextMenu` and `Tooltip` now mark their Escape handled. Neither did, and
+`PathContextMenu` listens on `document` — which runs before every window
+listener — so right-clicking a file path in a zoomed tile and pressing Escape
+closed the menu **and** exited the zoom.
+
+### Fixed — closing one pane reset every splitter in the workspace
+
+`removeFromTree` rebuilt every split it walked, dropping `splitPercentages`
+even on splits that had lost no child. Closing one tile in a hand-sized
+four-tile workspace snapped all the remaining boundaries to even — and, now
+that layouts persist, would have done so permanently. Only the split that
+actually loses a child drops its (now wrong-length) array.
+
+### Added — workspace tile layouts persist
+
+The mosaic tree was component state, so every restart rebuilt the layout from
+the pane-count preset and a hand-arranged workspace was lost. It now round-trips
+through `Workspace.layout`.
+
+Only a **user gesture** writes a layout — one write per completed drag or resize,
+never per drag frame, and never on pane add/remove. That last exclusion is
+deliberate: adding panes appends them to the root row, so persisting it would
+have frozen six panes added one at a time as six ~16% columns forever, quietly
+retiring the pane-count preset that used to heal exactly that on the next
+launch. Reconciliation appends new panes on load anyway, so the restored tree
+matches what was on screen.
+
+A release event also fires mid-drag, with the dragged tile collapsed to 0% — the
+library's drag source hides the tile on drag start and only `onChange` is
+suppressed. Saving that would restore an invisible pane, so a tree carrying a
+collapsed split is refused; the real drop fires again with sane geometry.
+
+A saved layout is a cache of an arrangement, never the truth about which panes
+exist, so it is reconciled against the real pane list on load: leaves whose pane
+is gone are pruned, panes it never saw are appended, duplicates are dropped, and
+a malformed or unusable tree falls back to the preset. Rearranging tiles does
+not bump the workspace's `updatedAt`.
+
+### Added — the Fleet sidebar expands
+
+Workspace rows now have a chevron and an always-visible `+`. Expanding a row
+shows its live panes as children — click to focus, hover-X to close, with
+terminal panes killing their PTY first — followed by a lazy `FILES` tree rooted
+at the project path. Clicking a file opens it as a tile. Expansion state
+persists, so a tree you opened survives view switches and restarts. Search
+results stay flat. SSH workspaces say file browsing is local-only rather than
+failing.
+
+### Added — WSL, File Viewer, and Markdown Viewer in the session picker
+
+WSL is a first-class row rather than a value buried in the Terminal row's shell
+dropdown. It is still exactly a Terminal pane carrying a `wsl` shell selection,
+so it reuses the whole existing PTY launch path; Windows-only, and hidden when
+no distro is installed.
+
+File Viewer and Markdown Viewer create a new `kind: "file"` tile, so a file can
+sit beside a running agent instead of only in the right-dock Editor. The tile is
+a thin wrapper over the existing editor: the same path open in the dock and in a
+tile is **one** buffer with one dirty flag and one save path. Markdown Viewer
+only differs by filtering the picker to `.md`/`.mdx` and opening rendered.
+
+There is still no Chat row in this picker — API conversations belong to Agents.
+
+### Testing
+
+`src/lib/__tests__/mosaicPresets.test.ts` is new. The module had no test file at
+all, which is why the first two defects above were live. Its load-bearing
+property is that the leaves of any tree the module produces are exactly the pane
+ids, once each.
+
 ## [0.10.4] - 2026-08-06
 
 Closes all twelve P1 findings from the 2026-08-05 deep review. Every fix

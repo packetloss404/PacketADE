@@ -153,6 +153,14 @@ pub struct WorkspaceDto {
     #[serde(default)]
     #[ts(optional)]
     pub terminal_shell: Option<TerminalShellSelectionDto>,
+    /// Hand-arranged mosaic tile layout, carried opaquely — the react-mosaic
+    /// tree is the frontend's shape and the backend never interprets it.
+    /// Absent ⇒ the pane-count preset. Inert `#[serde(default)]` mirror of
+    /// core `Workspace.layout`.
+    #[serde(default)]
+    #[ts(optional)]
+    #[ts(type = "unknown")]
+    pub layout: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -1357,6 +1365,7 @@ impl From<core_workspace::Workspace> for WorkspaceDto {
             github_repo: value.github_repo.map(Into::into),
             origin: value.origin,
             terminal_shell: value.terminal_shell.map(Into::into),
+            layout: value.layout,
         }
     }
 }
@@ -1381,6 +1390,7 @@ impl From<WorkspaceDto> for core_workspace::Workspace {
             github_repo: value.github_repo.map(Into::into),
             origin: value.origin,
             terminal_shell: value.terminal_shell.map(Into::into),
+            layout: value.layout,
         }
     }
 }

@@ -1,6 +1,6 @@
 # PacketADE Backlog
 
-Last reconciled: 2026-08-03
+Last reconciled: 2026-08-07
 
 This is the single task register for work that has not shipped or has not yet
 earned its required real/package proof. Completed implementation history belongs
@@ -140,6 +140,81 @@ environment or packaged matrix has actually run.
 ## Bounded source work
 
 These are real code changes, not substitutes for the proof matrices above.
+
+### Workspace pane-system review (2026-08-07)
+
+Three-team review of the mosaic layout, pane runtime lifecycle, and comparable
+products. Four findings were fixed in v0.10.5 (preset leaf duplication, the
+add/remove remount that restarted running agents, the zoom Escape hijack, and
+layout persistence). These are the remainder, still open.
+
+- **P1 - Approval hotkeys are global, not per-pane.** `useApprovalShortcuts`
+  binds bare `y`/`n`/`Escape` on `window` for every pane with `showApproval`,
+  so with two panes awaiting approval one `y` approves **both**. Gate on
+  `activePaneId === paneId` and bail on `defaultPrevented`.
+  (`src/hooks/useApprovalShortcuts.ts`)
+- **P2 - No DOM focus follows pane focus.** `activePaneId` drives a border
+  class only; nothing calls `xterm.focus()` or focuses the composer. Clicking a
+  pane's header or padding marks it active while keystrokes still go to
+  whichever pane last had DOM focus, and `requestPaneFocus` highlights a pane
+  the user must then click. No shortcut cycles panes or focuses pane N —
+  `mosaicPresets.getLeafOrder`'s docstring promises `Ctrl+1/2/3/4` switching
+  that does not exist.
+- **P2 - Resize is not coalesced.** `useXterm`'s `ResizeObserver` has no
+  debounce or rAF batching, and react-mosaic throttles splitter drags to 30Hz,
+  so a 4-pane drag costs roughly 120 forced layout measurements and up to 120
+  resize IPC round-trips per second. (`src/hooks/useXterm.ts`)
+- **P2 - PTY output is emitted per read, not coalesced.** One Tauri event per
+  8KB read, and each event is parsed twice (`useTerminalSession` and
+  `usePtyStateDetector` both listen on `pty:output:<id>`). A noisy build floods
+  the bridge. (`src-tauri/src/commands/pty.rs`, `src/hooks/usePtyStateDetector.ts`)
+- **P2 - Tile chrome is written three times.** `WorkspacePane`,
+  `ConversationTile`, and now `FileTile` each hand-roll the same grip / identity
+  / zoom bar and each re-connect the mosaic drag source, because
+  `mosaic-overrides.css` hides the library toolbar that _is_ the drag handle.
+  Three status vocabularies coexist (terminal pill, conversation pill, and
+  `sessionStatus`'s `Attention`, which calls itself the single truth but is not
+  what either tile renders). Extract one `TileChrome`.
+- **P3 - Dead pane API in `layoutStore`.** `panes` / `addPane` / `removePane` /
+  `setPaneSession` / `getActivePane` have no non-test callers; `layoutStore` is
+  live only for `projectPath` and `activePaneId`. Two stores expose a `panes`
+  array and one is a decoy.
+- **P3 - More than ~8 panes is unusable.** Tiles now all render (the preset fix),
+  but shrink past readability. react-mosaic 7 has a first-class tabs node —
+  `addToTree`/`removeFromTree` would need to learn about `MosaicTabsNode`, which
+  `getLeafOrder` already handles.
+- **P2 - A layout arriving after first mount is ignored, then overwritten.**
+  The container consumes `workspace.layout` only on its first tree build. If the
+  localStorage cache hydrates without a layout and the backend later supplies
+  one with identical pane ids (most plausibly after a swallowed
+  `localStorage.setItem` quota failure in `workspaceStore.ts`), the preset is
+  kept and the next saved gesture writes it over the user's arrangement. Low
+  frequency, permanent loss when it hits.
+- **P3 - `removeFromTree` cannot prune a leaf inside a tabs node.** It returns
+  tabs nodes unchanged. `reconcileLayout`'s final leaf check catches this and
+  falls back to the preset, but the incremental add/remove path has no such
+  backstop: a closed pane inside a tabs node would stay a leaf and `renderTile`
+  would return a bare `<div/>`. Latent — no `createNode` is passed today, so the
+  library never mints a tabs node. Must be fixed alongside the tabs work above.
+- **P3 - `ConversationTile`'s missing-conversation fallback omits
+  `data-pane-zoomed`.** `mosaic-overrides.css` hides every tile unless one
+  carries that attribute, so zooming a conversation tile and then deleting its
+  conversation blanks the whole workspace with no visible control
+  (`deleteConversation` clears the review but neither removes the pane nor
+  clears `zoomedPaneId`). Escape recovers it.
+- **P3 - `ReviewSurface` does not mark its Escape handled.** Its layering
+  therefore depends on listener registration order rather than on
+  `defaultPrevented`. No user-visible symptom found; a `preventDefault()` on
+  close would make the ordering explicit.
+- **P3 - Zoom is stranded when its workspace is archived or deleted.** Both null
+  `activeWorkspaceId` but leave `zoomedPaneId`, so restoring the workspace
+  reopens it already zoomed on the old pane. Inert meanwhile — the stale id
+  matches no rendered pane.
+- **P3 - Upgrade react-mosaic 7.0.0-beta0 → 7.0.0.** Released 2026-07-13. The
+  review recommends staying on react-mosaic rather than migrating to dockview:
+  tiles own PTY handles and xterm instances, and dockview's panel lifecycle
+  remounts during drag/popout would tear live terminals. Only popout-to-second-
+  monitor would justify a migration.
 
 ### Fable 5 review findings (2026-08-05)
 

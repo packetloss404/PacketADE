@@ -304,6 +304,7 @@ export function WorkspaceView({ surfaceActive = true }: WorkspaceViewProps) {
                       <WorkspaceMosaicContainer
                         workspace={ws}
                         autoStartTerminals={surfaceActive && ws.id === activeWorkspaceId}
+                        surfaceActive={surfaceActive}
                       />
                     )}
                   </div>

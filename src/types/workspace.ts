@@ -1,4 +1,5 @@
 import type { TerminalShellSelection } from "@/types/terminal-shell";
+import type { MosaicNode } from "@/types/mosaic";
 
 export type WorkspaceAgentSlot = "terminal" | "claude-code" | "codex" | "opencode" | "packetcode";
 
@@ -86,4 +87,16 @@ export interface Workspace {
   origin?: "conversation";
   /** Raw local Terminal default for this workspace. Absent means app default. */
   terminalShell?: TerminalShellSelection;
+  /**
+   * The user's hand-arranged mosaic tile layout. Absent ⇒ build from the
+   * pane-count preset, which is what every session did before this field
+   * existed and what an old cache or binary that drops it degrades to.
+   *
+   * It is a CACHE of an arrangement, never the source of truth for which panes
+   * exist — `panes` is. `WorkspaceMosaicContainer` reconciles the saved leaves
+   * against the real pane list on load (pruning leaves whose pane is gone,
+   * appending panes the layout never saw), so a stale tree can neither render
+   * a pane twice nor lose one.
+   */
+  layout?: MosaicNode<string>;
 }
