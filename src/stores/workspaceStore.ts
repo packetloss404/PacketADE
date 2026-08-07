@@ -129,6 +129,20 @@ interface WorkspaceStore {
     agentId: WorkspaceAgentSlot,
     options?: { accountId?: string | null; terminalShell?: TerminalShellSelection },
   ) => string | null;
+  /**
+   * Add a read/write file viewer tile to the workspace grid. The tile is a
+   * `kind: "file"` pane (inert carrier `agentId: "terminal"`, same downgrade
+   * story as conversation panes) whose buffer lives in `editorStore`, so the
+   * same path opened in the right-dock Editor and in a tile is ONE buffer and
+   * one dirty flag. Re-opening an already-tiled path focuses that tile and
+   * returns its id rather than minting a duplicate. Returns `null` for a blank
+   * path or an unknown workspace.
+   */
+  addFilePane: (
+    workspaceId: string,
+    filePath: string,
+    options?: { view?: "preview" | "raw" },
+  ) => string | null;
   removePane: (workspaceId: string, paneId: string) => void;
   /**
    * Tile program (P1-S2): prune every conversation pane referencing
@@ -280,6 +294,12 @@ function normalizePane(raw: unknown): WorkspacePane | null {
   if (typeof pane.id !== "string") return null;
 
   const isConversation = pane.kind === "conversation" && typeof pane.conversationId === "string";
+  // File viewer tiles follow the identical invariant one field over: `kind`
+  // stays the sole discriminant, `filePath` is the payload, and a file pane
+  // that lost its path self-heals to a terminal rather than mounting an empty
+  // viewer. `agentId` stays the inert carrier "terminal" here too.
+  const isFile =
+    pane.kind === "file" && typeof pane.filePath === "string" && !!pane.filePath.trim();
 
   // Preserve unknown fields, then override the discriminant pair so the
   // invariant always holds regardless of what was on disk. PTY ids are
@@ -294,9 +314,20 @@ function normalizePane(raw: unknown): WorkspacePane | null {
   if (isConversation) {
     normalized.kind = "conversation";
     normalized.conversationId = pane.conversationId;
+    delete normalized.filePath;
+    delete normalized.fileView;
+  } else if (isFile) {
+    normalized.kind = "file";
+    normalized.filePath = (pane.filePath as string).trim();
+    normalized.fileView =
+      pane.fileView === "preview" || pane.fileView === "raw" ? pane.fileView : undefined;
+    if (normalized.fileView === undefined) delete normalized.fileView;
+    delete normalized.conversationId;
   } else {
     normalized.kind = "terminal";
     delete normalized.conversationId;
+    delete normalized.filePath;
+    delete normalized.fileView;
   }
   // Multi-account CLI support: a non-string / blank `accountId` from an
   // untrusted cache degrades to ambient rather than reaching the runtime as a
@@ -687,6 +718,52 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     return newPaneId;
   },
 
+  addFilePane: (workspaceId, filePath, options) => {
+    const trimmed = filePath.trim();
+    if (!trimmed) return null;
+    const target = get().workspaces.find((w) => w.id === workspaceId);
+    if (!target) return null;
+    // One tile per path per workspace. Re-opening a file that is already tiled
+    // focuses the existing tile instead of stacking duplicate viewers of the
+    // same buffer (they'd share one `editorStore` entry anyway, so a second
+    // tile would just be a confusing mirror of the first).
+    const existing = target.panes.find((p) => p.kind === "file" && p.filePath === trimmed);
+    if (existing) {
+      get().requestPaneFocus(workspaceId, existing.id);
+      return existing.id;
+    }
+
+    const newPaneId = mintPaneId();
+    set(
+      commitWorkspaces((s) => {
+        const workspaces = s.workspaces.map((w) => {
+          if (w.id !== workspaceId) return w;
+          const newPane: WorkspacePane = {
+            id: newPaneId,
+            // Inert carrier, exactly as conversation panes do it: `kind` is the
+            // sole discriminant, so a downgraded binary that drops `kind`
+            // renders a harmless terminal pane rather than a broken tile.
+            agentId: "terminal",
+            sessionId: null,
+            kind: "file",
+            filePath: trimmed,
+            ...(options?.view ? { fileView: options.view } : {}),
+          };
+          return {
+            ...w,
+            // File panes are NOT pushed into `agents` — that list is the CLI
+            // roster behind the header badges, and a viewer launches no agent.
+            // `removePane` mirrors this by skipping the agents splice.
+            panes: [...w.panes, newPane],
+            updatedAt: Date.now(),
+          };
+        });
+        return { workspaces };
+      }),
+    );
+    return newPaneId;
+  },
+
   removePane: (workspaceId, paneId) => {
     set(
       commitWorkspaces((s) => {
@@ -702,7 +779,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
               // Conversation panes were never pushed into `agents` (they carry the
               // inert carrier agentId "terminal"), so removing one must NOT splice
               // a real terminal out of the agents list. Skip the mutation.
-              if (pane.kind === "conversation") return w.agents;
+              // File viewer panes carry the same inert carrier for the same
+              // reason, so they get the same skip.
+              if (pane.kind === "conversation" || pane.kind === "file") return w.agents;
               // Remove one occurrence of this agent from the agents list
               const idx = w.agents.indexOf(pane.agentId);
               if (idx === -1) return w.agents;

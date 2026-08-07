@@ -23,7 +23,12 @@ import {
   BellRing,
   Archive,
   ArchiveRestore,
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  MessageSquare,
   Search,
+  Terminal as TerminalIcon,
   X,
   Plus,
   Pin,
@@ -34,14 +39,20 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAgentSidebarPrefsStore } from "@/stores/agentSidebarPrefsStore";
-import {
-  archiveWorkspaceWithFanout,
-  openConversationInAgents,
-} from "@/stores/sessionGlue";
+import { archiveWorkspaceWithFanout, openConversationInAgents } from "@/stores/sessionGlue";
 import { useToast } from "@/components/ui/Toast";
 import { useConversationAttention, useWorkspaceStatuses, attentionDot } from "@/lib/sessionStatus";
 import { flightAttemptSessionIds } from "@/lib/sessionIndex";
-import { buildFleetProjection, basenameOf, type FleetFilter, type FleetRow } from "@/lib/fleetRows";
+import {
+  buildFleetProjection,
+  basenameOf,
+  agentLabelFor,
+  type FleetFilter,
+  type FleetRow,
+} from "@/lib/fleetRows";
+import { AddSessionPicker } from "@/components/workspace/AddSessionPicker";
+import { SidebarFileTree } from "@/components/workspace/SidebarFileTree";
+import type { Workspace, WorkspacePane } from "@/types/workspace";
 import { createInstantWorkspace } from "@/lib/workspaceCreation";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { ConfirmDeleteConversationModal } from "@/components/agents/ConfirmDeleteConversationModal";
@@ -73,6 +84,8 @@ export function FleetSidebar() {
   const restoreWorkspace = useWorkspaceStore((s) => s.restoreWorkspace);
   const deleteWorkspace = useWorkspaceStore((s) => s.deleteWorkspace);
   const requestPaneFocus = useWorkspaceStore((s) => s.requestPaneFocus);
+  const removePane = useWorkspaceStore((s) => s.removePane);
+  const addFilePane = useWorkspaceStore((s) => s.addFilePane);
 
   const conversations = useAgentTaskStore((s) => s.conversations ?? []);
   const archiveConversation = useAgentTaskStore((s) => s.archiveConversation);
@@ -82,6 +95,7 @@ export function FleetSidebar() {
 
   const prefs = useAgentSidebarPrefsStore((s) => s.prefs);
   const togglePinned = useAgentSidebarPrefsStore((s) => s.togglePinned);
+  const toggleExpanded = useAgentSidebarPrefsStore((s) => s.toggleExpanded);
   const projectLabels = useAgentSidebarPrefsStore((s) => s.projectLabels);
   const setProjectLabel = useAgentSidebarPrefsStore((s) => s.setProjectLabel);
 
@@ -259,6 +273,105 @@ export function FleetSidebar() {
   const isRowSelected = (row: FleetRow): boolean =>
     row.kind === "workspace" && row.workspaceId === activeWorkspaceId;
 
+  // ── Expanded-row children ──
+
+  /** Display label for a child pane row, by pane kind. */
+  const paneLabel = (pane: WorkspacePane): string => {
+    if (pane.kind === "file") return basenameOf(pane.filePath ?? "") || "File";
+    if (pane.kind === "conversation") {
+      const conv = conversations.find((c) => c.id === pane.conversationId);
+      return conv?.title || "Conversation";
+    }
+    return agentLabelFor(pane.agentId);
+  };
+
+  const paneIcon = (pane: WorkspacePane) => {
+    if (pane.kind === "file") return <FileText size={10} className="shrink-0 text-accent-blue" />;
+    if (pane.kind === "conversation")
+      return <MessageSquare size={10} className="shrink-0 text-accent-purple" />;
+    return <TerminalIcon size={10} className="shrink-0 text-text-muted" />;
+  };
+
+  const focusPane = (workspaceId: string, paneId: string) => {
+    // `requestPaneFocus` activates the workspace itself, so this is the whole
+    // navigation — no separate setActiveWorkspace call to get out of sync.
+    requestPaneFocus(workspaceId, paneId);
+  };
+
+  /**
+   * Close one pane from the sidebar. Terminal panes own an OS process, so the
+   * PTY is killed before the pane record goes — otherwise removing the tile
+   * orphans a live shell with no remaining handle to it. Conversation and file
+   * panes have no process: closing the tile is the whole operation, and (per
+   * the P1-S2 reference direction) it never deletes the conversation itself.
+   */
+  const closePane = (workspaceId: string, pane: WorkspacePane) => {
+    if (pane.kind !== "conversation" && pane.kind !== "file" && pane.sessionId) {
+      void killPty(pane.sessionId).catch(() => {});
+    }
+    removePane(workspaceId, pane.id);
+  };
+
+  const openFileInWorkspace = (workspaceId: string, absolutePath: string) => {
+    const paneId = addFilePane(workspaceId, absolutePath);
+    if (paneId) focusPane(workspaceId, paneId);
+  };
+
+  const renderExpandedChildren = (ws: Workspace) => {
+    const openFilePaths = new Set(
+      ws.panes.filter((p) => p.kind === "file" && p.filePath).map((p) => p.filePath as string),
+    );
+    const remote = Boolean(ws.serverId);
+
+    return (
+      <div className="bg-bg-primary/40 border-t border-line-soft pb-1">
+        {ws.panes.length === 0 ? (
+          <div className="px-3 py-1.5 pl-6 text-meta italic text-text-muted">
+            No sessions yet — use + to add one
+          </div>
+        ) : (
+          ws.panes.map((pane) => (
+            <div
+              key={pane.id}
+              className="group/pane flex items-center gap-1 pl-6 pr-1 hover:bg-bg-hover"
+            >
+              <button
+                type="button"
+                onClick={() => focusPane(ws.id, pane.id)}
+                title={pane.kind === "file" ? pane.filePath : `Focus ${paneLabel(pane)}`}
+                className="flex min-w-0 flex-1 items-center gap-1.5 py-[3px] text-left text-meta text-text-secondary transition-colors hover:text-text-primary"
+              >
+                {paneIcon(pane)}
+                <span className="truncate">{paneLabel(pane)}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => closePane(ws.id, pane)}
+                title={`Close ${paneLabel(pane)}`}
+                aria-label={`Close ${paneLabel(pane)}`}
+                className="shrink-0 rounded p-0.5 text-text-muted opacity-0 transition-opacity hover:text-accent-red focus-visible:opacity-100 group-hover/pane:opacity-100"
+              >
+                <X size={9} />
+              </button>
+            </div>
+          ))
+        )}
+
+        {remote ? (
+          <div className="px-3 py-1.5 pl-6 text-meta italic text-text-muted">
+            Remote workspace — file browsing is local-only
+          </div>
+        ) : (
+          <SidebarFileTree
+            projectPath={ws.projectPath}
+            openPaths={openFilePaths}
+            onOpenFile={(path) => openFileInWorkspace(ws.id, path)}
+          />
+        )}
+      </div>
+    );
+  };
+
   // ── Row renderer ──
   const renderRow = (row: FleetRow) => {
     const selected = isRowSelected(row);
@@ -266,6 +379,14 @@ export function FleetSidebar() {
     const dot = attentionDot(row.attention);
     const snippet = isSearching ? snippets.get(row.id) : undefined;
     const titleText = row.title || "(untitled)";
+    // Only real Workspace rows expand — the defensive virtual-conversation row
+    // has no panes and no project path to browse.
+    const ws = row.kind === "workspace" ? workspaces.find((w) => w.id === row.workspaceId) : null;
+    // Search results stay flat: an expanded tree under a match buries the next
+    // match, and the search projection is about locating a row, not working in
+    // it. Collapse is visual only — the persisted flag is untouched.
+    const canExpand = Boolean(ws) && !isSearching;
+    const isExpanded = canExpand && !!prefs[row.id]?.expanded;
 
     return (
       <div
@@ -274,75 +395,104 @@ export function FleetSidebar() {
           selected ? "bg-accent-purple/15 border-accent-purple" : "border-transparent"
         } border-b border-line-soft`}
       >
-        <button
-          onClick={() => handleOpen(row)}
-          title={row.title}
-          className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors ${
-            selected ? "" : "hover:bg-bg-hover"
-          }`}
-        >
-          <div className="flex items-center gap-1.5">
-            {isPinned && <Pin size={9} className="shrink-0 fill-accent-amber text-accent-amber" />}
-            {row.attention === "needs_you" ? (
-              <BellRing size={10} className="shrink-0 text-accent-amber" />
-            ) : (
-              <span
-                className={`h-2 w-2 shrink-0 rounded-full ${dot.className} ${
-                  dot.pulse ? "animate-pulse" : ""
-                }`}
-              />
-            )}
-            <span
-              className={`truncate text-ui leading-tight ${
-                selected ? "font-medium text-text-primary" : "text-text-secondary"
-              }`}
+        <div className="flex items-start">
+          {canExpand && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleExpanded(row.id);
+              }}
+              className="shrink-0 rounded py-2 pl-1.5 pr-0.5 text-text-muted transition-colors hover:text-text-primary"
+              title={isExpanded ? "Collapse" : "Expand sessions and files"}
+              aria-label={isExpanded ? `Collapse ${titleText}` : `Expand ${titleText}`}
+              aria-expanded={isExpanded}
             >
-              {snippet ?? titleText}
-            </span>
-            <span className="flex-1" />
-            {row.worktreePending && (
-              <Tooltip content="Worktree pending — unlanded work kept">
-                <span className="flex shrink-0 items-center gap-0.5 text-accent-amber">
-                  <GitBranch size={9} />
-                </span>
-              </Tooltip>
-            )}
-            <span className="shrink-0 text-meta text-text-muted">
-              {formatRelativeTime(row.updatedAt)}
-            </span>
-          </div>
-          {/* Line 2 — single agent label (single-tile) or aggregated chips. */}
-          {row.singleTile ? (
-            row.chips[0] && (
-              <div className={`text-meta font-medium ${row.chips[0].colorClass}`}>
-                {row.chips[0].label}
-              </div>
-            )
-          ) : (
-            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-              {row.chips.map((chip, i) => (
-                <span key={chip.label} className="flex items-center gap-1">
-                  {i > 0 && <span className="text-meta text-text-faint">·</span>}
-                  <span
-                    className={`text-meta font-medium ${chip.colorClass} flex items-center gap-0.5`}
-                  >
-                    {chip.needsYou && (
-                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-amber" />
-                    )}
-                    {chip.label}
-                    {chip.count > 1 && ` ×${chip.count}`}
+              {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+            </button>
+          )}
+          <button
+            onClick={() => handleOpen(row)}
+            title={row.title}
+            className={`flex min-w-0 flex-1 flex-col gap-0.5 py-2 pr-3 text-left transition-colors ${
+              canExpand ? "pl-1" : "pl-3"
+            } ${selected ? "" : "hover:bg-bg-hover"}`}
+          >
+            <div className="flex items-center gap-1.5">
+              {isPinned && (
+                <Pin size={9} className="shrink-0 fill-accent-amber text-accent-amber" />
+              )}
+              {row.attention === "needs_you" ? (
+                <BellRing size={10} className="shrink-0 text-accent-amber" />
+              ) : (
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${dot.className} ${
+                    dot.pulse ? "animate-pulse" : ""
+                  }`}
+                />
+              )}
+              <span
+                className={`truncate text-ui leading-tight ${
+                  selected ? "font-medium text-text-primary" : "text-text-secondary"
+                }`}
+              >
+                {snippet ?? titleText}
+              </span>
+              <span className="flex-1" />
+              {row.worktreePending && (
+                <Tooltip content="Worktree pending — unlanded work kept">
+                  <span className="flex shrink-0 items-center gap-0.5 text-accent-amber">
+                    <GitBranch size={9} />
                   </span>
-                </span>
-              ))}
+                </Tooltip>
+              )}
+              <span className="shrink-0 text-meta text-text-muted">
+                {formatRelativeTime(row.updatedAt)}
+              </span>
+            </div>
+            {/* Line 2 — single agent label (single-tile) or aggregated chips. */}
+            {row.singleTile ? (
+              row.chips[0] && (
+                <div className={`text-meta font-medium ${row.chips[0].colorClass}`}>
+                  {row.chips[0].label}
+                </div>
+              )
+            ) : (
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                {row.chips.map((chip, i) => (
+                  <span key={chip.label} className="flex items-center gap-1">
+                    {i > 0 && <span className="text-meta text-text-faint">·</span>}
+                    <span
+                      className={`text-meta font-medium ${chip.colorClass} flex items-center gap-0.5`}
+                    >
+                      {chip.needsYou && (
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-amber" />
+                      )}
+                      {chip.label}
+                      {chip.count > 1 && ` ×${chip.count}`}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </button>
+          {/* The per-row create affordance. Always visible (not hover-gated):
+              on an empty workspace it is the only way in, and the screenshot
+              target treats it as permanent chrome. It sits in the flow at the
+              right edge, so the hover-gated pin/archive/delete overlays below
+              are offset to clear it. */}
+          {ws && (
+            <div className="shrink-0 py-1.5 pr-1">
+              <AddSessionPicker workspace={ws} variant="icon" />
             </div>
           )}
-        </button>
+        </div>
         <button
           onClick={(e) => {
             e.stopPropagation();
             handleArchiveToggle(row);
           }}
-          className="absolute right-6 top-1.5 rounded p-0.5 text-text-muted opacity-0 transition-opacity hover:text-accent-green focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
+          className={`absolute ${ws ? "right-[52px]" : "right-6"} top-1.5 rounded p-0.5 text-text-muted opacity-0 transition-opacity hover:text-accent-green focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100`}
           title={row.archived ? "Unarchive" : "Archive"}
         >
           {row.archived ? <ArchiveRestore size={10} /> : <Archive size={10} />}
@@ -352,7 +502,7 @@ export function FleetSidebar() {
             e.stopPropagation();
             setPendingDelete({ row });
           }}
-          className="absolute right-1 top-1.5 rounded p-0.5 text-text-muted opacity-0 transition-opacity hover:text-accent-red focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
+          className={`absolute ${ws ? "right-8" : "right-1"} top-1.5 rounded p-0.5 text-text-muted opacity-0 transition-opacity hover:text-accent-red focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100`}
           title="Delete"
         >
           <Trash2 size={10} />
@@ -362,13 +512,15 @@ export function FleetSidebar() {
             e.stopPropagation();
             togglePinned(row.id);
           }}
-          className={`absolute right-11 top-1.5 rounded p-0.5 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 ${
+          className={`absolute ${ws ? "right-[72px]" : "right-11"} top-1.5 rounded p-0.5 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 ${
             isPinned ? "text-accent-amber" : "text-text-muted hover:text-accent-amber"
           }`}
           title={isPinned ? "Unpin" : "Pin to top"}
         >
           <Pin size={10} className={isPinned ? "fill-accent-amber" : ""} />
         </button>
+
+        {isExpanded && ws && renderExpandedChildren(ws)}
       </div>
     );
   };

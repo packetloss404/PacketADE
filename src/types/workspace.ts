@@ -16,7 +16,7 @@ export interface WorkspacePane {
    * carrier `agentId: "terminal"` so a downgraded binary renders a harmless
    * terminal pane (its `From<String>` catch-all never sees "conversation").
    */
-  kind?: "terminal" | "conversation";
+  kind?: "terminal" | "conversation" | "file";
   /**
    * Set iff `kind === "conversation"`. Points at the owning AgentConversation
    * (reference direction is pane→conversationId only). Enforced by
@@ -35,6 +35,19 @@ export interface WorkspacePane {
   accountId?: string;
   /** Per-pane raw local Terminal shell override. Absent means inherit. */
   terminalShell?: TerminalShellSelection;
+  /**
+   * Set iff `kind === "file"`. The absolute path this viewer tile shows.
+   * Enforced by `normalizePanes` the same way `conversationId` is: a file pane
+   * whose path was stripped self-heals to a terminal pane, so an old binary
+   * round-trip degrades cleanly instead of rendering an empty viewer.
+   */
+  filePath?: string;
+  /**
+   * Initial view mode for a file pane. Absent ⇒ the editor's per-extension
+   * default (markdown renders, everything else opens raw). The "Markdown
+   * Viewer" picker row is exactly this field set to `"preview"`.
+   */
+  fileView?: "preview" | "raw";
 }
 
 export interface Workspace {

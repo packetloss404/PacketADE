@@ -98,6 +98,16 @@ pub struct WorkspacePaneDto {
     #[serde(default)]
     #[ts(optional)]
     pub terminal_shell: Option<TerminalShellSelectionDto>,
+    /// Set iff `kind == Some("file")` — the absolute path this viewer tile
+    /// shows. Inert `#[serde(default)]` mirror of core `WorkspacePane`.
+    #[serde(default)]
+    #[ts(optional)]
+    pub file_path: Option<String>,
+    /// Initial view mode for a `kind == Some("file")` pane (`"preview"` |
+    /// `"raw"`). Absent ⇒ the editor's own per-extension default.
+    #[serde(default)]
+    #[ts(optional)]
+    pub file_view: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -1256,6 +1266,8 @@ impl From<core_workspace::WorkspacePane> for WorkspacePaneDto {
             conversation_id: value.conversation_id,
             account_id: value.account_id,
             terminal_shell: value.terminal_shell.map(Into::into),
+            file_path: value.file_path,
+            file_view: value.file_view,
         }
     }
 }
@@ -1279,6 +1291,8 @@ impl From<WorkspacePaneDto> for core_workspace::WorkspacePane {
             conversation_id: value.conversation_id,
             account_id: value.account_id,
             terminal_shell: value.terminal_shell.map(Into::into),
+            file_path: value.file_path,
+            file_view: value.file_view,
         }
     }
 }

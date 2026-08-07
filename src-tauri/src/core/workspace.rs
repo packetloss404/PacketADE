@@ -61,6 +61,15 @@ pub struct WorkspacePane {
     /// workspace/app default; old binaries therefore degrade to Auto.
     #[serde(default)]
     pub terminal_shell: Option<TerminalShellSelection>,
+    /// Set iff `kind == Some("file")` — the absolute path this viewer tile
+    /// shows. A file pane with no path self-heals to a terminal pane on the
+    /// frontend, so an old binary that strips this field degrades cleanly.
+    #[serde(default)]
+    pub file_path: Option<String>,
+    /// Initial view mode for a file pane (`"preview"` | `"raw"`). Absent ⇒ the
+    /// editor's per-extension default (markdown renders, everything else raw).
+    #[serde(default)]
+    pub file_view: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,6 +136,8 @@ mod tests {
             conversation_id: Some("conv-123".to_string()),
             account_id: None,
             terminal_shell: None,
+            file_path: None,
+            file_view: None,
         }
     }
 
@@ -180,6 +191,8 @@ mod tests {
             conversation_id: None,
             account_id: Some("acct-personal".to_string()),
             terminal_shell: None,
+            file_path: None,
+            file_view: None,
         };
         let json = serde_json::to_string(&pane).unwrap();
         let back: WorkspacePane = serde_json::from_str(&json).unwrap();

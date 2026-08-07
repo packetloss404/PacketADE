@@ -1908,8 +1908,14 @@ function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
       // (conversationId set iff kind==="conversation", absent kind ⇒ terminal)
       // is enforced by normalizePanes in workspaceStore, which runs over this
       // hydrated result.
-      kind: pane.kind === "conversation" ? "conversation" : undefined,
+      kind:
+        pane.kind === "conversation" ? "conversation" : pane.kind === "file" ? "file" : undefined,
       conversationId: pane.conversationId,
+      // File viewer tiles: thread path + view mode through hydration or a tiled
+      // file silently degrades to a terminal on the next load. The invariant
+      // (filePath set iff kind==="file") is enforced by normalizePanes below.
+      filePath: pane.filePath,
+      fileView: pane.fileView === "preview" || pane.fileView === "raw" ? pane.fileView : undefined,
       // Multi-account CLI support: thread the selected account id through
       // hydration or it silently drops on the next save. Absent ⇒ ambient.
       accountId: pane.accountId,
@@ -1956,6 +1962,15 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDtoWithFrontendMetadata 
       // downgraded binary that ignores `kind` renders a harmless terminal pane.
       ...(pane.kind === "conversation"
         ? { kind: "conversation" as const, conversationId: pane.conversationId }
+        : {}),
+      // Same rule for file tiles: only a file pane carries kind/filePath, so
+      // terminal panes stay byte-identical to the pre-viewer persisted shape.
+      ...(pane.kind === "file" && pane.filePath
+        ? {
+            kind: "file" as const,
+            filePath: pane.filePath,
+            ...(pane.fileView ? { fileView: pane.fileView } : {}),
+          }
         : {}),
       // Multi-account CLI support: only panes bound to an explicit account
       // carry the field — an ambient pane stays byte-identical to the

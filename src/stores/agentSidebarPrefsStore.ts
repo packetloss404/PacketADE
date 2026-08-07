@@ -26,6 +26,13 @@ const LEGACY_PROJECT_LABELS_STORAGE_KEY = `${LEGACY_STORAGE_PREFIX}project-label
 
 export interface ConversationPrefs {
   pinned?: boolean;
+  /**
+   * Fleet sidebar: the workspace row is expanded to show its session children
+   * and the FILES subtree. Persisted (rather than component state) so the tree
+   * a user opened survives switching views, and so an expanded workspace is
+   * still expanded on the next launch. Absent ⇒ collapsed.
+   */
+  expanded?: boolean;
 }
 
 interface PersistedState {
@@ -37,6 +44,8 @@ interface AgentSidebarPrefsStore extends PersistedState {
   /** projectPath -> custom display label for the project group header. */
   projectLabels: Record<string, string>;
   togglePinned: (rowId: string) => void;
+  /** Fleet sidebar: expand/collapse a workspace row's children + FILES tree. */
+  toggleExpanded: (rowId: string) => void;
   setProjectLabel: (projectPath: string, label: string) => void;
 }
 
@@ -48,8 +57,13 @@ function load(): PersistedState {
   // will not be written back on the next persist().
   const prefs: Record<string, ConversationPrefs> = {};
   for (const [id, entry] of Object.entries(raw?.prefs ?? {})) {
-    const e = entry as { pinned?: unknown };
-    if (e?.pinned === true) prefs[id] = { pinned: true };
+    const e = entry as { pinned?: unknown; expanded?: unknown };
+    const next: ConversationPrefs = {};
+    if (e?.pinned === true) next.pinned = true;
+    if (e?.expanded === true) next.expanded = true;
+    // Only keep rows that actually carry a preference — an all-false entry is
+    // indistinguishable from absent and would grow the blob forever.
+    if (next.pinned || next.expanded) prefs[id] = next;
   }
   return { prefs };
 }
@@ -80,6 +94,28 @@ function loadProjectLabels(): Record<string, string> {
   }
 }
 
+/**
+ * Set one boolean flag on a row's prefs, dropping the row entirely once no flag
+ * is left. Shared by pin and expand so toggling one never clobbers the other —
+ * the pre-expand version rebuilt the entry as `{ pinned: true }`, which would
+ * have silently collapsed an expanded row on pin.
+ */
+function setFlag(
+  current: Record<string, ConversationPrefs>,
+  rowId: string,
+  flag: keyof ConversationPrefs,
+  value: boolean,
+): PersistedState {
+  const prefs = { ...current };
+  const next: ConversationPrefs = { ...(prefs[rowId] ?? {}) };
+  if (value) next[flag] = true;
+  else delete next[flag];
+  if (next.pinned || next.expanded) prefs[rowId] = next;
+  else delete prefs[rowId];
+  persist({ prefs });
+  return { prefs };
+}
+
 const initial = load();
 
 export const useAgentSidebarPrefsStore = create<AgentSidebarPrefsStore>((set) => ({
@@ -88,15 +124,12 @@ export const useAgentSidebarPrefsStore = create<AgentSidebarPrefsStore>((set) =>
 
   togglePinned: (rowId) => {
     if (!rowId) return;
-    set((s) => {
-      const current = s.prefs[rowId] ?? {};
-      const nextPinned = !current.pinned;
-      const prefs = { ...s.prefs };
-      if (nextPinned) prefs[rowId] = { pinned: true };
-      else delete prefs[rowId];
-      persist({ prefs });
-      return { prefs };
-    });
+    set((s) => setFlag(s.prefs, rowId, "pinned", !s.prefs[rowId]?.pinned));
+  },
+
+  toggleExpanded: (rowId) => {
+    if (!rowId) return;
+    set((s) => setFlag(s.prefs, rowId, "expanded", !s.prefs[rowId]?.expanded));
   },
 
   setProjectLabel: (projectPath, label) => {

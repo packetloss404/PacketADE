@@ -30,7 +30,17 @@ accountId?: string,
 /**
  * Raw-terminal pane shell override. Absent means inherit/Auto.
  */
-terminalShell?: TerminalShellSelectionDto, };
+terminalShell?: TerminalShellSelectionDto,
+/**
+ * Set iff `kind == Some("file")` — the absolute path this viewer tile
+ * shows. Inert `#[serde(default)]` mirror of core `WorkspacePane`.
+ */
+filePath?: string,
+/**
+ * Initial view mode for a `kind == Some("file")` pane (`"preview"` |
+ * `"raw"`). Absent ⇒ the editor's own per-extension default.
+ */
+fileView?: string, };
 
 export type GithubRepoDto = { owner: string, repo: string, };
 

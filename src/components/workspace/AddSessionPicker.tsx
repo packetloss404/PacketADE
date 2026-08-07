@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { ExternalLink, LayoutTemplate, Plus, Search, Settings2 } from "lucide-react";
+import { createPortal } from "react-dom";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+import {
+  BookOpen,
+  ExternalLink,
+  FileText,
+  LayoutTemplate,
+  Plus,
+  Search,
+  Settings2,
+  Terminal as TerminalIcon,
+} from "lucide-react";
 import { TERMINAL_AGENTS } from "@/lib/agent-catalog";
 import { getAgentColor } from "@/lib/agentColors";
 import { INSTALL_HINTS } from "@/lib/agent-install-hints";
@@ -23,27 +34,56 @@ import type { TerminalShellProfileId, TerminalShellSelection } from "@/types/ter
 interface AddSessionPickerProps {
   workspace: Workspace;
   /**
-   * `popover` is the compact Workspace-header affordance. `inline` is the
-   * empty-Workspace zero state. Both expose only PTY/CLI sessions; GUI/API
-   * conversations are created in Agents.
+   * `popover` is the compact Workspace-header affordance (and the Fleet
+   * sidebar's per-row "+"). `inline` is the empty-Workspace zero state. Both
+   * expose PTY/CLI sessions plus the local file/markdown viewer tiles; GUI/API
+   * conversations are still created in Agents, so there is deliberately no
+   * "Chat" row here.
+   *
+   * `icon` is the same popover with a bare "+" trigger, for the Fleet sidebar's
+   * per-workspace-row affordance where there is no room for a label.
    */
-  variant: "popover" | "inline";
+  variant: "popover" | "inline" | "icon";
   onOpenTemplates?: () => void;
 }
 
 export function AddSessionPicker({ workspace, variant, onOpenTemplates }: AddSessionPickerProps) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Viewport coords for the portalled `icon` panel (see below).
+  const [anchorRect, setAnchorRect] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
-    if (variant !== "popover" || !open) return;
+    if (variant === "inline" || !open) return;
     const handler = (event: MouseEvent) => {
-      if (anchorRef.current && !anchorRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
+      const target = event.target as Node;
+      // The portalled panel lives outside `anchorRef`, so it needs its own
+      // containment check or every click inside the picker would close it.
+      if (anchorRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
+  }, [variant, open]);
+
+  // Close on Escape and on scroll — a fixed-position panel would otherwise
+  // detach from its row as the fleet list scrolls under it.
+  useEffect(() => {
+    if (variant !== "icon" || !open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    const onScroll = () => setOpen(false);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
   }, [variant, open]);
 
   if (variant === "inline") {
@@ -54,30 +94,89 @@ export function AddSessionPicker({ workspace, variant, onOpenTemplates }: AddSes
     );
   }
 
+  const isIcon = variant === "icon";
+
+  const PANEL_WIDTH = 320;
+  const PANEL_MAX_HEIGHT = 460;
+
   return (
     <div className="relative" ref={anchorRef}>
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
-        className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] transition-colors ${
-          open
-            ? "bg-accent-green/20 text-accent-green"
-            : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
-        }`}
-        title="Add a CLI session to this workspace"
+        onClick={(event) => {
+          // The sidebar trigger sits inside a clickable workspace row; opening
+          // the picker must not also activate/navigate that row.
+          event.stopPropagation();
+          if (isIcon && !open) {
+            const rect = event.currentTarget.getBoundingClientRect();
+            // Flip up / clamp left so the panel never runs off the viewport on
+            // a bottom-of-list row or a narrow window.
+            const top =
+              rect.bottom + PANEL_MAX_HEIGHT > window.innerHeight
+                ? Math.max(8, rect.top - PANEL_MAX_HEIGHT)
+                : rect.bottom + 4;
+            const left = Math.min(rect.left, window.innerWidth - PANEL_WIDTH - 8);
+            setAnchorRect({ top, left: Math.max(8, left) });
+          }
+          setOpen((value) => !value);
+        }}
+        className={
+          isIcon
+            ? `rounded p-0.5 transition-colors ${
+                open
+                  ? "bg-accent-green/20 text-accent-green"
+                  : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
+              }`
+            : `flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] transition-colors ${
+                open
+                  ? "bg-accent-green/20 text-accent-green"
+                  : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
+              }`
+        }
+        title="Add a session, terminal, or file viewer to this workspace"
+        aria-label={isIcon ? "Add to this workspace" : undefined}
       >
-        <Plus size={11} />
-        Add Session
+        <Plus size={isIcon ? 12 : 11} />
+        {!isIcon && "Add Session"}
       </button>
-      {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-[320px] rounded-md border border-bg-border bg-bg-elevated shadow-xl">
-          <PickerContent
-            workspace={workspace}
-            onClose={() => setOpen(false)}
-            onOpenTemplates={onOpenTemplates}
-          />
-        </div>
-      )}
+      {/* The header variant can position normally; the sidebar variant cannot.
+          The Fleet sidebar is a 240px column with `overflow-hidden` on the
+          shell and `overflow-y-auto` on the list, so an absolutely-positioned
+          panel would be clipped on both axes. Portal it to <body> at fixed
+          viewport coords instead. */}
+      {open &&
+        (isIcon ? (
+          anchorRect &&
+          createPortal(
+            <div
+              ref={panelRef}
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                position: "fixed",
+                top: anchorRect.top,
+                left: anchorRect.left,
+                width: PANEL_WIDTH,
+                maxHeight: PANEL_MAX_HEIGHT,
+              }}
+              className="z-[60] overflow-y-auto rounded-md border border-bg-border bg-bg-elevated shadow-xl"
+            >
+              <PickerContent
+                workspace={workspace}
+                onClose={() => setOpen(false)}
+                onOpenTemplates={onOpenTemplates}
+              />
+            </div>,
+            document.body,
+          )
+        ) : (
+          <div className="absolute right-0 top-full z-50 mt-1 w-[320px] rounded-md border border-bg-border bg-bg-elevated shadow-xl">
+            <PickerContent
+              workspace={workspace}
+              onClose={() => setOpen(false)}
+              onOpenTemplates={onOpenTemplates}
+            />
+          </div>
+        ))}
     </div>
   );
 }
@@ -106,6 +205,7 @@ function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentPro
   const agents = useAgentStore((state) => state.agents);
   const servers = useServerStore((state) => state.servers);
   const addPane = useWorkspaceStore((state) => state.addPane);
+  const addFilePane = useWorkspaceStore((state) => state.addFilePane);
   const openSettings = useAppStore((state) => state.openSettings);
   const defaultTerminalShell = useTerminalSettingsStore((state) => state.defaultShell);
   const shellDetection = useTerminalShellDetection();
@@ -157,6 +257,75 @@ function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentPro
     openSettings({ section: "cli-clients", cliId: "packetcode" });
     onClose();
   };
+
+  /**
+   * WSL as a first-class row rather than a value buried in the Terminal row's
+   * shell `<select>`. It is still exactly a Terminal pane carrying a `wsl`
+   * shell selection — no new pane kind, no second launch path — but "open a WSL
+   * shell here" is a top-level intent, not a preference on another intent.
+   * Windows-only, and hidden when no distro is installed.
+   */
+  const wslShell = shellDetection.shells.wsl;
+  const wslDistro = shellDetection.wslDistributions[0];
+  const wslAvailable =
+    terminalPlatform() === "windows" && wslShell?.available !== false && Boolean(wslDistro);
+  const wslLabel = wslDistro ? `WSL · ${wslDistro}` : "WSL";
+
+  const pickWsl = () => {
+    const selection = selectionForProfile("wsl", wslShell);
+    if (!selection.wslDistro && wslDistro) selection.wslDistro = wslDistro;
+    addPane(workspace.id, "terminal", { terminalShell: selection });
+    onClose();
+  };
+
+  /**
+   * Viewer rows. Both create the same `kind: "file"` tile; "Markdown Viewer"
+   * only differs by filtering the picker to .md/.mdx and asking the shared
+   * `EditorPane` to open rendered. SSH workspaces have no local FS, so the rows
+   * are disabled rather than hidden (same honesty rule the Editor dock uses).
+   */
+  const viewersDisabled = Boolean(workspace.serverId);
+
+  const pickViewer = (mode: "any" | "markdown") => {
+    // Close first: the native dialog is modal and would otherwise sit behind a
+    // popover that the next outside-click dismisses anyway. The store write
+    // below does not depend on this component still being mounted.
+    onClose();
+    void openFileDialog({
+      multiple: false,
+      directory: false,
+      defaultPath: workspace.projectPath,
+      ...(mode === "markdown"
+        ? { filters: [{ name: "Markdown", extensions: ["md", "mdx"] }] }
+        : {}),
+    })
+      .then((selected) => {
+        if (typeof selected !== "string") return;
+        addFilePane(workspace.id, selected, mode === "markdown" ? { view: "preview" } : undefined);
+      })
+      .catch(() => {
+        // Dialog cancelled or unavailable — nothing to add.
+      });
+  };
+
+  const viewerRows = [
+    {
+      key: "file-viewer",
+      label: "File Viewer",
+      hint: "Open any file as a tile",
+      icon: FileText,
+      onPick: () => pickViewer("any"),
+    },
+    {
+      key: "markdown-viewer",
+      label: "Markdown Viewer",
+      hint: "Open a .md rendered",
+      icon: BookOpen,
+      onPick: () => pickViewer("markdown"),
+    },
+  ].filter((row) => row.label.toLowerCase().includes(normalizedFilter));
+
+  const showWslRow = wslAvailable && wslLabel.toLowerCase().includes(normalizedFilter);
 
   return (
     <div className="py-1">
@@ -295,10 +464,55 @@ function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentPro
           );
         })}
 
-        {sessionRows.length === 0 && (
+        {showWslRow && (
+          <div className="flex items-center gap-2 px-3 py-1.5 transition-colors hover:bg-bg-hover">
+            <button
+              type="button"
+              onClick={pickWsl}
+              title={`Add a ${wslLabel} terminal session`}
+              className="flex min-w-0 flex-1 items-center gap-2 text-left text-ui text-text-primary"
+            >
+              <TerminalIcon size={11} className="shrink-0 text-accent-purple" />
+              <span className="truncate">{wslLabel}</span>
+            </button>
+          </div>
+        )}
+
+        {sessionRows.length === 0 && !showWslRow && (
           <div className="px-3 py-2 text-ui text-text-muted">No matching CLI sessions</div>
         )}
       </div>
+
+      {viewerRows.length > 0 && (
+        <>
+          <div className="my-1 border-t border-bg-border" />
+          <div className="px-3 py-1 text-meta uppercase tracking-wide text-text-muted">Viewers</div>
+          {viewerRows.map((row) => {
+            const Icon = row.icon;
+            return (
+              <button
+                key={row.key}
+                type="button"
+                onClick={row.onPick}
+                disabled={viewersDisabled}
+                title={
+                  viewersDisabled
+                    ? "File viewers read the local filesystem — not available on SSH workspaces"
+                    : row.hint
+                }
+                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui transition-colors ${
+                  viewersDisabled
+                    ? "cursor-not-allowed text-text-muted opacity-50"
+                    : "text-text-primary hover:bg-bg-hover"
+                }`}
+              >
+                <Icon size={11} className="shrink-0 text-accent-blue" />
+                <span className="truncate">{row.label}</span>
+              </button>
+            );
+          })}
+        </>
+      )}
 
       {!packetCodeReady && !normalizedFilter && (
         <div className="border-accent-amber/20 bg-accent-amber/5 mx-2 my-1 rounded border px-2 py-1.5 text-meta text-text-muted">

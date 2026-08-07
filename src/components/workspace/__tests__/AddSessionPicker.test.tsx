@@ -1,12 +1,16 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AddSessionPicker } from "@/components/workspace/AddSessionPicker";
 import { useCliAccountStore } from "@/stores/cliAccountStore";
 import type { CliAccount } from "@/types/cliAccount";
 import type { Workspace } from "@/types/workspace";
 
 const addPane = vi.hoisted(() => vi.fn());
+const addFilePane = vi.hoisted(() => vi.fn());
+const openFileDialog = vi.hoisted(() => vi.fn());
 const openSettings = vi.hoisted(() => vi.fn());
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: openFileDialog }));
 const terminalSettingsState = vi.hoisted(() => ({ defaultShell: { profile: "auto" as const } }));
 const agentState = vi.hoisted(() => ({
   agents: [
@@ -18,8 +22,9 @@ const agentState = vi.hoisted(() => ({
 }));
 
 vi.mock("@/stores/workspaceStore", () => ({
-  useWorkspaceStore: (selector: (state: { addPane: typeof addPane }) => unknown) =>
-    selector({ addPane }),
+  useWorkspaceStore: (
+    selector: (state: { addPane: typeof addPane; addFilePane: typeof addFilePane }) => unknown,
+  ) => selector({ addPane, addFilePane }),
 }));
 
 vi.mock("@/stores/appStore", () => ({
@@ -96,6 +101,12 @@ function account(id: string, label: string, cli: CliAccount["cli"]): CliAccount 
 }
 
 describe("AddSessionPicker", () => {
+  afterEach(() => {
+    // Platform stubs are per-test; a leaked UA spy silently flips every later
+    // assertion about platform-gated chrome.
+    vi.restoreAllMocks();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     useCliAccountStore.setState({ accounts: [], stickyDefaults: {} });
@@ -110,6 +121,20 @@ describe("AddSessionPicker", () => {
   function openPopover() {
     render(<AddSessionPicker workspace={localWorkspace} variant="popover" />);
     fireEvent.click(screen.getByRole("button", { name: /add session/i }));
+  }
+
+  /**
+   * `terminalPlatform()` sniffs the user agent, and jsdom reports Linux. Any
+   * assertion about Windows-only chrome (the Command Prompt shell option, the
+   * WSL row) has to stub the UA first or it is asserting against the posix
+   * profile list. The suite-level afterEach restores the spy —
+   * `vi.clearAllMocks()` clears calls, not implementations.
+   */
+  function openPopoverAsWindows() {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    );
+    openPopover();
   }
 
   it("offers CLI sessions only and recommends detected PacketCode first", () => {
@@ -151,7 +176,11 @@ describe("AddSessionPicker", () => {
   });
 
   it("stores a one-session shell override on the new Terminal pane", () => {
-    openPopover();
+    // Command Prompt only appears in the WINDOWS profile list. Under jsdom the
+    // UA reads Linux, so without this stub the <select> has no such option,
+    // jsdom coerces the value to "", and the assertion failed on a phantom
+    // `profile: ""` rather than on anything the component did.
+    openPopoverAsWindows();
 
     fireEvent.change(screen.getByRole("combobox", { name: "Shell for new Terminal session" }), {
       target: { value: "command-prompt" },
@@ -277,6 +306,82 @@ describe("AddSessionPicker", () => {
       expect(addPane).toHaveBeenCalledWith("ws-local", "claude-code", {
         accountId: null,
       });
+    });
+  });
+
+  describe("viewer rows", () => {
+    it("opens the picked file as a viewer tile", async () => {
+      openFileDialog.mockResolvedValue("/tmp/project/notes.txt");
+      openPopover();
+
+      fireEvent.click(screen.getByRole("button", { name: "File Viewer" }));
+      await vi.waitFor(() =>
+        expect(addFilePane).toHaveBeenCalledWith("ws-local", "/tmp/project/notes.txt", undefined),
+      );
+      // Scoped to the workspace so the dialog opens where the user is working.
+      expect(openFileDialog).toHaveBeenCalledWith(
+        expect.objectContaining({ defaultPath: "/tmp/project", directory: false }),
+      );
+    });
+
+    it("Markdown Viewer filters to .md and opens rendered", async () => {
+      openFileDialog.mockResolvedValue("/tmp/project/README.md");
+      openPopover();
+
+      fireEvent.click(screen.getByRole("button", { name: "Markdown Viewer" }));
+      await vi.waitFor(() =>
+        expect(addFilePane).toHaveBeenCalledWith("ws-local", "/tmp/project/README.md", {
+          view: "preview",
+        }),
+      );
+      expect(openFileDialog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filters: [{ name: "Markdown", extensions: ["md", "mdx"] }],
+        }),
+      );
+    });
+
+    it("adds nothing when the dialog is cancelled", async () => {
+      openFileDialog.mockResolvedValue(null);
+      openPopover();
+
+      fireEvent.click(screen.getByRole("button", { name: "File Viewer" }));
+      await vi.waitFor(() => expect(openFileDialog).toHaveBeenCalled());
+      expect(addFilePane).not.toHaveBeenCalled();
+    });
+
+    it("disables the viewers on an SSH workspace", () => {
+      render(
+        <AddSessionPicker workspace={{ ...localWorkspace, serverId: "srv-1" }} variant="popover" />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /add session/i }));
+
+      expect(screen.getByRole("button", { name: "File Viewer" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Markdown Viewer" })).toBeDisabled();
+    });
+
+    it("still offers no Chat row — API conversations belong to Agents", () => {
+      openPopover();
+      expect(screen.queryByRole("button", { name: /^chat/i })).toBeNull();
+    });
+  });
+
+  describe("WSL row", () => {
+    it("adds a Terminal pane carrying the WSL shell selection", () => {
+      openPopoverAsWindows();
+
+      fireEvent.click(screen.getByRole("button", { name: /WSL/ }));
+
+      // Not a new pane kind — a Terminal pane with a shell override, so it
+      // reuses the whole existing PTY launch path.
+      expect(addPane).toHaveBeenCalledWith("ws-local", "terminal", {
+        terminalShell: { profile: "wsl", executable: "wsl.exe", wslDistro: "Ubuntu" },
+      });
+    });
+
+    it("is absent off Windows", () => {
+      openPopover();
+      expect(screen.queryByRole("button", { name: /WSL/ })).toBeNull();
     });
   });
 });

@@ -4,6 +4,7 @@ import { Minimize2 } from "lucide-react";
 import type { MosaicNode, MosaicPath } from "@/types/mosaic";
 import { WorkspacePane } from "./WorkspacePane";
 import { ConversationTile } from "./ConversationTile";
+import { FileTile } from "./FileTile";
 import type { Workspace } from "@/types/workspace";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useReviewStore } from "@/stores/reviewStore";
@@ -132,10 +133,17 @@ export function WorkspaceMosaicContainer({
             draggable
           >
             {/* One branch on pane.kind (P3-S2): conversation panes mount the
-                ConversationTile (unforked AgentChatPane); everything else is a
-                terminal pane. `kind` is the sole discriminant. */}
+                ConversationTile (unforked AgentChatPane), file panes mount the
+                FileTile (unforked EditorPane); everything else is a terminal
+                pane. `kind` is the sole discriminant. */}
             {pane.kind === "conversation" ? (
               <ConversationTile pane={pane} workspaceId={workspace.id} />
+            ) : pane.kind === "file" ? (
+              <FileTile
+                pane={pane}
+                projectPath={workspace.projectPath}
+                remote={Boolean(workspace.serverId)}
+              />
             ) : (
               <WorkspacePane
                 pane={pane}

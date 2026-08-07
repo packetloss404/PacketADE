@@ -40,6 +40,11 @@ vi.mock("@/lib/tauri", () => ({
   retryLastTurn: vi.fn(),
   exportConversationMarkdown: vi.fn(),
   saveWorkspacesSlice: vi.fn().mockResolvedValue(undefined),
+  // The expanded row's FILES subtree lists the project directory.
+  listDirectory: vi.fn().mockResolvedValue([
+    { name: "src", path: "/proj/src", is_dir: true, size: 0, extension: null },
+    { name: "README.md", path: "/proj/README.md", is_dir: false, size: 12, extension: "md" },
+  ]),
 }));
 
 import { FleetSidebar } from "@/components/workspace/FleetSidebar";
@@ -222,7 +227,7 @@ describe("FleetSidebar", () => {
     expect(screen.queryByText("Write docs")).not.toBeInTheDocument();
   });
 
-  it("calls a workspace a Workspace in its delete dialog, which used to say \"Delete session?\"", () => {
+  it('calls a workspace a Workspace in its delete dialog, which used to say "Delete session?"', () => {
     useWorkspaceStore.setState({ workspaces: [workspace({ name: "Refactor parser" })] });
     render(<FleetSidebar />, { wrapper: ToastProvider });
 
@@ -231,7 +236,9 @@ describe("FleetSidebar", () => {
     expect(screen.getByText("Delete workspace?")).toBeInTheDocument();
     expect(screen.queryByText(/Delete session\?/)).not.toBeInTheDocument();
     // A workspace owns no worktree — deleting it detaches conversations.
-    expect(screen.getByText(/Member conversations are detached, not destroyed/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Member conversations are detached, not destroyed/),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -244,6 +251,86 @@ describe("FleetSidebar", () => {
 
     expect(useWorkspaceStore.getState().workspaces).toHaveLength(1);
     expect(screen.queryByText("Delete workspace?")).not.toBeInTheDocument();
+  });
+
+  // ── Expandable rows ──
+
+  it("collapses by default and reveals session children + FILES on expand", async () => {
+    useWorkspaceStore.setState({
+      workspaces: [
+        workspace({
+          name: "Browsable",
+          agents: ["claude-code"],
+          panes: [{ id: "pane-1", agentId: "claude-code", sessionId: "s1" }],
+        }),
+      ],
+    });
+    render(<FleetSidebar />, { wrapper: ToastProvider });
+
+    // Collapsed: the pane child row is not in the tree at all.
+    expect(screen.queryByRole("button", { name: "Close Claude" })).not.toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Expand Browsable" }));
+    });
+
+    expect(screen.getByRole("button", { name: "Claude" })).toBeInTheDocument();
+    expect(screen.getByText("Files")).toBeInTheDocument();
+    expect(await screen.findByText("README.md")).toBeInTheDocument();
+    // The flag is persisted so the tree survives a view switch.
+    expect(useAgentSidebarPrefsStore.getState().prefs["ws-A"]?.expanded).toBe(true);
+  });
+
+  it("closing a terminal child kills its PTY before dropping the pane", async () => {
+    const { killPty } = await import("@/lib/tauri");
+    useWorkspaceStore.setState({
+      workspaces: [
+        workspace({
+          name: "Browsable",
+          agents: ["terminal"],
+          panes: [{ id: "pane-1", agentId: "terminal", sessionId: "pty-9" }],
+        }),
+      ],
+    });
+    useAgentSidebarPrefsStore.setState({ prefs: { "ws-A": { expanded: true } } });
+    render(<FleetSidebar />, { wrapper: ToastProvider });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Close Terminal" }));
+    });
+
+    expect(killPty).toHaveBeenCalledWith("pty-9");
+    expect(useWorkspaceStore.getState().workspaces[0].panes).toHaveLength(0);
+  });
+
+  it("opens a file from the tree as a viewer tile in that workspace", async () => {
+    useWorkspaceStore.setState({ workspaces: [workspace({ name: "Browsable" })] });
+    useAgentSidebarPrefsStore.setState({ prefs: { "ws-A": { expanded: true } } });
+    render(<FleetSidebar />, { wrapper: ToastProvider });
+
+    // Resolve the listing BEFORE entering act — awaiting a findBy* inside an
+    // async act callback deadlocks: act holds the re-render the query waits on.
+    const fileRow = await screen.findByText("README.md");
+    await act(async () => {
+      fireEvent.click(fileRow);
+    });
+
+    const [pane] = useWorkspaceStore.getState().workspaces[0].panes;
+    expect(pane.kind).toBe("file");
+    expect(pane.filePath).toBe("/proj/README.md");
+    expect(useWorkspaceStore.getState().focusPaneRequest?.paneId).toBe(pane.id);
+  });
+
+  it("pinning an expanded row keeps it expanded", () => {
+    useWorkspaceStore.setState({ workspaces: [workspace({ name: "Browsable" })] });
+    useAgentSidebarPrefsStore.setState({ prefs: { "ws-A": { expanded: true } } });
+    render(<FleetSidebar />, { wrapper: ToastProvider });
+
+    fireEvent.click(screen.getByRole("button", { name: "Pin to top" }));
+
+    const entry = useAgentSidebarPrefsStore.getState().prefs["ws-A"];
+    expect(entry?.pinned).toBe(true);
+    expect(entry?.expanded).toBe(true);
   });
 
   it("does not re-render on an unrelated store update (per-slice subscriptions)", () => {
