@@ -156,3 +156,85 @@ describe("WorkspaceMosaicContainer zoom", () => {
     expect(useWorkspaceStore.getState().zoomedPaneId).toBeNull();
   });
 });
+
+/**
+ * Pane add/remove must not remount a SURVIVING tile.
+ *
+ * A remount runs `useTerminalSession`'s unmount cleanup (`killPty`) and then
+ * auto-starts a fresh PTY, so remounting a survivor kills a running agent
+ * mid-task. `MosaicRoot.renderRecursively` flattens each split into a keyed
+ * Fragment, so a leaf that changes DEPTH lands under a differently-keyed
+ * Fragment and React remounts it — reordering within one split's children is
+ * safe, re-nesting is not.
+ */
+describe("WorkspaceMosaicContainer pane add/remove stability", () => {
+  function withPanes(ids: string[]): Workspace {
+    return {
+      ...makeWorkspace(),
+      agents: ids.map(() => "claude-code" as const),
+      panes: ids.map((id) => ({ id, agentId: "claude-code" as const, sessionId: null })),
+    };
+  }
+
+  beforeEach(() => {
+    mountLog.length = 0;
+    useWorkspaceStore.setState({
+      workspaces: [makeWorkspace()],
+      activeWorkspaceId: "ws-1",
+      zoomedPaneId: null,
+    });
+  });
+
+  it("adding panes one at a time never unmounts an already-running pane", () => {
+    const { rerender } = render(<WorkspaceMosaicContainer workspace={withPanes(["pane-a"])} />);
+
+    for (const ids of [
+      ["pane-a", "pane-b"],
+      ["pane-a", "pane-b", "pane-c"],
+      ["pane-a", "pane-b", "pane-c", "pane-d"],
+      ["pane-a", "pane-b", "pane-c", "pane-d", "pane-e"],
+    ]) {
+      act(() => {
+        rerender(<WorkspaceMosaicContainer workspace={withPanes(ids)} />);
+      });
+    }
+
+    // The regression: 2 -> 3 logged "unmount:pane-b, mount:pane-b", killing a
+    // running codex when a terminal was added beside it.
+    expect(mountLog.filter((e) => e.startsWith("unmount:"))).toEqual([]);
+    for (const id of ["pane-a", "pane-b", "pane-c", "pane-d", "pane-e"]) {
+      expect(mountLog.filter((e) => e === `mount:${id}`)).toHaveLength(1);
+    }
+  });
+
+  it("removing a middle pane unmounts only that pane", () => {
+    const { rerender } = render(
+      <WorkspaceMosaicContainer workspace={withPanes(["pane-a", "pane-b", "pane-c"])} />,
+    );
+    mountLog.length = 0;
+
+    act(() => {
+      rerender(<WorkspaceMosaicContainer workspace={withPanes(["pane-a", "pane-c"])} />);
+    });
+
+    // Previously the parent split collapsed to a bare leaf, lifting pane-c a
+    // level and restarting it.
+    expect(mountLog).toEqual(["unmount:pane-b"]);
+  });
+
+  it("renders exactly one tile per pane at every count (no duplicate leaves)", () => {
+    for (let n = 1; n <= 8; n++) {
+      const ids = Array.from({ length: n }, (_, i) => `pane-${i}`);
+      const { container, unmount } = render(
+        <WorkspaceMosaicContainer workspace={withPanes(ids)} />,
+      );
+      for (const id of ids) {
+        // buildPresetTree used to clamp a short id list with `Math.min`,
+        // repeating the last id (n=3, n=5 -> two tiles, two PTYs for one pane)
+        // and dropping ids past the preset's capacity (n=7, n=8 -> no tile).
+        expect(terminalCount(container, id), `pane ${id} at n=${n}`).toBe(1);
+      }
+      unmount();
+    }
+  });
+});

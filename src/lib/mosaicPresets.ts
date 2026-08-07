@@ -6,56 +6,62 @@ import type { MosaicSplitNode } from "react-mosaic-component";
  * pulling the library's runtime into the entry chunk. A split node is an object
  * with a `direction` field; leaves are strings and tabs nodes lack `direction`.
  */
-function isSplitNode(
-  node: MosaicNode<string> | null,
-): node is MosaicSplitNode<string> {
+function isSplitNode(node: MosaicNode<string> | null): node is MosaicSplitNode<string> {
   return node != null && typeof node === "object" && "direction" in node;
 }
 
 /**
- * Build a mosaic n-ary tree for a given layout preset and ordered pane IDs.
- * Panes beyond what the preset needs are ignored; missing panes use the last ID.
+ * Tiles-per-row for each preset. Preset names are RxC, so the column count is
+ * the second digit — that is the only number the layout actually needs, since
+ * the row count falls out of how many panes there are.
  */
-export function buildPresetTree(
-  preset: MosaicLayoutPreset,
-  paneIds: string[],
-): MosaicNode<string> {
+const PRESET_COLUMNS: Record<MosaicLayoutPreset, number> = {
+  "1x1": 1,
+  "1x2": 2,
+  "2x1": 1,
+  "2x2": 2,
+  "2x3": 3,
+  "3x2": 2,
+};
+
+/**
+ * Build a mosaic n-ary tree for a given layout preset and ordered pane IDs.
+ *
+ * The leaves are ALWAYS exactly the given ids, once each. The previous version
+ * addressed fixed slots through `paneIds[Math.min(i, len - 1)]`, so a pane
+ * count the preset did not divide evenly repeated the last id (n=3 and n=5
+ * rendered one pane TWICE — two `WorkspacePane` mounts, two PTYs auto-started
+ * for one pane) and any count past the preset's capacity silently dropped
+ * panes (n=7+ had tiles for only the first six). Rows are now chunked from the
+ * real id list, so a short last row is short and a long list grows more rows.
+ *
+ * The root is always a split, even for a single pane. Appending a pane must
+ * never change a surviving leaf's DEPTH — `MosaicRoot` flattens each split
+ * into a keyed Fragment, so a re-nested leaf remounts and its PTY is killed
+ * and restarted. Keeping a split at the root means {@link appendPane} can push
+ * onto `children` without disturbing anything already there.
+ */
+export function buildPresetTree(preset: MosaicLayoutPreset, paneIds: string[]): MosaicNode<string> {
   if (paneIds.length === 0) throw new Error("Need at least one pane ID");
-  if (paneIds.length === 1 || preset === "1x1") return paneIds[0];
 
-  const p = (i: number) => paneIds[Math.min(i, paneIds.length - 1)];
-
-  switch (preset) {
-    case "1x2":
-      return split("row", [p(0), p(1)]);
-    case "2x1":
-      return split("column", [p(0), p(1)]);
-    case "2x2":
-      return split("column", [
-        split("row", [p(0), p(1)]),
-        split("row", [p(2), p(3)]),
-      ]);
-    case "2x3":
-      return split("column", [
-        split("row", [p(0), p(1)]),
-        split("row", [p(2), p(3), p(4)]),
-      ]);
-    case "3x2":
-      return split("column", [
-        split("row", [p(0), p(1)]),
-        split("row", [p(2), p(3)]),
-        split("row", [p(4), p(5)]),
-      ]);
-    default:
-      return paneIds[0];
+  const columns = PRESET_COLUMNS[preset] ?? 2;
+  const rows: MosaicNode<string>[] = [];
+  for (let i = 0; i < paneIds.length; i += columns) {
+    const rowIds = paneIds.slice(i, i + columns);
+    // A one-pane row is the bare leaf: a split wrapping a single child renders
+    // identically (no splitter, full bounds) but adds a pointless level.
+    rows.push(rowIds.length === 1 ? rowIds[0] : split("row", rowIds));
   }
+
+  // One row of one pane still gets a root split, per the depth invariant above.
+  if (rows.length === 1) {
+    return typeof rows[0] === "string" ? split("row", [rows[0]]) : rows[0];
+  }
+  return split("column", rows);
 }
 
 /** Shorthand to create a split node with equal percentages. */
-function split(
-  direction: "row" | "column",
-  children: MosaicNode<string>[],
-): MosaicNode<string> {
+function split(direction: "row" | "column", children: MosaicNode<string>[]): MosaicNode<string> {
   return {
     type: "split" as const,
     direction,
@@ -81,41 +87,46 @@ export function getLeafOrder(tree: MosaicNode<string> | null): string[] {
 }
 
 /**
- * Insert a new pane adjacent to an existing one in the tree.
+ * Append a new pane to the tree without moving anything already in it.
+ *
+ * Replaces the old `addToTree`, which converted the last leaf into a nested
+ * split. That pushed the surviving leaf down one level, and because
+ * `MosaicRoot` renders each split as a Fragment keyed by path, the survivor
+ * landed under a differently-keyed Fragment and React REMOUNTED it — running
+ * `useTerminalSession`'s cleanup (`killPty`) and then auto-starting a fresh
+ * PTY. Adding a terminal beside a working agent therefore restarted that
+ * agent mid-task. It also degraded widths to 50/25/12.5/12.5, since every
+ * addition nested one level deeper and always split as a row.
+ *
+ * Pushing onto the ROOT split's children instead leaves every existing leaf at
+ * its exact depth and index. `splitPercentages` is dropped so `MosaicRoot`
+ * falls back to even distribution across the new child count — a stale array
+ * sized for the old count would misplace every boundary.
  */
-export function addToTree(
-  tree: MosaicNode<string>,
-  existingId: string,
-  newId: string,
-  direction: "row" | "column" = "row",
-): MosaicNode<string> {
-  if (typeof tree === "string") {
-    if (tree === existingId) {
-      return split(direction, [existingId, newId]);
-    }
-    return tree;
-  }
-
+export function appendPane(tree: MosaicNode<string>, newId: string): MosaicNode<string> {
   if (isSplitNode(tree)) {
-    return {
-      ...tree,
-      children: tree.children.map((child) =>
-        addToTree(child, existingId, newId, direction),
-      ),
-    };
+    // Rebuilt field-by-field rather than spread, so `splitPercentages` is left
+    // behind: a percentage array sized for the old child count would misplace
+    // every boundary. Omitting it makes MosaicRoot distribute evenly.
+    return { type: "split", direction: tree.direction, children: [...tree.children, newId] };
   }
-
-  return tree;
+  // A bare leaf or tabs node at the root: wrap it. This is the one case that
+  // changes an existing leaf's depth, and `buildPresetTree` keeps a split at
+  // the root precisely so the app never reaches it.
+  return split("row", [tree, newId]);
 }
 
 /**
- * Remove a leaf from the tree and collapse its parent.
- * Returns null if the tree becomes empty.
+ * Remove a leaf from the tree. Returns null once the tree is empty.
+ *
+ * A split left with ONE child is deliberately kept rather than collapsed to
+ * that bare child. Collapsing lifted the survivor a level, which — by the same
+ * Fragment-keying described on {@link appendPane} — remounted it and restarted
+ * its agent: closing the middle of three panes restarted the right-hand one.
+ * A single-child split renders identically anyway (`MosaicRoot` emits no
+ * splitter for the last child and gives it the full bounding box).
  */
-export function removeFromTree(
-  tree: MosaicNode<string>,
-  id: string,
-): MosaicNode<string> | null {
+export function removeFromTree(tree: MosaicNode<string>, id: string): MosaicNode<string> | null {
   if (typeof tree === "string") {
     return tree === id ? null : tree;
   }
@@ -127,9 +138,10 @@ export function removeFromTree(
     .filter((child): child is MosaicNode<string> => child !== null);
 
   if (newChildren.length === 0) return null;
-  if (newChildren.length === 1) return newChildren[0];
 
-  return { ...tree, children: newChildren };
+  // Percentages sized for the old child count would misplace the remaining
+  // boundaries; omitting them lets MosaicRoot distribute evenly.
+  return { type: "split", direction: tree.direction, children: newChildren };
 }
 
 /**

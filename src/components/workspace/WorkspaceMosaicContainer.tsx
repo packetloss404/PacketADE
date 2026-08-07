@@ -11,7 +11,7 @@ import { useReviewStore } from "@/stores/reviewStore";
 import {
   buildPresetTree,
   presetForCount,
-  addToTree,
+  appendPane,
   removeFromTree,
   getLeafOrder,
 } from "@/lib/mosaicPresets";
@@ -75,10 +75,10 @@ export function WorkspaceMosaicContainer({
       setTree(null);
       return;
     }
-    if (nextIds.length === 1) {
-      setTree(nextIds[0]);
-      return;
-    }
+    // No single-pane special case: a bare-leaf root would have to be wrapped
+    // in a split when the second pane arrives, and wrapping changes the first
+    // pane's depth — which remounts it and restarts its agent. `buildPresetTree`
+    // returns a split even for one pane so growth is always a plain append.
 
     setTree((currentTree) => {
       // If no previous tree or workspace switched, full rebuild
@@ -100,16 +100,11 @@ export function WorkspaceMosaicContainer({
         if (updated) updated = removeFromTree(updated, id);
       }
 
-      // Add new panes
+      // Add new panes. Appending to the root split keeps every surviving leaf
+      // at its exact depth, so no running pane is remounted (and no live PTY
+      // killed and restarted) just because a sibling was added.
       for (const newId of added) {
-        if (!updated) {
-          updated = newId;
-        } else {
-          const lastLeaf = getLeafOrder(updated).pop();
-          if (lastLeaf) {
-            updated = addToTree(updated, lastLeaf, newId, "row");
-          }
-        }
+        updated = updated ? appendPane(updated, newId) : buildPresetTree("1x1", [newId]);
       }
 
       return updated;
