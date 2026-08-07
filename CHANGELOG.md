@@ -11,6 +11,13 @@ task list.
 
 ## [0.10.5] - 2026-08-07
 
+Windows artifacts, built 2026-08-07 18:54, **unsigned**:
+
+| Artifact                                         | SHA-256                                                            |
+| ------------------------------------------------ | ------------------------------------------------------------------ |
+| `PacketADE_0.10.5_x64-setup.exe` (NSIS, 88.9 MB) | `36129320464391c23b6aa42a64352a28cefa4c87756aef263ec67578b7e910cc` |
+| `PacketADE_0.10.5_x64_en-US.msi` (138.8 MB)      | `f4ed41640962d384b983f8e51ed7ba82f586bd3c545c8b5d98dcf717ca3f8d2e` |
+
 Workspace quality-of-life work, plus four defects the accompanying pane-system
 review turned up. Two of those defects corrupted live agent sessions on
 completely ordinary paths, so they are the reason this release exists.
