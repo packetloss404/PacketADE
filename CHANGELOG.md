@@ -83,6 +83,22 @@ longer un-zooms a hidden pane.
 listener — so right-clicking a file path in a zoomed tile and pressing Escape
 closed the menu **and** exited the zoom.
 
+### Fixed — one `y` approved every waiting agent
+
+`useApprovalShortcuts` bound bare `y`/`n`/`Escape` on `window`, gated only on
+that pane's own `showApproval` flag. Every waiting pane therefore had a live
+listener, and one keypress ran all of them — each writing `y\n` into **its own**
+PTY. With two agents waiting, approving one silently approved the other, so an
+agent the user had never read proceeded with whatever it was asking permission
+for. `preventDefault` could not help: the listeners share a target, so only
+`stopImmediatePropagation` would have stopped a sibling.
+
+Ownership is now decided inside each handler. One pane waiting owns the
+keypress whether or not it has been clicked — that is the common case and an
+unambiguous one. With several waiting, only the active pane answers; with
+several waiting and none active, nothing answers, and the user picks a pane or
+uses that pane's on-screen Approve/Deny buttons.
+
 ### Fixed — closing one pane reset every splitter in the workspace
 
 `removeFromTree` rebuilt every split it walked, dropping `splitPercentages`

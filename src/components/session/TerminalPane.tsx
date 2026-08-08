@@ -99,6 +99,7 @@ export function TerminalPane({
 
   useApprovalShortcuts({
     showApproval,
+    paneId,
     xtermRef,
     onApprove: handleApprove,
     onDeny: handleDeny,

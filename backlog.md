@@ -148,11 +148,6 @@ products. Four findings were fixed in v0.10.5 (preset leaf duplication, the
 add/remove remount that restarted running agents, the zoom Escape hijack, and
 layout persistence). These are the remainder, still open.
 
-- **P1 - Approval hotkeys are global, not per-pane.** `useApprovalShortcuts`
-  binds bare `y`/`n`/`Escape` on `window` for every pane with `showApproval`,
-  so with two panes awaiting approval one `y` approves **both**. Gate on
-  `activePaneId === paneId` and bail on `defaultPrevented`.
-  (`src/hooks/useApprovalShortcuts.ts`)
 - **P2 - No DOM focus follows pane focus.** `activePaneId` drives a border
   class only; nothing calls `xterm.focus()` or focuses the composer. Clicking a
   pane's header or padding marks it active while keystrokes still go to
