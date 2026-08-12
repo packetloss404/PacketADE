@@ -34,6 +34,11 @@ import type { ServerConfig } from "@/types/server";
 import type { CliAccount, CliAccountCli } from "@/types/cliAccount";
 import type { PacketAgentRequest, PacketAgentResponse } from "@/types/packet-agent";
 import type { TerminalShellProbe } from "@/types/terminal-shell";
+import type {
+  SyndicateMachineConnection,
+  SyndicatePairResult,
+  SyndicateRpcResult,
+} from "@/types/syndicate";
 import { normalizeTerminalShellSelection } from "@/lib/terminalShells";
 import { isValidMosaicTree } from "@/lib/mosaicPresets";
 
@@ -44,6 +49,114 @@ type WorkspaceDtoWithFrontendMetadata = Omit<WorkspaceDto, "panes"> & {
   panes: WorkspacePaneDtoWithFrontendMetadata[];
   githubRepo?: Workspace["githubRepo"];
 };
+
+// Syndicate controller protocol v1. Every wrapper maps to one allowlisted
+// native command; there is intentionally no generic RPC binding.
+export async function pairSyndicateMachine(
+  pairingPayload: string,
+  deviceName: string,
+  serverConfigId: string,
+  relayEndpoint?: string,
+): Promise<SyndicatePairResult> {
+  return invoke("syndicate_pair_machine", {
+    request: { pairingPayload, deviceName, serverConfigId, relayEndpoint },
+  });
+}
+
+export async function syndicateWorkspaceCreate(input: {
+  connection: SyndicateMachineConnection;
+  repositoryId: string;
+  name: string;
+  clientOperationId: string;
+}): Promise<SyndicateRpcResult> {
+  return invoke("syndicate_workspace_create", { request: input });
+}
+
+export async function syndicateMachineSnapshot(
+  connection: SyndicateMachineConnection,
+): Promise<SyndicateRpcResult> {
+  return invoke("syndicate_machine_snapshot", { connection });
+}
+
+export async function syndicateWorkspaceList(
+  connection: SyndicateMachineConnection,
+): Promise<SyndicateRpcResult> {
+  return invoke("syndicate_workspace_list", { connection });
+}
+
+export async function syndicateSessionStart(input: {
+  connection: SyndicateMachineConnection;
+  paneId: string;
+  terminalSessionId: string;
+  profileId: "codex" | "claude" | "packetcode";
+  cols: number;
+  rows: number;
+}): Promise<SyndicateRpcResult> {
+  return invoke("syndicate_session_start", { request: input });
+}
+
+export async function syndicatePaneCreate(input: {
+  connection: SyndicateMachineConnection;
+  workspaceId: string;
+  title: string;
+  profileId: "codex" | "claude" | "packetcode";
+  clientOperationId: string;
+}): Promise<SyndicateRpcResult> {
+  return invoke("syndicate_pane_create", { request: input });
+}
+
+export async function syndicateSessionAttach(input: {
+  connection: SyndicateMachineConnection;
+  paneId: string;
+  terminalSessionId: string;
+  sessionId: string;
+  afterSequence: number;
+}): Promise<SyndicateRpcResult> {
+  return invoke("syndicate_session_attach", { request: input });
+}
+
+export async function syndicateEventsRead(input: {
+  connection: SyndicateMachineConnection;
+  afterSequence: number;
+  limit?: number;
+}): Promise<SyndicateRpcResult> {
+  return invoke("syndicate_events_read", { request: input });
+}
+
+export async function syndicateSessionInput(input: {
+  connection: SyndicateMachineConnection;
+  sessionId: string;
+  frameId: string;
+  inputBase64: string;
+}): Promise<SyndicateRpcResult> {
+  return invoke("syndicate_session_input", { request: input });
+}
+
+export async function syndicateSessionResize(input: {
+  connection: SyndicateMachineConnection;
+  sessionId: string;
+  cols: number;
+  rows: number;
+}): Promise<SyndicateRpcResult> {
+  return invoke("syndicate_session_resize", { request: input });
+}
+
+export async function syndicateSessionStop(input: {
+  connection: SyndicateMachineConnection;
+  sessionId: string;
+}): Promise<SyndicateRpcResult> {
+  return invoke("syndicate_session_stop", { request: input });
+}
+
+export async function revokeSyndicateMachine(
+  connection: SyndicateMachineConnection,
+): Promise<SyndicateRpcResult> {
+  return invoke("syndicate_revoke_self", { connection });
+}
+
+export async function forgetSyndicateMachine(machineId: string): Promise<void> {
+  return invoke("syndicate_forget_machine", { machineId });
+}
 
 // Filesystem
 export async function getCwd(): Promise<string> {
@@ -1923,6 +2036,15 @@ function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
       terminalShell: pane.terminalShell
         ? normalizeTerminalShellSelection(pane.terminalShell)
         : undefined,
+      syndicatePaneId: pane.syndicatePaneId,
+      syndicateTerminalSessionId: pane.syndicateTerminalSessionId,
+      syndicateSessionId: pane.syndicateSessionId,
+      syndicateCursor:
+        typeof pane.syndicateCursor === "number" ? Number(pane.syndicateCursor) : undefined,
+      syndicateOperationGeneration:
+        typeof pane.syndicateOperationGeneration === "number"
+          ? Number(pane.syndicateOperationGeneration)
+          : undefined,
     })),
     projectPath: workspace.projectPath,
     prompt: workspace.prompt,
@@ -1934,6 +2056,7 @@ function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
     effortOverrides: normalizeOptionalRecord(workspace.effortOverrides),
     serverId: workspace.serverId,
     remoteProjectPath: workspace.remoteProjectPath,
+    executionTarget: workspace.executionTarget,
     githubRepo: workspaceWithMetadata.githubRepo,
     // Tile program (P1-S2): thread the workspace `origin` marker through
     // hydration so conversation wrappers survive a load/save round-trip; an
@@ -1982,6 +2105,17 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDtoWithFrontendMetadata 
       // pre-multi-account shape, so an old binary round-trip is unaffected.
       ...(pane.accountId ? { accountId: pane.accountId } : {}),
       ...(pane.terminalShell ? { terminalShell: pane.terminalShell } : {}),
+      ...(pane.syndicatePaneId ? { syndicatePaneId: pane.syndicatePaneId } : {}),
+      ...(pane.syndicateTerminalSessionId
+        ? { syndicateTerminalSessionId: pane.syndicateTerminalSessionId }
+        : {}),
+      ...(pane.syndicateSessionId ? { syndicateSessionId: pane.syndicateSessionId } : {}),
+      ...(typeof pane.syndicateCursor === "number"
+        ? { syndicateCursor: pane.syndicateCursor }
+        : {}),
+      ...(typeof pane.syndicateOperationGeneration === "number"
+        ? { syndicateOperationGeneration: pane.syndicateOperationGeneration }
+        : {}),
     })),
     projectPath: workspace.projectPath,
     prompt: workspace.prompt,
@@ -1993,6 +2127,7 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDtoWithFrontendMetadata 
     effortOverrides: workspace.effortOverrides,
     serverId: workspace.serverId,
     remoteProjectPath: workspace.remoteProjectPath,
+    executionTarget: workspace.executionTarget,
     githubRepo: workspace.githubRepo,
     // Tile program (P1-S2): persist the `origin` marker only when set — a
     // normal workspace stays byte-identical to the pre-tile shape.

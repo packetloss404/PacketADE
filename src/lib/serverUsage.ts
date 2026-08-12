@@ -17,6 +17,7 @@ import type { AgentConversation } from "@/types/agent-conversation";
 import type { Flight } from "@/types/flight";
 import type { ServerConnectionState, ServerStatus } from "@/types/server";
 import type { Workspace } from "@/types/workspace";
+import { executionTargetForWorkspace } from "@/types/workspace";
 
 /** Attempt statuses that mean work is still live on the host. */
 const LIVE_ATTEMPT_STATUSES = new Set(["queued", "provisioning", "running", "reviewing"]);
@@ -63,7 +64,14 @@ export function summarizeServerUsage(
     activeConversationCount: remoteConversations.filter((c) => c.status === "active").length,
     liveAttemptCount,
     workspaceNames: input.workspaces
-      .filter((w) => w.serverId === serverId && w.status !== "archived")
+      .filter((w) => {
+        if (w.status === "archived") return false;
+        const target = executionTargetForWorkspace(w);
+        return (
+          (target.kind === "ssh" && target.serverId === serverId) ||
+          (target.kind === "syndicate" && target.serverConfigId === serverId)
+        );
+      })
       .map((w) => w.name),
   };
 }

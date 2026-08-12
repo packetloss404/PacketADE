@@ -118,7 +118,8 @@ describe("AddSessionPicker", () => {
     ];
   });
 
-  function openPopover() {
+  function openPopover(userAgent = "Mozilla/5.0 (X11; Linux x86_64)") {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue(userAgent);
     render(<AddSessionPicker workspace={localWorkspace} variant="popover" />);
     fireEvent.click(screen.getByRole("button", { name: /add session/i }));
   }
@@ -131,10 +132,7 @@ describe("AddSessionPicker", () => {
    * `vi.clearAllMocks()` clears calls, not implementations.
    */
   function openPopoverAsWindows() {
-    vi.spyOn(navigator, "userAgent", "get").mockReturnValue(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    );
-    openPopover();
+    openPopover("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
   }
 
   it("offers CLI sessions only and recommends detected PacketCode first", () => {

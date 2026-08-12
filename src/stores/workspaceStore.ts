@@ -1,9 +1,16 @@
 import { create } from "zustand";
-import type { Workspace, WorkspacePane, WorkspaceAgentSlot } from "@/types/workspace";
+import {
+  isLocalWorkspace,
+  type ExecutionTargetRef,
+  type Workspace,
+  type WorkspacePane,
+  type WorkspaceAgentSlot,
+} from "@/types/workspace";
 import { saveWorkspacesSlice } from "@/lib/tauri";
 import { logSwallowed } from "@/lib/logSwallowed";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useServerStore } from "@/stores/serverStore";
+import { useSyndicateStore } from "@/stores/syndicateStore";
 import { rememberAccountChoice, resolveAccountId } from "@/lib/sessionAccountDefaults";
 import { normalizeTerminalShellSelection } from "@/lib/terminalShells";
 import type { TerminalShellSelection } from "@/types/terminal-shell";
@@ -17,6 +24,7 @@ export interface WorkspaceSessionConfig {
   bypassPermissions?: boolean;
   serverId?: string;
   remoteProjectPath?: string;
+  executionTarget?: ExecutionTargetRef;
   /**
    * v0.8-15: auto-bound GitHub repo, derived from `git remote get-url
    * origin` at workspace-creation time. Stamped onto `Workspace.githubRepo`.
@@ -409,8 +417,16 @@ function syncToLocalStorage(workspaces: Workspace[]) {
   }
 }
 
+let backendSaveTail: Promise<void> = Promise.resolve();
+
 function syncToBackend(workspaces: Workspace[]) {
-  saveWorkspacesSlice(workspaces).catch(logSwallowed("workspaceStore.save"));
+  // Tauri state writes replace the whole workspace slice. Serialize them so a
+  // slower cursor save can never land after a newer pane/session identity.
+  const snapshot = workspaces;
+  backendSaveTail = backendSaveTail
+    .catch(() => undefined)
+    .then(() => saveWorkspacesSlice(snapshot))
+    .catch(logSwallowed("workspaceStore.save"));
   syncToLocalStorage(workspaces);
 }
 
@@ -471,6 +487,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   createWorkspace: (name, agents, projectPath, sessionConfig) => {
     const serverId = sessionConfig?.serverId;
     const remoteProjectPath = sessionConfig?.remoteProjectPath;
+    const executionTarget: ExecutionTargetRef =
+      sessionConfig?.executionTarget ??
+      (serverId ? { kind: "ssh", serverId } : { kind: "local" });
 
     // Creation invariant — the empty-path guard lives HERE, not in the modal.
     // `WorkspaceCreationModal` used to be the only place that blocked
@@ -480,19 +499,22 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // silently produced exactly that broken workspace on a fresh install.
     // Callers with no known path must route the user through the folder
     // picker first — see `lib/workspaceCreation.createInstantWorkspace`.
-    if (!serverId && !projectPath.trim()) {
+    if (executionTarget.kind === "local" && !projectPath.trim()) {
       throw new Error(
         "createWorkspace: a local workspace requires a non-empty projectPath — " +
           "route the user through the folder picker (lib/workspaceCreation) instead",
       );
     }
 
-    if (serverId) {
+    if (executionTarget.kind === "ssh") {
+      if (serverId && serverId !== executionTarget.serverId) {
+        throw new Error("createWorkspace: SSH execution target and legacy serverId disagree");
+      }
       // Remote workspace: serverId must point to a real registered server
       // and we require an explicit remote project path. The pane launch
       // code in WorkspacePane.tsx reads `workspace.remoteProjectPath` so
       // we need it stored on the workspace itself.
-      const server = useServerStore.getState().getServer(serverId);
+      const server = useServerStore.getState().getServer(executionTarget.serverId);
       if (!server) {
         throw new Error(
           `createWorkspace: serverId "${serverId}" does not match any registered server`,
@@ -503,12 +525,40 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       }
     }
 
+    if (executionTarget.kind === "syndicate") {
+      if (serverId || remoteProjectPath) {
+        throw new Error("createWorkspace: Syndicate targets cannot carry SSH fields");
+      }
+      const machine = useSyndicateStore.getState().getMachine(executionTarget.machineId);
+      if (!machine) {
+        throw new Error(
+          `createWorkspace: Syndicate machine "${executionTarget.machineId}" is not paired`,
+        );
+      }
+      if (machine.grantStatus !== "active") {
+        throw new Error("createWorkspace: Syndicate controller grant is not active");
+      }
+      if (machine.serverConfigId !== executionTarget.serverConfigId) {
+        throw new Error("createWorkspace: Syndicate target and SSH server config disagree");
+      }
+      const server = useServerStore.getState().getServer(executionTarget.serverConfigId);
+      if (!server?.hostFingerprint) {
+        throw new Error("createWorkspace: Syndicate SSH server is missing or no longer verified");
+      }
+      if (!executionTarget.workspaceId.trim()) {
+        throw new Error("createWorkspace: Syndicate workspace id is required");
+      }
+      if (!projectPath.trim()) {
+        throw new Error("createWorkspace: Syndicate host did not provide a display path");
+      }
+    }
+
     // For remote workspaces the legacy `projectPath` becomes the remote
     // path string so any code that reads `workspace.projectPath` without
     // checking `serverId` still gets a stable label (used in workspace
     // headers, history, etc.). Local-only operations must guard with
     // `if (!workspace.serverId)` — see e.g. `IdeationView.handleGenerate`.
-    const effectiveProjectPath = serverId
+    const effectiveProjectPath = executionTarget.kind === "ssh"
       ? (remoteProjectPath ?? "").trim() || projectPath
       : projectPath;
 
@@ -521,7 +571,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       // Multi-account CLI support: panes resolve their account from the
       // caller's explicit choice, else the sticky per-project default. Keyed
       // on `effectiveProjectPath` so remote workspaces stick per remote path.
-      panes: buildPanes(agents, effectiveProjectPath, sessionConfig?.accountIds),
+      panes: buildPanes(agents, effectiveProjectPath, sessionConfig?.accountIds).map((pane) =>
+        executionTarget.kind === "syndicate" ? { ...pane, syndicateCursor: 0 } : pane,
+      ),
       projectPath: effectiveProjectPath,
       prompt: sessionConfig?.prompt,
       createdAt: now,
@@ -530,8 +582,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       bypassPermissions: sessionConfig?.bypassPermissions ?? false,
       modelOverrides: sessionConfig?.modelOverrides,
       effortOverrides: sessionConfig?.effortOverrides,
-      serverId,
-      remoteProjectPath,
+      serverId: executionTarget.kind === "ssh" ? executionTarget.serverId : undefined,
+      remoteProjectPath: executionTarget.kind === "ssh" ? remoteProjectPath : undefined,
+      executionTarget,
       githubRepo: sessionConfig?.githubRepo,
       terminalShell: sessionConfig?.terminalShell
         ? normalizeTerminalShellSelection(sessionConfig.terminalShell)
@@ -588,7 +641,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       // Only sync `layoutStore.projectPath` for local workspaces — for
       // remote workspaces the path is on the remote host and would
       // confuse local-only features (file watcher, git dashboard, etc.).
-      if (workspace && !workspace.serverId) {
+      if (workspace && isLocalWorkspace(workspace)) {
         useLayoutStore.getState().setProjectPath(workspace.projectPath);
       }
     }
@@ -709,6 +762,27 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // Resolved once, outside the (potentially re-run) updater, so the sticky
     // default is written exactly once per add.
     const target = get().workspaces.find((w) => w.id === workspaceId);
+    if (target?.executionTarget?.kind === "syndicate") {
+      if (!(["codex", "claude-code", "packetcode"] as WorkspaceAgentSlot[]).includes(agentId)) {
+        throw new Error("Syndicate supports only Codex, Claude Code, and PacketCode panes");
+      }
+      const machine = useSyndicateStore
+        .getState()
+        .getMachine(target.executionTarget.machineId);
+      if (!machine) throw new Error("The paired Syndicate machine no longer exists");
+      const profileId = agentId === "claude-code" ? "claude" : agentId;
+      const available = machine?.cachedSnapshot?.agents.some(
+        (agent) => agent.profileId === profileId && agent.state === "ready",
+      );
+      if (!available) throw new Error(`${agentId} is not ready on the Syndicate machine`);
+      if (
+        !machine.scopes.includes("workspace.create") ||
+        !machine.scopes.includes("session.start") ||
+        !machine.scopes.includes("terminal.view")
+      ) {
+        throw new Error("The Syndicate device grant cannot create and start panes");
+      }
+    }
     const accountId = target
       ? settleAccountId(target.projectPath, agentId, options?.accountId)
       : undefined;

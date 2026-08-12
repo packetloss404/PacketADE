@@ -22,6 +22,7 @@
  */
 import type { AgentConversation } from "@/types/agent-conversation";
 import type { Workspace } from "@/types/workspace";
+import { isSshWorkspace } from "@/types/workspace";
 import type { Attention } from "@/lib/sessionIndex";
 import { API_PROVIDERS } from "@/lib/api-models";
 import { getAgentColor } from "@/lib/agentColors";
@@ -257,7 +258,7 @@ export function buildFleetProjection(input: BuildFleetInput): FleetProjection {
     const attention = workspaceStatuses.get(w.id) ?? "idle";
     const { chips, needsYouPaneId } = buildChips(w, convById, conversationAttention);
     const singleTile = w.panes.length <= 1;
-    const isSsh = !!w.serverId;
+    const isSsh = isSshWorkspace(w);
     // Member conversation content for search.
     const memberConvs: AgentConversation[] = [];
     for (const p of w.panes) {

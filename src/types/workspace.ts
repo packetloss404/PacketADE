@@ -3,6 +3,16 @@ import type { MosaicNode } from "@/types/mosaic";
 
 export type WorkspaceAgentSlot = "terminal" | "claude-code" | "codex" | "opencode" | "packetcode";
 
+export type ExecutionTargetRef =
+  | { kind: "local" }
+  | { kind: "ssh"; serverId: string }
+  | {
+      kind: "syndicate";
+      machineId: string;
+      workspaceId: string;
+      serverConfigId: string;
+    };
+
 export interface WorkspacePane {
   id: string;
   agentId: WorkspaceAgentSlot;
@@ -49,6 +59,13 @@ export interface WorkspacePane {
    * Viewer" picker row is exactly this field set to `"preview"`.
    */
   fileView?: "preview" | "raw";
+  /** Host-owned Syndicate pane/session identities plus the last applied
+   * durable event cursor. Never interpreted as local PTY ids. */
+  syndicatePaneId?: string;
+  syndicateTerminalSessionId?: string;
+  syndicateSessionId?: string;
+  syndicateCursor?: number;
+  syndicateOperationGeneration?: number;
 }
 
 export interface Workspace {
@@ -66,6 +83,7 @@ export interface Workspace {
   effortOverrides?: Record<string, string | null>;
   serverId?: string;
   remoteProjectPath?: string;
+  executionTarget?: ExecutionTargetRef;
   /**
    * v0.8-15: auto-bound GitHub repo, derived from `git remote get-url
    * origin` at workspace-creation time. Absent for workspaces whose
@@ -99,4 +117,25 @@ export interface Workspace {
    * a pane twice nor lose one.
    */
   layout?: MosaicNode<string>;
+}
+
+/** Compatibility normalizer for workspaces persisted before tagged targets. */
+export function executionTargetForWorkspace(workspace: Workspace): ExecutionTargetRef {
+  if (workspace.executionTarget) return workspace.executionTarget;
+  return workspace.serverId
+    ? { kind: "ssh", serverId: workspace.serverId }
+    : { kind: "local" };
+}
+
+export function isSyndicateWorkspace(workspace: Workspace | undefined | null): boolean {
+  return !!workspace && executionTargetForWorkspace(workspace).kind === "syndicate";
+}
+
+export function isSshWorkspace(workspace: Workspace | undefined | null): boolean {
+  return !!workspace && executionTargetForWorkspace(workspace).kind === "ssh";
+}
+
+/** True only when it is safe to use workspace.projectPath on this workstation. */
+export function isLocalWorkspace(workspace: Workspace | undefined | null): boolean {
+  return !!workspace && executionTargetForWorkspace(workspace).kind === "local";
 }

@@ -3,6 +3,7 @@ import type { PaneConfig } from "@/types/layout";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { saveWorkspacesSlice } from "@/lib/tauri";
 import { logSwallowed } from "@/lib/logSwallowed";
+import { isLocalWorkspace } from "@/types/workspace";
 
 interface LayoutStore {
   panes: PaneConfig[];
@@ -56,7 +57,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
 
     const ws = useWorkspaceStore.getState();
     const active = ws.workspaces.find((w) => w.id === ws.activeWorkspaceId);
-    if (active && !active.serverId) {
+    if (active && isLocalWorkspace(active)) {
       // Mutate via setState directly — see workspaceStore for the
       // canonical write paths used internally; we deliberately avoid
       // adding a new action surface here.
@@ -167,7 +168,7 @@ function installWorkspaceProjectPathSync() {
       // archived/deleted). Fall back to whatever was last written via
       // `setProjectPath` — that's the "explicit user-set path" channel.
       next = layout.fallbackProjectPath;
-    } else if (active.serverId) {
+    } else if (!isLocalWorkspace(active)) {
       // Active workspace is remote — its `projectPath` lives on the remote
       // host and would confuse local-only features (git pollers, file
       // watcher, MCP, deploy). Preserve whatever local path is currently

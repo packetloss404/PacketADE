@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "hostX25519PrivateKeyBase64Url": "ERERERERERERERERERERERERERERERERERERERERERE",
+  "hostX25519PublicKeyBase64Url": "e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM",
+  "deviceX25519PrivateKeyBase64Url": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI",
+  "deviceX25519PublicKeyBase64Url": "D6poTtKIZ7l_Smot7l34zpdOdrcBjj8iocTPJnhXDyA",
+  "deviceEd25519PrivateKeyBase64Url": "MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM",
+  "deviceEd25519PublicKeyBase64Url": "F8t5-ytBIPKx7GXkGY1uCLKOgT_rAeSkAIObheGAgM4",
+  "derivedKeyBase64Url": "aI05K9DwmMq78mSqtQ_gjsY4smdsvp09naLxOGg-yPU",
+  "plaintext": {
+    "auth": {
+      "nonce": "nonce-00000001",
+      "signature": "fixture-signature",
+      "timestamp": "1786492800000"
+    },
+    "request": {
+      "deviceId": "device-123",
+      "machineId": "machine-123",
+      "method": "machine.snapshot",
+      "params": {},
+      "protocolVersion": 1,
+      "requestId": "request-00000001",
+      "expiresAt": "2026-08-12T00:00:30.000Z"
+    }
+  },
+  "frame": {
+    "protocolVersion": 1,
+    "type": "encrypted",
+    "routeId": "route_testvector",
+    "machineId": "machine-123",
+    "deviceId": "device-123",
+    "direction": "controller-to-host",
+    "counter": 7,
+    "nonceBase64Url": "Q1RIMQAAAAAAAAAH",
+    "ciphertextBase64Url": "t38Pvf3o_o-eJae_HCtx_y4QNxsPPAJBwhuTkh5-BdwF0nv7c2-NWCNEFP13Qst9E293uHEw3lxkkTvDbQnjMBIwW0nU33iuhvUbBTZCPAdPIr6UlhsPYm3v7wuCLiGAmHVppu0r-rWUamsvozf7qd4vYrnR2y-yXpa4SuYz-BSLliCVyg2RE3v0yq0ISNDuYMOFoUgvv3g2Di_Tcyq7XEu3RIsJrISWvx7wyr86O2k10FRmvd1YYJ0yRwuYMRpQUpA40IQl_JhKWCW_b55CA10jGGvTWNVNr_Cx6g8IhL2n6n886zx4CvzuCMiX0PX_az0sWkV3SNge3j8s0iAanClbCwfpOsuBeo9UmJ9jumI1AuEQ7Nx1DyZ3S-rRdV2-wA22j5nKabuk27DUh6vg",
+    "signatureBase64Url": "Nn5pJY5QPY8mTDLVpp9yfNPIIyljiID3iZreTquBuJWRNW-928Elxu3RMdruvSWW9aRYBsEGv_eyv_EMVSEABw"
+  }
+}

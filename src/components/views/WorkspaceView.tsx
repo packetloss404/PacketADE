@@ -16,7 +16,12 @@ import { GitDashboard } from "@/components/workspace/GitDashboard";
 import { getAgentColor } from "@/lib/agentColors";
 import { AccountDot } from "@/components/session/AccountChip";
 import { useWorkspaceStatuses, attentionDot } from "@/lib/sessionStatus";
-import type { WorkspaceAgentSlot } from "@/types/workspace";
+import {
+  isLocalWorkspace,
+  isSshWorkspace,
+  isSyndicateWorkspace,
+  type WorkspaceAgentSlot,
+} from "@/types/workspace";
 import { delegateWorkspaceToAgents } from "@/lib/agentHandoffs";
 import { useWorkspaceAgentsDogfoodStore } from "@/stores/workspaceAgentsDogfoodStore";
 
@@ -129,7 +134,8 @@ export function WorkspaceView({ surfaceActive = true }: WorkspaceViewProps) {
   // D2 — the Workspace surface registers its right-side panels with the ONE
   // dock instead of rendering competing fixed-width columns (P0-2). D3 stays
   // honoured: the local-FS editor is disabled (not hidden) on SSH workspaces.
-  const workspaceRemote = Boolean(activeWorkspace?.serverId);
+  const workspaceRemote = Boolean(activeWorkspace && !isLocalWorkspace(activeWorkspace));
+  const workspaceSyndicate = isSyndicateWorkspace(activeWorkspace);
   const gitProjectPath = activeWorkspace
     ? workspaceRemote
       ? (activeWorkspace.remoteProjectPath ?? activeWorkspace.projectPath)
@@ -143,18 +149,22 @@ export function WorkspaceView({ surfaceActive = true }: WorkspaceViewProps) {
           label: "Editor",
           icon: FileText,
           disabled: workspaceRemote,
-          disabledReason: REMOTE_UNSUPPORTED_TOOLTIP,
+          disabledReason: workspaceSyndicate
+            ? "Files remain on the Syndicate host in this release."
+            : REMOTE_UNSUPPORTED_TOOLTIP,
           render: () => <EditorDockPanel />,
         },
         {
           id: "git",
           label: "Git",
           icon: GitBranch,
+          disabled: workspaceSyndicate,
+          disabledReason: "Git operations for Syndicate targets are not exposed in this release.",
           render: () => (
             <GitDashboard
               projectPath={gitProjectPath}
               workspaceId={activeWorkspace.id}
-              serverId={activeWorkspace.serverId}
+              serverId={isSshWorkspace(activeWorkspace) ? activeWorkspace.serverId : undefined}
               conversationId={scopedGitConversationId}
             />
           ),
@@ -234,8 +244,9 @@ export function WorkspaceView({ surfaceActive = true }: WorkspaceViewProps) {
                 <button
                   type="button"
                   onClick={() => delegateWorkspaceToAgents(activeWorkspace.id)}
-                  className="flex items-center gap-1 rounded border border-bg-border bg-bg-secondary px-2 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
-                  title="Delegate work on this project to a GUI agent"
+                  disabled={workspaceSyndicate}
+                  className="flex items-center gap-1 rounded border border-bg-border bg-bg-secondary px-2 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  title={workspaceSyndicate ? "GUI agent handoff is not exposed for Syndicate yet" : "Delegate work on this project to a GUI agent"}
                 >
                   <Bot size={10} />
                   Delegate
@@ -258,7 +269,7 @@ export function WorkspaceView({ surfaceActive = true }: WorkspaceViewProps) {
                 onClick={() =>
                   activeWorkspace && setBypassPermissions(activeWorkspace.id, !bypassOn)
                 }
-                disabled={!activeWorkspace}
+                disabled={!activeWorkspace || workspaceSyndicate}
                 className={`flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] transition-colors ${
                   bypassOn
                     ? "border-accent-line bg-accent-soft text-accent-amber"

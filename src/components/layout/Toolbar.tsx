@@ -27,6 +27,7 @@ import { Modal } from "@/components/ui/Modal";
 import { getPreferredWorkspaceCli } from "@/lib/workspaceCliDefaults";
 import { openWorkspaceCreationModal } from "@/lib/workspaceCreation";
 import { TERMINAL_AGENTS } from "@/lib/agent-catalog";
+import { isLocalWorkspace, isSyndicateWorkspace } from "@/types/workspace";
 
 // Lazy-loaded so the markdown vendor chunk leaves the entry chunk; only
 // fetched when the New Flight modal opens.
@@ -112,7 +113,7 @@ export function Toolbar() {
     // clear the choice will rebind THAT workspace's project folder. With
     // no workspace, we don't silently write the fallback — we let the
     // user choose whether to create a workspace or just stash the path.
-    if (activeWorkspace?.serverId) return;
+    if (activeWorkspace && !isLocalWorkspace(activeWorkspace)) return;
     const titled = activeWorkspace
       ? `Change folder for "${activeWorkspace.name}"`
       : "Open project folder";
@@ -294,11 +295,13 @@ export function Toolbar() {
 
         {/* Open project folder */}
         {(() => {
-          const activeProjectPath = activeWorkspace?.serverId
+          const activeProjectPath = activeWorkspace && !isLocalWorkspace(activeWorkspace)
             ? (activeWorkspace.remoteProjectPath ?? activeWorkspace.projectPath)
             : projectPath;
-          const folderTooltip = activeWorkspace?.serverId
-            ? `Remote project: ${activeProjectPath || "(unset)"} (${activeWorkspace.name}) — change it in Workspace settings`
+          const folderTooltip = activeWorkspace && !isLocalWorkspace(activeWorkspace)
+            ? isSyndicateWorkspace(activeWorkspace)
+              ? `Syndicate project: ${activeProjectPath || "(unset)"} (${activeWorkspace.name}) — managed on its execution host`
+              : `Remote project: ${activeProjectPath || "(unset)"} (${activeWorkspace.name}) — change it in Workspace settings`
             : activeWorkspace
               ? `Project: ${activeProjectPath || "(unset)"} (${activeWorkspace.name}) — click to change`
               : projectPath
@@ -307,7 +310,7 @@ export function Toolbar() {
           return (
             <button
               onClick={handleOpenFolder}
-              disabled={Boolean(activeWorkspace?.serverId)}
+              disabled={Boolean(activeWorkspace && !isLocalWorkspace(activeWorkspace))}
               className="flex items-center rounded bg-bg-elevated px-2 py-0.5 text-xs text-text-secondary transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-text-secondary"
               title={folderTooltip}
               aria-label={folderTooltip}

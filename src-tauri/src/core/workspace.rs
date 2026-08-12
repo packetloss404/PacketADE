@@ -70,6 +70,37 @@ pub struct WorkspacePane {
     /// editor's per-extension default (markdown renders, everything else raw).
     #[serde(default)]
     pub file_view: Option<String>,
+    /// Host-owned identities/cursor for a Syndicate terminal pane. These are
+    /// inert for local/SSH panes and survive PacketADE restarts so attach can
+    /// resume exactly once from the last applied durable sequence.
+    #[serde(default)]
+    pub syndicate_pane_id: Option<String>,
+    #[serde(default)]
+    pub syndicate_terminal_session_id: Option<String>,
+    #[serde(default)]
+    pub syndicate_session_id: Option<String>,
+    #[serde(default)]
+    pub syndicate_cursor: Option<u64>,
+    #[serde(default)]
+    pub syndicate_operation_generation: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
+pub enum ExecutionTargetRef {
+    Local,
+    Ssh {
+        server_id: String,
+    },
+    Syndicate {
+        machine_id: String,
+        workspace_id: String,
+        server_config_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,6 +150,11 @@ pub struct Workspace {
     /// a pane twice or lose one.
     #[serde(default)]
     pub layout: Option<serde_json::Value>,
+    /// New workspaces persist the tagged execution target. `None` is retained
+    /// only for legacy records and normalizes to local/SSH from the historical
+    /// fields in the frontend.
+    #[serde(default)]
+    pub execution_target: Option<ExecutionTargetRef>,
 }
 
 #[cfg(test)]
@@ -147,6 +183,11 @@ mod tests {
             terminal_shell: None,
             file_path: None,
             file_view: None,
+            syndicate_pane_id: None,
+            syndicate_terminal_session_id: None,
+            syndicate_session_id: None,
+            syndicate_cursor: None,
+            syndicate_operation_generation: None,
         }
     }
 
@@ -202,6 +243,11 @@ mod tests {
             terminal_shell: None,
             file_path: None,
             file_view: None,
+            syndicate_pane_id: None,
+            syndicate_terminal_session_id: None,
+            syndicate_session_id: None,
+            syndicate_cursor: None,
+            syndicate_operation_generation: None,
         };
         let json = serde_json::to_string(&pane).unwrap();
         let back: WorkspacePane = serde_json::from_str(&json).unwrap();
@@ -228,6 +274,7 @@ mod tests {
             origin: Some("conversation".to_string()),
             layout: None,
             terminal_shell: None,
+            execution_target: None,
         }
     }
 

@@ -3,13 +3,14 @@ import { useAppStore } from "@/stores/appStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { getGitBranch } from "@/lib/tauri";
+import { isLocalWorkspace } from "@/types/workspace";
 
 export function useGitInfo() {
   const projectPath = useLayoutStore((s) => s.projectPath);
   const activeWorkspace = useWorkspaceStore((s) =>
     s.workspaces.find((workspace) => workspace.id === s.activeWorkspaceId),
   );
-  const activeWorkspaceIsRemote = Boolean(activeWorkspace?.serverId);
+  const activeWorkspaceIsRemote = Boolean(activeWorkspace && !isLocalWorkspace(activeWorkspace));
   const setGitBranch = useAppStore((s) => s.setGitBranch);
   const gitBranch = useAppStore((s) => s.gitBranch);
 

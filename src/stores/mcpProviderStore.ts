@@ -7,6 +7,7 @@ import type {
 } from "@/types/mcp-provider";
 import { useFlightStore } from "@/stores/flightStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { isLocalWorkspace } from "@/types/workspace";
 import { useMemoryStore } from "@/stores/memoryStore";
 import {
   mcpServerStart,
@@ -387,7 +388,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
     }
 
     for (const workspace of useWorkspaceStore.getState().workspaces) {
-      if (workspace.serverId) continue;
+      if (!isLocalWorkspace(workspace)) continue;
       resources.push({
         uri: `packetade://memory/project/${workspace.id}`,
         name: `${workspace.name} Project Memory`,

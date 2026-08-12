@@ -40,9 +40,11 @@ filePath?: string,
  * Initial view mode for a `kind == Some("file")` pane (`"preview"` |
  * `"raw"`). Absent ⇒ the editor's own per-extension default.
  */
-fileView?: string, };
+fileView?: string, syndicatePaneId?: string, syndicateTerminalSessionId?: string, syndicateSessionId?: string, syndicateCursor?: number, syndicateOperationGeneration?: number, };
 
 export type GithubRepoDto = { owner: string, repo: string, };
+
+export type ExecutionTargetRefDto = { "kind": "local" } | { "kind": "ssh", serverId: string, } | { "kind": "syndicate", machineId: string, workspaceId: string, serverConfigId: string, };
 
 export type WorkspaceDto = { id: string, name: string, agents: Array<WorkspaceAgentSlotDto>, panes: Array<WorkspacePaneDto>, projectPath: string, prompt?: string, createdAt: number, updatedAt: number, status: WorkspaceStatusDto, bypassPermissions?: boolean, modelOverrides?: { [key in string]?: string | null }, effortOverrides?: { [key in string]?: string | null }, serverId?: string, remoteProjectPath?: string, githubRepo?: GithubRepoDto,
 /**
@@ -61,7 +63,7 @@ terminalShell?: TerminalShellSelectionDto,
  * Absent ⇒ the pane-count preset. Inert `#[serde(default)]` mirror of
  * core `Workspace.layout`.
  */
-layout?: unknown, };
+layout?: unknown, executionTarget?: ExecutionTargetRefDto, };
 
 export type ServerConfigDto = { id: string, name: string, host: string, port: number, username: string, authMethod: string, keyPath: string | null, remotePath: string | null, lastConnectedAt: bigint | null, installedAgents: Array<string>, hostFingerprint: string | null, };
 

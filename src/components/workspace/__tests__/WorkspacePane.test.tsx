@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspacePane } from "@/components/workspace/WorkspacePane";
 import type { TerminalHeaderRenderState } from "@/components/session/TerminalPane";
@@ -124,7 +124,7 @@ describe("WorkspacePane tile header", () => {
     expect(name.className).not.toContain("text-accent-amber");
   });
 
-  it("confirms before Close pane stops a live PTY and removes the pane", () => {
+  it("confirms before Close pane stops a live PTY and removes the pane", async () => {
     const workspace = useWorkspaceStore.getState().workspaces[0];
     const removePaneSpy = vi.spyOn(useWorkspaceStore.getState(), "removePane");
 
@@ -150,7 +150,9 @@ describe("WorkspacePane tile header", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close pane" }));
 
     expect(currentHeaderState.onKill).toHaveBeenCalledTimes(1);
-    expect(removePaneSpy).toHaveBeenCalledWith(workspace.id, "pane-codex");
+    await waitFor(() =>
+      expect(removePaneSpy).toHaveBeenCalledWith(workspace.id, "pane-codex"),
+    );
   });
 
   it("applies the selected shell only to a raw local Terminal pane", () => {

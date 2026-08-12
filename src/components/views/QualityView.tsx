@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Diamond, LayoutGrid, Plus, RefreshCw, X } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { isLocalWorkspace } from "@/types/workspace";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore } from "@/stores/appStore";
 import {
@@ -85,7 +86,7 @@ export function QualityView() {
   );
   const layoutProjectPath = useLayoutStore((s) => s.projectPath);
   const projectPath = workspace?.projectPath ?? layoutProjectPath;
-  const isRemote = Boolean(workspace?.serverId);
+  const isRemote = Boolean(workspace && !isLocalWorkspace(workspace));
 
   useEffect(() => {
     if (!projectPath) {
