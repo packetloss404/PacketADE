@@ -33,27 +33,28 @@ only product direction and ordering.
   durable remote CLI panes and replay, a managed pinned-SSH bootstrap, and an
   application-encrypted PacketRelay transport are implemented and reviewed.
 
-The present bottleneck is proof and distribution, not another broad source
+The public Syndicate distribution and relay are now live. The remaining
+bottleneck is packaged, real-host acceptance proof, not another broad source
 feature wave.
 
 ## Now
 
-| Track                       | Priority | Current state                                                                                                                | Next action                                                                                                                                                                    |
-| --------------------------- | -------: | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Packaged Windows acceptance |       P1 | v0.10.3 app/NSIS/MSI compiled; interactive matrix open                                                                       | Dogfood real Terminal panes, Claude statusline, close/lifecycle, Monitor, accessibility, and denial behavior                                                                   |
-| Distribution trust          |       P1 | 0 failures / 6 readiness warnings; artifacts unsigned                                                                        | Add hosted CI; acquire Windows Authenticode and Apple Developer ID credentials in parallel on day 0; wire notarization and updater                                             |
-| macOS release               |       P1 | Builds, bundles a DMG, and runs from source on real hardware; never signed, notarized, or interactively accepted             | Enroll in the Apple Developer Program now; run the unsigned acceptance matrix in the 1.0 buffer; ship arm64 DMG in v1.1 (`dev/macos-release-plan.md`)                          |
-| Remote Agents decisions     |       P1 | Rust relay/code location decided; implementation paused                                                                      | Choose auth provider and E2EE launch gate                                                                                                                                      |
-| Global Undo                 |       P1 | Confirmations and cleanup are implemented; no recovery path                                                                  | Choose durable soft-delete/restore or a time-boxed delayed-delete toast                                                                                                        |
-| Flight supervision proof    |       P1 | Reviewer/graph/inbox/YOLO source complete                                                                                    | Run packaged local and disposable pinned-SSH matrices                                                                                                                          |
-| PacketAgent handoff proof   |       P1 | W9 consumer source and fixtures pass                                                                                         | Run separately hosted close/relaunch/reconnect and evidence-return matrix                                                                                                      |
-| PacketCode release proof    |       P1 | Source integration and doctor contract pass                                                                                  | Publish signed artifacts; run clean-machine upgrade/rollback and compatibility smoke                                                                                           |
-| Dictation proof             |       P1 | DV1-DV16 source complete                                                                                                     | Run real microphone plus macOS/Linux package matrices                                                                                                                          |
-| Settings/MS4 cleanup        |       P2 | P1 correctness is complete                                                                                                   | Stable IDs/active identity/profile validation, diagnostics, ARIA, labels, and responsive overflow                                                                              |
-| Git/Memory/MCP/Trust proof  |       P2 | Source implementations pass                                                                                                  | Run real GitHub/Gitea, editor-watch, provider, MCP, SSH, restart, and visual matrices                                                                                          |
-| Terminal shell proof        |       P2 | Source, package compile, detection, and command probes pass                                                                  | Run interactive pane, persistence, unavailable-profile, CLI, and SSH matrix                                                                                                    |
-| Monitor proof               |       P2 | Read-only Agent/Flight v1 source complete                                                                                    | Run packaged multi-display lifecycle and Rust-denial proof                                                                                                                     |
-| Syndicate public release    |       P1 | PacketADE target, controller v1, SSH bootstrap, encrypted PacketRelay client, and Node Host-restart recovery are implemented | Deploy and verify the public PacketRelay route and immutable Syndicate release assets; publish and clean-install the live `curl` installer before advertising anywhere control |
+| Track                       | Priority | Current state                                                                                                    | Next action                                                                                                                                           |
+| --------------------------- | -------: | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Packaged Windows acceptance |       P1 | v0.10.3 app/NSIS/MSI compiled; interactive matrix open                                                           | Dogfood real Terminal panes, Claude statusline, close/lifecycle, Monitor, accessibility, and denial behavior                                          |
+| Distribution trust          |       P1 | 0 failures / 6 readiness warnings; artifacts unsigned                                                            | Add hosted CI; acquire Windows Authenticode and Apple Developer ID credentials in parallel on day 0; wire notarization and updater                    |
+| macOS release               |       P1 | Builds, bundles a DMG, and runs from source on real hardware; never signed, notarized, or interactively accepted | Enroll in the Apple Developer Program now; run the unsigned acceptance matrix in the 1.0 buffer; ship arm64 DMG in v1.1 (`dev/macos-release-plan.md`) |
+| Remote Agents decisions     |       P1 | Rust relay/code location decided; implementation paused                                                          | Choose auth provider and E2EE launch gate                                                                                                             |
+| Global Undo                 |       P1 | Confirmations and cleanup are implemented; no recovery path                                                      | Choose durable soft-delete/restore or a time-boxed delayed-delete toast                                                                               |
+| Flight supervision proof    |       P1 | Reviewer/graph/inbox/YOLO source complete                                                                        | Run packaged local and disposable pinned-SSH matrices                                                                                                 |
+| PacketAgent handoff proof   |       P1 | W9 consumer source and fixtures pass                                                                             | Run separately hosted close/relaunch/reconnect and evidence-return matrix                                                                             |
+| PacketCode release proof    |       P1 | Source integration and doctor contract pass                                                                      | Publish signed artifacts; run clean-machine upgrade/rollback and compatibility smoke                                                                  |
+| Dictation proof             |       P1 | DV1-DV16 source complete                                                                                         | Run real microphone plus macOS/Linux package matrices                                                                                                 |
+| Settings/MS4 cleanup        |       P2 | P1 correctness is complete                                                                                       | Stable IDs/active identity/profile validation, diagnostics, ARIA, labels, and responsive overflow                                                     |
+| Git/Memory/MCP/Trust proof  |       P2 | Source implementations pass                                                                                      | Run real GitHub/Gitea, editor-watch, provider, MCP, SSH, restart, and visual matrices                                                                 |
+| Terminal shell proof        |       P2 | Source, package compile, detection, and command probes pass                                                      | Run interactive pane, persistence, unavailable-profile, CLI, and SSH matrix                                                                           |
+| Monitor proof               |       P2 | Read-only Agent/Flight v1 source complete                                                                        | Run packaged multi-display lifecycle and Rust-denial proof                                                                                            |
+| Syndicate acceptance proof  |       P1 | Production PacketRelay WSS and signed immutable Syndicate v0.1.3 x64/arm64 installer are live and smoke-verified | Run the packaged PacketADE clean-host, controller, network-fault, revocation, restart, upgrade, and rollback matrix                                   |
 
 ## Next
 
@@ -63,9 +64,9 @@ After the immediately available proof gates:
 2. Close bounded Settings and main-shell MS4 work.
 3. Finish Ollama capability-aware selection, auxiliary-task routing, retired
    conversation provider switching, and edit/diff honesty.
-4. Publish the Syndicate Linux release assets and live `curl` installer, deploy
-   and verify the public PacketRelay product route, then run the clean-host,
-   controller, network-fault, revocation, and restart acceptance matrix.
+4. Run the Syndicate clean-host, controller, network-fault, revocation,
+   restart, upgrade, and rollback acceptance matrix against the live relay and
+   signed Linux release.
 5. Resolve Remote Agents auth and E2EE; execute Sprint 0 against the standalone
    Rust `packet-relay` service.
 6. Land a private PWA/relay alpha with desktop-owned execution, narrow audited
@@ -126,8 +127,8 @@ execution belongs in v1.
 2. Close available real-host, microphone, provider, MCP, and cross-product
    evidence gates.
 3. Resolve and implement Undo plus bounded Settings/MS4 work.
-4. Deploy and verify Syndicate's public relay route and immutable Linux
-   installer assets; do not publish a `curl` command until both are live.
+4. Complete Syndicate's packaged PacketADE/real-host acceptance matrix against
+   the live relay and signed immutable Linux installer.
 5. Decide Remote Agents auth and E2EE, then build the PWA/relay alpha.
 6. Add hosted CI, signing, notarization, and updater infrastructure.
 7. Expand E2E coverage across session creation, API-agent launch, Remote Agents
