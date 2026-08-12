@@ -14,6 +14,7 @@ import {
 import { probeTerminalShell } from "@/lib/tauri";
 import { useTerminalSettingsStore } from "@/stores/terminalSettingsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { isLocalWorkspace } from "@/types/workspace";
 import type {
   DetectedTerminalShell,
   TerminalShellProbe,
@@ -40,7 +41,7 @@ export function TerminalShellSettingsCard() {
     state.workspaces.find((candidate) => candidate.id === state.activeWorkspaceId),
   );
   const setWorkspaceShell = useWorkspaceStore((state) => state.setTerminalShellOverride);
-  const projectPath = workspace && !workspace.serverId ? workspace.projectPath : "";
+  const projectPath = workspace && isLocalWorkspace(workspace) ? workspace.projectPath : "";
   const detection = useTerminalShellDetection();
 
   return (
@@ -87,7 +88,7 @@ export function TerminalShellSettingsCard() {
           wslDistributions={detection.wslDistributions}
           projectPath={projectPath}
           inheritLabel="Use app default"
-          disabled={!workspace || !!workspace.serverId}
+          disabled={!isLocalWorkspace(workspace)}
           onChange={(selection) => {
             if (activeWorkspaceId) setWorkspaceShell(activeWorkspaceId, selection);
           }}

@@ -108,6 +108,45 @@ pub struct WorkspacePaneDto {
     #[serde(default)]
     #[ts(optional)]
     pub file_view: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub syndicate_pane_id: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub syndicate_terminal_session_id: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub syndicate_session_id: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    #[ts(type = "number")]
+    pub syndicate_cursor: Option<u64>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub syndicate_operation_generation: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
+#[ts(rename_all = "camelCase")]
+pub enum ExecutionTargetRefDto {
+    Local,
+    Ssh {
+        #[ts(rename = "serverId")]
+        server_id: String,
+    },
+    Syndicate {
+        #[ts(rename = "machineId")]
+        machine_id: String,
+        #[ts(rename = "workspaceId")]
+        workspace_id: String,
+        #[ts(rename = "serverConfigId")]
+        server_config_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -161,6 +200,9 @@ pub struct WorkspaceDto {
     #[ts(optional)]
     #[ts(type = "unknown")]
     pub layout: Option<serde_json::Value>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub execution_target: Option<ExecutionTargetRefDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -1276,6 +1318,11 @@ impl From<core_workspace::WorkspacePane> for WorkspacePaneDto {
             terminal_shell: value.terminal_shell.map(Into::into),
             file_path: value.file_path,
             file_view: value.file_view,
+            syndicate_pane_id: value.syndicate_pane_id,
+            syndicate_terminal_session_id: value.syndicate_terminal_session_id,
+            syndicate_session_id: value.syndicate_session_id,
+            syndicate_cursor: value.syndicate_cursor,
+            syndicate_operation_generation: value.syndicate_operation_generation,
         }
     }
 }
@@ -1301,6 +1348,47 @@ impl From<WorkspacePaneDto> for core_workspace::WorkspacePane {
             terminal_shell: value.terminal_shell.map(Into::into),
             file_path: value.file_path,
             file_view: value.file_view,
+            syndicate_pane_id: value.syndicate_pane_id,
+            syndicate_terminal_session_id: value.syndicate_terminal_session_id,
+            syndicate_session_id: value.syndicate_session_id,
+            syndicate_cursor: value.syndicate_cursor,
+            syndicate_operation_generation: value.syndicate_operation_generation,
+        }
+    }
+}
+
+impl From<core_workspace::ExecutionTargetRef> for ExecutionTargetRefDto {
+    fn from(value: core_workspace::ExecutionTargetRef) -> Self {
+        match value {
+            core_workspace::ExecutionTargetRef::Local => Self::Local,
+            core_workspace::ExecutionTargetRef::Ssh { server_id } => Self::Ssh { server_id },
+            core_workspace::ExecutionTargetRef::Syndicate {
+                machine_id,
+                workspace_id,
+                server_config_id,
+            } => Self::Syndicate {
+                machine_id,
+                workspace_id,
+                server_config_id,
+            },
+        }
+    }
+}
+
+impl From<ExecutionTargetRefDto> for core_workspace::ExecutionTargetRef {
+    fn from(value: ExecutionTargetRefDto) -> Self {
+        match value {
+            ExecutionTargetRefDto::Local => Self::Local,
+            ExecutionTargetRefDto::Ssh { server_id } => Self::Ssh { server_id },
+            ExecutionTargetRefDto::Syndicate {
+                machine_id,
+                workspace_id,
+                server_config_id,
+            } => Self::Syndicate {
+                machine_id,
+                workspace_id,
+                server_config_id,
+            },
         }
     }
 }
@@ -1366,6 +1454,7 @@ impl From<core_workspace::Workspace> for WorkspaceDto {
             origin: value.origin,
             terminal_shell: value.terminal_shell.map(Into::into),
             layout: value.layout,
+            execution_target: value.execution_target.map(Into::into),
         }
     }
 }
@@ -1391,6 +1480,7 @@ impl From<WorkspaceDto> for core_workspace::Workspace {
             origin: value.origin,
             terminal_shell: value.terminal_shell.map(Into::into),
             layout: value.layout,
+            execution_target: value.execution_target.map(Into::into),
         }
     }
 }
@@ -2836,6 +2926,7 @@ pub fn generated_typescript_schema() -> String {
     push_decl!(TerminalShellSelectionDto);
     push_decl!(WorkspacePaneDto);
     push_decl!(GithubRepoDto);
+    push_decl!(ExecutionTargetRefDto);
     push_decl!(WorkspaceDto);
     push_decl!(ServerConfigDto);
     push_decl!(CliAccountDto);

@@ -62,6 +62,7 @@ import {
   validateCooperativeGraph,
 } from "@/lib/cooperativeFlight";
 import type { Task } from "@/types/flight";
+import { isSyndicateWorkspace } from "@/types/workspace";
 
 export interface AsyncLaunchOptions {
   allowPathCollisions?: boolean;
@@ -340,6 +341,9 @@ function cooperativeTarget(flight: Flight): {
         .getState()
         .workspaces.find((candidate) => candidate.id === flight.workspaceId)
     : undefined;
+  if (isSyndicateWorkspace(workspace)) {
+    throw new Error("Flights cannot execute against a Syndicate Workspace in this release.");
+  }
   if (!workspace?.serverId) return { projectPath: flight.projectPath };
   const server = useServerStore.getState().getServer(workspace.serverId);
   if (!server) throw new Error("The cooperative Flight's SSH server is no longer configured.");

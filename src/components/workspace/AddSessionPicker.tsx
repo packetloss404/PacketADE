@@ -18,6 +18,7 @@ import { useAppStore } from "@/stores/appStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { useServerStore } from "@/stores/serverStore";
+import { useSyndicateStore } from "@/stores/syndicateStore";
 import { isAccountAwareSlot } from "@/lib/sessionAccountDefaults";
 import { SessionAccountPicker } from "@/components/workspace/SessionAccountPicker";
 import type { Workspace, WorkspaceAgentSlot } from "@/types/workspace";
@@ -189,6 +190,7 @@ interface PickerContentProps {
 
 function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentProps) {
   const [filter, setFilter] = useState("");
+  const [addError, setAddError] = useState<string | null>(null);
   /**
    * Multi-account CLI support: per-row explicit account choices. A slot absent
    * from this map has NOT been touched, so clicking its row stays the one-click
@@ -204,6 +206,7 @@ function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentPro
   >(undefined);
   const agents = useAgentStore((state) => state.agents);
   const servers = useServerStore((state) => state.servers);
+  const syndicateMachines = useSyndicateStore((state) => state.machines);
   const addPane = useWorkspaceStore((state) => state.addPane);
   const addFilePane = useWorkspaceStore((state) => state.addFilePane);
   const openSettings = useAppStore((state) => state.openSettings);
@@ -214,6 +217,19 @@ function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentPro
   );
 
   const isInstalled = (slot: WorkspaceAgentSlot): boolean => {
+    if (workspace.executionTarget?.kind === "syndicate") {
+      const target = workspace.executionTarget;
+      if (slot === "terminal" || slot === "opencode") return false;
+      const machine = syndicateMachines.find(
+        (candidate) => candidate.machineId === target.machineId,
+      );
+      const profileId = slot === "claude-code" ? "claude" : slot;
+      return (
+        machine?.cachedSnapshot?.agents.some(
+          (agent) => agent.profileId === profileId && agent.state === "ready",
+        ) ?? false
+      );
+    }
     if (slot === "terminal") return true;
     if (workspace.serverId) {
       const server = servers.find((candidate) => candidate.id === workspace.serverId);
@@ -249,8 +265,13 @@ function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentPro
     if (slot === "terminal" && terminalShellChoice) {
       options.terminalShell = terminalShellChoice;
     }
-    addPane(workspace.id, slot, Object.keys(options).length > 0 ? options : undefined);
-    onClose();
+    try {
+      setAddError(null);
+      addPane(workspace.id, slot, Object.keys(options).length > 0 ? options : undefined);
+      onClose();
+    } catch (reason) {
+      setAddError(reason instanceof Error ? reason.message : String(reason));
+    }
   };
 
   const openPacketCodeSetup = () => {
@@ -274,8 +295,13 @@ function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentPro
   const pickWsl = () => {
     const selection = selectionForProfile("wsl", wslShell);
     if (!selection.wslDistro && wslDistro) selection.wslDistro = wslDistro;
-    addPane(workspace.id, "terminal", { terminalShell: selection });
-    onClose();
+    try {
+      setAddError(null);
+      addPane(workspace.id, "terminal", { terminalShell: selection });
+      onClose();
+    } catch (reason) {
+      setAddError(reason instanceof Error ? reason.message : String(reason));
+    }
   };
 
   /**
@@ -284,7 +310,7 @@ function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentPro
    * `EditorPane` to open rendered. SSH workspaces have no local FS, so the rows
    * are disabled rather than hidden (same honesty rule the Editor dock uses).
    */
-  const viewersDisabled = Boolean(workspace.serverId);
+  const viewersDisabled = Boolean(workspace.serverId || workspace.executionTarget?.kind === "syndicate");
 
   const pickViewer = (mode: "any" | "markdown") => {
     // Close first: the native dialog is modal and would otherwise sit behind a
@@ -340,6 +366,11 @@ function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentPro
             className="w-full bg-transparent text-ui text-text-primary placeholder:text-text-muted focus:outline-none"
           />
         </div>
+        {addError && (
+          <div role="alert" className="mt-1 rounded bg-accent-red/10 px-2 py-1 text-[9px] text-accent-red">
+            {addError}
+          </div>
+        )}
       </div>
 
       <div className="px-3 py-1 text-meta uppercase tracking-wide text-text-muted">

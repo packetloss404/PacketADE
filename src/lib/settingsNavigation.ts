@@ -102,6 +102,13 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
         keywords: ["ssh", "servers", "remote", "password", "key", "host", "fingerprint"],
       },
       {
+        key: "syndicate-machines",
+        label: "Syndicate Machines",
+        description: "Pair, inspect, and revoke private Linux coding-agent hosts.",
+        scopes: ["App", "Workspace"],
+        keywords: ["syndicate", "linux", "machine", "pair", "revoke", "controller", "remote"],
+      },
+      {
         key: "project-rules",
         label: "Project Rules",
         description: "Instructions and operational rules for the active project.",

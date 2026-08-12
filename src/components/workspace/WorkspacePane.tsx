@@ -25,6 +25,8 @@ import { accountLoginCliForSlot, useAccountLaunchGate } from "@/hooks/useAccount
 import type { WorkspacePane as WorkspacePaneType } from "@/types/workspace";
 import { useTerminalSettingsStore } from "@/stores/terminalSettingsStore";
 import { resolveTerminalShellLaunch } from "@/lib/terminalShells";
+import { executionTargetForWorkspace } from "@/types/workspace";
+import { SyndicateTerminalPane } from "@/components/session/SyndicateTerminalPane";
 
 /** Per-agent CLI flag to bypass all permission prompts.
  * OpenCode is intentionally omitted — it has no equivalent launch flag and
@@ -62,7 +64,11 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
   // "root" is the menu list, the other views are drilled-into sub-panels.
   const [showOverflow, setShowOverflow] = useState(false);
   const [overflowView, setOverflowView] = useState<"root" | "model" | "prompts" | "pins">("root");
-  const [pendingClose, setPendingClose] = useState<{ onKill: () => void } | null>(null);
+  const [pendingClose, setPendingClose] = useState<{
+    onKill: () => void | Promise<void>;
+    busy?: boolean;
+    error?: string;
+  } | null>(null);
   const [newPinCmd, setNewPinCmd] = useState("");
   const overflowRef = useRef<HTMLDivElement>(null);
   const promptTemplates = usePromptStore((s) => s.templates);
@@ -173,12 +179,14 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
   const server = workspace?.serverId
     ? useServerStore.getState().getServer(workspace.serverId)
     : undefined;
+  const executionTarget = workspace ? executionTargetForWorkspace(workspace) : { kind: "local" as const };
+  const isSyndicate = executionTarget.kind === "syndicate";
   const knownHostsPath = useServerStore((s) => s.knownHostsPath);
   const isRemote = !!server;
   const paneIdentity =
     pane.agentId === "terminal"
-      ? `${agentName} · ${isRemote ? "Remote login shell" : terminalShellLaunch.label}`
-      : agentName;
+      ? `${agentName} · ${isSyndicate ? "Syndicate" : isRemote ? "Remote login shell" : terminalShellLaunch.label}`
+      : `${agentName}${isSyndicate ? " · Syndicate" : ""}`;
   const localPlatform =
     typeof navigator !== "undefined" &&
     /windows|win32|win64/i.test(navigator.userAgent || navigator.platform || "")
@@ -646,14 +654,27 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
           title="Close terminal pane?"
           entityName={agentName}
           description="will be removed from this Workspace."
-          warnings={["Any live PTY and CLI process in this pane will be stopped."]}
-          warningTitle="Session lifecycle"
-          confirmLabel="Close pane"
+          warnings={[
+            "Any live PTY and CLI process in this pane will be stopped.",
+            ...(pendingClose.error ? [pendingClose.error] : []),
+          ]}
+          warningTitle={pendingClose.error ? "Remote stop failed" : "Session lifecycle"}
+          confirmLabel={pendingClose.busy ? "Stopping…" : "Close pane"}
           onClose={() => setPendingClose(null)}
-          onConfirm={() => {
-            pendingClose.onKill();
-            useWorkspaceStore.getState().removePane(workspaceId, pane.id);
-            setPendingClose(null);
+          onConfirm={async () => {
+            if (pendingClose.busy) return;
+            const onKill = pendingClose.onKill;
+            setPendingClose({ onKill, busy: true });
+            try {
+              await onKill();
+              useWorkspaceStore.getState().removePane(workspaceId, pane.id);
+              setPendingClose(null);
+            } catch (reason) {
+              setPendingClose({
+                onKill,
+                error: reason instanceof Error ? reason.message : String(reason),
+              });
+            }
           }}
         />,
         document.body,
@@ -713,6 +734,28 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
               }}
             />
           )}
+        </div>
+        {closeConfirmation}
+      </>
+    );
+  }
+
+  if (workspace && executionTarget.kind === "syndicate") {
+    return (
+      <>
+        <div
+          data-pane-zoomed={isZoomed || undefined}
+          className={`flex h-full flex-col overflow-hidden rounded-md ${wrapperBorderClass} ${flashClass}`}
+        >
+          <SyndicateTerminalPane
+            pane={pane}
+            workspaceId={workspaceId}
+            machineId={executionTarget.machineId}
+            hostWorkspaceId={executionTarget.workspaceId}
+            initialPrompt={initialPrompt}
+            autoStart={autoStart}
+            renderHeader={renderHeader}
+          />
         </div>
         {closeConfirmation}
       </>

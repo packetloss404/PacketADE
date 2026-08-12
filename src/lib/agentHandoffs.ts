@@ -9,14 +9,20 @@ import { makeSshUri } from "@/lib/ssh-uri";
 import { getPreferredWorkspaceCli } from "@/lib/workspaceCliDefaults";
 import type { AgentConversation, PermissionMode } from "@/types/agent-conversation";
 import type { McpTrustSnapshot } from "@/types/mcp";
-import type { Workspace, WorkspaceAgentSlot } from "@/types/workspace";
+import {
+  isLocalWorkspace,
+  isSyndicateWorkspace,
+  type Workspace,
+  type WorkspaceAgentSlot,
+} from "@/types/workspace";
 import { recordWorkspaceAgentsEvent } from "@/stores/workspaceAgentsDogfoodStore";
 
 export type AgentHandoffErrorCode =
   | "conversation_not_found"
   | "workspace_not_found"
   | "flight_not_found"
-  | "packetcode_unavailable";
+  | "packetcode_unavailable"
+  | "unsupported_target";
 
 export type AgentHandoffResult<T extends object> =
   | ({ ok: true } & T)
@@ -118,7 +124,7 @@ export function workspaceMatchesConversationTarget(
     const workspacePath = workspace.remoteProjectPath ?? workspace.projectPath;
     return normalizePath(workspacePath, false) === normalizePath(target.projectPath, false);
   }
-  if (workspace.serverId) return false;
+  if (!isLocalWorkspace(workspace)) return false;
   return (
     normalizePath(workspace.projectPath, isWindowsStylePath(workspace.projectPath)) ===
     normalizePath(target.projectPath, isWindowsStylePath(target.projectPath))
@@ -188,6 +194,13 @@ export function delegateWorkspaceToAgents(
       ok: false,
       code: "workspace_not_found",
       message: "That Workspace no longer exists.",
+    };
+  }
+  if (isSyndicateWorkspace(workspace)) {
+    return {
+      ok: false,
+      code: "unsupported_target",
+      message: "Agent handoff for Syndicate Workspaces is not exposed in this release.",
     };
   }
 

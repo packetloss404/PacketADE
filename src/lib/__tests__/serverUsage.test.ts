@@ -103,6 +103,24 @@ describe("summarizeServerUsage", () => {
     expect(usage.connection).toBeNull();
   });
 
+  it("counts Syndicate targets that depend on the SSH server config", () => {
+    const usage = summarizeServerUsage("srv-1", {
+      ...EMPTY,
+      workspaces: [
+        workspace({
+          serverId: undefined,
+          executionTarget: {
+            kind: "syndicate",
+            machineId: "machine-1",
+            workspaceId: "host-workspace-1",
+            serverConfigId: "srv-1",
+          },
+        }),
+      ],
+    });
+    expect(usage.workspaceNames).toEqual(["prod app"]);
+  });
+
   it("ignores archived conversations, archived workspaces, and finished attempts", () => {
     const usage = summarizeServerUsage("srv-1", {
       ...EMPTY,

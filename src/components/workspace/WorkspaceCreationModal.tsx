@@ -6,6 +6,7 @@ import { useAgentStore } from "@/stores/agentStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useServerStore } from "@/stores/serverStore";
+import { useSyndicateStore } from "@/stores/syndicateStore";
 // Memory context is now injected live at session launch, not baked into workspace prompt
 import { usePromptStore } from "@/stores/promptStore";
 import { useAppStore } from "@/stores/appStore";
@@ -20,9 +21,13 @@ import { AdvancedAccordion } from "@/components/agents/composer/AdvancedAccordio
 import { getPreferredWorkspaceCli } from "@/lib/workspaceCliDefaults";
 import { isAccountAwareSlot, resolveAccountId } from "@/lib/sessionAccountDefaults";
 import { SessionAccountPicker } from "@/components/workspace/SessionAccountPicker";
-import type { WorkspaceAgentSlot } from "@/types/workspace";
+import { isLocalWorkspace, type WorkspaceAgentSlot } from "@/types/workspace";
+import type {
+  SyndicateRepositorySnapshot,
+  SyndicateWorkspaceSnapshot,
+} from "@/types/syndicate";
 
-type LocationMode = "local" | "remote";
+type LocationMode = "local" | "remote" | "syndicate";
 
 type PathProbeState =
   | { kind: "idle" }
@@ -129,6 +134,20 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   const [serverDropdownOpen, setServerDropdownOpen] = useState(false);
   const serverDropdownRef = useRef<HTMLDivElement>(null);
   const [pathProbe, setPathProbe] = useState<PathProbeState>({ kind: "idle" });
+  const syndicateMachines = useSyndicateStore((state) => state.machines);
+  const loadSyndicateCatalog = useSyndicateStore((state) => state.loadCatalog);
+  const createHostWorkspace = useSyndicateStore((state) => state.createHostWorkspace);
+  const [syndicateMachineId, setSyndicateMachineId] = useState<string | undefined>();
+  const [syndicateWorkspaceId, setSyndicateWorkspaceId] = useState<string | undefined>();
+  const [syndicateWorkspaces, setSyndicateWorkspaces] = useState<SyndicateWorkspaceSnapshot[]>([]);
+  const [syndicateRepositories, setSyndicateRepositories] = useState<
+    SyndicateRepositorySnapshot[]
+  >([]);
+  const [syndicateRepositoryId, setSyndicateRepositoryId] = useState<string | undefined>();
+  const [syndicateLoading, setSyndicateLoading] = useState(false);
+  const [syndicateCreating, setSyndicateCreating] = useState(false);
+  const [syndicateError, setSyndicateError] = useState<string | null>(null);
+  const hostWorkspaceOperationRef = useRef<{ key: string; id: string } | null>(null);
 
   // S6: optional "clone a repo into this remote path" flow. When the target
   // path isn't already a git repo, the user can paste a repo URL and we clone
@@ -166,6 +185,14 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
     () => (serverId ? servers.find((srv) => srv.id === serverId) : undefined),
     [serverId, servers],
   );
+  const syndicateMachine = useMemo(
+    () => syndicateMachines.find((machine) => machine.machineId === syndicateMachineId),
+    [syndicateMachineId, syndicateMachines],
+  );
+  const syndicateWorkspace = useMemo(
+    () => syndicateWorkspaces.find((workspace) => workspace.workspaceId === syndicateWorkspaceId),
+    [syndicateWorkspaceId, syndicateWorkspaces],
+  );
   const createWorkspace = useWorkspaceStore((s) => s.createWorkspace);
   const setActiveView = useAppStore((s) => s.setActiveView);
   const openSettings = useAppStore((s) => s.openSettings);
@@ -178,16 +205,94 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
     setRemoteProjectPath((prev) => (prev.trim() ? prev : server.remotePath ?? ""));
   }, [locationMode, server]);
 
+  useEffect(() => {
+    if (locationMode !== "syndicate" || !syndicateMachineId) {
+      setSyndicateWorkspaces([]);
+      setSyndicateRepositories([]);
+      setSyndicateWorkspaceId(undefined);
+      setSyndicateError(null);
+      return;
+    }
+    let cancelled = false;
+    setSyndicateLoading(true);
+    setSyndicateError(null);
+    loadSyndicateCatalog(syndicateMachineId)
+      .then((catalog) => {
+        if (cancelled) return;
+        const workspaces = catalog.workspaces;
+        setSyndicateWorkspaces(workspaces);
+        setSyndicateRepositories(catalog.repositories);
+        setSyndicateRepositoryId((current) =>
+          current && catalog.repositories.some((repository) => repository.repositoryId === current)
+            ? current
+            : catalog.repositories.find((repository) => repository.state === "active")?.repositoryId,
+        );
+        setSyndicateWorkspaceId((current) =>
+          current && workspaces.some((workspace) => workspace.workspaceId === current)
+            ? current
+            : workspaces[0]?.workspaceId,
+        );
+      })
+      .catch((reason) => {
+        if (!cancelled) setSyndicateError(reason instanceof Error ? reason.message : String(reason));
+      })
+      .finally(() => {
+        if (!cancelled) setSyndicateLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadSyndicateCatalog, locationMode, syndicateMachineId]);
+
+  const handleCreateHostWorkspace = useCallback(async () => {
+    if (!syndicateMachineId || !syndicateRepositoryId || !name.trim() || syndicateCreating) return;
+    const operationKey = `${syndicateMachineId}\n${syndicateRepositoryId}\n${name.trim()}`;
+    if (hostWorkspaceOperationRef.current?.key !== operationKey) {
+      hostWorkspaceOperationRef.current = { key: operationKey, id: crypto.randomUUID() };
+    }
+    setSyndicateCreating(true);
+    setSyndicateError(null);
+    try {
+      const workspace = await createHostWorkspace(
+        syndicateMachineId,
+        syndicateRepositoryId,
+        name.trim(),
+        hostWorkspaceOperationRef.current.id,
+      );
+      setSyndicateWorkspaces((current) => [
+        workspace,
+        ...current.filter((candidate) => candidate.workspaceId !== workspace.workspaceId),
+      ]);
+      setSyndicateWorkspaceId(workspace.workspaceId);
+    } catch (reason) {
+      setSyndicateError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSyndicateCreating(false);
+    }
+  }, [createHostWorkspace, name, syndicateCreating, syndicateMachineId, syndicateRepositoryId]);
+
+  useEffect(() => {
+    if (locationMode !== "syndicate" || nameEdited || !syndicateWorkspace) return;
+    setName(syndicateWorkspace.displayName);
+  }, [locationMode, nameEdited, syndicateWorkspace]);
+
   const installedAgentIds = useMemo(() => {
+    if (locationMode === "syndicate") {
+      return new Set(
+        (syndicateMachine?.cachedSnapshot?.agents ?? [])
+          .filter((agent) => agent.state === "ready")
+          .map((agent) => (agent.profileId === "claude" ? "claude-code" : agent.profileId)),
+      );
+    }
     if (locationMode === "remote") {
       return new Set(server?.installedAgents ?? []);
     }
     return new Set(agents.filter((agent) => agent.installed).map((agent) => agent.id));
-  }, [agents, server?.installedAgents, locationMode]);
+  }, [agents, server?.installedAgents, locationMode, syndicateMachine?.cachedSnapshot?.agents]);
 
   const isAgentInstalled = useCallback((id: WorkspaceAgentSlot) => {
-    return id === "terminal" || installedAgentIds.has(id);
-  }, [installedAgentIds]);
+    return (locationMode !== "syndicate" && id === "terminal") || installedAgentIds.has(id);
+  }, [installedAgentIds, locationMode]);
 
   // Unique project paths from existing workspaces + current global path
   const recentProjectPaths = useMemo(() => {
@@ -196,7 +301,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
     }
     const paths = new Set<string>([projectPath]);
     for (const w of useWorkspaceStore.getState().workspaces) {
-      if (w.projectPath && !w.serverId) paths.add(w.projectPath);
+      if (w.projectPath && isLocalWorkspace(w)) paths.add(w.projectPath);
     }
     return Array.from(paths);
   }, [remoteProjectPath, projectPath, locationMode]);
@@ -328,7 +433,12 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   // The path the workspace will actually be created at — local folder, or the
   // remote path for an SSH workspace. Sticky account defaults key off this, so
   // it is hoisted out of `handleCreate` and shared with the account pickers.
-  const effectivePath = locationMode === "remote" ? remoteProjectPath.trim() : selectedProjectPath;
+  const effectivePath =
+    locationMode === "remote"
+      ? remoteProjectPath.trim()
+      : locationMode === "syndicate"
+        ? (syndicateWorkspace?.displayPath ?? syndicateWorkspace?.displayName ?? "")
+        : selectedProjectPath;
 
   // Multi-account CLI support: the project path can change while the modal is
   // open (folder picker, recent-path dropdown, Local↔Remote, remote path edit).
@@ -340,8 +450,11 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
 
   // Slots that can carry an account, in the order they appear below.
   const accountAwareSlots = useMemo(
-    () => AGENT_SLOTS.filter((slot) => selected.has(slot.id) && isAccountAwareSlot(slot.id)),
-    [selected],
+    () =>
+      locationMode === "syndicate"
+        ? []
+        : AGENT_SLOTS.filter((slot) => selected.has(slot.id) && isAccountAwareSlot(slot.id)),
+    [locationMode, selected],
   );
 
   // Collapsed-Advanced summary: surface a non-default account so it is never
@@ -359,7 +472,10 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   }, [accountAwareSlots, accountSelections, effectivePath]);
 
   // CLI sessions with model/permission configuration (not a plain shell).
-  const selectedCliAgents = AGENT_SLOTS.filter((s) => selected.has(s.id) && s.cliId);
+  const selectedCliAgents =
+    locationMode === "syndicate"
+      ? []
+      : AGENT_SLOTS.filter((s) => selected.has(s.id) && s.cliId);
 
   // Count of non-default per-agent model overrides — feeds the Advanced
   // section's collapsed summary so an active override stays visible.
@@ -414,8 +530,25 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
       }
       if (pathProbe.kind === "error") return pathProbe.message;
     }
+    if (locationMode === "syndicate") {
+      if (!syndicateMachineId || !syndicateMachine) return "Choose a Syndicate machine";
+      if (syndicateMachine.grantStatus !== "active") return "Approve and refresh this Syndicate device first";
+      const requiredScopes = [
+        "workspace.read",
+        "workspace.create",
+        "session.start",
+        "terminal.view",
+      ];
+      const missingScope = requiredScopes.find(
+        (scope) => !syndicateMachine.scopes.includes(scope as never),
+      );
+      if (missingScope) return `Device grant is missing ${missingScope}`;
+      if (syndicateLoading) return "Loading host Workspaces…";
+      if (syndicateError) return syndicateError;
+      if (!syndicateWorkspaceId || !syndicateWorkspace) return "Choose a host-owned Workspace";
+    }
     return null;
-  }, [name, selected.size, locationMode, selectedProjectPath, serverId, server, remoteProjectPath, pathProbe]);
+  }, [name, selected.size, locationMode, selectedProjectPath, serverId, server, remoteProjectPath, pathProbe, syndicateMachineId, syndicateMachine, syndicateLoading, syndicateError, syndicateWorkspaceId, syndicateWorkspace]);
 
   // v0.8.8 (edge case): pick a folder from the OS dialog. Used when no
   // workspace exists yet (so `useLayoutStore.projectPath` is empty) and
@@ -479,11 +612,22 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
 
     createWorkspace(name.trim(), orderedAgents, effectivePath, {
       prompt: finalPrompt || undefined,
-      modelOverrides,
-      effortOverrides,
-      bypassPermissions,
+      modelOverrides: locationMode === "syndicate" ? {} : modelOverrides,
+      effortOverrides: locationMode === "syndicate" ? {} : effortOverrides,
+      bypassPermissions: locationMode === "syndicate" ? false : bypassPermissions,
       serverId: locationMode === "remote" ? serverId : undefined,
       remoteProjectPath: locationMode === "remote" ? remoteProjectPath.trim() : undefined,
+      executionTarget:
+        locationMode === "syndicate" && syndicateMachineId && syndicateWorkspaceId && syndicateMachine
+          ? {
+              kind: "syndicate",
+              machineId: syndicateMachineId,
+              workspaceId: syndicateWorkspaceId,
+              serverConfigId: syndicateMachine.serverConfigId,
+            }
+          : locationMode === "remote" && serverId
+            ? { kind: "ssh", serverId }
+            : { kind: "local" },
       // v0.8-15: stamp the auto-detected GitHub repo onto the workspace
       // so downstream surfaces (sidebar badge, GitHub pane) can render
       // the binding without re-probing.
@@ -691,8 +835,8 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
           persistKey={storageKey("workspace-create-advanced")}
           forceOpenOnFirstMount={!!initialServerId}
           summary={[
-            { label: locationMode === "remote" ? "Remote" : null },
-            { label: bypassPermissions ? "Bypass perms" : null },
+            { label: locationMode === "remote" ? "Remote" : locationMode === "syndicate" ? "Syndicate" : null },
+            { label: locationMode !== "syndicate" && bypassPermissions ? "Bypass perms" : null },
             { label: nOverrides > 0 ? `${nOverrides} model override${nOverrides > 1 ? "s" : ""}` : null },
             { label: accountSummary },
           ]}
@@ -701,7 +845,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
             {/* Location: Local vs Remote (SSH) */}
             <div>
               <label className="text-meta text-text-muted block mb-1 uppercase tracking-wider">Location</label>
-              <div className="grid grid-cols-2 gap-1.5">
+              <div className="grid grid-cols-3 gap-1.5">
                 <button
                   type="button"
                   onClick={() => setLocationMode("local")}
@@ -732,8 +876,144 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                     <span className="text-meta text-text-muted">Saved server</span>
                   </span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLocationMode("syndicate");
+                    setSyndicateMachineId((current) => current ?? syndicateMachines[0]?.machineId);
+                  }}
+                  className={`flex items-center gap-2 px-3 py-2 text-ui rounded border transition-colors ${
+                    locationMode === "syndicate"
+                      ? "bg-accent-green/15 border-accent-green/40 text-accent-green font-medium"
+                      : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
+                  }`}
+                >
+                  <Server size={12} />
+                  <span className="flex flex-col items-start">
+                    <span>Syndicate</span>
+                    <span className="text-meta text-text-muted">Private agent host</span>
+                  </span>
+                </button>
               </div>
             </div>
+
+            {locationMode === "syndicate" && (
+              <div className="space-y-3 rounded border border-bg-border bg-bg-primary p-3">
+                {syndicateMachines.length === 0 ? (
+                  <div className="text-[10px] text-text-muted">
+                    No machines paired. Pair one in Settings → Syndicate Machines first.
+                    <button
+                      type="button"
+                      onClick={() => {
+                        openSettings({ section: "syndicate-machines" });
+                        onClose();
+                      }}
+                      className="ml-1 text-accent-green hover:underline"
+                    >
+                      Open settings →
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-[9px] leading-relaxed text-text-muted">
+                      Creating PacketADE panes requires a Full control grant. View-only devices can
+                      browse machine status and the Host catalog in Settings, but must be re-paired
+                      with a new Full control invite before execution.
+                    </p>
+                    <div>
+                      <label className="text-meta text-text-muted block mb-1 uppercase tracking-wider">
+                        Machine
+                      </label>
+                      <select
+                        value={syndicateMachineId ?? ""}
+                        onChange={(event) => setSyndicateMachineId(event.target.value || undefined)}
+                        className="w-full rounded border border-bg-border bg-bg-secondary px-2 py-1.5 text-[11px] text-text-primary"
+                      >
+                        <option value="">Choose a machine…</option>
+                        {syndicateMachines.map((machine) => (
+                          <option key={machine.machineId} value={machine.machineId}>
+                            {machine.displayName} · {machine.grantStatus}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-meta text-text-muted block mb-1 uppercase tracking-wider">
+                        Host-owned Workspace
+                      </label>
+                      <select
+                        value={syndicateWorkspaceId ?? ""}
+                        onChange={(event) => setSyndicateWorkspaceId(event.target.value || undefined)}
+                        disabled={syndicateLoading || !syndicateMachineId}
+                        className="w-full rounded border border-bg-border bg-bg-secondary px-2 py-1.5 text-[11px] text-text-primary disabled:opacity-50"
+                      >
+                        <option value="">
+                          {syndicateLoading ? "Loading…" : "Choose a Workspace…"}
+                        </option>
+                        {syndicateWorkspaces.map((workspace) => (
+                          <option key={workspace.workspaceId} value={workspace.workspaceId}>
+                            {workspace.displayName}
+                          </option>
+                        ))}
+                      </select>
+                      {syndicateWorkspace?.displayPath && (
+                        <p className="mt-1 font-mono text-[9px] text-text-muted">
+                          {syndicateWorkspace.displayPath}
+                        </p>
+                      )}
+                      {syndicateError && <p className="mt-1 text-[10px] text-accent-red">{syndicateError}</p>}
+                    </div>
+                    <div className="rounded border border-bg-border bg-bg-secondary p-2">
+                      <p className="mb-2 text-[9px] leading-relaxed text-text-muted">
+                        Need a fresh Host Workspace? Choose one of the server's registered repositories.
+                        Syndicate owns the repository path and isolated worktrees; PacketADE never sends a path.
+                      </p>
+                      <div className="flex gap-2">
+                        <select
+                          value={syndicateRepositoryId ?? ""}
+                          onChange={(event) =>
+                            setSyndicateRepositoryId(event.target.value || undefined)
+                          }
+                          disabled={syndicateLoading || syndicateCreating}
+                          aria-label="Registered Syndicate repository"
+                          className="min-w-0 flex-1 rounded border border-bg-border bg-bg-primary px-2 py-1.5 text-[10px] text-text-primary disabled:opacity-50"
+                        >
+                          <option value="">Choose a registered repository…</option>
+                          {syndicateRepositories.map((repository) => (
+                            <option
+                              key={repository.repositoryId}
+                              value={repository.repositoryId}
+                              disabled={repository.state !== "active"}
+                            >
+                              {repository.displayName}
+                              {repository.state === "active" ? "" : ` · ${repository.state}`}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => void handleCreateHostWorkspace()}
+                          disabled={
+                            !syndicateRepositoryId ||
+                            !name.trim() ||
+                            syndicateLoading ||
+                            syndicateCreating
+                          }
+                          className="rounded border border-accent-green/30 bg-accent-green/10 px-2 py-1 text-[10px] text-accent-green disabled:opacity-40"
+                        >
+                          {syndicateCreating ? "Creating…" : "Create Host Workspace"}
+                        </button>
+                      </div>
+                      {syndicateRepositories.length === 0 && !syndicateLoading && (
+                        <p className="mt-1 text-[9px] text-accent-amber">
+                          Register a repository in Syndicate on the Linux server first.
+                        </p>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Remote: Server picker + remote project path */}
             {locationMode === "remote" && (
@@ -953,7 +1233,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
             </div>
 
             {/* Bypass permissions toggle */}
-            {selectedCliAgents.length > 0 && (
+            {locationMode !== "syndicate" && selectedCliAgents.length > 0 && (
               <div className="flex flex-col gap-1">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input

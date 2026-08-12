@@ -1,6 +1,6 @@
 # PacketADE Backlog
 
-Last reconciled: 2026-08-07
+Last reconciled: 2026-08-12
 
 This is the single task register for work that has not shipped or has not yet
 earned its required real/package proof. Completed implementation history belongs
@@ -90,6 +90,21 @@ environment or packaged matrix has actually run.
   run clean-machine install/update/rollback, packaged PacketADE launch, and
   PacketAgent W9 compatibility smoke. Source detection and `doctor --json`
   already pass.
+- **P1 - Syndicate public relay and installer release gate.** The PacketADE
+  flagship execution-target source is complete: typed/scoped pairing and
+  revocation, Host-owned Workspace selection/creation, Codex/Claude
+  Code/PacketCode panes, durable attach/replay, managed pinned-SSH bootstrap,
+  application-encrypted PacketRelay transport, and strict target-isolation
+  fences all pass automated review. Before advertising “control from
+  anywhere,” deploy and verify the public PacketRelay `/v1/product-route`,
+  publish immutable x64/arm64 Syndicate archives and checksums, publish the
+  live rootless `curl` installer URL, and run clean Ubuntu plus network-loss,
+  revocation, scope, replay, Node Host-restart, upgrade, and rollback matrices.
+  The intended production endpoint is
+  `wss://packet-relay-1038865114903.us-central1.run.app/v1/product-route`, but
+  it remains unshipped until deployment and an end-to-end route smoke succeed.
+  See
+  [`dev/syndicate-execution-target.md`](./dev/syndicate-execution-target.md).
 - **P1 - Dictation hardware/platform matrix.** Run default/USB/Bluetooth,
   44.1/48 kHz, fast-PTT, cancel, disconnect, repeated phrase, first-model-load,
   history, in-app, clipboard, and opt-in external-paste tests on Windows with an
@@ -521,6 +536,15 @@ These are approved concepts, not current implementation commitments.
 
 Do not reopen these from historical plans:
 
+- PacketADE's first Syndicate execution-target source boundary is complete:
+  `kind: "syndicate"` persistence, OS-keychain device credentials, scoped
+  pairing/revocation, machine capability health, Host repository/Workspace
+  selection and creation, pane/session lifecycle, durable cursor replay,
+  managed pinned SSH bootstrap, encrypted PacketRelay frames, and local-path
+  authority fences are implemented. The remaining work is the explicit public
+  relay/installer deployment and packaged real-host proof gate above, not a
+  redesign of the target or controller protocol.
+
 - Workspace/Agents restructuring and WA0-WA4 are complete: Workspaces are
   CLI/PacketCode-first; Agents is a first-class same-window GUI-agent surface;
   new Workspace conversation attachments are retired; saved panes remain
@@ -545,6 +569,7 @@ Do not reopen these from historical plans:
 - Current audit summary: [`docs/reports/state-of-the-ade-2026-07-30.md`](./docs/reports/state-of-the-ade-2026-07-30.md), Section 0
 - Current release record: [`dev/release-v0.10.3.md`](./dev/release-v0.10.3.md)
 - Remote Agents: [`dev/remoteagents/README.md`](./dev/remoteagents/README.md)
+- Syndicate execution target: [`dev/syndicate-execution-target.md`](./dev/syndicate-execution-target.md)
 - Main shell: [`dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md)
 - Workspace/Agents: [`dev/workspace-agents-restructuring-goal.md`](./dev/workspace-agents-restructuring-goal.md)
 - Settings: [`dev/workspace-agent-settings-decision-2026-07-29.md`](./dev/workspace-agent-settings-decision-2026-07-29.md)

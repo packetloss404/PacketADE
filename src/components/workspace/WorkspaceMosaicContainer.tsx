@@ -5,7 +5,7 @@ import type { MosaicNode, MosaicPath } from "@/types/mosaic";
 import { WorkspacePane } from "./WorkspacePane";
 import { ConversationTile } from "./ConversationTile";
 import { FileTile } from "./FileTile";
-import type { Workspace } from "@/types/workspace";
+import { isLocalWorkspace, type Workspace } from "@/types/workspace";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useReviewStore } from "@/stores/reviewStore";
 import { isModalOpen } from "@/lib/modalStack";
@@ -254,7 +254,7 @@ export function WorkspaceMosaicContainer({
                 pane={pane}
                 workspaceId={workspace.id}
                 projectPath={workspace.projectPath}
-                remote={Boolean(workspace.serverId)}
+                remote={!isLocalWorkspace(workspace)}
               />
             ) : (
               <WorkspacePane

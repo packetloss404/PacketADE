@@ -15,7 +15,7 @@ export interface TerminalHeaderRenderState {
   showApproval: boolean;
   cliCommand: string;
   onRestart: () => void;
-  onKill: () => void;
+  onKill: () => void | Promise<void>;
 }
 
 interface TerminalPaneProps {

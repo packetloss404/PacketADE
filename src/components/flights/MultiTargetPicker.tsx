@@ -6,6 +6,7 @@ import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
 import type { AgentCli } from "@/stores/agentTaskStore";
 import type { ServerConfig } from "@/types/server";
 import type { Workspace } from "@/types/workspace";
+import { isLocalWorkspace } from "@/types/workspace";
 
 export type PickedTarget =
   | {
@@ -53,7 +54,7 @@ export function MultiTargetPicker({
     () =>
       workspaces
         .filter((w): w is Workspace & { projectPath: string } =>
-          Boolean(w.projectPath) && !w.serverId,
+          Boolean(w.projectPath) && isLocalWorkspace(w),
         )
         .map((w) => ({
           key: `local:${w.id}`,
