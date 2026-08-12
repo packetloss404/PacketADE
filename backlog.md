@@ -90,20 +90,16 @@ environment or packaged matrix has actually run.
   run clean-machine install/update/rollback, packaged PacketADE launch, and
   PacketAgent W9 compatibility smoke. Source detection and `doctor --json`
   already pass.
-- **P1 - Syndicate public relay and installer release gate.** The PacketADE
-  flagship execution-target source is complete: typed/scoped pairing and
-  revocation, Host-owned Workspace selection/creation, Codex/Claude
-  Code/PacketCode panes, durable attach/replay, managed pinned-SSH bootstrap,
-  application-encrypted PacketRelay transport, and strict target-isolation
-  fences all pass automated review. Before advertising “control from
-  anywhere,” deploy and verify the public PacketRelay `/v1/product-route`,
-  publish immutable x64/arm64 Syndicate archives and checksums, publish the
-  live rootless `curl` installer URL, and run clean Ubuntu plus network-loss,
-  revocation, scope, replay, Node Host-restart, upgrade, and rollback matrices.
-  The intended production endpoint is
-  `wss://packet-relay-1038865114903.us-central1.run.app/v1/product-route`, but
-  it remains unshipped until deployment and an end-to-end route smoke succeed.
-  See
+- **P1 - Syndicate packaged acceptance gate.** The PacketADE flagship target,
+  typed/scoped pairing and revocation, Host-owned Workspaces, durable panes,
+  managed pinned-SSH bootstrap, encrypted PacketRelay transport, and target
+  isolation pass automated review. The public PacketRelay
+  `wss://packet-relay-1038865114903.us-central1.run.app/v1/product-route` and
+  signed immutable Syndicate `v0.1.3` x64/arm64 installer are live and
+  independently smoke-verified. Remaining: run packaged PacketADE against clean
+  Ubuntu plus network-loss, revocation, scope, replay, Node Host-restart,
+  upgrade, and rollback matrices before treating “control from anywhere” as a
+  broadly accepted release promise. See
   [`dev/syndicate-execution-target.md`](./dev/syndicate-execution-target.md).
 - **P1 - Dictation hardware/platform matrix.** Run default/USB/Bluetooth,
   44.1/48 kHz, fast-PTT, cancel, disconnect, repeated phrase, first-model-load,
@@ -541,9 +537,9 @@ Do not reopen these from historical plans:
   pairing/revocation, machine capability health, Host repository/Workspace
   selection and creation, pane/session lifecycle, durable cursor replay,
   managed pinned SSH bootstrap, encrypted PacketRelay frames, and local-path
-  authority fences are implemented. The remaining work is the explicit public
-  relay/installer deployment and packaged real-host proof gate above, not a
-  redesign of the target or controller protocol.
+  authority fences are implemented. The public relay and signed installer are
+  deployed; the remaining work is the packaged real-host proof gate above, not
+  a redesign of the target or controller protocol.
 
 - Workspace/Agents restructuring and WA0-WA4 are complete: Workspaces are
   CLI/PacketCode-first; Agents is a first-class same-window GUI-agent surface;

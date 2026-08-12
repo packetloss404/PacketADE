@@ -1,7 +1,8 @@
 # Syndicate execution target
 
-Status: **source implemented and independently reviewed**; public relay,
-installer publication, and packaged real-host proof remain release gates.
+Status: **public infrastructure live and independently reviewed**; the signed
+Linux installer and production PacketRelay route are deployed. Packaged
+PacketADE/real-host proof remains a release acceptance gate.
 
 Last reconciled: 2026-08-12.
 
@@ -54,15 +55,18 @@ Syndicate, `packet-host`, and PacketRelay:
       tests pass; focused direct/relay/tunnel/fixture/bootstrap coverage passes and
       independent review found no remaining P0/P1 issue.
 
-The following are not yet shipped promises:
+Public deployment status and remaining promises:
 
-- [ ] Deploy and end-to-end verify the public PacketRelay product route. The
-      intended endpoint is
-      `wss://packet-relay-1038865114903.us-central1.run.app/v1/product-route`, but
-      it must not be described as live until deployment and smoke verification
-      succeed.
-- [ ] Publish immutable Syndicate x64/arm64 release archives and checksums, then
-      publish and clean-install the real public `curl` installer URL.
+- [x] The public PacketRelay product route is deployed at
+      `wss://packet-relay-1038865114903.us-central1.run.app/v1/product-route`.
+      Public health/readiness and a real TLS WebSocket `101` upgrade smoke pass.
+- [x] Signed immutable Syndicate
+      [`v0.1.3`](https://github.com/packetloss404/syndicate-releases/releases/tag/v0.1.3)
+      x64/arm64 archives and the
+      [exact installer asset](https://github.com/packetloss404/syndicate-releases/releases/download/v0.1.3/install.sh)
+      are published. Release assets, the detached Ed25519 manifest signature,
+      every checksum, and an unrelated-working-directory Host boot were
+      independently verified.
 - [ ] Run the packaged Ubuntu/controller/network/revocation/restart/upgrade/
       rollback acceptance matrix.
 - [ ] Prove recovery across `packet-host` service restart or server reboot
@@ -172,8 +176,9 @@ The release pairing package has this additive envelope shape:
 
 `relayEndpoint` is optional. An explicitly entered PacketADE endpoint wins;
 both forms are validated as exact versioned WSS product-route URLs before the
-one-time claim is consumed. The production URL above is the intended release
-value, not a live-service claim until deployment verification closes.
+one-time claim is consumed. The production URL above is live and is emitted by
+the deployed Syndicate Host unless the operator explicitly overrides or
+disables relay transport.
 
 The managed pinned SSH local forward is the implemented pairing and grant-
 bootstrap path. Pairing and application authorization are still required; the
@@ -267,14 +272,14 @@ The existing Syndicate single-use browser bootstrap/cookie is not a native
 controller credential. The bootstrap still requires the controller protocol
 and a paired device grant.
 
-### Implemented client, pending public deployment: PacketRelay
+### Implemented and publicly deployed: PacketRelay
 
 Syndicate keeps the Host outbound-only and PacketRelay treats routed payloads
 as opaque ciphertext. PacketADE and the Host implement Host-signed grants,
 device proof of possession, X25519/HKDF-SHA256 key derivation, AES-256-GCM,
 Ed25519 frame signatures, durable counters, replay rejection, expiry/scope
-validation, reconnect, and response correlation. The remaining transport gate
-is operational: deploy and verify the public WSS product route. A private
+validation, reconnect, and response correlation. The public WSS product route
+is live and has passed an exact-path TLS WebSocket upgrade smoke. A private
 LAN/VPN direct route may later use the same application protocol and device
 identity.
 
@@ -437,9 +442,9 @@ These are implementation and release-proof boundaries, not parallel backlogs:
 1. **ST0 — Source complete.** Version the target schema, controller messages,
    scopes, error taxonomy, cursor semantics, and compatibility rules in both
    repositories.
-2. **ST1 — Source complete; public proof open.** Package the unprivileged systemd user
-   service, installer/update path, doctor, resource policy, and uninstall
-   behavior on a clean Ubuntu host.
+2. **ST1 — Public release live; full host matrix open.** Package the unprivileged
+   systemd user service, installer/update path, doctor, resource policy, and
+   uninstall behavior on a clean Ubuntu host.
 3. **ST2 — Source complete.** Add device keys/grants,
    revocation, capability snapshots, CLI readiness, and an SSH-tunneled direct
    proof.
@@ -452,9 +457,8 @@ These are implementation and release-proof boundaries, not parallel backlogs:
 7. **ST6 — Source complete; packaged proof open.** Prove multiple isolated agents, cgroup
    limits, disk pressure, descendant shutdown, quarantine, upgrades, and
    diagnostics.
-8. **ST7 — Client/Host/relay source complete; deployment open.** Put the same
-   controller protocol over the reviewed application-encrypted outbound relay;
-   deploy and verify its public WSS route.
+8. **ST7 — Complete.** Put the same controller protocol over the reviewed
+   application-encrypted outbound relay; deploy and verify its public WSS route.
 9. **ST8 — Open release matrix.** Run packaged PacketADE against clean Ubuntu x64
    and arm64 hosts, each supported CLI, Windows/macOS/Linux controllers,
    network faults, revocation, upgrades, and rollback.
@@ -480,15 +484,14 @@ boundary:
 - Node Host-only restart reconciliation through the independently supervised
   `packet-host` service.
 
-ST1/ST7/ST8 remain release gates rather than missing core implementation. A
-public `curl` command remains blocked on immutable public x64/arm64 assets,
-checksums, installer publication, and clean-machine proof. “Control from
-anywhere” remains blocked on deployment and end-to-end verification of the
-public PacketRelay product route.
+The public PacketRelay route and signed immutable `v0.1.3` curl installer are
+live. ST1/ST6/ST8 retain the broader packaged PacketADE/real-host acceptance
+matrix rather than representing missing core implementation or deployment.
 
 ## Acceptance matrix
 
-The feature is not shippable until all of these are demonstrated:
+Broad packaged release acceptance remains open until all of these are
+demonstrated:
 
 1. A clean Ubuntu machine installs Syndicate without running the service or
    agents as root.
