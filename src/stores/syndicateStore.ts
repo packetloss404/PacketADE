@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { storageKey } from "@/lib/brand";
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
 import {
+  disableSyndicateIntegration,
   forgetSyndicateMachine,
   pairSyndicateMachine,
   revokeSyndicateMachine,
@@ -18,14 +19,21 @@ import {
   type SyndicateWorkspaceCatalog,
   type SyndicateWorkspaceSnapshot,
 } from "@/types/syndicate";
+import {
+  loadSyndicateIntegrationEnabled,
+  persistSyndicateIntegrationEnabled,
+  SYNDICATE_INTEGRATION_DISABLED_MESSAGE,
+} from "@/lib/syndicateIntegration";
 
 const MACHINES_KEY = storageKey("syndicate-machines-v1");
 
 interface SyndicateStore {
+  enabled: boolean;
   machines: SyndicateMachine[];
   connectionErrors: Record<string, string | undefined>;
   workspaceCache: Record<string, SyndicateWorkspaceSnapshot[]>;
   catalogCache: Record<string, SyndicateWorkspaceCatalog>;
+  setEnabled: (enabled: boolean) => Promise<void>;
   pair: (
     pairingPayload: string,
     deviceName: string,
@@ -68,12 +76,30 @@ function persist(machines: SyndicateMachine[]) {
 }
 
 export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
+  enabled: loadSyndicateIntegrationEnabled(),
   machines: loadMachines(),
   connectionErrors: {},
   workspaceCache: {},
   catalogCache: {},
 
+  setEnabled: async (enabled) => {
+    const previous = get().enabled;
+    if (previous === enabled) return;
+    persistSyndicateIntegrationEnabled(enabled);
+    set({ enabled });
+    if (!enabled) {
+      try {
+        await disableSyndicateIntegration();
+      } catch (error) {
+        persistSyndicateIntegrationEnabled(previous);
+        set({ enabled: previous });
+        throw error;
+      }
+    }
+  },
+
   pair: async (pairingPayload, deviceName, serverConfigId, relayEndpoint) => {
+    if (!get().enabled) throw new Error(SYNDICATE_INTEGRATION_DISABLED_MESSAGE);
     // Credentials are intentionally one keychain record per Host machine in
     // v1. Never overwrite the only key capable of revoking an existing grant.
     if (get().machines.length > 0) {
@@ -131,6 +157,7 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
   },
 
   refresh: async (machineId) => {
+    if (!get().enabled) throw new Error(SYNDICATE_INTEGRATION_DISABLED_MESSAGE);
     const machine = get().machines.find((item) => item.machineId === machineId);
     if (!machine) throw new Error("Syndicate machine is no longer configured");
     try {
@@ -173,6 +200,7 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
   },
 
   loadCatalog: async (machineId) => {
+    if (!get().enabled) throw new Error(SYNDICATE_INTEGRATION_DISABLED_MESSAGE);
     const machine = get().machines.find((item) => item.machineId === machineId);
     if (!machine) throw new Error("Syndicate machine is no longer configured");
     const response = await syndicateWorkspaceList(syndicateConnection(machine));
@@ -185,6 +213,7 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
   },
 
   createHostWorkspace: async (machineId, repositoryId, name, clientOperationId) => {
+    if (!get().enabled) throw new Error(SYNDICATE_INTEGRATION_DISABLED_MESSAGE);
     const machine = get().machines.find((item) => item.machineId === machineId);
     if (!machine) throw new Error("Syndicate machine is no longer configured");
     const response = await syndicateWorkspaceCreate({

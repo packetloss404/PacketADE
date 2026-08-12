@@ -528,14 +528,20 @@ async fn ensure_tunnel(server_config_id: &str, requested_port: u16) -> Result<u1
     Ok(local_port)
 }
 
-pub fn shutdown_tunnels() {
+fn close_tunnels() -> Result<(), String> {
     if let Some(registry) = TUNNELS.get() {
-        if let Ok(mut registry) = registry.lock() {
-            for (_, mut tunnel) in registry.drain() {
-                let _ = tunnel.child.start_kill();
-            }
+        let mut registry = registry
+            .lock()
+            .map_err(|_| "Syndicate tunnel registry is unavailable.".to_string())?;
+        for (_, mut tunnel) in registry.drain() {
+            let _ = tunnel.child.start_kill();
         }
     }
+    Ok(())
+}
+
+pub fn shutdown_tunnels() {
+    let _ = close_tunnels();
 }
 
 fn validate_terminal_size(cols: u16, rows: u16) -> Result<(), String> {
@@ -1170,6 +1176,14 @@ async fn send_rpc(
         capture_relay_grant(connection, &result)?;
     }
     Ok(SyndicateRpcResult { request_id, result })
+}
+
+#[tauri::command]
+pub async fn syndicate_disable_integration() -> Result<(), String> {
+    // Serialize with tunnel creation so disabling cannot race a new managed
+    // forward into the registry after the drain completes.
+    let _start_guard = TUNNEL_START_GATE.lock().await;
+    close_tunnels()
 }
 
 #[tauri::command]

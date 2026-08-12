@@ -11,6 +11,7 @@ import { logSwallowed } from "@/lib/logSwallowed";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useServerStore } from "@/stores/serverStore";
 import { useSyndicateStore } from "@/stores/syndicateStore";
+import { SYNDICATE_INTEGRATION_DISABLED_MESSAGE } from "@/lib/syndicateIntegration";
 import { rememberAccountChoice, resolveAccountId } from "@/lib/sessionAccountDefaults";
 import { normalizeTerminalShellSelection } from "@/lib/terminalShells";
 import type { TerminalShellSelection } from "@/types/terminal-shell";
@@ -526,6 +527,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
 
     if (executionTarget.kind === "syndicate") {
+      if (!useSyndicateStore.getState().enabled) {
+        throw new Error(`createWorkspace: ${SYNDICATE_INTEGRATION_DISABLED_MESSAGE}`);
+      }
       if (serverId || remoteProjectPath) {
         throw new Error("createWorkspace: Syndicate targets cannot carry SSH fields");
       }
@@ -763,6 +767,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // default is written exactly once per add.
     const target = get().workspaces.find((w) => w.id === workspaceId);
     if (target?.executionTarget?.kind === "syndicate") {
+      if (!useSyndicateStore.getState().enabled) {
+        throw new Error(SYNDICATE_INTEGRATION_DISABLED_MESSAGE);
+      }
       if (!(["codex", "claude-code", "packetcode"] as WorkspaceAgentSlot[]).includes(agentId)) {
         throw new Error("Syndicate supports only Codex, Claude Code, and PacketCode panes");
       }

@@ -104,9 +104,22 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
       {
         key: "syndicate-machines",
         label: "Syndicate Machines",
-        description: "Pair, inspect, and revoke private Linux coding-agent hosts.",
+        description:
+          "Enable or disable Syndicate, then pair, inspect, and revoke private Linux coding-agent hosts.",
         scopes: ["App", "Workspace"],
-        keywords: ["syndicate", "linux", "machine", "pair", "revoke", "controller", "remote"],
+        keywords: [
+          "syndicate",
+          "linux",
+          "machine",
+          "pair",
+          "revoke",
+          "controller",
+          "remote",
+          "enable",
+          "disable",
+          "integration",
+          "toggle",
+        ],
       },
       {
         key: "project-rules",

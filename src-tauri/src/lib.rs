@@ -282,6 +282,7 @@ pub fn run() {
             commands::ssh_keys::delete_ssh_password,
             // Syndicate execution targets (typed controller protocol v1)
             commands::syndicate::syndicate_pair_machine,
+            commands::syndicate::syndicate_disable_integration,
             commands::syndicate::syndicate_machine_snapshot,
             commands::syndicate::syndicate_workspace_list,
             commands::syndicate::syndicate_workspace_create,

@@ -134,6 +134,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   const [serverDropdownOpen, setServerDropdownOpen] = useState(false);
   const serverDropdownRef = useRef<HTMLDivElement>(null);
   const [pathProbe, setPathProbe] = useState<PathProbeState>({ kind: "idle" });
+  const syndicateEnabled = useSyndicateStore((state) => state.enabled);
   const syndicateMachines = useSyndicateStore((state) => state.machines);
   const loadSyndicateCatalog = useSyndicateStore((state) => state.loadCatalog);
   const createHostWorkspace = useSyndicateStore((state) => state.createHostWorkspace);
@@ -148,6 +149,17 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   const [syndicateCreating, setSyndicateCreating] = useState(false);
   const [syndicateError, setSyndicateError] = useState<string | null>(null);
   const hostWorkspaceOperationRef = useRef<{ key: string; id: string } | null>(null);
+
+  useEffect(() => {
+    if (syndicateEnabled || locationMode !== "syndicate") return;
+    setLocationMode("local");
+    setSyndicateMachineId(undefined);
+    setSyndicateWorkspaceId(undefined);
+    setSyndicateRepositoryId(undefined);
+    setSyndicateWorkspaces([]);
+    setSyndicateRepositories([]);
+    setSyndicateError(null);
+  }, [locationMode, syndicateEnabled]);
 
   // S6: optional "clone a repo into this remote path" flow. When the target
   // path isn't already a git repo, the user can paste a repo URL and we clone
@@ -206,7 +218,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   }, [locationMode, server]);
 
   useEffect(() => {
-    if (locationMode !== "syndicate" || !syndicateMachineId) {
+    if (!syndicateEnabled || locationMode !== "syndicate" || !syndicateMachineId) {
       setSyndicateWorkspaces([]);
       setSyndicateRepositories([]);
       setSyndicateWorkspaceId(undefined);
@@ -242,9 +254,13 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
     return () => {
       cancelled = true;
     };
-  }, [loadSyndicateCatalog, locationMode, syndicateMachineId]);
+  }, [loadSyndicateCatalog, locationMode, syndicateEnabled, syndicateMachineId]);
 
   const handleCreateHostWorkspace = useCallback(async () => {
+    if (!syndicateEnabled) {
+      setSyndicateError("Syndicate integration is disabled in Settings.");
+      return;
+    }
     if (!syndicateMachineId || !syndicateRepositoryId || !name.trim() || syndicateCreating) return;
     const operationKey = `${syndicateMachineId}\n${syndicateRepositoryId}\n${name.trim()}`;
     if (hostWorkspaceOperationRef.current?.key !== operationKey) {
@@ -269,7 +285,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
     } finally {
       setSyndicateCreating(false);
     }
-  }, [createHostWorkspace, name, syndicateCreating, syndicateMachineId, syndicateRepositoryId]);
+  }, [createHostWorkspace, name, syndicateCreating, syndicateEnabled, syndicateMachineId, syndicateRepositoryId]);
 
   useEffect(() => {
     if (locationMode !== "syndicate" || nameEdited || !syndicateWorkspace) return;
@@ -513,6 +529,9 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   const saveBlockedReason = useMemo<string | null>(() => {
     if (!name.trim()) return "Workspace name is required";
     if (selected.size === 0) return "Select at least one CLI session";
+    if (locationMode === "syndicate" && !syndicateEnabled) {
+      return "Syndicate integration is disabled in Settings";
+    }
     if (locationMode === "local") {
       // v0.8.8 (edge case): zero-workspaces + no fallback = empty
       // `selectedProjectPath`. Block submit so we never persist a
@@ -548,7 +567,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
       if (!syndicateWorkspaceId || !syndicateWorkspace) return "Choose a host-owned Workspace";
     }
     return null;
-  }, [name, selected.size, locationMode, selectedProjectPath, serverId, server, remoteProjectPath, pathProbe, syndicateMachineId, syndicateMachine, syndicateLoading, syndicateError, syndicateWorkspaceId, syndicateWorkspace]);
+  }, [name, selected.size, locationMode, selectedProjectPath, serverId, server, remoteProjectPath, pathProbe, syndicateEnabled, syndicateMachineId, syndicateMachine, syndicateLoading, syndicateError, syndicateWorkspaceId, syndicateWorkspace]);
 
   // v0.8.8 (edge case): pick a folder from the OS dialog. Used when no
   // workspace exists yet (so `useLayoutStore.projectPath` is empty) and
@@ -845,7 +864,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
             {/* Location: Local vs Remote (SSH) */}
             <div>
               <label className="text-meta text-text-muted block mb-1 uppercase tracking-wider">Location</label>
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className={`grid ${syndicateEnabled ? "grid-cols-3" : "grid-cols-2"} gap-1.5`}>
                 <button
                   type="button"
                   onClick={() => setLocationMode("local")}
@@ -876,24 +895,26 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                     <span className="text-meta text-text-muted">Saved server</span>
                   </span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLocationMode("syndicate");
-                    setSyndicateMachineId((current) => current ?? syndicateMachines[0]?.machineId);
-                  }}
-                  className={`flex items-center gap-2 px-3 py-2 text-ui rounded border transition-colors ${
-                    locationMode === "syndicate"
-                      ? "bg-accent-green/15 border-accent-green/40 text-accent-green font-medium"
-                      : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
-                  }`}
-                >
-                  <Server size={12} />
-                  <span className="flex flex-col items-start">
-                    <span>Syndicate</span>
-                    <span className="text-meta text-text-muted">Private agent host</span>
-                  </span>
-                </button>
+                {syndicateEnabled && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLocationMode("syndicate");
+                      setSyndicateMachineId((current) => current ?? syndicateMachines[0]?.machineId);
+                    }}
+                    className={`flex items-center gap-2 px-3 py-2 text-ui rounded border transition-colors ${
+                      locationMode === "syndicate"
+                        ? "bg-accent-green/15 border-accent-green/40 text-accent-green font-medium"
+                        : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
+                    }`}
+                  >
+                    <Server size={12} />
+                    <span className="flex flex-col items-start">
+                      <span>Syndicate</span>
+                      <span className="text-meta text-text-muted">Private agent host</span>
+                    </span>
+                  </button>
+                )}
               </div>
             </div>
 

@@ -9,6 +9,7 @@ const addPane = vi.hoisted(() => vi.fn());
 const addFilePane = vi.hoisted(() => vi.fn());
 const openFileDialog = vi.hoisted(() => vi.fn());
 const openSettings = vi.hoisted(() => vi.fn());
+const syndicateState = vi.hoisted(() => ({ enabled: true, machines: [] as unknown[] }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: openFileDialog }));
 const terminalSettingsState = vi.hoisted(() => ({ defaultShell: { profile: "auto" as const } }));
@@ -39,6 +40,11 @@ vi.mock("@/stores/agentStore", () => ({
 vi.mock("@/stores/serverStore", () => ({
   useServerStore: (selector: (state: { servers: unknown[] }) => unknown) =>
     selector({ servers: [] }),
+}));
+
+vi.mock("@/stores/syndicateStore", () => ({
+  useSyndicateStore: (selector: (state: typeof syndicateState) => unknown) =>
+    selector(syndicateState),
 }));
 
 vi.mock("@/stores/terminalSettingsStore", () => ({
@@ -116,6 +122,8 @@ describe("AddSessionPicker", () => {
       { id: "opencode", installed: false },
       { id: "packetcode", installed: true },
     ];
+    syndicateState.enabled = true;
+    syndicateState.machines = [];
   });
 
   function openPopover(userAgent = "Mozilla/5.0 (X11; Linux x86_64)") {
@@ -218,6 +226,27 @@ describe("AddSessionPicker", () => {
     expect(screen.getByRole("button", { name: "Claude Code" })).toBeInTheDocument();
     expect(screen.queryByText("PacketCode")).toBeNull();
     expect(screen.queryByText("Claude API")).toBeNull();
+  });
+
+  it("pauses an existing Syndicate Workspace when the integration is disabled", () => {
+    syndicateState.enabled = false;
+    const syndicateWorkspace: Workspace = {
+      ...localWorkspace,
+      id: "ws-syndicate",
+      executionTarget: {
+        kind: "syndicate",
+        machineId: "machine-1",
+        workspaceId: "host-workspace-1",
+        serverConfigId: "server-1",
+      },
+    };
+
+    render(<AddSessionPicker workspace={syndicateWorkspace} variant="inline" />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Syndicate integration is disabled");
+    fireEvent.click(screen.getByRole("button", { name: "Open Syndicate settings" }));
+    expect(openSettings).toHaveBeenCalledWith({ section: "syndicate-machines" });
+    expect(addPane).not.toHaveBeenCalled();
   });
 
   describe("account affordance", () => {

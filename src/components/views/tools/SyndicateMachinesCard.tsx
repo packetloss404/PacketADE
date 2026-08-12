@@ -27,6 +27,8 @@ export function relayEndpointFromPairingPackage(input: string): string | undefin
 }
 
 export function SyndicateMachinesCard() {
+  const enabled = useSyndicateStore((state) => state.enabled);
+  const setEnabled = useSyndicateStore((state) => state.setEnabled);
   const machines = useSyndicateStore((state) => state.machines);
   const servers = useServerStore((state) => state.servers);
   const connectionErrors = useSyndicateStore((state) => state.connectionErrors);
@@ -43,6 +45,26 @@ export function SyndicateMachinesCard() {
   const [error, setError] = useState<string | null>(null);
   const [pendingRevoke, setPendingRevoke] = useState<SyndicateMachine | null>(null);
   const [revokeError, setRevokeError] = useState<string | null>(null);
+  const [toggleBusy, setToggleBusy] = useState(false);
+  const [toggleError, setToggleError] = useState<string | null>(null);
+
+  async function toggleIntegration() {
+    if (toggleBusy) return;
+    const next = !enabled;
+    setToggleBusy(true);
+    setToggleError(null);
+    try {
+      await setEnabled(next);
+      if (!next) {
+        setShowPair(false);
+        setPendingRevoke(null);
+      }
+    } catch (reason) {
+      setToggleError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setToggleBusy(false);
+    }
+  }
 
   async function submitPair() {
     if (!pairingPayload.trim() || !deviceName.trim() || !serverConfigId) return;
@@ -99,19 +121,66 @@ export function SyndicateMachinesCard() {
             Transport: PacketRelay when configured, with the managed SSH forward as bootstrap and fallback.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setShowPair((value) => !value);
-            setError(null);
-          }}
-          className="hover:bg-accent-green/10 flex shrink-0 items-center gap-1 rounded px-2 py-1 text-[11px] text-accent-green"
-        >
-          <Plus size={11} /> Pair machine
-        </button>
+        {enabled && (
+          <button
+            type="button"
+            onClick={() => {
+              setShowPair((value) => !value);
+              setError(null);
+            }}
+            className="hover:bg-accent-green/10 flex shrink-0 items-center gap-1 rounded px-2 py-1 text-[11px] text-accent-green"
+          >
+            <Plus size={11} /> Pair machine
+          </button>
+        )}
       </div>
 
-      {showPair && (
+      <div className="mb-3 flex items-center justify-between gap-3 rounded border border-bg-border bg-bg-primary px-3 py-2.5">
+        <div>
+          <p className="text-[11px] font-medium text-text-primary">Enable Syndicate integration</p>
+          <p className="mt-0.5 max-w-2xl text-[9px] leading-relaxed text-text-muted">
+            Turning this off closes PacketADE-managed SSH tunnels, removes Syndicate from new
+            Workspace targets, and pauses remote panes. Pairings and server-side sessions are kept.
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className={`text-[9px] ${enabled ? "text-accent-green" : "text-text-muted"}`}>
+            {toggleBusy ? "Updating…" : enabled ? "Enabled" : "Disabled"}
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-label="Syndicate integration"
+            aria-checked={enabled}
+            disabled={toggleBusy}
+            onClick={() => void toggleIntegration()}
+            className={`relative h-4 w-7 rounded-full transition-colors disabled:opacity-50 ${
+              enabled ? "bg-accent-green" : "bg-bg-elevated"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-transform ${
+                enabled ? "translate-x-3.5" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {toggleError && (
+        <p role="alert" className="mb-3 text-[10px] text-accent-red">
+          {toggleError}
+        </p>
+      )}
+
+      {!enabled && (
+        <div className="rounded border border-dashed border-bg-border px-3 py-7 text-center text-[10px] text-text-muted">
+          Syndicate is disabled. {machines.length} paired machine{machines.length === 1 ? "" : "s"}{" "}
+          and all saved remote Workspace data are retained.
+        </div>
+      )}
+
+      {enabled && showPair && (
         <div className="mb-3 space-y-2 rounded border border-bg-border bg-bg-primary p-3">
           <p className="text-[10px] leading-relaxed text-text-muted">
             On the server, create a short-lived controller invite. Select its verified SSH server,
@@ -182,7 +251,7 @@ export function SyndicateMachinesCard() {
         </div>
       )}
 
-      {machines.length === 0 ? (
+      {enabled && (machines.length === 0 ? (
         <div className="rounded border border-dashed border-bg-border py-7 text-center text-[10px] text-text-muted">
           No Syndicate machines paired.
         </div>
@@ -296,9 +365,9 @@ export function SyndicateMachinesCard() {
             );
           })}
         </div>
-      )}
+        ))}
 
-      {pendingRevoke && (
+      {enabled && pendingRevoke && (
         <ConfirmDeleteModal
           title="Revoke Syndicate controller?"
           entityName={`${pendingRevoke.displayName} (${pendingRevoke.deviceId})`}

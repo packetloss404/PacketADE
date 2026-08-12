@@ -7,6 +7,7 @@ vi.mock("@/lib/tauri", () => ({
 import { useWorkspaceStore, normalizePanes } from "@/stores/workspaceStore";
 import { useServerStore } from "@/stores/serverStore";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useSyndicateStore } from "@/stores/syndicateStore";
 import type { Workspace, WorkspacePane } from "@/types/workspace";
 
 describe("workspaceStore.createWorkspace", () => {
@@ -25,6 +26,7 @@ describe("workspaceStore.createWorkspace", () => {
       knownHostsPath: null,
     });
     useLayoutStore.setState({ projectPath: "" });
+    useSyndicateStore.setState({ enabled: true, machines: [] });
   });
 
   it("creates a local workspace with no server metadata", () => {
@@ -196,6 +198,22 @@ describe("workspaceStore.createWorkspace", () => {
     useWorkspaceStore.getState().setActiveWorkspace(id);
 
     expect(useLayoutStore.getState().projectPath).toBe("C:\\new\\proj");
+  });
+
+  it("rejects a Syndicate target while the integration is disabled", () => {
+    useSyndicateStore.setState({ enabled: false });
+
+    expect(() =>
+      useWorkspaceStore.getState().createWorkspace("Remote WS", ["codex"], "/srv/repo", {
+        executionTarget: {
+          kind: "syndicate",
+          machineId: "machine-1",
+          workspaceId: "host-workspace-1",
+          serverConfigId: "server-1",
+        },
+      }),
+    ).toThrow("Syndicate integration is disabled in Settings");
+    expect(useWorkspaceStore.getState().workspaces).toHaveLength(0);
   });
 });
 

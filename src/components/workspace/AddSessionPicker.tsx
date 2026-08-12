@@ -206,6 +206,7 @@ function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentPro
   >(undefined);
   const agents = useAgentStore((state) => state.agents);
   const servers = useServerStore((state) => state.servers);
+  const syndicateEnabled = useSyndicateStore((state) => state.enabled);
   const syndicateMachines = useSyndicateStore((state) => state.machines);
   const addPane = useWorkspaceStore((state) => state.addPane);
   const addFilePane = useWorkspaceStore((state) => state.addFilePane);
@@ -215,6 +216,32 @@ function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentPro
   const terminalProfiles = shellProfilesForPlatform(terminalPlatform()).filter(
     (profile) => profile !== "custom" || defaultTerminalShell.profile === "custom",
   );
+
+  if (workspace.executionTarget?.kind === "syndicate" && !syndicateEnabled) {
+    return (
+      <div className="p-3">
+        <div role="alert" className="rounded border border-bg-border bg-bg-primary p-3">
+          <p className="text-[11px] font-medium text-text-primary">
+            Syndicate integration is disabled
+          </p>
+          <p className="mt-1 text-[9px] leading-relaxed text-text-muted">
+            Re-enable it to add or reconnect remote coding-agent panes. Existing Host sessions and
+            paired-machine records are preserved.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              openSettings({ section: "syndicate-machines" });
+              onClose();
+            }}
+            className="mt-2 inline-flex items-center gap-1 text-[10px] text-accent-green hover:underline"
+          >
+            <Settings2 size={10} /> Open Syndicate settings
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const isInstalled = (slot: WorkspaceAgentSlot): boolean => {
     if (workspace.executionTarget?.kind === "syndicate") {

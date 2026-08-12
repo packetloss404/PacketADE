@@ -20,6 +20,7 @@ import {
 } from "@/types/syndicate";
 import type { WorkspaceAgentSlot, WorkspacePane } from "@/types/workspace";
 import type { TerminalHeaderRenderState } from "@/components/session/TerminalPane";
+import { SYNDICATE_INTEGRATION_DISABLED_MESSAGE } from "@/lib/syndicateIntegration";
 import "@xterm/xterm/css/xterm.css";
 
 interface SyndicateTerminalPaneProps {
@@ -119,10 +120,14 @@ export function SyndicateTerminalPane({
   const [alive, setAlive] = useState(Boolean(pane.syndicateSessionId));
   const [error, setError] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
+  const integrationEnabled = useSyndicateStore((state) => state.enabled);
   const machine = useSyndicateStore((state) => state.machines.find((item) => item.machineId === machineId));
   const hasScope = useCallback(
-    (scope: string) => machine?.grantStatus === "active" && machine.scopes.includes(scope as never),
-    [machine],
+    (scope: string) =>
+      integrationEnabled &&
+      machine?.grantStatus === "active" &&
+      machine.scopes.includes(scope as never),
+    [integrationEnabled, machine],
   );
 
   const updatePane = useCallback(
@@ -157,6 +162,11 @@ export function SyndicateTerminalPane({
       if (!machine) return;
       let delay = 350;
       while (mountedRef.current && pollGenerationRef.current === generation && sessionIdRef.current) {
+        if (!useSyndicateStore.getState().enabled) {
+          setAlive(false);
+          setReconnecting(false);
+          return;
+        }
         try {
           const response = await syndicateSessionAttach({
             connection: syndicateConnection(machine),
@@ -182,7 +192,10 @@ export function SyndicateTerminalPane({
           if (!mountedRef.current || pollGenerationRef.current !== generation) return;
           const message = reason instanceof Error ? reason.message : String(reason);
           setError(message);
-          if (/DEVICE_REVOKED|SCOPE_DENIED|SESSION_NOT_FOUND|SESSION_NOT_OWNED/.test(message)) {
+          if (
+            message === SYNDICATE_INTEGRATION_DISABLED_MESSAGE ||
+            /DEVICE_REVOKED|SCOPE_DENIED|SESSION_NOT_FOUND|SESSION_NOT_OWNED/.test(message)
+          ) {
             setAlive(false);
             setReconnecting(false);
             break;
@@ -197,6 +210,11 @@ export function SyndicateTerminalPane({
   );
 
   const startOrAttach = useCallback(async () => {
+    if (!integrationEnabled) {
+      setError(SYNDICATE_INTEGRATION_DISABLED_MESSAGE);
+      setAlive(false);
+      return;
+    }
     if (!machine) {
       setError("This Syndicate machine is no longer paired.");
       return;
@@ -291,9 +309,14 @@ export function SyndicateTerminalPane({
       term.write(`\r\n\x1b[31m[Syndicate] ${message}\x1b[0m\r\n`);
       setAlive(false);
     }
-  }, [hasScope, hostWorkspaceId, initialPrompt, machine, pane, persistCursor, pollOutput, updatePane]);
+  }, [hasScope, hostWorkspaceId, initialPrompt, integrationEnabled, machine, pane, persistCursor, pollOutput, updatePane]);
 
   const stop = useCallback(async () => {
+    if (!integrationEnabled) {
+      throw new Error(
+        `${SYNDICATE_INTEGRATION_DISABLED_MESSAGE} Re-enable it before stopping this preserved remote session.`,
+      );
+    }
     if (sessionIdRef.current) {
       if (!machine) {
         throw new Error("The paired Syndicate machine is unavailable; the remote session was preserved.");
@@ -322,7 +345,7 @@ export function SyndicateTerminalPane({
       syndicateCursor: 0,
       syndicateOperationGeneration: operationGenerationRef.current,
     });
-  }, [hasScope, machine, updatePane]);
+  }, [hasScope, integrationEnabled, machine, updatePane]);
 
   const restart = useCallback(async () => {
     if (sessionIdRef.current) await stop();
@@ -351,7 +374,7 @@ export function SyndicateTerminalPane({
 
     const dataDisposable = term.onData((data) => {
       const sessionId = sessionIdRef.current;
-      if (!machine || !sessionId || !hasScope("terminal.input")) return;
+      if (!integrationEnabled || !machine || !sessionId || !hasScope("terminal.input")) return;
       // Never retry input automatically: a lost response can mean delivery is
       // uncertain, and replaying keystrokes would duplicate code-execution authority.
       void syndicateSessionInput({
@@ -363,7 +386,7 @@ export function SyndicateTerminalPane({
     });
     const resizeDisposable = term.onResize(({ cols, rows }) => {
       const sessionId = sessionIdRef.current;
-      if (!machine || !sessionId || !hasScope("terminal.resize") || cols < 2 || rows < 2) return;
+      if (!integrationEnabled || !machine || !sessionId || !hasScope("terminal.resize") || cols < 2 || rows < 2) return;
       void syndicateSessionResize({
         connection: syndicateConnection(machine),
         sessionId,
@@ -384,17 +407,26 @@ export function SyndicateTerminalPane({
       termRef.current = null;
       fitRef.current = null;
     };
-  }, [hasScope, machine]);
+  }, [hasScope, integrationEnabled, machine]);
+
+  useEffect(() => {
+    if (integrationEnabled) return;
+    pollGenerationRef.current += 1;
+    startedRef.current = false;
+    setAlive(false);
+    setReconnecting(false);
+    setError(null);
+  }, [integrationEnabled]);
 
   useEffect(() => {
     mountedRef.current = true;
-    if (autoStart && !startedRef.current) {
+    if (integrationEnabled && autoStart && !startedRef.current) {
       startedRef.current = true;
       const timer = window.setTimeout(() => void startOrAttach(), 200);
       return () => window.clearTimeout(timer);
     }
     return undefined;
-  }, [autoStart, startOrAttach]);
+  }, [autoStart, integrationEnabled, startOrAttach]);
 
   useEffect(
     () => () => {
@@ -414,8 +446,14 @@ export function SyndicateTerminalPane({
         showApproval: false,
         cliCommand: `syndicate:${pane.agentId}`,
         onRestart: () => void restart(),
-        onKill: () => void stop(),
+        onKill: stop,
       })}
+      {!integrationEnabled && (
+        <div className="border-b border-accent-amber/20 bg-accent-amber/5 px-2 py-1 text-[9px] text-accent-amber">
+          Syndicate integration is disabled in Settings. This remote session is preserved and
+          PacketADE will not reconnect or send input until you re-enable it.
+        </div>
+      )}
       {error && (
         <div className="border-b border-accent-red/20 bg-accent-red/5 px-2 py-1 text-[9px] text-accent-red">
           {reconnecting ? "Reconnecting" : "Disconnected"} · {error}
@@ -423,7 +461,14 @@ export function SyndicateTerminalPane({
       )}
       <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden p-1" />
       <div className="border-t border-bg-border px-2 py-1 text-[9px] text-text-muted">
-        Syndicate · {machine?.displayName ?? machineId} · {alive ? "running" : "detached"} · {hasScope("terminal.input") ? "interactive" : "read-only; re-pair with terminal.input to control"} · cursor {cursorRef.current}
+        Syndicate · {machine?.displayName ?? machineId} ·{" "}
+        {integrationEnabled ? (alive ? "running" : "detached") : "disabled"} ·{" "}
+        {hasScope("terminal.input")
+          ? "interactive"
+          : integrationEnabled
+            ? "read-only; re-pair with terminal.input to control"
+            : "transport paused"}{" "}
+        · cursor {cursorRef.current}
       </div>
     </div>
   );
