@@ -9,6 +9,7 @@ import {
   syndicateMachineSnapshot,
   syndicateWorkspaceCreate,
   syndicateWorkspaceList,
+  setNativeSyndicateIntegrationEnabled,
 } from "@/lib/tauri";
 import {
   parseMachineSnapshot,
@@ -29,11 +30,17 @@ const MACHINES_KEY = storageKey("syndicate-machines-v1");
 
 interface SyndicateStore {
   enabled: boolean;
+  /** Native command boundary has applied the persisted preference. */
+  nativeReady: boolean;
+  nativeSyncError?: string;
+  /** Invalidates late controller reads when the integration changes state. */
+  operationGeneration: number;
   machines: SyndicateMachine[];
   connectionErrors: Record<string, string | undefined>;
   workspaceCache: Record<string, SyndicateWorkspaceSnapshot[]>;
   catalogCache: Record<string, SyndicateWorkspaceCatalog>;
   setEnabled: (enabled: boolean) => Promise<void>;
+  syncNative: () => Promise<void>;
   pair: (
     pairingPayload: string,
     deviceName: string,
@@ -50,6 +57,7 @@ interface SyndicateStore {
   ) => Promise<SyndicateWorkspaceSnapshot>;
   revoke: (machineId: string) => Promise<void>;
   forgetOffline: (machineId: string) => Promise<void>;
+  recordControllerFailure: (machineId: string, deviceId: string, error: unknown) => void;
   getMachine: (machineId: string) => SyndicateMachine | undefined;
 }
 
@@ -66,7 +74,8 @@ function loadMachines(): SyndicateMachine[] {
       typeof item.serverConfigId === "string" &&
       typeof item.localPort === "number" &&
       typeof item.machineSigningFingerprint === "string" &&
-      Array.isArray(item.scopes)
+      Array.isArray(item.scopes) &&
+      item.scopes.every((scope) => typeof scope === "string")
     );
   });
 }
@@ -75,27 +84,119 @@ function persist(machines: SyndicateMachine[]) {
   saveToStorage(MACHINES_KEY, machines);
 }
 
+function grantStatusFromError(error: unknown): "revoked" | "expired" | undefined {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/DEVICE_REVOKED|device was revoked by Syndicate/i.test(message)) return "revoked";
+  if (/GRANT_EXPIRED|DEVICE_EXPIRED|relay grant (?:is )?expired/i.test(message)) return "expired";
+  return undefined;
+}
+
+function hasCurrentDevice(
+  state: Pick<SyndicateStore, "machines">,
+  machineId: string,
+  deviceId: string,
+): boolean {
+  return state.machines.some(
+    (machine) => machine.machineId === machineId && machine.deviceId === deviceId,
+  );
+}
+
+let preferenceTransition: Promise<void> = Promise.resolve();
+let preferenceRevision = 0;
+let requestedEnabled = loadSyndicateIntegrationEnabled();
+
 export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
   enabled: loadSyndicateIntegrationEnabled(),
+  nativeReady: false,
+  nativeSyncError: undefined,
+  operationGeneration: 0,
   machines: loadMachines(),
   connectionErrors: {},
   workspaceCache: {},
   catalogCache: {},
 
   setEnabled: async (enabled) => {
-    const previous = get().enabled;
-    if (previous === enabled) return;
-    persistSyndicateIntegrationEnabled(enabled);
-    set({ enabled });
-    if (!enabled) {
-      try {
-        await disableSyndicateIntegration();
-      } catch (error) {
-        persistSyndicateIntegrationEnabled(previous);
-        set({ enabled: previous });
-        throw error;
-      }
+    if (requestedEnabled === enabled && get().enabled === enabled && get().nativeReady) {
+      return preferenceTransition;
     }
+    requestedEnabled = enabled;
+    const revision = ++preferenceRevision;
+
+    // Close the frontend boundary immediately. Enabling is the inverse: the
+    // native boundary must open successfully before mounted panes see true.
+    if (!enabled) {
+      persistSyndicateIntegrationEnabled(false);
+      set((state) => ({
+        enabled: false,
+        operationGeneration: state.operationGeneration + 1,
+      }));
+    }
+
+    preferenceTransition = preferenceTransition
+      .catch(() => {})
+      .then(async () => {
+        if (revision !== preferenceRevision) return;
+        try {
+          if (enabled) await setNativeSyndicateIntegrationEnabled(true);
+          else await disableSyndicateIntegration();
+        } catch (error) {
+          // Disable flips the native flag before tunnel cleanup, so even a
+          // degraded cleanup result is a ready, fail-closed command boundary.
+          set({
+            nativeReady: !enabled,
+            nativeSyncError: error instanceof Error ? error.message : String(error),
+          });
+          if (enabled && revision === preferenceRevision) requestedEnabled = get().enabled;
+          throw error;
+        }
+
+        // A newer intent arrived while native work was in flight. If this was
+        // a stale enable, close it again before yielding to the queued disable.
+        if (revision !== preferenceRevision) {
+          if (enabled) await disableSyndicateIntegration();
+          return;
+        }
+        if (enabled) {
+          persistSyndicateIntegrationEnabled(true);
+          set((state) => ({
+            enabled: true,
+            nativeReady: true,
+            nativeSyncError: undefined,
+            operationGeneration: state.operationGeneration + 1,
+          }));
+        } else {
+          set({ nativeReady: true, nativeSyncError: undefined });
+        }
+      });
+    return preferenceTransition;
+  },
+
+  syncNative: async () => {
+    requestedEnabled = get().enabled;
+    const desiredEnabled = requestedEnabled;
+    const revision = ++preferenceRevision;
+    preferenceTransition = preferenceTransition
+      .catch(() => {})
+      .then(async () => {
+        if (revision !== preferenceRevision) return;
+        try {
+          await setNativeSyndicateIntegrationEnabled(desiredEnabled);
+          if (revision !== preferenceRevision) {
+            if (desiredEnabled) await disableSyndicateIntegration();
+            return;
+          }
+          set({ nativeReady: true, nativeSyncError: undefined });
+        } catch (error) {
+          if (revision === preferenceRevision) {
+            set({
+              nativeReady: !desiredEnabled,
+              nativeSyncError: error instanceof Error ? error.message : String(error),
+            });
+          }
+          throw error;
+        }
+      });
+    return preferenceTransition;
   },
 
   pair: async (pairingPayload, deviceName, serverConfigId, relayEndpoint) => {
@@ -149,9 +250,12 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
       addedAt: Date.now(),
     };
     set((state) => {
-      const machines = [machine, ...state.machines.filter((item) => item.machineId !== machine.machineId)];
+      const machines = [
+        machine,
+        ...state.machines.filter((item) => item.machineId !== machine.machineId),
+      ];
       persist(machines);
-      return { machines };
+      return { machines, operationGeneration: state.operationGeneration + 1 };
     });
     return machine;
   },
@@ -160,6 +264,7 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
     if (!get().enabled) throw new Error(SYNDICATE_INTEGRATION_DISABLED_MESSAGE);
     const machine = get().machines.find((item) => item.machineId === machineId);
     if (!machine) throw new Error("Syndicate machine is no longer configured");
+    const generation = get().operationGeneration;
     try {
       const response = await syndicateMachineSnapshot(syndicateConnection(machine));
       const snapshot = parseMachineSnapshot(response.result);
@@ -170,6 +275,13 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
         throw new Error("Syndicate device identity does not match the paired credential");
       }
       set((state) => {
+        if (
+          !state.enabled ||
+          state.operationGeneration !== generation ||
+          !hasCurrentDevice(state, machineId, machine.deviceId)
+        ) {
+          return state;
+        }
         const machines = state.machines.map((item) =>
           item.machineId === machineId
             ? {
@@ -189,12 +301,31 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
         };
       });
     } catch (error) {
-      set((state) => ({
-        connectionErrors: {
-          ...state.connectionErrors,
-          [machineId]: error instanceof Error ? error.message : String(error),
-        },
-      }));
+      set((state) => {
+        if (
+          !state.enabled ||
+          state.operationGeneration !== generation ||
+          !hasCurrentDevice(state, machineId, machine.deviceId)
+        ) {
+          return state;
+        }
+        const grantStatus = grantStatusFromError(error);
+        const machines = grantStatus
+          ? state.machines.map((item) =>
+              item.machineId === machineId && item.deviceId === machine.deviceId
+                ? { ...item, grantStatus }
+                : item,
+            )
+          : state.machines;
+        if (grantStatus) persist(machines);
+        return {
+          machines,
+          connectionErrors: {
+            ...state.connectionErrors,
+            [machineId]: error instanceof Error ? error.message : String(error),
+          },
+        };
+      });
       throw error;
     }
   },
@@ -203,12 +334,19 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
     if (!get().enabled) throw new Error(SYNDICATE_INTEGRATION_DISABLED_MESSAGE);
     const machine = get().machines.find((item) => item.machineId === machineId);
     if (!machine) throw new Error("Syndicate machine is no longer configured");
+    const generation = get().operationGeneration;
     const response = await syndicateWorkspaceList(syndicateConnection(machine));
     const catalog = parseWorkspaceCatalog(response.result);
-    set((state) => ({
-      workspaceCache: { ...state.workspaceCache, [machineId]: catalog.workspaces },
-      catalogCache: { ...state.catalogCache, [machineId]: catalog },
-    }));
+    set((state) =>
+      !state.enabled ||
+      state.operationGeneration !== generation ||
+      !hasCurrentDevice(state, machineId, machine.deviceId)
+        ? state
+        : {
+            workspaceCache: { ...state.workspaceCache, [machineId]: catalog.workspaces },
+            catalogCache: { ...state.catalogCache, [machineId]: catalog },
+          },
+    );
     return catalog;
   },
 
@@ -216,6 +354,7 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
     if (!get().enabled) throw new Error(SYNDICATE_INTEGRATION_DISABLED_MESSAGE);
     const machine = get().machines.find((item) => item.machineId === machineId);
     if (!machine) throw new Error("Syndicate machine is no longer configured");
+    const generation = get().operationGeneration;
     const response = await syndicateWorkspaceCreate({
       connection: syndicateConnection(machine),
       repositoryId,
@@ -224,6 +363,13 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
     });
     const workspace = parseWorkspaceCreate(response.result);
     set((state) => {
+      if (
+        !state.enabled ||
+        state.operationGeneration !== generation ||
+        !hasCurrentDevice(state, machineId, machine.deviceId)
+      ) {
+        return state;
+      }
       const existing = state.workspaceCache[machineId] ?? [];
       const workspaces = [
         workspace,
@@ -244,6 +390,7 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
   },
 
   revoke: async (machineId) => {
+    if (!get().enabled) throw new Error(SYNDICATE_INTEGRATION_DISABLED_MESSAGE);
     const machine = get().machines.find((item) => item.machineId === machineId);
     if (!machine) return;
     await revokeSyndicateMachine(syndicateConnection(machine));
@@ -251,14 +398,30 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
     set((state) => {
       const machines = state.machines.filter((item) => item.machineId !== machineId);
       persist(machines);
-      return { machines };
+      return { machines, operationGeneration: state.operationGeneration + 1 };
     });
   },
 
   forgetOffline: async (machineId) => {
+    if (!get().enabled) throw new Error(SYNDICATE_INTEGRATION_DISABLED_MESSAGE);
     await forgetSyndicateMachine(machineId);
     set((state) => {
       const machines = state.machines.filter((item) => item.machineId !== machineId);
+      persist(machines);
+      return { machines, operationGeneration: state.operationGeneration + 1 };
+    });
+  },
+
+  recordControllerFailure: (machineId, deviceId, error) => {
+    const grantStatus = grantStatusFromError(error);
+    if (!grantStatus) return;
+    set((state) => {
+      if (!hasCurrentDevice(state, machineId, deviceId)) return state;
+      const machines = state.machines.map((machine) =>
+        machine.machineId === machineId && machine.deviceId === deviceId
+          ? { ...machine, grantStatus }
+          : machine,
+      );
       persist(machines);
       return { machines };
     });

@@ -283,6 +283,7 @@ pub fn run() {
             // Syndicate execution targets (typed controller protocol v1)
             commands::syndicate::syndicate_pair_machine,
             commands::syndicate::syndicate_disable_integration,
+            commands::syndicate::syndicate_set_integration_enabled,
             commands::syndicate::syndicate_machine_snapshot,
             commands::syndicate::syndicate_workspace_list,
             commands::syndicate::syndicate_workspace_create,

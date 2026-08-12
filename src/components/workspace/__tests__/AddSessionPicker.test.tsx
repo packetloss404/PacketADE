@@ -9,7 +9,7 @@ const addPane = vi.hoisted(() => vi.fn());
 const addFilePane = vi.hoisted(() => vi.fn());
 const openFileDialog = vi.hoisted(() => vi.fn());
 const openSettings = vi.hoisted(() => vi.fn());
-const syndicateState = vi.hoisted(() => ({ enabled: true, machines: [] as unknown[] }));
+const syndicateState = vi.hoisted(() => ({ enabled: true, nativeReady: true, machines: [] as unknown[] }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: openFileDialog }));
 const terminalSettingsState = vi.hoisted(() => ({ defaultShell: { profile: "auto" as const } }));
@@ -123,6 +123,7 @@ describe("AddSessionPicker", () => {
       { id: "packetcode", installed: true },
     ];
     syndicateState.enabled = true;
+    syndicateState.nativeReady = true;
     syndicateState.machines = [];
   });
 

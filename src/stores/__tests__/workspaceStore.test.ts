@@ -26,7 +26,7 @@ describe("workspaceStore.createWorkspace", () => {
       knownHostsPath: null,
     });
     useLayoutStore.setState({ projectPath: "" });
-    useSyndicateStore.setState({ enabled: true, machines: [] });
+    useSyndicateStore.setState({ enabled: true, nativeReady: true, machines: [] });
   });
 
   it("creates a local workspace with no server metadata", () => {

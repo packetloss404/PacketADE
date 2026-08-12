@@ -36,6 +36,7 @@ import {
 import { initializeApp, persistUiState } from "@/lib/bootstrap";
 import { requestNotificationPermission } from "@/lib/notifications";
 import type { AppView } from "@/stores/appStore";
+import { useSyndicateStore } from "@/stores/syndicateStore";
 
 // Lazy-loaded views — split into separate chunks to reduce initial bundle size
 const IssueBoard = lazy(() =>
@@ -111,6 +112,13 @@ export default function App() {
   // the complete Workspace + AgentConversation graph.
   useEffect(() => {
     void initializeApp();
+    // Mirror the persisted preference into the native operation gate before
+    // any user-initiated controller work. Frontend assertions remain a second
+    // guard; native rejects direct or racing invokes while disabled.
+    void useSyndicateStore
+      .getState()
+      .syncNative()
+      .catch(() => {});
     // Request OS notification permission on the first user gesture. macOS
     // WKWebView refuses `Notification.requestPermission()` calls that aren't
     // triggered by a gesture ("can only be done from a user gesture"), so

@@ -43,3 +43,7 @@ export function assertSyndicateIntegrationEnabled(): void {
     throw new Error(SYNDICATE_INTEGRATION_DISABLED_MESSAGE);
   }
 }
+
+export function isSyndicateIntegrationEnabled(): boolean {
+  return loadSyndicateIntegrationEnabled();
+}

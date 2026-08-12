@@ -206,7 +206,7 @@ function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentPro
   >(undefined);
   const agents = useAgentStore((state) => state.agents);
   const servers = useServerStore((state) => state.servers);
-  const syndicateEnabled = useSyndicateStore((state) => state.enabled);
+  const syndicateEnabled = useSyndicateStore((state) => state.enabled && state.nativeReady);
   const syndicateMachines = useSyndicateStore((state) => state.machines);
   const addPane = useWorkspaceStore((state) => state.addPane);
   const addFilePane = useWorkspaceStore((state) => state.addFilePane);

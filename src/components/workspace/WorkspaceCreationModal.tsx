@@ -134,7 +134,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   const [serverDropdownOpen, setServerDropdownOpen] = useState(false);
   const serverDropdownRef = useRef<HTMLDivElement>(null);
   const [pathProbe, setPathProbe] = useState<PathProbeState>({ kind: "idle" });
-  const syndicateEnabled = useSyndicateStore((state) => state.enabled);
+  const syndicateEnabled = useSyndicateStore((state) => state.enabled && state.nativeReady);
   const syndicateMachines = useSyndicateStore((state) => state.machines);
   const loadSyndicateCatalog = useSyndicateStore((state) => state.loadCatalog);
   const createHostWorkspace = useSyndicateStore((state) => state.createHostWorkspace);

@@ -9,6 +9,7 @@ export type SyndicateScope =
   | "terminal.stop";
 
 export type SyndicateGrantStatus = "pending" | "active" | "revoked" | "expired";
+export type SyndicateTransport = "packet-relay" | "ssh-forward";
 
 /** Persisted metadata only. Device private keys live in the OS keychain. */
 export interface SyndicateMachine {
@@ -23,7 +24,8 @@ export interface SyndicateMachine {
   machineSigningFingerprint: string;
   machineKeyAgreementFingerprint?: string;
   grantStatus: SyndicateGrantStatus;
-  scopes: SyndicateScope[];
+  /** Known v1 scopes plus any future scope strings retained for honest UI. */
+  scopes: string[];
   addedAt: number;
   lastConnectedAt?: number;
   cachedSnapshot?: SyndicateMachineSnapshot;
@@ -52,7 +54,7 @@ export interface SyndicateMachineSnapshot {
     transport: "ssh-forward";
     device: {
       deviceId: string;
-      scopes: SyndicateScope[];
+      scopes: string[];
       revocationEpoch: number;
     };
   };
@@ -152,6 +154,8 @@ export interface SyndicateMachineConnection {
 export interface SyndicateRpcResult<T = unknown> {
   requestId: string;
   result: T;
+  /** PacketADE's selected carrier for this successful request. */
+  transport: SyndicateTransport;
 }
 
 export interface SyndicatePairResult {
@@ -165,7 +169,7 @@ export interface SyndicatePairResult {
   machineSigningFingerprint: string;
   machineKeyAgreementFingerprint?: string;
   grantStatus: SyndicateGrantStatus;
-  scopes: SyndicateScope[];
+  scopes: string[];
 }
 
 export function pairingPackageRelayEndpoint(value: unknown): string | undefined {
@@ -246,6 +250,7 @@ export function parseMachineSnapshot(value: unknown): SyndicateMachineSnapshot {
     snapshot.controller.protocolVersion !== 1 ||
     !snapshot.controller.device ||
     !Array.isArray(snapshot.controller.device.scopes) ||
+    !snapshot.controller.device.scopes.every((scope) => typeof scope === "string") ||
     !Array.isArray(snapshot.agents) ||
     typeof snapshot.snapshotSequence !== "number"
   ) {

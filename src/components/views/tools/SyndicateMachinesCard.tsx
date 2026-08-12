@@ -1,17 +1,51 @@
-import { useState } from "react";
-import { Cpu, KeyRound, Loader2, Plus, RefreshCw, ServerCog, Trash2 } from "lucide-react";
+import { useMemo, useState, useSyncExternalStore } from "react";
+import {
+  AlertTriangle,
+  Cpu,
+  KeyRound,
+  Loader2,
+  Plus,
+  RefreshCw,
+  ServerCog,
+  ShieldCheck,
+  Trash2,
+} from "lucide-react";
 import { APP_NAME } from "@/lib/brand";
 import { useSyndicateStore } from "@/stores/syndicateStore";
 import { useServerStore } from "@/stores/serverStore";
 import type { SyndicateMachine } from "@/types/syndicate";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
+import { Modal } from "@/components/ui/Modal";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import {
+  configuredTransportLabel,
+  hasSyndicateDisableImpact,
+  SYNDICATE_SCOPE_DETAILS,
+  syndicateAuthoritySummary,
+  syndicateDisableImpact,
+  transportLabel,
+  unknownSyndicateScopes,
+} from "@/lib/syndicateMachineStatus";
+import {
+  getSyndicateTransportSnapshot,
+  syndicateTransportObservation,
+  subscribeSyndicateTransportSnapshot,
+} from "@/lib/syndicateTransportStatus";
 
 function memoryLabel(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "Unknown RAM";
   return `${Math.round(bytes / 1024 ** 3)} GB RAM`;
 }
 
-export function relayEndpointFromPairingPackage(input: string): string | undefined {
+function countLabel(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function observedTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleString();
+}
+
+function relayEndpointFromPairingPackage(input: string): string | undefined {
   try {
     const trimmed = input.trim();
     const json = trimmed.startsWith("syndicate-pair-v1:")
@@ -28,8 +62,12 @@ export function relayEndpointFromPairingPackage(input: string): string | undefin
 
 export function SyndicateMachinesCard() {
   const enabled = useSyndicateStore((state) => state.enabled);
+  const nativeReady = useSyndicateStore((state) => state.nativeReady);
+  const nativeSyncError = useSyndicateStore((state) => state.nativeSyncError);
   const setEnabled = useSyndicateStore((state) => state.setEnabled);
+  const syncNative = useSyndicateStore((state) => state.syncNative);
   const machines = useSyndicateStore((state) => state.machines);
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
   const servers = useServerStore((state) => state.servers);
   const connectionErrors = useSyndicateStore((state) => state.connectionErrors);
   const pair = useSyndicateStore((state) => state.pair);
@@ -47,10 +85,16 @@ export function SyndicateMachinesCard() {
   const [revokeError, setRevokeError] = useState<string | null>(null);
   const [toggleBusy, setToggleBusy] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
+  const [confirmDisable, setConfirmDisable] = useState(false);
+  const transportSnapshot = useSyncExternalStore(
+    subscribeSyndicateTransportSnapshot,
+    getSyndicateTransportSnapshot,
+    getSyndicateTransportSnapshot,
+  );
+  const disableImpact = useMemo(() => syndicateDisableImpact(workspaces), [workspaces]);
 
-  async function toggleIntegration() {
+  async function setIntegration(next: boolean) {
     if (toggleBusy) return;
-    const next = !enabled;
     setToggleBusy(true);
     setToggleError(null);
     try {
@@ -59,11 +103,30 @@ export function SyndicateMachinesCard() {
         setShowPair(false);
         setPendingRevoke(null);
       }
+      setConfirmDisable(false);
     } catch (reason) {
-      setToggleError(reason instanceof Error ? reason.message : String(reason));
+      const detail = reason instanceof Error ? reason.message : String(reason);
+      setToggleError(
+        !next && !useSyndicateStore.getState().enabled
+          ? `Syndicate is disabled and new controller activity is blocked, but ${APP_NAME} could not confirm every managed SSH tunnel closed: ${detail}. Close ${APP_NAME} or turn the integration on and off again to retry cleanup.`
+          : detail,
+      );
     } finally {
       setToggleBusy(false);
     }
+  }
+
+  function toggleIntegration() {
+    if (!enabled) {
+      void setIntegration(true);
+      return;
+    }
+    if (hasSyndicateDisableImpact(disableImpact)) {
+      setToggleError(null);
+      setConfirmDisable(true);
+      return;
+    }
+    void setIntegration(false);
   }
 
   async function submitPair() {
@@ -114,14 +177,15 @@ export function SyndicateMachinesCard() {
           </h3>
           <p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-text-muted">
             Pair a Linux execution host over a managed, host-key-pinned SSH tunnel. PacketRelay can
-            then carry end-to-end encrypted controller traffic from anywhere. Device keys stay in the
-            OS credential store; provider credentials remain on the server.
+            then carry end-to-end encrypted controller traffic from anywhere. Device keys stay in
+            the OS credential store; provider credentials remain on the server.
           </p>
           <p className="mt-1 text-[9px] text-text-muted">
-            Transport: PacketRelay when configured, with the managed SSH forward as bootstrap and fallback.
+            Transport: managed SSH bootstraps pairing and relay grants. After PacketRelay is active,
+            failed relay requests are surfaced and never retried automatically over SSH.
           </p>
         </div>
-        {enabled && (
+        {enabled && nativeReady && (
           <button
             type="button"
             onClick={() => {
@@ -138,8 +202,11 @@ export function SyndicateMachinesCard() {
       <div className="mb-3 flex items-center justify-between gap-3 rounded border border-bg-border bg-bg-primary px-3 py-2.5">
         <div>
           <p className="text-[11px] font-medium text-text-primary">Enable Syndicate integration</p>
-          <p className="mt-0.5 max-w-2xl text-[9px] leading-relaxed text-text-muted">
-            Turning this off closes PacketADE-managed SSH tunnels, removes Syndicate from new
+          <p
+            id="syndicate-integration-consequences"
+            className="mt-0.5 max-w-2xl text-[9px] leading-relaxed text-text-muted"
+          >
+            Turning this off closes {APP_NAME}-managed SSH tunnels, removes Syndicate from new
             Workspace targets, and pauses remote panes. Pairings and server-side sessions are kept.
           </p>
         </div>
@@ -152,8 +219,9 @@ export function SyndicateMachinesCard() {
             role="switch"
             aria-label="Syndicate integration"
             aria-checked={enabled}
-            disabled={toggleBusy}
-            onClick={() => void toggleIntegration()}
+            aria-describedby="syndicate-integration-consequences"
+            disabled={toggleBusy || !nativeReady}
+            onClick={toggleIntegration}
             className={`relative h-4 w-7 rounded-full transition-colors disabled:opacity-50 ${
               enabled ? "bg-accent-green" : "bg-bg-elevated"
             }`}
@@ -173,10 +241,37 @@ export function SyndicateMachinesCard() {
         </p>
       )}
 
-      {!enabled && (
+      {!nativeReady && (
+        <div className="mb-3 flex items-center justify-between gap-3 text-[10px] text-accent-amber">
+          <p role="status">
+            {nativeSyncError
+              ? `Syndicate controller access is blocked because the native setting could not be applied: ${nativeSyncError}`
+              : "Applying the saved Syndicate setting…"}
+          </p>
+          {nativeSyncError && (
+            <button
+              type="button"
+              onClick={() => void syncNative().catch(() => {})}
+              className="border-accent-amber/30 hover:bg-accent-amber/10 shrink-0 rounded border px-2 py-1"
+            >
+              Retry native sync
+            </button>
+          )}
+        </div>
+      )}
+
+      {nativeReady && nativeSyncError && !toggleError && (
+        <p role="alert" className="mb-3 text-[10px] text-accent-amber">
+          Syndicate controller activity is blocked, but {APP_NAME} could not confirm every managed
+          SSH tunnel closed: {nativeSyncError}. Close {APP_NAME} or turn the integration on and off
+          again to retry cleanup.
+        </p>
+      )}
+
+      {!enabled && machines.length === 0 && (
         <div className="rounded border border-dashed border-bg-border px-3 py-7 text-center text-[10px] text-text-muted">
-          Syndicate is disabled. {machines.length} paired machine{machines.length === 1 ? "" : "s"}{" "}
-          and all saved remote Workspace data are retained.
+          Syndicate is disabled. No machines are paired; all saved remote Workspace data is
+          retained.
         </div>
       )}
 
@@ -184,7 +279,8 @@ export function SyndicateMachinesCard() {
         <div className="mb-3 space-y-2 rounded border border-bg-border bg-bg-primary p-3">
           <p className="text-[10px] leading-relaxed text-text-muted">
             On the server, create a short-lived controller invite. Select its verified SSH server,
-            paste the complete payload here, then approve this device in Syndicate's local browser UI.
+            paste the complete payload here, then approve this device in Syndicate's local browser
+            UI.
           </p>
           <select
             value={serverConfigId}
@@ -211,11 +307,15 @@ export function SyndicateMachinesCard() {
             value={relayEndpoint}
             onChange={(event) => setRelayEndpoint(event.target.value)}
             aria-label="PacketRelay product-route endpoint"
-            placeholder={relayEndpointFromPairingPackage(pairingPayload) ?? "Optional override: wss://relay.example/v1/product-route"}
+            placeholder={
+              relayEndpointFromPairingPackage(pairingPayload) ??
+              "Optional override: wss://relay.example/v1/product-route"
+            }
             className="w-full rounded border border-bg-border bg-bg-secondary px-2 py-1.5 font-mono text-[10px] text-text-primary outline-none focus:border-accent-green"
           />
           <p className="text-[9px] text-text-muted">
-            The endpoint must be exact WSS /v1/product-route. Leave blank to use the Host-selected endpoint in the pairing package (or SSH-only when none is present).
+            The endpoint must be exact WSS /v1/product-route. Leave blank to use the Host-selected
+            endpoint in the pairing package (or SSH-only when none is present).
           </p>
           <textarea
             value={pairingPayload}
@@ -238,10 +338,7 @@ export function SyndicateMachinesCard() {
               type="button"
               onClick={() => void submitPair()}
               disabled={
-                !pairingPayload.trim() ||
-                !deviceName.trim() ||
-                !serverConfigId ||
-                busyId === "pair"
+                !pairingPayload.trim() || !deviceName.trim() || !serverConfigId || busyId === "pair"
               }
               className="border-accent-green/30 bg-accent-green/10 rounded border px-3 py-1 text-[10px] text-accent-green disabled:opacity-40"
             >
@@ -251,17 +348,35 @@ export function SyndicateMachinesCard() {
         </div>
       )}
 
-      {enabled && (machines.length === 0 ? (
-        <div className="rounded border border-dashed border-bg-border py-7 text-center text-[10px] text-text-muted">
-          No Syndicate machines paired.
-        </div>
+      {machines.length === 0 ? (
+        enabled ? (
+          <div className="rounded border border-dashed border-bg-border py-7 text-center text-[10px] text-text-muted">
+            No Syndicate machines paired.
+          </div>
+        ) : null
       ) : (
         <div className="space-y-2">
           {machines.map((machine) => {
             const snapshot = machine.cachedSnapshot;
-            const connectionError = connectionErrors[machine.machineId];
+            const connectionError = enabled ? connectionErrors[machine.machineId] : undefined;
+            const transportObservation = syndicateTransportObservation(
+              transportSnapshot,
+              machine.machineId,
+              machine.deviceId,
+            );
+            const authority = syndicateAuthoritySummary(machine.grantStatus, machine.scopes);
+            const unknownScopes = unknownSyndicateScopes(machine.scopes);
+            const authorityIsCurrent = machine.grantStatus === "active";
+            const effectiveScopes = authorityIsCurrent ? machine.scopes : [];
+            const canLaunch = ["workspace.create", "session.start", "terminal.view"].every(
+              (scope) => effectiveScopes.includes(scope),
+            );
             return (
-              <div key={machine.machineId} className="rounded border border-bg-border bg-bg-primary p-3">
+              <div
+                key={machine.machineId}
+                aria-disabled={!enabled || !nativeReady}
+                className="rounded border border-bg-border bg-bg-primary p-3"
+              >
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -270,17 +385,26 @@ export function SyndicateMachinesCard() {
                       </span>
                       <span
                         className={`rounded px-1.5 py-0.5 text-[9px] ${
-                          connectionError
-                            ? "bg-accent-red/10 text-accent-red"
-                            : machine.grantStatus === "active"
-                              ? "bg-accent-green/10 text-accent-green"
-                              : "bg-accent-amber/10 text-accent-amber"
+                          !enabled || !nativeReady
+                            ? "bg-bg-elevated text-text-secondary"
+                            : connectionError
+                              ? "bg-accent-red/10 text-accent-red"
+                              : machine.grantStatus === "active"
+                                ? "bg-accent-green/10 text-accent-green"
+                                : "bg-accent-amber/10 text-accent-amber"
                         }`}
                       >
-                        {connectionError ? "offline" : machine.grantStatus}
+                        {!enabled || !nativeReady
+                          ? !enabled
+                            ? "paused by setting"
+                            : "blocked by native sync"
+                          : connectionError
+                            ? "offline"
+                            : machine.grantStatus}
                       </span>
                       {snapshot && (
                         <span className="text-[9px] text-text-muted">
+                          {!enabled || !nativeReady ? "Last known · " : ""}
                           {snapshot.machine.os} · {snapshot.machine.architecture} ·{" "}
                           {snapshot.machine.logicalCpuCount} cores ·{" "}
                           {memoryLabel(snapshot.machine.totalMemoryBytes)}
@@ -291,28 +415,45 @@ export function SyndicateMachinesCard() {
                       <span>machine {machine.machineId}</span>
                       <span>device {machine.deviceId}</span>
                       <span>
-                        SSH {servers.find((server) => server.id === machine.serverConfigId)?.name ?? machine.serverConfigId}
+                        SSH{" "}
+                        {servers.find((server) => server.id === machine.serverConfigId)?.name ??
+                          machine.serverConfigId}
                       </span>
                       <span>127.0.0.1:{machine.localPort}</span>
-                      <span>{machine.relayEndpoint ? "PacketRelay enabled" : "SSH only"}</span>
                     </div>
-                    {connectionError && <p className="mt-1 text-[10px] text-accent-red">{connectionError}</p>}
-                    {machine.grantStatus === "pending" && (
-                      <p className="mt-1 text-[10px] text-accent-amber">
-                        Pairing claim submitted. Approve this device in the server's local Syndicate UI,
-                        then refresh.
+                    <div className="mt-2 grid gap-1 text-[9px] text-text-secondary sm:grid-cols-2">
+                      <p>
+                        <span className="text-text-muted">Configured: </span>
+                        {configuredTransportLabel(machine.relayEndpoint)}
+                      </p>
+                      <p>
+                        <span className="text-text-muted">Last successful path: </span>
+                        {transportObservation
+                          ? `${transportLabel(transportObservation.transport)} · ${observedTime(transportObservation.observedAt)}`
+                          : "Not observed yet"}
+                      </p>
+                    </div>
+                    {machine.relayEndpoint && transportObservation?.transport === "ssh-forward" && (
+                      <p className="mt-1 text-[9px] text-text-muted">
+                        Managed SSH was used to bootstrap pairing or obtain the verified PacketRelay
+                        grant.
                       </p>
                     )}
-                    {machine.grantStatus === "active" &&
-                      (!machine.scopes.includes("workspace.create") ||
-                        !machine.scopes.includes("session.start") ||
-                        !machine.scopes.includes("terminal.view")) && (
-                        <p className="mt-1 text-[10px] text-accent-amber">
-                          View-only grant: status and catalog browsing are available, but PacketADE
-                          cannot launch terminal panes. Create a new Full control invite in Syndicate
-                          and re-pair this device for execution.
-                        </p>
-                      )}
+                    {connectionError && (
+                      <p className="mt-1 text-[10px] text-accent-red">{connectionError}</p>
+                    )}
+                    {machine.grantStatus === "pending" && (
+                      <p className="mt-1 text-[10px] text-accent-amber">
+                        Pairing claim submitted. Approve this device in the server's local Syndicate
+                        UI, then refresh.
+                      </p>
+                    )}
+                    {machine.grantStatus === "active" && !canLaunch && (
+                      <p className="mt-1 text-[10px] text-accent-amber">
+                        This grant cannot launch {APP_NAME} terminal panes because one or more
+                        launch permissions are missing. Its exact authority is listed below.
+                      </p>
+                    )}
                     {snapshot && (
                       <div className="mt-2 flex flex-wrap gap-1">
                         {snapshot.agents.map((agent) => (
@@ -320,7 +461,8 @@ export function SyndicateMachinesCard() {
                             key={agent.profileId}
                             className="flex items-center gap-1 rounded border border-bg-border px-1.5 py-0.5 text-[9px] text-text-secondary"
                           >
-                            <Cpu size={9} /> {agent.displayName} {agent.version ?? ""} · {agent.state}
+                            <Cpu size={9} /> {agent.displayName} {agent.version ?? ""} ·{" "}
+                            {agent.state}
                           </span>
                         ))}
                       </div>
@@ -330,7 +472,8 @@ export function SyndicateMachinesCard() {
                     <button
                       type="button"
                       onClick={() => void refresh(machine.machineId).catch(() => {})}
-                      disabled={busyId === machine.machineId}
+                      disabled={!enabled || !nativeReady || busyId === machine.machineId}
+                      aria-label={`Refresh ${machine.displayName}`}
                       className="p-1 text-text-muted hover:text-accent-green disabled:opacity-40"
                       title="Refresh capability and health"
                     >
@@ -346,7 +489,9 @@ export function SyndicateMachinesCard() {
                         setPendingRevoke(machine);
                         setRevokeError(null);
                       }}
-                      className="p-1 text-text-muted hover:text-accent-red"
+                      disabled={!enabled || !nativeReady || busyId === machine.machineId}
+                      aria-label={`Revoke ${machine.displayName}`}
+                      className="p-1 text-text-muted hover:text-accent-red disabled:opacity-40"
                       title="Revoke controller device"
                     >
                       <Trash2 size={11} />
@@ -359,13 +504,149 @@ export function SyndicateMachinesCard() {
                   </div>
                 )}
                 <div className="mt-1 flex items-center gap-1 text-[9px] text-text-muted">
-                  <KeyRound size={9} /> Syndicate machine fingerprint {machine.machineSigningFingerprint}
+                  <KeyRound size={9} /> Syndicate machine fingerprint{" "}
+                  {machine.machineSigningFingerprint}
+                </div>
+                <div className="mt-3 border-t border-bg-border pt-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="flex items-center gap-1 text-[10px] font-medium text-text-primary">
+                      <ShieldCheck size={10} /> {authority}
+                    </p>
+                    <p className="text-[9px] text-text-muted">
+                      {machine.grantStatus === "pending"
+                        ? "Requested authority"
+                        : machine.grantStatus === "revoked" || machine.grantStatus === "expired"
+                          ? "Historical authority"
+                          : !enabled || !nativeReady || connectionError
+                            ? "Last verified authority"
+                            : "Granted authority"}
+                      {machine.lastConnectedAt ? ` · ${observedTime(machine.lastConnectedAt)}` : ""}
+                    </p>
+                  </div>
+                  <ul
+                    aria-label={`Permissions for ${machine.displayName}`}
+                    className="mt-2 grid gap-1 sm:grid-cols-2"
+                  >
+                    {SYNDICATE_SCOPE_DETAILS.map(({ scope, label, group }) => {
+                      const granted = effectiveScopes.includes(scope);
+                      const retained = !authorityIsCurrent && machine.scopes.includes(scope);
+                      const retainedLabel =
+                        machine.grantStatus === "pending" ? "Requested" : "Previously granted";
+                      return (
+                        <li
+                          key={scope}
+                          className="flex items-center justify-between gap-2 rounded border border-bg-border px-2 py-1 text-[9px]"
+                        >
+                          <span className="text-text-secondary">
+                            {label} · {group}
+                          </span>
+                          <span
+                            className={
+                              granted
+                                ? "text-accent-green"
+                                : retained
+                                  ? "text-accent-amber"
+                                  : "text-text-muted"
+                            }
+                          >
+                            {granted ? "Granted" : retained ? retainedLabel : "Not granted"}
+                          </span>
+                        </li>
+                      );
+                    })}
+                    {unknownScopes.map((scope) => (
+                      <li
+                        key={scope}
+                        className="flex items-center justify-between gap-2 rounded border border-bg-border px-2 py-1 text-[9px]"
+                      >
+                        <span className="font-mono text-text-secondary">
+                          Unknown permission · {scope}
+                        </span>
+                        <span className="text-accent-amber">
+                          {authorityIsCurrent
+                            ? "Granted"
+                            : machine.grantStatus === "pending"
+                              ? "Requested"
+                              : "Previously granted"}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  {effectiveScopes.includes("terminal.input") && (
+                    <p
+                      role="note"
+                      className="border-accent-amber/30 bg-accent-amber/10 mt-2 flex items-start gap-1.5 rounded border px-2 py-1.5 text-[9px] text-accent-amber"
+                    >
+                      <AlertTriangle size={10} className="mt-0.5 shrink-0" />
+                      Terminal input is granted. It can execute code with the Syndicate Linux
+                      user&apos;s authority.
+                    </p>
+                  )}
                 </div>
               </div>
             );
           })}
         </div>
-        ))}
+      )}
+
+      {confirmDisable && enabled && (
+        <Modal
+          title="Disable Syndicate integration?"
+          width="w-[440px]"
+          closeDisabled={toggleBusy}
+          onClose={() => {
+            if (!toggleBusy) setConfirmDisable(false);
+          }}
+          footer={
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={toggleBusy}
+                onClick={() => setConfirmDisable(false)}
+                className="rounded px-3 py-1.5 text-[10px] text-text-secondary hover:bg-bg-hover disabled:opacity-40"
+              >
+                Keep enabled
+              </button>
+              <button
+                type="button"
+                disabled={toggleBusy}
+                onClick={() => void setIntegration(false)}
+                className="bg-accent-amber/15 hover:bg-accent-amber/25 rounded px-3 py-1.5 text-[10px] font-medium text-accent-amber disabled:opacity-40"
+              >
+                {toggleBusy ? "Disabling…" : "Disable integration"}
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-3 px-5 py-4 text-[11px] text-text-secondary">
+            <p>
+              {APP_NAME} will stop all Syndicate controller activity and close its managed SSH
+              forwards. Pairings, Workspace data, pane identities, cursors, and Host sessions are
+              retained.
+            </p>
+            <div
+              role="alert"
+              className="border-accent-amber/30 bg-accent-amber/10 rounded border px-3 py-2"
+            >
+              <p className="font-medium text-accent-amber">
+                This will pause remote work in {APP_NAME}
+              </p>
+              <ul className="mt-1 list-disc space-y-1 pl-4 text-[10px]">
+                <li>
+                  {countLabel(disableImpact.activeWorkspaces, "active Syndicate Workspace")} will
+                  become read-only.
+                </li>
+                <li>{countLabel(disableImpact.activePanes, "remote terminal pane")} will pause.</li>
+                <li>
+                  {countLabel(disableImpact.knownHostSessions, "known Host session")} may continue
+                  running on the server.
+                </li>
+              </ul>
+            </div>
+            {toggleError && <p className="text-[10px] text-accent-red">{toggleError}</p>}
+          </div>
+        </Modal>
+      )}
 
       {enabled && pendingRevoke && (
         <ConfirmDeleteModal

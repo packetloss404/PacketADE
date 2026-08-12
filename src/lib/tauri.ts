@@ -41,7 +41,11 @@ import type {
 } from "@/types/syndicate";
 import { normalizeTerminalShellSelection } from "@/lib/terminalShells";
 import { isValidMosaicTree } from "@/lib/mosaicPresets";
-import { assertSyndicateIntegrationEnabled } from "@/lib/syndicateIntegration";
+import {
+  assertSyndicateIntegrationEnabled,
+  isSyndicateIntegrationEnabled,
+} from "@/lib/syndicateIntegration";
+import { forgetSyndicateTransport, recordSyndicateTransport } from "@/lib/syndicateTransportStatus";
 
 type WorkspacePaneDtoWithFrontendMetadata = WorkspaceDto["panes"][number] &
   Pick<Workspace["panes"][number], "pinnedCommands">;
@@ -60,9 +64,32 @@ export async function pairSyndicateMachine(
   relayEndpoint?: string,
 ): Promise<SyndicatePairResult> {
   assertSyndicateIntegrationEnabled();
-  return invoke("syndicate_pair_machine", {
+  const result = await invoke<SyndicatePairResult>("syndicate_pair_machine", {
     request: { pairingPayload, deviceName, serverConfigId, relayEndpoint },
   });
+  // Claim, approval bootstrap, and the first verified snapshot all use the
+  // pinned managed SSH forward before a relay grant is available.
+  if (isSyndicateIntegrationEnabled()) {
+    recordSyndicateTransport(result.machineId, result.deviceId, "ssh-forward");
+  }
+  return result;
+}
+
+async function invokeSyndicateRpc(
+  command: string,
+  args: Record<string, unknown>,
+  machineId: string,
+  deviceId: string,
+): Promise<SyndicateRpcResult> {
+  assertSyndicateIntegrationEnabled();
+  const response = await invoke<SyndicateRpcResult>(command, args);
+  if (response.transport !== "packet-relay" && response.transport !== "ssh-forward") {
+    throw new Error("Native Syndicate response is missing valid transport metadata");
+  }
+  if (isSyndicateIntegrationEnabled()) {
+    recordSyndicateTransport(machineId, deviceId, response.transport);
+  }
+  return response;
 }
 
 export async function syndicateWorkspaceCreate(input: {
@@ -71,22 +98,34 @@ export async function syndicateWorkspaceCreate(input: {
   name: string;
   clientOperationId: string;
 }): Promise<SyndicateRpcResult> {
-  assertSyndicateIntegrationEnabled();
-  return invoke("syndicate_workspace_create", { request: input });
+  return invokeSyndicateRpc(
+    "syndicate_workspace_create",
+    { request: input },
+    input.connection.machineId,
+    input.connection.deviceId,
+  );
 }
 
 export async function syndicateMachineSnapshot(
   connection: SyndicateMachineConnection,
 ): Promise<SyndicateRpcResult> {
-  assertSyndicateIntegrationEnabled();
-  return invoke("syndicate_machine_snapshot", { connection });
+  return invokeSyndicateRpc(
+    "syndicate_machine_snapshot",
+    { connection },
+    connection.machineId,
+    connection.deviceId,
+  );
 }
 
 export async function syndicateWorkspaceList(
   connection: SyndicateMachineConnection,
 ): Promise<SyndicateRpcResult> {
-  assertSyndicateIntegrationEnabled();
-  return invoke("syndicate_workspace_list", { connection });
+  return invokeSyndicateRpc(
+    "syndicate_workspace_list",
+    { connection },
+    connection.machineId,
+    connection.deviceId,
+  );
 }
 
 export async function syndicateSessionStart(input: {
@@ -97,8 +136,12 @@ export async function syndicateSessionStart(input: {
   cols: number;
   rows: number;
 }): Promise<SyndicateRpcResult> {
-  assertSyndicateIntegrationEnabled();
-  return invoke("syndicate_session_start", { request: input });
+  return invokeSyndicateRpc(
+    "syndicate_session_start",
+    { request: input },
+    input.connection.machineId,
+    input.connection.deviceId,
+  );
 }
 
 export async function syndicatePaneCreate(input: {
@@ -108,8 +151,12 @@ export async function syndicatePaneCreate(input: {
   profileId: "codex" | "claude" | "packetcode";
   clientOperationId: string;
 }): Promise<SyndicateRpcResult> {
-  assertSyndicateIntegrationEnabled();
-  return invoke("syndicate_pane_create", { request: input });
+  return invokeSyndicateRpc(
+    "syndicate_pane_create",
+    { request: input },
+    input.connection.machineId,
+    input.connection.deviceId,
+  );
 }
 
 export async function syndicateSessionAttach(input: {
@@ -119,8 +166,12 @@ export async function syndicateSessionAttach(input: {
   sessionId: string;
   afterSequence: number;
 }): Promise<SyndicateRpcResult> {
-  assertSyndicateIntegrationEnabled();
-  return invoke("syndicate_session_attach", { request: input });
+  return invokeSyndicateRpc(
+    "syndicate_session_attach",
+    { request: input },
+    input.connection.machineId,
+    input.connection.deviceId,
+  );
 }
 
 export async function syndicateEventsRead(input: {
@@ -128,8 +179,12 @@ export async function syndicateEventsRead(input: {
   afterSequence: number;
   limit?: number;
 }): Promise<SyndicateRpcResult> {
-  assertSyndicateIntegrationEnabled();
-  return invoke("syndicate_events_read", { request: input });
+  return invokeSyndicateRpc(
+    "syndicate_events_read",
+    { request: input },
+    input.connection.machineId,
+    input.connection.deviceId,
+  );
 }
 
 export async function syndicateSessionInput(input: {
@@ -138,8 +193,12 @@ export async function syndicateSessionInput(input: {
   frameId: string;
   inputBase64: string;
 }): Promise<SyndicateRpcResult> {
-  assertSyndicateIntegrationEnabled();
-  return invoke("syndicate_session_input", { request: input });
+  return invokeSyndicateRpc(
+    "syndicate_session_input",
+    { request: input },
+    input.connection.machineId,
+    input.connection.deviceId,
+  );
 }
 
 export async function syndicateSessionResize(input: {
@@ -148,32 +207,51 @@ export async function syndicateSessionResize(input: {
   cols: number;
   rows: number;
 }): Promise<SyndicateRpcResult> {
-  assertSyndicateIntegrationEnabled();
-  return invoke("syndicate_session_resize", { request: input });
+  return invokeSyndicateRpc(
+    "syndicate_session_resize",
+    { request: input },
+    input.connection.machineId,
+    input.connection.deviceId,
+  );
 }
 
 export async function syndicateSessionStop(input: {
   connection: SyndicateMachineConnection;
   sessionId: string;
 }): Promise<SyndicateRpcResult> {
-  assertSyndicateIntegrationEnabled();
-  return invoke("syndicate_session_stop", { request: input });
+  return invokeSyndicateRpc(
+    "syndicate_session_stop",
+    { request: input },
+    input.connection.machineId,
+    input.connection.deviceId,
+  );
 }
 
 export async function revokeSyndicateMachine(
   connection: SyndicateMachineConnection,
 ): Promise<SyndicateRpcResult> {
-  assertSyndicateIntegrationEnabled();
-  return invoke("syndicate_revoke_self", { connection });
+  return invokeSyndicateRpc(
+    "syndicate_revoke_self",
+    { connection },
+    connection.machineId,
+    connection.deviceId,
+  );
 }
 
 export async function forgetSyndicateMachine(machineId: string): Promise<void> {
-  return invoke("syndicate_forget_machine", { machineId });
+  assertSyndicateIntegrationEnabled();
+  await invoke("syndicate_forget_machine", { machineId });
+  forgetSyndicateTransport(machineId);
 }
 
 /** Close every managed SSH forward when the user disables the integration. */
 export async function disableSyndicateIntegration(): Promise<void> {
   return invoke("syndicate_disable_integration");
+}
+
+/** Synchronize the persisted frontend preference into the native fail-closed gate. */
+export async function setNativeSyndicateIntegrationEnabled(enabled: boolean): Promise<void> {
+  return invoke("syndicate_set_integration_enabled", { enabled });
 }
 
 // Filesystem

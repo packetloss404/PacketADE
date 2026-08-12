@@ -527,7 +527,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
 
     if (executionTarget.kind === "syndicate") {
-      if (!useSyndicateStore.getState().enabled) {
+      const integration = useSyndicateStore.getState();
+      if (!integration.enabled || !integration.nativeReady) {
         throw new Error(`createWorkspace: ${SYNDICATE_INTEGRATION_DISABLED_MESSAGE}`);
       }
       if (serverId || remoteProjectPath) {
@@ -767,7 +768,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // default is written exactly once per add.
     const target = get().workspaces.find((w) => w.id === workspaceId);
     if (target?.executionTarget?.kind === "syndicate") {
-      if (!useSyndicateStore.getState().enabled) {
+      const integration = useSyndicateStore.getState();
+      if (!integration.enabled || !integration.nativeReady) {
         throw new Error(SYNDICATE_INTEGRATION_DISABLED_MESSAGE);
       }
       if (!(["codex", "claude-code", "packetcode"] as WorkspaceAgentSlot[]).includes(agentId)) {

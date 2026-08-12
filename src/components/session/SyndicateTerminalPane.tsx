@@ -120,7 +120,10 @@ export function SyndicateTerminalPane({
   const [alive, setAlive] = useState(Boolean(pane.syndicateSessionId));
   const [error, setError] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
-  const integrationEnabled = useSyndicateStore((state) => state.enabled);
+  const integrationPreferenceEnabled = useSyndicateStore((state) => state.enabled);
+  const nativeReady = useSyndicateStore((state) => state.nativeReady);
+  const nativeSyncError = useSyndicateStore((state) => state.nativeSyncError);
+  const integrationEnabled = integrationPreferenceEnabled && nativeReady;
   const machine = useSyndicateStore((state) => state.machines.find((item) => item.machineId === machineId));
   const hasScope = useCallback(
     (scope: string) =>
@@ -162,7 +165,8 @@ export function SyndicateTerminalPane({
       if (!machine) return;
       let delay = 350;
       while (mountedRef.current && pollGenerationRef.current === generation && sessionIdRef.current) {
-        if (!useSyndicateStore.getState().enabled) {
+        const integration = useSyndicateStore.getState();
+        if (!integration.enabled || !integration.nativeReady) {
           setAlive(false);
           setReconnecting(false);
           return;
@@ -191,10 +195,13 @@ export function SyndicateTerminalPane({
         } catch (reason) {
           if (!mountedRef.current || pollGenerationRef.current !== generation) return;
           const message = reason instanceof Error ? reason.message : String(reason);
+          useSyndicateStore
+            .getState()
+            .recordControllerFailure(machine.machineId, machine.deviceId, reason);
           setError(message);
           if (
             message === SYNDICATE_INTEGRATION_DISABLED_MESSAGE ||
-            /DEVICE_REVOKED|SCOPE_DENIED|SESSION_NOT_FOUND|SESSION_NOT_OWNED/.test(message)
+            /DEVICE_REVOKED|device was revoked by Syndicate|relay grant (?:is )?expired|SCOPE_DENIED|SESSION_NOT_FOUND|SESSION_NOT_OWNED/i.test(message)
           ) {
             setAlive(false);
             setReconnecting(false);
@@ -419,6 +426,14 @@ export function SyndicateTerminalPane({
   }, [integrationEnabled]);
 
   useEffect(() => {
+    pollGenerationRef.current += 1;
+    startedRef.current = false;
+    setAlive(false);
+    setReconnecting(false);
+    setError(null);
+  }, [machine?.deviceId]);
+
+  useEffect(() => {
     mountedRef.current = true;
     if (integrationEnabled && autoStart && !startedRef.current) {
       startedRef.current = true;
@@ -450,8 +465,11 @@ export function SyndicateTerminalPane({
       })}
       {!integrationEnabled && (
         <div className="border-b border-accent-amber/20 bg-accent-amber/5 px-2 py-1 text-[9px] text-accent-amber">
-          Syndicate integration is disabled in Settings. This remote session is preserved and
-          PacketADE will not reconnect or send input until you re-enable it.
+          {!integrationPreferenceEnabled
+            ? "Syndicate integration is disabled in Settings. This remote session is preserved and PacketADE will not reconnect or send input until you re-enable it."
+            : nativeSyncError
+              ? `Syndicate native synchronization failed: ${nativeSyncError}. This remote session is preserved; retry synchronization in Settings.`
+              : "Applying the saved Syndicate setting. This remote session is preserved and transport remains blocked until initialization finishes."}
         </div>
       )}
       {error && (
@@ -462,7 +480,15 @@ export function SyndicateTerminalPane({
       <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden p-1" />
       <div className="border-t border-bg-border px-2 py-1 text-[9px] text-text-muted">
         Syndicate · {machine?.displayName ?? machineId} ·{" "}
-        {integrationEnabled ? (alive ? "running" : "detached") : "disabled"} ·{" "}
+        {integrationEnabled
+          ? alive
+            ? "running"
+            : "detached"
+          : integrationPreferenceEnabled
+            ? nativeSyncError
+              ? "blocked"
+              : "initializing"
+            : "disabled"} ·{" "}
         {hasScope("terminal.input")
           ? "interactive"
           : integrationEnabled

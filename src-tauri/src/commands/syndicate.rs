@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -198,6 +199,9 @@ struct RpcError {
 pub struct SyndicateRpcResult {
     pub request_id: String,
     pub result: Value,
+    /// PacketADE's carrier for this completed request. This is deliberately
+    /// separate from machine.snapshot's Host-local controller transport.
+    pub transport: &'static str,
 }
 
 #[derive(Debug, Deserialize)]
@@ -319,7 +323,20 @@ struct ManagedTunnel {
 
 static TUNNELS: OnceLock<Mutex<HashMap<String, ManagedTunnel>>> = OnceLock::new();
 static TUNNEL_START_GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+static SYNDICATE_OPERATION_GATE: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
+// Fail closed until the persisted frontend preference is mirrored during app
+// bootstrap. This prevents a direct/racing invoke from opening controller
+// authority before Settings has been applied.
+static SYNDICATE_INTEGRATION_ENABLED: AtomicBool = AtomicBool::new(false);
 static RELAY_CREDENTIAL_GATE: Mutex<()> = Mutex::new(());
+
+fn require_integration_enabled() -> Result<(), String> {
+    if SYNDICATE_INTEGRATION_ENABLED.load(Ordering::Acquire) {
+        Ok(())
+    } else {
+        Err("Syndicate integration is disabled in Settings.".into())
+    }
+}
 
 fn tunnels() -> &'static Mutex<HashMap<String, ManagedTunnel>> {
     TUNNELS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -1027,6 +1044,12 @@ async fn send_rpc(
     params: Value,
     request_id: Option<String>,
 ) -> Result<SyndicateRpcResult, String> {
+    require_integration_enabled()?;
+    // Keep a shared operation lease through signing and transport. Disable
+    // flips the flag before taking the exclusive lease, so new relay and SSH
+    // work fails while it waits for already-started requests to settle.
+    let _operation_guard = SYNDICATE_OPERATION_GATE.read().await;
+    require_integration_enabled()?;
     validate_connection(connection)?;
     let request_id = request_id.unwrap_or_else(|| Uuid::new_v4().to_string());
     require_id(&request_id, "Request id")?;
@@ -1105,8 +1128,8 @@ async fn send_rpc(
             None
         };
 
-    let response = if let Some(response) = relay_response {
-        response
+    let (response, transport) = if let Some(response) = relay_response {
+        (response, "packet-relay")
     } else {
         let local_port = ensure_tunnel(&connection.server_config_id, connection.local_port).await?;
         let mut headers = HeaderMap::new();
@@ -1139,12 +1162,13 @@ async fn send_rpc(
             .bytes()
             .await
             .map_err(|error| format!("Failed to read Syndicate response: {}", error))?;
-        serde_json::from_slice::<RpcResponse>(&bytes).map_err(|_| {
+        let response = serde_json::from_slice::<RpcResponse>(&bytes).map_err(|_| {
             format!(
                 "Syndicate returned an invalid controller response (HTTP {}).",
                 status.as_u16()
             )
-        })?
+        })?;
+        (response, "ssh-forward")
     };
     if response.protocol_version != PROTOCOL_VERSION || response.request_id != request_id {
         return Err("Syndicate returned a response for a different protocol request.".into());
@@ -1175,11 +1199,28 @@ async fn send_rpc(
     if method == "machine.snapshot" {
         capture_relay_grant(connection, &result)?;
     }
-    Ok(SyndicateRpcResult { request_id, result })
+    Ok(SyndicateRpcResult {
+        request_id,
+        result,
+        transport,
+    })
 }
 
 #[tauri::command]
 pub async fn syndicate_disable_integration() -> Result<(), String> {
+    syndicate_set_integration_enabled(false).await
+}
+
+#[tauri::command]
+pub async fn syndicate_set_integration_enabled(enabled: bool) -> Result<(), String> {
+    if !enabled {
+        SYNDICATE_INTEGRATION_ENABLED.store(false, Ordering::Release);
+    }
+    let _operation_guard = SYNDICATE_OPERATION_GATE.write().await;
+    if enabled {
+        SYNDICATE_INTEGRATION_ENABLED.store(true, Ordering::Release);
+        return Ok(());
+    }
     // Serialize with tunnel creation so disabling cannot race a new managed
     // forward into the registry after the drain completes.
     let _start_guard = TUNNEL_START_GATE.lock().await;
@@ -1190,6 +1231,9 @@ pub async fn syndicate_disable_integration() -> Result<(), String> {
 pub async fn syndicate_pair_machine(
     request: PairMachineRequest,
 ) -> Result<PairMachineResult, String> {
+    require_integration_enabled()?;
+    let _operation_guard = SYNDICATE_OPERATION_GATE.read().await;
+    require_integration_enabled()?;
     let pairing = parse_pairing_payload(&request.pairing_payload)?;
     let payload = pairing.invitation;
     require_id(&request.server_config_id, "Server config id")?;
@@ -1530,6 +1574,9 @@ pub async fn syndicate_session_stop(
 
 #[tauri::command]
 pub async fn syndicate_forget_machine(machine_id: String) -> Result<(), String> {
+    require_integration_enabled()?;
+    let _operation_guard = SYNDICATE_OPERATION_GATE.read().await;
+    require_integration_enabled()?;
     delete_signing_key(&machine_id)
 }
 
@@ -1555,6 +1602,30 @@ pub async fn syndicate_revoke_self(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn native_boundary_starts_fail_closed_before_parsing_or_key_access() {
+        SYNDICATE_INTEGRATION_ENABLED.store(false, Ordering::Release);
+        let pair_error = syndicate_pair_machine(PairMachineRequest {
+            pairing_payload: "not-a-pairing-package".into(),
+            device_name: "controller".into(),
+            server_config_id: "server-1".into(),
+            relay_endpoint: None,
+        })
+        .await
+        .err()
+        .expect("disabled pair should fail");
+        assert_eq!(pair_error, "Syndicate integration is disabled in Settings.");
+
+        let forget_error = syndicate_forget_machine("machine-1".into())
+            .await
+            .err()
+            .expect("disabled forget should fail");
+        assert_eq!(
+            forget_error,
+            "Syndicate integration is disabled in Settings."
+        );
+    }
 
     #[test]
     fn pairing_payload_accepts_only_v1_and_known_fields() {
@@ -1680,6 +1751,26 @@ mod tests {
             true,
         ));
         assert!(!use_relay_transport(None, true));
+    }
+
+    #[test]
+    fn rpc_result_serializes_packetade_carrier_separately() {
+        let relay = serde_json::to_value(SyndicateRpcResult {
+            request_id: "request-1".into(),
+            result: json!({"ok": true}),
+            transport: "packet-relay",
+        })
+        .unwrap();
+        assert_eq!(relay["transport"], "packet-relay");
+        assert_eq!(relay["requestId"], "request-1");
+
+        let ssh = serde_json::to_value(SyndicateRpcResult {
+            request_id: "request-2".into(),
+            result: Value::Null,
+            transport: "ssh-forward",
+        })
+        .unwrap();
+        assert_eq!(ssh["transport"], "ssh-forward");
     }
 
     #[test]
