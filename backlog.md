@@ -90,6 +90,13 @@ environment or packaged matrix has actually run.
   run clean-machine install/update/rollback, packaged PacketADE launch, and
   PacketAgent W9 compatibility smoke. Source detection and `doctor --json`
   already pass.
+- **P1 - Bump the version before the next release build.** `package.json` and
+  `src-tauri/tauri.conf.json` still read `0.10.5`, which has already shipped.
+  The 2026-08-15 development build of the Syndicate expiry work therefore
+  produced installers labelled `0.10.5` that hash differently from the released
+  ones (both sets are recorded in `CHANGELOG.md`). Nothing distinguishes them to
+  a user or an updater, so the unreleased pair must not be distributed and the
+  version must move before the next `pnpm tauri build`.
 - **P1 - Syndicate packaged acceptance gate.** The PacketADE flagship target,
   typed/scoped pairing and revocation, Host-owned Workspaces, durable panes,
   managed pinned-SSH bootstrap, encrypted PacketRelay transport, and target
@@ -119,7 +126,11 @@ environment or packaged matrix has actually run.
   client-side proposal, including the security tradeoff of refreshing an
   already-expired grant, is
   [`dev/syndicate-device-refresh-proposal.md`](./dev/syndicate-device-refresh-proposal.md);
-  it needs handing to the Syndicate session, which owns the decision.
+  delivered to Syndicate on 2026-08-15 as branch
+  `packetade/device-refresh-proposal` (commit `3844d3e`, one new file
+  `docs/PACKETADE_DEVICE_REFRESH_PROPOSAL.md`, branched from their `main`).
+  Blocked on Syndicate merging it and answering the six questions in its §10;
+  PacketADE builds nothing until the shape is settled.
 - **P2 - Contribute the device→relay protocol spec.** `CONTROLLER_PROTOCOL_V1`
   documents the controller→Host half only. The device→relay half — `device_hello`
   and its `SYNDICATE-RELAY-DEVICE-HELLO-V1` separator (signed over a five-field
@@ -129,8 +140,12 @@ environment or packaged matrix has actually run.
   Syndicate owns the document and asked us to write that half, since we own the
   only implementation. Its stated goal is that an independent client be
   buildable from the spec alone, which today it is not. Drafted in
-  [`dev/controller-protocol-device-relay-half.md`](./dev/controller-protocol-device-relay-half.md);
-  remaining work is to hand it to Syndicate for integration.
+  [`dev/controller-protocol-device-relay-half.md`](./dev/controller-protocol-device-relay-half.md),
+  cross-checked against the relay's own `product_route.rs` rather than our side
+  alone; remaining work is to hand it to Syndicate for integration. It also
+  records that the shared crypto fixture pins neither route-id derivation nor
+  either liveness frame, which is narrower coverage than the fixture's presence
+  suggests.
 - **P3 - Syndicate SSH forward pins the remote port to 4317.**
   `SyndicateMachineConnection.local_port` is configurable but
   `commands/syndicate.rs` builds the forward as

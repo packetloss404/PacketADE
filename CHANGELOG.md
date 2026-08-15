@@ -9,6 +9,22 @@ task list.
 
 ## [Unreleased]
 
+Windows artifacts, built 2026-08-15 02:51 from `a9d5d702`, **unsigned**:
+
+| Artifact                                         | SHA-256                                                            |
+| ------------------------------------------------ | ------------------------------------------------------------------ |
+| `PacketADE_0.10.5_x64-setup.exe` (NSIS, 89.4 MB) | `8c0233fe31a5b39fef0c1e98082c392054610ab892e7053d0b7fb21985977303` |
+| `PacketADE_0.10.5_x64_en-US.msi` (139.5 MB)      | `fca82769b8b48115d35294b2b84ed4346370c92c2804628e8859f7fac2387b45` |
+
+> **These are not the released 0.10.5.** The version was never bumped, so these
+> installers carry the same `0.10.5` string as the artifacts recorded under
+> [0.10.5] below while containing different code and hashing differently. They
+> are a development build of unreleased work. **Bump the version before any
+> release build of this branch**, and do not distribute these — an installer
+> that claims a released version but is not it cannot be told apart by a user
+> or an updater. They live in `C:\Users\ianwalmsley\packetade-build\release\`,
+> not in the repo.
+
 ### Added — Syndicate integration toggle
 
 Settings → Tools now carries an explicit switch for the Syndicate integration.
