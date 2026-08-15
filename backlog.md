@@ -104,13 +104,22 @@ environment or packaged matrix has actually run.
   The expiry matrix is now the sharpest of these: grants last 30 days with no
   renewal path, so every paired device reaches it. PacketADE handles the cliff
   correctly as of the integration-toggle work, but the fix has never been
-  exercised against a real expired grant.
+  exercised against a real expired grant. The 11-row matrix, and how to produce
+  an expired grant without waiting 30 days, is
+  [`dev/syndicate-expiry-acceptance.md`](./dev/syndicate-expiry-acceptance.md).
+  Note it establishes that Revoke cannot succeed on an expired grant — the
+  revocation RPC is itself rejected with `DEVICE_UNAUTHORIZED` — so local
+  Forget is the only cleanup path in that state.
 - **P2 - Syndicate `device.refresh` client half.** Grants expire at 30 days and
   Syndicate has no renewal method yet; it is designing and building the host
   half (its backlog item P4#2) and PacketADE implements the client call
   afterwards. Agree the method shape before either side builds. Until it lands,
   the only remedy for an expired grant is re-pairing, which PacketADE now warns
-  about in the final week rather than discovering at the cliff.
+  about in the final week rather than discovering at the cliff. PacketADE's
+  client-side proposal, including the security tradeoff of refreshing an
+  already-expired grant, is
+  [`dev/syndicate-device-refresh-proposal.md`](./dev/syndicate-device-refresh-proposal.md);
+  it needs handing to the Syndicate session, which owns the decision.
 - **P2 - Contribute the device→relay protocol spec.** `CONTROLLER_PROTOCOL_V1`
   documents the controller→Host half only. The device→relay half — `device_hello`
   and its `SYNDICATE-RELAY-DEVICE-HELLO-V1` separator (signed over a five-field
@@ -119,7 +128,9 @@ environment or packaged matrix has actually run.
   PacketADE's implementation in `src-tauri/src/commands/syndicate_relay.rs`.
   Syndicate owns the document and asked us to write that half, since we own the
   only implementation. Its stated goal is that an independent client be
-  buildable from the spec alone, which today it is not.
+  buildable from the spec alone, which today it is not. Drafted in
+  [`dev/controller-protocol-device-relay-half.md`](./dev/controller-protocol-device-relay-half.md);
+  remaining work is to hand it to Syndicate for integration.
 - **P3 - Syndicate SSH forward pins the remote port to 4317.**
   `SyndicateMachineConnection.local_port` is configurable but
   `commands/syndicate.rs` builds the forward as
