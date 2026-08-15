@@ -46,6 +46,7 @@ import {
   isSyndicateIntegrationEnabled,
 } from "@/lib/syndicateIntegration";
 import { forgetSyndicateTransport, recordSyndicateTransport } from "@/lib/syndicateTransportStatus";
+import { toSyndicateError } from "@/lib/syndicateErrors";
 
 type WorkspacePaneDtoWithFrontendMetadata = WorkspaceDto["panes"][number] &
   Pick<Workspace["panes"][number], "pinnedCommands">;
@@ -57,6 +58,21 @@ type WorkspaceDtoWithFrontendMetadata = Omit<WorkspaceDto, "panes"> & {
 
 // Syndicate controller protocol v1. Every wrapper maps to one allowlisted
 // native command; there is intentionally no generic RPC binding.
+
+/**
+ * Native Syndicate commands reject with a typed `{message, code, retryable,
+ * correlationId}` payload, not a string. Rehydrating it here is what lets
+ * every caller keep reading `error.message` while retry and grant-state
+ * decisions branch on the protocol's own fields.
+ */
+async function invokeSyndicate<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await (args === undefined ? invoke<T>(command) : invoke<T>(command, args));
+  } catch (reason) {
+    throw toSyndicateError(reason);
+  }
+}
+
 export async function pairSyndicateMachine(
   pairingPayload: string,
   deviceName: string,
@@ -64,7 +80,7 @@ export async function pairSyndicateMachine(
   relayEndpoint?: string,
 ): Promise<SyndicatePairResult> {
   assertSyndicateIntegrationEnabled();
-  const result = await invoke<SyndicatePairResult>("syndicate_pair_machine", {
+  const result = await invokeSyndicate<SyndicatePairResult>("syndicate_pair_machine", {
     request: { pairingPayload, deviceName, serverConfigId, relayEndpoint },
   });
   // Claim, approval bootstrap, and the first verified snapshot all use the
@@ -80,9 +96,16 @@ async function invokeSyndicateRpc(
   args: Record<string, unknown>,
   machineId: string,
   deviceId: string,
+  /**
+   * Only `device.revoke_self` sets this. The kill switch must not block the
+   * remedy it exists to enable — revocation is the one controller call that
+   * reduces this device's authority rather than exercising it. The native
+   * boundary enforces the same exemption.
+   */
+  allowWhileDisabled = false,
 ): Promise<SyndicateRpcResult> {
-  assertSyndicateIntegrationEnabled();
-  const response = await invoke<SyndicateRpcResult>(command, args);
+  if (!allowWhileDisabled) assertSyndicateIntegrationEnabled();
+  const response = await invokeSyndicate<SyndicateRpcResult>(command, args);
   if (response.transport !== "packet-relay" && response.transport !== "ssh-forward") {
     throw new Error("Native Syndicate response is missing valid transport metadata");
   }
@@ -235,23 +258,28 @@ export async function revokeSyndicateMachine(
     { connection },
     connection.machineId,
     connection.deviceId,
+    true,
   );
 }
 
+/**
+ * Delete the local device credential. Deliberately not gated on the Settings
+ * switch: it opens no transport, and a user who has disabled the integration
+ * must still be able to destroy a key they have decided to abandon.
+ */
 export async function forgetSyndicateMachine(machineId: string): Promise<void> {
-  assertSyndicateIntegrationEnabled();
-  await invoke("syndicate_forget_machine", { machineId });
+  await invokeSyndicate("syndicate_forget_machine", { machineId });
   forgetSyndicateTransport(machineId);
 }
 
 /** Close every managed SSH forward when the user disables the integration. */
 export async function disableSyndicateIntegration(): Promise<void> {
-  return invoke("syndicate_disable_integration");
+  return invokeSyndicate("syndicate_disable_integration");
 }
 
 /** Synchronize the persisted frontend preference into the native fail-closed gate. */
 export async function setNativeSyndicateIntegrationEnabled(enabled: boolean): Promise<void> {
-  return invoke("syndicate_set_integration_enabled", { enabled });
+  return invokeSyndicate("syndicate_set_integration_enabled", { enabled });
 }
 
 // Filesystem

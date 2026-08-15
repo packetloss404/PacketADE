@@ -24,8 +24,41 @@ use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519Secret};
 
 use super::syndicate::{
     canonical_json, commit_relay_receive_counter, reserve_relay_send_counter,
-    StoredControllerCredential,
+    StoredControllerCredential, SyndicateCommandError,
 };
+
+// PacketRelay reports revocation and grant expiry to this module rather than to
+// the typed controller layer, so these are the only two failures PacketADE can
+// classify as authoritatively as the Host would. They are named once here and
+// mapped by `classify_relay_error` so no consumer has to match on prose.
+const DEVICE_REVOKED_MESSAGE: &str = "This PacketADE device was revoked by Syndicate.";
+const GRANT_EXPIRED_IN_FLIGHT_MESSAGE: &str =
+    "The Syndicate relay grant expired while awaiting the Host response.";
+const GRANT_EXPIRED_MESSAGE: &str = "The Syndicate relay grant is expired or has an invalid lifetime.";
+
+/// Host code for a grant the Host will no longer honour. Matches
+/// `CONTROLLER_PROTOCOL_V1` so a relay-detected revocation and a Host-reported
+/// one classify identically.
+const CODE_DEVICE_REVOKED: &str = "DEVICE_REVOKED";
+/// PacketADE-local code for a grant this device knows has passed `expiresAt`.
+/// The Host answers the same situation with `DEVICE_UNAUTHORIZED`; both mean
+/// the grant is dead and retrying cannot help.
+const CODE_GRANT_EXPIRED: &str = "GRANT_EXPIRED";
+
+/// Attach the typed verdict this module already knows to its own error strings.
+pub(super) fn classify_relay_error(message: String) -> SyndicateCommandError {
+    match message.as_str() {
+        DEVICE_REVOKED_MESSAGE => {
+            SyndicateCommandError::local_typed(CODE_DEVICE_REVOKED, message)
+        }
+        GRANT_EXPIRED_IN_FLIGHT_MESSAGE | GRANT_EXPIRED_MESSAGE => {
+            SyndicateCommandError::local_typed(CODE_GRANT_EXPIRED, message)
+        }
+        // Sockets, timeouts, and framing faults carry no verdict: the caller
+        // must stay free to reconnect.
+        _ => SyndicateCommandError::local(message),
+    }
+}
 
 const PROTOCOL_VERSION: u8 = 1;
 const ROUTE_PATH: &str = "/v1/product-route";
@@ -198,10 +231,10 @@ impl RelayTransport {
                         continue;
                     }
                     if routed.get("type").and_then(Value::as_str) == Some("routeRevoked") {
-                        return Err("This PacketADE device was revoked by Syndicate.".into());
+                        return Err(DEVICE_REVOKED_MESSAGE.into());
                     }
                     if time::OffsetDateTime::now_utc() >= material.expires_at {
-                        return Err("The Syndicate relay grant expired while awaiting the Host response.".into());
+                        return Err(GRANT_EXPIRED_IN_FLIGHT_MESSAGE.into());
                     }
                     let response = decrypt_host_frame(&material, &self.credential, &routed)?;
                     let response_id = response.get("requestId").and_then(Value::as_str)
@@ -302,7 +335,7 @@ fn validate_material(
         || expires <= issued
         || expires - issued > time::Duration::days(31)
     {
-        return Err("The Syndicate relay grant is expired or has an invalid lifetime.".into());
+        return Err(GRANT_EXPIRED_MESSAGE.into());
     }
     if grant.scopes.is_empty()
         || grant.scopes.len() > CONTROLLER_SCOPES.len()

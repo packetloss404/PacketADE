@@ -57,9 +57,102 @@ describe("SyndicateMachinesCard integration toggle", () => {
     expect(screen.getByText("paused by setting")).toBeInTheDocument();
     expect(screen.getByText("View machine status · View")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Refresh Build host" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Revoke Build host" })).toBeDisabled();
+    // Revoking and local forget stay available: disabling the integration is
+    // what a user does on suspicion, and it must not disarm the remedy.
+    expect(screen.getByRole("button", { name: "Revoke Build host" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Forget Build host locally" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: /Pair machine/i })).not.toBeInTheDocument();
     expect(useSyndicateStore.getState().machines).toHaveLength(1);
+  });
+
+  it("revokes a device while the integration is disabled", async () => {
+    useSyndicateStore.setState({
+      enabled: false,
+      machines: [
+        {
+          machineId: "machine-1",
+          displayName: "Build host",
+          deviceId: "device-1",
+          serverConfigId: "server-1",
+          localPort: 4317,
+          machineSigningFingerprint: "fingerprint",
+          grantStatus: "active",
+          scopes: ["terminal.input"],
+          addedAt: 1,
+        },
+      ],
+    });
+    invoke.mockImplementation((command: string) =>
+      command === "syndicate_revoke_self"
+        ? Promise.resolve({ requestId: "request-1", transport: "ssh-forward", result: {} })
+        : Promise.resolve(undefined),
+    );
+    render(<SyndicateMachinesCard />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke Build host" }));
+    expect(screen.getByText(/Revoking while disabled/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Revoke device" }));
+
+    await waitFor(() => expect(useSyndicateStore.getState().machines).toHaveLength(0));
+    expect(invoke).toHaveBeenCalledWith("syndicate_revoke_self", expect.anything());
+  });
+
+  it("confirms before restoring controller authority to a paired host", async () => {
+    // Enabling is the authority-increasing direction. It used to be one
+    // unconfirmed click that handed terminal.input — code execution as the
+    // Syndicate OS user — back to every paired machine.
+    useSyndicateStore.setState({
+      enabled: false,
+      machines: [
+        {
+          machineId: "machine-1",
+          displayName: "Build host",
+          deviceId: "device-1",
+          serverConfigId: "server-1",
+          localPort: 4317,
+          machineSigningFingerprint: "fingerprint",
+          grantStatus: "active",
+          scopes: ["terminal.input"],
+          addedAt: 1,
+        },
+      ],
+    });
+    render(<SyndicateMachinesCard />);
+
+    const toggle = screen.getByRole("switch", { name: "Syndicate integration" });
+    fireEvent.click(toggle);
+
+    expect(invoke).not.toHaveBeenCalled();
+    expect(screen.getByText("This grants code execution")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Enable integration" }));
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("syndicate_set_integration_enabled", { enabled: true }),
+    );
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
+  });
+
+  it("keeps the integration off and reports why when enabling fails natively", async () => {
+    // The disable direction already had this covered; a failed *enable* left
+    // the toggle claiming a state the native boundary never reached.
+    useSyndicateStore.setState({ enabled: false, machines: [] });
+    invoke.mockImplementation((command: string) =>
+      command === "syndicate_set_integration_enabled"
+        ? Promise.reject({ message: "Native Syndicate boundary is unavailable." })
+        : Promise.resolve(undefined),
+    );
+    render(<SyndicateMachinesCard />);
+
+    const toggle = screen.getByRole("switch", { name: "Syndicate integration" });
+    fireEvent.click(toggle);
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Native Syndicate boundary is unavailable.",
+      ),
+    );
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(useSyndicateStore.getState().enabled).toBe(false);
   });
 
   it("confirms the exact active Workspace, pane, and known-session impact before disabling", async () => {

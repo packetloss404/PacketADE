@@ -38,6 +38,18 @@ function loadSnapshot(): TransportSnapshot {
 let snapshot: TransportSnapshot = loadSnapshot();
 const listeners = new Set<() => void>();
 
+/**
+ * Minimum spacing between writes for an unchanged transport.
+ *
+ * Every successful RPC reports its carrier, and an active pane polls output
+ * every 25 ms and sends one `session.input` per keystroke — roughly 40 writes
+ * a second, each a synchronous `JSON.stringify` plus `localStorage.setItem`
+ * plus a re-render of the machines card, all to move a timestamp nobody reads
+ * at that resolution. A change of carrier is still recorded immediately,
+ * because that is the part users act on.
+ */
+const UNCHANGED_TRANSPORT_WRITE_INTERVAL_MS = 30_000;
+
 function persist() {
   if (typeof localStorage === "undefined") return;
   try {
@@ -62,7 +74,16 @@ export function recordSyndicateTransport(
   transport: SyndicateTransport,
   observedAt = Date.now(),
 ): void {
-  snapshot = { ...snapshot, [observationKey(machineId, deviceId)]: { transport, observedAt } };
+  const key = observationKey(machineId, deviceId);
+  const previous = snapshot[key];
+  if (
+    previous &&
+    previous.transport === transport &&
+    observedAt - previous.observedAt < UNCHANGED_TRANSPORT_WRITE_INTERVAL_MS
+  ) {
+    return;
+  }
+  snapshot = { ...snapshot, [key]: { transport, observedAt } };
   persist();
   for (const listener of listeners) listener();
 }

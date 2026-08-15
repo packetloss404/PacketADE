@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  SYNDICATE_GRANT_WARNING_DAYS,
   syndicateAuthoritySummary,
   syndicateDisableImpact,
+  syndicateGrantExpiry,
   unknownSyndicateScopes,
 } from "@/lib/syndicateMachineStatus";
 import type { Workspace } from "@/types/workspace";
@@ -80,5 +82,34 @@ describe("Syndicate settings status helpers", () => {
     expect(unknownSyndicateScopes(["machine.read", "future.control", "future.control"])).toEqual([
       "future.control",
     ]);
+  });
+
+  it("reports where a grant sits against the 30-day cliff", () => {
+    const now = Date.parse("2026-08-14T00:00:00.000Z");
+    const inDays = (days: number) => now + days * 86_400_000;
+
+    // Grants have no renewal path, so every paired device reaches expiry.
+    expect(syndicateGrantExpiry(inDays(30), now)).toEqual({
+      state: "valid",
+      expiresAt: inDays(30),
+      daysRemaining: 30,
+    });
+    expect(syndicateGrantExpiry(inDays(SYNDICATE_GRANT_WARNING_DAYS), now)).toMatchObject({
+      state: "expiring",
+      daysRemaining: SYNDICATE_GRANT_WARNING_DAYS,
+    });
+    expect(syndicateGrantExpiry(inDays(-1), now)).toEqual({
+      state: "expired",
+      expiresAt: inDays(-1),
+    });
+    // The boundary itself is already dead, not "expiring".
+    expect(syndicateGrantExpiry(now, now)).toMatchObject({ state: "expired" });
+  });
+
+  it("does not imply safety when the Host issued no relay grant", () => {
+    // SSH-only pairings carry no `expiresAt`, so there is nothing to warn
+    // from. Reporting `unknown` keeps that visible instead of guessing.
+    expect(syndicateGrantExpiry(undefined)).toEqual({ state: "unknown" });
+    expect(syndicateGrantExpiry(Number.NaN)).toEqual({ state: "unknown" });
   });
 });

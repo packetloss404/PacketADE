@@ -12,14 +12,17 @@ import {
   setNativeSyndicateIntegrationEnabled,
 } from "@/lib/tauri";
 import {
+  grantExpiryFromSnapshot,
   parseMachineSnapshot,
   parseWorkspaceCatalog,
   parseWorkspaceCreate,
   syndicateConnection,
+  type SyndicateGrantStatus,
   type SyndicateMachine,
   type SyndicateWorkspaceCatalog,
   type SyndicateWorkspaceSnapshot,
 } from "@/types/syndicate";
+import { grantStatusFromSyndicateError } from "@/lib/syndicateErrors";
 import {
   loadSyndicateIntegrationEnabled,
   persistSyndicateIntegrationEnabled,
@@ -61,6 +64,8 @@ interface SyndicateStore {
   getMachine: (machineId: string) => SyndicateMachine | undefined;
 }
 
+const GRANT_STATUSES: readonly SyndicateGrantStatus[] = ["pending", "active", "revoked", "expired"];
+
 function loadMachines(): SyndicateMachine[] {
   const raw = loadFromStorage<unknown>(MACHINES_KEY, []);
   if (!Array.isArray(raw)) return [];
@@ -74,6 +79,12 @@ function loadMachines(): SyndicateMachine[] {
       typeof item.serverConfigId === "string" &&
       typeof item.localPort === "number" &&
       typeof item.machineSigningFingerprint === "string" &&
+      // An unrecognized status must not survive into the UI: `undefined` is
+      // not "revoked", and the authority summary would read a dead grant as
+      // "Full coding control".
+      typeof item.grantStatus === "string" &&
+      GRANT_STATUSES.includes(item.grantStatus) &&
+      (item.grantExpiresAt === undefined || typeof item.grantExpiresAt === "number") &&
       Array.isArray(item.scopes) &&
       item.scopes.every((scope) => typeof scope === "string")
     );
@@ -82,13 +93,6 @@ function loadMachines(): SyndicateMachine[] {
 
 function persist(machines: SyndicateMachine[]) {
   saveToStorage(MACHINES_KEY, machines);
-}
-
-function grantStatusFromError(error: unknown): "revoked" | "expired" | undefined {
-  const message = error instanceof Error ? error.message : String(error);
-  if (/DEVICE_REVOKED|device was revoked by Syndicate/i.test(message)) return "revoked";
-  if (/GRANT_EXPIRED|DEVICE_EXPIRED|relay grant (?:is )?expired/i.test(message)) return "expired";
-  return undefined;
 }
 
 function hasCurrentDevice(
@@ -289,6 +293,10 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
                 displayName: snapshot.machine.displayName,
                 grantStatus: "active" as const,
                 scopes: snapshot.controller.device.scopes,
+                // Grants die at 30 days with no renewal path. Carrying the
+                // Host's own expiry is what makes a warning possible before
+                // the cliff rather than a diagnosis after it.
+                grantExpiresAt: grantExpiryFromSnapshot(snapshot) ?? item.grantExpiresAt,
                 cachedSnapshot: snapshot,
                 lastConnectedAt: Date.now(),
               }
@@ -309,7 +317,7 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
         ) {
           return state;
         }
-        const grantStatus = grantStatusFromError(error);
+        const grantStatus = grantStatusFromSyndicateError(error);
         const machines = grantStatus
           ? state.machines.map((item) =>
               item.machineId === machineId && item.deviceId === machine.deviceId
@@ -335,7 +343,15 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
     const machine = get().machines.find((item) => item.machineId === machineId);
     if (!machine) throw new Error("Syndicate machine is no longer configured");
     const generation = get().operationGeneration;
-    const response = await syndicateWorkspaceList(syndicateConnection(machine));
+    // Every controller call is evidence about the grant, not just the terminal
+    // poll. A dead grant discovered here used to be reported and then thrown
+    // away, leaving the machines card claiming the device was still active.
+    const response = await syndicateWorkspaceList(syndicateConnection(machine)).catch(
+      (reason: unknown) => {
+        get().recordControllerFailure(machineId, machine.deviceId, reason);
+        throw reason;
+      },
+    );
     const catalog = parseWorkspaceCatalog(response.result);
     set((state) =>
       !state.enabled ||
@@ -360,6 +376,9 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
       repositoryId,
       name,
       clientOperationId,
+    }).catch((reason: unknown) => {
+      get().recordControllerFailure(machineId, machine.deviceId, reason);
+      throw reason;
     });
     const workspace = parseWorkspaceCreate(response.result);
     set((state) => {
@@ -389,8 +408,11 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
     return workspace;
   },
 
+  // Revocation and local cleanup deliberately ignore the Settings switch.
+  // Disabling the integration is what a user does on suspicion of compromise;
+  // if that also disarmed revocation, the grant would stay live on the Host
+  // until it expired. These are the two operations that *reduce* authority.
   revoke: async (machineId) => {
-    if (!get().enabled) throw new Error(SYNDICATE_INTEGRATION_DISABLED_MESSAGE);
     const machine = get().machines.find((item) => item.machineId === machineId);
     if (!machine) return;
     await revokeSyndicateMachine(syndicateConnection(machine));
@@ -403,7 +425,7 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
   },
 
   forgetOffline: async (machineId) => {
-    if (!get().enabled) throw new Error(SYNDICATE_INTEGRATION_DISABLED_MESSAGE);
+    // Local-only: deletes the OS-keychain record and needs no transport at all.
     await forgetSyndicateMachine(machineId);
     set((state) => {
       const machines = state.machines.filter((item) => item.machineId !== machineId);
@@ -413,7 +435,7 @@ export const useSyndicateStore = create<SyndicateStore>((set, get) => ({
   },
 
   recordControllerFailure: (machineId, deviceId, error) => {
-    const grantStatus = grantStatusFromError(error);
+    const grantStatus = grantStatusFromSyndicateError(error);
     if (!grantStatus) return;
     set((state) => {
       if (!hasCurrentDevice(state, machineId, deviceId)) return state;

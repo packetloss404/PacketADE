@@ -32,6 +32,11 @@ const CLAIM_PATH: &str = "/api/v1/controller/pairing/claim";
 const DEFAULT_PORT: u16 = 4317;
 const MAX_TERMINAL_INPUT_BYTES: usize = 32_768;
 
+/// PacketADE-local error code for the Settings kill switch. Host codes are
+/// defined by `CONTROLLER_PROTOCOL_V1`; this one never appears on the wire.
+pub const CODE_INTEGRATION_DISABLED: &str = "INTEGRATION_DISABLED";
+const INTEGRATION_DISABLED_MESSAGE: &str = "Syndicate integration is disabled in Settings.";
+
 const DEFAULT_SCOPES: &[&str] = &[
     "machine.read",
     "workspace.read",
@@ -117,8 +122,14 @@ struct PairClaimRequest {
     proof_signature: String,
 }
 
+// Deliberately not `deny_unknown_fields`, unlike the invitation envelope above.
+// `CONTROLLER_PROTOCOL_V1` pins the invitation field-by-field and backs it with
+// a cross-repo fixture, so strictness there is a conformance check. It says
+// nothing about the claim response, so rejecting unknown fields here would turn
+// any additive Host change into a silent pairing failure on already-shipped
+// PacketADE builds. Every field this client relies on is still required below.
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct PairClaimResponse {
     protocol_version: u8,
     device: PairClaimDevice,
@@ -126,7 +137,7 @@ struct PairClaimResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct PairClaimDevice {
     device_id: String,
     device_name: String,
@@ -282,6 +293,71 @@ fn default_port() -> u16 {
     DEFAULT_PORT
 }
 
+/// Typed failure for every Syndicate command.
+///
+/// `CONTROLLER_PROTOCOL_V1` answers a rejected RPC with
+/// `error: {code, retryable, correlationId}`. Flattening that into a sentence
+/// forced the frontend to re-derive the verdict with message regexes, which is
+/// how `DEVICE_UNAUTHORIZED` — the code a Host returns for an expired grant —
+/// became an unbounded reconnect loop. The typed fields are carried through to
+/// the frontend verbatim so retry and grant-state decisions branch on data.
+///
+/// `code` and `retryable` are `None` for failures that never reached a Host
+/// (validation, tunnels, sockets). Absence therefore means "no Host verdict",
+/// which callers must not read as "not retryable".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyndicateCommandError {
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retryable: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
+}
+
+impl SyndicateCommandError {
+    /// A failure PacketADE decided locally, with no Host verdict attached.
+    pub fn local(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            code: None,
+            retryable: None,
+            correlation_id: None,
+        }
+    }
+
+    /// A failure PacketADE decided locally but can classify as authoritatively
+    /// as the Host would — an expired or revoked relay grant it holds itself.
+    pub fn local_typed(code: &str, message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            code: Some(code.to_string()),
+            retryable: Some(false),
+            correlation_id: None,
+        }
+    }
+}
+
+impl From<String> for SyndicateCommandError {
+    fn from(message: String) -> Self {
+        Self::local(message)
+    }
+}
+
+impl From<&str> for SyndicateCommandError {
+    fn from(message: &str) -> Self {
+        Self::local(message)
+    }
+}
+
+impl std::fmt::Display for SyndicateCommandError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
 fn require_id(value: &str, label: &str) -> Result<(), String> {
     let valid = !value.is_empty()
         && value.len() <= 128
@@ -330,11 +406,14 @@ static SYNDICATE_OPERATION_GATE: tokio::sync::RwLock<()> = tokio::sync::RwLock::
 static SYNDICATE_INTEGRATION_ENABLED: AtomicBool = AtomicBool::new(false);
 static RELAY_CREDENTIAL_GATE: Mutex<()> = Mutex::new(());
 
-fn require_integration_enabled() -> Result<(), String> {
+fn require_integration_enabled() -> Result<(), SyndicateCommandError> {
     if SYNDICATE_INTEGRATION_ENABLED.load(Ordering::Acquire) {
         Ok(())
     } else {
-        Err("Syndicate integration is disabled in Settings.".into())
+        Err(SyndicateCommandError::local_typed(
+            CODE_INTEGRATION_DISABLED,
+            INTEGRATION_DISABLED_MESSAGE,
+        ))
     }
 }
 
@@ -1043,13 +1122,31 @@ async fn send_rpc(
     method: &'static str,
     params: Value,
     request_id: Option<String>,
-) -> Result<SyndicateRpcResult, String> {
-    require_integration_enabled()?;
+) -> Result<SyndicateRpcResult, SyndicateCommandError> {
+    send_rpc_with_authority(connection, method, params, request_id, false).await
+}
+
+/// `allow_while_disabled` exists for exactly one caller: `device.revoke_self`.
+/// The kill switch must never block the remedy it exists to enable, and
+/// revocation is the only controller operation that *reduces* this device's
+/// authority. Every other method stays fail-closed.
+async fn send_rpc_with_authority(
+    connection: &SyndicateMachineConnection,
+    method: &'static str,
+    params: Value,
+    request_id: Option<String>,
+    allow_while_disabled: bool,
+) -> Result<SyndicateRpcResult, SyndicateCommandError> {
+    if !allow_while_disabled {
+        require_integration_enabled()?;
+    }
     // Keep a shared operation lease through signing and transport. Disable
     // flips the flag before taking the exclusive lease, so new relay and SSH
     // work fails while it waits for already-started requests to settle.
     let _operation_guard = SYNDICATE_OPERATION_GATE.read().await;
-    require_integration_enabled()?;
+    if !allow_while_disabled {
+        require_integration_enabled()?;
+    }
     validate_connection(connection)?;
     let request_id = request_id.unwrap_or_else(|| Uuid::new_v4().to_string());
     require_id(&request_id, "Request id")?;
@@ -1114,10 +1211,15 @@ async fn send_rpc(
                         }))
                         .await
                         .map_err(|error| {
-                            format!(
-                            "PacketRelay request failed without an automatic retry over SSH: {}",
-                            error
-                        )
+                            // Classify before prefixing: the typed verdict is
+                            // keyed on the relay's own exact message.
+                            let mut classified =
+                                crate::commands::syndicate_relay::classify_relay_error(error);
+                            classified.message = format!(
+                                "PacketRelay request failed without an automatic retry over SSH: {}",
+                                classified.message
+                            );
+                            classified
                         })?,
                 )
                 .map_err(|_| {
@@ -1180,20 +1282,27 @@ async fn send_rpc(
             retryable: false,
             correlation_id: None,
         });
-        return Err(format!(
-            "{}: {}{}{}",
-            error.code,
-            error
-                .message
-                .as_deref()
-                .unwrap_or("Syndicate rejected the controller request"),
-            if error.retryable { " (retryable)" } else { "" },
-            error
-                .correlation_id
-                .as_deref()
-                .map(|id| format!(" · correlation {}", id))
-                .unwrap_or_default()
-        ));
+        // The Host sends no `message`, so the readable half stays PacketADE's.
+        // `code` and `retryable` are forwarded untouched: they are the
+        // frontend's only sound basis for retrying or marking a grant dead.
+        return Err(SyndicateCommandError {
+            message: format!(
+                "{}: {}{}",
+                error.code,
+                error
+                    .message
+                    .as_deref()
+                    .unwrap_or("Syndicate rejected the controller request"),
+                error
+                    .correlation_id
+                    .as_deref()
+                    .map(|id| format!(" · correlation {}", id))
+                    .unwrap_or_default()
+            ),
+            code: Some(error.code),
+            retryable: Some(error.retryable),
+            correlation_id: error.correlation_id,
+        });
     }
     let result = response.result.unwrap_or(Value::Null);
     if method == "machine.snapshot" {
@@ -1207,12 +1316,12 @@ async fn send_rpc(
 }
 
 #[tauri::command]
-pub async fn syndicate_disable_integration() -> Result<(), String> {
+pub async fn syndicate_disable_integration() -> Result<(), SyndicateCommandError> {
     syndicate_set_integration_enabled(false).await
 }
 
 #[tauri::command]
-pub async fn syndicate_set_integration_enabled(enabled: bool) -> Result<(), String> {
+pub async fn syndicate_set_integration_enabled(enabled: bool) -> Result<(), SyndicateCommandError> {
     if !enabled {
         SYNDICATE_INTEGRATION_ENABLED.store(false, Ordering::Release);
     }
@@ -1224,13 +1333,13 @@ pub async fn syndicate_set_integration_enabled(enabled: bool) -> Result<(), Stri
     // Serialize with tunnel creation so disabling cannot race a new managed
     // forward into the registry after the drain completes.
     let _start_guard = TUNNEL_START_GATE.lock().await;
-    close_tunnels()
+    close_tunnels().map_err(SyndicateCommandError::local)
 }
 
 #[tauri::command]
 pub async fn syndicate_pair_machine(
     request: PairMachineRequest,
-) -> Result<PairMachineResult, String> {
+) -> Result<PairMachineResult, SyndicateCommandError> {
     require_integration_enabled()?;
     let _operation_guard = SYNDICATE_OPERATION_GATE.read().await;
     require_integration_enabled()?;
@@ -1312,7 +1421,7 @@ pub async fn syndicate_pair_machine(
             .and_then(Value::as_str)
             .or_else(|| value.get("message").and_then(Value::as_str))
             .unwrap_or("Syndicate rejected the pairing claim.");
-        return Err(message.to_string());
+        return Err(SyndicateCommandError::local(message));
     }
     let result: PairClaimResponse = serde_json::from_slice(&bytes).map_err(|_| {
         format!(
@@ -1373,21 +1482,21 @@ pub async fn syndicate_pair_machine(
 #[tauri::command]
 pub async fn syndicate_machine_snapshot(
     connection: SyndicateMachineConnection,
-) -> Result<SyndicateRpcResult, String> {
+) -> Result<SyndicateRpcResult, SyndicateCommandError> {
     send_rpc(&connection, "machine.snapshot", json!({}), None).await
 }
 
 #[tauri::command]
 pub async fn syndicate_workspace_list(
     connection: SyndicateMachineConnection,
-) -> Result<SyndicateRpcResult, String> {
+) -> Result<SyndicateRpcResult, SyndicateCommandError> {
     send_rpc(&connection, "workspace.list", json!({}), None).await
 }
 
 #[tauri::command]
 pub async fn syndicate_workspace_create(
     request: WorkspaceCreateRequest,
-) -> Result<SyndicateRpcResult, String> {
+) -> Result<SyndicateRpcResult, SyndicateCommandError> {
     require_id(&request.repository_id, "Repository id")?;
     let name = request.name.trim();
     if name.is_empty() || name.len() > 120 {
@@ -1409,7 +1518,7 @@ pub async fn syndicate_workspace_create(
 #[tauri::command]
 pub async fn syndicate_pane_create(
     request: PaneCreateRequest,
-) -> Result<SyndicateRpcResult, String> {
+) -> Result<SyndicateRpcResult, SyndicateCommandError> {
     require_id(&request.workspace_id, "Workspace id")?;
     if !matches!(
         request.profile_id.as_str(),
@@ -1441,7 +1550,7 @@ pub async fn syndicate_pane_create(
 #[tauri::command]
 pub async fn syndicate_session_start(
     request: SessionStartRequest,
-) -> Result<SyndicateRpcResult, String> {
+) -> Result<SyndicateRpcResult, SyndicateCommandError> {
     require_id(&request.pane_id, "Pane id")?;
     require_id(&request.terminal_session_id, "Terminal session id")?;
     require_id(&request.profile_id, "Profile id")?;
@@ -1477,7 +1586,7 @@ pub async fn syndicate_session_start(
 #[tauri::command]
 pub async fn syndicate_session_attach(
     request: SessionAttachRequest,
-) -> Result<SyndicateRpcResult, String> {
+) -> Result<SyndicateRpcResult, SyndicateCommandError> {
     require_id(&request.pane_id, "Pane id")?;
     require_id(&request.terminal_session_id, "Terminal session id")?;
     require_id(&request.session_id, "Session id")?;
@@ -1498,7 +1607,7 @@ pub async fn syndicate_session_attach(
 #[tauri::command]
 pub async fn syndicate_events_read(
     request: EventsReadRequest,
-) -> Result<SyndicateRpcResult, String> {
+) -> Result<SyndicateRpcResult, SyndicateCommandError> {
     let limit = request.limit.unwrap_or(500);
     if limit == 0 || limit > 1000 {
         return Err("Event read limit must be between 1 and 1000.".into());
@@ -1515,17 +1624,17 @@ pub async fn syndicate_events_read(
 #[tauri::command]
 pub async fn syndicate_session_input(
     request: SessionInputRequest,
-) -> Result<SyndicateRpcResult, String> {
+) -> Result<SyndicateRpcResult, SyndicateCommandError> {
     require_id(&request.session_id, "Session id")?;
     require_id(&request.frame_id, "Frame id")?;
     let decoded = URL_SAFE_NO_PAD
         .decode(&request.input_base64)
         .map_err(|_| "Terminal input is not valid base64url.".to_string())?;
     if decoded.is_empty() || decoded.len() > MAX_TERMINAL_INPUT_BYTES {
-        return Err(format!(
+        return Err(SyndicateCommandError::local(format!(
             "Terminal input must be between 1 and {} bytes.",
             MAX_TERMINAL_INPUT_BYTES
-        ));
+        )));
     }
     send_rpc(
         &request.connection,
@@ -1543,7 +1652,7 @@ pub async fn syndicate_session_input(
 #[tauri::command]
 pub async fn syndicate_session_resize(
     request: SessionResizeRequest,
-) -> Result<SyndicateRpcResult, String> {
+) -> Result<SyndicateRpcResult, SyndicateCommandError> {
     require_id(&request.session_id, "Session id")?;
     validate_terminal_size(request.cols, request.rows)?;
     send_rpc(
@@ -1558,7 +1667,7 @@ pub async fn syndicate_session_resize(
 #[tauri::command]
 pub async fn syndicate_session_stop(
     request: SessionStopRequest,
-) -> Result<SyndicateRpcResult, String> {
+) -> Result<SyndicateRpcResult, SyndicateCommandError> {
     require_id(&request.session_id, "Session id")?;
     send_rpc(
         &request.connection,
@@ -1573,21 +1682,27 @@ pub async fn syndicate_session_stop(
 }
 
 #[tauri::command]
-pub async fn syndicate_forget_machine(machine_id: String) -> Result<(), String> {
-    require_integration_enabled()?;
+pub async fn syndicate_forget_machine(machine_id: String) -> Result<(), SyndicateCommandError> {
+    // Deliberately ungated. This deletes a local OS-keychain record and opens
+    // no transport, so gating it on the Settings switch only ever prevented a
+    // user from destroying a credential they had already decided to abandon.
     let _operation_guard = SYNDICATE_OPERATION_GATE.read().await;
-    require_integration_enabled()?;
-    delete_signing_key(&machine_id)
+    delete_signing_key(&machine_id).map_err(SyndicateCommandError::local)
 }
 
 #[tauri::command]
 pub async fn syndicate_revoke_self(
     connection: SyndicateMachineConnection,
-) -> Result<SyndicateRpcResult, String> {
+) -> Result<SyndicateRpcResult, SyndicateCommandError> {
     // The Host commits revocation before replying. Callers delete the local
     // key only after this signed request succeeds (or explicitly choose local
     // forget while offline).
-    send_rpc(
+    //
+    // This runs even while the integration is disabled: a user who flips the
+    // switch on suspicion of compromise must still be able to kill the grant
+    // on the Host, which is otherwise left live until it expires.
+    let disabled = !SYNDICATE_INTEGRATION_ENABLED.load(Ordering::Acquire);
+    let result = send_rpc_with_authority(
         &connection,
         "device.revoke_self",
         json!({}),
@@ -1595,8 +1710,16 @@ pub async fn syndicate_revoke_self(
             "device-revoke",
             &[&connection.machine_id, &connection.device_id],
         )),
+        true,
     )
-    .await
+    .await;
+    if disabled {
+        // Revoking may have had to raise a managed forward. Put the disabled
+        // state back the way the user left it, whatever the outcome was.
+        let _start_guard = TUNNEL_START_GATE.lock().await;
+        let _ = close_tunnels();
+    }
+    result
 }
 
 #[cfg(test)]
@@ -1615,16 +1738,93 @@ mod tests {
         .await
         .err()
         .expect("disabled pair should fail");
-        assert_eq!(pair_error, "Syndicate integration is disabled in Settings.");
-
-        let forget_error = syndicate_forget_machine("machine-1".into())
-            .await
-            .err()
-            .expect("disabled forget should fail");
         assert_eq!(
-            forget_error,
+            pair_error.message,
             "Syndicate integration is disabled in Settings."
         );
+        // The kill switch is a typed verdict, not a sentence to be re-parsed.
+        assert_eq!(pair_error.code.as_deref(), Some(CODE_INTEGRATION_DISABLED));
+        assert_eq!(pair_error.retryable, Some(false));
+
+        // Forgetting is local-only cleanup and must survive the kill switch:
+        // it deletes an OS-keychain record and opens no transport. Blocking it
+        // stranded the local half of a credential the user had already decided
+        // to abandon. It now reaches the keyring, whatever that reports.
+        let forget = syndicate_forget_machine("machine-1".into()).await;
+        assert_ne!(
+            forget.as_ref().err().and_then(|error| error.code.as_deref()),
+            Some(CODE_INTEGRATION_DISABLED),
+            "local forget must not be blocked by the Settings switch"
+        );
+    }
+
+    #[test]
+    fn host_rejections_keep_their_typed_code_and_retryability() {
+        // The day-30 chain starts here: a Host answers an expired grant with
+        // DEVICE_UNAUTHORIZED and retryable:false. Both must survive the trip
+        // to the frontend, or it can only guess from prose.
+        let response: RpcResponse = serde_json::from_value(json!({
+            "protocolVersion": 1,
+            "requestId": "request-1",
+            "ok": false,
+            "error": {
+                "code": "DEVICE_UNAUTHORIZED",
+                "retryable": false,
+                "correlationId": "correlation-1"
+            }
+        }))
+        .expect("typed error response parses");
+        let error = response.error.expect("error is present");
+        assert_eq!(error.code, "DEVICE_UNAUTHORIZED");
+        assert!(!error.retryable);
+
+        let serialized = serde_json::to_value(SyndicateCommandError {
+            message: "DEVICE_UNAUTHORIZED: Syndicate rejected the controller request".into(),
+            code: Some(error.code),
+            retryable: Some(error.retryable),
+            correlation_id: error.correlation_id,
+        })
+        .expect("command error serializes");
+        assert_eq!(serialized["code"], json!("DEVICE_UNAUTHORIZED"));
+        assert_eq!(serialized["retryable"], json!(false));
+        assert_eq!(serialized["correlationId"], json!("correlation-1"));
+    }
+
+    #[test]
+    fn local_failures_carry_no_host_verdict() {
+        // Absence must read as "no verdict", never as "not retryable": a
+        // socket fault has to stay reconnectable.
+        let error = SyndicateCommandError::local("Cannot reach Syndicate on the loopback forward.");
+        assert!(error.code.is_none());
+        assert!(error.retryable.is_none());
+        let serialized = serde_json::to_value(&error).expect("local error serializes");
+        assert!(serialized.get("code").is_none());
+        assert!(serialized.get("retryable").is_none());
+    }
+
+    #[test]
+    fn claim_response_tolerates_fields_the_spec_does_not_pin() {
+        // CONTROLLER_PROTOCOL_V1 does not freeze the claim response, so an
+        // additive Host change must not break pairing on shipped builds.
+        let claim: PairClaimResponse = serde_json::from_value(json!({
+            "protocolVersion": 1,
+            "approvalRequired": true,
+            "device": {
+                "deviceId": "device-1",
+                "deviceName": "PacketADE controller",
+                "status": "pending",
+                "scopes": [],
+                "revocationEpoch": 0,
+                "pairedAt": "2026-08-14T00:00:00.000Z",
+                "publicKeyFingerprint": "fingerprint-1",
+                "keyAgreementFingerprint": "fingerprint-2",
+                "someFieldAddedLater": "ignored"
+            },
+            "somethingElseAddedLater": {"nested": true}
+        }))
+        .expect("unknown claim fields are ignored");
+        assert_eq!(claim.device.device_id, "device-1");
+        assert!(claim.approval_required);
     }
 
     #[test]
@@ -1659,6 +1859,16 @@ mod tests {
         assert!(parse_pairing_payload(&arbitrary_endpoint.to_string()).is_err());
     }
 
+    // FROZEN FIXTURE — DO NOT EDIT, DO NOT RENAME-SWEEP.
+    //
+    // `tests/fixtures/controller-pairing-invitation-v1.json` and
+    // `tests/fixtures/controller-relay-crypto-v1.json` are byte-identical to
+    // Syndicate's `docs/fixtures/` copies by design, and both repos load them
+    // as cross-language conformance vectors. Their value is the byte-identity,
+    // not the accuracy of the strings inside: the literal
+    // `"displayName": "PacketADE controller"` must survive the PacketBench
+    // rename, and the `relayEndpoint` must survive the relay moving hosts.
+    // Exclude both files from any rename or find-and-replace tooling.
     #[test]
     fn shared_pairing_fixture_matches_the_nested_v1_envelope() {
         let mut fixture: Value = serde_json::from_str(include_str!(

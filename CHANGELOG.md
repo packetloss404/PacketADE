@@ -9,6 +9,95 @@ task list.
 
 ## [Unreleased]
 
+### Added — Syndicate integration toggle
+
+Settings → Tools now carries an explicit switch for the Syndicate integration.
+Turning it off closes every PacketADE-managed SSH forward, removes Syndicate
+from new Workspace targets, and pauses remote panes. Pairings, Workspace data,
+pane identities, cursors, and Host sessions are all retained. A native
+fail-closed gate backs the preference, so the boundary holds against a direct
+or racing invoke rather than relying on the UI alone.
+
+Existing installations default to **enabled**, so paired machines keep working
+without intervention.
+
+Turning it back **on** is now the confirmed direction. Enabling restores full
+controller authority to every already-paired Host — including `terminal.input`,
+which executes code as the Syndicate OS user — without asking the server for a
+fresh approval, so the confirmation names how many machines that is and calls
+out the ones that hold terminal input. Disabling stays confirmed too, but for a
+different reason: to report the remote work it pauses.
+
+### Fixed — an expired device grant retried forever and still read as active
+
+Syndicate grants last 30 days and cannot be renewed, so every paired device
+reaches this. A Host answers an expired grant with `DEVICE_UNAUTHORIZED` while
+leaving the device's status `active`, and PacketADE understood neither half:
+
+- The terminal pane's stop condition matched fragments of the error _message_,
+  and `DEVICE_UNAUTHORIZED` was not among them — so an expired grant re-signed
+  `session.attach` every five seconds indefinitely. `MACHINE_MISMATCH`,
+  `INVALID_SIGNATURE`, `AUTH_REPLAY`, and `REQUEST_EXPIRED` fell through the
+  same gap.
+- The machines card kept advertising "Full coding control" for a grant the
+  server would never honour again.
+- Nothing carried the grant's expiry, so no warning was possible before the
+  cliff — only a diagnosis after it.
+
+The protocol has always answered with a typed `error.retryable` and a stable
+`error.code`; PacketADE flattened both into a sentence and then tried to read
+them back out of it. The native layer now forwards the typed fields verbatim,
+retry decisions branch on `retryable`, grant state branches on `code`, and the
+Host's `expiresAt` reaches the machines card — which warns in the last week of
+a grant's life and states plainly when one has expired. Transient Host
+conditions the protocol marks retryable, and local socket faults, still
+reconnect exactly as before.
+
+### Fixed — the kill switch disarmed the remedy
+
+Revoking a device grant and forgetting a device locally both refused to run
+while the integration was disabled, and the Revoke button was disabled with
+them. Disabling Syndicate is precisely what a user does on suspicion of
+compromise, and doing so left the grant live on the Host until it expired.
+Both now work while disabled: revoking briefly raises the managed forward and
+closes it again, and forgetting is local-only and never needed transport at
+all. The machine row gained an explicit "forget locally" action for an
+unreachable Host, which deletes the OS-keychain key without pretending the
+grant was revoked.
+
+### Fixed — a restored remote pane rendered as detached
+
+A mount-time reset clobbered the restored session state of a pane holding a
+live Host session, so it displayed "detached" whenever auto-start was off. The
+same reset cleared the start guard without clearing the session identity, so
+after re-pairing a machine the new device attached the previous device's
+session and the Host answered `SESSION_NOT_OWNED`. The reset now runs only when
+the paired device actually changes, and clears the identities with it.
+
+### Fixed — closing a pane could drop it while the remote session ran on
+
+The terminal header's close button called its kill handler without awaiting or
+catching it. Where that handler can reject — stopping a remote session can fail
+— the pane disappeared, the rejection went unhandled, and the Host session kept
+running with nothing shown. The pane now stays put and surfaces the reason.
+
+### Changed — PacketRelay carrier status is throttled
+
+Every successful controller RPC recorded which carrier served it. With 25 ms
+output polls and one request per keystroke that was roughly 40 `localStorage`
+writes a second per active pane, each re-rendering the machines card, to move a
+timestamp nobody reads at that resolution. Unchanged carriers now persist at
+most once every 30 seconds; a change of carrier is still recorded immediately.
+
+### Changed — pairing tolerates additive Host responses
+
+The controller protocol pins the pairing _invitation_ field-by-field and backs
+it with a fixture shared byte-for-byte with Syndicate, but says nothing about
+the claim response. PacketADE rejected unknown fields in both, which meant any
+additive change to the claim response would have silently broken pairing on
+already-shipped builds. The claim response and its device record are now
+forward-compatible; the invitation envelope stays strict, deliberately.
+
 ## [0.10.5] - 2026-08-07
 
 Windows artifacts, built 2026-08-07 19:32, **unsigned**:

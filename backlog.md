@@ -101,6 +101,42 @@ environment or packaged matrix has actually run.
   upgrade, and rollback matrices before treating “control from anywhere” as a
   broadly accepted release promise. See
   [`dev/syndicate-execution-target.md`](./dev/syndicate-execution-target.md).
+  The expiry matrix is now the sharpest of these: grants last 30 days with no
+  renewal path, so every paired device reaches it. PacketADE handles the cliff
+  correctly as of the integration-toggle work, but the fix has never been
+  exercised against a real expired grant.
+- **P2 - Syndicate `device.refresh` client half.** Grants expire at 30 days and
+  Syndicate has no renewal method yet; it is designing and building the host
+  half (its backlog item P4#2) and PacketADE implements the client call
+  afterwards. Agree the method shape before either side builds. Until it lands,
+  the only remedy for an expired grant is re-pairing, which PacketADE now warns
+  about in the final week rather than discovering at the cliff.
+- **P2 - Contribute the device→relay protocol spec.** `CONTROLLER_PROTOCOL_V1`
+  documents the controller→Host half only. The device→relay half — `device_hello`
+  and its `SYNDICATE-RELAY-DEVICE-HELLO-V1` separator (signed over a five-field
+  newline payload rather than canonical JSON, unlike every other signature in
+  the protocol), the device keepalive, and `routeRevoked` — exists only as
+  PacketADE's implementation in `src-tauri/src/commands/syndicate_relay.rs`.
+  Syndicate owns the document and asked us to write that half, since we own the
+  only implementation. Its stated goal is that an independent client be
+  buildable from the spec alone, which today it is not.
+- **P3 - Syndicate SSH forward pins the remote port to 4317.**
+  `SyndicateMachineConnection.local_port` is configurable but
+  `commands/syndicate.rs` builds the forward as
+  `127.0.0.1:{local_port}:127.0.0.1:{DEFAULT_PORT}`, so a Host listening on a
+  non-default `SYNDICATE_PORT` is unreachable over SSH.
+- **P3 - PacketRelay opens one WebSocket per RPC.** Each relayed call costs a
+  TLS handshake plus `device_hello` plus `routeReady` before it sends anything.
+  Fine for occasional control, poor for `session.input`; connection reuse is the
+  fix if terminal streaming over the relay is ever wanted.
+- **P3 - Relay keepalive is coupled by an exact string.** PacketRelay compares
+  received text byte-for-byte against the literal
+  `{"protocolVersion":1,"type":"ping"}`, and
+  `syndicate_relay.rs` emits exactly that. It currently matches only because
+  serde_json sorts keys and `protocolVersion` happens to sort before `type`. Any
+  reformat, key reorder, or added field breaks liveness silently — no `pong`,
+  then a close-1013 reconnect loop after 45s. Covered by no fixture or test;
+  Syndicate tracks the cross-repo fixture as its P4#11.
 - **P1 - Dictation hardware/platform matrix.** Run default/USB/Bluetooth,
   44.1/48 kHz, fast-PTT, cancel, disconnect, repeated phrase, first-model-load,
   history, in-app, clipboard, and opt-in external-paste tests on Windows with an

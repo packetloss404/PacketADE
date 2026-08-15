@@ -90,6 +90,36 @@ export function transportLabel(transport: SyndicateTransport): string {
   return transport === "packet-relay" ? "PacketRelay" : "Managed SSH forward";
 }
 
+/**
+ * How close a grant is to the 30-day cliff.
+ *
+ * Grants have no renewal path, so every paired device reaches this. A warning
+ * is only possible when the Host has issued a relay grant to read `expiresAt`
+ * from; SSH-only pairings report `unknown` rather than implying safety.
+ */
+export type SyndicateGrantExpiry =
+  | { state: "unknown" }
+  | { state: "expired"; expiresAt: number }
+  | { state: "expiring"; expiresAt: number; daysRemaining: number }
+  | { state: "valid"; expiresAt: number; daysRemaining: number };
+
+/** Days of remaining grant life below which the card warns. */
+export const SYNDICATE_GRANT_WARNING_DAYS = 7;
+
+export function syndicateGrantExpiry(
+  grantExpiresAt: number | undefined,
+  now: number = Date.now(),
+): SyndicateGrantExpiry {
+  if (typeof grantExpiresAt !== "number" || !Number.isFinite(grantExpiresAt)) {
+    return { state: "unknown" };
+  }
+  if (grantExpiresAt <= now) return { state: "expired", expiresAt: grantExpiresAt };
+  const daysRemaining = Math.ceil((grantExpiresAt - now) / 86_400_000);
+  return daysRemaining <= SYNDICATE_GRANT_WARNING_DAYS
+    ? { state: "expiring", expiresAt: grantExpiresAt, daysRemaining }
+    : { state: "valid", expiresAt: grantExpiresAt, daysRemaining };
+}
+
 export function unknownSyndicateScopes(scopes: readonly string[]): string[] {
   const known = new Set<string>(SYNDICATE_SCOPE_DETAILS.map(({ scope }) => scope));
   return [...new Set(scopes.filter((scope) => !known.has(scope)))].sort();

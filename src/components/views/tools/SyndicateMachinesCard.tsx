@@ -9,6 +9,7 @@ import {
   ServerCog,
   ShieldCheck,
   Trash2,
+  Unlink,
 } from "lucide-react";
 import { APP_NAME } from "@/lib/brand";
 import { useSyndicateStore } from "@/stores/syndicateStore";
@@ -23,6 +24,7 @@ import {
   SYNDICATE_SCOPE_DETAILS,
   syndicateAuthoritySummary,
   syndicateDisableImpact,
+  syndicateGrantExpiry,
   transportLabel,
   unknownSyndicateScopes,
 } from "@/lib/syndicateMachineStatus";
@@ -86,12 +88,24 @@ export function SyndicateMachinesCard() {
   const [toggleBusy, setToggleBusy] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
   const [confirmDisable, setConfirmDisable] = useState(false);
+  const [confirmEnable, setConfirmEnable] = useState(false);
+  const [forgetOnly, setForgetOnly] = useState(false);
   const transportSnapshot = useSyncExternalStore(
     subscribeSyndicateTransportSnapshot,
     getSyndicateTransportSnapshot,
     getSyndicateTransportSnapshot,
   );
   const disableImpact = useMemo(() => syndicateDisableImpact(workspaces), [workspaces]);
+  // What turning the integration back on hands back to already-paired Hosts.
+  const restoredAuthority = useMemo(
+    () => ({
+      machines: machines.length,
+      withTerminalInput: machines.filter(
+        (machine) => machine.grantStatus === "active" && machine.scopes.includes("terminal.input"),
+      ).length,
+    }),
+    [machines],
+  );
 
   async function setIntegration(next: boolean) {
     if (toggleBusy) return;
@@ -104,6 +118,7 @@ export function SyndicateMachinesCard() {
         setPendingRevoke(null);
       }
       setConfirmDisable(false);
+      setConfirmEnable(false);
     } catch (reason) {
       const detail = reason instanceof Error ? reason.message : String(reason);
       setToggleError(
@@ -118,6 +133,17 @@ export function SyndicateMachinesCard() {
 
   function toggleIntegration() {
     if (!enabled) {
+      // Enabling is the authority-increasing direction: it hands full
+      // controller authority — including terminal.input, which is code
+      // execution as the Syndicate OS user — back to every paired Host in one
+      // click. Confirm it whenever there is a pairing to restore. Disabling
+      // only ever removes authority, so it is confirmed for a different
+      // reason: to report the remote work it pauses.
+      if (restoredAuthority.machines > 0) {
+        setToggleError(null);
+        setConfirmEnable(true);
+        return;
+      }
       void setIntegration(true);
       return;
     }
@@ -152,14 +178,15 @@ export function SyndicateMachinesCard() {
     }
   }
 
-  async function confirmRevoke(forgetOnly: boolean) {
+  async function confirmRevoke(localOnly: boolean) {
     if (!pendingRevoke || busyId) return;
     setBusyId(pendingRevoke.machineId);
     setRevokeError(null);
     try {
-      if (forgetOnly) await forgetOffline(pendingRevoke.machineId);
+      if (localOnly) await forgetOffline(pendingRevoke.machineId);
       else await revoke(pendingRevoke.machineId);
       setPendingRevoke(null);
+      setForgetOnly(false);
     } catch (reason) {
       setRevokeError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -365,6 +392,7 @@ export function SyndicateMachinesCard() {
               machine.deviceId,
             );
             const authority = syndicateAuthoritySummary(machine.grantStatus, machine.scopes);
+            const grantExpiry = syndicateGrantExpiry(machine.grantExpiresAt);
             const unknownScopes = unknownSyndicateScopes(machine.scopes);
             const authorityIsCurrent = machine.grantStatus === "active";
             const effectiveScopes = authorityIsCurrent ? machine.scopes : [];
@@ -448,6 +476,29 @@ export function SyndicateMachinesCard() {
                         UI, then refresh.
                       </p>
                     )}
+                    {/* Grants last 30 days with no renewal path, so this is a
+                        certainty rather than an edge case. Saying so before the
+                        cliff is the whole point of carrying `expiresAt`. */}
+                    {machine.grantStatus === "expired" ? (
+                      <p className="mt-1 text-[10px] text-accent-amber">
+                        This device grant has expired. Syndicate rejects its requests until you pair
+                        this machine again.
+                        {grantExpiry.state === "expired"
+                          ? ` Expired ${observedTime(grantExpiry.expiresAt)}.`
+                          : ""}
+                      </p>
+                    ) : machine.grantStatus === "active" && grantExpiry.state === "expiring" ? (
+                      <p className="mt-1 text-[10px] text-accent-amber">
+                        This device grant expires in {countLabel(grantExpiry.daysRemaining, "day")}{" "}
+                        ({observedTime(grantExpiry.expiresAt)}). Grants cannot be renewed — pair
+                        this machine again before then to avoid an interruption.
+                      </p>
+                    ) : machine.grantStatus === "active" && grantExpiry.state === "valid" ? (
+                      <p className="mt-1 text-[9px] text-text-muted">
+                        Grant expires {observedTime(grantExpiry.expiresAt)} ·{" "}
+                        {countLabel(grantExpiry.daysRemaining, "day")} left
+                      </p>
+                    ) : null}
                     {machine.grantStatus === "active" && !canLaunch && (
                       <p className="mt-1 text-[10px] text-accent-amber">
                         This grant cannot launch {APP_NAME} terminal panes because one or more
@@ -488,13 +539,35 @@ export function SyndicateMachinesCard() {
                       onClick={() => {
                         setPendingRevoke(machine);
                         setRevokeError(null);
+                        setForgetOnly(false);
                       }}
-                      disabled={!enabled || !nativeReady || busyId === machine.machineId}
+                      // Deliberately not gated on the integration switch.
+                      // Disabling Syndicate is what a user does on suspicion
+                      // of compromise; if that also disarmed Revoke, the grant
+                      // would stay live on the Host until it expired.
+                      disabled={busyId === machine.machineId}
                       aria-label={`Revoke ${machine.displayName}`}
                       className="p-1 text-text-muted hover:text-accent-red disabled:opacity-40"
                       title="Revoke controller device"
                     >
                       <Trash2 size={11} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPendingRevoke(machine);
+                        setRevokeError(null);
+                        setForgetOnly(true);
+                      }}
+                      // Purely local: deletes the OS-keychain record and needs
+                      // no transport, so an unreachable Host — or a disabled
+                      // integration — must never strand the local key.
+                      disabled={busyId === machine.machineId}
+                      aria-label={`Forget ${machine.displayName} locally`}
+                      className="p-1 text-text-muted hover:text-accent-amber disabled:opacity-40"
+                      title="Forget this device locally without contacting the Host"
+                    >
+                      <Unlink size={11} />
                     </button>
                   </div>
                 </div>
@@ -589,7 +662,68 @@ export function SyndicateMachinesCard() {
         </div>
       )}
 
-      {confirmDisable && enabled && (
+      {confirmEnable && !enabled && (
+        <Modal
+          title="Enable Syndicate integration?"
+          width="w-[440px]"
+          closeDisabled={toggleBusy}
+          onClose={() => {
+            if (!toggleBusy) setConfirmEnable(false);
+          }}
+          footer={
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={toggleBusy}
+                onClick={() => setConfirmEnable(false)}
+                className="rounded px-3 py-1.5 text-[10px] text-text-secondary hover:bg-bg-hover disabled:opacity-40"
+              >
+                Keep disabled
+              </button>
+              <button
+                type="button"
+                disabled={toggleBusy}
+                onClick={() => void setIntegration(true)}
+                className="border-accent-green/30 bg-accent-green/10 hover:bg-accent-green/20 rounded border px-3 py-1.5 text-[10px] font-medium text-accent-green disabled:opacity-40"
+              >
+                {toggleBusy ? "Enabling…" : "Enable integration"}
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-3 px-5 py-4 text-[11px] text-text-secondary">
+            <p>
+              This restores controller authority to{" "}
+              {countLabel(restoredAuthority.machines, "already-paired Syndicate machine")}. Existing
+              grants resume immediately — no new approval is requested on the server.
+            </p>
+            {restoredAuthority.withTerminalInput > 0 && (
+              <div
+                role="alert"
+                className="border-accent-amber/30 bg-accent-amber/10 rounded border px-3 py-2"
+              >
+                <p className="flex items-center gap-1.5 font-medium text-accent-amber">
+                  <AlertTriangle size={11} className="shrink-0" />
+                  This grants code execution
+                </p>
+                <p className="mt-1 text-[10px]">
+                  {countLabel(restoredAuthority.withTerminalInput, "paired machine")} still{" "}
+                  {restoredAuthority.withTerminalInput === 1 ? "holds" : "hold"} terminal input,
+                  which runs commands with the Syndicate Linux user&apos;s authority. Revoke a
+                  device instead if you no longer trust it.
+                </p>
+              </div>
+            )}
+            {toggleError && <p className="text-[10px] text-accent-red">{toggleError}</p>}
+          </div>
+        </Modal>
+      )}
+
+      {/* Not gated on `enabled`: disabling closes the frontend boundary
+          immediately, before the native call settles, so gating on it unmounted
+          this modal the instant it was confirmed — its "Disabling…" state and
+          any cleanup error were unreachable. It closes on success instead. */}
+      {confirmDisable && (
         <Modal
           title="Disable Syndicate integration?"
           width="w-[440px]"
@@ -648,17 +782,54 @@ export function SyndicateMachinesCard() {
         </Modal>
       )}
 
-      {enabled && pendingRevoke && (
+      {pendingRevoke && (
         <ConfirmDeleteModal
-          title="Revoke Syndicate controller?"
+          title={forgetOnly ? "Forget this device locally?" : "Revoke Syndicate controller?"}
           entityName={`${pendingRevoke.displayName} (${pendingRevoke.deviceId})`}
-          description="will revoke this device grant on the Syndicate host and delete its private controller key from the OS credential store. Server workspaces and agent sessions are not deleted."
-          warnings={revokeError ? [revokeError] : []}
-          warningTitle={revokeError ? "Revocation did not complete" : undefined}
-          confirmLabel={busyId === pendingRevoke.machineId ? "Revoking…" : "Revoke device"}
-          onConfirm={() => void confirmRevoke(false)}
+          description={
+            forgetOnly
+              ? "will delete this device's private controller key from the OS credential store without contacting the Host. The grant stays live on the server until you revoke it there or it expires."
+              : "will revoke this device grant on the Syndicate host and delete its private controller key from the OS credential store. Server workspaces and agent sessions are not deleted."
+          }
+          warnings={[
+            ...(revokeError ? [revokeError] : []),
+            ...(forgetOnly
+              ? [
+                  "Local cleanup only. Revoking on the Host is the only thing that stops this device being usable from a stolen key.",
+                ]
+              : []),
+            ...(enabled
+              ? []
+              : [
+                  "The integration is disabled. Revoking still reaches the Host — it briefly raises the managed SSH forward, then closes it again.",
+                ]),
+          ]}
+          warningTitle={
+            revokeError
+              ? forgetOnly
+                ? "Local cleanup did not complete"
+                : "Revocation did not complete"
+              : forgetOnly
+                ? "This does not revoke the grant"
+                : enabled
+                  ? undefined
+                  : "Revoking while disabled"
+          }
+          confirmLabel={
+            busyId === pendingRevoke.machineId
+              ? forgetOnly
+                ? "Forgetting…"
+                : "Revoking…"
+              : forgetOnly
+                ? "Forget locally"
+                : "Revoke device"
+          }
+          onConfirm={() => void confirmRevoke(forgetOnly)}
           onClose={() => {
-            if (!busyId) setPendingRevoke(null);
+            if (!busyId) {
+              setPendingRevoke(null);
+              setForgetOnly(false);
+            }
           }}
         />
       )}

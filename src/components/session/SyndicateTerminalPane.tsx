@@ -21,6 +21,7 @@ import {
 import type { WorkspaceAgentSlot, WorkspacePane } from "@/types/workspace";
 import type { TerminalHeaderRenderState } from "@/components/session/TerminalPane";
 import { SYNDICATE_INTEGRATION_DISABLED_MESSAGE } from "@/lib/syndicateIntegration";
+import { isFatalSyndicateError } from "@/lib/syndicateErrors";
 import "@xterm/xterm/css/xterm.css";
 
 interface SyndicateTerminalPaneProps {
@@ -90,7 +91,8 @@ function writeReplay(
     term.write(decoder.decode(decodeBase64(chunk.dataBase64), { stream: true }));
     next = chunk.sequence;
   }
-  if (typeof replay?.nextAfterSequence === "number") next = Math.max(next, replay.nextAfterSequence);
+  if (typeof replay?.nextAfterSequence === "number")
+    next = Math.max(next, replay.nextAfterSequence);
   return next;
 }
 
@@ -124,7 +126,9 @@ export function SyndicateTerminalPane({
   const nativeReady = useSyndicateStore((state) => state.nativeReady);
   const nativeSyncError = useSyndicateStore((state) => state.nativeSyncError);
   const integrationEnabled = integrationPreferenceEnabled && nativeReady;
-  const machine = useSyndicateStore((state) => state.machines.find((item) => item.machineId === machineId));
+  const machine = useSyndicateStore((state) =>
+    state.machines.find((item) => item.machineId === machineId),
+  );
   const hasScope = useCallback(
     (scope: string) =>
       integrationEnabled &&
@@ -164,7 +168,11 @@ export function SyndicateTerminalPane({
     async (generation: number, hostPaneId: string, terminalSessionId: string) => {
       if (!machine) return;
       let delay = 350;
-      while (mountedRef.current && pollGenerationRef.current === generation && sessionIdRef.current) {
+      while (
+        mountedRef.current &&
+        pollGenerationRef.current === generation &&
+        sessionIdRef.current
+      ) {
         const integration = useSyndicateStore.getState();
         if (!integration.enabled || !integration.nativeReady) {
           setAlive(false);
@@ -199,10 +207,13 @@ export function SyndicateTerminalPane({
             .getState()
             .recordControllerFailure(machine.machineId, machine.deviceId, reason);
           setError(message);
-          if (
-            message === SYNDICATE_INTEGRATION_DISABLED_MESSAGE ||
-            /DEVICE_REVOKED|device was revoked by Syndicate|relay grant (?:is )?expired|SCOPE_DENIED|SESSION_NOT_FOUND|SESSION_NOT_OWNED/i.test(message)
-          ) {
+          // Stop on the Host's own verdict. `retryable: false` covers every
+          // terminal rejection — DEVICE_UNAUTHORIZED for an expired grant,
+          // DEVICE_REVOKED, MACHINE_MISMATCH, INVALID_SIGNATURE, AUTH_REPLAY,
+          // REQUEST_EXPIRED, SCOPE_DENIED — so this no longer depends on a
+          // list of message fragments that a new code can silently fall
+          // through. Local faults carry no verdict and stay reconnectable.
+          if (message === SYNDICATE_INTEGRATION_DISABLED_MESSAGE || isFatalSyndicateError(reason)) {
             setAlive(false);
             setReconnecting(false);
             break;
@@ -236,7 +247,11 @@ export function SyndicateTerminalPane({
       const connection = syndicateConnection(machine);
 
       if (!hostPaneId || !terminalSessionId) {
-        if (!hasScope("workspace.create") || !hasScope("session.start") || !hasScope("terminal.view")) {
+        if (
+          !hasScope("workspace.create") ||
+          !hasScope("session.start") ||
+          !hasScope("terminal.view")
+        ) {
           throw new Error("This device grant cannot create and start Syndicate terminal panes.");
         }
         const created = parseHostPane(
@@ -316,7 +331,17 @@ export function SyndicateTerminalPane({
       term.write(`\r\n\x1b[31m[Syndicate] ${message}\x1b[0m\r\n`);
       setAlive(false);
     }
-  }, [hasScope, hostWorkspaceId, initialPrompt, integrationEnabled, machine, pane, persistCursor, pollOutput, updatePane]);
+  }, [
+    hasScope,
+    hostWorkspaceId,
+    initialPrompt,
+    integrationEnabled,
+    machine,
+    pane,
+    persistCursor,
+    pollOutput,
+    updatePane,
+  ]);
 
   const stop = useCallback(async () => {
     if (!integrationEnabled) {
@@ -326,7 +351,9 @@ export function SyndicateTerminalPane({
     }
     if (sessionIdRef.current) {
       if (!machine) {
-        throw new Error("The paired Syndicate machine is unavailable; the remote session was preserved.");
+        throw new Error(
+          "The paired Syndicate machine is unavailable; the remote session was preserved.",
+        );
       }
       if (!hasScope("terminal.stop")) {
         throw new Error("This device grant cannot stop the remote terminal session.");
@@ -354,6 +381,23 @@ export function SyndicateTerminalPane({
     });
   }, [hasScope, integrationEnabled, machine, updatePane]);
 
+  /**
+   * `stop` for the pane header's close action.
+   *
+   * It still rejects, so the caller keeps the pane rather than dropping it
+   * while the Host session runs on. Recording the reason here as well means
+   * the pane's own banner explains itself, instead of the failure living only
+   * inside a modal the user is about to dismiss.
+   */
+  const stopFromHeader = useCallback(async () => {
+    try {
+      await stop();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      throw reason;
+    }
+  }, [stop]);
+
   const restart = useCallback(async () => {
     if (sessionIdRef.current) await stop();
     await startOrAttach();
@@ -377,7 +421,11 @@ export function SyndicateTerminalPane({
     term.open(container);
     termRef.current = term;
     fitRef.current = fit;
-    try { fit.fit(); } catch { /* layout not ready */ }
+    try {
+      fit.fit();
+    } catch {
+      /* layout not ready */
+    }
 
     const dataDisposable = term.onData((data) => {
       const sessionId = sessionIdRef.current;
@@ -393,7 +441,15 @@ export function SyndicateTerminalPane({
     });
     const resizeDisposable = term.onResize(({ cols, rows }) => {
       const sessionId = sessionIdRef.current;
-      if (!integrationEnabled || !machine || !sessionId || !hasScope("terminal.resize") || cols < 2 || rows < 2) return;
+      if (
+        !integrationEnabled ||
+        !machine ||
+        !sessionId ||
+        !hasScope("terminal.resize") ||
+        cols < 2 ||
+        rows < 2
+      )
+        return;
       void syndicateSessionResize({
         connection: syndicateConnection(machine),
         sessionId,
@@ -403,7 +459,11 @@ export function SyndicateTerminalPane({
     });
     const resizeObserver = new ResizeObserver(() => {
       if (container.offsetWidth < 1 || container.offsetHeight < 1) return;
-      try { fit.fit(); } catch { /* hidden layout */ }
+      try {
+        fit.fit();
+      } catch {
+        /* hidden layout */
+      }
     });
     resizeObserver.observe(container);
     return () => {
@@ -425,13 +485,46 @@ export function SyndicateTerminalPane({
     setError(null);
   }, [integrationEnabled]);
 
+  // Reset only when the paired device actually *changes*. Running this
+  // unconditionally on mount clobbered the restored `alive` state, so a pane
+  // holding a live Host session rendered "detached" whenever autoStart was
+  // off — and it cleared `startedRef` without clearing the session identity,
+  // so after a re-pair the new device attached the previous device's session
+  // and the Host answered SESSION_NOT_OWNED.
+  const lastDeviceIdRef = useRef(machine?.deviceId);
   useEffect(() => {
+    const previous = lastDeviceIdRef.current;
+    const current = machine?.deviceId;
+    if (previous === current) return;
+    lastDeviceIdRef.current = current;
+    // First resolution of the machine record: nothing has run under a device
+    // yet, so restored state is still the truth.
+    if (previous === undefined) return;
+
     pollGenerationRef.current += 1;
     startedRef.current = false;
     setAlive(false);
     setReconnecting(false);
     setError(null);
-  }, [machine?.deviceId]);
+    // The machine going away (unpair, revoke) stops the pane but leaves the
+    // record alone. Only a genuinely different device invalidates the
+    // identities, which belong to the credential that created them.
+    if (current === undefined) return;
+    sessionIdRef.current = null;
+    hostPaneIdRef.current = null;
+    terminalSessionIdRef.current = null;
+    cursorRef.current = 0;
+    persistedCursorRef.current = 0;
+    decoderRef.current = new TextDecoder();
+    operationGenerationRef.current += 1;
+    updatePane({
+      syndicatePaneId: undefined,
+      syndicateTerminalSessionId: undefined,
+      syndicateSessionId: undefined,
+      syndicateCursor: 0,
+      syndicateOperationGeneration: operationGenerationRef.current,
+    });
+  }, [machine?.deviceId, updatePane]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -461,10 +554,10 @@ export function SyndicateTerminalPane({
         showApproval: false,
         cliCommand: `syndicate:${pane.agentId}`,
         onRestart: () => void restart(),
-        onKill: stop,
+        onKill: stopFromHeader,
       })}
       {!integrationEnabled && (
-        <div className="border-b border-accent-amber/20 bg-accent-amber/5 px-2 py-1 text-[9px] text-accent-amber">
+        <div className="border-accent-amber/20 bg-accent-amber/5 border-b px-2 py-1 text-[9px] text-accent-amber">
           {!integrationPreferenceEnabled
             ? "Syndicate integration is disabled in Settings. This remote session is preserved and PacketADE will not reconnect or send input until you re-enable it."
             : nativeSyncError
@@ -473,7 +566,7 @@ export function SyndicateTerminalPane({
         </div>
       )}
       {error && (
-        <div className="border-b border-accent-red/20 bg-accent-red/5 px-2 py-1 text-[9px] text-accent-red">
+        <div className="border-accent-red/20 bg-accent-red/5 border-b px-2 py-1 text-[9px] text-accent-red">
           {reconnecting ? "Reconnecting" : "Disconnected"} · {error}
         </div>
       )}
@@ -488,7 +581,8 @@ export function SyndicateTerminalPane({
             ? nativeSyncError
               ? "blocked"
               : "initializing"
-            : "disabled"} ·{" "}
+            : "disabled"}{" "}
+        ·{" "}
         {hasScope("terminal.input")
           ? "interactive"
           : integrationEnabled

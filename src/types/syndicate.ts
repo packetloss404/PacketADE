@@ -28,6 +28,14 @@ export interface SyndicateMachine {
   scopes: string[];
   addedAt: number;
   lastConnectedAt?: number;
+  /**
+   * Epoch milliseconds at which the Host stops honouring this grant, from the
+   * relay grant in `machine.snapshot`. Grants last 30 days and have no renewal
+   * path, so without this the UI cannot warn before the cliff — it can only
+   * report the failure afterwards. Undefined when the Host has issued no relay
+   * grant, which is the case for SSH-only pairings.
+   */
+  grantExpiresAt?: number;
   cachedSnapshot?: SyndicateMachineSnapshot;
 }
 
@@ -56,6 +64,12 @@ export interface SyndicateMachineSnapshot {
       deviceId: string;
       scopes: string[];
       revocationEpoch: number;
+      /**
+       * Host-signed PacketRelay grant. Only `expiresAt` is read here — the
+       * certificate itself is verified and stored natively and never crosses
+       * into the frontend as authority.
+       */
+      relayGrant?: { grant?: { expiresAt?: string } };
     };
   };
   agents: SyndicateAgentSnapshot[];
@@ -203,37 +217,47 @@ export function parseMachineSnapshot(value: unknown): SyndicateMachineSnapshot {
   const agents: SyndicateAgentSnapshot[] = launchProfiles.flatMap((value) => {
     if (!value || typeof value !== "object") return [];
     const profile = value as Record<string, unknown>;
-    if (!['codex', 'claude', 'packetcode'].includes(String(profile.id))) return [];
+    if (!["codex", "claude", "packetcode"].includes(String(profile.id))) return [];
     const probe = agentProbes.find(
-      (candidate) => candidate && typeof candidate === "object" && (candidate as Record<string, unknown>).id === profile.id,
+      (candidate) =>
+        candidate &&
+        typeof candidate === "object" &&
+        (candidate as Record<string, unknown>).id === profile.id,
     ) as Record<string, unknown> | undefined;
     const authReady = probe?.auth === "authenticated" || probe?.auth === "not-applicable";
-    return [{
-      profileId: profile.id as SyndicateAgentSnapshot["profileId"],
-      displayName: typeof probe?.displayName === "string" ? probe.displayName : profileName(String(profile.id)),
-      version:
-        typeof profile.version === "string"
-          ? profile.version
-          : typeof probe?.version === "string"
-            ? probe.version
-            : undefined,
-      state:
-        profile.available !== true
-          ? "unavailable"
-          : authReady
-            ? "ready"
-            : "auth-required",
-    }];
+    return [
+      {
+        profileId: profile.id as SyndicateAgentSnapshot["profileId"],
+        displayName:
+          typeof probe?.displayName === "string"
+            ? probe.displayName
+            : profileName(String(profile.id)),
+        version:
+          typeof profile.version === "string"
+            ? profile.version
+            : typeof probe?.version === "string"
+              ? probe.version
+              : undefined,
+        state: profile.available !== true ? "unavailable" : authReady ? "ready" : "auth-required",
+      },
+    ];
   });
   const snapshot: Partial<SyndicateMachineSnapshot> = {
-    machine: rawMachine && platform ? {
-      machineId: typeof rawMachine.id === "string" ? rawMachine.id : "",
-      displayName: typeof rawMachine.displayName === "string" ? rawMachine.displayName : "Syndicate",
-      os: typeof platform.os === "string" ? platform.os : "unknown",
-      architecture: typeof platform.architecture === "string" ? platform.architecture : "unknown",
-      logicalCpuCount: typeof platform.logicalCpuCount === "number" ? platform.logicalCpuCount : 0,
-      totalMemoryBytes: typeof platform.totalMemoryBytes === "number" ? platform.totalMemoryBytes : 0,
-    } : undefined,
+    machine:
+      rawMachine && platform
+        ? {
+            machineId: typeof rawMachine.id === "string" ? rawMachine.id : "",
+            displayName:
+              typeof rawMachine.displayName === "string" ? rawMachine.displayName : "Syndicate",
+            os: typeof platform.os === "string" ? platform.os : "unknown",
+            architecture:
+              typeof platform.architecture === "string" ? platform.architecture : "unknown",
+            logicalCpuCount:
+              typeof platform.logicalCpuCount === "number" ? platform.logicalCpuCount : 0,
+            totalMemoryBytes:
+              typeof platform.totalMemoryBytes === "number" ? platform.totalMemoryBytes : 0,
+          }
+        : undefined,
     controller,
     agents,
     snapshotSequence: typeof raw.snapshotSequence === "number" ? raw.snapshotSequence : undefined,
@@ -257,6 +281,21 @@ export function parseMachineSnapshot(value: unknown): SyndicateMachineSnapshot {
     throw new Error("Syndicate returned an incompatible machine snapshot");
   }
   return snapshot as SyndicateMachineSnapshot;
+}
+
+/**
+ * Epoch milliseconds at which this snapshot's relay grant expires.
+ *
+ * Grants are issued for 30 days with no renewal path, and the Host puts
+ * `expiresAt` inside the relay grant it returns from `machine.snapshot`. A
+ * snapshot with no relay grant (SSH-only pairings) yields undefined rather
+ * than a guess.
+ */
+export function grantExpiryFromSnapshot(snapshot: SyndicateMachineSnapshot): number | undefined {
+  const expiresAt = snapshot.controller.device.relayGrant?.grant?.expiresAt;
+  if (typeof expiresAt !== "string") return undefined;
+  const parsed = Date.parse(expiresAt);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 export function parseWorkspaceCatalog(value: unknown): SyndicateWorkspaceCatalog {
