@@ -155,13 +155,20 @@ baseline**, so nothing in this plan may claim a saving until Phase 0 lands.
    estimator branches on it, so Anthropic's disjoint buckets are no longer
    wrongly subtracted. The Rust call sites (item 2) and `modelContext.ts` are
    still unbranched — that is CE1's remaining scope.
-5. **Half the provider rows write no PacketADE-owned usage record.**
-   `append_usage_entry` is called from exactly three sites, all in
-   `api_agent.rs` — the in-process path only. `api-claude-oauth`,
-   `api-openai-codex`, and `api-openai-agents` produce zero rows in
-   `~/.packetade/usage.jsonl`; their spend is reconstructed by scraping
-   `~/.codex/sessions/*.jsonl` and `~/.claude/cost-tally.json`, files the
-   **vendor CLIs** write.
+5. ~~**Half the provider rows write no PacketADE-owned usage record.**~~
+   **FIXED for the sidecar (2026-08-16).** The sidecar `turn_summary` handler
+   now appends a `usage.jsonl` row per turn delta (sources `api-claude-oauth` /
+   `api-openai-agents`), priced through `billable_input_tokens` like the
+   in-process sites, so sidecar spend reaches `read_usage_analytics` and the
+   budget guardrails. Provider+model come from a start-time registry on
+   `SidecarManager` (`session_usage_meta`), which also tracks `set_model`
+   swaps. The historical record: `append_usage_entry` used to be called from
+   exactly three sites, all in `api_agent.rs`, and `api-claude-oauth` /
+   `api-openai-codex` / `api-openai-agents` produced zero rows — their spend
+   was reconstructed by scraping `~/.codex/sessions/*.jsonl` and
+   `~/.claude/cost-tally.json`, files the **vendor CLIs** write. That scrape
+   still runs (PTY CLI agents still need it), so the conflation noted in
+   `oauth-removal-plan.md` WI-0 persists for PTY sessions only.
 6. **The ~15 auxiliary LLM call sites emit no usage entry whatsoever** — side
    chat, subagent, custom agent, GitHub catch-up/triage/PR/investigate, code
    quality, spec import, four memory ops, insights. `UsageEntry.agent_id`
@@ -481,7 +488,13 @@ Consequences, stated so they are not rediscovered later:
 - **Guardrails are unaffected.** They read `read_usage_analytics`, which keeps
   ingesting `~/.packetade/usage.jsonl` plus the vendor CLI files exactly as
   today. Subscription providers were never in the PacketADE-owned ledger and
-  still are not; that gap is now permanent and accepted.
+  still are not; that gap is now permanent and accepted. **Update 2026-08-16:**
+  after the OAuth removal turned the sidecar providers into metered API-key
+  spend, "accepted" stopped holding for them — the sidecar `turn_summary`
+  handler now writes ledger rows (see §1 item 5). This is the sidecar slice of
+  CE5 only, revived because the guardrails needed it; the ~15 auxiliary sites
+  were separately covered by `aux_llm::record_usage`, and the
+  `task_class`/`run_id` attribution and vendor-file demotion stay cut.
 - **CE6-PRE loses its `run_id`.** It needs a way to select one benchmark run out
   of the ledger. Add `run_id` alone, as CE6-PRE's own temporary instrumentation
   (serde-default, so old lines parse) — not as the first slice of a revived CE5.

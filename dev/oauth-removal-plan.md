@@ -458,7 +458,7 @@ two different agents.
 | SSH remote | yes | yes (`core/tool_runtime_ssh.rs`) |
 | Prompt caching | assumed on (SDK-internal); unresolved — `cost-efficiency-loop.md:658` SPIKE-2 | **definitely off** — `cache_control` appears in no file under `src-tauri/src` (`cost-efficiency-loop.md:30`) |
 | Billing | flat subscription | metered per token |
-| PacketADE-owned usage ledger | **none** — writes zero rows to `usage.jsonl` | **yes** — `append_usage_entry` is called only from the in-process path (`api_agent.rs:1649,1944,2528`) |
+| PacketADE-owned usage ledger | ~~none — writes zero rows to `usage.jsonl`~~ **yes since 2026-08-16** — the sidecar `turn_summary` handler appends a row per turn delta (source `api-claude-oauth`) | **yes** — via the three `api_agent.rs` construction sites |
 
 **Verdict:** migrating `api-claude-oauth` → `api-claude` is a real capability
 downgrade (no edit tool, no structured plan, weaker plan mode, no Claude Code
@@ -711,11 +711,15 @@ Effort scale: **S** ≈ half a day, **M** ≈ 1–2 days, **L** ≈ 3+ days.
 period~~ — DROPPED 2026-07-31.** CE5 is cut and the dashboard it protected is
 deleted (`cost-efficiency-loop.md` §0), so this is **no longer a blocker for
 anything**. The paragraph below is retained as the record of what the concern
-was; read "dashboard" as "guardrail inputs". Today `api-claude-oauth`, `api-openai-codex`,
+was; read "dashboard" as "guardrail inputs". ~~Today `api-claude-oauth`, `api-openai-codex`,
 and `api-openai-agents` write **zero** rows to `~/.packetade/usage.jsonl`
 (`append_usage_entry` is called only from `api_agent.rs:1649,1944,2528`); their
 spend is reconstructed by scraping `~/.claude/cost-tally.json` and
-`~/.codex/sessions/*.jsonl`, files the **vendor CLIs** write. Removing the rows
+`~/.codex/sessions/*.jsonl`, files the **vendor CLIs** write.~~ **No longer
+true since 2026-08-16:** the sidecar `turn_summary` handler now appends
+`usage.jsonl` rows for the surviving sidecar providers (see
+`cost-efficiency-loop.md` §1 item 5), so metered sidecar spend feeds the
+guardrails directly. Removing the rows
 before CE5 lands freezes roughly half the dashboard's history with no PacketADE
 replacement, precisely across the transition being measured
 (`cost-efficiency-loop.md:728-731`).

@@ -141,57 +141,21 @@ fn read_usage_analytics_blocking() -> String {
         }
     }
 
-    // Ingest ~/.packetade/usage.jsonl (written by API agents)
+    // Ingest ~/.packetade/usage.jsonl (written by the in-process API agents,
+    // the aux router, and the sidecar turn_summary handler)
     let usage_jsonl_path = PathBuf::from(&home)
         .join(crate::core::brand::DATA_DIR_NAME)
         .join("usage.jsonl");
     if let Ok(contents) = fs::read_to_string(&usage_jsonl_path) {
-        for line in contents.lines() {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            let entry: crate::commands::usage::UsageEntry = match serde_json::from_str(line) {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-
-            let cost = entry.cost_usd;
-            let input = entry.input_tokens;
-            let output = entry.output_tokens;
-            let sessions: u32 = 1;
-            let pricing_status = crate::commands::pricing::pricing_status_for(&entry.model);
-
-            total_cost += cost;
-            total_sessions += sessions;
-            total_input += input;
-            total_output += output;
-
-            let key = format!("{}::{}", entry.source, entry.model);
-            let usage = model_map.entry(key).or_insert(ModelUsage {
-                source: entry.source.clone(),
-                model: entry.model.clone(),
-                sessions: 0,
-                input_tokens: 0,
-                output_tokens: 0,
-                cost_usd: 0.0,
-                pricing_status,
-            });
-            usage.source = entry.source.clone();
-            usage.pricing_status = merge_pricing_status(usage.pricing_status, pricing_status);
-            usage.sessions += sessions;
-            usage.input_tokens += input;
-            usage.output_tokens += output;
-            usage.cost_usd += cost;
-
-            // Daily date = first 10 chars of ISO 8601 timestamp, or today as fallback
-            let date = if entry.ts.len() >= 10 {
-                entry.ts[..10].to_string()
-            } else {
-                today_date_string()
-            };
-            *daily_map.entry(date).or_insert(0.0) += cost;
-        }
+        ingest_usage_jsonl(
+            &contents,
+            &mut total_cost,
+            &mut total_sessions,
+            &mut total_input,
+            &mut total_output,
+            &mut model_map,
+            &mut daily_map,
+        );
     }
 
     // Ingest ~/.codex/sessions/*.jsonl (written by Codex CLI)
@@ -325,6 +289,69 @@ fn read_usage_analytics_blocking() -> String {
     };
 
     serde_json::to_string(&data).unwrap_or_else(|_| empty_analytics())
+}
+
+/// Fold `~/.packetade/usage.jsonl` lines into the aggregation accumulators.
+/// One row = one `UsageEntry` = one session-turn's spend; malformed or blank
+/// lines are skipped. Extracted from `read_usage_analytics_blocking` so the
+/// ledger→rollup behaviour — the input the daily/monthly budget guardrails
+/// evaluate — is testable without touching the real home directory.
+#[allow(clippy::too_many_arguments)]
+fn ingest_usage_jsonl(
+    contents: &str,
+    total_cost: &mut f64,
+    total_sessions: &mut u32,
+    total_input: &mut u64,
+    total_output: &mut u64,
+    model_map: &mut HashMap<String, ModelUsage>,
+    daily_map: &mut HashMap<String, f64>,
+) {
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let entry: crate::commands::usage::UsageEntry = match serde_json::from_str(line) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        let cost = entry.cost_usd;
+        let input = entry.input_tokens;
+        let output = entry.output_tokens;
+        let sessions: u32 = 1;
+        let pricing_status = crate::commands::pricing::pricing_status_for(&entry.model);
+
+        *total_cost += cost;
+        *total_sessions += sessions;
+        *total_input += input;
+        *total_output += output;
+
+        let key = format!("{}::{}", entry.source, entry.model);
+        let usage = model_map.entry(key).or_insert(ModelUsage {
+            source: entry.source.clone(),
+            model: entry.model.clone(),
+            sessions: 0,
+            input_tokens: 0,
+            output_tokens: 0,
+            cost_usd: 0.0,
+            pricing_status,
+        });
+        usage.source = entry.source.clone();
+        usage.pricing_status = merge_pricing_status(usage.pricing_status, pricing_status);
+        usage.sessions += sessions;
+        usage.input_tokens += input;
+        usage.output_tokens += output;
+        usage.cost_usd += cost;
+
+        // Daily date = first 10 chars of ISO 8601 timestamp, or today as fallback
+        let date = if entry.ts.len() >= 10 {
+            entry.ts[..10].to_string()
+        } else {
+            today_date_string()
+        };
+        *daily_map.entry(date).or_insert(0.0) += cost;
+    }
 }
 
 fn read_cost_tally(path: &PathBuf) -> Vec<CostTallyEntry> {
@@ -576,6 +603,80 @@ mod tests {
             "payload": { "model": model }
         })
         .to_string()
+    }
+
+    /// A sidecar session's `turn_summary` ledger rows must surface in the
+    /// analytics rollup — totals, per-model usage, and the daily buckets the
+    /// `today` / `current month` budget guardrails are computed from. Built
+    /// with the real sidecar entry constructor so this breaks if either side
+    /// of the ledger schema drifts.
+    #[test]
+    fn sidecar_ledger_rows_roll_up_into_analytics() {
+        let claude = crate::commands::agent_sidecar::sidecar_usage_entry(
+            "claude-oauth",
+            "claude-sonnet-4-6",
+            "sidecar-sess-1",
+            1000,
+            500,
+            2000,
+            3000,
+        );
+        let openai = crate::commands::agent_sidecar::sidecar_usage_entry(
+            "openai-agents",
+            "gpt-5.5",
+            "sidecar-sess-2",
+            1000,
+            200,
+            800,
+            0,
+        );
+        assert!(claude.cost_usd > 0.0 && openai.cost_usd > 0.0);
+        let contents = format!(
+            "{}\n\nnot json\n{}\n",
+            serde_json::to_string(&claude).unwrap(),
+            serde_json::to_string(&openai).unwrap(),
+        );
+
+        let mut total_cost = 0.0;
+        let mut total_sessions = 0u32;
+        let mut total_input = 0u64;
+        let mut total_output = 0u64;
+        let mut model_map = HashMap::new();
+        let mut daily_map = HashMap::new();
+        ingest_usage_jsonl(
+            &contents,
+            &mut total_cost,
+            &mut total_sessions,
+            &mut total_input,
+            &mut total_output,
+            &mut model_map,
+            &mut daily_map,
+        );
+
+        assert_eq!(total_sessions, 2);
+        assert_eq!(total_input, 2000);
+        assert_eq!(total_output, 700);
+        let expected_cost = claude.cost_usd + openai.cost_usd;
+        assert!(
+            (total_cost - expected_cost).abs() < 1e-12,
+            "sidecar spend must reach the rollup total: expected {expected_cost}, got {total_cost}"
+        );
+
+        let claude_usage = model_map
+            .get("api-claude-oauth::claude-sonnet-4-6")
+            .expect("claude-oauth sidecar row must appear in model usage");
+        assert_eq!(claude_usage.sessions, 1);
+        assert!((claude_usage.cost_usd - claude.cost_usd).abs() < 1e-12);
+        assert!(model_map.contains_key("api-openai-agents::gpt-5.5"));
+
+        // Both rows were stamped just now, so the guardrails' daily bucket
+        // for the entries' own date must carry the full spend.
+        let date = claude.ts[..10].to_string();
+        let daily = daily_map
+            .get(&date)
+            .copied()
+            .expect("sidecar spend must land in a daily cost bucket");
+        assert!((daily - expected_cost).abs() < 1e-12);
     }
 
     #[test]

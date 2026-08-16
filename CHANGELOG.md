@@ -44,6 +44,23 @@ fresh approval, so the confirmation names how many machines that is and calls
 out the ones that hold terminal input. Disabling stays confirmed too, but for a
 different reason: to report the remote work it pauses.
 
+### Fixed — sidecar API-agent spend was invisible to the budget guardrails
+
+Sessions on the sidecar providers (`api-claude-oauth`, `api-openai-agents`)
+computed cost for the flight rollup but never wrote a row to the
+PacketADE-owned usage ledger (`~/.packetade/usage.jsonl`) — the input the
+analytics rollup and the daily/monthly budget guardrails read. Since the OAuth
+removal turned those providers into metered API-key spend, real money was
+missing from the caps.
+
+The sidecar `turn_summary` handler now appends a ledger row per turn delta,
+using provider and model recorded at session start (and kept in step with
+mid-session model swaps). Rows store the vendor's raw token counts and price
+through the same OpenAI superset-prompt normalisation as the in-process
+providers; the flight cost rollup is unchanged, and the retired Codex
+cumulative-snapshot path still contributes only deltas, so nothing is counted
+twice.
+
 ### Fixed — an expired device grant retried forever and still read as active
 
 Syndicate grants last 30 days and cannot be renewed, so every paired device

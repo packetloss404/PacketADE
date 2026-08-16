@@ -99,6 +99,15 @@ struct ChildHandle {
     own_group: bool,
 }
 
+/// Provider + model recorded for a sidecar-owned session at start time, so
+/// the `turn_summary` handler can price and attribute a usage-ledger row
+/// without needing the session to be linked to a flight.
+#[derive(Debug, Clone)]
+pub(super) struct SessionUsageMeta {
+    pub(super) provider: String,
+    pub(super) model: String,
+}
+
 pub struct SidecarManager {
     pub(super) app_handle: AppHandle,
     /// Absolute path to the sidecar's `dist/index.js` entrypoint.
@@ -142,6 +151,14 @@ pub struct SidecarManager {
     /// fan-out ([`fan_out_crash_error_to_local_sessions`]), and the remote
     /// per-child wait task in [`Self::spawn_remote_sidecar_for_session`].
     pub(super) exec_token_snapshots: Arc<Mutex<HashMap<(String, String), (u64, [u64; 4])>>>,
+    /// Usage-ledger metadata for sessions this supervisor started: the
+    /// provider and model recorded by `forward_start` (model refreshed by
+    /// `forward_set_model`). The `turn_summary` handler reads it to append
+    /// `~/.packetade/usage.jsonl` rows for sidecar sessions — including
+    /// standalone chats that own no flight role, which have no other place
+    /// their model is recorded. Entries are dropped at the same
+    /// session-death cleanup sites as `exec_token_snapshots`.
+    pub(super) session_usage_meta: Arc<Mutex<HashMap<String, SessionUsageMeta>>>,
     /// E8-ACCUM — monotonic stamp source for `exec_token_snapshots`
     /// sequence numbers. Incremented in `handle_event` for each
     /// `turn_summary` BEFORE the rollup task is spawned, so stamps reflect
@@ -180,6 +197,7 @@ impl SidecarManager {
             remote_owned_sessions: Arc::new(Mutex::new(HashSet::new())),
             remote_sessions: Arc::new(Mutex::new(HashMap::new())),
             exec_token_snapshots: Arc::new(Mutex::new(HashMap::new())),
+            session_usage_meta: Arc::new(Mutex::new(HashMap::new())),
             exec_turn_seq: AtomicU64::new(0),
             handshake_protocol: AtomicU32::new(0),
             local_child: StdMutex::new(None),
@@ -230,6 +248,7 @@ impl SidecarManager {
             .lock()
             .await
             .retain(|(sid, _), _| sid != session_id);
+        self.session_usage_meta.lock().await.remove(session_id);
     }
 
     /// E10-SUMMARIZE — register a one-shot completion waiter for
@@ -548,6 +567,7 @@ impl SidecarManager {
             let remote_owned_sessions = Arc::clone(&self.remote_owned_sessions);
             let oneshot_waiters = Arc::clone(&self.oneshot_waiters);
             let exec_token_snapshots = Arc::clone(&self.exec_token_snapshots);
+            let session_usage_meta = Arc::clone(&self.session_usage_meta);
             let app_handle = self.app_handle.clone();
             tokio::spawn(async move {
                 let status = child.wait().await;
@@ -572,6 +592,7 @@ impl SidecarManager {
                     .lock()
                     .await
                     .retain(|(sid, _), _| sid != &session_for_wait);
+                session_usage_meta.lock().await.remove(&session_for_wait);
                 let message = match status {
                     Ok(exit) if exit.success() => {
                         format!("SSH sidecar for {} exited", target_for_wait)
@@ -1234,6 +1255,7 @@ impl SidecarManager {
             &self.remote_owned_sessions,
             &self.oneshot_waiters,
             &self.exec_token_snapshots,
+            &self.session_usage_meta,
             message,
             |event, payload| {
                 let _ = self.app_handle.emit(&event, payload);
@@ -1248,6 +1270,7 @@ async fn fan_out_crash_error_to_local_sessions<F>(
     remote_owned_sessions: &Arc<Mutex<HashSet<String>>>,
     oneshot_waiters: &Arc<Mutex<HashMap<String, OneshotWaiter>>>,
     exec_token_snapshots: &Arc<Mutex<HashMap<(String, String), (u64, [u64; 4])>>>,
+    session_usage_meta: &Arc<Mutex<HashMap<String, SessionUsageMeta>>>,
     message: &str,
     mut emit_error: F,
 ) where
@@ -1290,6 +1313,10 @@ async fn fan_out_crash_error_to_local_sessions<F>(
     {
         let mut snapshots = exec_token_snapshots.lock().await;
         snapshots.retain(|(sid, _), _| !sessions.iter().any(|cleared| cleared == sid));
+    }
+    {
+        let mut meta = session_usage_meta.lock().await;
+        meta.retain(|sid, _| !sessions.iter().any(|cleared| cleared == sid));
     }
 
     // E10-SUMMARIZE — also resolve any outstanding one-shot waiters
@@ -1816,6 +1843,24 @@ mod supervisor_tests {
                 (7_u64, [1, 2, 3, 4]),
             ),
         ])));
+        // Usage-ledger metadata follows the same purge/keep rule as the
+        // cost baselines above.
+        let session_usage_meta = Arc::new(Mutex::new(HashMap::from([
+            (
+                "local-a".to_string(),
+                SessionUsageMeta {
+                    provider: "claude-oauth".to_string(),
+                    model: "claude-sonnet-4-6".to_string(),
+                },
+            ),
+            (
+                "remote-a".to_string(),
+                SessionUsageMeta {
+                    provider: "openai-agents".to_string(),
+                    model: "gpt-5.5".to_string(),
+                },
+            ),
+        ])));
 
         let mut emitted = Vec::new();
         fan_out_crash_error_to_local_sessions(
@@ -1823,6 +1868,7 @@ mod supervisor_tests {
             &remote_owned_sessions,
             &oneshot_waiters,
             &exec_token_snapshots,
+            &session_usage_meta,
             SIDECAR_RESTART_RECOVERABLE_ERROR,
             |event, payload| emitted.push((event, payload.message)),
         )
@@ -1892,11 +1938,24 @@ mod supervisor_tests {
             );
         }
 
+        {
+            let meta = session_usage_meta.lock().await;
+            assert!(
+                !meta.contains_key("local-a"),
+                "cleared local session's usage metadata must be purged"
+            );
+            assert!(
+                meta.contains_key("remote-a"),
+                "surviving remote session's usage metadata must be kept"
+            );
+        }
+
         fan_out_crash_error_to_local_sessions(
             &owned_sessions,
             &remote_owned_sessions,
             &oneshot_waiters,
             &exec_token_snapshots,
+            &session_usage_meta,
             "Sidecar crashed and could not restart",
             |event, payload| emitted.push((event, payload.message)),
         )

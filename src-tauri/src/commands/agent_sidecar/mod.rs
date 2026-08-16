@@ -124,6 +124,50 @@ pub fn is_sidecar_provider(provider: &str) -> bool {
     SIDECAR_PROVIDERS.contains(&provider)
 }
 
+/// Build the `~/.packetade/usage.jsonl` row for one sidecar `turn_summary`
+/// delta — the sidecar counterpart of the `UsageEntry` construction sites in
+/// `api_agent.rs`, and the reason sidecar spend reaches the analytics rollup
+/// (`read_usage_analytics`) and the daily/monthly budget guardrails at all.
+///
+/// Token counts are stored **raw** (the vendor's own figures — see
+/// `usage::UsageEntry`); the cost normalises OpenAI-family superset prompt
+/// counts through `pricing::billable_input_tokens`, exactly like the
+/// in-process call sites. `source` prefixes the sidecar provider id with
+/// `api-` (`claude-oauth` → `api-claude-oauth`, `openai-agents` →
+/// `api-openai-agents`) so sidecar rows stay distinguishable from the
+/// in-process `api-claude` / `api-openai` rows and the vendor-CLI-scraped
+/// `claude-cli` / `codex` sources.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn sidecar_usage_entry(
+    provider: &str,
+    model: &str,
+    session_id: &str,
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_read: u64,
+    cache_write: u64,
+) -> crate::commands::usage::UsageEntry {
+    let cost = crate::commands::pricing::calculate_cost(
+        model,
+        crate::commands::pricing::billable_input_tokens(model, input_tokens, cache_read),
+        output_tokens,
+        cache_read,
+        cache_write,
+    );
+    crate::commands::usage::UsageEntry {
+        ts: crate::commands::usage::current_timestamp_iso(),
+        source: format!("api-{provider}"),
+        model: model.to_string(),
+        agent_id: None,
+        session_id: session_id.to_string(),
+        input_tokens,
+        output_tokens,
+        cache_read,
+        cache_write,
+        cost_usd: cost,
+    }
+}
+
 /// F7 — does a peer's advertised protocol version clear the security floor?
 ///
 /// `None` (a `ready` event with no `protocolVersion` at all) does NOT clear it.
@@ -206,6 +250,81 @@ mod tests {
         // decision — it breaks mixed-version pairings on purpose.
         assert_eq!(MINIMUM_PROTOCOL_VERSION, 11);
         assert!(EXPECTED_PROTOCOL_VERSION >= MINIMUM_PROTOCOL_VERSION);
+    }
+
+    #[test]
+    fn sidecar_usage_entry_matches_the_in_process_ledger_schema() {
+        // The row must parse back as a `UsageEntry` and carry every key the
+        // `api_agent.rs` construction sites write — analytics ingests both
+        // through the same serde path, so a shape drift here silently drops
+        // sidecar spend from the guardrail input.
+        let entry = sidecar_usage_entry(
+            "claude-oauth",
+            "claude-sonnet-4-6",
+            "sidecar-sess-1",
+            1000,
+            500,
+            2000,
+            3000,
+        );
+        assert_eq!(entry.source, "api-claude-oauth");
+        assert_eq!(entry.model, "claude-sonnet-4-6");
+        assert_eq!(entry.agent_id, None);
+        assert_eq!(entry.session_id, "sidecar-sess-1");
+        // Token counts are stored raw, per the `UsageEntry` contract.
+        assert_eq!(
+            (
+                entry.input_tokens,
+                entry.output_tokens,
+                entry.cache_read,
+                entry.cache_write
+            ),
+            (1000, 500, 2000, 3000)
+        );
+        // Anthropic buckets are disjoint: 1000×$3 + 500×$15 + 2000×$0.30 +
+        // 3000×$3.75 per MTok.
+        assert!(
+            (entry.cost_usd - 0.02235).abs() < 1e-9,
+            "expected 0.02235, got {}",
+            entry.cost_usd
+        );
+
+        let line = serde_json::to_string(&entry).expect("serialize");
+        let parsed: serde_json::Value = serde_json::from_str(&line).expect("parse");
+        for key in [
+            "ts",
+            "source",
+            "model",
+            "agent_id",
+            "session_id",
+            "input_tokens",
+            "output_tokens",
+            "cache_read",
+            "cache_write",
+            "cost_usd",
+        ] {
+            assert!(parsed.get(key).is_some(), "row is missing key {key}");
+        }
+        let round_trip: crate::commands::usage::UsageEntry =
+            serde_json::from_str(&line).expect("round-trip as UsageEntry");
+        assert_eq!(round_trip.source, "api-claude-oauth");
+    }
+
+    #[test]
+    fn sidecar_usage_entry_normalises_openai_superset_prompt_counts() {
+        // gpt-5.5 reports `input_tokens` as a superset that already contains
+        // the cached reads. The stored row keeps the vendor's raw 1000, but
+        // the cost must bill only the 200 uncached prompt tokens: 200×$5 +
+        // 200×$15 + 800×$2.50 per MTok.
+        let entry =
+            sidecar_usage_entry("openai-agents", "gpt-5.5", "sidecar-sess-2", 1000, 200, 800, 0);
+        assert_eq!(entry.source, "api-openai-agents");
+        assert_eq!(entry.input_tokens, 1000, "raw superset count is stored");
+        assert!(
+            (entry.cost_usd - 0.006).abs() < 1e-9,
+            "expected 0.006, got {}",
+            entry.cost_usd
+        );
     }
 
     #[test]

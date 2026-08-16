@@ -571,6 +571,14 @@ impl SidecarManager {
                 // hard-stop, launch guardrail, StatGrid cost chip) track the
                 // spend live instead of waiting for the next hydrate.
                 //
+                // The same delta also feeds the PacketADE-owned usage ledger
+                // (`~/.packetade/usage.jsonl`) — for EVERY sidecar session,
+                // flight-linked or not — so sidecar spend reaches the
+                // analytics rollup and the daily/monthly budget guardrails
+                // that read it. The two writes are independent stores: the
+                // flight rollup is a per-flight display total, the ledger is
+                // the guardrail input.
+                //
                 // Provider semantics differ: the Anthropic provider emits
                 // genuine per-message deltas, but the retired `openai-codex`
                 // provider emitted SESSION-CUMULATIVE running totals on every
@@ -582,11 +590,12 @@ impl SidecarManager {
                 //
                 // Async-dispatched so we never block the sidecar event loop
                 // on the `with_state_lock` mutex, and short-circuits cleanly
-                // for sidecar sessions that own no flight role (e.g. a
-                // standalone API-agent chat) — no-op fallthrough.
+                // for sessions with neither ledger metadata nor a flight
+                // role.
                 let session_for_async = session_id.clone();
                 let app_for_async = self.app_handle.clone();
                 let snapshots = std::sync::Arc::clone(&self.exec_token_snapshots);
+                let usage_meta = std::sync::Arc::clone(&self.session_usage_meta);
                 // Order guard for the cumulative-delta accounting below: the
                 // rollup runs in an unordered spawned task whose
                 // variable-latency load_state() means a newer/larger codex
@@ -602,19 +611,31 @@ impl SidecarManager {
                     .exec_turn_seq
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 tauri::async_runtime::spawn(async move {
+                    // Two independent consumers of this turn's delta:
+                    //   * the usage ledger (`~/.packetade/usage.jsonl`) — fed for
+                    //     EVERY sidecar session via the supervisor's start-time
+                    //     provider/model registry, so standalone chats meter too;
+                    //   * the flight cost rollup — only for sessions linked to a
+                    //     flight via attempt/task session_id.
+                    let meta = usage_meta.lock().await.get(&session_for_async).cloned();
                     let state_snap = crate::core::storage::load_state();
-                    let owner = match crate::commands::flight_cost::flight_for_executor_session(
+                    let owner = crate::commands::flight_cost::flight_for_executor_session(
                         &state_snap,
                         &session_for_async,
-                    ) {
-                        Some(o) => o,
-                        None => return,
-                    };
+                    );
+                    if meta.is_none() && owner.is_none() {
+                        return;
+                    }
                     // Retired-Codex `turn_summary` events carried
                     // session-cumulative totals — accumulate only the delta
                     // since the previous snapshot. Every live provider
-                    // (claude-oauth / openai-agents) reports per-turn.
-                    let cumulative = owner.provider == "openai-codex";
+                    // (claude-oauth / openai-agents) reports per-turn. The
+                    // discriminator stays the flight linkage's provider field
+                    // (historical codex task sessions are only reachable
+                    // through it); ownerless sessions are always per-turn.
+                    let cumulative = owner
+                        .as_ref()
+                        .is_some_and(|o| o.provider == "openai-codex");
                     let (d_in, d_out, d_cr, d_cc) = if cumulative {
                         let key = (
                             session_for_async.clone(),
@@ -670,6 +691,52 @@ impl SidecarManager {
                         // Nothing new to roll up (repeat cumulative snapshot).
                         return;
                     }
+                    // Usage ledger first, so a missing/foreign flight can
+                    // never drop the spend from the guardrail input
+                    // (`read_usage_analytics` → costGuardrails). Prefer the
+                    // start-time registry — it tracks `set_model` hot-swaps
+                    // and carries the real sidecar provider id — and fall
+                    // back to the flight linkage's fields for sessions whose
+                    // registry entry is already gone. This is the ONLY
+                    // ledger writer for sidecar sessions (the `done` event
+                    // carries turn totals already summed here), so each
+                    // turn is recorded exactly once.
+                    let ledger = meta
+                        .as_ref()
+                        .map(|m| (m.provider.clone(), m.model.clone()))
+                        .or_else(|| {
+                            owner
+                                .as_ref()
+                                .map(|o| (o.provider.clone(), o.model.clone()))
+                        });
+                    if let Some((provider, model)) = ledger {
+                        // Skip the dev-only echo smoke provider and
+                        // model-less task linkages — a row that can't be
+                        // priced or attributed is noise in analytics.
+                        if provider != "echo" && !model.is_empty() {
+                            let entry = super::sidecar_usage_entry(
+                                &provider,
+                                &model,
+                                &session_for_async,
+                                d_in,
+                                d_out,
+                                d_cr,
+                                d_cc,
+                            );
+                            if let Err(e) = crate::commands::usage::append_usage_entry(&entry) {
+                                warn!(
+                                    session_id = %session_for_async,
+                                    error = %e,
+                                    "Failed to persist sidecar API-agent usage"
+                                );
+                            }
+                        }
+                    }
+                    let Some(owner) = owner else {
+                        // Standalone chat: metered above, no flight to roll
+                        // up onto.
+                        return;
+                    };
                     let exec_cost_usd = crate::commands::pricing::calculate_cost(
                         &owner.model,
                         d_in,

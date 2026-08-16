@@ -164,6 +164,20 @@ impl SidecarManager {
             let mut sessions = self.owned_sessions.lock().await;
             sessions.insert(session_id.clone());
         }
+        // Record the session's provider + model so the `turn_summary` handler
+        // can attribute and price usage-ledger rows even for sessions that own
+        // no flight role. Removed by `forget_owned_session` on the failure
+        // path below and at every other session-death cleanup site.
+        {
+            let mut meta = self.session_usage_meta.lock().await;
+            meta.insert(
+                session_id.clone(),
+                super::supervisor::SessionUsageMeta {
+                    provider: provider.clone(),
+                    model: model.clone(),
+                },
+            );
+        }
         let req = encode_start_session(
             &session_id,
             provider,
@@ -280,9 +294,17 @@ impl SidecarManager {
         let req = json!({
             "type": "set_model",
             "sessionId": session_id,
-            "model": model,
+            "model": model.clone(),
         });
-        self.send_json_for_session(&session_id, req).await
+        let result = self.send_json_for_session(&session_id, req).await;
+        // Keep the usage-ledger metadata in step with the sidecar's active
+        // model so subsequent turn_summary rows price against the right rates.
+        if result.is_ok() {
+            if let Some(meta) = self.session_usage_meta.lock().await.get_mut(&session_id) {
+                meta.model = model;
+            }
+        }
+        result
     }
 
     /// Forward a retry / regenerate-last-turn request to the sidecar.
