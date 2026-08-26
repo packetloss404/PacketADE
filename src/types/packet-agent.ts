@@ -11,6 +11,18 @@ export const PACKET_AGENT_CONTRACT_COMMIT = "dd8a5c93779a9ecc8af96bb232adcb5be0b
 export const WORKER_PACKAGE_SCHEMA_VERSION = "packetagent.worker-package/v1";
 export const WORKER_PACKAGE_CANONICALIZATION = "packetagent.worker-package-canonical-json/v1";
 
+/** W9 artifact-by-reference shape. Artifacts are references, never payloads —
+ * PacketAgent fetches content itself; PacketADE never inlines file bytes. */
+export interface PacketAgentWorkerArtifactReference {
+  reference: string;
+  name?: string;
+  mediaType: string;
+  byteLength: number;
+  contentDigest: string;
+  role: "source" | "configuration" | "acceptance" | "input" | "other";
+  classification: string;
+}
+
 export interface PacketAgentWorkerCapability {
   id: string;
   tool: string;
@@ -36,7 +48,9 @@ export interface PacketAgentWorkerPackage {
     product: typeof APP_NAME;
     kind: typeof APP_NAME_LOWER;
     sourceId?: string;
-    flightId: string;
+    /** Optional since PH3 — PacketAgent's WorkerSourceProvenance never
+     * required it; conversation-kind packages have no Flight. */
+    flightId?: string;
     projectId?: string;
     conversationId?: string;
     repository?: string;
@@ -108,7 +122,7 @@ export interface PacketAgentWorkerPackage {
       }>;
     };
   };
-  artifacts: [];
+  artifacts: PacketAgentWorkerArtifactReference[];
   integrity: {
     canonicalization: typeof WORKER_PACKAGE_CANONICALIZATION;
     algorithm: "sha256";

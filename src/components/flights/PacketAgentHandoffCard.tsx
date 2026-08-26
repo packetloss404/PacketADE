@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bot, Eye, Pause, Play, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import { APP_NAME_LOWER } from "@/lib/brand";
+import { resolvePackageGitContext } from "@/lib/packetAgentGit";
 import {
-  buildPacketAgentPackage,
+  buildWorkerPackage,
   validatePacketAgentPackageLocally,
+  type PackageSource,
 } from "@/lib/packetAgentPackage";
+import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { usePacketAgentStore } from "@/stores/packetAgentStore";
 import type { Flight } from "@/types/flight";
 import type { PacketAgentWorkerPackage } from "@/types/packet-agent";
@@ -36,8 +39,21 @@ export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [evidence, setEvidence] = useState<Record<string, unknown> | null>(null);
+  // PH3: which source this card packages — the whole Flight (default), one
+  // worktree attempt ("attempt:<id>"), or the planning conversation.
+  const [sourceKey, setSourceKey] = useState("flight");
+  const [buildError, setBuildError] = useState<string | null>(null);
+  const planningConversation = useAgentTaskStore((state) =>
+    flight.planningConversationId
+      ? state.conversations.find(
+          (conversation) => conversation.id === flight.planningConversationId,
+        )
+      : undefined,
+  );
 
   const configured = Boolean(endpoint && workspaceId);
+  const attempts = flight.attempts ?? [];
+  const hasSourceChoices = attempts.length > 0 || Boolean(planningConversation);
   const packageJson = useMemo(
     () => (workerPackage ? JSON.stringify(workerPackage, null, 2) : ""),
     [workerPackage],
@@ -45,13 +61,48 @@ export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
 
   useEffect(() => {
     let live = true;
-    void buildPacketAgentPackage(flight).then((value) => {
-      if (live) setWorkerPackage(value);
-    });
+    async function build() {
+      let source: PackageSource | null = null;
+      if (sourceKey === "flight") {
+        source = { kind: "flight", flight };
+      } else if (sourceKey.startsWith("attempt:")) {
+        const attempt = (flight.attempts ?? []).find(
+          (candidate) => candidate.id === sourceKey.slice("attempt:".length),
+        );
+        if (attempt) source = { kind: "attempt", flight, attempt };
+      } else if (sourceKey === "conversation" && planningConversation) {
+        source = { kind: "conversation", conversation: planningConversation };
+      }
+      if (!source) {
+        if (live) {
+          setWorkerPackage(null);
+          setBuildError("The selected handoff source no longer exists.");
+        }
+        return;
+      }
+      try {
+        // The flight kind stays enrichment-free so its package (and digest)
+        // is byte-identical to what pre-PH3 builds produced for the same
+        // Flight; attempt/conversation kinds get origin-URL/branch context.
+        const git =
+          source.kind === "flight" ? undefined : await resolvePackageGitContext(source);
+        const built = await buildWorkerPackage(source, git);
+        if (live) {
+          setWorkerPackage(built);
+          setBuildError(null);
+        }
+      } catch (error) {
+        if (live) {
+          setWorkerPackage(null);
+          setBuildError(String(error instanceof Error ? error.message : error));
+        }
+      }
+    }
+    void build();
     return () => {
       live = false;
     };
-  }, [flight]);
+  }, [flight, sourceKey, planningConversation]);
 
   async function validate() {
     if (!workerPackage) return;
@@ -243,6 +294,35 @@ export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
       {!configured && (
         <p className="border-accent-amber/30 bg-accent-amber/10 mt-2 rounded border px-2 py-1.5 text-[10px] text-accent-amber">
           Configure the PacketAgent endpoint, workspace, and token in Settings first.
+        </p>
+      )}
+
+      {hasSourceChoices && !projection && (
+        <label className="mt-2 flex items-center gap-1.5 text-[10px] text-text-secondary">
+          <span className="shrink-0 text-text-muted">Source</span>
+          <select
+            value={sourceKey}
+            onChange={(event) => setSourceKey(event.target.value)}
+            className="min-w-0 flex-1 rounded border border-bg-border bg-bg-primary px-1.5 py-1 text-[10px] text-text-primary outline-none focus:border-accent-green"
+          >
+            <option value="flight">Whole Flight</option>
+            {attempts.map((attempt) => (
+              <option key={attempt.id} value={`attempt:${attempt.id}`}>
+                Attempt · {attempt.branch}
+              </option>
+            ))}
+            {planningConversation && (
+              <option value="conversation">
+                Planning conversation · {planningConversation.title || planningConversation.id}
+              </option>
+            )}
+          </select>
+        </label>
+      )}
+
+      {buildError && (
+        <p className="border-accent-red/30 bg-accent-red/10 mt-2 rounded border px-2 py-1.5 text-[10px] text-accent-red">
+          {buildError}
         </p>
       )}
 
