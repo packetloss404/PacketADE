@@ -142,6 +142,7 @@ export interface PacketAgentResponse {
 
 export type PacketAgentOperation =
   | "health"
+  | "contract"
   | "validate"
   | "deploy"
   | "inspect"

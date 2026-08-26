@@ -64,10 +64,37 @@ function deploymentFields(body: Record<string, unknown>) {
   };
 }
 
+export const DEFAULT_PACKET_AGENT_ENDPOINT = "http://127.0.0.1:8484";
+/** Pre-v1 default that pointed at the wrong port; migrated on hydrate. */
+const STALE_DEFAULT_ENDPOINT = "http://127.0.0.1:8787";
+
+type PersistedPacketAgentState = {
+  endpoint: string;
+  workspaceId: string;
+  deployments: Record<string, PacketAgentDeploymentProjection>;
+};
+
+/**
+ * One-time persisted-state migration: the pre-v1 default endpoint pointed at
+ * port 8787, which PacketAgent never listens on (server default is
+ * PORT ?? 8484). Only the exact stale default is rewritten — any other
+ * persisted endpoint was user-typed and is left alone.
+ */
+export function migratePacketAgentPersistedState(
+  persisted: unknown,
+  version: number,
+): PersistedPacketAgentState {
+  const state = persisted as PersistedPacketAgentState;
+  if (version === 0 && state?.endpoint === STALE_DEFAULT_ENDPOINT) {
+    return { ...state, endpoint: DEFAULT_PACKET_AGENT_ENDPOINT };
+  }
+  return state;
+}
+
 export const usePacketAgentStore = create<PacketAgentStore>()(
   persist(
     (set, get) => ({
-      endpoint: "http://127.0.0.1:8787",
+      endpoint: DEFAULT_PACKET_AGENT_ENDPOINT,
       workspaceId: "",
       deployments: {},
       setConnection: (endpoint, workspaceId) =>
@@ -134,6 +161,8 @@ export const usePacketAgentStore = create<PacketAgentStore>()(
     }),
     {
       name: storageKey("packet-agent"),
+      version: 1,
+      migrate: migratePacketAgentPersistedState,
       partialize: ({ endpoint, workspaceId, deployments }) => ({
         endpoint,
         workspaceId,

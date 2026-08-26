@@ -98,6 +98,11 @@ fn request_target(input: &PacketAgentRequest) -> Result<(Method, Url, bool), Str
     let (method, segments, requires_auth): (Method, Vec<&str>, bool) =
         match input.operation.as_str() {
             "health" => (Method::GET, vec!["api", "health"], false),
+            "contract" => (
+                Method::GET,
+                vec!["api", "worker-packages", "contract"],
+                true,
+            ),
             "validate" => (
                 Method::POST,
                 vec!["api", "worker-packages", "validate"],
@@ -301,8 +306,8 @@ mod tests {
     #[test]
     fn endpoint_requires_https_except_loopback() {
         assert!(normalized_endpoint("https://agent.example.test").is_ok());
-        assert!(normalized_endpoint("http://localhost:8787").is_ok());
-        assert!(normalized_endpoint("http://127.0.0.1:8787").is_ok());
+        assert!(normalized_endpoint("http://localhost:8484").is_ok());
+        assert!(normalized_endpoint("http://127.0.0.1:8484").is_ok());
         assert!(normalized_endpoint("http://agent.example.test").is_err());
         assert!(normalized_endpoint("https://token@agent.example.test").is_err());
     }
@@ -321,5 +326,24 @@ mod tests {
             if_match: None,
         };
         assert!(request_target(&request).is_err());
+    }
+
+    #[test]
+    fn contract_operation_targets_the_contract_route_with_auth() {
+        let request = PacketAgentRequest {
+            endpoint: "https://agent.example.test".to_string(),
+            workspace_id: Some("workspace".to_string()),
+            operation: "contract".to_string(),
+            deployment_id: None,
+            event_id: None,
+            cursor: None,
+            payload: None,
+            idempotency_key: None,
+            if_match: None,
+        };
+        let (method, url, requires_auth) = request_target(&request).expect("contract arm");
+        assert_eq!(method, Method::GET);
+        assert_eq!(url.path(), "/api/worker-packages/contract");
+        assert!(requires_auth);
     }
 }
