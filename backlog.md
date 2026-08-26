@@ -93,10 +93,19 @@ environment or packaged matrix has actually run.
 - **P1 - Flight supervision.** Run packaged local and disposable pinned-SSH
   matrices for Reviewer Gate, cooperative integration, Coordination Inbox, and
   bounded YOLO (RG8/CG9/CI9/AP9).
-- **P1 - PacketAgent W9 interoperability.** Configure a separately running
-  PacketAgent URL/token/workspace; prove deploy, close/relaunch/reconnect,
-  ordered-event continuation, evidence/artifact return, and the currently
-  published control surface. PacketAgent remains the durable-execution owner.
+- **P1 - PacketAgent W9 interoperability.** **Source complete both halves
+  (2026-08-26):** the PacketBench consumer (PH2–PH9 — contract probe, multi-
+  source package builders, Rust-side SSE stream with reconnect/dedupe/ack and
+  polling fallback, approval round-trip, typed evidence + provenance-stamped
+  landing, attention-queue integration) and the PacketAgent server surface
+  (contract route, attention list/respond ops, credential-mint CLI) are merged
+  and gated. **PH10 live e2e remains** — the only part needing a running
+  instance: mint a packet-product credential with the new
+  `packet-product-credential issue` CLI, point PacketBench Settings at
+  `http://127.0.0.1:8484`, then run the deploy → close/relaunch/reconnect →
+  approve → evidence runbook in
+  [`dev/bridgemind/packetagent-handoff-loop.md`](./dev/bridgemind/packetagent-handoff-loop.md).
+  PacketAgent remains the durable-execution owner.
 - **DONE 2026-08-26 - Re-pin `PACKET_AGENT_CONTRACT_COMMIT`.** The PacketAgent
   server half (contract route, attention operations, mint CLI) merged to
   PacketAgent main as `cf910c1`; the pin in `src/types/packet-agent.ts` now
