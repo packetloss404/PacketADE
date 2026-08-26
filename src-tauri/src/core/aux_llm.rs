@@ -301,9 +301,21 @@ pub fn resolve_aux_route(
                 ));
             }
 
-            let model = trimmed(&pinned.model)
-                .unwrap_or(candidate.default_model)
-                .to_string();
+            // 3E-4: pinning Ollama REQUIRES an explicit model. The candidate
+            // default ("qwen3:32b") is a guess about what the user has
+            // pulled, and a wrong guess fails at turn time with a confusing
+            // daemon error instead of here with an actionable one.
+            let model = match trimmed(&pinned.model) {
+                Some(model) => model.to_string(),
+                None if candidate.provider == "ollama" => {
+                    return Err(format!(
+                        "{} is routed to Ollama without a model. Pick an installed model in \
+                         Settings → AI Provider Routing, or set the route back to Auto.",
+                        task.label()
+                    ));
+                }
+                None => candidate.default_model.to_string(),
+            };
             return Ok(AuxRoute {
                 provider: provider.to_string(),
                 model,
@@ -950,6 +962,43 @@ mod tests {
         let route = resolve_aux_route(AuxTaskClass::CodeQualitySummarize, &overrides, &[])
             .expect("a route");
         assert_eq!(route.provider, "ollama");
+    }
+
+    #[test]
+    fn pinning_ollama_without_a_model_is_a_validation_error() {
+        // 3E-4: the static default ("qwen3:32b") is a guess about what the
+        // user has pulled; requiring an explicit model turns a confusing
+        // turn-time daemon error into an actionable settings error.
+        let mut overrides = AuxOverrides::new();
+        overrides.insert(
+            AuxTaskClass::CodeQualitySummarize,
+            AuxRouteOverride {
+                provider: Some("ollama".to_string()),
+                model: None,
+            },
+        );
+        let err = resolve_aux_route(AuxTaskClass::CodeQualitySummarize, &overrides, &[])
+            .unwrap_err();
+        assert!(err.contains("without a model"), "{}", err);
+        assert!(err.contains("Settings → AI Provider Routing"), "{}", err);
+
+        // Cloud pins keep their provider default — only Ollama requires the
+        // explicit choice.
+        let mut cloud = AuxOverrides::new();
+        cloud.insert(
+            AuxTaskClass::CodeQualitySummarize,
+            AuxRouteOverride {
+                provider: Some("anthropic".to_string()),
+                model: None,
+            },
+        );
+        let route = resolve_aux_route(
+            AuxTaskClass::CodeQualitySummarize,
+            &cloud,
+            &configured(&["anthropic"]),
+        )
+        .expect("a route");
+        assert_eq!(route.model, "claude-haiku-4-5");
     }
 
     #[test]

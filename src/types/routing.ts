@@ -73,6 +73,17 @@ export const AUX_TASK_CLASS_LABELS: Record<
 };
 
 /**
+ * Settings-card grouping for the auxiliary task classes. Rendered as
+ * headed sections once the flat list outgrows a single screenful (>8 rows);
+ * every class must appear in exactly one group.
+ */
+export const AUX_TASK_CLASS_GROUPS: { label: string; classes: AuxTaskClass[] }[] = [
+  { label: "Spec & issues", classes: ["spec-import"] },
+  { label: "Code Quality", classes: ["code-quality-explain", "code-quality-summarize"] },
+  { label: "GitHub", classes: ["pr-description", "pr-review"] },
+];
+
+/**
  * A user-pinned auxiliary route. `provider: null` means "Auto" — the backend
  * picks the cheapest configured API-key provider using the shared rate table.
  */
