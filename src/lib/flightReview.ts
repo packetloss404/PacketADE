@@ -1,24 +1,59 @@
 import type { Attempt, Flight, Task, TaskStatus } from "@/types/flight";
+import type { PacketAgentDeploymentProjection } from "@/types/packet-agent";
+
+/** PH9: PacketAgent contribution to a flight's "needs a human" summary. */
+export interface PacketAgentAttentionSummary {
+  /** Open approval/blocked events observed on the deployment. */
+  attentionCount: number;
+  /** The worker ended without success (failed / budget_exhausted / cancelled). */
+  terminalFailure: boolean;
+  deploymentId: string;
+}
 
 export interface FlightAttentionSummary {
   /** Attempts awaiting the user's Accept/Reject. */
   reviewing: Attempt[];
   /** Failed attempts — candidates for reassign or manual review. */
   failed: Attempt[];
-  /** reviewing + failed. */
+  /** PH9: set when the flight's PacketAgent deployment needs a human. */
+  packetAgent?: PacketAgentAttentionSummary;
+  /** reviewing + failed (+1 when packetAgent is set). */
   total: number;
 }
+
+const PACKET_AGENT_FAILURE_STATES = ["failed", "budget_exhausted", "cancelled"];
 
 /**
  * E6: the single "needs a human" list for a flight — attempts that are either
  * awaiting review (`reviewing`) or failed (candidates for reassign/review).
  * Healthy (running/completed) and cancelled attempts never need intervention.
+ * PH9: an optional PacketAgent deployment projection contributes when it has
+ * open attention events or ended in a terminal failure state.
  */
-export function summarizeFlightAttention(flight: Flight): FlightAttentionSummary {
+export function summarizeFlightAttention(
+  flight: Flight,
+  packetAgentProjection?: PacketAgentDeploymentProjection,
+): FlightAttentionSummary {
   const attempts = flight.attempts ?? [];
   const reviewing = attempts.filter((a) => a.status === "reviewing");
   const failed = attempts.filter((a) => a.status === "failed");
-  return { reviewing, failed, total: reviewing.length + failed.length };
+  const summary: FlightAttentionSummary = {
+    reviewing,
+    failed,
+    total: reviewing.length + failed.length,
+  };
+  if (packetAgentProjection) {
+    const terminalFailure = PACKET_AGENT_FAILURE_STATES.includes(packetAgentProjection.status);
+    if (packetAgentProjection.attentionCount > 0 || terminalFailure) {
+      summary.packetAgent = {
+        attentionCount: packetAgentProjection.attentionCount,
+        terminalFailure,
+        deploymentId: packetAgentProjection.deploymentId,
+      };
+      summary.total += 1;
+    }
+  }
+  return summary;
 }
 
 export interface FlightReviewTaskRef {

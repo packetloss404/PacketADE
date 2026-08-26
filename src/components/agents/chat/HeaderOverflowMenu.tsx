@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   Archive,
+  Bot,
   Brain,
   ChevronDown,
   Copy,
@@ -15,6 +16,7 @@ import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { ContinueInMenu } from "../ContinueInMenu";
 import { AddConversationToFlightModal } from "../AddConversationToFlightModal";
+import { PacketAgentDeployModal } from "../PacketAgentDeployModal";
 import { PacketCodeHandoffModal } from "../PacketCodeHandoffModal";
 import { exportConversationJson, copyTranscriptToClipboard } from "./handleExport";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
@@ -78,9 +80,9 @@ export function HeaderOverflowMenu({
   onArchive,
 }: HeaderOverflowMenuProps) {
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [handoffModal, setHandoffModal] = useState<"packetcode" | "flight" | null>(
-    null,
-  );
+  const [handoffModal, setHandoffModal] = useState<
+    "packetcode" | "flight" | "packetagent" | null
+  >(null);
 
   function flashFeedback(msg: string) {
     setFeedback(msg);
@@ -112,6 +114,7 @@ export function HeaderOverflowMenu({
           flashFeedback={flashFeedback}
           onRequestPacketCode={() => setHandoffModal("packetcode")}
           onRequestFlight={() => setHandoffModal("flight")}
+          onRequestPacketAgent={() => setHandoffModal("packetagent")}
         />
       </Dropdown>
       {handoffModal === "packetcode" && (
@@ -123,6 +126,13 @@ export function HeaderOverflowMenu({
       )}
       {handoffModal === "flight" && (
         <AddConversationToFlightModal
+          conversation={conversation}
+          onClose={() => setHandoffModal(null)}
+          onFeedback={flashFeedback}
+        />
+      )}
+      {handoffModal === "packetagent" && (
+        <PacketAgentDeployModal
           conversation={conversation}
           onClose={() => setHandoffModal(null)}
           onFeedback={flashFeedback}
@@ -142,6 +152,7 @@ interface OverflowMenuContentProps
   flashFeedback: (msg: string) => void;
   onRequestPacketCode: () => void;
   onRequestFlight: () => void;
+  onRequestPacketAgent: () => void;
 }
 
 /** Menu body — mounted only while the dropdown is open. */
@@ -156,6 +167,7 @@ function OverflowMenuContent({
   flashFeedback,
   onRequestPacketCode,
   onRequestFlight,
+  onRequestPacketAgent,
 }: OverflowMenuContentProps) {
   const conversationId = conversation.id;
   const previewDisabled = isRemoteConversation(conversation);
@@ -388,6 +400,15 @@ function OverflowMenuContent({
             onRequestPacketCode={onRequestPacketCode}
             onRequestFlight={onRequestFlight}
           />
+
+          {/* PH3: hand THIS conversation to the always-on PacketAgent runtime. */}
+          <div className="border-t border-bg-border">
+            <DropdownItem onClick={onRequestPacketAgent}>
+              <span className="flex items-center gap-1.5 text-ui">
+                <Bot size={11} /> Deploy to PacketAgent
+              </span>
+            </DropdownItem>
+          </div>
 
           {/* Lifecycle, last — folded in from the tile chrome's own kebab so a
               tile has exactly one overflow menu. */}
