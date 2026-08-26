@@ -1,13 +1,15 @@
 /**
  * PacketAgent W9 consumer contract.
  *
- * Frozen from PacketAgent origin/main at dd8a5c93779a9ecc8af96bb232adcb5be0bdf16e.
+ * Frozen from PacketAgent main at cf910c170261d40e03fe82666c6d2363cf72a4b0
+ * (adds the contract descriptor route, packet-product attention operations,
+ * and the credential-mint CLI — all additive; digest fixture unchanged).
  * PacketAgent owns the normative runtime contract; this file deliberately
  * contains only the subset PacketADE emits or projects.
  */
 import { APP_NAME, APP_NAME_LOWER } from "@/lib/brand";
 
-export const PACKET_AGENT_CONTRACT_COMMIT = "dd8a5c93779a9ecc8af96bb232adcb5be0bdf16e";
+export const PACKET_AGENT_CONTRACT_COMMIT = "cf910c170261d40e03fe82666c6d2363cf72a4b0";
 export const WORKER_PACKAGE_SCHEMA_VERSION = "packetagent.worker-package/v1";
 export const WORKER_PACKAGE_CANONICALIZATION = "packetagent.worker-package-canonical-json/v1";
 
