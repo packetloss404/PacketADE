@@ -86,6 +86,13 @@ environment or packaged matrix has actually run.
   PacketAgent URL/token/workspace; prove deploy, close/relaunch/reconnect,
   ordered-event continuation, evidence/artifact return, and the currently
   published control surface. PacketAgent remains the durable-execution owner.
+- **P1 - Re-pin `PACKET_AGENT_CONTRACT_COMMIT` at handoff merge time.** The
+  PH2-PH9 consumer pass (contract probe, multi-source builders, SSE consumer,
+  approvals, typed evidence, attention-queue integration) deliberately left
+  the pin in `src/types/packet-agent.ts` at `dd8a5c93…`. Once the sibling
+  PacketAgent server half lands, update the pin to the merged PacketAgent
+  commit and re-verify the digest fixture
+  (`src/lib/__tests__/packetAgentPackage.test.ts`) still passes unchanged.
 - **P1 - PacketCode release proof.** Publish signed stable/preview artifacts;
   run clean-machine install/update/rollback, packaged PacketADE launch, and
   PacketAgent W9 compatibility smoke. Source detection and `doctor --json`
