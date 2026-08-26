@@ -158,6 +158,7 @@ pub(crate) fn sidecar_usage_entry(
         ts: crate::commands::usage::current_timestamp_iso(),
         source: format!("api-{provider}"),
         model: model.to_string(),
+        provider: Some(provider.to_string()),
         agent_id: None,
         session_id: session_id.to_string(),
         input_tokens,

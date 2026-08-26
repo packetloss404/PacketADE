@@ -515,6 +515,7 @@ fn record_usage(task: AuxTaskClass, route: &AuxRoute, session_id: &str, turn: &A
         ts: crate::commands::usage::current_timestamp_iso(),
         source: "aux".to_string(),
         model: route.model.clone(),
+        provider: Some(route.provider.clone()),
         agent_id: Some(task.id().to_string()),
         session_id: session_id.to_string(),
         input_tokens: turn.input_tokens,
