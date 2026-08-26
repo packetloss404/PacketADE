@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bot, Eye, Pause, Play, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import { APP_NAME_LOWER } from "@/lib/brand";
+import {
+  buildPacketAgentEvidenceLanding,
+  packetAgentTerminalVerdict,
+  parsePacketAgentEvidence,
+  type PacketAgentEvidenceParseResult,
+} from "@/lib/packetAgentEvidence";
 import { resolvePackageGitContext } from "@/lib/packetAgentGit";
 import {
   buildWorkerPackage,
@@ -8,6 +14,7 @@ import {
   type PackageSource,
 } from "@/lib/packetAgentPackage";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { postCoordinationMessage } from "@/stores/coordinationInboxStore";
 import { usePacketAgentStore } from "@/stores/packetAgentStore";
 import type { Flight } from "@/types/flight";
 import type { PacketAgentWorkerPackage } from "@/types/packet-agent";
@@ -33,7 +40,10 @@ export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
-  const [evidence, setEvidence] = useState<Record<string, unknown> | null>(null);
+  const [evidenceView, setEvidenceView] = useState<{
+    eventId: string;
+    result: PacketAgentEvidenceParseResult;
+  } | null>(null);
   // PH3: which source this card packages — the whole Flight (default), one
   // worktree attempt ("attempt:<id>"), or the planning conversation.
   const [sourceKey, setSourceKey] = useState("flight");
@@ -48,6 +58,15 @@ export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
 
   const configured = Boolean(endpoint && workspaceId);
   const openAttention = attention ?? [];
+  // PH8: terminal-state verdict — "completed without evidence" is a warning,
+  // never a success.
+  const verdict = projection ? packetAgentTerminalVerdict(projection) : undefined;
+  const verdictClass =
+    verdict?.tone === "success"
+      ? "bg-accent-green/10 text-accent-green"
+      : verdict?.tone === "warning"
+        ? "bg-accent-amber/10 text-accent-amber"
+        : "bg-accent-red/10 text-accent-red";
   const attempts = flight.attempts ?? [];
   const hasSourceChoices = attempts.length > 0 || Boolean(planningConversation);
   const packageJson = useMemo(
@@ -214,8 +233,32 @@ export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
     setNotice(null);
     try {
       const response = await request("evidence", { eventId });
-      setEvidence(response.body);
+      setEvidenceView({ eventId, result: parsePacketAgentEvidence(response.body) });
       setNotice("Loaded the latest PacketAgent evidence envelope.");
+    } catch (error) {
+      setNotice(String(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** PH8: explicit landing — record evidence/artifact REFERENCES in the
+   * flight's coordination inbox with provenance. Never fetches content and
+   * never checks anything out. */
+  async function landEvidence() {
+    if (!evidenceView || !projection) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      await postCoordinationMessage(
+        buildPacketAgentEvidenceLanding({
+          flightId: flight.id,
+          deploymentId: projection.deploymentId,
+          eventId: evidenceView.eventId,
+          result: evidenceView.result,
+        }),
+      );
+      setNotice("Evidence references landed in the coordination inbox.");
     } catch (error) {
       setNotice(String(error));
     } finally {
@@ -257,11 +300,16 @@ export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-[11px] font-semibold text-text-primary">PacketAgent</h3>
-            {projection && (
-              <span className="bg-accent-green/10 rounded px-1.5 py-0.5 text-[9px] uppercase text-accent-green">
-                {projection.status}
-              </span>
-            )}
+            {projection &&
+              (verdict ? (
+                <span className={`rounded px-1.5 py-0.5 text-[9px] uppercase ${verdictClass}`}>
+                  {verdict.label}
+                </span>
+              ) : (
+                <span className="bg-accent-green/10 rounded px-1.5 py-0.5 text-[9px] uppercase text-accent-green">
+                  {projection.status}
+                </span>
+              ))}
           </div>
           <p className="mt-0.5 text-[10px] leading-relaxed text-text-muted">
             Hand this Flight to the separate always-on worker runtime using its frozen W9 package
@@ -485,10 +533,61 @@ export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
           ))}
         </div>
       )}
-      {evidence && (
-        <pre className="mt-2 max-h-48 overflow-auto rounded bg-bg-primary p-2 text-[9px] leading-relaxed text-text-secondary">
-          {JSON.stringify(evidence, null, 2)}
-        </pre>
+      {evidenceView && (
+        <div className="mt-2 space-y-1.5 rounded bg-bg-primary p-2">
+          {evidenceView.result.codes.length > 0 && (
+            <div className="font-mono text-[9px] text-accent-amber">
+              {evidenceView.result.codes.join(" · ")}
+            </div>
+          )}
+          {evidenceView.result.integrityErrors.length > 0 && (
+            <div className="text-[9px] leading-relaxed text-accent-red">
+              {evidenceView.result.integrityErrors.join(" ")}
+            </div>
+          )}
+          {evidenceView.result.evidence.length === 0 &&
+            evidenceView.result.codes.length === 0 && (
+              <div className="text-[9px] text-text-muted">
+                No evidence entries in this envelope.
+              </div>
+            )}
+          {evidenceView.result.evidence.map((entry) => (
+            <div key={entry.id} className="border-b border-bg-border pb-1.5 last:border-b-0 last:pb-0">
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-bg-secondary px-1 py-0.5 font-mono text-[8px] uppercase text-text-muted">
+                  {entry.classification}
+                </span>
+                <span className="font-mono text-[8px] text-text-muted">#{entry.sequence}</span>
+              </div>
+              <div className="mt-0.5 text-[9px] leading-relaxed text-text-secondary">
+                {entry.summary || "(no summary)"}
+              </div>
+              <div className="truncate font-mono text-[8px] text-text-muted" title={entry.evidenceDigest}>
+                {entry.evidenceDigest}
+              </div>
+            </div>
+          ))}
+          {evidenceView.result.artifacts.map((artifact) => (
+            <div key={artifact.reference} className="text-[9px] text-text-secondary">
+              <span className="text-text-muted">artifact · </span>
+              <span className="font-mono" title={artifact.contentDigest}>
+                {artifact.name ?? artifact.reference}
+              </span>
+              <span className="text-text-muted">
+                {" "}
+                ({artifact.mediaType}, {artifact.byteLength} bytes)
+              </span>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => void landEvidence()}
+            disabled={busy}
+            className="mt-1 rounded border border-bg-border px-2 py-1 text-[9px] text-text-secondary hover:bg-bg-hover disabled:opacity-50"
+          >
+            Land references into coordination inbox
+          </button>
+        </div>
       )}
       {notice && <p className="mt-2 text-[10px] leading-relaxed text-text-secondary">{notice}</p>}
     </div>

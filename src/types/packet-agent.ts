@@ -191,6 +191,33 @@ export interface PacketAgentRequest {
   ifMatch?: string;
 }
 
+/** PH8: consumer subset of PacketAgent's WorkerEvidenceEntry. */
+export interface PacketAgentEvidence {
+  id: string;
+  sequence: number;
+  summary: string;
+  classification: string;
+  sourceEventId: string;
+  workerRunId?: string;
+  traceId?: string;
+  artifactManifestIds?: string[];
+  evidenceDigest: string;
+  createdAt: string;
+}
+
+/** PH8: artifact returned BY REFERENCE from a worker run. Content is never
+ * inlined — landing records the reference; any fetch is a separate explicit
+ * user action. */
+export interface PacketAgentReturnedArtifact {
+  reference: string;
+  name?: string;
+  mediaType: string;
+  byteLength: number;
+  contentDigest: string;
+  producerKind: string;
+  role?: string;
+}
+
 /** PH7: decision verbs accepted by POST /api/worker-attention/:id/respond. */
 export type PacketAgentAttentionDecision = "approve_once" | "approve_for_run" | "reject";
 
