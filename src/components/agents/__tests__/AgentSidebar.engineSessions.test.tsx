@@ -177,7 +177,8 @@ describe("AgentSidebar — engine session directory", () => {
     // project-grouped conversations above it.
     expect(screen.getByText("Local conversation")).toBeInTheDocument();
     expect(screen.getByText("Refactor the router")).toBeInTheDocument();
-    expect(screen.getByText(/on the engine/i)).toBeInTheDocument();
+    // The heading, plus the caption that says these rows are the engine's.
+    expect(screen.getAllByText(/on the engine/i).length).toBeGreaterThan(0);
   });
 
   it("adopts an engine row and opens the conversation the adoption created", async () => {

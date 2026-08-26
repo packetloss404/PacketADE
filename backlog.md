@@ -50,6 +50,19 @@ These are the only current product decisions blocking implementation.
    Program enrollment, which must start alongside the Windows signing
    application.
 
+5. **OPEN 2026-08-26 - PacketCode ACP fold-in leftovers.** Three product
+   calls remain after the ACP transport landed. (a) **Cost statusline.** The
+   `$` segment is implemented behind `packetade:agents:show-cost`, which
+   defaults off and has no Settings toggle — so the feature is present, tested
+   and unreachable. Either wire the toggle (Agents & Models -> Agent behavior)
+   or delete `fmtCost`/`shouldShowCost`/`setCostDisplayEnabled`. Design review
+   found the 2026-07-31 removal reason that still holds ("the dashboard was
+   never used to change a decision"); the subscription-fiction reason is moot
+   now every API row is BYOK. (b) **Retire the PTY-scraping packetcode
+   adapter** (`src/agents/packetcode.ts`) now the structured transport is at
+   parity. (c) **Archive packetcode-gui** — decide whether that means a README
+   notice or archiving the GitHub repo.
+
 Remote Agents relay architecture and code location are already decided: extend
 the standalone Rust service at `D:\projects\packetrelay`; keep shared schemas
 and the initial PWA under PacketADE's `remoteagents/` workspace. See
@@ -228,6 +241,44 @@ environment or packaged matrix has actually run.
 ## Bounded source work
 
 These are real code changes, not substitutes for the proof matrices above.
+
+### PacketCode ACP transport residue (2026-08-26)
+
+The ACP transport, its engine surface, and the Claude Code x Codex restyle of
+the Agents pane are implemented and green (731 Rust + 31 ACP integration, 267
+frontend files / 2305 tests). Deliberate leftovers:
+
+- **P1 - Dead `/opacity` modifiers on Graphite tokens.** `tailwind.config.ts`
+  declares colors as bare `var(--color-*)`, which Tailwind v3 cannot compute
+  alpha from, so every opacity modifier silently emits NO CSS — 1113 usages
+  across 156 files, app-wide and mostly predating this work. Affected elements
+  fall back to preflight defaults (a `border-accent-amber/60` card renders with
+  a light-gray border on the dark theme). Verified fix is the
+  `color-mix(in srgb, var(...) calc(<alpha-value> * 100%), transparent)` form.
+  Not applied here: it switches on 1113 never-seen styles at once and needs its
+  own audit, light and dark.
+- **P2 - Adopted engine sessions do not render their replay.** The
+  `api-agent:*` contract has no user-turn event, so a replayed ACP transcript
+  would show every assistant turn with every prompt missing, and PacketADE has
+  no local record to interleave. The replay is suppressed and the conversation
+  opens with a notice; the engine still holds full history as model context.
+  Real replay needs a user-turn event in the contract.
+- **P2 - ACP sessions expose four permission postures, not five.** `deny` and
+  `plan` both map to ACP `read-only`, so `deny` is dropped. This is a property
+  of the posture mapping, not the operator ceiling, and applies even to a
+  fully permissive engine.
+- **P3 - Launch composer shows the seeded model catalog for the ACP row.**
+  Engine-advertised models reach the picker only once a conversation exists;
+  fetching them pre-launch would require branching on provider id, which the
+  pane's capability rule forbids.
+- **P3 - Engine installer is unproven on macOS/Linux.** Command construction is
+  unit-tested per platform, but `curl | bash` has never been executed on a real
+  Unix host. It targets `~/.local/bin` because a GUI app cannot answer the
+  sudo prompt `install.sh`'s `/usr/local/bin` default raises.
+- **P3 - Frontend suite is timeout-flaky under CPU contention.** A 7x slowdown
+  from parallel work cascades into the 5s default `testTimeout`; the same
+  suites pass serially and in isolation. Worth raising the default or marking
+  the store-graph suites.
 
 ### Three-track build-out residue (2026-08-26)
 

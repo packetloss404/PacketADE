@@ -172,7 +172,7 @@ export function AcpMcpConsent({ projectPath, caps }: AcpMcpConsentProps) {
       // refusing plan. Sending `null` instead would be indistinguishable from
       // "we never asked".
       mcpTrustSnapshot: previewSnapshot,
-      inheritEngineDefaults: inherit,
+      inheritEngineDefaults: inherit === true,
     })
       .then((next) => {
         if (cancelled) return;
@@ -448,8 +448,8 @@ export function AcpMcpConsent({ projectPath, caps }: AcpMcpConsentProps) {
               <label className="mx-2 mb-1 flex items-start gap-1.5 rounded-md border border-bg-border bg-bg-primary px-2 py-1.5">
                 <input
                   type="checkbox"
-                  checked={inherit}
-                  onChange={(event) => setInherit(event.target.checked)}
+                  checked={inherit === true}
+                  onChange={(event) => setInherit?.(event.target.checked)}
                   className="mt-px shrink-0 accent-accent-green"
                 />
                 <span className="min-w-0 flex-1 text-meta leading-snug text-text-secondary">

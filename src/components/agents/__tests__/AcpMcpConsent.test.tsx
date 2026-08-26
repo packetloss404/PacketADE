@@ -212,7 +212,9 @@ describe("AcpMcpConsent", () => {
     renderConsent();
     open();
 
-    await waitFor(() => expect(screen.getByText("server-0")).toBeInTheDocument());
+    // The summary line also names the selected server, so wait on a phrase
+    // that appears exactly once instead of on the server name.
+    await screen.findByText(/Allowed — this server will start/i);
     for (const [reason, copy] of reasons) {
       expect(screen.getByText(copy), `no copy for ${reason}`).toBeInTheDocument();
     }
@@ -244,7 +246,7 @@ describe("AcpMcpConsent", () => {
     renderConsent();
     open();
 
-    await waitFor(() => expect(screen.getByText("fixable")).toBeInTheDocument());
+    await screen.findByText("fixable");
     expect(screen.getAllByRole("button", { name: "Allow" })).toHaveLength(1);
   });
 
@@ -255,8 +257,7 @@ describe("AcpMcpConsent", () => {
     renderConsent();
     open();
 
-    await waitFor(() => expect(screen.getByText("github")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Allow" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Allow" }));
 
     // Both halves of the model every transport already reads: the allowlist
     // `captureMcpTrustSnapshot` filters on, and the per-server profile it
@@ -279,8 +280,8 @@ describe("AcpMcpConsent", () => {
     renderConsent();
     open();
 
-    await waitFor(() => expect(screen.getByText("github")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /Don't allow/i }));
+    const revoke = await screen.findByRole("button", { name: /Don't allow/i });
+    fireEvent.click(revoke);
 
     expect(useAgentSettingsStore.getState().defaultEnabledMcpServerIds).toEqual([]);
     expect(useMcpTrustStore.getState().profiles["global:github"]?.allowReads).toBe(false);

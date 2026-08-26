@@ -15,12 +15,12 @@
  * in `components/agents/**` and take no filter prop today. Narrowing them is a
  * follow-up in that directory, not here.
  *
- * Known gap (backend): the engine directory is READ-ONLY. Resuming one of
- * those sessions needs ACP `session/load`, and `acp::load_session_on` is not
- * exposed as a Tauri command — `start_api_agent_session`'s ACP branch always
- * calls `session/new` and takes no engine session id. Until that command
- * exists the sidebar lists and renames engine sessions and says plainly that
- * it cannot open them, rather than offering a control that does nothing.
+ * Adopting an engine session binds it to a new conversation and resumes it
+ * through ACP `session/load`. The replay is deliberately not rendered: the
+ * api-agent contract carries no user-turn event, so a replayed transcript
+ * would show every assistant turn with every prompt missing. The adopted
+ * conversation opens with a notice saying so, and the engine still holds the
+ * full history as the model's context.
  *
  * The engine gate wraps that composition rather than living inside
  * `AgentsView`: the `packetcode` binary is this route's dependency alone, and

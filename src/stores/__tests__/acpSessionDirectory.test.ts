@@ -445,7 +445,7 @@ describe("agentTaskStore — adopting an engine session", () => {
     // the engine has the history, PacketADE does not, and the replay that
     // would have carried it leaves out the user's own turns.
     expect(conversation?.messages).toHaveLength(1);
-    const notice = conversation.messages[0];
+    const notice = conversation!.messages[0];
     expect(notice.role).toBe("system");
     expect(notice.content).toMatch(/no copy/i);
     expect(notice.content).toMatch(/leaves out your own prompts/i);
@@ -483,7 +483,7 @@ describe("agentTaskStore — adopting an engine session", () => {
 
   it("resumes the bound session instead of minting a new one", async () => {
     const useAgentTaskStore = await seededStore();
-    const id = await useAgentTaskStore.getState().adoptEngineSession("eng-1");
+    const id = (await useAgentTaskStore.getState().adoptEngineSession("eng-1"))!;
     startApiAgentSessionMock.mockClear();
 
     await useAgentTaskStore.getState().resumeApiConversation(id, "carry on");
@@ -497,12 +497,12 @@ describe("agentTaskStore — adopting an engine session", () => {
 
   it("does not claim the engine forgot a history it is about to reload", async () => {
     const useAgentTaskStore = await seededStore();
-    const id = await useAgentTaskStore.getState().adoptEngineSession("eng-1");
+    const id = (await useAgentTaskStore.getState().adoptEngineSession("eng-1"))!;
 
     await useAgentTaskStore.getState().resumeApiConversation(id, "carry on");
 
     const conversation = useAgentTaskStore.getState().conversations.find((c) => c.id === id);
-    const notices = conversation.messages.filter((m) => m.role === "system");
+    const notices = conversation!.messages.filter((m) => m.role === "system");
     // Only the adoption notice. The "new engine session, context is empty"
     // line would be false here: `session/load` brings the history back.
     expect(notices).toHaveLength(1);
@@ -511,7 +511,7 @@ describe("agentTaskStore — adopting an engine session", () => {
 
   it("keeps the engine-MCP inheritance off unless it was granted", async () => {
     const useAgentTaskStore = await seededStore();
-    const id = await useAgentTaskStore.getState().adoptEngineSession("eng-1");
+    const id = (await useAgentTaskStore.getState().adoptEngineSession("eng-1"))!;
     startApiAgentSessionMock.mockClear();
 
     await useAgentTaskStore.getState().resumeApiConversation(id, "carry on");
@@ -522,7 +522,7 @@ describe("agentTaskStore — adopting an engine session", () => {
 
   it("carries an affirmative engine-MCP consent onto the session", async () => {
     const useAgentTaskStore = await seededStore();
-    const id = await useAgentTaskStore.getState().adoptEngineSession("eng-1");
+    const id = (await useAgentTaskStore.getState().adoptEngineSession("eng-1"))!;
     useAgentTaskStore.getState().setAcpInheritEngineMcp(true);
     startApiAgentSessionMock.mockClear();
 

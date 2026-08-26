@@ -4041,7 +4041,11 @@ export interface AcpEngineProbe {
   minimumVersion: string;
   /** `version >= minimumVersion` (source builds reporting "dev" pass). */
   compatible: boolean;
-  /** Always false — PacketADE never runs the engine's PowerShell installer. */
+  /**
+   * True on Windows, macOS and Linux, where `acpInstallEngine` can run
+   * packetcode's own published install script. False elsewhere, where
+   * `detail` carries manual instructions instead.
+   */
   installSupported: boolean;
   /** Human-readable reason when the probe could not conclude. */
   detail?: string;

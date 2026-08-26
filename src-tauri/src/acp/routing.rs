@@ -225,7 +225,7 @@ pub async fn start_session(
             engine_session
         }
         None => {
-            let engine_session = super::new_session_on(
+            let created = super::new_session_on(
                 state,
                 &project_path,
                 // Provider selection is the engine's own concern: PacketADE picks
@@ -235,11 +235,23 @@ pub async fn start_session(
                 resolved,
                 mcp,
             )
-            .await?;
-            state
-                .sessions
-                .register(&conversation_id, &engine_session, &project_path);
-            engine_session
+            .await;
+            match created {
+                Ok(engine_session) => {
+                    state
+                        .sessions
+                        .register(&conversation_id, &engine_session, &project_path);
+                    engine_session
+                }
+                // The pending config above already put this conversation in the
+                // map. A failed `session/new` must not leave ACP claiming
+                // ownership of a conversation that has no engine session, or
+                // every later command routes here to die on it.
+                Err(e) => {
+                    state.sessions.forget(&conversation_id);
+                    return Err(e);
+                }
+            }
         }
     };
 

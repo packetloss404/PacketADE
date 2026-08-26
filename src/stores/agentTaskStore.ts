@@ -152,7 +152,7 @@ export type ApiAgentCli =
   | "api-minimax"
   | "api-openrouter"
   | "api-ollama"
-  | "api-packetcode";
+  | "api-packetcode"
   | "api-custom";
 
 export type AgentCli =
