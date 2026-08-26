@@ -2201,6 +2201,13 @@ async fn run_agent_loop(
                 let hooks_for_tool = all_hooks.clone();
                 let enabled_mcp_server_ids = enabled_mcp_server_ids.clone();
                 let mcp_trust_snapshot = mcp_trust_snapshot.clone();
+                // Q2: sub-agent / custom-agent tools inherit the SESSION's
+                // provider through this task-local scope (see
+                // core::tool_subagent::PARENT_LLM).
+                let parent_llm = crate::core::tool_subagent::ParentLlm {
+                    provider: provider_name.clone(),
+                    model: model.clone(),
+                };
                 async move {
                     // Plan mode gate
                     if plan_mode_active && !PLAN_MODE_ALLOWED.contains(&tc.name.as_str()) {
@@ -2650,14 +2657,20 @@ async fn run_agent_loop(
                         return (tc.id.clone(), err);
                     }
 
-                    // Execute tool
-                    let result = tool_runtime::execute_tool_with_mcp_trust(
-                        &tc,
-                        &execution,
-                        enabled_mcp_server_ids.as_deref(),
-                        mcp_trust_snapshot.as_deref(),
-                    )
-                    .await;
+                    // Execute tool. The PARENT_LLM scope hands sub-agent
+                    // tools the session's provider (Q2); everything else is
+                    // oblivious to it.
+                    let result = crate::core::tool_subagent::PARENT_LLM
+                        .scope(
+                            parent_llm,
+                            tool_runtime::execute_tool_with_mcp_trust(
+                                &tc,
+                                &execution,
+                                enabled_mcp_server_ids.as_deref(),
+                                mcp_trust_snapshot.as_deref(),
+                            ),
+                        )
+                        .await;
                     let _ = app_handle.emit(
                         &tool_result_event(&session_id),
                         ToolResultPayload {
