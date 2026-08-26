@@ -6,6 +6,12 @@
  * the shared resizer's viewport-aware clamping and per-surface persistence,
  * auto-reveal of Preview when a target lands for THIS conversation, the Diff
  * panel's empty-state for PTY conversations, and the SSH guards (D3).
+ *
+ * B4 (wave 2b) changed two things these tests pin:
+ *   - the dock now ships CLOSED (two-pane Agents view), so a test that wants a
+ *     panel body has to open it, exactly as a user or a deep link would;
+ *   - six panels became three — Inspector folded into the Diff panel's header,
+ *     Files into the Editor, and the duplicate Plan panel is gone.
  */
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -71,6 +77,13 @@ function persistedAgentsDock(): { width?: number; expanded?: boolean; activePane
   return raw ? JSON.parse(raw).agents : {};
 }
 
+/** Open the dock the way a user or a deep link would. B4 ships it closed. */
+function openDock() {
+  act(() => {
+    useRightDockStore.getState().setExpanded("agents", true);
+  });
+}
+
 describe("AgentInspectorPane", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -83,57 +96,81 @@ describe("AgentInspectorPane", () => {
     usePreviewPaneStore.getState().clear();
   });
 
+  it("renders no dock chrome at all until something opens it (B4 two-pane default)", () => {
+    const { container } = render(<AgentInspectorPane conversationId="conv-1" />);
+
+    // Not merely collapsed to the icon rail — absent. The Agents view is two
+    // panes until the dock is asked for.
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+  });
+
   it("shows exactly one panel at a time as each tab is clicked", () => {
     render(<AgentInspectorPane conversationId="conv-1" />);
+    openDock();
 
-    // Inspector panel is active on first mount — its content renders the
-    // "Files changed" section header.
-    expect(screen.getByText("Files changed")).toBeInTheDocument();
-    expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("tab", { name: /^preview$/i }));
+    // Preview leads the three-panel strip now that Inspector and Files have
+    // been folded into Diff and Editor.
     expect(screen.getByTestId("preview-pane")).toBeInTheDocument();
-    expect(screen.queryByText("Files changed")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("diff-pane")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: /^diff$/i }));
     expect(screen.getByTestId("diff-pane")).toBeInTheDocument();
     expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: /^files$/i }));
-    // No SSH target on the default fixture → AgentFilePane mounts its
-    // local-FS branch; confirm the diff stub unmounted.
-    expect(screen.queryByTestId("diff-pane")).not.toBeInTheDocument();
-
     fireEvent.click(screen.getByRole("tab", { name: /^editor$/i }));
-    expect(screen.getByText("No file open.")).toBeInTheDocument();
+    expect(screen.queryByTestId("diff-pane")).not.toBeInTheDocument();
+    // No buffer open → the Editor panel IS the (folded-in) file browser. No
+    // SSH target on the default fixture, so AgentFilePane takes its local
+    // branch rather than the "not supported" one.
+    expect(
+      screen.queryByText(/file browsing on ssh targets is not yet supported/i),
+    ).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: /^inspector$/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /^preview$/i }));
+    expect(screen.getByTestId("preview-pane")).toBeInTheDocument();
+  });
+
+  it("folds the old Inspector tab into the Diff panel's header", () => {
+    render(<AgentInspectorPane conversationId="conv-1" />);
+    openDock();
+    fireEvent.click(screen.getByRole("tab", { name: /^diff$/i }));
+
+    // There is no Inspector tab any more…
+    expect(screen.queryByRole("tab", { name: /^inspector$/i })).not.toBeInTheDocument();
+    // …and the diffs, not the metadata, are what the panel opens on.
+    expect(screen.getByTestId("diff-pane")).toBeInTheDocument();
+    expect(screen.queryByText("Files changed")).not.toBeInTheDocument();
+
+    // The metadata is one disclosure away, alongside the diffs it describes.
+    fireEvent.click(screen.getByRole("button", { name: /session details/i }));
     expect(screen.getByText("Files changed")).toBeInTheDocument();
-    expect(screen.queryByText("No file open.")).not.toBeInTheDocument();
+    expect(screen.getByTestId("diff-pane")).toBeInTheDocument();
   });
 
   it("collapses to an icon strip and expands back via the chevron", () => {
     const { container } = render(<AgentInspectorPane conversationId="conv-1" />);
+    openDock();
 
     expect(container.querySelector("aside")).not.toBeNull();
     expect(screen.getByTitle("Collapse pane")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Show right pane" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("Files changed")).toBeInTheDocument();
+    expect(screen.getByTestId("preview-pane")).toBeInTheDocument();
 
     fireEvent.click(screen.getByTitle("Collapse pane"));
 
     expect(container.querySelector("aside")).toBeNull();
     expect(screen.getByRole("button", { name: "Show right pane" })).toBeInTheDocument();
     expect(screen.queryByTitle("Collapse pane")).not.toBeInTheDocument();
-    expect(screen.queryByText("Files changed")).not.toBeInTheDocument();
-    // Icon-strip buttons keep their accessible names.
-    expect(screen.getByRole("tab", { name: "Inspector" })).toBeInTheDocument();
+    expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
+    // Icon-strip buttons keep their accessible names. Three panels now, not
+    // six: Inspector folded into Diff, Files into Editor, Plan is inline only.
     expect(screen.getByRole("tab", { name: "Preview" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Diff" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Files" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Editor" })).toBeInTheDocument();
+    expect(screen.getAllByRole("tab")).toHaveLength(3);
 
     fireEvent.click(screen.getByRole("button", { name: "Show right pane" }));
     expect(container.querySelector("aside")).not.toBeNull();
@@ -142,6 +179,7 @@ describe("AgentInspectorPane", () => {
 
   it("clamps drag-resize to the viewport width contract and persists per surface", async () => {
     const { unmount } = render(<AgentInspectorPane conversationId="conv-1" />);
+    openDock();
     // Let InspectorContent's async diff-aggregation effect settle so
     // its setState calls don't bleed across `act` boundaries.
     await act(async () => {});
@@ -174,14 +212,13 @@ describe("AgentInspectorPane", () => {
     expect(container.querySelector("aside")!.style.width).toBe("380px");
   });
 
-  it("auto-reveals Preview (and re-expands) when a target lands for this conversation", () => {
-    render(<AgentInspectorPane conversationId="conv-1" />);
+  it("auto-reveals Preview from a CLOSED dock when a target lands for this conversation", () => {
+    const { container } = render(<AgentInspectorPane conversationId="conv-1" />);
 
-    // Start collapsed on Inspector to prove BOTH effects (panel switch +
-    // expand) fire from a single store change.
-    fireEvent.click(screen.getByTitle("Collapse pane"));
-    expect(screen.getByRole("button", { name: "Show right pane" })).toBeInTheDocument();
-    expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
+    // The dock ships closed (B4), so this deep link has to do BOTH jobs:
+    // pick the panel AND expand the dock. `openPanel` implying `expanded` is
+    // what keeps it from being a silent no-op.
+    expect(container).toBeEmptyDOMElement();
 
     act(() => {
       usePreviewPaneStore.getState().openPlan("conv-1", "# plan body");
@@ -189,19 +226,27 @@ describe("AgentInspectorPane", () => {
 
     expect(screen.getByTitle("Collapse pane")).toBeInTheDocument();
     expect(screen.getByTestId("preview-pane")).toBeInTheDocument();
+
+    // …and it works just as well from a merely-collapsed dock.
+    fireEvent.click(screen.getByTitle("Collapse pane"));
+    expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
+    act(() => {
+      usePreviewPaneStore.getState().openMarkdown("conv-1", "README.md");
+    });
+    expect(screen.getByTestId("preview-pane")).toBeInTheDocument();
   });
 
   it("ignores a preview target that belongs to a different conversation (P0-3)", () => {
-    render(<AgentInspectorPane conversationId="conv-1" />);
-    expect(screen.getByText("Files changed")).toBeInTheDocument();
+    const { container } = render(<AgentInspectorPane conversationId="conv-1" />);
 
     act(() => {
       usePreviewPaneStore.getState().openMarkdown("conv-OTHER", "README.md");
     });
 
-    // Conversation A's dock must not be hijacked by conversation B's preview.
+    // Conversation A's dock must not be hijacked by conversation B's preview —
+    // and with the two-pane default that means it must not open at all.
     expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
-    expect(screen.getByText("Files changed")).toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("renders the Diff empty-state for PTY-mode conversations", () => {
@@ -209,6 +254,7 @@ describe("AgentInspectorPane", () => {
       makeConversation({ id: "conv-pty", mode: "pty", agent: "claude-code" }),
     ];
     render(<AgentInspectorPane conversationId="conv-pty" />);
+    openDock();
 
     fireEvent.click(screen.getByRole("tab", { name: /^diff$/i }));
 
@@ -232,6 +278,7 @@ describe("AgentInspectorPane", () => {
       }),
     ];
     render(<AgentInspectorPane conversationId="conv-ssh" />);
+    openDock();
 
     for (const name of [/^preview$/i, /^editor$/i]) {
       const tab = screen.getByRole("tab", { name });
@@ -242,7 +289,9 @@ describe("AgentInspectorPane", () => {
       fireEvent.click(tab);
     }
     expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
-    expect(screen.queryByText("No file open.")).not.toBeInTheDocument();
+    // Diff is the only panel an SSH conversation can select, so that is where
+    // the dock lands rather than on a panel that cannot work.
+    expect(screen.getByTestId("diff-pane")).toBeInTheDocument();
 
     // A plan landing in the preview store must not force the dock onto a
     // panel that cannot work for this conversation.
@@ -250,10 +299,14 @@ describe("AgentInspectorPane", () => {
       usePreviewPaneStore.getState().openPlan("conv-ssh", "# plan body");
     });
     expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
-    expect(screen.getByText("Files changed")).toBeInTheDocument();
+    expect(screen.getByTestId("diff-pane")).toBeInTheDocument();
   });
 
-  it("shows the SSH 'not supported' message on the Files tab for SSH conversations", () => {
+  it("keeps the folded-in file browser unreachable on SSH, and says why (D3)", () => {
+    // The Files tab used to exist purely to tell SSH users "file browsing on
+    // SSH targets is not yet supported". Now that the browser lives inside the
+    // Editor panel, that same refusal is carried by the Editor tab's disabled
+    // reason — one statement of the limit instead of two, and no dead tab.
     agentStore.state.conversations = [
       makeConversation({
         id: "conv-ssh",
@@ -267,11 +320,15 @@ describe("AgentInspectorPane", () => {
       }),
     ];
     render(<AgentInspectorPane conversationId="conv-ssh" />);
+    openDock();
 
-    fireEvent.click(screen.getByRole("tab", { name: /^files$/i }));
+    expect(screen.queryByRole("tab", { name: /^files$/i })).not.toBeInTheDocument();
 
-    expect(
-      screen.getByText(/file browsing on ssh targets is not yet supported/i),
-    ).toBeInTheDocument();
+    const editorTab = screen.getByRole("tab", { name: /^editor$/i });
+    expect(editorTab).toBeDisabled();
+    expect(editorTab.getAttribute("title")).toMatch(/not yet available for ssh workspaces/i);
+
+    fireEvent.click(editorTab);
+    expect(screen.queryByRole("button", { name: /browse files/i })).not.toBeInTheDocument();
   });
 });

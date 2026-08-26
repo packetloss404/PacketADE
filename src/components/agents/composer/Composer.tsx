@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronUp, Mic, Send, Square, X } from "lucide-react";
+import { ArrowUp, ChevronUp, FileText, Mic, Square, X } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
@@ -12,14 +12,26 @@ import type { ImageAttachment } from "@/lib/tauri";
 import type { AuthStatus } from "@/components/ui/AuthBadge";
 import { isSshUri } from "@/lib/ssh-uri";
 import { FileMentionPopover } from "../FileMentionPopover";
-import { InputPopover } from "../InputPopover";
+import { InputPopover, type InputPopoverItem } from "../InputPopover";
 import { CancelPendingButton } from "../chat/CancelPendingButton";
 import { usePrefixMatcher } from "../hooks/usePrefixMatcher";
 import { useAttachmentStaging } from "../hooks/useAttachmentStaging";
 import { useProviderAuthStatus } from "../hooks/useProviderAuthStatus";
 import { useOllamaModels } from "../hooks/useOllamaModels";
 import { useProjectSlashCommands } from "../hooks/useProjectSlashCommands";
+import { useEngineSlashCommands } from "../hooks/useEngineSlashCommands";
+import { useEngineFileSearch } from "../hooks/useEngineFileSearch";
+import { useEngineSessionUsage } from "../hooks/useEngineSessionUsage";
 import { useVoiceTranscript } from "../hooks/useVoiceTranscript";
+import { AgentModeChip, type AgentMode as PermissionPosture } from "../AgentModeChip";
+import { addPaneControlListener, OPEN_MODEL_DROPDOWN_EVENT } from "../paneEvents";
+import { capabilitiesFor } from "@/lib/agentCapabilities";
+import {
+  sessionUsageFor,
+  shouldShowCost,
+  usageStatusline,
+} from "@/lib/usageStatusline";
+import { ContextStrip } from "./ContextStrip";
 import { ProjectPicker } from "./ProjectPicker";
 import { ModeSelector } from "./ModeSelector";
 import { ProfilePicker } from "./ProfilePicker";
@@ -31,6 +43,7 @@ import { AdvancedAccordion } from "./AdvancedAccordion";
 import {
   COMPOSER_HELP_TEXT,
   MODE_META,
+  composerPlaceholder,
   type AgentMode,
   type ComposerMode,
 } from "./utils";
@@ -70,8 +83,14 @@ export interface ChatComposerProps {
   /** Pending permission+edit approvals — drives the cancel-pending button. */
   pendingApprovalCount: number;
   onCancelPending: () => void;
-  /** Shift+Tab mode-chip cycle (owned by the chat pane / header chip). */
+  /** Shift+Tab mode-chip cycle (the posture state machine lives in the pane). */
   onCycleMode: () => void;
+  /** Pick a posture directly from the mode chip's popover. */
+  onSelectMode: (mode: PermissionPosture) => void;
+  /** The chip popover's orthogonal "Approve writes" fine flag. */
+  onSetApproveWrites: (on: boolean) => void;
+  /** Model switch from the composer-row picker. */
+  onChangeModel: (model: string) => void;
 }
 
 export type ComposerProps = LaunchComposerProps | ChatComposerProps;
@@ -201,6 +220,21 @@ export function Composer(props: ComposerProps) {
   );
   const voice = useVoiceTranscript(appendToInput);
 
+  // ─── Capabilities — every control below renders from THIS, never from a
+  //     provider id. See lib/agentCapabilities.ts. ────────────────────────
+  const caps = conversation ? capabilitiesFor(conversation) : null;
+  /**
+   * Is there an ACP engine standing behind this conversation?
+   *
+   * NOT a provider-identity test: `engineCapabilities` is the engine's own
+   * `initialize` advertisement, stamped onto the record at session start. Its
+   * presence is what makes the `acp*` bindings answerable at all, so it gates
+   * the CALLS — every affordance those calls feed is still gated on `caps`.
+   * `undefined` (any other transport, or a capability fetch that failed) keeps
+   * each affordance on its pre-engine source.
+   */
+  const engineBacked = !!conversation?.engineCapabilities;
+
   // ─── Prefix-trigger pickers (@ mentions, / slash-commands) ───────────
   const mention = usePrefixMatcher("@");
   const slash = usePrefixMatcher("/");
@@ -229,18 +263,59 @@ export function Composer(props: ComposerProps) {
     [customSlashCommands, templateDefs],
   );
 
+  // The ENGINE's own commands for this project. Cached per cwd inside the
+  // hook — the `/` query changes on every keystroke and this is a subprocess
+  // round trip. Empty (so: today's menu) for every non-engine session, and for
+  // an engine that could not answer.
+  const engineCommands = useEngineSlashCommands(
+    mentionProjectPath,
+    engineBacked && (caps?.slashCommands ?? false),
+  );
+
+  // Whether `/` opens a menu at all. The pane's rule is to omit an affordance
+  // a session cannot serve rather than open an empty one; the placeholder
+  // already degrades to match (composerPlaceholder).
+  const slashEnabled = caps ? caps.slashCommands : true;
+  const mentionsEnabled = caps
+    ? caps.fileMentions
+    : // Launch has no conversation to ask, so the project path is the gate,
+      // exactly as before.
+      !!mentionProjectPath;
+
+  // `@` search served by the ENGINE, which owns the project's ignore rules.
+  // Debounced inside the hook (one subprocess round trip per pause, not per
+  // keystroke) and capped at the backend's FILE_MENTION_LIMIT. On failure the
+  // hook latches `failed` and the composer falls straight back to the local
+  // directory scan below — an engine that cannot answer must degrade the menu
+  // to its pre-engine source, never to an empty "no files in this project".
+  const engineFiles = useEngineFileSearch(
+    mentionProjectPath,
+    mention.state.query,
+    engineBacked && mentionsEnabled && mention.state.active,
+  );
+  const engineFileSearch = engineBacked && mentionsEnabled && !engineFiles.failed;
+
   // THE slash list — rendered by the popover and resolved by the keyboard
   // handler, so the two can never disagree.
   const slashItems = useMemo<SlashItem[]>(
     () =>
-      slash.state.active
+      slash.state.active && slashEnabled
         ? buildSlashItems(slash.state.query, {
             includeBuiltins: isChat,
             customCommands: allCustomSlashCommands,
             userSkills,
+            engineCommands,
           })
         : [],
-    [slash.state.active, slash.state.query, isChat, allCustomSlashCommands, userSkills],
+    [
+      slash.state.active,
+      slash.state.query,
+      slashEnabled,
+      isChat,
+      allCustomSlashCommands,
+      userSkills,
+      engineCommands,
+    ],
   );
   const clampSlashHighlight = slash.clampHighlight;
   useEffect(() => {
@@ -249,16 +324,21 @@ export function Composer(props: ComposerProps) {
 
   const detectTriggers = useCallback(
     (value: string, caret: number) => {
-      const mentionHit = mention.detect(value, caret);
+      // A session that cannot serve the affordance never opens the trigger at
+      // all — `@`/`/` stay literal text, and Enter still submits rather than
+      // being swallowed by an empty popover. Launch (no conversation, so no
+      // capability record) keeps today's unconditional detection.
+      const mentionHit = mentionsEnabled ? mention.detect(value, caret) : false;
+      if (!mentionsEnabled) mention.close();
       // Slash is suppressed while the mention popover is active so the two
       // triggers don't fight.
-      if (!mentionHit) {
+      if (!mentionHit && slashEnabled) {
         slash.detect(value, caret);
       } else {
         slash.close();
       }
     },
-    [mention, slash],
+    [mention, slash, mentionsEnabled, slashEnabled],
   );
 
   // ─── Chat prompt history (↑/↓ recall) ────────────────────────────────
@@ -312,6 +392,24 @@ export function Composer(props: ComposerProps) {
     },
     [mention],
   );
+
+  // The engine path has no popover component pushing results up, so feed the
+  // same ref/clamp channel `FileMentionPopover` uses — the keyboard handler
+  // reads it synchronously for ArrowUp/Down/Enter.
+  //
+  // Deliberately NOT `handleMentionItemsChange`: that callback closes over
+  // `mention`, which usePrefixMatcher rebuilds every render, so depending on it
+  // would re-run this effect on every render — and `clampHighlight` can return
+  // a fresh state object, which renders again. That is an unbounded loop.
+  // `mention.clampHighlight` is itself a `useCallback([])`, so it is stable and
+  // the effect fires only when the engine's answer actually changes.
+  const engineFilePaths = engineFiles.paths;
+  const clampMentionHighlight = mention.clampHighlight;
+  useEffect(() => {
+    if (!engineFileSearch) return;
+    mentionItemsRef.current = engineFilePaths;
+    clampMentionHighlight(engineFilePaths.length);
+  }, [engineFileSearch, engineFilePaths, clampMentionHighlight]);
 
   const insertMentionPath = useCallback(
     (path: string) => {
@@ -371,6 +469,26 @@ export function Composer(props: ComposerProps) {
         return;
       }
 
+      if (sel.kind === "engine") {
+        // The ENGINE expands `/name` itself when the turn arrives, so the
+        // invocation is spliced in literally (keeping its slash) rather than
+        // replaced by a body PacketADE does not have. The trailing space lets
+        // the user type arguments straight after — that's what argumentHint
+        // is advertising.
+        const invocation = `/${sel.def.name} `;
+        const nextText = `${before}${invocation}${after}`;
+        setInput(nextText);
+        const caretAfter = before.length + invocation.length;
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (el) {
+            el.focus();
+            el.setSelectionRange(caretAfter, caretAfter);
+          }
+        });
+        return;
+      }
+
       // Trim trailing whitespace on the body, leave the user's `after`
       // content untouched to avoid double-newlines.
       const body = sel.def.body.replace(/\s+$/, "");
@@ -401,9 +519,24 @@ export function Composer(props: ComposerProps) {
 
   // ─── Provider auth + Ollama models (launch variant only) ─────────────
   const { authStatus, refreshAuthStatuses } = useProviderAuthStatus(!isChat);
+  // Both variants own a model picker now, so the Ollama probe follows whichever
+  // agent this composer is pointed at.
   const { ollamaModels, refresh: refreshOllamaModels } = useOllamaModels(
-    launch?.selectedAgent ?? "",
+    launch?.selectedAgent ?? conversation?.agent ?? "",
   );
+
+  // `/model` slash command → open the composer-row model picker. This listener
+  // used to live in TileHeaderActions; it MUST travel with the control it
+  // opens, or `/model` becomes a silent no-op.
+  const [modelOpenSignal, setModelOpenSignal] = useState(0);
+  useEffect(() => {
+    if (!isChat || !conversationId) return undefined;
+    return addPaneControlListener(
+      OPEN_MODEL_DROPDOWN_EVENT,
+      conversationId,
+      () => setModelOpenSignal((n) => n + 1),
+    );
+  }, [isChat, conversationId]);
 
   const selectedAuth = launch ? authStatus[launch.selectedAgent] : undefined;
   const selectedAuthStatus: AuthStatus =
@@ -444,6 +577,23 @@ export function Composer(props: ComposerProps) {
   }, [launch, launchReady, staged, input, clearStaged]);
 
   const isActive = conversation?.status === "active";
+
+  /**
+   * Engine-queried usage for the statusline.
+   *
+   * The ACP transport emits no per-turn `turn-summary` — its usage totals are
+   * session-cumulative, so stamping them per turn would double-count in the
+   * cost ledger — which means `sessionUsageFor` (a roll-up of per-message
+   * token counts) has nothing to add up for an engine session. The numbers
+   * therefore have to be ASKED for, once per turn end. `null` for every other
+   * transport and for a query that failed, so the roll-up below stays the
+   * source of truth everywhere it already was.
+   */
+  const engineUsage = useEngineSessionUsage(
+    conversationId,
+    engineBacked && (caps?.reportsUsage ?? false),
+    !!isActive,
+  );
 
   const submitChat = useCallback(() => {
     if (!isChat || !conversation) return;
@@ -514,18 +664,38 @@ export function Composer(props: ComposerProps) {
   }, [isChat, input, textareaRef]);
 
   // ─── Shared pieces ────────────────────────────────────────────────────
+  const engineFileItems: InputPopoverItem[] = engineFilePaths.map((path) => ({
+    key: path,
+    label: path,
+    icon: <FileText size={12} />,
+  }));
+
   const popovers = (
     <div className="relative">
-      <FileMentionPopover
-        visible={mention.state.active && !!mentionProjectPath}
-        projectPath={mentionProjectPath}
-        query={mention.state.query}
-        highlightedIndex={mention.state.highlightedIndex}
-        onSelect={insertMentionPath}
-        onItemsChange={handleMentionItemsChange}
-      />
+      {engineFileSearch ? (
+        // Engine-served `@` menu. Same rows, same keyboard channel; the list
+        // just comes from the engine's project index instead of the local
+        // directory scan.
+        <InputPopover
+          visible={mention.state.active && mentionsEnabled}
+          items={engineFileItems}
+          loading={engineFiles.loading && engineFileItems.length === 0}
+          highlightedIndex={mention.state.highlightedIndex}
+          onSelect={(item) => insertMentionPath(item.key)}
+          emptyLabel="No files found"
+        />
+      ) : (
+        <FileMentionPopover
+          visible={mention.state.active && mentionsEnabled && !!mentionProjectPath}
+          projectPath={mentionProjectPath}
+          query={mention.state.query}
+          highlightedIndex={mention.state.highlightedIndex}
+          onSelect={insertMentionPath}
+          onItemsChange={handleMentionItemsChange}
+        />
+      )}
       <InputPopover
-        visible={slash.state.active}
+        visible={slash.state.active && slashEnabled}
         items={slashItems}
         highlightedIndex={slash.state.highlightedIndex}
         onSelect={(item) => {
@@ -538,11 +708,11 @@ export function Composer(props: ComposerProps) {
   );
 
   const stagedChips = staged.length > 0 && (
-    <div className="flex flex-wrap gap-1.5 px-3 pt-2">
+    <div className="flex flex-wrap gap-1.5 pb-2">
       {staged.map((s) => (
         <div
           key={s.id}
-          className="flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 rounded bg-bg-secondary text-meta text-text-secondary"
+          className="flex items-center gap-1.5 rounded-md bg-bg-secondary py-0.5 pl-1 pr-1.5 text-meta text-text-secondary"
         >
           <Tooltip
             content={`${s.name} · ${(s.sizeBytes / 1024).toFixed(1)} KB`}
@@ -582,65 +752,117 @@ export function Composer(props: ComposerProps) {
       onPaste={handlePaste}
       onBlur={handleBlur}
       placeholder={
-        isChat ? "Send a message..." : "What would you like to work on?"
+        isChat
+          ? // Degrades with capability — never promise a key this session
+            // cannot serve (see composerPlaceholder above).
+            composerPlaceholder(
+              caps?.slashCommands ?? true,
+              caps?.fileMentions ?? false,
+            )
+          : "What would you like to work on?"
       }
       rows={isChat ? 1 : 4}
       className={
         isChat
-          ? "flex-1 resize-none bg-transparent text-xs leading-relaxed text-text-primary placeholder:text-text-muted focus:outline-none"
-          : "w-full bg-transparent px-4 py-3 text-xs text-text-primary placeholder:text-text-muted focus:outline-none resize-none"
+          ? "w-full resize-none bg-transparent text-body text-text-primary placeholder:text-text-muted focus:outline-none"
+          : "w-full resize-none bg-transparent px-4 py-3 text-body text-text-primary placeholder:text-text-muted focus:outline-none"
       }
     />
   );
 
-  // ─── Chat variant shell ───────────────────────────────────────────────
-  if (isChat) {
+  // ─── Voice button — same control in both shells ──────────────────────
+  const voiceButton = voice.isSupported && (
+    <Tooltip content={voice.isListening ? "Stop recording" : "Voice input"}>
+      <button
+        type="button"
+        onClick={voice.isListening ? voice.stopListening : voice.startListening}
+        className={`shrink-0 rounded-md p-1 transition-colors motion-reduce:transition-none ${
+          voice.isListening
+            ? "animate-pulse bg-accent-green/20 text-accent-green motion-reduce:animate-none"
+            : "text-text-muted hover:bg-bg-hover hover:text-text-primary"
+        }`}
+      >
+        <Mic size={12} />
+      </button>
+    </Tooltip>
+  );
+
+  // ─── Chat variant shell — the floating Codex-style composer card ──────
+  if (isChat && conversation && caps) {
+    // Pushed per-turn totals first (every non-ACP transport); the engine's
+    // queried answer fills the gap where no turn-summary is ever emitted.
+    const usage = caps.reportsUsage
+      ? (sessionUsageFor(conversation) ?? engineUsage)
+      : null;
+    const statusline = usageStatusline(
+      usage,
+      shouldShowCost(caps.reportsCost, conversation, usage),
+    );
+
     return (
       <div
-        className="relative shrink-0 border-t border-bg-border bg-bg-primary px-3 py-2"
+        className="composer-zone relative shrink-0 bg-bg-primary px-6 pb-4 pt-1"
         onDrop={handleDrop}
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
       >
-        {historyIndex >= 0 && (
-          <div className="pointer-events-none absolute right-3 top-1 inline-flex select-none items-center gap-0.5 font-mono text-meta text-text-faint">
-            <ChevronUp size={10} />
-            {historyIndex + 1}/{turnCount}
-          </div>
-        )}
+        <div className="relative mx-auto w-full max-w-composer">
+          {historyIndex >= 0 && (
+            <div className="pointer-events-none absolute -top-4 right-1 inline-flex select-none items-center gap-0.5 font-mono text-meta text-text-faint">
+              <ChevronUp size={10} />
+              {historyIndex + 1}/{turnCount}
+            </div>
+          )}
 
-        <div className="relative">
+          {/* `@`/`/` popovers open UPWARD (InputPopover is `bottom-full`), so
+              they must be anchored above the whole card. */}
           {popovers}
+
+          <ContextStrip conversation={conversation} caps={caps} />
+
           <div
-            className={`rounded border bg-bg-primary transition-colors ${
+            className={`rounded-b-xl border bg-bg-tertiary px-3.5 py-2.5 transition-colors motion-reduce:transition-none ${
               dragActive
                 ? "border-accent-green ring-2 ring-accent-green/30"
                 : "border-bg-border focus-within:border-accent-green/50"
             }`}
           >
             {stagedChips}
-            <div className="flex items-end gap-2 px-2 py-1.5">
-              {textarea}
+            {textarea}
 
-              {voice.isSupported && (
+            {/* Composer row: posture + turn control left, model/effort/send
+                right. Every slot is gated on a capability, never a provider. */}
+            <div className="mt-2 flex items-center gap-1.5">
+              {caps.permissionModes.length > 0 && (
+                <AgentModeChip
+                  conversation={conversation}
+                  onCycle={props.onCycleMode}
+                  onSelectMode={props.onSelectMode}
+                  onSetApproveWrites={props.onSetApproveWrites}
+                />
+              )}
+
+              {caps.canCancelTurn && isActive && (
                 <Tooltip
-                  content={voice.isListening ? "Stop recording" : "Voice input"}
+                  content={
+                    isStopping ? "Waiting for Stop acknowledgement" : "Stop turn"
+                  }
                 >
                   <button
                     type="button"
-                    onClick={
-                      voice.isListening
-                        ? voice.stopListening
-                        : voice.startListening
-                    }
-                    className={`shrink-0 rounded p-1 transition-colors ${
-                      voice.isListening
-                        ? "bg-accent-green/20 animate-pulse motion-reduce:animate-none text-accent-green"
-                        : "text-text-muted hover:bg-bg-hover hover:text-text-primary"
-                    }`}
+                    onClick={handleStop}
+                    disabled={isStopping}
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent-red/20 text-accent-red transition-colors motion-reduce:transition-none hover:bg-accent-red/30 disabled:cursor-wait disabled:opacity-60"
                   >
-                    <Mic size={12} />
+                    <Square
+                      size={12}
+                      className={
+                        isStopping
+                          ? "animate-pulse motion-reduce:animate-none"
+                          : undefined
+                      }
+                    />
                   </button>
                 </Tooltip>
               )}
@@ -650,31 +872,66 @@ export function Composer(props: ComposerProps) {
                 onCancel={props.onCancelPending}
               />
 
-              {isActive ? (
-                <Tooltip content={isStopping ? "Waiting for Stop acknowledgement" : "Stop turn"}>
-                  <button
-                    type="button"
-                    onClick={handleStop}
-                    disabled={isStopping}
-                    className="shrink-0 rounded bg-accent-red/15 p-1.5 text-accent-red transition-colors hover:bg-accent-red/25 disabled:cursor-wait disabled:opacity-60"
-                  >
-                    <Square size={12} className={isStopping ? "animate-pulse" : undefined} />
-                  </button>
-                </Tooltip>
-              ) : (
+              <div className="ml-auto flex min-w-0 items-center gap-1.5">
+                {voiceButton}
+
+                {caps.models.length > 0 ? (
+                  <ModelSelector
+                    dropUp
+                    selectedAgent={conversation.agent}
+                    selectedModel={conversation.model ?? ""}
+                    onModelChange={props.onChangeModel}
+                    // Capability first: on an engine session this is the
+                    // engine's own enumeration, not the seeded catalog row.
+                    models={caps.models}
+                    ollamaModels={ollamaModels}
+                    refreshOllamaModels={refreshOllamaModels}
+                    openSignal={modelOpenSignal}
+                  />
+                ) : (
+                  conversation.model && (
+                    // No catalog to pick FROM, but the session still knows what
+                    // it runs ON — read-only rather than hidden.
+                    <span className="truncate text-chip text-text-muted">
+                      {conversation.model}
+                    </span>
+                  )
+                )}
+
+                {/* Effort segments — omitted while no adapter advertises them. */}
+                {caps.effortLevels && caps.effortLevels.length > 0 && (
+                  <div className="flex items-center overflow-hidden rounded-md border border-bg-border">
+                    {caps.effortLevels.map((level) => (
+                      <span
+                        key={level}
+                        className="px-1.5 py-0.5 text-chip text-text-muted"
+                      >
+                        {level}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
                 <Tooltip content="Send (Enter)">
                   <button
                     type="button"
                     onClick={submitChat}
-                    disabled={!input.trim()}
-                    className="shrink-0 rounded bg-accent-green/20 p-1.5 text-accent-green transition-colors hover:bg-accent-green/30 disabled:cursor-not-allowed disabled:opacity-30"
+                    disabled={!input.trim() || (isActive && !caps.canCancelTurn)}
+                    aria-label="Send"
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent-green text-bg-primary transition-colors motion-reduce:transition-none hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-30"
                   >
-                    <Send size={12} />
+                    <ArrowUp size={14} />
                   </button>
                 </Tooltip>
-              )}
+              </div>
             </div>
           </div>
+
+          {statusline && (
+            <div className="mt-1.5 px-1 font-mono text-meta text-text-faint">
+              {statusline}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -686,15 +943,20 @@ export function Composer(props: ComposerProps) {
   const composerMode = launch.composerMode ?? "local";
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center px-8">
-      <div className="w-full max-w-[600px]">
-        <ProjectPicker
-          selectedRepo={selectedRepo}
-          setSelectedRepo={setSelectedRepo}
-        />
+    <div className="composer-zone flex flex-1 flex-col items-center justify-center px-8">
+      {/* Same three-part shell as the chat composer — context strip on top,
+          input card below, controls in a composer row — so the empty state and
+          a live conversation read as one object rather than two designs. */}
+      <div className="w-full max-w-composer">
+        <div className="flex items-center gap-1.5 rounded-t-xl border border-b-0 border-bg-border bg-bg-secondary px-2 py-0.5">
+          <ProjectPicker
+            selectedRepo={selectedRepo}
+            setSelectedRepo={setSelectedRepo}
+          />
+        </div>
 
         <div
-          className={`relative border rounded bg-bg-primary transition-colors ${
+          className={`relative rounded-b-xl border bg-bg-tertiary transition-colors motion-reduce:transition-none ${
             dragActive
               ? "border-accent-green ring-2 ring-accent-green/30"
               : "border-bg-border focus-within:border-accent-green/50"
@@ -707,13 +969,13 @@ export function Composer(props: ComposerProps) {
           {/* Popovers positioned above the textarea. */}
           {popovers}
 
-          {stagedChips}
+          {staged.length > 0 && <div className="px-4 pt-3">{stagedChips}</div>}
 
           {textarea}
 
-          <div className="flex flex-col gap-2 px-3 py-2 border-t border-bg-border/50">
+          <div className="flex flex-col gap-2 border-t border-bg-border/50 px-3 py-2">
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex flex-wrap items-center gap-2">
                 <ProviderPicker
                   selectedAgent={launch.selectedAgent}
                   onAgentChange={launch.onAgentChange}
@@ -793,7 +1055,7 @@ export function Composer(props: ComposerProps) {
           </div>
         </div>
 
-        <p className="text-meta text-text-muted mt-2 text-center">
+        <p className="mt-1.5 px-1 text-center font-mono text-meta text-text-faint">
           {COMPOSER_HELP_TEXT}
         </p>
       </div>

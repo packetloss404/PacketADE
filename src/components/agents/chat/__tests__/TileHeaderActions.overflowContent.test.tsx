@@ -132,10 +132,6 @@ function renderTile(
       previewOpen={false}
       togglePreview={vi.fn()}
       onClose={vi.fn()}
-      onCycleMode={vi.fn()}
-      onSelectMode={vi.fn()}
-      onSetApproveWrites={vi.fn()}
-      onChangeModel={vi.fn()}
       onExport={vi.fn()}
       pendingApprovalCount={0}
       {...props}
@@ -181,8 +177,13 @@ describe("TileHeaderActions — overflow menu content", () => {
     renderTile({}, { onArchive });
     openOverflowMenu();
 
-    // Merged in from the second header kebab ("More controls").
-    expect(screen.getByText("Show model & context controls")).toBeInTheDocument();
+    // The "Show model & context controls" reveal row is GONE (wave 2a): the
+    // model picker and context ring it revealed moved onto the composer, so it
+    // has nothing left in the header to toggle. Asserting its ABSENCE keeps a
+    // dead affordance from creeping back in.
+    expect(
+      screen.queryByText("Show model & context controls"),
+    ).not.toBeInTheDocument();
     // Merged in from the tile chrome bar's kebab (its only item).
     expect(screen.getByText("Archive conversation")).toBeInTheDocument();
     // Everything the menu already held.

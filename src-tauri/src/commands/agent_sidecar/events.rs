@@ -10,48 +10,48 @@ use serde::Serialize;
 // Event name helpers — must match `api_agent.rs` exactly.
 // ---------------------------------------------------------------------------
 
-pub(super) fn chunk_event(session_id: &str) -> String {
+pub(crate) fn chunk_event(session_id: &str) -> String {
     format!("api-agent:chunk:{}", session_id)
 }
-pub(super) fn tool_start_event(session_id: &str) -> String {
+pub(crate) fn tool_start_event(session_id: &str) -> String {
     format!("api-agent:tool-start:{}", session_id)
 }
-pub(super) fn tool_result_event(session_id: &str) -> String {
+pub(crate) fn tool_result_event(session_id: &str) -> String {
     format!("api-agent:tool-result:{}", session_id)
 }
-pub(super) fn done_event(session_id: &str) -> String {
+pub(crate) fn done_event(session_id: &str) -> String {
     format!("api-agent:done:{}", session_id)
 }
-pub(super) fn error_event(session_id: &str) -> String {
+pub(crate) fn error_event(session_id: &str) -> String {
     format!("api-agent:error:{}", session_id)
 }
-pub(super) fn thinking_event(session_id: &str) -> String {
+pub(crate) fn thinking_event(session_id: &str) -> String {
     format!("api-agent:thinking:{}", session_id)
 }
-pub(super) fn thinking_stop_event(session_id: &str) -> String {
+pub(crate) fn thinking_stop_event(session_id: &str) -> String {
     format!("api-agent:thinking-stop:{}", session_id)
 }
-pub(super) fn permission_request_event(session_id: &str) -> String {
+pub(crate) fn permission_request_event(session_id: &str) -> String {
     format!("api-agent:permission-request:{}", session_id)
 }
-pub(super) fn pending_edit_event(session_id: &str) -> String {
+pub(crate) fn pending_edit_event(session_id: &str) -> String {
     format!("api-agent:pending-edit:{}", session_id)
 }
-pub(super) fn edit_baseline_event(session_id: &str) -> String {
+pub(crate) fn edit_baseline_event(session_id: &str) -> String {
     format!("api-agent:edit-baseline:{}", session_id)
 }
-pub(super) fn plan_block_event(session_id: &str) -> String {
+pub(crate) fn plan_block_event(session_id: &str) -> String {
     format!("api-agent:plan-block:{}", session_id)
 }
-pub(super) fn tool_output_extended_event(session_id: &str) -> String {
+pub(crate) fn tool_output_extended_event(session_id: &str) -> String {
     format!("api-agent:tool-output-extended:{}", session_id)
 }
-pub(super) fn turn_summary_event(session_id: &str) -> String {
+pub(crate) fn turn_summary_event(session_id: &str) -> String {
     format!("api-agent:turn-summary:{}", session_id)
 }
 /// S8-Phase-B: reports which MCP servers the remote sidecar sourced from its
 /// OWN filesystem for this session (plus read/parse errors).
-pub(super) fn mcp_sources_event(session_id: &str) -> String {
+pub(crate) fn mcp_sources_event(session_id: &str) -> String {
     format!("api-agent:mcp-sources:{}", session_id)
 }
 
@@ -61,7 +61,7 @@ pub(super) fn mcp_sources_event(session_id: &str) -> String {
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Serialize)]
-pub(super) struct ToolStartPayload {
+pub(crate) struct ToolStartPayload {
     pub id: String,
     pub name: String,
     /// P1-7: raw tool-input JSON, forwarded from the sidecar's `tool_use`
@@ -74,7 +74,7 @@ pub(super) struct ToolStartPayload {
 }
 
 #[derive(Clone, Serialize)]
-pub(super) struct ToolResultPayload {
+pub(crate) struct ToolResultPayload {
     pub id: String,
     pub name: String,
     pub content: String,
@@ -83,12 +83,12 @@ pub(super) struct ToolResultPayload {
 }
 
 #[derive(Clone, Serialize)]
-pub(super) struct ThinkingPayload {
+pub(crate) struct ThinkingPayload {
     pub text: String,
 }
 
 #[derive(Clone, Serialize)]
-pub(super) struct PermissionRequestPayload {
+pub(crate) struct PermissionRequestPayload {
     pub id: String,
     pub name: String,
     pub arguments: String,
@@ -102,7 +102,7 @@ pub(super) struct PermissionRequestPayload {
 }
 
 #[derive(Clone, Serialize)]
-pub(super) struct PendingEditPayload {
+pub(crate) struct PendingEditPayload {
     pub id: String,
     pub path: String,
     pub content: String,
@@ -116,7 +116,7 @@ pub(super) struct PendingEditPayload {
 /// (approve-writes off). The frontend records it so review surfaces diff
 /// applied edits against the true "before" instead of live disk.
 #[derive(Clone, Serialize)]
-pub(super) struct EditBaselinePayload {
+pub(crate) struct EditBaselinePayload {
     pub id: String,
     pub path: String,
     /// Pre-edit file content (None when the file did not exist).
@@ -125,7 +125,7 @@ pub(super) struct EditBaselinePayload {
 }
 
 #[derive(Clone, Serialize)]
-pub(super) struct DonePayload {
+pub(crate) struct DonePayload {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cache_read_input_tokens: u64,
@@ -141,7 +141,7 @@ pub(super) struct DonePayload {
 /// v3: structured plan/todo item parsed by the provider from the
 /// Anthropic SDK's TodoWrite tool call (or equivalent).
 #[derive(Clone, Serialize)]
-pub(super) struct PlanItemPayload {
+pub(crate) struct PlanItemPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     pub content: String,
@@ -152,12 +152,12 @@ pub(super) struct PlanItemPayload {
 }
 
 #[derive(Clone, Serialize)]
-pub(super) struct PlanBlockPayload {
+pub(crate) struct PlanBlockPayload {
     pub items: Vec<PlanItemPayload>,
 }
 
 #[derive(Clone, Serialize)]
-pub(super) struct ToolOutputExtendedPayload {
+pub(crate) struct ToolOutputExtendedPayload {
     pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i64>,
@@ -170,7 +170,7 @@ pub(super) struct ToolOutputExtendedPayload {
 }
 
 #[derive(Clone, Serialize)]
-pub(super) struct TurnSummaryPayload {
+pub(crate) struct TurnSummaryPayload {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cache_read_input_tokens: u64,
@@ -187,7 +187,7 @@ pub(super) struct TurnSummaryPayload {
 }
 
 #[derive(Clone, Serialize)]
-pub(super) struct ErrorPayload {
+pub(crate) struct ErrorPayload {
     pub message: String,
 }
 
@@ -196,7 +196,7 @@ pub(super) struct ErrorPayload {
 /// headers, or any secret.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct McpSourceInfo {
+pub(crate) struct McpSourceInfo {
     pub name: String,
     /// "stdio" | "http" | "sse"
     pub transport: String,
@@ -208,7 +208,7 @@ pub(super) struct McpSourceInfo {
 /// remote MCP config. Carries the failing scope/path/message ONLY.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct McpReadError {
+pub(crate) struct McpReadError {
     /// "global" | "project"
     pub scope: String,
     pub path: String,
@@ -220,7 +220,7 @@ pub(super) struct McpReadError {
 /// re-emitted as `api-agent:mcp-sources:{sessionId}`.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct McpSourcesPayload {
+pub(crate) struct McpSourcesPayload {
     pub sources: Vec<McpSourceInfo>,
     pub read_errors: Vec<McpReadError>,
 }

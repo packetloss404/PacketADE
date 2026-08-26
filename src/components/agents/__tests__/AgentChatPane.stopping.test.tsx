@@ -120,7 +120,6 @@ vi.mock("@/components/agents/hooks/useDiffTotals", () => ({
 
 vi.mock("@/components/agents/MemoryInjectionCard", () => ({ MemoryInjectionCard: () => null }));
 vi.mock("@/components/agents/AgentHeaderBadges", () => ({ AgentHeaderBadges: () => null }));
-vi.mock("@/components/agents/chat/SessionMetaLine", () => ({ SessionMetaLine: () => null }));
 vi.mock("@/components/agents/PlanPanel", () => ({ PlanPanel: () => null }));
 vi.mock("@/components/agents/chat/TileHeaderActions", () => ({ TileHeaderActions: () => null }));
 vi.mock("@/components/agents/chat/EmptyConversationHint", () => ({

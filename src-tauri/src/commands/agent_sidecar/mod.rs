@@ -15,7 +15,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-mod events;
+// `pub(crate)` rather than private: the ACP transport (`crate::acp::events`)
+// reuses these event-name helpers and payload shapes verbatim, so all three
+// backends emit a byte-identical `api-agent:*` contract.
+pub(crate) mod events;
 mod handler;
 mod protocol;
 mod status;

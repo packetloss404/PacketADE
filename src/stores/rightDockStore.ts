@@ -28,7 +28,16 @@ export type DockSurface = "workspace" | "agents";
 
 /** Panels the Workspace surface can dock. */
 export type WorkspacePanelId = "editor" | "git";
-/** Panels the Agents surface can dock (the old inspector tabs are now panels). */
+/**
+ * Panels the Agents surface can dock.
+ *
+ * `inspector`, `plan` and `files` are no longer REGISTERED by
+ * `AgentInspectorPane` — the inspector folded into the Diff panel's header,
+ * the file browser into the Editor, and the plan lives inline in the
+ * conversation (it used to render twice). They stay in the union because
+ * `loadPersisted` can still read them out of a returning user's localStorage;
+ * the dock re-points `activePanel` at a registered panel on mount.
+ */
 export type AgentsPanelId =
   | "inspector"
   | "plan"
@@ -112,6 +121,13 @@ export interface DockSurfaceState {
   width: number;
   /** User intent. The dock may still render collapsed if it cannot fit. */
   expanded: boolean;
+  /**
+   * True once this surface's dock has ever been opened. The permanent 30px
+   * icon rail is gated on it, so a surface that ships two-pane (Agents) paints
+   * NO dock chrome until something actually asks for a panel — the shell reads
+   * as two panes, not as a three-column IDE with an empty third column.
+   */
+  everOpened: boolean;
 }
 
 interface RightDockState {
@@ -146,16 +162,28 @@ function defaults(): Record<DockSurface, DockSurfaceState> {
       activePanel: null,
       width: DEFAULT_DOCK_WIDTH.workspace,
       expanded: false,
+      // The rail IS the Workspace dock's discovery surface (its Editor has no
+      // other permanent entry point), so it is "already opened" from the start.
+      everOpened: true,
     },
     agents: {
-      activePanel: "inspector",
+      // B4 — the Agents view ships TWO panes. The dock is opt-in: nothing is
+      // chosen, nothing is expanded, and no rail paints until a deep link
+      // (preview target, plan block, open-in-editor) or the user asks.
+      activePanel: null,
       width: DEFAULT_DOCK_WIDTH.agents,
-      expanded: true,
+      expanded: false,
+      everOpened: false,
     },
   };
 }
 
-function loadPersisted(): Record<DockSurface, DockSurfaceState> {
+/**
+ * Read the persisted dock state, filling in defaults for anything missing.
+ * Exported so the localStorage UPGRADE rules (notably the `everOpened`
+ * back-fill) can be tested without reloading the module singleton.
+ */
+export function loadPersisted(): Record<DockSurface, DockSurfaceState> {
   const base = defaults();
   try {
     if (typeof localStorage === "undefined") return base;
@@ -170,6 +198,14 @@ function loadPersisted(): Record<DockSurface, DockSurfaceState> {
       }
       if (typeof saved.expanded === "boolean") {
         base[surface].expanded = saved.expanded;
+      }
+      if (typeof saved.everOpened === "boolean") {
+        base[surface].everOpened = saved.everOpened;
+      } else if (saved.expanded === true) {
+        // Records written before `everOpened` existed: a dock that was left
+        // expanded had obviously been opened, so keep its rail rather than
+        // making an upgrade look like the dock vanished.
+        base[surface].everOpened = true;
       }
       if (typeof saved.activePanel === "string" || saved.activePanel === null) {
         base[surface].activePanel = (saved.activePanel ?? null) as DockPanelId | null;
@@ -206,8 +242,15 @@ function update(
 export const useRightDockStore = create<RightDockState>((set) => ({
   surfaces: loadPersisted(),
 
+  // `expanded: true` is load-bearing, not a convenience: the auto-reveal deep
+  // links (AgentInspectorPane's preview + plan effects, `openInEditor`) call
+  // ONLY this verb, and the dock body renders on `expanded`. Setting just
+  // `activePanel` would make every one of them a silent no-op now that the
+  // Agents dock ships collapsed.
   openPanel: (surface, panel) =>
-    set((state) => update(state, surface, { activePanel: panel, expanded: true })),
+    set((state) =>
+      update(state, surface, { activePanel: panel, expanded: true, everOpened: true }),
+    ),
 
   closePanel: (surface, panel) =>
     set((state) => {
@@ -223,14 +266,16 @@ export const useRightDockStore = create<RightDockState>((set) => ({
       const visible = current.expanded && current.activePanel === panel;
       return visible
         ? update(state, surface, { expanded: false })
-        : update(state, surface, { activePanel: panel, expanded: true });
+        : update(state, surface, { activePanel: panel, expanded: true, everOpened: true });
     }),
 
   setActivePanel: (surface, panel) =>
     set((state) => update(state, surface, { activePanel: panel })),
 
   setExpanded: (surface, expanded) =>
-    set((state) => update(state, surface, { expanded })),
+    set((state) =>
+      update(state, surface, expanded ? { expanded, everOpened: true } : { expanded }),
+    ),
 
   setWidth: (surface, width) =>
     set((state) =>

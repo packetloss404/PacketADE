@@ -140,10 +140,6 @@ function renderTile(over: Partial<AgentConversation> = {}) {
       previewOpen={false}
       togglePreview={vi.fn()}
       onClose={vi.fn()}
-      onCycleMode={vi.fn()}
-      onSelectMode={vi.fn()}
-      onSetApproveWrites={vi.fn()}
-      onChangeModel={vi.fn()}
       onExport={vi.fn()}
       pendingApprovalCount={0}
     />,

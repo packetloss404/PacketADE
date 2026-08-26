@@ -1,6 +1,7 @@
 import type { AgentCli } from "@/stores/agentTaskStore";
 import type { ProvenanceEnvelope } from "@/types/provenance";
 import type { McpTrustSnapshot } from "@/types/mcp";
+import type { AcpEngineCapabilities, AcpModelOption } from "@/lib/tauri";
 
 export interface AgentToolCall {
   id: string;
@@ -181,6 +182,53 @@ export interface AgentConversation {
     sources: { name: string; transport: "stdio" | "http" | "sse"; scope: "global" | "project" }[];
     readErrors: { scope: "global" | "project"; path: string; message: string }[];
   };
+  /**
+   * ACP: what the packetcode engine advertised in its `initialize` handshake,
+   * captured when this conversation's engine session started.
+   *
+   * `capabilitiesFor()` is a PURE function of the conversation — it may not
+   * do IPC — so the engine's answer has to be ON the record for the descriptor
+   * to consume it. Present ONLY for `packetcode-acp` conversations whose
+   * capability fetch succeeded: `undefined` means "no engine has told us
+   * anything", which every consumer must read as today's transport-agnostic
+   * behavior, NOT as "the engine said no". (See `agentCapabilities.ts`.)
+   *
+   * A snapshot, not a subscription: the engine could in principle be restarted
+   * under a different configured ceiling. Re-stamping on resume is deliberately
+   * left to the resume path rather than done lazily at read time, because a
+   * lazy refresh is exactly the IPC the purity contract forbids.
+   */
+  engineCapabilities?: AcpEngineCapabilities;
+  /**
+   * ACP: the models the engine enumerated over `_packetcode/models/list` at
+   * session start. Fetched only when `engineCapabilities.packetcode.modelsList`
+   * is advertised, so `undefined` means "never asked, or the ask failed" and
+   * the seeded `API_PROVIDERS` catalog rows stand. An EMPTY array is a real
+   * answer — the engine serves no models — and is honoured as such.
+   */
+  engineModels?: AcpModelOption[];
+  /**
+   * ACP: the ENGINE's own session id this conversation is bound to, when it
+   * was adopted from the engine's session directory (`acpListSessions`)
+   * rather than started fresh.
+   *
+   * Present means "resume this, do not mint a new one": every backend session
+   * start for this conversation passes it as
+   * `StartApiAgentAcpOptions.engineSessionId`, so the engine answers with
+   * `session/load` and the stored history is the model's context. Absent — the
+   * case for every conversation PacketADE started itself, and for every other
+   * transport — keeps the pre-existing `session/new` behaviour.
+   *
+   * Persisted, because the binding is the whole point: a conversation that
+   * forgot which engine session it adopted would silently start a fresh, empty
+   * one on the next app run.
+   *
+   * NOT a transcript. PacketADE holds no local copy of an adopted session's
+   * history and the engine's replay omits the user's own turns, so an adopted
+   * conversation says so in a durable `system` message rather than pretending
+   * the messages above the boundary are the whole story.
+   */
+  acpEngineSessionId?: string;
   /** B1: hover-`+` diff comments queued by the user on pending edits.
    * Folded into the next user turn as a "File comments:" preamble and
    * cleared on send (or via the chip-strip "Clear" action). */

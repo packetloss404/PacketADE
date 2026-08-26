@@ -102,6 +102,7 @@ function BashToolCallCardImpl({ toolCall }: BashToolCallCardProps) {
   return (
     <BaseToolCard
       icon={<Terminal size={11} className="text-text-muted shrink-0" />}
+      kind="bash"
       title={
         <span className="font-mono">{command || "(no command)"}</span>
       }
@@ -118,7 +119,9 @@ function BashToolCallCardImpl({ toolCall }: BashToolCallCardProps) {
       }}
       isError={toolCall.status === "error"}
     >
-      <pre className="text-ui font-mono whitespace-pre-wrap bg-bg-primary rounded p-2 mx-1 mb-1 text-text-primary overflow-y-auto max-h-[320px]">
+      {/* `selectable` is load-bearing: `body { user-select: none }` is global,
+          so without it command output cannot be copied out of the transcript. */}
+      <pre className="selectable text-ui font-mono whitespace-pre-wrap bg-bg-primary rounded-lg p-2 mx-1 mb-1 text-text-primary overflow-y-auto max-h-[320px]">
         {body}
       </pre>
     </BaseToolCard>

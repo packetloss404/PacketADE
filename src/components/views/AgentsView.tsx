@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot, X } from "lucide-react";
-import { authProbeProvider, useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
+import {
+  ACP_PROVIDER_ID,
+  apiAgentProvider,
+  authProbeProvider,
+  useAgentTaskStore,
+  type AgentCli,
+} from "@/stores/agentTaskStore";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { launchConversation } from "@/lib/launchConversation";
@@ -33,13 +39,24 @@ const AUTO_PICK_ORDER: AgentCli[] = [
 const DEFAULT_AGENT: AgentCli = "api-minimax";
 const DEFAULT_MODEL = "MiniMax-M3";
 
-export function AgentsView() {
+export interface AgentsViewProps {
+  /**
+   * Pin the launch composer to ONE provider instead of auto-picking the first
+   * credentialed one. Set by provider-scoped routes (see `PacketCodeView`);
+   * `undefined` keeps the historical behaviour exactly.
+   */
+  pinnedAgent?: AgentCli;
+  /** Model preselected alongside `pinnedAgent`. Ignored when unpinned. */
+  pinnedModel?: string;
+}
+
+export function AgentsView({ pinnedAgent, pinnedModel }: AgentsViewProps = {}) {
   const selectedRepo = useAgentTaskStore((state) => state.selectedRepo);
   const selectedConversationId = useAgentTaskStore((state) => state.selectedConversationId);
   const selectConversation = useAgentTaskStore((state) => state.selectConversation);
 
-  const [selectedAgent, setSelectedAgent] = useState<AgentCli>(DEFAULT_AGENT);
-  const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL);
+  const [selectedAgent, setSelectedAgent] = useState<AgentCli>(pinnedAgent ?? DEFAULT_AGENT);
+  const [selectedModel, setSelectedModel] = useState(pinnedModel ?? DEFAULT_MODEL);
   const [agentMode, setAgentMode] = useState<AgentMode>("agent");
   const [launchError, setLaunchError] = useState<string | null>(null);
   const defaultProfileId = useProfileStore((state) => state.defaultProfileId);
@@ -53,6 +70,16 @@ export function AgentsView() {
   const recordVisibleConversations = useWorkspaceAgentsDogfoodStore(
     (state) => state.recordVisibleConversations,
   );
+
+  /**
+   * Whether this route is scoped to the ACP transport, which is the one that
+   * has an engine-side session directory to show. A TRANSPORT question, not an
+   * affordance one: what the directory then lets you do is still resolved from
+   * `capabilitiesFor()` inside the sidebar. On the general Agents route a list
+   * of packetcode-engine sessions would be noise; on `PacketCodeView` it is
+   * the reason the route exists.
+   */
+  const showEngineSessions = !!pinnedAgent && apiAgentProvider(pinnedAgent) === ACP_PROVIDER_ID;
 
   useEffect(() => {
     recordVisibleConversations(selectedConversationId ? 1 : 0);
@@ -75,7 +102,9 @@ export function AgentsView() {
   }, [launchError]);
 
   useEffect(() => {
-    if (autoPickStarted.current || selectedConversationId) return;
+    // A pinned provider is the caller's explicit choice — never override it
+    // with the credential auto-pick.
+    if (pinnedAgent || autoPickStarted.current || selectedConversationId) return;
     autoPickStarted.current = true;
     let cancelled = false;
     void Promise.all(
@@ -102,7 +131,7 @@ export function AgentsView() {
     return () => {
       cancelled = true;
     };
-  }, [selectedConversationId]);
+  }, [pinnedAgent, selectedConversationId]);
 
   const handleNewAgent = useCallback(() => {
     selectConversation(null);
@@ -144,12 +173,19 @@ export function AgentsView() {
         selectedId={selectedConversationId}
         onSelect={selectConversation}
         onNewAgent={handleNewAgent}
+        showEngineSessions={showEngineSessions}
       />
 
       {selectedConversationId ? (
         <>
           <ErrorBoundary fallbackMessage="This conversation encountered an error.">
-            <AgentChatPane conversationId={selectedConversationId} onClose={handleNewAgent} />
+            <AgentChatPane
+              conversationId={selectedConversationId}
+              onClose={handleNewAgent}
+              // The Agents dock is a sibling of this pane, so its header owns
+              // the toggle. (Workspace tiles omit this — see AgentChatPane.)
+              dockSurface="agents"
+            />
           </ErrorBoundary>
           <ErrorBoundary fallbackMessage="The agent inspector encountered an error.">
             <AgentInspectorPane conversationId={selectedConversationId} />

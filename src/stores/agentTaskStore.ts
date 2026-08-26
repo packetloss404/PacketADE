@@ -16,6 +16,14 @@ import {
   exportConversationMarkdown,
   getGitStatus,
   removeConversationWorktree,
+  acpCapabilities,
+  acpListModels,
+  acpListSessions,
+  acpRenameSession,
+  acpStart,
+  type AcpEngineCapabilities,
+  type AcpModelOption,
+  type AcpSessionSummary,
   type ImageAttachment,
   type ResumeMessage,
 } from "@/lib/tauri";
@@ -23,6 +31,11 @@ import { isWorktreeDirty } from "@/lib/worktreeLifecycle";
 import { conversationWorktree } from "@/lib/conversationWorktreeDisclosure";
 import { buildResumeSshConfig, type ResumeSshConfig } from "@/lib/resumeSshConfig";
 import { logSwallowed } from "@/lib/logSwallowed";
+// Type-only: `capabilitiesFor` itself is deliberately NOT imported here. The
+// store must not decide affordances — components do, from the descriptor —
+// and a runtime import would drag `lib/agentCapabilities`' own dependency
+// graph (serverStore, the api-models catalog) into every store consumer.
+import type { CapabilityConversation } from "@/lib/agentCapabilities";
 /** Phase 2: SSH conversations now reference a `ServerConfig` from
  *  `serverStore` plus a per-session remote path. This payload is what the
  *  Agents UI hands to `createApiConversation` — it carries every field we
@@ -138,7 +151,8 @@ export type ApiAgentCli =
   | "api-openai"
   | "api-minimax"
   | "api-openrouter"
-  | "api-ollama";
+  | "api-ollama"
+  | "api-packetcode";
 
 export type AgentCli =
   | "claude-code"
@@ -152,6 +166,7 @@ export type AgentCli =
   | "api-minimax"
   | "api-openrouter"
   | "api-ollama"
+  | "api-packetcode"
   | (string & {});
 
 /** Retired provider-identity duplicates, mapped onto their canonical id.
@@ -241,6 +256,12 @@ export function apiAgentProvider(agent: AgentCli): string {
     "api-minimax": "minimax",
     "api-openrouter": "openrouter",
     "api-ollama": "ollama",
+    // The PacketCode ACP engine, driven over Agent Client Protocol as a local
+    // subprocess. It authenticates itself (its own provider config / keyring),
+    // so PacketADE holds no credential for it — but the identity entry is
+    // still mandatory: without it the fallback below would bill ACP turns to
+    // the user's Anthropic key.
+    "api-packetcode": "packetcode-acp",
   };
   // Canonicalise first so a legacy id hydrated from disk (`api-minimax-api`)
   // resolves through its alias instead of tripping the unknown-agent fallback.
@@ -280,6 +301,118 @@ export function apiAgentProvider(agent: AgentCli): string {
 export function authProbeProvider(agent: AgentCli): string {
   const routing = apiAgentProvider(agent);
   return routing === "claude-oauth" ? "anthropic" : routing;
+}
+
+/**
+ * The provider id that routes a conversation to the packetcode ACP engine.
+ *
+ * Mirrors `acp::routing::PROVIDER_ID` in Rust and the `packetcode-acp` value
+ * `apiAgentProvider` maps `api-packetcode` onto. Named here so the ACP-only
+ * branches below test a constant rather than re-spelling the string.
+ */
+export const ACP_PROVIDER_ID = "packetcode-acp";
+
+/**
+ * Stamp what the ACP engine advertised onto a conversation record.
+ *
+ * `capabilitiesFor()` is a PURE function of the conversation — no store reads,
+ * no IPC — so the only way the descriptor can honour the engine's answer is
+ * for that answer to be ON the record. This is where it gets there.
+ *
+ * ENTIRELY BEST-EFFORT, by design. It runs AFTER the session has started (the
+ * engine is brought up lazily by `start_api_agent_session`, so asking any
+ * earlier would only ever get the pre-handshake defaults) and it is never
+ * awaited by the launch path: a slow engine, a rejected query, or a
+ * conversation the user deleted in the meantime all leave the record without
+ * `engineCapabilities`, which every consumer reads as "no engine has told us
+ * anything" and answers with the pre-ACP behavior. A capability fetch must
+ * never be able to fail a session start or take an affordance away.
+ *
+ * The model list is fetched only when the engine advertised `modelsList`;
+ * otherwise the query is pointless (the backend would degrade it to `[]`, and
+ * an empty array is a MEANINGFUL answer to `capabilitiesFor` — it would empty
+ * the model picker). A models query that fails leaves `engineModels` untouched
+ * for the same reason.
+ *
+ * Exported so the resume path — and later ACP surfaces — can re-stamp a
+ * conversation without duplicating the degradation rules.
+ */
+export async function stampEngineCapabilities(
+  conversationId: string,
+  provider: string,
+): Promise<void> {
+  if (provider !== ACP_PROVIDER_ID) return;
+  try {
+    const capabilities = await acpCapabilities();
+    let models: AcpModelOption[] | undefined;
+    if (capabilities.packetcode.advertised && capabilities.packetcode.modelsList) {
+      try {
+        models = await acpListModels();
+      } catch (e) {
+        // The engine advertised the extension and then refused it. Leaving
+        // `engineModels` undefined keeps the seeded catalog rows, which is
+        // strictly better than an empty picker.
+        logSwallowed("agentTaskStore.stampEngineCapabilities/models")(e);
+      }
+    }
+    let stamped: AgentConversation | undefined;
+    useAgentTaskStore.setState((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== conversationId) return c;
+        const next: AgentConversation = {
+          ...c,
+          engineCapabilities: capabilities,
+          ...(models ? { engineModels: models } : {}),
+        };
+        stamped = next;
+        return next;
+      }),
+    }));
+    // Persist so a reloaded conversation keeps the engine's answer instead of
+    // silently reverting to the transport-agnostic defaults. Deliberately NOT
+    // an `updatedAt` bump: nothing the user did happened here.
+    if (stamped) scheduleSave(stamped);
+  } catch (e) {
+    logSwallowed("agentTaskStore.stampEngineCapabilities")(e);
+  }
+}
+
+/**
+ * How the last engine-session listing resolved.
+ *
+ * `ready` with an EMPTY array is the normal "the engine knows of no sessions"
+ * answer, not a failure — `acp::list_sessions_on` degrades a missing
+ * `_packetcode/sessions/list` to a `~/.packetcode/sessions/*.json` read and
+ * that to nothing at all, so an empty list is a real answer that must render
+ * as such. `unavailable` is the strictly different case where the query
+ * itself could not be made (no engine on PATH, handshake refused, transport
+ * error) and PacketADE therefore knows NOTHING about engine-side history.
+ * Conflating the two would either invent an error where there is none or
+ * claim "no sessions" for a question that was never answered.
+ */
+export type EngineSessionsStatus = "idle" | "loading" | "ready" | "unavailable";
+
+/**
+ * A synthetic {@link CapabilityConversation}-shaped record for the engine
+ * ITSELF, so surfaces that act on engine-known sessions — which have no
+ * PacketADE conversation behind them — can still render every affordance from
+ * `capabilitiesFor()` instead of testing the provider id.
+ *
+ * `agent`/`mode` name the ACP transport (that is identity feeding a LABEL,
+ * which the capability rule allows); `engineCapabilities` is what actually
+ * decides, and `undefined` there yields the same pre-engine defaults any other
+ * transport gets.
+ */
+export function engineDirectoryRecord(
+  engine: AcpEngineCapabilities | null,
+): CapabilityConversation {
+  return {
+    agent: "api-packetcode",
+    mode: "api",
+    model: "",
+    projectPath: "",
+    ...(engine ? { engineCapabilities: engine } : {}),
+  };
 }
 
 /**
@@ -499,6 +632,85 @@ interface AgentTaskStore {
   /** Session ids whose Stop command has been sent but not yet acknowledged. */
   cancellingConversationIds: Set<string>;
 
+  // --- Engine session directory (ACP) ---
+  //
+  // Sessions the packetcode ENGINE knows about — created by its TUI, or by a
+  // PacketADE run whose conversation record is gone. These are REMOTE HANDLES,
+  // not conversations: a summary row and nothing else. They are held in their
+  // own slice, never merged into `conversations`, precisely so no surface can
+  // accidentally render one as a local conversation with a transcript.
+  /** Newest-first, as the engine (or its on-disk fallback) ordered them. */
+  engineSessions: AcpSessionSummary[];
+  /** Whether the listing was answered, empty, or never obtained at all. */
+  engineSessionsStatus: EngineSessionsStatus;
+  /**
+   * What the ENGINE (not any one conversation) advertised at handshake, so
+   * affordances on engine-only rows still resolve through `capabilitiesFor()`
+   * — see {@link engineDirectoryRecord}. `null` until a listing has been
+   * attempted, which every consumer reads as "nobody told us anything".
+   */
+  engineCapabilities: AcpEngineCapabilities | null;
+  /**
+   * Re-read the engine's session directory. Never rejects: every failure
+   * lands as `unavailable` with an empty list, leaving the UI in its
+   * pre-engine state.
+   */
+  refreshEngineSessions: () => Promise<void>;
+  /**
+   * Rename a session that exists only in the ENGINE's store. Optimistic on
+   * the cached row; a failed push re-reads the directory rather than leaving
+   * a name the engine never accepted standing.
+   */
+  renameEngineSession: (engineSessionId: string, name: string) => Promise<void>;
+  /**
+   * Push a local conversation's new title to the engine so it survives
+   * outside PacketADE. The CAPABILITY gate is the caller's (`canRename`); this
+   * only enforces the transport check and swallows every failure — a rename
+   * the engine refused must never revert or throw over the local one.
+   */
+  pushEngineRename: (conversationId: string, title: string) => Promise<void>;
+  /**
+   * Turn a row of the engine's session directory into a PacketADE
+   * conversation BOUND to it — the "open" the directory could not offer while
+   * `session/load` had no command behind it.
+   *
+   * Creates a local record stamped with `acpEngineSessionId` and nothing else:
+   * no engine call, no turn, no subprocess. The `session/load` happens when
+   * the user actually sends, because that is the moment the resumed session is
+   * needed and the moment a failure has somewhere honest to land.
+   *
+   * The new conversation opens with ONE durable `system` message stating that
+   * PacketADE holds no transcript for it. That is the whole honesty story for
+   * adopted sessions: ACP's load replay omits the user's own turns and
+   * PacketADE has no local record to interleave, so the backend renders none
+   * of the replay (`acp/events.rs`) rather than showing answers to questions
+   * that are not there.
+   *
+   * Resolves the new conversation id, or `null` when the row is unknown or the
+   * engine never advertised the spec `loadSession` capability. Adopting the
+   * same engine session twice returns the existing conversation instead of
+   * making a second one bound to the same remote handle.
+   */
+  adoptEngineSession: (engineSessionId: string) => Promise<string | null>;
+  /**
+   * ACP only: whether new sessions may inherit the packetcode ENGINE's own
+   * configured MCP fleet.
+   *
+   * A separate consent from the per-server trust snapshot — that one covers
+   * PacketADE's OWN configured servers and is named server by server; this one
+   * says "run whatever your config.toml lists", which can only ever be granted
+   * wholesale against the engine's disclosure list (`acpListMcpServers()` with
+   * no session id).
+   *
+   * Deliberately NOT persisted. It defaults to `false` on every app start, so
+   * the standing answer to "may an ACP session start MCP subprocesses we did
+   * not name" is no unless someone said yes in this run. The backend refuses
+   * it outright against an engine that never advertised `mcpDefaults`, which
+   * surfaces as `AcpMcpPlan.inheritRefused`.
+   */
+  acpInheritEngineMcp: boolean;
+  setAcpInheritEngineMcp: (inherit: boolean) => void;
+
   setSelectedRepo: (repo: string | null) => void;
 
   // --- Conversation actions ---
@@ -530,6 +742,10 @@ interface AgentTaskStore {
   deleteConversation: (id: string) => Promise<WorktreeDiscardOutcome | null>;
   archiveConversation: (id: string) => void;
   unarchiveConversation: (id: string) => void;
+  /** Rename a conversation from the sidebar. Trims the input and ignores a
+   * blank result, so an accidental clear-and-commit leaves the old title
+   * standing rather than persisting an empty row label. */
+  renameConversation: (id: string, title: string) => void;
   /** P2-S2: flip a conversation's worktree lifecycle state (active → landed /
    * discarded) after a merge-back or discard, and persist. Materializes a
    * legacy conversation's derived worktree provenance onto the record if it
@@ -647,7 +863,187 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   selectedConversationId: null,
   cancellingConversationIds: new Set(),
 
+  engineSessions: [],
+  engineSessionsStatus: "idle",
+  engineCapabilities: null,
+
   setSelectedRepo: (repo) => set({ selectedRepo: repo }),
+
+  // ─── Engine session directory (ACP) ──────────────────────────────────
+
+  refreshEngineSessions: async () => {
+    if (get().engineSessionsStatus === "loading") return;
+    set({ engineSessionsStatus: "loading" });
+
+    // Engine lifetime is lazy — `start_api_agent_session` brings it up — so a
+    // directory read asked BEFORE any ACP conversation exists has to start it
+    // itself. That is exactly the case `acpStart` is documented for. A failure
+    // here is not fatal on its own: an engine that is already up makes this a
+    // no-op, and a listing may still be servable from disk.
+    try {
+      await acpStart();
+    } catch (e) {
+      logSwallowed("agentTaskStore.refreshEngineSessions/start")(e);
+    }
+
+    // Capabilities first, and kept even when the listing fails: they are what
+    // `capabilitiesFor()` needs to decide whether an engine row may be
+    // renamed. Their absence is the pre-engine answer, never "feature gone".
+    let capabilities: AcpEngineCapabilities | null = null;
+    try {
+      capabilities = await acpCapabilities();
+    } catch (e) {
+      logSwallowed("agentTaskStore.refreshEngineSessions/capabilities")(e);
+    }
+
+    try {
+      const sessions = await acpListSessions();
+      // An EMPTY array here is a real answer — the backend degrades the
+      // vendor method to a disk read and that to `[]` — so it lands as
+      // `ready`, which the sidebar renders as "no engine sessions", not as a
+      // failure.
+      set({
+        engineSessions: sessions,
+        engineCapabilities: capabilities,
+        engineSessionsStatus: "ready",
+      });
+    } catch (e) {
+      // No engine on PATH, a refused handshake, a transport error: PacketADE
+      // knows nothing about engine-side history, which is a different claim
+      // from "there is none". Previously-listed rows are dropped rather than
+      // left to go stale behind an engine we can no longer reach.
+      logSwallowed("agentTaskStore.refreshEngineSessions")(e);
+      set({
+        engineSessions: [],
+        engineCapabilities: capabilities,
+        engineSessionsStatus: "unavailable",
+      });
+    }
+  },
+
+  renameEngineSession: async (engineSessionId, name) => {
+    const next = name.trim();
+    if (!next) return;
+    const before = get().engineSessions;
+    const row = before.find((session) => session.sessionId === engineSessionId);
+    if (!row || row.name === next) return;
+    // Optimistic: the row renames under the pointer.
+    set({
+      engineSessions: before.map((session) =>
+        session.sessionId === engineSessionId ? { ...session, name: next } : session,
+      ),
+    });
+    try {
+      // The engine's own session id — `acp_rename_session` resolves a
+      // PacketADE conversation id when it has one and passes anything else
+      // through verbatim, which is what makes an engine-only row renamable.
+      await acpRenameSession(engineSessionId, next);
+    } catch (e) {
+      logSwallowed("agentTaskStore.renameEngineSession")(e);
+      // Unlike a conversation title, the ENGINE's store is the only record of
+      // this name. A push that failed leaves the optimistic row saying
+      // something untrue, so re-read instead of keeping it.
+      void get().refreshEngineSessions();
+    }
+  },
+
+  pushEngineRename: async (conversationId, title) => {
+    const next = title.trim();
+    if (!next) return;
+    const conversation = get().conversations.find(
+      (candidate) => candidate.id === conversationId,
+    );
+    if (!conversation || conversation.provider !== ACP_PROVIDER_ID) return;
+    try {
+      // PacketADE's conversation id: the backend maps it to the engine's own
+      // session id (`engine_id_or_raw`).
+      await acpRenameSession(conversationId, next);
+    } catch (e) {
+      // Deliberately terminal. `renameConversation` has already committed the
+      // local title and scheduled its save; an engine that would not take the
+      // name must not be able to undo that or surface as a thrown rename.
+      logSwallowed("agentTaskStore.pushEngineRename")(e);
+    }
+  },
+
+  acpInheritEngineMcp: false,
+  setAcpInheritEngineMcp: (inherit) => set({ acpInheritEngineMcp: inherit }),
+
+  adoptEngineSession: async (engineSessionId) => {
+    const state = get();
+    // Already adopted: hand back the conversation that owns the binding rather
+    // than minting a second one pointed at the same remote handle. Two
+    // conversations resuming one engine session would interleave turns into a
+    // history neither of them shows.
+    const existing = state.conversations.find(
+      (candidate) => candidate.acpEngineSessionId === engineSessionId,
+    );
+    if (existing) {
+      set({ selectedConversationId: existing.id });
+      return existing.id;
+    }
+
+    const row = state.engineSessions.find(
+      (session) => session.sessionId === engineSessionId,
+    );
+    if (!row) return null;
+    // The SPEC capability, read from the engine's own handshake — not the
+    // provider id, and not an assumption. An engine that did not advertise
+    // `loadSession` cannot resume anything, so adopting would produce a
+    // conversation whose first send is guaranteed to fail. `null` here is what
+    // keeps the directory read-only on such an engine.
+    if (state.engineCapabilities?.loadSession !== true) return null;
+
+    const id = generateId("conv");
+    const now = Date.now();
+    const adopted: AgentConversation = {
+      id,
+      title: row.name || "(untitled engine session)",
+      agent: "api-packetcode",
+      projectPath: row.workingDir,
+      status: "idle",
+      messages: [
+        {
+          id: generateId("msg"),
+          role: "system",
+          content:
+            `Adopted the packetcode engine session "${row.name || engineSessionId}" ` +
+            `(${row.messageCount} message${row.messageCount === 1 ? "" : "s"}, ` +
+            `${row.provider}/${row.model}).\n\n` +
+            "Its transcript stays in the engine. PacketADE has no copy, and the engine's " +
+            "replay leaves out your own prompts — so rather than show answers with the " +
+            "questions missing, nothing above this line is shown at all. Your next message " +
+            "resumes the session on the engine, which still has the full history as context.",
+          timestamp: now,
+        },
+      ],
+      sessionId: id,
+      rawOutput: "",
+      createdAt: now,
+      updatedAt: now,
+      mode: "api",
+      provider: ACP_PROVIDER_ID,
+      model: row.model,
+      queuedMessages: [],
+      planMode: false,
+      permissionMode: "auto",
+      approveWrites: false,
+      thinkingEnabled: false,
+      acpEngineSessionId: engineSessionId,
+      // The handshake record the directory listing already obtained. Same
+      // answer `stampEngineCapabilities` would fetch, minus a round trip — and
+      // it is what makes `capabilitiesFor()` resolve honestly on this
+      // conversation from its very first render.
+      ...(state.engineCapabilities ? { engineCapabilities: state.engineCapabilities } : {}),
+    };
+
+    set((s) => ({
+      conversations: [adopted, ...s.conversations],
+      selectedConversationId: id,
+    }));
+    scheduleSave(adopted);
+    return id;
+  },
 
   // ─── Conversation actions ────────────────────────────────────────────
 
@@ -861,8 +1257,23 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           null, // commandPath — no surviving sidecar provider is CLI-backed
           undefined,
           frozenMcpTrust,
+          // ACP extras, sent only on the ACP transport so no other backend
+          // sees a field it has no branch for. `inheritEngineMcp` is the
+          // session-scoped, affirmatively-granted consent to run the ENGINE's
+          // own MCP fleet — false unless someone said yes in this app run, and
+          // ignored entirely when PacketADE's trust snapshot already names
+          // servers of its own.
+          provider === ACP_PROVIDER_ID
+            ? { inheritEngineMcp: get().acpInheritEngineMcp }
+            : null,
         );
       }
+      // ACP only, and deliberately un-awaited: the engine handshake has
+      // happened by now, so this is the first moment its capabilities are
+      // real — but a slow or failing query must not hold up the first turn
+      // (or fail the launch), so the record is stamped whenever the answer
+      // arrives and the conversation simply behaves pre-ACP until it does.
+      void stampEngineCapabilities(id, provider);
     } catch (e) {
       // `startApiAgentSession` rejected before any `api-agent:*` event could
       // fire, so the streaming placeholder would otherwise spin forever.
@@ -1159,6 +1570,21 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         const next: AgentConversation = { ...c, archived: false, updatedAt: Date.now() };
         updated = next;
         return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  },
+
+  renameConversation: (id, title) => {
+    const next = title.trim();
+    if (!next) return;
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id || c.title === next) return c;
+        const renamed: AgentConversation = { ...c, title: next, updatedAt: Date.now() };
+        updated = renamed;
+        return renamed;
       }),
     }));
     if (updated) scheduleSave(updated);
@@ -1636,6 +2062,40 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       ? attachmentProvenance(userMsg.id, attachments, userMsg.timestamp)
       : undefined;
     const assistantMsgId = generateId("msg");
+    // ACP resume, and the two genuinely different things it can mean.
+    //
+    // A conversation BOUND to an engine session (`acpEngineSessionId`, set by
+    // `adoptEngineSession`) resumes it with `session/load`: the engine still
+    // holds that session's history, so the model does have the earlier turns —
+    // just not the ones PacketADE can show, because ACP's replay omits the
+    // user's own prompts and none of the replay is rendered. Nothing needs
+    // saying at this boundary; the adoption notice already said it, once, at
+    // the top of the conversation.
+    //
+    // Every OTHER ACP conversation gets a brand-new engine session, because
+    // ACP has no mid-life resume and the ACP branch ignores the
+    // `resumeMessages` every other transport replays. So the transcript above
+    // this point is PacketADE's OWN complete record while the engine's side
+    // starts empty — the model genuinely does not have the earlier turns. That
+    // asymmetry is invisible unless it is said out loud, and a transcript the
+    // user reasonably reads as shared context is exactly the kind of quiet lie
+    // this pane must not tell. Recorded as a durable `system` message at the
+    // boundary (same treatment as `appendRetiredAgentNotice`) rather than a
+    // toast, so it survives a reload and stays legible where it happened.
+    const engineContextReset: AgentMessage[] =
+      conv.provider === ACP_PROVIDER_ID && !conv.acpEngineSessionId
+        ? [
+            {
+              id: generateId("msg"),
+              role: "system",
+              content:
+                "Resumed on a new engine session. The transcript above is PacketADE's own " +
+                "record — the packetcode engine does not carry the earlier turns into this " +
+                "session, so restate anything it still needs.",
+              timestamp: Date.now(),
+            },
+          ]
+        : [];
     let updated: AgentConversation | undefined;
     set((s) => ({
       conversations: s.conversations.map((c) => {
@@ -1644,6 +2104,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           ...c,
           messages: [
             ...c.messages,
+            ...engineContextReset,
             userMsg,
             {
               id: assistantMsgId,
@@ -1727,7 +2188,25 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         null, // commandPath — no surviving sidecar provider is CLI-backed
         undefined,
         frozenMcpTrust,
+        // ACP extras. `engineSessionId` is what makes an ADOPTED conversation
+        // resume its engine session instead of silently starting an empty new
+        // one; it is undefined for every conversation PacketADE started
+        // itself, which keeps the pre-existing `session/new` behaviour.
+        conv.provider === ACP_PROVIDER_ID
+          ? {
+              inheritEngineMcp: get().acpInheritEngineMcp,
+              engineSessionId: conv.acpEngineSessionId ?? null,
+            }
+          : null,
       );
+      // ACP only, and deliberately un-awaited — same contract as the launch
+      // path. A resume creates a BRAND-NEW engine session, so whatever was
+      // stamped when this conversation first started describes an engine that
+      // may since have been upgraded, reconfigured, or replaced. Re-stamping
+      // here is what keeps the mode chip, model picker and slash-command menu
+      // honest for the rest of the app's run; a slow or failing query simply
+      // leaves the previous answer in place.
+      void stampEngineCapabilities(conversationId, conv.provider);
     } catch (e) {
       console.warn("resumeApiConversation failed:", e);
       // Clear the streaming placeholder we appended above — no `api-agent:*`

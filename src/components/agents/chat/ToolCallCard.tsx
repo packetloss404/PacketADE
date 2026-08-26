@@ -92,21 +92,24 @@ function ToolCallCardImpl({
             .openForConversation(conversationId, writeFileInput.path)
         }
         title={`Review ${writeFileInput.path}`}
-        className={`w-full flex items-center gap-2 px-2 py-1 border rounded text-left transition-colors hover:bg-bg-tertiary ${
+        // Same resting fill + radius + header padding as BaseToolCard: the
+        // transcript must show exactly ONE card background, so the edit chip
+        // sits on bg-bg-tertiary too and only its border responds to hover.
+        className={`w-full flex items-center gap-2 px-3 py-2 border rounded-xl text-left transition-colors ${
           isError
-            ? "border-accent-red/30 bg-accent-red/5"
-            : "border-bg-border bg-bg-secondary"
+            ? "border-accent-red/40 bg-accent-red/5"
+            : "border-bg-border bg-bg-tertiary hover:border-line-strong"
         }`}
       >
         <FileEdit size={12} className="text-text-secondary shrink-0" />
-        <span className="text-ui font-medium text-text-primary shrink-0">
+        <span className="shrink-0 font-mono text-meta uppercase tracking-[0.05em] text-text-faint">
           Edit
         </span>
-        <span className="font-mono text-ui text-text-secondary truncate">
+        <span className="font-mono text-ui text-text-primary truncate">
           {baseName}
         </span>
         {isNewFile && (
-          <span className="text-meta text-accent-green bg-accent-green/10 px-1 rounded shrink-0">
+          <span className="shrink-0 font-mono text-meta font-semibold uppercase tracking-[0.05em] text-accent-green">
             new
           </span>
         )}
@@ -135,6 +138,10 @@ function ToolCallCardImpl({
   return (
     <BaseToolCard
       icon={<Icon size={11} className="text-text-muted shrink-0" />}
+      // Eyebrow carries the raw tool id the model actually called; the title
+      // carries the humanized verb + target. Suppressed for the toolRowMeta
+      // fallback, where verb IS the tool name and the two would duplicate.
+      kind={meta.verb === toolCall.name ? undefined : toolCall.name}
       title={
         <span className="flex items-center gap-1.5 min-w-0">
           <span className="text-text-primary shrink-0">{meta.verb}</span>
@@ -154,11 +161,14 @@ function ToolCallCardImpl({
       toggleLabel={{ expanded: "Collapse output", collapsed: "Expand output" }}
       isError={isError}
     >
-      <pre className="text-ui font-mono whitespace-pre-wrap bg-bg-primary rounded p-2 mx-1 mb-1 text-text-primary overflow-y-auto max-h-[320px]">
+      {/* `selectable` is load-bearing: `body { user-select: none }` is global
+          (src/index.css), so without it tool output cannot be copied at all.
+          Full-bleed with a divider now that the card clips its own corners. */}
+      <pre className="selectable text-ui font-mono whitespace-pre-wrap border-t border-bg-border bg-bg-primary px-3 py-2.5 text-text-primary overflow-auto max-h-[320px]">
         {body}
       </pre>
       {verbosity === "verbose" && toolCall.input && (
-        <pre className="text-meta font-mono whitespace-pre-wrap bg-bg-secondary border-t border-line-soft p-2 mx-1 mb-1 max-h-48 overflow-y-auto text-text-muted">
+        <pre className="selectable text-meta font-mono whitespace-pre-wrap border-t border-line-soft bg-bg-secondary px-3 py-2 max-h-48 overflow-auto text-text-muted">
           input: {toolCall.input}
         </pre>
       )}

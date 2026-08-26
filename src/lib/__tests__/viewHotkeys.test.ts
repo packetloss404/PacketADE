@@ -12,6 +12,7 @@ describe("VIEW_HOTKEY_MAP", () => {
     expect(VIEW_HOTKEY_MAP["#"]).toBe("issues");
     expect(VIEW_HOTKEY_MAP["$"]).toBe("history");
     expect(VIEW_HOTKEY_MAP["%"]).toBe("tools");
+    expect(VIEW_HOTKEY_MAP["^"]).toBe("packetcode");
   });
 
   it("contains one Agents destination", () => {
@@ -19,7 +20,7 @@ describe("VIEW_HOTKEY_MAP", () => {
   });
 
   it("holds only the number-row chords; letter chords resolve via the registry", () => {
-    expect(Object.keys(VIEW_HOTKEY_MAP).sort()).toEqual(["!", "#", "$", "%", "@"]);
+    expect(Object.keys(VIEW_HOTKEY_MAP).sort()).toEqual(["!", "#", "$", "%", "@", "^"]);
     expect(resolveViewHotkey({ ctrlKey: true, shiftKey: true, code: "KeyW", key: "W" })).toBe(
       "workspace",
     );

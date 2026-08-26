@@ -1,21 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
-import { PendingApprovalsRollup } from "../PendingApprovalsRollup";
-import { PermissionPrompt } from "../PermissionPrompt";
+import { useEffect, useState, type RefObject } from "react";
+import { ShieldAlert } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
-import type {
-  AgentConversation,
-  PendingPermission,
-} from "@/types/agent-conversation";
-import type { useAgentTaskStore } from "@/stores/agentTaskStore";
+import type { PendingPermission } from "@/types/agent-conversation";
 import type { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 
-type TaskStore = ReturnType<typeof useAgentTaskStore.getState>;
 type ApprovalStore = ReturnType<typeof useAgentApprovalStore.getState>;
-
-/** Collapse the section by default once the queue reaches this size — the
- * pending footer becomes unscrollably tall beyond ~3 stacked prompts. */
-const COLLAPSE_THRESHOLD = 3;
 
 /**
  * Blocking permission prompts (shell / network / out-of-project tools) with
@@ -24,13 +13,26 @@ const COLLAPSE_THRESHOLD = 3;
  * with Keep/Undo, so the two verb pairs are never mixed in one surface.
  * Permission prompts outrank edits for the Y/N shortcut; the ReviewBar's
  * edit handler stays passive while any permission is pending.
+ *
+ * ## What this component is, after B3 (wave 2c)
+ *
+ * It is no longer a footer band. The CARDS moved into the transcript, at the
+ * call site that raised them (`chat/InlineApprovals` via `MessageList`). What
+ * stayed here, deliberately unmoved, is:
+ *
+ *  1. the ONE document-level Y/N keydown handler, its typing-context guards,
+ *     and the `keyboardScopeActive` / `scopeArmed` per-tile focus gate. Two
+ *     live document handlers would mean every open tile in the workspace
+ *     mosaic answering a single keypress, so the effect has exactly one home
+ *     and the markup moved around it;
+ *  2. what the band degrades to — a floating pill, shown only while the
+ *     pending approval is scrolled OUT of view, so an agent blocked above the
+ *     fold is never silently waiting.
  */
 interface PendingApprovalsSectionProps {
-  conversation: AgentConversation;
   conversationId: string;
   pendingPermissions: PendingPermission[];
   respondPermission: ApprovalStore["respondPermission"];
-  appendAllowedToolPattern: TaskStore["appendAllowedToolPattern"];
   /**
    * Y/N focus gate (P3-S1). Undefined → no pane context (standalone
    * AgentsView), armed exactly as today. Defined → the document-level
@@ -39,49 +41,33 @@ interface PendingApprovalsSectionProps {
    * prompts still render regardless.
    */
   keyboardScopeActive?: boolean;
+  /**
+   * The transcript's scroll container. Used as the IntersectionObserver root
+   * for "is the pending approval actually on screen?". Omitted → the pill
+   * never shows (nothing to measure against), which is the safe direction:
+   * the inline card is still rendered either way.
+   */
+  scrollContainerRef?: RefObject<HTMLDivElement | null>;
 }
 
 export function PendingApprovalsSection({
-  conversation,
   conversationId,
   pendingPermissions,
   respondPermission,
-  appendAllowedToolPattern,
   keyboardScopeActive,
+  scrollContainerRef,
 }: PendingApprovalsSectionProps) {
   const totalCount = pendingPermissions.length;
-
-  // Default collapsed when the initial render already exceeds the threshold.
-  // Re-collapses only when the user explicitly chooses to; auto-expands once
-  // the queue drains below the threshold so a single remaining prompt is
-  // always visible.
-  const [collapsed, setCollapsed] = useState(totalCount >= COLLAPSE_THRESHOLD);
-  // Track whether the queue has been continuously >= threshold so we know
-  // when to seed the default. Without this, going 4 → 2 → 4 would re-collapse
-  // the section after the user manually expanded it.
-  const wasAboveThresholdRef = useRef(totalCount >= COLLAPSE_THRESHOLD);
-
-  useEffect(() => {
-    if (totalCount < COLLAPSE_THRESHOLD) {
-      // Drop below threshold: force-expand and re-arm the auto-collapse.
-      if (collapsed) setCollapsed(false);
-      wasAboveThresholdRef.current = false;
-    } else if (!wasAboveThresholdRef.current) {
-      // Crossed up through the threshold this render — apply default collapse.
-      wasAboveThresholdRef.current = true;
-      setCollapsed(true);
-    }
-  }, [totalCount, collapsed]);
 
   // Y/N shortcuts target the top permission prompt.
   const topPermission = pendingPermissions[0];
 
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
 
-  // P1-9: Y/N stays live while the section is collapsed — the top prompt is
+  // P1-9: Y/N stays live wherever the card happens to be — the top prompt is
   // still the target, so a stacked queue can be drained from the keyboard
-  // without expanding. The typing-context guards below keep "y"/"n" usable
-  // in the composer and any focused input.
+  // without hunting for each card. The typing-context guards below keep
+  // "y"/"n" usable in the composer and any focused input.
   // Dual-mode focus gate (P3-S1): no pane context (undefined) → armed as
   // today; pane context → armed iff this instance holds keyboard scope.
   const scopeArmed = keyboardScopeActive === undefined || keyboardScopeActive;
@@ -126,98 +112,63 @@ export function PendingApprovalsSection({
     scopeArmed,
   ]);
 
-  if (pendingPermissions.length === 0) {
-    return null;
-  }
-
-  const allowAllPermissions = () => {
-    for (const item of pendingPermissions) {
-      void respondPermission(conversationId, item.id, "allow_once");
+  // Is any inline approval card currently on screen? Cards tag themselves with
+  // `data-approval-id`, so this needs no cross-component plumbing and stays
+  // scoped to THIS tile's scroll container (a mosaic of tiles must not measure
+  // each other's cards). Optimistically true so the pill never flashes on the
+  // frame a card mounts, and true when there is no IntersectionObserver
+  // (jsdom / old webviews) so the fallback is "no pill", never "wrong pill".
+  const [anyCardVisible, setAnyCardVisible] = useState(true);
+  useEffect(() => {
+    const container = scrollContainerRef?.current;
+    if (totalCount === 0 || !container) {
+      setAnyCardVisible(true);
+      return;
     }
-  };
-  const denyAllPermissions = () => {
-    for (const item of pendingPermissions) {
-      void respondPermission(conversationId, item.id, "deny");
+    if (typeof IntersectionObserver === "undefined") {
+      setAnyCardVisible(true);
+      return;
     }
-  };
-
-  if (collapsed) {
-    return (
-      <div
-        role="region"
-        aria-label="Pending approvals"
-        aria-live="polite"
-        className="shrink-0 px-3 py-2 border-t border-bg-border bg-bg-primary"
-      >
-        <div className="flex items-center gap-2 rounded border border-accent-amber/40 bg-bg-secondary px-2 py-1.5">
-          <button
-            type="button"
-            onClick={() => setCollapsed(false)}
-            className="flex items-center gap-1.5 flex-1 text-left text-ui text-text-primary hover:text-accent-amber transition-colors"
-            title="Expand to review each prompt"
-          >
-            <ChevronRight size={12} className="text-text-secondary shrink-0" />
-            <span className="font-medium">
-              {totalCount} pending approval{totalCount === 1 ? "" : "s"}
-            </span>
-            <span className="text-text-muted">
-              · Y allow · N deny (top prompt: {pendingPermissions[0]?.name})
-            </span>
-          </button>
-        </div>
-      </div>
+    const cards = container.querySelectorAll("[data-approval-id]");
+    if (cards.length === 0) {
+      setAnyCardVisible(true);
+      return;
+    }
+    const seen = new Map<Element, boolean>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) seen.set(entry.target, entry.isIntersecting);
+        setAnyCardVisible([...seen.values()].some(Boolean));
+      },
+      { root: container },
     );
-  }
+    cards.forEach((card) => observer.observe(card));
+    return () => observer.disconnect();
+  }, [totalCount, pendingPermissions, scrollContainerRef]);
+
+  if (totalCount === 0) return null;
+  if (anyCardVisible) return null;
+
+  const scrollToFirst = () => {
+    const container = scrollContainerRef?.current;
+    container
+      ?.querySelector("[data-approval-id]")
+      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+  };
 
   return (
-    <div
-      role="region"
-      aria-label="Pending approvals"
-      aria-live="polite"
-      className="shrink-0 px-3 py-2 flex flex-col gap-2 border-t border-bg-border bg-bg-primary"
+    <button
+      type="button"
+      onClick={scrollToFirst}
+      aria-label={`${totalCount} pending approval${totalCount === 1 ? "" : "s"} — scroll to it`}
+      title="Scroll to the waiting approval"
+      className="absolute bottom-3 right-3 z-10 inline-flex animate-[welcomeFadeIn_150ms_ease-out] items-center gap-1.5 rounded-full border border-accent-amber/50 bg-bg-elevated px-3 py-1 text-ui shadow-md transition-colors hover:border-accent-amber motion-reduce:animate-none"
     >
-      {totalCount >= COLLAPSE_THRESHOLD && (
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setCollapsed(true)}
-            className="flex items-center gap-1.5 flex-1 text-left text-ui text-text-secondary hover:text-text-primary transition-colors"
-            title="Collapse approvals"
-          >
-            <ChevronDown size={12} className="text-text-secondary shrink-0" />
-            <span>
-              {totalCount} pending approval{totalCount === 1 ? "" : "s"}
-            </span>
-          </button>
-        </div>
-      )}
-      <PendingApprovalsRollup
-        pendingPermissions={pendingPermissions}
-        onAllowAllPermissions={allowAllPermissions}
-        onDenyAllPermissions={denyAllPermissions}
-      />
-      {pendingPermissions.map((item, idx) => (
-        <PermissionPrompt
-          key={item.id}
-          item={item}
-          conversationAllowedTools={conversation.allowedTools}
-          // Hints attach to the first permission only — that's the Y/N target.
-          showKeyboardHints={idx === 0}
-          onAllowOnce={(toolId) =>
-            void respondPermission(conversationId, toolId, "allow_once")
-          }
-          onAllowAlways={(toolId) =>
-            void respondPermission(conversationId, toolId, "allow_always")
-          }
-          onDeny={(toolId, reason) =>
-            void respondPermission(conversationId, toolId, "deny", reason)
-          }
-          onAllowAlwaysWithPattern={(toolId, pattern) => {
-            void respondPermission(conversationId, toolId, "allow_always");
-            appendAllowedToolPattern(conversationId, pattern);
-          }}
-        />
-      ))}
-    </div>
+      <ShieldAlert size={12} className="shrink-0 text-accent-amber" />
+      <span className="font-medium text-accent-amber">
+        {totalCount} pending
+      </span>
+      <span className="text-text-muted">· Y allow · N deny</span>
+    </button>
   );
 }

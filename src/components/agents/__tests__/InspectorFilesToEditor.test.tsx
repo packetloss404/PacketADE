@@ -1,12 +1,17 @@
 /**
- * P1-5 / D5 amendment — the Files tab's advertised open path is wired.
+ * P1-5 / D5 amendment — the file browser's advertised open path is wired.
  *
  * `AgentFilePane` has always called an optional `onSelectFile`, but
  * `AgentInspectorPane` never provided one, so a file click only copied a path
  * while Preview told the user to "open a Markdown file from the file pane".
  * Rows now open the buffer in the dock Editor, which renders `.md` through
  * MarkdownRenderer.
+ *
+ * B4 (wave 2b) folded the standalone Files tab INTO the Editor panel — an
+ * Editor with no buffer open is the browser — so the same journey now starts
+ * on the Editor tab. The dock also ships closed, so the test opens it first.
  */
+import { act } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentConversation } from "@/types/agent-conversation";
@@ -67,8 +72,12 @@ describe("Inspector Files → Editor", () => {
 
   it("opens a clicked file in the dock Editor and renders Markdown", async () => {
     render(<AgentInspectorPane conversationId="conv-1" />);
+    act(() => {
+      useRightDockStore.getState().setExpanded("agents", true);
+    });
 
-    fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+    // No buffer open yet, so the Editor panel shows the folded-in browser.
+    fireEvent.click(screen.getByRole("tab", { name: "Editor" }));
     const row = await screen.findByTitle("/proj/NOTES.md");
     fireEvent.click(row);
 

@@ -32,6 +32,7 @@ const EXHAUSTIVE = [
   "welcome",
   "workspace",
   "agents",
+  "packetcode",
   "issues",
   "flights",
   "history",
@@ -108,6 +109,7 @@ describe("Left Rail placement", () => {
     expect(railPrimaryRoutes().map((r) => r.id)).toEqual([
       "workspace",
       "agents",
+      "packetcode",
       "flights",
       "issues",
       "memory",

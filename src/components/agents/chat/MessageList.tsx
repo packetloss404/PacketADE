@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -19,9 +20,14 @@ import { PlanModeApprovalMenu } from "../PlanModeApprovalMenu";
 import { ThinkingBlock } from "../ThinkingBlock";
 import { looksLikePlan } from "../planDetection";
 import { ToolCallRenderer } from "./ToolCallRenderer";
+import {
+  InlineApprovals,
+  type InlineApprovalsBinding,
+} from "./InlineApprovals";
 import type {
   AgentConversation,
   AgentMessage,
+  PendingPermission,
 } from "@/types/agent-conversation";
 
 // Virtualization tuning. The last N rows always mount immediately so the
@@ -34,7 +40,18 @@ const TAIL_FORCE_MOUNT = 10;
 // sensible size before real heights are known. WKWebView has NO CSS scroll
 // anchoring, so LazyMessageRow compensates scrollTop manually when a row
 // mounts above the viewport (see the layout effect there).
-const PLACEHOLDER_MIN_HEIGHT = 72;
+//
+// Tracks the BODY TYPE SCALE, not a magic number: it is a two-line assistant
+// turn at the current metrics — 2 × --leading-body (21px) of de-bubbled prose,
+// + the ~15px footer action row, + the 6px space-y-1.5 between them ≈ 63 → 64.
+// The old 72 was the same two-line estimate under the pre-restyle bubble
+// metrics (16px of px-3/py-2 padding + 2 × 19.5px leading-relaxed text-xs).
+// Re-derive this whenever --text-body / --leading-body or the turn padding move.
+const PLACEHOLDER_MIN_HEIGHT = 64;
+
+/** Stable empty queue — keeps the placement memo from re-running every render
+ * on a fresh `[]`. */
+const NO_PERMISSIONS: PendingPermission[] = [];
 
 interface MessageListProps {
   conversation: AgentConversation;
@@ -53,6 +70,15 @@ interface MessageListProps {
   // Scroll container that owns the message viewport (from AgentChatPane).
   // Used as the IntersectionObserver root for lazy row mounting.
   scrollContainerRef?: RefObject<HTMLDivElement | null>;
+  /**
+   * B3 — pending approvals, rendered inline at the call site. `undefined`
+   * means "this session cannot approve per tool" (`caps.canApprovePerTool`),
+   * and no approval chrome is rendered at all.
+   *
+   * Presentation only: the Y/N keydown handler and its per-tile focus gate
+   * live in `PendingApprovalsSection` and are NOT duplicated here.
+   */
+  approvals?: InlineApprovalsBinding;
 }
 
 export function MessageList({
@@ -68,6 +94,7 @@ export function MessageList({
   onRetryLastTurn,
   isActive,
   scrollContainerRef,
+  approvals,
 }: MessageListProps) {
   const messages = conversation.messages;
   const lastMessage = messages[messages.length - 1];
@@ -127,13 +154,50 @@ export function MessageList({
 
   const tailStart = Math.max(0, messages.length - TAIL_FORCE_MOUNT);
 
+  // B3 placement. A permission's `id` IS the tool-use id: the
+  // `api-agent:permission-request` payload echoes the same id that
+  // `api-agent:tool-start` puts on the tool call, so the raising call can be
+  // found by identity rather than by guesswork. Anything unmatched — an
+  // adapter that gates BEFORE it announces the call — falls to the tail of the
+  // transcript, which is exactly where the agent is sitting blocked anyway.
+  const pendingPermissions = approvals?.permissions ?? NO_PERMISSIONS;
+  const placement = useMemo(() => {
+    const byMessage = new Map<string, PendingPermission[]>();
+    const trailing: PendingPermission[] = [];
+    const ownerOf = (perm: PendingPermission) =>
+      messages.find((m) => m.toolCalls?.some((tc) => tc.id === perm.id));
+    for (const perm of pendingPermissions) {
+      const owner = ownerOf(perm);
+      if (!owner) {
+        trailing.push(perm);
+        continue;
+      }
+      const bucket = byMessage.get(owner.id);
+      if (bucket) bucket.push(perm);
+      else byMessage.set(owner.id, [perm]);
+    }
+    // Where the HEAD of the queue landed. The batch rollup and the Y/N hints
+    // render against the head, and only there.
+    const head = pendingPermissions[0];
+    return {
+      byMessage,
+      trailing,
+      headOwnerId: head ? (ownerOf(head)?.id ?? null) : null,
+    };
+  }, [messages, pendingPermissions]);
+  const topPermissionId = pendingPermissions[0]?.id;
+
   return (
     <>
       {messages.map((msg, index) => {
         const isLastAssistant = msg.id === lastAssistantMessage?.id;
+        const ownedApprovals = placement.byMessage.get(msg.id);
         // Always mount the tail window + the last assistant message so the
         // streaming card, quick actions and diff viewer never get windowed out.
-        const forceMount = index >= tailStart || isLastAssistant;
+        // A row holding a live approval joins them unconditionally: a blocking
+        // prompt that a virtualized placeholder swallowed is an agent hung on a
+        // question the user was never shown.
+        const forceMount = index >= tailStart || isLastAssistant || !!ownedApprovals;
         return (
           <LazyMessageRow
             key={msg.id}
@@ -164,9 +228,32 @@ export function MessageList({
               onSubmitEdit={() => onSubmitEdit(msg.id)}
               onCancelEdit={onCancelEdit}
             />
+            {approvals && ownedApprovals && (
+              <div className="mt-2">
+                <InlineApprovals
+                  conversationId={conversationId}
+                  conversationAllowedTools={conversation.allowedTools}
+                  binding={approvals}
+                  permissions={ownedApprovals}
+                  leading={placement.headOwnerId === msg.id}
+                  topPermissionId={topPermissionId}
+                />
+              </div>
+            )}
           </LazyMessageRow>
         );
       })}
+
+      {approvals && placement.trailing.length > 0 && (
+        <InlineApprovals
+          conversationId={conversationId}
+          conversationAllowedTools={conversation.allowedTools}
+          binding={approvals}
+          permissions={placement.trailing}
+          leading={placement.headOwnerId === null}
+          topPermissionId={topPermissionId}
+        />
+      )}
 
       {conversation.planMode &&
         lastMessage?.role === "assistant" &&
@@ -179,11 +266,9 @@ export function MessageList({
         )}
 
       {showThinking && (
-        <div className="flex items-start gap-2">
-          <div className="flex items-center gap-1.5 px-3 py-2 bg-bg-secondary rounded text-ui text-text-muted">
-            <Spinner size={10} className="text-text-muted" label="Thinking" />
-            Thinking...
-          </div>
+        <div className="flex items-center gap-1.5 text-ui text-text-muted">
+          <Spinner size={10} className="text-text-muted" label="Thinking" />
+          Thinking...
         </div>
       )}
     </>
@@ -295,15 +380,20 @@ function MessageBubble({
   // Global transcript view mode (P1-17) — read unconditionally at the top so
   // this hook call stays stable across the role early-returns below.
   const verbosity = useAgentSettingsStore((s) => s.transcriptViewMode);
+  // System notices are transcript punctuation, not a participant's turn: a
+  // centered faint rule-and-label, no card. Dropping the fill keeps the
+  // one-card-background rule intact.
   if (message.role === "system") {
     return (
-      <div className="flex justify-center">
-        <div className="text-meta text-text-muted px-2 py-1 bg-bg-secondary/50 rounded max-w-[90%]">
+      <div className="flex items-center gap-2 py-0.5">
+        <span className="h-px flex-1 bg-line-soft" />
+        <div className="max-w-[80%] text-center text-meta text-text-faint">
           <MarkdownRenderer
             content={message.content}
             className="text-meta leading-relaxed"
           />
         </div>
+        <span className="h-px flex-1 bg-line-soft" />
       </div>
     );
   }
@@ -312,7 +402,7 @@ function MessageBubble({
     if (isEditing) {
       return (
         <div className="flex justify-end">
-          <div className="max-w-[85%] w-full px-3 py-2 rounded text-xs bg-accent-blue/10 border border-accent-blue/40 flex flex-col gap-1.5">
+          <div className="max-w-[85%] w-full px-3.5 py-2.5 rounded-[14px_14px_4px_14px] text-body bg-bg-tertiary border border-accent-line flex flex-col gap-1.5">
             <textarea
               autoFocus
               value={editingText ?? ""}
@@ -330,7 +420,7 @@ function MessageBubble({
                 8,
                 Math.max(2, (editingText ?? "").split("\n").length),
               )}
-              className="w-full bg-transparent text-xs text-text-primary placeholder:text-text-muted focus:outline-none resize-none leading-relaxed"
+              className="w-full bg-transparent text-body text-text-primary placeholder:text-text-muted focus:outline-none resize-none"
             />
             <div className="flex items-center justify-between gap-2">
               <Tooltip content="Truncates the transcript to this point and re-runs from here">
@@ -367,14 +457,19 @@ function MessageBubble({
     return (
       <div className="flex flex-col items-end">
         <div className="group flex w-full justify-end">
+          {/* Neutral, not blue: a blue right-aligned bubble reads as a
+              messenger app. The asymmetric radius (square bottom-right) is
+              what marks the turn as the user's, not the hue. */}
           <div
-            className={`max-w-[85%] px-3 py-1.5 rounded text-xs text-text-primary relative ${
+            className={`max-w-[85%] px-3.5 py-2.5 rounded-[14px_14px_4px_14px] border text-body text-text-primary relative ${
               message.queued
-                ? "bg-accent-amber/10"
-                : "bg-accent-blue/15"
+                ? "border-accent-amber/40 bg-accent-amber/10"
+                : "border-bg-border bg-bg-tertiary"
             }`}
           >
-            <div className="whitespace-pre-wrap break-words">{message.content}</div>
+            <div className="selectable whitespace-pre-wrap break-words">
+              {message.content}
+            </div>
             {message.queued && (
               <span className="text-meta text-accent-amber ml-1">
                 (queued)
@@ -437,55 +532,68 @@ function MessageBubble({
     );
   }
 
-  // assistant
+  // Assistant. De-bubbled: no `flex justify-start`, no `max-w-[90%]`, no
+  // `bg-bg-secondary` panel. The turn IS the page — markdown renders directly
+  // on the background at the body type scale, and the reading measure comes
+  // from the centered transcript column, not from a per-bubble max-width.
+  const toolCalls = message.toolCalls ?? [];
   return (
-    <div className="flex justify-start">
-      <div className="max-w-[90%] space-y-1.5">
-        {verbosity !== "summary" &&
-          message.thinking &&
-          message.thinking.length > 0 && (
-            <ThinkingBlock
-              text={message.thinking}
-              streaming={message.isStreaming}
-            />
-          )}
-
-        {message.toolCalls && message.toolCalls.length > 0 && (
-          <ExplorationRollupCard
-            toolCalls={message.toolCalls}
-            isStreaming={message.isStreaming}
+    <div className="group/turn space-y-1.5">
+      {verbosity !== "summary" &&
+        message.thinking &&
+        message.thinking.length > 0 && (
+          <ThinkingBlock
+            text={message.thinking}
+            streaming={message.isStreaming}
           />
         )}
 
-        {message.toolCalls && message.toolCalls.length > 0 && (
+      {/* Rollup XOR individual cards, per tool call: ExplorationRollupCard is
+          the sole representation of read/search/list calls (live AND settled),
+          and ToolCallRenderer filters exactly those out via
+          isExplorationToolName. The two therefore partition message.toolCalls
+          and never both render the same call. Keep that classifier as the
+          single source of truth on both sides — duplicating the predicate is
+          how the transcript ends up showing a call twice. */}
+      {toolCalls.length > 0 && (
+        <>
+          <ExplorationRollupCard
+            toolCalls={toolCalls}
+            isStreaming={message.isStreaming}
+          />
           <ToolCallRenderer
-            toolCalls={message.toolCalls}
+            toolCalls={toolCalls}
             conversationId={conversation.id}
             projectPath={conversation.projectPath}
           />
-        )}
+        </>
+      )}
 
-        {message.content && (
-          <div className="px-3 py-2 bg-bg-secondary rounded text-xs">
-            <MarkdownRenderer
-              content={message.content}
-              className="text-xs leading-relaxed"
-            />
-            {message.isStreaming && (
-              <span className="inline-block w-1.5 h-3.5 bg-accent-green/70 rounded-sm animate-pulse ml-1 align-text-bottom" />
-            )}
-          </div>
-        )}
+      {message.content && (
+        <div>
+          <MarkdownRenderer
+            content={message.content}
+            className="markdown-doc text-body text-text-primary"
+          />
+          {message.isStreaming && (
+            <span className="inline-block w-1.5 h-3.5 bg-accent-green/70 rounded-sm animate-pulse motion-reduce:animate-none ml-1 align-text-bottom" />
+          )}
+        </div>
+      )}
 
-        {message.isStreaming && !message.content && (
-          <div className="flex items-center gap-1.5 px-3 py-2 bg-bg-secondary rounded text-ui text-text-muted">
-            <Spinner size={10} className="text-accent-green" label="Responding" />
-            Responding...
-          </div>
-        )}
+      {message.isStreaming && !message.content && (
+        <div className="flex items-center gap-1.5 text-ui text-text-muted">
+          <Spinner size={10} className="text-accent-green" label="Responding" />
+          Responding...
+        </div>
+      )}
 
-        <div className="flex items-center gap-2">
-          <AssistantTokenPill message={message} />
+      {/* Footer actions are hover-revealed. `opacity-0` (not conditional
+          render) is deliberate: the row keeps its height either way, so
+          revealing it never changes the row height the virtualizer measured. */}
+      <div className="flex items-center gap-2">
+        <AssistantTokenPill message={message} />
+        <div className="flex items-center gap-2 opacity-0 transition-opacity motion-reduce:transition-none group-hover/turn:opacity-100 group-focus-within/turn:opacity-100">
           {isLastAssistant && !message.isStreaming && onRetry && (
             <Tooltip content="Retry this turn">
               <button

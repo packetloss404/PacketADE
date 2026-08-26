@@ -74,6 +74,7 @@ function SubagentToolCallCardImpl({
   return (
     <BaseToolCard
       icon={<Bot size={11} className="text-accent-green shrink-0" />}
+      kind="subagent"
       title={<span className="italic">{headerTask}</span>}
       titleAttr={taskDisplay}
       statusPill={pill}
@@ -93,13 +94,15 @@ function SubagentToolCallCardImpl({
         </div>
       }
     >
-      <div className="bg-bg-primary rounded p-2 mx-1 mb-1 text-text-primary overflow-y-auto max-h-[320px]">
+      <div className="bg-bg-primary rounded-lg p-2 mx-1 mb-1 text-text-primary overflow-y-auto max-h-[320px]">
         <MarkdownRenderer
           content={body}
           className="text-ui leading-relaxed"
         />
         {verbosity === "verbose" && toolCall.input && (
-          <pre className="mt-2 pt-2 border-t border-bg-border text-meta font-mono whitespace-pre-wrap text-text-muted">
+          // `selectable`: the global `body { user-select: none }` otherwise
+          // makes the raw tool input uncopyable.
+          <pre className="selectable mt-2 pt-2 border-t border-bg-border text-meta font-mono whitespace-pre-wrap text-text-muted">
             {(() => {
               try {
                 return JSON.stringify(JSON.parse(toolCall.input), null, 2);

@@ -67,7 +67,10 @@ describe("openInEditor", () => {
 
     expect(id).toBeNull();
     expect(useEditorStore.getState().openFiles).toHaveLength(0);
-    expect(useRightDockStore.getState().surfaces.agents.activePanel).toBe("inspector");
+    // The Agents dock is untouched. Its default `activePanel` became `null`
+    // when B4 made the dock opt-in (it used to seed "inspector"); the
+    // assertion is still "nothing moved it".
+    expect(useRightDockStore.getState().surfaces.agents.activePanel).toBeNull();
   });
 
   it("targets the Workspace dock when the Workspace surface is active", () => {
@@ -76,7 +79,8 @@ describe("openInEditor", () => {
 
     openInEditor("a.ts", { projectPath: "/p" });
     expect(useRightDockStore.getState().surfaces.workspace.activePanel).toBe("editor");
-    expect(useRightDockStore.getState().surfaces.agents.activePanel).toBe("inspector");
+    // Unchanged from the (now `null`) Agents default — see the note above.
+    expect(useRightDockStore.getState().surfaces.agents.activePanel).toBeNull();
   });
 
   it("honours an explicit surface override", () => {

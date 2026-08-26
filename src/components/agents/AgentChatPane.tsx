@@ -1,9 +1,8 @@
 import { useCallback, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { ArrowDown, ArrowLeft, MessageSquareOff, Server, Sparkles } from "lucide-react";
+import { ArrowDown, ArrowLeft, MessageSquareOff, Sparkles } from "lucide-react";
 import { MemoryInjectionCard } from "./MemoryInjectionCard";
 import { AgentHeaderBadges } from "./AgentHeaderBadges";
-import { SessionMetaLine } from "./chat/SessionMetaLine";
 import { PlanPanel } from "./PlanPanel";
 import { deriveMode, flagsForMode, nextMode } from "./agentModeChipUtils";
 import type { AgentMode } from "./AgentModeChip";
@@ -35,14 +34,16 @@ import { useScrollState } from "./hooks/useScrollState";
 import { useLatestPlanPreview } from "./hooks/useLatestPlanPreview";
 import { useDiffTotals } from "./hooks/useDiffTotals";
 import { Tooltip } from "@/components/ui/Tooltip";
-import { getAgentColor } from "@/lib/agentColors";
+import { capabilitiesFor } from "@/lib/agentCapabilities";
 import { isRemoteConversation } from "@/lib/remoteConversation";
+import type { DockSurface } from "@/stores/rightDockStore";
 
 const AGENT_LABELS: Record<string, string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
   opencode: "OpenCode",
   packetcode: "PacketCode",
+  "api-packetcode": "PacketCode (ACP)",
 };
 
 const STATUS_DISPLAY: Record<string, { label: string; className: string }> = {
@@ -71,6 +72,17 @@ interface AgentChatPaneProps {
    * The tile passes `activePaneId === pane.id` in P3-S2.
    */
   keyboardScopeActive?: boolean;
+  /**
+   * Right-dock surface this pane's header may open, if any.
+   *
+   * Set to "agents" by `AgentsView`, whose dock (preview / diff / editor) is a
+   * sibling of this pane. B4 made that dock two-pane-by-default — its rail does
+   * not paint until `everOpened` — so without a header control the only way in
+   * was a deep link. Left UNSET in the workspace mosaic: there the dock belongs
+   * to the workspace shell, not to any one conversation tile, and N tiles each
+   * offering a toggle for one shared panel is N wrong controls.
+   */
+  dockSurface?: DockSurface;
 }
 
 // "← back to plan" link shown when this conversation was spawned by a
@@ -101,6 +113,7 @@ export function AgentChatPane({
   closeTooltip,
   onArchive,
   keyboardScopeActive,
+  dockSurface,
 }: AgentChatPaneProps) {
   const conversation = useAgentTaskStore((s) =>
     s.conversations.find((c) => c.id === conversationId),
@@ -156,6 +169,19 @@ export function AgentChatPane({
     if (previewOpen) hidePreview();
     else openPreviewPanel("agents", "preview");
   }, [previewOpen, openPreviewPanel]);
+
+  // Wave 2c — the header's right-pane toggle. Reads/writes only `expanded`:
+  // `RightDock` already falls back to the first selectable panel when nothing
+  // has been chosen, and `setExpanded(surface, true)` is what flips
+  // `everOpened` so the rail (the way back) starts painting.
+  const dockExpanded = useRightDockStore((s) =>
+    dockSurface ? s.surfaces[dockSurface].expanded : false,
+  );
+  const setDockExpanded = useRightDockStore((s) => s.setExpanded);
+  const toggleDock = useCallback(() => {
+    if (!dockSurface) return;
+    setDockExpanded(dockSurface, !dockExpanded);
+  }, [dockSurface, dockExpanded, setDockExpanded]);
   const memoryEvents = useMemoryStore((s) => s.events);
   const memoryPatterns = useMemoryStore((s) => s.patterns);
   const composeMemoryBrief = useMemoryStore((s) => s.composeMemoryBrief);
@@ -211,7 +237,19 @@ export function AgentChatPane({
     ? { label: "Stopping…", className: "text-accent-amber" }
     : (STATUS_DISPLAY[conversation.status] ?? STATUS_DISPLAY.idle);
   const agentLabel = AGENT_LABELS[conversation.agent] ?? conversation.agent;
-  const agentColor = getAgentColor(conversation.agent);
+  const caps = capabilitiesFor(conversation);
+
+  // B3 — approvals render inline in the transcript, so the transcript needs
+  // the queue and the two store actions that answer it. `undefined` is the
+  // capability gate: an adapter that cannot pause a tool call for a decision
+  // gets no approval chrome at all, rather than chrome that can never fire.
+  const approvalsBinding = caps.canApprovePerTool
+    ? {
+        permissions: pendingPermissions,
+        respondPermission: approvalActions.respondPermission,
+        appendAllowedToolPattern: actions.appendAllowedToolPattern,
+      }
+    : undefined;
 
   // isActive = actively streaming / waiting for the agent ("running" in the UI sense).
   const isActive = conversation.status === "active";
@@ -275,8 +313,10 @@ export function AgentChatPane({
   const chatContent = (
     <div className="flex h-full flex-col">
       {/* Header bar — sparkle avatar + title + agent/status chips. Single row
-          snapped to the shared h-[33px] baseline; project/branch/cost moved
-          into the thin SessionMetaLine below. The `agent-chat-header` hook
+          snapped to the shared h-[33px] baseline. Project / branch / MCP / SSH
+          are NOT here: they are context chips on the composer's context strip
+          (the old full-bleed SessionMetaLine band is gone, and its 30s
+          gitSafetyCheck poll moved with the chip). The `agent-chat-header` hook
           turns the row into a query container (all @container rules are scoped
           to [data-frame="tile"] in conversation-tile.css). */}
       <div className="agent-chat-header flex h-[33px] shrink-0 items-center gap-2.5 border-b border-bg-border bg-bg-secondary px-3">
@@ -287,24 +327,20 @@ export function AgentChatPane({
           <span className="truncate text-ui font-semibold text-text-primary">
             {conversation.title || agentLabel}
           </span>
+          {/* Status dot, NOT an identity dot. `getAgentColor(conversation.agent)`
+              used to paint this per provider — identity deciding chrome, which
+              the capability rule forbids. It now carries the one fact a dot can
+              usefully carry: whether this session is running, done, failed or
+              parked. The provider still names itself in the title and tooltip. */}
           <span
-            className={`h-1.5 w-1.5 shrink-0 rounded-full ${agentColor.text} bg-current ${isActive ? "animate-pulse motion-reduce:animate-none" : ""}`}
+            aria-hidden="true"
+            data-status={conversation.status}
+            className={`h-1.5 w-1.5 shrink-0 rounded-full bg-current ${status.className} ${isActive ? "animate-pulse motion-reduce:animate-none" : ""}`}
           />
           <span className={`tile-hide-narrow text-meta font-medium ${status.className}`}>
             {status.label}
           </span>
-          {conversation.sshTarget && (
-            <Tooltip
-              content={`Tools run on ${conversation.sshTarget.user}@${conversation.sshTarget.host}:${conversation.sshTarget.remotePath}`}
-              side="bottom"
-            >
-              <span className="tile-hide-narrow flex items-center gap-1 rounded bg-accent-soft px-1.5 py-0.5 text-meta text-accent-green">
-                <Server size={10} />
-                {conversation.sshTarget.host}
-              </span>
-            </Tooltip>
-          )}
-          <AgentHeaderBadges conversationId={conversationId} agent={conversation.agent} />
+          <AgentHeaderBadges conversation={conversation} />
           {conversation.parentConversationId && (
             <BackToParentLink parentId={conversation.parentConversationId} />
           )}
@@ -320,20 +356,16 @@ export function AgentChatPane({
           closeLabel={closeLabel}
           closeTooltip={closeTooltip}
           onArchive={onArchive}
-          onCycleMode={cycleMode}
-          onSelectMode={applyMode}
-          onSetApproveWrites={(on) => void actions.setApproveWrites(conversationId, on)}
-          onChangeModel={(model) => void actions.changeModel(conversationId, model)}
           onExport={() => void handleExport(conversation)}
           pendingApprovalCount={pendingApprovalCount}
+          dockOpen={dockExpanded}
+          onToggleDock={dockSurface ? toggleDock : undefined}
         />
       </div>
 
       <div aria-live={announce ? "polite" : "off"} aria-atomic="true" className="sr-only">
         {announce ? `${status.label}. ${lastAssistantText}` : ""}
       </div>
-
-      <SessionMetaLine conversation={conversation} />
 
       <PlanPanel conversation={conversation} />
 
@@ -343,11 +375,18 @@ export function AgentChatPane({
         remote={isRemote}
       >
         <div className="relative flex min-h-0 flex-1 flex-col">
-          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 py-3">
-            {/* Inner content wrapper carries the row spacing and is measured by
-                the ResizeObserver in useScrollState so "stick to bottom" stays
-                pinned as virtualized rows lazily mount and grow. */}
-            <div ref={messagesContentRef} className="space-y-turn">
+          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto">
+            {/* A3 — the reading measure. The transcript is a centered
+                `max-w-chat` column instead of full-bleed at every width, and
+                turn spacing comes from `gap-turn` rather than `space-y-turn`.
+                This element ALSO carries `messagesContentRef`: useScrollState's
+                ResizeObserver measures it so "stick to bottom" stays pinned as
+                virtualized rows lazily mount and grow. Keep the ref on whatever
+                element carries the spacing — moving it breaks scroll tracking. */}
+            <div
+              ref={messagesContentRef}
+              className="mx-auto flex max-w-chat flex-col gap-turn px-6 pb-4 pt-8"
+            >
               {conversation.mode === "api" && conversation.memoryContextEnabled && (
                 <MemoryInjectionCard brief={memoryBrief} />
               )}
@@ -373,11 +412,28 @@ export function AgentChatPane({
                 onRetryLastTurn={() => void actions.retryLastTurn(conversationId)}
                 isActive={isActive}
                 scrollContainerRef={messagesContainerRef}
+                approvals={approvalsBinding}
               />
 
               <div ref={messagesEndRef} />
             </div>
           </div>
+          {/* B3 — what the old footer band degraded to. The approval CARDS are
+              inline in the transcript above (MessageList → InlineApprovals);
+              this renders only the floating "N pending · Y allow · N deny"
+              pill, and only while every card is scrolled out of view. It also
+              owns the ONE document-level Y/N handler and its per-tile focus
+              gate, which is why it stays mounted whether or not the pill
+              shows. */}
+          {approvalsBinding && (
+            <PendingApprovalsSection
+              conversationId={conversationId}
+              pendingPermissions={pendingPermissions}
+              respondPermission={approvalActions.respondPermission}
+              keyboardScopeActive={keyboardScopeActive}
+              scrollContainerRef={messagesContainerRef}
+            />
+          )}
           {!isAtBottom && (
             <Tooltip content="Jump to latest">
               <button
@@ -402,15 +458,6 @@ export function AgentChatPane({
           )}
         </div>
       </ClickablePathsRoot>
-
-      <PendingApprovalsSection
-        conversation={conversation}
-        conversationId={conversationId}
-        pendingPermissions={pendingPermissions}
-        respondPermission={approvalActions.respondPermission}
-        appendAllowedToolPattern={actions.appendAllowedToolPattern}
-        keyboardScopeActive={keyboardScopeActive}
-      />
 
       {(conversation.pendingDiffComments?.length ?? 0) > 0 && (
         <PendingDiffCommentsStrip
@@ -438,6 +485,9 @@ export function AgentChatPane({
         pendingApprovalCount={pendingApprovalCount}
         onCancelPending={() => void approvalActions.cancelPendingTools(conversationId)}
         onCycleMode={cycleMode}
+        onSelectMode={applyMode}
+        onSetApproveWrites={(on) => void actions.setApproveWrites(conversationId, on)}
+        onChangeModel={(model) => void actions.changeModel(conversationId, model)}
       />
     </div>
   );

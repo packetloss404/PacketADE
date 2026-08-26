@@ -1,10 +1,12 @@
-import { Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Loader2, AlertCircle, ChevronDown, RefreshCw } from "lucide-react";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import type { AgentCli } from "@/stores/agentTaskStore";
 import {
   API_PROVIDERS,
   getModelSpeed,
   MODEL_SPEED_LABEL,
+  type ApiModel,
 } from "@/lib/api-models";
 import type { OllamaModelsState } from "../hooks/useOllamaModels";
 
@@ -26,29 +28,98 @@ function formatPricing(
   return `$${pricing.input}/$${pricing.output}`;
 }
 
+/** One selectable model row, rendered identically by both popover directions. */
+interface ModelRow {
+  key: string;
+  /** Text the search box filters on. */
+  searchText: string;
+  body: ReactNode;
+  onSelect: () => void;
+}
+
 interface ModelSelectorProps {
   selectedAgent: AgentCli;
   selectedModel: string;
   onModelChange: (model: string) => void;
+  /**
+   * THE rows to offer, from `capabilitiesFor(conversation).models`.
+   *
+   * The catalog is only a SEED for engine-backed sessions: an ACP session's
+   * real choices come from the engine's `_packetcode/models/list`, and the
+   * descriptor already prefers that list when the engine advertised it. Pass
+   * it and the picker offers exactly what the session can actually run.
+   *
+   * Omitted (or empty) falls back to the `API_PROVIDERS` row for
+   * `selectedAgent`, which is what this component did unconditionally before
+   * — so every non-engine caller behaves identically to today. Ollama is
+   * unaffected either way: its rows are live-fetched via `ollamaModels`.
+   */
+  models?: ApiModel[];
   ollamaModels: OllamaModelsState;
   refreshOllamaModels: () => void;
-  /** Imperative "open now" channel threaded to the underlying Dropdown, e.g.
-   * so the `/model` slash command can open the header's picker. */
+  /** Imperative "open now" channel, e.g. so the `/model` slash command can
+   * open whichever surface currently owns the picker. */
   openSignal?: number;
+  /**
+   * Open the list UPWARD. The composer sits on the bottom edge of the pane, so
+   * the shared `Dropdown` (which is hard-coded to `top-full`) would render its
+   * menu off-screen there. This flag swaps in an equivalent self-contained
+   * popover anchored to `bottom-[calc(100%+8px)]`; the rows, the search box and
+   * the `openSignal` behaviour are the same either way.
+   */
+  dropUp?: boolean;
 }
 
 export function ModelSelector({
   selectedAgent,
   selectedModel,
   onModelChange,
+  models,
   ollamaModels,
   refreshOllamaModels,
   openSignal,
+  dropUp = false,
 }: ModelSelectorProps) {
-  const provider = API_PROVIDERS.find((p) => p.agentCli === selectedAgent);
-  if (!provider) return null;
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // Same imperative channel the shared Dropdown exposes.
+  useEffect(() => {
+    if (openSignal !== undefined && openSignal > 0) setOpen(true);
+  }, [openSignal]);
+
+  useEffect(() => {
+    if (!open) {
+      setFilter("");
+      return;
+    }
+    const id = window.setTimeout(() => searchRef.current?.focus(), 0);
+    function handleClick(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => {
+      window.clearTimeout(id);
+      document.removeEventListener("mousedown", handleClick);
+    };
+  }, [open]);
 
   const isOllama = selectedAgent === "api-ollama";
+
+  // Capability first, catalog second. The catalog lookup is what used to gate
+  // this whole component (`if (!provider) return null`), which meant a session
+  // whose real model list came from somewhere other than `API_PROVIDERS` got
+  // no picker at all — and an engine that advertised models had them ignored.
+  const catalogModels =
+    API_PROVIDERS.find((p) => p.agentCli === selectedAgent)?.models ?? [];
+  const modelRows = models && models.length > 0 ? models : catalogModels;
+  // Ollama draws its rows from the live daemon probe, so an empty catalog is
+  // expected there and must not unmount the picker.
+  if (!isOllama && modelRows.length === 0) return null;
 
   // Trigger label. In Ollama mode the label is the live-fetched model name
   // (just the `name` string; Ollama installs have no separate display label).
@@ -57,10 +128,7 @@ export function ModelSelector({
     if (Array.isArray(ollamaModels)) {
       const match = ollamaModels.find((m) => m.name === selectedModel);
       triggerLabel =
-        match?.name ??
-        selectedModel ??
-        ollamaModels[0]?.name ??
-        "Select model";
+        match?.name ?? selectedModel ?? ollamaModels[0]?.name ?? "Select model";
     } else if (ollamaModels === "loading") {
       triggerLabel = selectedModel || "Loading models…";
     } else {
@@ -68,8 +136,7 @@ export function ModelSelector({
     }
   } else {
     const currentModel =
-      provider.models.find((m) => m.value === selectedModel) ??
-      provider.models[0];
+      modelRows.find((m) => m.value === selectedModel) ?? modelRows[0];
     triggerLabel = currentModel?.label ?? "Select model";
   }
 
@@ -81,105 +148,205 @@ export function ModelSelector({
         ? "text-accent-purple bg-accent-purple/10"
         : "text-accent-blue bg-accent-blue/10";
 
-  return (
-    <Dropdown
-      searchable
-      searchPlaceholder="Search models…"
-      openSignal={openSignal}
-      trigger={
-        <span className="flex items-center gap-1.5 text-text-muted text-ui">
-          <span>{triggerLabel}</span>
-          <span
-            className={`px-1 py-px rounded text-meta font-medium ${speedClass}`}
-            title={`${MODEL_SPEED_LABEL[speed]} mode (heuristic)`}
-          >
-            {MODEL_SPEED_LABEL[speed]}
-          </span>
-        </span>
-      }
-    >
-      {isOllama ? (
+  // ── Rows + notices, computed once and rendered by either direction ──────
+  const rows: ModelRow[] = [];
+  let header: ReactNode = null;
+  let notice: ReactNode = null;
+
+  if (isOllama) {
+    header = (
+      <div className="flex items-center justify-between px-3 py-1 text-meta uppercase tracking-wide text-text-muted">
+        <span>Installed models</span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            refreshOllamaModels();
+          }}
+          className="rounded p-0.5 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
+          title="Refresh installed Ollama models"
+        >
+          <RefreshCw size={10} />
+        </button>
+      </div>
+    );
+    if (ollamaModels === "loading") {
+      notice = (
+        <div className="flex items-center gap-1.5 px-3 py-1.5 text-text-muted">
+          <Loader2 size={10} className="animate-spin motion-reduce:animate-none" />
+          Loading models…
+        </div>
+      );
+    } else if (!Array.isArray(ollamaModels)) {
+      notice = (
         <>
-          <div className="flex items-center justify-between px-3 py-1 text-meta uppercase tracking-wide text-text-muted">
-            <span>Installed models</span>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                refreshOllamaModels();
-              }}
-              className="p-0.5 rounded hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors"
-              title="Refresh installed Ollama models"
-            >
-              <RefreshCw size={10} />
-            </button>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 text-accent-red">
+            <AlertCircle size={10} />
+            {ollamaModels.error}
           </div>
-          {ollamaModels === "loading" ? (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 text-text-muted">
-              <Loader2 size={10} className="animate-spin" />
-              Loading models…
-            </div>
-          ) : !Array.isArray(ollamaModels) ? (
-            <>
-              <div className="flex items-center gap-1.5 px-3 py-1.5 text-accent-red">
-                <AlertCircle size={10} />
-                {ollamaModels.error}
-              </div>
-              <DropdownItem onClick={() => refreshOllamaModels()}>
-                <span className="flex items-center gap-1.5 text-text-secondary">
-                  <RefreshCw size={10} />
-                  Retry
-                </span>
-              </DropdownItem>
-            </>
-          ) : ollamaModels.length === 0 ? (
-            <div className="px-3 py-1.5 text-text-muted text-meta">
-              No models installed. Run{" "}
-              <code className="text-text-secondary">
-                ollama pull &lt;model&gt;
-              </code>{" "}
-              in a terminal.
-            </div>
-          ) : (
-            ollamaModels.map((m) => (
-              <DropdownItem
-                key={m.name}
-                onClick={() => onModelChange(m.name)}
-              >
-                <span className="flex items-center justify-between gap-2 w-full">
-                  <span className="truncate">{m.name}</span>
-                  {typeof m.size === "number" && (
-                    <span className="text-text-muted text-meta shrink-0">
-                      {(m.size / 1e9).toFixed(1)} GB
-                    </span>
-                  )}
-                </span>
-              </DropdownItem>
-            ))
-          )}
+          <button
+            type="button"
+            onClick={() => {
+              refreshOllamaModels();
+              setOpen(false);
+            }}
+            className="w-full px-3 py-1.5 text-left text-ui text-text-primary transition-colors hover:bg-bg-hover"
+          >
+            <span className="flex items-center gap-1.5 text-text-secondary">
+              <RefreshCw size={10} />
+              Retry
+            </span>
+          </button>
         </>
-      ) : (
-        provider.models.map((m) => {
-          const ctx = formatContextWindow(m.contextWindow);
-          const price = formatPricing(m.pricing);
-          return (
-            <DropdownItem
-              key={m.value}
-              onClick={() => onModelChange(m.value)}
-            >
-              <span className="flex items-center justify-between gap-3 w-full">
-                <span className="truncate">{m.label}</span>
-                {(ctx || price) && (
-                  <span className="flex items-center gap-2 shrink-0 text-text-muted text-meta tabular-nums">
-                    {ctx && <span>{ctx}</span>}
-                    {price && <span>{price}</span>}
-                  </span>
-                )}
+      );
+    } else if (ollamaModels.length === 0) {
+      notice = (
+        <div className="px-3 py-1.5 text-meta text-text-muted">
+          No models installed. Run{" "}
+          <code className="text-text-secondary">ollama pull &lt;model&gt;</code>{" "}
+          in a terminal.
+        </div>
+      );
+    } else {
+      for (const m of ollamaModels) {
+        rows.push({
+          key: m.name,
+          searchText: m.name,
+          onSelect: () => onModelChange(m.name),
+          body: (
+            <span className="flex w-full items-center justify-between gap-2">
+              <span className="truncate">{m.name}</span>
+              {typeof m.size === "number" && (
+                <span className="shrink-0 text-meta text-text-muted">
+                  {(m.size / 1e9).toFixed(1)} GB
+                </span>
+              )}
+            </span>
+          ),
+        });
+      }
+    }
+  } else {
+    for (const m of modelRows) {
+      const ctx = formatContextWindow(m.contextWindow);
+      const price = formatPricing(m.pricing);
+      rows.push({
+        key: m.value,
+        searchText: m.label,
+        onSelect: () => onModelChange(m.value),
+        body: (
+          <span className="flex w-full items-center justify-between gap-3">
+            <span className="truncate">{m.label}</span>
+            {(ctx || price) && (
+              <span className="flex shrink-0 items-center gap-2 text-meta tabular-nums text-text-muted">
+                {ctx && <span>{ctx}</span>}
+                {price && <span>{price}</span>}
               </span>
-            </DropdownItem>
-          );
-        })
+            )}
+          </span>
+        ),
+      });
+    }
+  }
+
+  const trigger = (
+    <span className="flex items-center gap-1.5 text-ui text-text-muted">
+      <span>{triggerLabel}</span>
+      <span
+        className={`rounded px-1 py-px text-meta font-medium ${speedClass}`}
+        title={`${MODEL_SPEED_LABEL[speed]} mode (heuristic)`}
+      >
+        {MODEL_SPEED_LABEL[speed]}
+      </span>
+    </span>
+  );
+
+  // ── Downward (launch card / anywhere with room below) ───────────────────
+  if (!dropUp) {
+    return (
+      <Dropdown
+        searchable
+        searchPlaceholder="Search models…"
+        openSignal={openSignal}
+        trigger={trigger}
+      >
+        {header}
+        {notice}
+        {rows.map((r) => (
+          <DropdownItem key={r.key} onClick={r.onSelect}>
+            {r.body}
+          </DropdownItem>
+        ))}
+      </Dropdown>
+    );
+  }
+
+  // ── Upward (composer row, pinned to the bottom edge) ────────────────────
+  const needle = filter.trim().toLowerCase();
+  const visible =
+    needle === ""
+      ? rows
+      : rows.filter((r) => r.searchText.toLowerCase().includes(needle));
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="flex items-center gap-1 rounded-md px-2 py-1 text-ui text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+      >
+        {trigger}
+        <ChevronDown
+          size={10}
+          className={`transition-transform motion-reduce:transition-none ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          className="absolute bottom-[calc(100%+8px)] right-0 z-50 min-w-[220px] rounded-lg border border-bg-border bg-bg-elevated py-1 shadow-xl"
+        >
+          <div className="px-1 pb-1">
+            <input
+              ref={searchRef}
+              type="text"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== "Escape") return;
+                e.preventDefault();
+                e.stopPropagation();
+                if (filter !== "") setFilter("");
+                else setOpen(false);
+              }}
+              placeholder="Search models…"
+              className="w-full rounded border border-bg-border bg-bg-primary px-2 py-1 text-ui text-text-primary placeholder:text-text-muted focus:border-accent-green focus:outline-none"
+            />
+          </div>
+          {header}
+          {notice}
+          {visible.map((r) => (
+            <button
+              key={r.key}
+              type="button"
+              role="option"
+              aria-selected={r.key === selectedModel}
+              onClick={() => {
+                r.onSelect();
+                setOpen(false);
+              }}
+              className="w-full px-3 py-1.5 text-left text-ui text-text-primary transition-colors hover:bg-bg-hover"
+            >
+              {r.body}
+            </button>
+          ))}
+          {needle !== "" && visible.length === 0 && (
+            <div className="px-2 py-1 text-ui text-text-muted">No matches</div>
+          )}
+        </div>
       )}
-    </Dropdown>
+    </div>
   );
 }

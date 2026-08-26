@@ -10,9 +10,10 @@ import {
   Scissors,
   Shield,
   ShieldCheck,
+  Terminal,
   Trash,
 } from "lucide-react";
-import type { SkillDef, SlashCommandDef } from "@/lib/tauri";
+import type { AcpSlashCommand, SkillDef, SlashCommandDef } from "@/lib/tauri";
 import type { PromptTemplate } from "@/types/prompt";
 import type { InputPopoverItem } from "../InputPopover";
 import { templateSlug } from "./utils";
@@ -40,6 +41,12 @@ export type BuiltinSlashCommand =
 
 export type SlashSelection =
   | { kind: "builtin"; name: BuiltinSlashCommand }
+  /**
+   * A command the ACP ENGINE owns. Unlike a custom command there is no body to
+   * expand locally — the engine resolves `/name` itself when the turn arrives —
+   * so picking one splices the literal invocation into the composer.
+   */
+  | { kind: "engine"; def: AcpSlashCommand }
   | { kind: "custom"; def: SlashCommandDef }
   | { kind: "skill"; def: SkillDef };
 
@@ -141,16 +148,33 @@ export interface SlashItemSources {
   /** Project/global `.claude/commands/` files + synthesized template defs. */
   customCommands: SlashCommandDef[];
   userSkills: SkillDef[];
+  /**
+   * Commands the ACP engine enumerated for this project. Empty for every
+   * other transport, and empty when the engine could not answer — in both
+   * cases the menu is byte-identical to its pre-engine contents.
+   */
+  engineCommands?: AcpSlashCommand[];
 }
 
 /**
- * Build the ordered, query-filtered slash list: builtins, then custom
- * commands (incl. templates), then user-invocable skills — every source
- * filtered by the same case-insensitive prefix rule.
+ * Build the ordered, query-filtered slash list: builtins, then the engine's
+ * own commands, then custom commands (incl. templates), then user-invocable
+ * skills — every source filtered by the same case-insensitive prefix rule.
+ *
+ * A builtin SHADOWS an engine command of the same name. `/model` and
+ * `/permissions` are how the composer's own model picker and mode chip are
+ * opened from the keyboard (they dispatch `OPEN_MODEL_DROPDOWN_EVENT` /
+ * `OPEN_MODE_CHIP_EVENT`); letting the engine take those names would turn two
+ * documented PacketADE controls into engine round trips.
  */
 export function buildSlashItems(
   query: string,
-  { includeBuiltins, customCommands, userSkills }: SlashItemSources,
+  {
+    includeBuiltins,
+    customCommands,
+    userSkills,
+    engineCommands = [],
+  }: SlashItemSources,
 ): SlashItem[] {
   const q = query.toLowerCase();
   const builtins = includeBuiltins
@@ -162,6 +186,22 @@ export function buildSlashItems(
         selection: { kind: "builtin", name: c.cmd },
       }))
     : [];
+  const shadowed = new Set<string>(
+    includeBuiltins ? BUILTINS.map((c) => c.cmd as string) : [],
+  );
+  const engine = engineCommands
+    .filter(
+      (c) => !shadowed.has(c.name.toLowerCase()) && c.name.toLowerCase().startsWith(q),
+    )
+    .map<SlashItem>((c) => ({
+      key: `engine:${c.name}`,
+      // The argument hint rides on the label, next to the name it belongs to
+      // — same shape the skill rows already use.
+      label: `/${c.name}${c.argumentHint ? ` ${c.argumentHint}` : ""}`,
+      description: `${c.description} (${c.source})`,
+      icon: <Terminal size={12} />,
+      selection: { kind: "engine", def: c },
+    }));
   const custom = customCommands
     .filter((c) => c.name.toLowerCase().startsWith(q))
     .map<SlashItem>((c) => ({
@@ -185,5 +225,5 @@ export function buildSlashItems(
       icon: <BookOpen size={12} />,
       selection: { kind: "skill", def: s },
     }));
-  return [...builtins, ...custom, ...skills];
+  return [...builtins, ...engine, ...custom, ...skills];
 }

@@ -17,6 +17,7 @@ import {
   REMOTE_UNSUPPORTED_TOOLTIP,
 } from "@/lib/remoteConversation";
 import { parseToolInput } from "@/lib/parseToolInput";
+import { capabilitiesFor } from "@/lib/agentCapabilities";
 import { authStatusKey, useAuthStatusStore } from "@/stores/authStatusStore";
 import { authProbeProvider, type AgentCli } from "@/stores/agentTaskStore";
 
@@ -163,6 +164,10 @@ interface PlanPanelProps {
  * still renders the same data within the message stream.
  *
  * Renders nothing when no plan-bearing tool call exists yet.
+ *
+ * B4 (wave 2b): this used to be mounted TWICE — here, inline above the chat
+ * scroll, AND as a right-dock "Plan" panel. The dock copy is gone; the plan is
+ * part of the conversation, not a filing-cabinet tab beside it.
  */
 export function PlanPanel({ conversation }: PlanPanelProps) {
   const storedPlan = useAgentPlanStore((s) => s.plan.get(conversation.id));
@@ -183,17 +188,20 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
   );
 
   // B8 — executor auth probe for the "Hand off to OpenAI" button. Only
-  // meaningful when the parent conversation is a Claude one (the executor
-  // can't hand off to itself). Live-refreshes on `provider-auth:changed`
-  // so a key added in Settings enables the button without a reload.
+  // meaningful when this conversation is the one authoring the plan (the
+  // executor consumes plans, it can't hand off to itself). Live-refreshes on
+  // `provider-auth:changed` so a key added in Settings enables the button
+  // without a reload.
   //
   // The executor was `api-openai-codex` (Codex `exec` on a ChatGPT
   // subscription) until that row was removed in 2026-07; it is now the
   // OpenAI Agents SDK row, which reaches the same API with an API key and
   // additionally honours per-tool approvals.
-  const isClaudeParent =
-    conversation.agent === "api-claude" ||
-    conversation.agent === "api-claude-oauth";
+  // The handoff exists when THIS session is the one that produces structured
+  // plans — the executor consumes a plan, it does not author one. That is
+  // exactly `structuredPlans`, so the control reads from the capability
+  // descriptor instead of naming provider ids (capability rule).
+  const authorsStructuredPlans = capabilitiesFor(conversation).structuredPlans;
   const [handingOff, setHandingOff] = useState(false);
   // Credential the handoff button gates on — the OpenAI API key. Derived in
   // the component rather than at module scope so importing this file never
@@ -208,10 +216,10 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
     ? executorAuth.status === "ready"
     : false;
   useEffect(() => {
-    if (!isClaudeParent) return;
+    if (!authorsStructuredPlans) return;
     ensureAuthListener();
     void fetchAuthStatus(handoffAuthProvider);
-  }, [isClaudeParent, fetchAuthStatus, ensureAuthListener, handoffAuthProvider]);
+  }, [authorsStructuredPlans, fetchAuthStatus, ensureAuthListener, handoffAuthProvider]);
 
   if (!items) return null;
 
@@ -220,7 +228,7 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
   // which calls agentPlanStore.approvePlan — flipping planApproved here and
   // lifting plan mode, so this derivation clears on approval.
   const awaitingPlanApproval = (conversation.planMode ?? false) && !planApproved;
-  const handoffEligible = isClaudeParent && items.length > 0;
+  const handoffEligible = authorsStructuredPlans && items.length > 0;
 
   // D3 / P0-4: the handoff used to hard-code `sshTarget: null`, silently
   // turning a remote conversation into a LOCAL executor session pointed at a

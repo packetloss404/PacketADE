@@ -111,7 +111,8 @@ export function ProjectPicker({
   }, [setActiveView]);
 
   return (
-    <div className="mb-3">
+    // Sits inside the launch composer's context strip, which owns the spacing.
+    <div className="min-w-0">
       <Dropdown
         trigger={
           <span

@@ -6,6 +6,7 @@
  * inline width clamped to what the viewport can afford, and a graceful
  * collapse (rather than a starved canvas) at the 800px minimum window.
  */
+import { act } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { FileText, GitBranch, PanelLeft } from "lucide-react";
@@ -115,7 +116,30 @@ describe("RightDock", () => {
     expect(screen.queryByText("editor body")).not.toBeInTheDocument();
   });
 
+  it("paints no chrome at all on a surface whose dock has never been opened (B4)", () => {
+    // The Agents surface ships two-pane: no body, and no 30px rail either —
+    // an empty third column is exactly what the restyle removes.
+    const { container } = render(
+      <RightDock surface="agents" panels={panels} ariaLabel="Inspector views" />,
+    );
+    expect(container).toBeEmptyDOMElement();
+
+    // Opening the dock (here as a deep link would) brings the body, and
+    // collapsing it afterwards leaves the rail behind as the way back.
+    act(() => {
+      useRightDockStore.getState().openPanel("agents", "editor");
+    });
+    expect(screen.getByText("editor body")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle("Collapse pane"));
+    expect(screen.queryByText("editor body")).not.toBeInTheDocument();
+    expect(screen.getByTestId("right-dock-rail-agents")).toBeInTheDocument();
+  });
+
   it("persists width per surface through the shared resizer", () => {
+    // The Agents dock ships collapsed (B4); this test exercises the expanded
+    // resizer, so opt in explicitly the way the Workspace beforeEach does.
+    useRightDockStore.getState().setExpanded("agents", true);
     render(<RightDock surface="agents" panels={[
       { id: "inspector", label: "Inspector", icon: PanelLeft, render: () => <div>i</div> },
     ]} ariaLabel="Inspector views" />);

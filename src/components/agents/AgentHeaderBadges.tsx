@@ -2,14 +2,15 @@ import { useEffect, useMemo } from "react";
 import { Plane } from "lucide-react";
 import { AuthBadge, type AuthStatus } from "@/components/ui/AuthBadge";
 import { Tooltip } from "@/components/ui/Tooltip";
-import { authProbeProvider, type AgentCli } from "@/stores/agentTaskStore";
+import { authProbeProvider } from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAppStore } from "@/stores/appStore";
 import { authStatusKey, useAuthStatusStore } from "@/stores/authStatusStore";
+import { capabilitiesFor } from "@/lib/agentCapabilities";
+import type { AgentConversation } from "@/types/agent-conversation";
 
 interface AgentHeaderBadgesProps {
-  conversationId: string;
-  agent: AgentCli;
+  conversation: AgentConversation;
 }
 
 /**
@@ -27,10 +28,8 @@ interface AgentHeaderBadgesProps {
  * wrong home for a setting whose caption admitted it only applies "on next
  * launch"; a project-level default belongs in Settings.
  */
-export function AgentHeaderBadges({
-  conversationId,
-  agent,
-}: AgentHeaderBadgesProps) {
+export function AgentHeaderBadges({ conversation }: AgentHeaderBadgesProps) {
+  const conversationId = conversation.id;
   const flights = useFlightStore((s) => s.flights);
   const setActiveFlight = useFlightStore((s) => s.setActiveFlight);
   const setActiveView = useAppStore((s) => s.setActiveView);
@@ -40,8 +39,14 @@ export function AgentHeaderBadges({
     [flights, conversationId],
   );
 
-  const isApi = agent.startsWith("api-");
-  const provider = isApi ? authProbeProvider(agent) : null;
+  // Capability, not identity: "does this session authenticate through a
+  // provider credential PacketADE holds?" The `agent.startsWith("api-")` test
+  // that used to live on this line now lives once, in lib/agentCapabilities.ts.
+  // Identity still feeds the LABEL — which keyring slot the badge probes.
+  const caps = capabilitiesFor(conversation);
+  const provider = caps.usesProviderCredential
+    ? authProbeProvider(conversation.agent)
+    : null;
 
   // Shared cache: N mounted panes on the same provider share one probe and
   // one `provider-auth:changed` subscription. The Agents surface is

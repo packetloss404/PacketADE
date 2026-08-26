@@ -16,7 +16,16 @@ const agentStore = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@/stores/agentTaskStore", () => ({
+// The sidebar now also imports `engineDirectoryRecord` from this module (the
+// synthetic capability record for engine-only rows), so the mock became a
+// PARTIAL one: only the hook is a fixture, every other export keeps its real
+// implementation. That in turn pulls in the real store module, hence the two
+// Tauri stubs above it.
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+
+vi.mock("@/stores/agentTaskStore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/stores/agentTaskStore")>()),
   // `getState` is required by the shared delete confirm, which reads the
   // conversation imperatively to resolve its worktree.
   useAgentTaskStore: Object.assign(

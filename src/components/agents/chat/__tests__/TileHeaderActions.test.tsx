@@ -2,16 +2,21 @@
  * TileHeaderActions (P3-S3) — the tile-frame header cluster's responsive +
  * lazy-mount economy.
  *
- * Ruled hybrid model: CSS `@container` handles VISUAL collapse; the heavy
- * controls (ModelSelector, ContextUsageRing, HeaderOverflowMenu) MOUNT LAZILY,
- * only when the overflow toggle is open OR this tile is the zoomed pane — both
- * pre-existing JS state, zero observers. The three cheap chips (AgentModeChip,
- * the Changes/DiffPaneTrigger chip, the amber approval badge) plus close are
- * always present.
+ * Ruled hybrid model: CSS `@container` handles VISUAL collapse; the header's
+ * ONE overflow menu (`HeaderOverflowMenu`) MOUNTS LAZILY, only on first click
+ * of its placeholder OR when this tile is the zoomed pane — both pre-existing
+ * JS state, zero observers. The cheap chips (the Changes/DiffPaneTrigger chip
+ * and the amber approval badge) plus close are always present.
  *
- * The heavy controls are mocked to leaf stubs so these assertions isolate the
- * MOUNT decision (heavy controls not in the DOM until overflow/zoom), which is
- * the load-bearing perf guarantee.
+ * WAVE 2a: `AgentModeChip`, `ModelSelector` and `ContextUsageRing` LEFT this
+ * header for the composer (mode chip + model picker in the composer row, the
+ * context ring in the composer's context strip), and the "Show model & context
+ * controls" reveal row went with them. The assertions below were re-pointed at
+ * those controls' new home — they now assert the header does NOT mount them,
+ * which is a strictly stronger claim than the old "not until revealed".
+ *
+ * The remaining controls are mocked to leaf stubs so these assertions isolate
+ * the MOUNT decision, which is the load-bearing perf guarantee.
  */
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -111,10 +116,6 @@ function renderTile(
       previewOpen={false}
       togglePreview={vi.fn()}
       onClose={vi.fn()}
-      onCycleMode={vi.fn()}
-      onSelectMode={vi.fn()}
-      onSetApproveWrites={vi.fn()}
-      onChangeModel={vi.fn()}
       onExport={vi.fn()}
       pendingApprovalCount={0}
       {...props}
@@ -128,17 +129,19 @@ beforeEach(() => {
 });
 
 describe("TileHeaderActions — lazy mount", () => {
-  it("at rest (narrow, not zoomed, menu closed) the heavy controls are NOT in the DOM", () => {
+  it("at rest (narrow, not zoomed, menu closed) the menu is NOT in the DOM", () => {
     renderTile();
     // Always-visible cheap chips are present.
-    expect(screen.getByTestId("mode-chip")).toBeInTheDocument();
     expect(screen.getByTestId("diff-trigger")).toBeInTheDocument();
     expect(screen.getByLabelText("Close conversation")).toBeInTheDocument();
     expect(screen.getByLabelText("Conversation menu")).toBeInTheDocument();
-    // Heavy controls are unmounted.
+    // The overflow menu is unmounted until first use.
+    expect(screen.queryByTestId("overflow-menu")).not.toBeInTheDocument();
+    // The autonomy chip, the model picker and the context ring belong to the
+    // COMPOSER now — this header must never mount them, revealed or not.
+    expect(screen.queryByTestId("mode-chip")).not.toBeInTheDocument();
     expect(screen.queryByTestId("model-selector")).not.toBeInTheDocument();
     expect(screen.queryByTestId("context-ring")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("overflow-menu")).not.toBeInTheDocument();
   });
 
   it("the header offers exactly ONE menu control (no second kebab beside it)", () => {
@@ -151,19 +154,18 @@ describe("TileHeaderActions — lazy mount", () => {
     expect(labels).toEqual(["Conversation menu", "Close conversation"]);
   });
 
-  it("the menu control mounts the overflow menu, which reveals/hides the heavy controls", () => {
+  it("the menu control mounts the overflow menu, and offers no model/context reveal", () => {
     renderTile();
     fireEvent.click(screen.getByLabelText("Conversation menu"));
     // One click mounts the menu (it opens itself via openSignal).
     expect(screen.getByTestId("overflow-menu")).toBeInTheDocument();
-    // The model/context cluster is revealed from INSIDE that menu.
+    // The reveal row is gone with the controls it used to reveal — the header
+    // must not offer a toggle for something it no longer owns.
+    expect(
+      screen.queryByLabelText("Show model & context controls"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByTestId("model-selector")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText("Show model & context controls"));
-    expect(screen.getByTestId("model-selector")).toBeInTheDocument();
-    expect(screen.getByTestId("context-ring")).toBeInTheDocument();
-    // And hidden again from the same row.
-    fireEvent.click(screen.getByLabelText("Hide model & context controls"));
-    expect(screen.queryByTestId("model-selector")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("context-ring")).not.toBeInTheDocument();
   });
 
   it("forwards Archive to the overflow menu only when the mount site supplies it", () => {
@@ -193,28 +195,25 @@ describe("TileHeaderActions — lazy mount", () => {
     expect(screen.queryByLabelText("Back to list")).not.toBeInTheDocument();
   });
 
-  it("a zoomed tile mounts the heavy controls without opening the menu", () => {
+  it("a zoomed tile mounts the overflow menu without a click", () => {
     wsState.zoomedPaneId = "pane-9";
     wsState.workspaces = [
       { panes: [{ id: "pane-9", kind: "conversation", conversationId: "conv-1" }] },
     ];
     renderTile();
-    expect(screen.getByTestId("model-selector")).toBeInTheDocument();
-    expect(screen.getByTestId("context-ring")).toBeInTheDocument();
     expect(screen.getByTestId("overflow-menu")).toBeInTheDocument();
-    // Zoomed tiles always show the cluster, so the reveal row is not offered.
-    expect(
-      screen.queryByLabelText("Hide model & context controls"),
-    ).not.toBeInTheDocument();
+    // Even zoomed, the composer's controls stay on the composer.
+    expect(screen.queryByTestId("model-selector")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("context-ring")).not.toBeInTheDocument();
   });
 
-  it("a DIFFERENT tile being zoomed does not mount this tile's heavy controls", () => {
+  it("a DIFFERENT tile being zoomed does not eagerly mount this tile's menu", () => {
     wsState.zoomedPaneId = "pane-9";
     wsState.workspaces = [
       { panes: [{ id: "pane-9", kind: "conversation", conversationId: "other-conv" }] },
     ];
     renderTile();
-    expect(screen.queryByTestId("model-selector")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("overflow-menu")).not.toBeInTheDocument();
   });
 
   it("shows the amber approval badge only when there are pending approvals", () => {
@@ -228,11 +227,7 @@ describe("TileHeaderActions — lazy mount", () => {
         previewOpen={false}
         togglePreview={vi.fn()}
         onClose={vi.fn()}
-        onCycleMode={vi.fn()}
-        onSelectMode={vi.fn()}
-        onSetApproveWrites={vi.fn()}
-        onChangeModel={vi.fn()}
-        onExport={vi.fn()}
+                onExport={vi.fn()}
         pendingApprovalCount={3}
       />,
     );
@@ -241,17 +236,48 @@ describe("TileHeaderActions — lazy mount", () => {
 
   it("PTY conversations show no api-only chips; close stays; overflow still mounts on demand", () => {
     renderTile({ mode: "pty", agent: "claude-code", model: undefined, provider: undefined });
-    expect(screen.queryByTestId("mode-chip")).not.toBeInTheDocument();
+    // The Changes chip is gated on caps.structuredEdits, which a PTY session
+    // does not have.
     expect(screen.queryByTestId("diff-trigger")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Close conversation")).toBeInTheDocument();
-    // Heavy api controls never mount for PTY, but the overflow menu (export /
-    // view-mode / copy transcript) still does on demand.
+    // The overflow menu (export / view-mode / copy transcript) still mounts on
+    // demand for PTY.
     fireEvent.click(screen.getByLabelText("Conversation menu"));
-    expect(screen.queryByTestId("model-selector")).not.toBeInTheDocument();
     expect(screen.getByTestId("overflow-menu")).toBeInTheDocument();
-    // No model/context reveal row for PTY — there is nothing to reveal.
+    expect(screen.queryByTestId("model-selector")).not.toBeInTheDocument();
     expect(
       screen.queryByLabelText("Show model & context controls"),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Wave 2c — the right dock's only hand-operated entry point.
+ *
+ * B4 (wave 2b) made the Agents dock two-pane-by-default: its 30px rail stays
+ * unpainted until `everOpened`, which left deep links as the ONLY way to open
+ * it. This toggle is the way back in, and it is deliberately absent where no
+ * dock belongs to this pane (the workspace mosaic), so "renders nothing
+ * without a handler" is as load-bearing as "renders and fires with one".
+ */
+describe("TileHeaderActions — dock toggle", () => {
+  it("renders no dock toggle when the mount site has no dock of its own", () => {
+    renderTile();
+    expect(screen.queryByLabelText(/right pane/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the open affordance while the dock is closed and fires the handler", () => {
+    const onToggleDock = vi.fn();
+    renderTile({}, { onToggleDock, dockOpen: false });
+    const button = screen.getByLabelText("Show right pane");
+    expect(button).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(button);
+    expect(onToggleDock).toHaveBeenCalledTimes(1);
+  });
+
+  it("flips to the hide affordance while the dock is open", () => {
+    renderTile({}, { onToggleDock: vi.fn(), dockOpen: true });
+    const button = screen.getByLabelText("Hide right pane");
+    expect(button).toHaveAttribute("aria-pressed", "true");
   });
 });

@@ -133,7 +133,13 @@ export function RightDock({ surface, panels, ariaLabel }: RightDockProps) {
 
   if (panels.length === 0) return null;
 
-  const railVisible = !showBody || overlay;
+  // B4 — the rail is not free chrome. A surface that has never opened its dock
+  // (Agents, by default) renders NOTHING here, so the shell reads as two panes
+  // instead of a three-column IDE with an empty third column. Once the dock has
+  // been opened even once — by the user or by an auto-reveal deep link — the
+  // rail stays as the way back. While the panel floats it is always kept, since
+  // it is the only thing anchoring the overlay to the shell.
+  const railVisible = (showBody && overlay) || (!showBody && state.everOpened);
 
   return (
     <>

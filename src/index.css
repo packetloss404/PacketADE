@@ -44,11 +44,19 @@
     --color-accent-soft: rgba(111, 184, 154, 0.14);
     --color-accent-line: rgba(111, 184, 154, 0.32);
 
+    /* Type + layout metrics. These are metrics, not colors, so they are
+       deliberately NOT mirrored in the light theme below. */
     --text-ui: 11px;
     --leading-ui: 16px;
     --text-meta: 10px;
     --leading-meta: 14px;
-    --space-turn: 20px;
+    --text-body: 13px;      /* transcript prose */
+    --leading-body: 21px;
+    --text-chip: 11.5px;    /* composer chips & pickers */
+    --leading-chip: 16px;
+    --space-turn: 24px;
+    --measure-chat: 680px;      /* transcript reading column */
+    --measure-composer: 680px;  /* composer matches the reading column */
   }
 
   /* Light theme overrides */
@@ -157,6 +165,36 @@
 .markdown-content th {
   @apply bg-bg-elevated text-text-primary font-semibold;
 }
+
+/* Document-mode modifier for `.markdown-content`, used by the Agents transcript
+   where an assistant turn is rendered as prose on the page (no bubble) rather
+   than as a compact panel. Applied alongside `.markdown-content`; it must stay
+   BELOW that block because both selectors have equal specificity and the later
+   rule is the one that wins.
+   Do not fold these rules into `.markdown-content` — that class is shared with
+   non-Agents surfaces (insights, memory, side chat) that want the compact look. */
+.markdown-doc {
+  /* `.markdown-content` @applies `text-sm leading-relaxed` from a rule emitted
+     after the Tailwind utilities layer, so a `text-body` utility on the same
+     element loses the cascade. Set the body scale here instead. */
+  @apply text-body;
+}
+
+.markdown-doc p              { @apply mb-2.5; }
+.markdown-doc h1             { @apply mt-5 mb-2 text-[15px] font-semibold; }
+.markdown-doc h2             { @apply mt-5 mb-2 text-[14px] font-semibold; }
+.markdown-doc h3             { @apply mt-4 mb-1.5 text-[13px] font-semibold; }
+.markdown-doc ul,
+.markdown-doc ol             { @apply mb-2.5 pl-5; }
+.markdown-doc li             { @apply mb-1; }
+.markdown-doc pre            { @apply mb-3 rounded-lg border border-bg-border bg-bg-primary p-3; }
+.markdown-doc code           { @apply rounded-md border border-bg-border bg-bg-elevated
+                                      px-1 py-px font-mono text-[11.5px] text-accent-amber; }
+.markdown-doc pre code       { @apply border-none bg-transparent p-0 text-text-primary; }
+.markdown-doc blockquote     { @apply mb-2.5 border-l-2 border-bg-border pl-3
+                                      italic text-text-secondary; }
+.markdown-doc > :first-child { @apply mt-0; }
+.markdown-doc > :last-child  { @apply mb-0; }
 
 @keyframes welcomeFadeIn {
   from { opacity: 0; transform: translateY(8px); }

@@ -257,7 +257,8 @@ pub(crate) fn redirect_data_dir_for_test(dir: impl Into<PathBuf>) -> TestDataDir
 /// migration can't strand the user on an empty new dir while their data sits
 /// in the legacy dir:
 /// - prefer the new dir if it already exists,
-/// - otherwise fall back to the legacy dir if it exists,
+/// - otherwise fall back to the legacy dir if it exists AND is recognizably
+///   ours (the sibling `packetcode` TUI owns that path on fresh machines),
 /// - otherwise return the new dir (fresh install).
 pub fn data_dir() -> PathBuf {
     #[cfg(test)]
@@ -265,12 +266,23 @@ pub fn data_dir() -> PathBuf {
         return dir;
     }
     let home = home_dir().unwrap_or_else(|| ".".to_string());
-    let new_dir = PathBuf::from(&home).join(crate::core::brand::DATA_DIR_NAME);
+    resolve_data_dir(Path::new(&home))
+}
+
+/// Body of [`data_dir`], parameterized on the home directory so the
+/// legacy-fallback rule is testable without touching process-wide env vars.
+fn resolve_data_dir(home: &Path) -> PathBuf {
+    let new_dir = home.join(crate::core::brand::DATA_DIR_NAME);
     if new_dir.exists() {
         return new_dir;
     }
-    let legacy_dir = PathBuf::from(&home).join(crate::core::brand::LEGACY_DATA_DIR_NAME);
-    if legacy_dir.exists() {
+    // Only adopt `~/.packetcode` when it is OUR pre-rename dir. The sibling
+    // `packetcode` TUI claimed that path as its own home after the rename, and
+    // writing our state into it would scribble on another product's data.
+    let legacy_dir = home.join(crate::core::brand::LEGACY_DATA_DIR_NAME);
+    if crate::core::migration::classify_legacy_dir(&legacy_dir)
+        == crate::core::migration::LegacyDirShape::Ours
+    {
         return legacy_dir;
     }
     new_dir
@@ -1540,5 +1552,34 @@ mod tests {
             serde_json::from_value(value).expect("legacy state should still deserialize");
         assert!(state.cli_accounts.is_empty());
         assert!(state.cli_account_defaults.is_empty());
+    }
+
+    #[test]
+    fn resolve_data_dir_ignores_a_legacy_dir_owned_by_the_packetcode_tui() {
+        let home = unique_temp_dir("resolve-foreign");
+        let legacy = home.join(crate::core::brand::LEGACY_DATA_DIR_NAME);
+        fs::create_dir_all(legacy.join("jobs")).unwrap();
+        fs::write(legacy.join("config.toml"), "model = \"opus\"\n").unwrap();
+
+        // Not adopted: we would otherwise write state.v1.json into the TUI's home.
+        assert_eq!(
+            resolve_data_dir(&home),
+            home.join(crate::core::brand::DATA_DIR_NAME)
+        );
+
+        fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn resolve_data_dir_still_falls_back_to_our_own_legacy_dir() {
+        let home = unique_temp_dir("resolve-ours");
+        let legacy = home.join(crate::core::brand::LEGACY_DATA_DIR_NAME);
+        fs::create_dir_all(legacy.join("conversations")).unwrap();
+        fs::write(legacy.join(STATE_FILENAME), "{}").unwrap();
+
+        // A failed migration must not strand us on an empty new dir.
+        assert_eq!(resolve_data_dir(&home), legacy);
+
+        fs::remove_dir_all(&home).ok();
     }
 }

@@ -62,7 +62,10 @@ export const MODE_ORDER: AgentMode[] = ["agent", "ask", "manual", "plan"];
 export const PROVIDER_GROUPS: { label: string; agents: AgentCli[] }[] = [
   { label: "Anthropic", agents: ["api-claude-oauth" as AgentCli, "api-claude"] },
   { label: "OpenAI", agents: ["api-openai", "api-openai-agents"] },
-  { label: "Other", agents: ["api-openrouter", "api-minimax", "api-ollama"] },
+  {
+    label: "Other",
+    agents: ["api-openrouter", "api-minimax", "api-ollama", "api-packetcode"],
+  },
 ];
 
 /**
@@ -108,3 +111,19 @@ export function fileToImageAttachment(file: File): Promise<ImageAttachment> {
 
 export const COMPOSER_HELP_TEXT =
   "Enter to send · Shift+Enter for newline · Ctrl+N for new agent · @ to mention a file · / to expand a prompt template · drag/paste images";
+
+/**
+ * The composer placeholder must not promise an affordance this session cannot
+ * serve — a conversation with no project path has nothing for `@` to scan, so
+ * the prompt degrades rather than advertising a dead key. Driven by
+ * `SessionCapabilities.slashCommands` / `.fileMentions`.
+ */
+export function composerPlaceholder(
+  hasCommands: boolean,
+  hasFiles: boolean,
+): string {
+  if (hasCommands && hasFiles) return "Do anything — / for commands, @ for files";
+  if (hasCommands) return "Do anything — / for commands";
+  if (hasFiles) return "Do anything — @ for files";
+  return "Do anything";
+}

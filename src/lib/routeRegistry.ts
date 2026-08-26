@@ -26,6 +26,7 @@ import {
   MessageSquare,
   Mic,
   Plane,
+  Radio,
   Settings,
   Terminal,
   Ticket,
@@ -136,6 +137,20 @@ export const ROUTE_REGISTRY: Record<CoreView, RouteMeta> = {
       keywords: ["agent", "conversation", "chat", "inspector", "api"],
     },
     hotkey: { code: "Digit1", legacyKey: "!", display: "Ctrl+Shift+1" },
+  },
+  packetcode: {
+    id: "packetcode",
+    label: "PacketCode",
+    icon: Radio,
+    rail: { placement: "primary", order: 25 },
+    palette: {
+      visible: true,
+      label: "PacketCode (ACP)",
+      description: "Agent conversations on the PacketCode ACP engine",
+      iconColor: "text-accent-purple",
+      keywords: ["packetcode", "acp", "agent", "engine", "conversation"],
+    },
+    hotkey: { code: "Digit6", legacyKey: "^", display: "Ctrl+Shift+6" },
   },
   flights: {
     id: "flights",

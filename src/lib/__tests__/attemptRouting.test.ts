@@ -96,11 +96,12 @@ describe("attemptRouting", () => {
  * The provider-id mapping for EVERY pickable executor, restated independently
  * of the map it checks.
  *
- * Seven of the eight ids round-trip through a naive
- * `agentConfigId.replace(/^api-/, "")`, which is precisely why the eighth —
- * `api-claude`, the DEFAULT — shipped broken: it yielded `"claude"`, which
- * `get_provider` rejects and `load_api_key` reports as a missing key for a
- * provider that does not exist. `"anthropic"` is the only correct answer.
+ * Most ids round-trip through a naive `agentConfigId.replace(/^api-/, "")`,
+ * which is precisely why `api-claude` — the DEFAULT — shipped broken: it
+ * yielded `"claude"`, which `get_provider` rejects and `load_api_key` reports
+ * as a missing key for a provider that does not exist. `"anthropic"` is the
+ * only correct answer. `api-packetcode` diverges for the same class of reason
+ * (`packetcode` is the PTY CLI slot, not the ACP provider).
  */
 const EXPECTED_PROVIDER_IDS: ReadonlyArray<[AgentCli, string]> = [
   ["api-claude-oauth", "claude-oauth"],
@@ -110,6 +111,9 @@ const EXPECTED_PROVIDER_IDS: ReadonlyArray<[AgentCli, string]> = [
   ["api-minimax", "minimax"],
   ["api-openrouter", "openrouter"],
   ["api-ollama", "ollama"],
+  // Diverges from the naive prefix-strip too: the backend provider is
+  // `packetcode-acp`, not `packetcode` (which names the PTY CLI slot).
+  ["api-packetcode", "packetcode-acp"],
 ];
 
 describe("attemptProviderFor", () => {
@@ -141,8 +145,12 @@ describe("attemptProviderFor", () => {
 
     // If this ever grows, the naive derivation is broken for more executors,
     // not fewer — never "fix" it by re-deriving.
-    expect(divergent).toEqual(["api-claude"]);
+    expect(divergent).toEqual(["api-claude", "api-packetcode"]);
     expect(attemptProviderFor("api-claude")).not.toBe(stripped("api-claude"));
+    // `api-packetcode` → `packetcode-acp`, NOT `packetcode`: the bare id names
+    // the PTY CLI slot, and handing it to the ACP router would resolve the
+    // wrong transport.
+    expect(attemptProviderFor("api-packetcode")).not.toBe(stripped("api-packetcode"));
   });
 
   it("resolves the retired identity-duplicate agent id through its alias", () => {

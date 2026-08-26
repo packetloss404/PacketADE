@@ -140,12 +140,15 @@ function ExplorationRollupCardImpl({ toolCalls, isStreaming }: ExplorationRollup
         : verb;
 
   return (
-    <div className="bg-bg-hover rounded text-ui text-text-muted border border-bg-border">
+    // `bg-bg-hover` is the app's PRESSED token — as a resting fill it made this
+    // card read as permanently hovered, the same bug wave 1 fixed on
+    // BaseToolCard. It now matches the one card background in the transcript.
+    <div className="overflow-hidden rounded-xl border border-bg-border bg-bg-tertiary text-ui text-text-muted transition-colors hover:border-line-strong">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
-        className="w-full flex items-center gap-1.5 px-2 py-1 hover:bg-bg-elevated transition-colors text-left"
+        className="w-full flex items-center gap-2 px-3 py-2 hover:text-text-primary transition-colors text-left"
       >
         <ChevronRight
           size={12}
@@ -162,7 +165,7 @@ function ExplorationRollupCardImpl({ toolCalls, isStreaming }: ExplorationRollup
         )}
       </button>
       {expanded && (
-        <div className="px-2 pb-1.5 border-t border-bg-border flex flex-col gap-0.5 max-h-64 overflow-y-auto">
+        <div className="selectable px-3 pb-2 border-t border-bg-border flex flex-col gap-0.5 max-h-64 overflow-y-auto">
           {stats.fileReads.length > 0 && (
             <div className="pt-1">
               <div className="text-meta uppercase tracking-wide text-text-faint mb-0.5">

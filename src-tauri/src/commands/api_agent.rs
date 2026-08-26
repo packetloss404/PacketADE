@@ -830,6 +830,10 @@ fn provider_to_source(provider: &str) -> &'static str {
         "minimax-api" | "api-minimax-api" => "api-minimax-api",
         "openrouter" | "api-openrouter" => "api-openrouter",
         "ollama" | "api-ollama" => "api-ollama",
+        // ACP transport: the engine picks the upstream provider from its own
+        // config, so the ledger attributes the spend to the transport rather
+        // than silently billing it to api-claude via the fallback arm.
+        crate::acp::routing::PROVIDER_ID => "packetcode-acp",
         _ => "api-claude",
     }
 }
@@ -989,6 +993,7 @@ pub async fn start_api_agent_session(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, Arc<ApiAgentState>>,
     sidecar: tauri::State<'_, Arc<SidecarManager>>,
+    acp: tauri::State<'_, crate::acp::AcpState>,
     session_id: String,
     provider: String,
     model: String,
@@ -1008,12 +1013,101 @@ pub async fn start_api_agent_session(
     approve_writes: Option<bool>,
     command_path: Option<String>,
     workspace: Option<ApiAgentWorkspaceInput>,
+    // `acp_inherit_engine_mcp` — ACP only, and a SEPARATE consent from
+    // `mcp_trust_snapshot`: the user affirmatively asked this session to run
+    // the packetcode engine's OWN configured `[mcp.<name>]` fleet, the servers
+    // `acp_list_mcp_servers` (called with no session id) disclosed. Absent or
+    // false is the safe default. It only takes effect when PacketADE's own
+    // trust decision yields nothing to send, because naming the exact servers
+    // is the more honest form of the same consent; and it is refused outright
+    // against an engine that never advertised `mcpDefaults`.
+    acp_inherit_engine_mcp: Option<bool>,
+    // `acp_engine_session_id` — ACP only. An id from the ENGINE's own session
+    // directory (`acp_list_sessions`). Present when this conversation is
+    // adopting a session the engine already holds: the ACP branch resumes it
+    // with `session/load` instead of minting a new one with `session/new`, so
+    // the engine's stored history is the model's context from the first turn.
+    // Absent is the ordinary fresh-session path.
+    acp_engine_session_id: Option<String>,
 ) -> Result<(), String> {
     // v2 Tier 4 slice B: bump the local-only per-provider launch counter
     // before any routing decision so both sidecar and in-process launches are
     // counted. Best-effort — disk-write failures are logged to stderr and
     // never block the session start.
     provider_stats::record_launch(&provider);
+
+    // ACP transport: bring the packetcode engine up if needed, create an
+    // engine-side session for this conversation, register the id mapping, and
+    // run the first turn. PacketADE's `session_id` stays the identity
+    // everywhere — the engine's own id lives only inside `crate::acp`.
+    if crate::acp::routing::is_acp_provider(&provider) {
+        if ssh_config.is_some() {
+            let message =
+                "The packetcode ACP engine runs locally; remote (SSH) workspaces are not \
+                 supported for this provider yet."
+                    .to_string();
+            let _ = app_handle.emit(
+                &error_event(&session_id),
+                ErrorPayload {
+                    message: message.clone(),
+                },
+            );
+            return Err(message);
+        }
+        super::validate_project_path(&project_path)?;
+        // Resolve the session's MCP posture from PacketADE's OWN trust model —
+        // the same `enabled_mcp_server_ids` + `mcp_trust_snapshot` pair the
+        // sidecar path freezes — rather than from a second, ACP-only consent
+        // dialog. `crate::acp::mcp` documents how the two map onto ACP's
+        // three-way `mcpServers` contract; the short version is that a
+        // trusted, selected, resolvable stdio server is sent BY NAME, and
+        // anything we cannot show was affirmatively trusted is simply not
+        // sent. Absent both inputs this is `AcpMcpPosture::None` — byte for
+        // byte the `mcpServers: []` ACP sessions have always carried.
+        let mcp_posture = crate::acp::mcp::posture_for_session(
+            &project_path,
+            enabled_mcp_server_ids.as_deref(),
+            mcp_trust_snapshot.as_deref(),
+        )
+        .await;
+        let mcp_posture = match mcp_posture {
+            // Explicit beats inherit: PacketADE has configs the user trusted,
+            // so name them instead of telling the engine to use whatever it
+            // happens to have.
+            posture @ crate::acp::AcpMcpPosture::Explicit(_) => posture,
+            posture => {
+                if acp_inherit_engine_mcp.unwrap_or(false) {
+                    // Still guarded: `new_session_on` downgrades this to
+                    // `None` when the engine never promised `mcpDefaults`.
+                    crate::acp::AcpMcpPosture::InheritEngineDefaults
+                } else {
+                    posture
+                }
+            }
+        };
+        let result = crate::acp::routing::start_session(
+            &app_handle,
+            &acp,
+            session_id.clone(),
+            project_path.clone(),
+            Some(model.clone()),
+            permission_mode.clone(),
+            plan_mode.unwrap_or(false),
+            mcp_posture,
+            acp_engine_session_id.clone(),
+            initial_message.clone(),
+        )
+        .await;
+        if let Err(e) = result {
+            warn!(session_id = %session_id, error = %e, "ACP start_session failed");
+            let _ = app_handle.emit(
+                &error_event(&session_id),
+                ErrorPayload { message: e.clone() },
+            );
+            return Err(e);
+        }
+        return Ok(());
+    }
 
     // Phase 3 slice C: if this provider runs in the sidecar, forward the start
     // request and return early. In-process providers fall through to the
@@ -1280,10 +1374,18 @@ pub async fn send_api_agent_message(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, Arc<ApiAgentState>>,
     sidecar: tauri::State<'_, Arc<SidecarManager>>,
+    acp: tauri::State<'_, crate::acp::AcpState>,
     session_id: String,
     message: String,
     attachments: Option<Vec<ImageAttachment>>,
 ) -> Result<(), String> {
+    // ACP transport owns this conversation: run the turn on the engine.
+    // Attachments have no ACP prompt-block equivalent yet, so they are
+    // dropped rather than silently mangled into text.
+    if crate::acp::routing::owns_session(&acp, &session_id) {
+        return crate::acp::routing::send_message(&app_handle, &acp, session_id, message);
+    }
+
     // Phase 3 slice C: forward to sidecar if it owns this session.
     if sidecar.owns_session(&session_id).await {
         let attachments_json = match &attachments {
@@ -1350,8 +1452,13 @@ pub async fn send_api_agent_message(
 pub async fn cancel_api_agent_session(
     state: tauri::State<'_, Arc<ApiAgentState>>,
     sidecar: tauri::State<'_, Arc<SidecarManager>>,
+    acp: tauri::State<'_, crate::acp::AcpState>,
     session_id: String,
 ) -> Result<(), String> {
+    if crate::acp::routing::owns_session(&acp, &session_id) {
+        return crate::acp::routing::cancel(&acp, &session_id).await;
+    }
+
     // Phase 3 slice C: forward to sidecar if it owns this session.
     if sidecar.owns_session(&session_id).await {
         return sidecar.forward_cancel(session_id).await;
@@ -1368,9 +1475,16 @@ pub async fn cancel_api_agent_session(
 pub async fn change_model(
     state: tauri::State<'_, Arc<ApiAgentState>>,
     sidecar: tauri::State<'_, Arc<SidecarManager>>,
+    acp: tauri::State<'_, crate::acp::AcpState>,
     session_id: String,
     new_model: String,
 ) -> Result<(), String> {
+    // ACP binds the model at session/new, so the engine stashes nothing —
+    // the routing layer records it for the next engine session.
+    if crate::acp::routing::owns_session(&acp, &session_id) {
+        return crate::acp::routing::set_model(&acp, &session_id, new_model);
+    }
+
     // Phase 3 slice C: forward to sidecar if it owns this session. The
     // Anthropic provider hot-swaps via SDK `setModel`; Codex stashes the
     // value for the next spawn.
@@ -1391,9 +1505,17 @@ pub async fn change_model(
 pub async fn set_plan_mode(
     state: tauri::State<'_, Arc<ApiAgentState>>,
     sidecar: tauri::State<'_, Arc<SidecarManager>>,
+    acp: tauri::State<'_, crate::acp::AcpState>,
     session_id: String,
     enabled: bool,
 ) -> Result<(), String> {
+    // ACP: the same boolean, in the engine's vocabulary —
+    // `true` → "read-only", `false` → "auto".
+    if crate::acp::routing::owns_session(&acp, &session_id) {
+        let mode = if enabled { "plan" } else { "default" };
+        return crate::acp::routing::set_permission_mode(&acp, &session_id, mode).await;
+    }
+
     // Phase 3 slice C: forward to sidecar if it owns this session. Translate
     // the legacy boolean into the SDK's permission-mode vocabulary:
     // `true` → "plan", `false` → "default".
@@ -1417,9 +1539,17 @@ pub async fn set_plan_mode(
 pub async fn set_permission_mode(
     state: tauri::State<'_, Arc<ApiAgentState>>,
     sidecar: tauri::State<'_, Arc<SidecarManager>>,
+    acp: tauri::State<'_, crate::acp::AcpState>,
     session_id: String,
     mode: String,
 ) -> Result<(), String> {
+    // ACP: map PacketADE's posture onto the engine's permission ladder (see
+    // `acp::routing::to_acp_permission_mode`) and record it for the next
+    // engine session — ACP has no mid-session mode method.
+    if crate::acp::routing::owns_session(&acp, &session_id) {
+        return crate::acp::routing::set_permission_mode(&acp, &session_id, &mode).await;
+    }
+
     // Phase 3 slice C: forward to sidecar if it owns this session. The
     // sidecar's Anthropic provider maps mode strings onto the SDK's
     // `setPermissionMode`; we pass the caller's string through verbatim so
@@ -1443,11 +1573,21 @@ pub async fn set_permission_mode(
 pub async fn respond_permission(
     state: tauri::State<'_, Arc<ApiAgentState>>,
     sidecar: tauri::State<'_, Arc<SidecarManager>>,
+    acp: tauri::State<'_, crate::acp::AcpState>,
     session_id: String,
     tool_id: String,
     decision: String,
     reason: Option<String>,
 ) -> Result<(), String> {
+    // ACP: `tool_id` is the id PacketADE emitted on the permission-request
+    // event; the routing layer maps it back to the engine's raw JSON-RPC id
+    // and to the `optionId` the engine actually offered. ACP has no channel
+    // for the user's deny-with-steering text, so `reason` is dropped.
+    if crate::acp::routing::owns_session(&acp, &session_id) {
+        return crate::acp::routing::respond_permission(&acp, &session_id, &tool_id, &decision)
+            .await;
+    }
+
     // Phase 3 slice C: forward to sidecar if it owns this session.
     if sidecar.owns_session(&session_id).await {
         return sidecar
@@ -1478,9 +1618,17 @@ pub async fn respond_permission(
 pub async fn set_approve_writes(
     state: tauri::State<'_, Arc<ApiAgentState>>,
     sidecar: tauri::State<'_, Arc<SidecarManager>>,
+    acp: tauri::State<'_, crate::acp::AcpState>,
     session_id: String,
     enabled: bool,
 ) -> Result<(), String> {
+    // ACP: same lossy translation as the sidecar, in the engine's vocabulary —
+    // `true` → "accept-edits", `false` → "auto".
+    if crate::acp::routing::owns_session(&acp, &session_id) {
+        let mode = if enabled { "acceptEdits" } else { "default" };
+        return crate::acp::routing::set_permission_mode(&acp, &session_id, mode).await;
+    }
+
     // Phase 3 slice C: forward to sidecar if it owns this session. Translate
     // the legacy boolean into the SDK's permission-mode vocabulary:
     // `true` → "acceptEdits" (auto-apply writes), `false` → "default".
@@ -1552,8 +1700,15 @@ pub async fn respond_edit(
 pub async fn cancel_pending_tools(
     state: tauri::State<'_, Arc<ApiAgentState>>,
     sidecar: tauri::State<'_, Arc<SidecarManager>>,
+    acp: tauri::State<'_, crate::acp::AcpState>,
     session_id: String,
 ) -> Result<(), String> {
+    // ACP: answer every parked permission request with the engine's own
+    // reject option, leaving the turn running.
+    if crate::acp::routing::owns_session(&acp, &session_id) {
+        return crate::acp::routing::cancel_pending_tools(&acp, &session_id).await;
+    }
+
     if sidecar.owns_session(&session_id).await {
         return sidecar.forward_cancel_pending_tools(session_id).await;
     }
@@ -1655,8 +1810,15 @@ pub async fn retry_last_turn(
 pub async fn close_api_agent_session(
     state: tauri::State<'_, Arc<ApiAgentState>>,
     sidecar: tauri::State<'_, Arc<SidecarManager>>,
+    acp: tauri::State<'_, crate::acp::AcpState>,
     session_id: String,
 ) -> Result<(), String> {
+    // ACP: release the engine-side runtime (and its MCP children) and drop the
+    // id mapping. Engines predating `session/close` degrade to success.
+    if crate::acp::routing::owns_session(&acp, &session_id) {
+        return crate::acp::routing::close_session(&acp, &session_id).await;
+    }
+
     // Phase 3 slice C: forward to sidecar if it owns this session.
     if sidecar.owns_session(&session_id).await {
         return sidecar.forward_close(session_id).await;

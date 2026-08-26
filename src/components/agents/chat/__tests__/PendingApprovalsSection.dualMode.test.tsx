@@ -10,35 +10,31 @@
  *     only the focused conversation tile answers a keypress.
  *
  * The prompts themselves still render regardless of the gate — only the
- * keyboard shortcut is scoped. Child presentational components are mocked so
- * the test isolates the keydown wiring.
+ * keyboard shortcut is scoped.
+ *
+ * B3 (wave 2c) moved the approval CARDS out of this component and into the
+ * transcript at the call site (`chat/InlineApprovals`). This file is unchanged
+ * in what it asserts: the handler, its guards and the focus gate never moved,
+ * so the same keypresses must still produce the same `respondPermission`
+ * calls. Only the prop plumbing shrank — the presentational props (and the
+ * mocks that stubbed those children out) went with the markup.
  */
 import { fireEvent, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentConversation, PendingPermission } from "@/types/agent-conversation";
+import type { PendingPermission } from "@/types/agent-conversation";
 
 vi.mock("@/stores/appStore", () => ({
   useAppStore: (selector: (s: { commandPaletteOpen: boolean }) => unknown) =>
     selector({ commandPaletteOpen: false }),
 }));
 
-// Presentational children — irrelevant to the keyboard gate under test.
-vi.mock("../../PendingApprovalsRollup", () => ({
-  PendingApprovalsRollup: () => <div data-testid="rollup" />,
-}));
-vi.mock("../../PermissionPrompt", () => ({
-  PermissionPrompt: () => <div data-testid="prompt" />,
-}));
 import { PendingApprovalsSection } from "@/components/agents/chat/PendingApprovalsSection";
 
 const respondPermission = vi.fn().mockResolvedValue(undefined);
-const appendAllowedToolPattern = vi.fn();
 
 function makePermission(id: string, name = "bash"): PendingPermission {
   return { id, name, arguments: "{}" };
 }
-
-const conversation = { id: "conv-1", allowedTools: undefined } as AgentConversation;
 
 function renderSection({
   pendingPermissions,
@@ -51,11 +47,9 @@ function renderSection({
 }) {
   return render(
     <PendingApprovalsSection
-      conversation={{ ...conversation, id: conversationId }}
       conversationId={conversationId}
       pendingPermissions={pendingPermissions}
       respondPermission={respondPermission}
-      appendAllowedToolPattern={appendAllowedToolPattern}
       keyboardScopeActive={keyboardScopeActive}
     />,
   );
@@ -133,19 +127,15 @@ describe("PendingApprovalsSection Y/N focus gate (P3-S1)", () => {
     render(
       <>
         <PendingApprovalsSection
-          conversation={{ ...conversation, id: "conv-armed" }}
           conversationId="conv-armed"
           pendingPermissions={[makePermission("perm-armed")]}
           respondPermission={respondPermission}
-          appendAllowedToolPattern={appendAllowedToolPattern}
           keyboardScopeActive={true}
         />
         <PendingApprovalsSection
-          conversation={{ ...conversation, id: "conv-inactive" }}
           conversationId="conv-inactive"
           pendingPermissions={[makePermission("perm-inactive")]}
           respondPermission={respondPermission}
-          appendAllowedToolPattern={appendAllowedToolPattern}
           keyboardScopeActive={false}
         />
       </>,

@@ -151,6 +151,34 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
       { label: "CodeLlama 34B", value: "codellama:34b" },
     ],
   },
+  {
+    // The sibling PacketCode TUI, driven over Agent Client Protocol as a local
+    // subprocess. `needsKey: false` for the same reason as Ollama: the engine
+    // owns its own provider credentials (its config + keyring), so PacketADE
+    // never holds an API key for this row and the auth badge reflects engine
+    // reachability rather than a keyring slot.
+    //
+    // `supportsApprovals: true` — ACP carries a real per-tool permission
+    // round-trip (`session/request_permission`), so every PermissionMode the
+    // mode pickers offer is genuinely enforceable here.
+    //
+    // The model list is SEEDED, not authoritative: the engine enumerates its
+    // live models over `_packetcode/models/list` at session time. These three
+    // exist so the picker renders something before the engine has been asked,
+    // mirroring how the Ollama row seeds common local tags ahead of
+    // `list_ollama_models`. All three ids resolve in shared/model-pricing.json
+    // and modelContext.ts, so cost/context surfaces stay honest.
+    id: "packetcode-acp",
+    agentCli: "api-packetcode",
+    name: "PacketCode (ACP)",
+    needsKey: false,
+    supportsApprovals: true,
+    models: [
+      { label: "Claude Opus 4.8", value: "claude-opus-4-8" },
+      { label: "Claude Sonnet 4.6", value: "claude-sonnet-4-6" },
+      { label: "GPT-5.5", value: "gpt-5.5" },
+    ],
+  },
 ];
 
 // Populate context-window + pricing metadata for every known model, sourcing

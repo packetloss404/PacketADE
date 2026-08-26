@@ -38,19 +38,24 @@ describe("agent-catalog merged registry", () => {
     }
   });
 
-  it("marks local-only runtimes (Ollama) as SSH-incapable", () => {
+  it("marks local-only runtimes (Ollama, PacketCode ACP) as SSH-incapable", () => {
     expect(getChatAgent("api-ollama")?.supportsSsh).toBe(false);
+    // The ACP engine is a local child process, not an endpoint the remote
+    // sidecar could reach.
+    expect(getChatAgent("api-packetcode")?.supportsSsh).toBe(false);
     expect(getChatAgent("api-claude")?.supportsSsh).toBe(true);
   });
 
   it("keeps the Agent SDK row SSH-capable (routes through the remote sidecar)", () => {
     // The sidecar providers run over SSH via the remote sidecar (the whole
-    // sidecar runs on the host). Only Ollama is local-only — a regression here
-    // would silently hide a provider from remote workspaces.
+    // sidecar runs on the host). Only the locally-spawned runtimes are
+    // local-only — a regression here would silently hide a provider from
+    // remote workspaces.
+    const LOCAL_ONLY = new Set(["api-ollama", "api-packetcode"]);
     expect(getChatAgent("api-claude-oauth")?.supportsSsh).toBe(true);
     expect(getChatAgent("api-openai-agents")?.supportsSsh).toBe(true);
     for (const c of CHAT_AGENTS) {
-      expect(c.supportsSsh).toBe(c.agentCli !== "api-ollama");
+      expect(c.supportsSsh).toBe(!LOCAL_ONLY.has(c.agentCli));
     }
   });
 

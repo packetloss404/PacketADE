@@ -10,47 +10,53 @@ import { gitSafetyCheck, type GitSafetyReport } from "@/lib/tauri";
 import { useAgentSidebarPrefsStore } from "@/stores/agentSidebarPrefsStore";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { Spinner } from "@/components/ui/Spinner";
+import { ContextUsageRing } from "../ContextUsageRing";
+import type { SessionCapabilities } from "@/lib/agentCapabilities";
 import type { AgentConversation } from "@/types/agent-conversation";
 
+/** Git poll cadence, carried over verbatim from the deleted SessionMetaLine. */
 const POLL_INTERVAL_MS = 30_000;
+
+/** Shared chip shell so every fact in the strip reads as the same object. */
+const CHIP =
+  "flex shrink-0 cursor-default items-center gap-1 rounded-md px-1.5 py-0.5 text-chip";
 
 function basenameOf(path: string): string {
   const segs = path.replace(/\\/g, "/").split("/").filter(Boolean);
   return segs[segs.length - 1] ?? path;
 }
 
-interface SessionMetaLineProps {
+interface ContextStripProps {
   conversation: AgentConversation;
+  caps: SessionCapabilities;
 }
 
 /**
- * Thin single-line replacement for SessionHealthBar. Model text, ctx%,
- * token count, and turn/tool-call/pending counts all died with that
- * component (vanity — the model picker and ContextUsageRing already show
- * model/context once each, and pending-approval count lives in
- * PendingApprovalsSection). This line owns exactly two facts:
+ * The Codex-style context strip that caps the floating composer card: what
+ * this session is pointed at (project · ssh · git · MCP) on the left, and how
+ * full its context window is on the right.
  *
- * - project pill (custom label or basename, full path on hover)
- * - git branch/dirty/behind-upstream (ported verbatim from SessionHealthBar)
+ * This replaces the old full-bleed `SessionMetaLine` band. The band's two
+ * facts — the project pill and the git branch/dirty/behind cluster, including
+ * its 30s `gitSafetyCheck` poll — MOVED here rather than being duplicated;
+ * there is exactly one interval per mounted conversation, as before.
  *
- * A right-aligned session-cost readout used to live here too; it went with the
- * rest of the cost reporting surface on 2026-07-31. Cost is still measured and
- * still drives the budget guardrails — it is just no longer displayed.
+ * The MCP chip is READ-ONLY on purpose. PacketADE has no per-session MCP
+ * consent toggle, so a clickable chip would be a false affordance.
  */
-export function SessionMetaLine({ conversation }: SessionMetaLineProps) {
+export function ContextStrip({ conversation, caps }: ContextStripProps) {
   const projectLabels = useAgentSidebarPrefsStore((s) => s.projectLabels);
   const [report, setReport] = useState<GitSafetyReport | null>(null);
   const [gitLoading, setGitLoading] = useState(false);
   const gitCancelled = useRef(false);
 
-  const isSsh = !!conversation.sshTarget;
+  const isSsh = caps.remote;
   const projectPath = conversation.projectPath;
   const customLabel = projectLabels[projectPath];
   const displayLabel = customLabel || basenameOf(projectPath) || "(no project)";
 
-  // Per-conversation git safety poll (branch + dirty state + behind-upstream),
-  // ported verbatim from SessionHealthBar. Skipped for SSH targets and
-  // project-less conversations.
+  // Per-conversation git safety poll (branch + dirty state + behind-upstream).
+  // Skipped for SSH targets and project-less conversations.
   useEffect(() => {
     gitCancelled.current = false;
     if (isSsh || !projectPath) {
@@ -78,37 +84,41 @@ export function SessionMetaLine({ conversation }: SessionMetaLineProps) {
     };
   }, [projectPath, isSsh]);
 
-  // S8-Phase-B (Slice B): MCP servers the sidecar sourced from its own FS for
-  // this session (remote sessions), plus any read/parse errors. Shown for all
-  // sessions — it's a free signal for local stdio too — with amber styling
-  // carrying the attention when a config file could not be read.
   const mcpSources = conversation.mcpSources;
   const mcpCount = mcpSources?.sources.length ?? 0;
   const mcpErrorCount = mcpSources?.readErrors.length ?? 0;
-  const showMcpPill = !!mcpSources && (mcpCount > 0 || mcpErrorCount > 0);
 
   return (
-    <div className="flex items-center gap-3 px-3 py-1 bg-bg-primary border-b border-line-soft text-meta text-text-muted shrink-0 overflow-hidden">
-      {/* Project pill */}
-      <Tooltip content={projectPath || "No project"} side="bottom">
-        <span className="flex items-center gap-1.5 shrink-0 cursor-default">
-          {isSsh ? (
-            <Server size={10} className="text-accent-purple" />
-          ) : (
-            <FolderOpen size={10} className="text-text-muted" />
-          )}
-          <span className="truncate max-w-[160px]">{displayLabel}</span>
+    <div className="flex items-center gap-1.5 overflow-hidden rounded-t-xl border border-b-0 border-bg-border bg-bg-secondary px-2.5 py-1">
+      {/* Project */}
+      <Tooltip content={projectPath || "No project"}>
+        <span className={`${CHIP} min-w-0 text-text-muted`}>
+          <FolderOpen size={10} />
+          <span className="max-w-[160px] truncate">{displayLabel}</span>
         </span>
       </Tooltip>
 
+      {/* SSH — omitted entirely for local sessions (caps.remote). */}
+      {caps.remote && conversation.sshTarget && (
+        <Tooltip
+          content={`Tools run on ${conversation.sshTarget.user}@${conversation.sshTarget.host}:${conversation.sshTarget.remotePath}`}
+        >
+          <span className={`${CHIP} min-w-0 bg-accent-soft text-accent-green`}>
+            <Server size={10} />
+            <span className="max-w-[120px] truncate">
+              {conversation.sshTarget.host}
+            </span>
+          </span>
+        </Tooltip>
+      )}
+
       {/* Git cluster */}
       {!isSsh && report && report.isGitRepo && (
-        <span className="flex items-center gap-1 shrink-0 font-mono">
-          <GitBranchIcon
-            size={10}
-            className={report.isClean ? "text-text-muted" : "text-accent-amber"}
-          />
-          <span className={report.isClean ? "text-text-muted" : "text-accent-amber"}>
+        <span
+          className={`${CHIP} ${report.isClean ? "text-text-muted" : "text-accent-amber"}`}
+        >
+          <GitBranchIcon size={10} />
+          <span className="max-w-[140px] truncate font-mono">
             {report.branch ?? "?"}
           </span>
           {!report.isClean && (
@@ -116,15 +126,14 @@ export function SessionMetaLine({ conversation }: SessionMetaLineProps) {
               content={`${report.uncommittedCount} uncommitted change${
                 report.uncommittedCount === 1 ? "" : "s"
               }`}
-              side="bottom"
             >
               <span className="inline-flex items-center">
-                <span className="w-1.5 h-1.5 rounded-full bg-accent-amber" />
+                <span className="h-1.5 w-1.5 rounded-full bg-accent-amber" />
               </span>
             </Tooltip>
           )}
           {report.behindUpstream > 0 && (
-            <Tooltip content={`${report.behindUpstream} behind upstream`} side="bottom">
+            <Tooltip content={`${report.behindUpstream} behind upstream`}>
               <span className="flex items-center text-accent-amber">
                 <ArrowDownToLine size={9} />
                 {report.behindUpstream}
@@ -135,7 +144,7 @@ export function SessionMetaLine({ conversation }: SessionMetaLineProps) {
       )}
 
       {!isSsh && !gitLoading && report && !report.isGitRepo && (
-        <span className="flex items-center gap-1 shrink-0 text-text-faint">
+        <span className={`${CHIP} text-text-faint`}>
           <FolderOpen size={10} />
           not a git repo
         </span>
@@ -145,13 +154,13 @@ export function SessionMetaLine({ conversation }: SessionMetaLineProps) {
         <Spinner size={10} className="text-text-faint" />
       )}
 
-      {/* MCP sources pill (S8-Phase-B) */}
-      {showMcpPill && (
+      {/* MCP disclosure — read-only (no per-session consent toggle exists). */}
+      {caps.mcp && mcpSources && (
         <Tooltip
           content={
             <div className="flex flex-col gap-0.5 text-left">
               {mcpCount > 0 ? (
-                mcpSources!.sources.map((s) => (
+                mcpSources.sources.map((s) => (
                   <span key={`${s.scope}:${s.name}`}>
                     {s.name} ({s.transport}, {s.scope})
                   </span>
@@ -160,26 +169,29 @@ export function SessionMetaLine({ conversation }: SessionMetaLineProps) {
                 <span>No MCP servers sourced</span>
               )}
               {mcpErrorCount > 0 &&
-                mcpSources!.readErrors.map((e) => (
+                mcpSources.readErrors.map((e) => (
                   <span key={`err:${e.scope}:${e.path}`} className="text-accent-amber">
                     {e.scope}: {e.path} — {e.message}
                   </span>
                 ))}
             </div>
           }
-          side="bottom"
         >
-          <span className="flex items-center gap-1 shrink-0 cursor-default">
-            <Plug
-              size={10}
-              className={mcpErrorCount > 0 ? "text-accent-amber" : "text-text-muted"}
-            />
-            <span className={mcpErrorCount > 0 ? "text-accent-amber" : undefined}>
-              MCP {mcpCount}
-              {mcpErrorCount > 0 ? ` (!${mcpErrorCount})` : ""}
-            </span>
+          <span
+            className={`${CHIP} ${mcpErrorCount > 0 ? "text-accent-amber" : "text-text-muted"}`}
+          >
+            <Plug size={10} />
+            MCP {mcpCount}
+            {mcpErrorCount > 0 ? ` (!${mcpErrorCount})` : ""}
           </span>
         </Tooltip>
+      )}
+
+      {/* Context ring — omitted when the adapter reports no window. */}
+      {caps.contextWindow !== null && (
+        <span className="ml-auto shrink-0 pl-1">
+          <ContextUsageRing conversation={conversation} />
+        </span>
       )}
     </div>
   );

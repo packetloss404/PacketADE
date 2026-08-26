@@ -626,6 +626,7 @@ pub async fn launch_flight_async(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, Arc<ApiAgentState>>,
     sidecar: tauri::State<'_, Arc<SidecarManager>>,
+    acp: tauri::State<'_, crate::acp::AcpState>,
     flight_id: String,
     prompt: String,
     targets: Vec<AttemptTargetSpec>,
@@ -801,6 +802,7 @@ pub async fn launch_flight_async(
             app_handle.clone(),
             state.clone(),
             sidecar.clone(),
+            acp.clone(),
             session_id.clone(),
             provider.clone(),
             model.clone(),
@@ -820,6 +822,15 @@ pub async fn launch_flight_async(
             Some(false), // approve_writes
             None,        // command_path
             None,        // workspace — derived from ssh_config/local project_path
+            // acp_inherit_engine_mcp — a flight attempt is unattended, so
+            // there is nobody to consent to the engine spawning its own MCP
+            // subprocesses. With `mcp_trust_snapshot` also absent above, an
+            // ACP-backed attempt resolves to `AcpMcpPosture::None`.
+            None,
+            // acp_engine_session_id — a flight attempt is always a fresh
+            // session in a fresh worktree; there is no engine-side history for
+            // it to adopt.
+            None,
         )
         .await
         {
@@ -1016,6 +1027,7 @@ pub async fn sweep_interrupted_attempts(
 pub async fn cancel_flight_attempt(
     state: tauri::State<'_, Arc<ApiAgentState>>,
     sidecar: tauri::State<'_, Arc<SidecarManager>>,
+    acp: tauri::State<'_, crate::acp::AcpState>,
     flight_id: String,
     attempt_id: String,
 ) -> Result<worktree::WorktreeCleanupOutcome, String> {
@@ -1031,7 +1043,7 @@ pub async fn cancel_flight_attempt(
     };
 
     // 2. Close the API agent session (cancels the loop + drops history).
-    let _ = close_api_agent_session(state, sidecar, attempt.session_id.clone()).await;
+    let _ = close_api_agent_session(state, sidecar, acp, attempt.session_id.clone()).await;
 
     // 3. Mark cancelled before worktree removal so the UI flips quickly.
     let _ = update_attempt_status(&flight_id, &attempt_id, AttemptStatus::Cancelled, None).await;
@@ -1230,6 +1242,7 @@ pub async fn set_attempt_review_gate(
 pub async fn mark_attempt_status(
     state: tauri::State<'_, Arc<ApiAgentState>>,
     sidecar: tauri::State<'_, Arc<SidecarManager>>,
+    acp: tauri::State<'_, crate::acp::AcpState>,
     flight_id: String,
     attempt_id: String,
     status: SetAttemptStatus,
@@ -1266,7 +1279,7 @@ pub async fn mark_attempt_status(
 
     // Close the API agent session bound to this attempt (best-effort —
     // it may already be closed if the agent finished naturally).
-    let _ = close_api_agent_session(state, sidecar, attempt.session_id.clone()).await;
+    let _ = close_api_agent_session(state, sidecar, acp, attempt.session_id.clone()).await;
 
     // Tear down the worktree. Local cleanup runs inline; SSH cleanup still
     // prefers the saved ServerConfig and reports `deferred` when it is gone,

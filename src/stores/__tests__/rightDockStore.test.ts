@@ -15,6 +15,7 @@ import {
   SURFACE_SIDEBAR_WIDTH,
   dockWidthContract,
   isPanelVisible,
+  loadPersisted,
   useRightDockStore,
 } from "@/stores/rightDockStore";
 
@@ -66,12 +67,68 @@ describe("useRightDockStore", () => {
     useRightDockStore.getState().reset();
   });
 
-  it("ships the Workspace dock collapsed and the Agents dock on Inspector", () => {
+  it("ships BOTH docks collapsed, and only Workspace paints a rail up front", () => {
     const { surfaces } = useRightDockStore.getState();
     // Workspace had no default right panel before D2 — the CLI workroom keeps
-    // its full width until the user asks for a panel.
-    expect(surfaces.workspace).toMatchObject({ expanded: false, activePanel: null });
-    expect(surfaces.agents).toMatchObject({ expanded: true, activePanel: "inspector" });
+    // its full width until the user asks for a panel. Its icon rail is the
+    // dock's only permanent entry point, so it counts as already opened.
+    expect(surfaces.workspace).toMatchObject({
+      expanded: false,
+      activePanel: null,
+      everOpened: true,
+    });
+    // B4: the Agents surface used to ship expanded on Inspector, which made
+    // the view a three-column IDE by default. It is now two panes — nothing
+    // active, nothing expanded, and no rail chrome until the dock is opened.
+    expect(surfaces.agents).toMatchObject({
+      expanded: false,
+      activePanel: null,
+      everOpened: false,
+    });
+  });
+
+  it("latches everOpened on the first open and never clears it", () => {
+    const dock = useRightDockStore.getState();
+    expect(useRightDockStore.getState().surfaces.agents.everOpened).toBe(false);
+
+    dock.openPanel("agents", "diff");
+    expect(useRightDockStore.getState().surfaces.agents.everOpened).toBe(true);
+
+    // Collapsing hides the body, not the way back to it.
+    dock.closePanel("agents");
+    expect(useRightDockStore.getState().surfaces.agents).toMatchObject({
+      expanded: false,
+      everOpened: true,
+    });
+
+    dock.reset();
+    expect(useRightDockStore.getState().surfaces.agents.everOpened).toBe(false);
+    // An explicit expand is just as much an "open" as picking a panel.
+    useRightDockStore.getState().setExpanded("agents", true);
+    expect(useRightDockStore.getState().surfaces.agents.everOpened).toBe(true);
+  });
+
+  it("treats a pre-everOpened record that was left expanded as already opened", () => {
+    // Upgrade path: records written before `everOpened` existed carry no such
+    // key. A dock the user left expanded had obviously been opened, so the
+    // upgrade must not read as "the dock vanished".
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ agents: { expanded: true, activePanel: "inspector", width: 340 } }),
+    );
+    expect(loadPersisted().agents).toMatchObject({
+      expanded: true,
+      everOpened: true,
+    });
+
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ agents: { expanded: false, activePanel: null, width: 340 } }),
+    );
+    expect(loadPersisted().agents).toMatchObject({
+      expanded: false,
+      everOpened: false,
+    });
   });
 
   it("keeps exactly one panel visible per surface", () => {

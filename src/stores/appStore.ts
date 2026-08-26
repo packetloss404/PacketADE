@@ -6,6 +6,7 @@ export type CoreView =
   | "welcome"
   | "workspace"
   | "agents"
+  | "packetcode"
   | "issues"
   | "flights"
   | "history"

@@ -12,6 +12,10 @@ interface PendingApprovalsRollupProps {
  * Compact "allow all N" rollup that appears above the per-item permission
  * prompts when the agent has stacked up multiple pending requests.
  *
+ * B3 (wave 2c): it renders INLINE in the transcript, once, above the first
+ * card in the queue — its verbs act on the whole queue, so a copy at every
+ * call site would be N buttons that all do the same thing.
+ *
  * P1-8: this rollup is permissions-only. Pending file edits live in the
  * canonical review surface (ReviewBar / ReviewSurface) with the Keep/Undo
  * verb pair — the old duplicated edit banners ("Accept all" vs "Apply all")
@@ -25,7 +29,7 @@ export function PendingApprovalsRollup({
   if (pendingPermissions.length < 2) return null;
 
   return (
-    <div className="flex items-center gap-2 px-2 py-1.5 rounded border border-accent-amber/40 bg-accent-amber/5">
+    <div className="flex items-center gap-2 rounded-lg border border-accent-amber/40 bg-accent-amber/5 px-2.5 py-1.5">
       <ShieldAlert size={12} className="text-accent-amber shrink-0" />
       <span className="text-ui text-text-secondary flex-1">
         {pendingPermissions.length} pending tool permissions
@@ -34,7 +38,7 @@ export function PendingApprovalsRollup({
         <button
           type="button"
           onClick={onAllowAllPermissions}
-          className="flex items-center gap-1 text-ui px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
+          className="flex items-center gap-1 text-ui px-2.5 py-1 rounded-lg border border-accent-green/40 bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-semibold transition-colors"
         >
           <Check size={11} /> Allow all
         </button>
@@ -43,7 +47,7 @@ export function PendingApprovalsRollup({
         <button
           type="button"
           onClick={onDenyAllPermissions}
-          className="flex items-center gap-1 text-ui px-2 py-0.5 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors"
+          className="flex items-center gap-1 text-ui px-2.5 py-1 rounded-lg border border-accent-red/40 bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-semibold transition-colors"
         >
           <X size={11} /> Deny all
         </button>

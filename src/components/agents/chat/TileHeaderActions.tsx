@@ -1,14 +1,16 @@
-import { useEffect, useState } from "react";
-import { ChevronDown, MoreVertical, X } from "lucide-react";
+import { useState } from "react";
+import {
+  ChevronDown,
+  MoreVertical,
+  PanelRight,
+  PanelRightClose,
+  X,
+} from "lucide-react";
 import { Tooltip } from "@/components/ui/Tooltip";
-import { AgentModeChip, type AgentMode } from "../AgentModeChip";
-import { ContextUsageRing } from "../ContextUsageRing";
 import { DiffPaneTrigger } from "../DiffPaneTrigger";
-import { ModelSelector } from "../composer/ModelSelector";
-import { useOllamaModels } from "../hooks/useOllamaModels";
 import { HeaderOverflowMenu } from "./HeaderOverflowMenu";
-import { addPaneControlListener, OPEN_MODEL_DROPDOWN_EVENT } from "../paneEvents";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { capabilitiesFor } from "@/lib/agentCapabilities";
 import type { AgentConversation } from "@/types/agent-conversation";
 
 interface TileHeaderActionsProps {
@@ -18,10 +20,6 @@ interface TileHeaderActionsProps {
   previewOpen: boolean;
   togglePreview: () => void;
   onClose: () => void;
-  onCycleMode: () => void;
-  onSelectMode: (mode: AgentMode) => void;
-  onSetApproveWrites: (on: boolean) => void;
-  onChangeModel: (model: string) => void;
   onExport: () => void;
   /** Pending edits + permissions for this conversation (amber approval badge). */
   pendingApprovalCount: number;
@@ -33,30 +31,63 @@ interface TileHeaderActionsProps {
   closeLabel?: string;
   /** Tooltip for the close control — states the consequence in full. */
   closeTooltip?: string;
+  /**
+   * Wave 2c — the right dock's ONLY user-facing entry point.
+   *
+   * B4 made the Agents dock two-pane-by-default: its 30px rail does not paint
+   * until `everOpened`, which left deep links (a preview target, open-in-editor)
+   * as the sole way in. This pair restores a hand-operated way to open it.
+   *
+   * Supplied ONLY where a dock actually exists for this mount (the Agents
+   * view). Omitted in the workspace mosaic, where the surface dock belongs to
+   * the workspace shell and not to any one conversation tile — a per-tile
+   * toggle there would be N controls fighting over one panel.
+   */
+  dockOpen?: boolean;
+  onToggleDock?: () => void;
 }
 
 /**
  * Tile-frame ("frame='tile'") variant of the chat header's right cluster —
  * the responsive + lazy-mount economy required by the N-tile mosaic (P3-S3).
  *
+ * DO NOT rename `.tile-header-actions` (or the `.agent-chat-header` /
+ * `.tile-hide-narrow` hooks in AgentChatPane). `src/styles/conversation-tile.css`
+ * targets them through `@container tilehdr` rules; renaming one silently breaks
+ * narrow-tile collapse and no test catches it.
+ *
  * Ruled hybrid responsive model (no ResizeObserver, no width JS):
  *  - CSS `@container` (see `src/styles/conversation-tile.css`) handles ALL
  *    *visual* collapse of the cheap always-mounted set at narrow widths.
- *  - The heavy controls — `ModelSelector` and `ContextUsageRing` — MOUNT
- *    LAZILY, only when revealed from the overflow menu or when this tile is the
- *    zoomed pane. Both are already-existing JS state (local reveal state +
- *    `workspaceStore.zoomedPaneId`), so a resting narrow tile pays zero cost
- *    for them and mounts NO observers.
- *  - `HeaderOverflowMenu` is the header's ONE menu (the old second kebab that
- *    toggled the inline cluster is now a row inside it). It also mounts on
- *    first use: until then an identical-looking placeholder button holds its
- *    slot, and its click mounts the menu already open.
+ *  - `HeaderOverflowMenu` is the header's ONE menu. It mounts on first use:
+ *    until then an identical-looking placeholder button holds its slot, and its
+ *    click mounts the menu already open.
  *
- * Always-visible narrow set = three cheap per-slice subscribers: `AgentModeChip`
- * (safety posture), the Changes diffstat chip (`DiffPaneTrigger`, review entry),
- * and the amber approval badge. Close (X) is always present. This is now the
- * only chat-header right cluster — AgentChatPane mounts it directly (the retired
- * standalone AgentsView header and its `HeaderActions` router are deleted).
+ * ## What moved out (wave 2a)
+ *
+ * The autonomy chip (`AgentModeChip`), the model picker (`ModelSelector`) and
+ * `ContextUsageRing` used to live here behind a lazy "inline controls" reveal.
+ * They now live ON the composer — mode chip and model picker in the composer
+ * row, the context ring in the composer's context strip — which is where Claude
+ * Code and Codex both put them, and which removes the reveal toggle entirely.
+ *
+ * Two consequences worth knowing:
+ *  - the `OPEN_MODEL_DROPDOWN_EVENT` listener that made `/model` work moved to
+ *    `composer/Composer.tsx` with the picker. `OPEN_MODE_CHIP_EVENT` needed no
+ *    move — `AgentModeChip` has always registered it itself.
+ *  - the heavy-control mount economy this file was built around is moot: what
+ *    remains (the diffstat chip, the approval badge, the menu placeholder) is
+ *    cheap and always mounted.
+ *
+ * Always-visible narrow set = the Changes diffstat chip (`DiffPaneTrigger`,
+ * review entry) and the amber approval badge. Close (X) is always present.
+ *
+ * ## What moved in (wave 2c)
+ *
+ * The right-pane toggle (`onToggleDock`). It is the dock's only hand-operated
+ * entry point now that the Agents dock ships two-pane with an unpainted rail,
+ * and it collapses with `tile-hide-narrow` because a 200px tile has no room to
+ * host a dock anyway.
  */
 export function TileHeaderActions({
   conversation,
@@ -65,10 +96,6 @@ export function TileHeaderActions({
   previewOpen,
   togglePreview,
   onClose,
-  onCycleMode,
-  onSelectMode,
-  onSetApproveWrites,
-  onChangeModel,
   onExport,
   pendingApprovalCount,
   onArchive,
@@ -77,37 +104,20 @@ export function TileHeaderActions({
   // tile passes its own pair — closing a tile removes the pane, not the chat.
   closeLabel = "Close conversation",
   closeTooltip = "Close conversation — returns to the New agent screen. Nothing is stopped or deleted; it stays in the list.",
+  dockOpen = false,
+  onToggleDock,
 }: TileHeaderActionsProps) {
-  const isApi = conversation.mode === "api";
+  const caps = capabilitiesFor(conversation);
 
-  const { ollamaModels, refresh: refreshOllamaModels } = useOllamaModels(
-    conversation.agent,
-  );
-
-  // Inline model/context cluster reveal — now toggled from a row INSIDE the
-  // overflow menu (it used to be a second kebab beside the menu's own).
-  const [inlineControls, setInlineControls] = useState(false);
-  // The overflow menu itself mounts on first use (or when this tile is zoomed);
+  // The overflow menu mounts on first use (or when this tile is zoomed);
   // until then a look-alike placeholder holds its place, so the header always
   // shows exactly ONE menu control and never shifts.
   const [menuMounted, setMenuMounted] = useState(false);
   const [menuOpenSignal, setMenuOpenSignal] = useState(0);
 
-  // `/model` slash command → reveal the cluster (mounting the picker) and bump
-  // the signal so the model dropdown opens.
-  const [modelOpenSignal, setModelOpenSignal] = useState(0);
-  useEffect(
-    () =>
-      addPaneControlListener(OPEN_MODEL_DROPDOWN_EVENT, conversationId, () => {
-        setInlineControls(true);
-        setModelOpenSignal((n) => n + 1);
-      }),
-    [conversationId],
-  );
-
   // Is THIS conversation's tile the currently-zoomed pane? Cheap boolean
   // selector — re-renders only when the answer flips (not on every workspace
-  // write). Zoomed tiles have room, so their heavy controls mount eagerly.
+  // write). Zoomed tiles have room, so their menu mounts eagerly.
   const isZoomedTile = useWorkspaceStore((s) => {
     const zid = s.zoomedPaneId;
     if (!zid) return false;
@@ -120,21 +130,12 @@ export function TileHeaderActions({
     return false;
   });
 
-  const heavyMounted = inlineControls || isZoomedTile;
   const menuActive = menuMounted || isZoomedTile;
 
   return (
     <div className="tile-header-actions flex shrink-0 items-center gap-1">
-      {/* --- Always-visible narrow set (three cheap chips) --- */}
-      {isApi && (
-        <AgentModeChip
-          conversation={conversation}
-          onCycle={onCycleMode}
-          onSelectMode={onSelectMode}
-          onSetApproveWrites={onSetApproveWrites}
-        />
-      )}
-      {isApi && (
+      {/* --- Always-visible narrow set --- */}
+      {caps.structuredEdits && (
         <DiffPaneTrigger
           conversationId={conversationId}
           fileCount={diffTotals.fileCount}
@@ -155,20 +156,31 @@ export function TileHeaderActions({
         </Tooltip>
       )}
 
-      {/* --- Heavy cluster — lazily mounted (menu open OR tile zoomed) --- */}
-      {isApi && heavyMounted && (
-        <>
-          <ModelSelector
-            selectedAgent={conversation.agent}
-            selectedModel={conversation.model ?? ""}
-            onModelChange={onChangeModel}
-            ollamaModels={ollamaModels}
-            refreshOllamaModels={refreshOllamaModels}
-            openSignal={modelOpenSignal}
-          />
-          <ContextUsageRing conversation={conversation} />
-        </>
+      {/* Right-pane toggle. Hidden at narrow tile widths via the existing
+          `tile-hide-narrow` container rule — the dock is a wide-window
+          affordance, and a 200px tile has nothing to give it. */}
+      {onToggleDock && (
+        <Tooltip
+          content={
+            dockOpen
+              ? "Hide the right pane"
+              : "Show the right pane — preview, diff and editor"
+          }
+        >
+          <button
+            type="button"
+            onClick={onToggleDock}
+            aria-pressed={dockOpen}
+            aria-label={dockOpen ? "Hide right pane" : "Show right pane"}
+            className={`tile-hide-narrow rounded p-1 transition-colors hover:bg-bg-hover ${
+              dockOpen ? "text-text-primary" : "text-text-muted hover:text-text-primary"
+            }`}
+          >
+            {dockOpen ? <PanelRightClose size={12} /> : <PanelRight size={12} />}
+          </button>
+        </Tooltip>
       )}
+
       {/* The ONE overflow menu of this header. Mounted on first use; the
           placeholder below is its visual stand-in until then. */}
       {menuActive ? (
@@ -178,10 +190,6 @@ export function TileHeaderActions({
           togglePreview={togglePreview}
           onExport={onExport}
           openSignal={menuOpenSignal}
-          inlineControlsShown={heavyMounted}
-          onToggleInlineControls={
-            isApi && !isZoomedTile ? () => setInlineControls((v) => !v) : undefined
-          }
           onArchive={onArchive}
         />
       ) : (

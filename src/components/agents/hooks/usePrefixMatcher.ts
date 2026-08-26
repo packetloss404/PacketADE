@@ -92,6 +92,11 @@ export function usePrefixMatcher(prefix: string): UsePrefixMatcherResult {
   const clampHighlight = useCallback((itemCount: number) => {
     setState((prev) => {
       if (!prev.active) return prev;
+      // Already at 0 — including the empty-list case, where `0 >= 0` used to
+      // allocate a state object identical to the old one. React cannot bail
+      // out of that, so a caller re-clamping on every render (an async result
+      // feed) would re-render forever.
+      if (prev.highlightedIndex === 0) return prev;
       if (prev.highlightedIndex >= itemCount) {
         return { ...prev, highlightedIndex: 0 };
       }

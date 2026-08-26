@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CheckSquare,
+  ChevronRight,
   File as FileIcon,
   FileText,
   Eye,
-  PanelLeft,
   FileDiff,
   FolderTree,
   AlertCircle,
 } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import { useAgentPlanStore } from "@/stores/agentPlanStore";
+import { useEditorStore } from "@/stores/editorStore";
 import {
   aggregateConversationDiffs,
   type PerFileDiffStat,
@@ -20,7 +19,6 @@ import { API_PROVIDERS } from "@/lib/api-models";
 import { AgentPreviewPane } from "./AgentPreviewPane";
 import { ReviewSurface } from "./review/ReviewSurface";
 import { AgentFilePane } from "./AgentFilePane";
-import { PlanPanel } from "./PlanPanel";
 import { EditorDockPanel } from "@/components/editor/EditorDockPanel";
 import { RightDock, type RightDockPanel } from "@/components/layout/RightDock";
 import { useRightDockStore } from "@/stores/rightDockStore";
@@ -33,7 +31,6 @@ import {
 import { useUnviewedCount } from "./review/useUnviewedCount";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { getAgentColor } from "@/lib/agentColors";
 
 interface AgentInspectorPaneProps {
   conversationId: string;
@@ -46,6 +43,18 @@ interface AgentInspectorPaneProps {
  * from D5), so mutual exclusion, width arbitration and collapse are the dock's
  * job rather than five pieces of local component state. Preview in particular
  * is a real dock panel now instead of a free-floating global (P0-3).
+ *
+ * B4 (wave 2b) cut the tab strip from six panels to three, because six tabs at
+ * a 260px minimum width is a filing cabinet, not an inspector:
+ *   - Inspector folded into the Diff panel's header (same content, one click
+ *     away, next to the diffs it describes);
+ *   - Files folded into the Editor (the browser IS how you open a buffer, and
+ *     an Editor with no file open had nothing else to show);
+ *   - Plan dropped entirely — `PlanPanel` was mounted TWICE, here and inline in
+ *     `AgentChatPane`. The plan belongs in the conversation, so the inline one
+ *     survives and this duplicate is gone.
+ * The dock itself now ships collapsed (see `rightDockStore` defaults), so the
+ * Agents view is a two-pane shell until something asks for a panel.
  */
 export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) {
   const conversation = useAgentTaskStore((s) =>
@@ -77,42 +86,15 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
     prevPreviewSignatureRef.current = previewSignature;
   }, [previewSignature, remote, openPanel]);
 
-  // Peer effect: reveal the Plan panel on the rising edge of "plan arrives",
-  // so we never steal a panel the user picked while a plan already existed.
-  const planCount = useAgentPlanStore(
-    (s) => s.plan.get(conversationId)?.length ?? 0,
-  );
-  const prevPlanCountRef = useRef(planCount);
-  useEffect(() => {
-    if (planCount > 0 && prevPlanCountRef.current === 0) {
-      openPanel("agents", "plan");
-    }
-    prevPlanCountRef.current = planCount;
-  }, [planCount, openPanel]);
+  // There is no peer "reveal the Plan panel" effect any more. It used to fire
+  // on the rising edge of "plan arrives" and open a dock panel that no longer
+  // exists — which would now open the dock onto whatever panel happens to sort
+  // first, hijacking the view for a plan that is already visible inline in the
+  // conversation. The inline `PlanPanel` in `AgentChatPane` is the reveal.
 
   const panels = useMemo<RightDockPanel[]>(() => {
     if (!conversation) return [];
     return [
-      {
-        id: "inspector",
-        label: "Inspector",
-        icon: PanelLeft,
-        render: () => (
-          <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-            <InspectorContent conversationId={conversationId} />
-          </div>
-        ),
-      },
-      {
-        id: "plan",
-        label: "Plan",
-        icon: CheckSquare,
-        render: () => (
-          <div className="min-h-0 flex-1 overflow-auto">
-            <PlanPanel conversation={conversation} />
-          </div>
-        ),
-      },
       {
         id: "preview",
         label: "Preview",
@@ -133,38 +115,24 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
         label: "Diff",
         icon: FileDiff,
         badge: unreviewedCount,
-        render: () =>
-          conversation.mode === "api" ? (
-            <ReviewSurface conversationId={conversationId} embedded />
-          ) : (
-            <div className="flex flex-1 items-center justify-center bg-bg-primary">
-              <EmptyState
-                icon={<FileDiff size={24} />}
-                title="Diffs are only tracked for API-mode conversations."
-              />
-            </div>
-          ),
-      },
-      {
-        id: "files",
-        label: "Files",
-        icon: FolderTree,
         render: () => (
-          <AgentFilePane
-            conversationId={conversationId}
-            projectPath={conversation.projectPath}
-            sshTarget={conversation.sshTarget ?? null}
-            // D5 / P1-5: Files advertised a preview path that was never wired
-            // — `onSelectFile` had no producer. Rows now open the file in the
-            // dock Editor, which renders `.md` through MarkdownRenderer.
-            onSelectFile={(absolutePath) =>
-              openInEditor(absolutePath, {
-                projectPath: conversation.projectPath,
-                remote,
-                surface: "agents",
-              })
-            }
-          />
+          <div className="flex min-h-0 flex-1 flex-col">
+            {/* The old Inspector tab, folded in as this panel's header: the
+                file/session facts describe the very diffs below them. */}
+            <InspectorHeader conversationId={conversationId} />
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {conversation.mode === "api" ? (
+                <ReviewSurface conversationId={conversationId} embedded />
+              ) : (
+                <div className="flex flex-1 items-center justify-center bg-bg-primary">
+                  <EmptyState
+                    icon={<FileDiff size={24} />}
+                    title="Diffs are only tracked for API-mode conversations."
+                  />
+                </div>
+              )}
+            </div>
+          </div>
         ),
       },
       {
@@ -173,7 +141,14 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
         icon: FileText,
         disabled: remote,
         disabledReason: REMOTE_UNSUPPORTED_TOOLTIP,
-        render: () => <EditorDockPanel />,
+        render: () => (
+          <EditorPanel
+            conversationId={conversationId}
+            projectPath={conversation.projectPath}
+            sshTarget={conversation.sshTarget ?? null}
+            remote={remote}
+          />
+        ),
       },
     ];
   }, [conversation, conversationId, remote, unreviewedCount]);
@@ -181,6 +156,103 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
   if (!conversation) return null;
 
   return <RightDock surface="agents" panels={panels} ariaLabel="Inspector views" />;
+}
+
+/* ------------------------------------------------------------------ */
+/* Folded panels                                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The former Inspector tab, folded into the Diff panel's header.
+ *
+ * Collapsed by default: the diffs are what the panel is FOR, and the session
+ * facts are reference material. Opening it never navigates away, so the diff
+ * list is still one click behind.
+ */
+function InspectorHeader({ conversationId }: { conversationId: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="shrink-0 border-b border-line-soft bg-bg-secondary">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left transition-colors hover:bg-bg-tertiary"
+      >
+        <ChevronRight
+          size={10}
+          className={`shrink-0 text-text-muted transition-transform motion-reduce:transition-none ${
+            open ? "rotate-90" : ""
+          }`}
+        />
+        <span className="text-meta uppercase tracking-[0.09em] text-text-faint">
+          Session details
+        </span>
+      </button>
+      {open && (
+        <div className="max-h-[240px] overflow-auto border-t border-line-soft">
+          <InspectorContent conversationId={conversationId} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The former Files tab, folded into the Editor.
+ *
+ * The browser is how a buffer gets opened, and an Editor with no file open had
+ * nothing else to say — so an empty Editor IS the browser. Once a buffer exists
+ * a toggle strip switches back and forth without leaving the panel.
+ */
+function EditorPanel({
+  conversationId,
+  projectPath,
+  sshTarget,
+  remote,
+}: {
+  conversationId: string;
+  projectPath: string;
+  sshTarget: { host: string; user: string; remotePath: string } | null;
+  remote: boolean;
+}) {
+  const openFileCount = useEditorStore((s) => s.openFiles.length);
+  const [browsing, setBrowsing] = useState(false);
+  const showBrowser = browsing || openFileCount === 0;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {openFileCount > 0 && (
+        <div className="flex shrink-0 items-center border-b border-line-soft bg-bg-secondary px-2 py-1">
+          <button
+            type="button"
+            onClick={() => setBrowsing((v) => !v)}
+            aria-pressed={browsing}
+            className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-meta text-text-muted transition-colors hover:bg-bg-tertiary hover:text-text-primary"
+          >
+            <FolderTree size={10} />
+            {browsing ? "Back to editor" : "Browse files"}
+          </button>
+        </div>
+      )}
+      {showBrowser ? (
+        <AgentFilePane
+          conversationId={conversationId}
+          projectPath={projectPath}
+          sshTarget={sshTarget}
+          // D5 / P1-5: Files advertised a preview path that was never wired
+          // — `onSelectFile` had no producer. Rows now open the file in the
+          // dock Editor, which renders `.md` through MarkdownRenderer.
+          onSelectFile={(absolutePath) => {
+            openInEditor(absolutePath, { projectPath, remote, surface: "agents" });
+            setBrowsing(false);
+          }}
+        />
+      ) : (
+        <EditorDockPanel />
+      )}
+    </div>
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -308,7 +380,11 @@ function InspectorContent({ conversationId }: { conversationId: string }) {
             k="Agent"
             v={
               <span>
-                <span className={`${getAgentColor(conversation?.agent ?? "").text} font-medium`}>
+                {/* Identity feeds the LABEL, never the chrome. `getAgentColor`
+                    used to tint this row per provider, which is exactly the
+                    identity-driven chrome the capability rule forbids — the
+                    provider name is text, not a colour. */}
+                <span className="font-medium text-text-primary">
                   {agentDisplayName(conversation?.agent ?? "")}
                 </span>
                 <span className="text-text-muted"> · {modelLabel}</span>
@@ -448,6 +524,7 @@ function agentDisplayName(agent: string): string {
     codex: "Codex",
     opencode: "OpenCode",
     packetcode: "PacketCode",
+    "api-packetcode": "PacketCode (ACP)",
   };
   return labels[agent] ?? agent;
 }
