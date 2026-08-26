@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { APP_NAME_LOWER, storageKey } from "@/lib/brand";
 import { parsePacketAgentAttentionList } from "@/lib/packetAgentAttention";
+import { buildPacketAgentCoordinationMessage } from "@/lib/packetAgentCoordination";
 import {
   isPacketAgentAttentionEvent,
   projectPacketAgentEvent,
@@ -389,6 +390,21 @@ export const usePacketAgentStore = create<PacketAgentStore>()(
         if (isPacketAgentAttentionEvent(observed.type)) {
           void get()
             .fetchAttention(key)
+            .catch(() => undefined);
+        }
+        // PH9: attention/terminal events also post into the flight's
+        // coordination inbox (dedupeKey packetagent:{eventId}). Lazy import
+        // keeps the flight-store graph out of this module; a key that is not
+        // a Flight id (conversation deployments) rejects and is ignored.
+        const inboxMessage = buildPacketAgentCoordinationMessage({
+          flightId: key,
+          deploymentId: projection.deploymentId,
+          workerRunId: projection.workerRunId,
+          event: observed,
+        });
+        if (inboxMessage) {
+          void import("@/stores/coordinationInboxStore")
+            .then((module) => module.postCoordinationMessage(inboxMessage))
             .catch(() => undefined);
         }
         if (observed.eventId) {

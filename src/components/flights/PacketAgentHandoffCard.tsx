@@ -294,7 +294,10 @@ export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
   }
 
   return (
-    <div className="rounded border border-bg-border bg-bg-secondary p-3">
+    <div
+      id={`packetagent-card-${flight.id}`}
+      className="rounded border border-bg-border bg-bg-secondary p-3"
+    >
       <div className="flex items-start gap-2">
         <Bot size={14} className="mt-0.5 text-accent-green" />
         <div className="min-w-0 flex-1">
