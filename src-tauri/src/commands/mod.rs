@@ -23,6 +23,8 @@ pub mod git;
 pub mod github;
 pub mod history;
 pub mod insights;
+// LM2 — custom OpenAI-compatible endpoint configuration.
+pub mod custom_compat;
 // v0.8.5 — issues spec import.
 pub mod flight_cost;
 pub mod issues;

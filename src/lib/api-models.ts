@@ -151,6 +151,18 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
       { label: "CodeLlama 34B", value: "codellama:34b" },
     ],
   },
+  {
+    // LM2 — user-supplied OpenAI-compatible endpoint (vLLM, LM Studio,
+    // LiteLLM, Together, …). Models are a runtime-managed manual list (see
+    // `useCustomModels`) exactly like Ollama's live list, so the static
+    // catalog carries none. `needsKey: false` — the endpoint may require no
+    // key; the auth badge reflects whether a base URL is configured instead.
+    id: "custom",
+    agentCli: "api-custom",
+    name: "Custom endpoint (OpenAI-compatible)",
+    needsKey: false,
+    models: [],
+  },
 ];
 
 // Populate context-window + pricing metadata for every known model, sourcing

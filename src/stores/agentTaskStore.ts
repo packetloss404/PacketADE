@@ -138,7 +138,8 @@ export type ApiAgentCli =
   | "api-openai"
   | "api-minimax"
   | "api-openrouter"
-  | "api-ollama";
+  | "api-ollama"
+  | "api-custom";
 
 export type AgentCli =
   | "claude-code"
@@ -152,6 +153,7 @@ export type AgentCli =
   | "api-minimax"
   | "api-openrouter"
   | "api-ollama"
+  | "api-custom"
   | (string & {});
 
 /** Retired provider-identity duplicates, mapped onto their canonical id.
@@ -241,6 +243,8 @@ export function apiAgentProvider(agent: AgentCli): string {
     "api-minimax": "minimax",
     "api-openrouter": "openrouter",
     "api-ollama": "ollama",
+    // LM2 — user-supplied OpenAI-compatible endpoint. Key optional.
+    "api-custom": "custom",
   };
   // Canonicalise first so a legacy id hydrated from disk (`api-minimax-api`)
   // resolves through its alias instead of tripping the unknown-agent fallback.

@@ -1,9 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Check, RotateCcw, Server } from "lucide-react";
 import {
+  getCustomCompatBaseUrl,
+  getCustomCompatModels,
   getMinimaxBaseUrl,
   getOllamaBaseUrl,
   getOllamaRuntimeOptions,
+  setCustomCompatBaseUrl,
+  setCustomCompatModels,
   setMinimaxBaseUrl,
   setOllamaBaseUrl,
   setOllamaRuntimeOptions,
@@ -247,6 +251,141 @@ function OllamaRuntimeRow() {
   );
 }
 
+/**
+ * LM2 — the custom OpenAI-compatible endpoint (vLLM, LM Studio, LiteLLM,
+ * Together, any server speaking `POST {base}/chat/completions`). Unlike the
+ * rows above there is NO default URL — unset means the provider is
+ * unconfigured — and the URL is stored INCLUDING its `/v1`-style path prefix
+ * and used verbatim. The model list is manual: no discovery route works
+ * across these servers, so the picker shows exactly what is entered here.
+ */
+function CustomCompatRow() {
+  const [effectiveUrl, setEffectiveUrl] = useState<string | null>(null);
+  const [urlDraft, setUrlDraft] = useState("");
+  const [modelsDraft, setModelsDraft] = useState("");
+  const [savedModels, setSavedModels] = useState<string[]>([]);
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([getCustomCompatBaseUrl(), getCustomCompatModels()])
+      .then(([url, models]) => {
+        if (cancelled) return;
+        const list = models ?? [];
+        setEffectiveUrl(url ?? null);
+        setUrlDraft(url ?? "");
+        setSavedModels(list);
+        setModelsDraft(list.join("\n"));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(String(err));
+        setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function apply(nextUrl: string | null, nextModels: string[]) {
+    setStatus("saving");
+    setError(null);
+    try {
+      const appliedUrl = await setCustomCompatBaseUrl(nextUrl);
+      const appliedModels = (await setCustomCompatModels(nextModels)) ?? [];
+      setEffectiveUrl(appliedUrl ?? null);
+      setUrlDraft(appliedUrl ?? "");
+      setSavedModels(appliedModels);
+      setModelsDraft(appliedModels.join("\n"));
+      setStatus("saved");
+    } catch (err) {
+      setStatus("error");
+      setError(String(err));
+    }
+  }
+
+  const draftModels = modelsDraft
+    .split("\n")
+    .map((m) => m.trim())
+    .filter(Boolean);
+  const hasChanges =
+    urlDraft.trim() !== (effectiveUrl ?? "") ||
+    draftModels.join("\n") !== savedModels.join("\n");
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <label htmlFor="custom-compat-base-url" className="text-[11px] text-text-secondary">
+          Custom OpenAI-compatible
+        </label>
+        <span className="text-[10px] text-text-muted">No default — unset disables the row</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <input
+          id="custom-compat-base-url"
+          type="url"
+          value={urlDraft}
+          onChange={(e) => {
+            setUrlDraft(e.target.value);
+            setStatus("idle");
+            setError(null);
+          }}
+          placeholder="http://localhost:8000/v1"
+          className="flex-1 min-w-0 bg-bg-primary border border-bg-border rounded px-2 py-1.5 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
+        />
+        <button
+          type="button"
+          onClick={() => void apply(urlDraft.trim() || null, draftModels)}
+          disabled={!hasChanges || status === "saving"}
+          className="p-1.5 text-accent-green hover:bg-accent-green/10 rounded disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+          title="Save custom endpoint"
+        >
+          <Check size={12} />
+        </button>
+        <button
+          type="button"
+          onClick={() => void apply(null, [])}
+          disabled={status === "saving"}
+          className="p-1.5 text-text-muted hover:text-text-primary hover:bg-bg-hover rounded disabled:opacity-40 transition-colors"
+          title="Clear custom endpoint and model list"
+        >
+          <RotateCcw size={12} />
+        </button>
+      </div>
+      <label htmlFor="custom-compat-models" className="sr-only">
+        Custom endpoint model list
+      </label>
+      <textarea
+        id="custom-compat-models"
+        value={modelsDraft}
+        onChange={(e) => {
+          setModelsDraft(e.target.value);
+          setStatus("idle");
+          setError(null);
+        }}
+        rows={3}
+        placeholder={"Model ids — one per line\nqwen2.5-72b-instruct"}
+        className="mt-1.5 w-full resize-none bg-bg-primary border border-bg-border rounded px-2 py-1.5 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
+      />
+      <div className="mt-1.5 text-[10px] text-text-muted bg-bg-primary border border-bg-border rounded px-3 py-2">
+        Any server speaking the OpenAI chat-completions protocol: vLLM, LM Studio, LiteLLM,
+        Together, … The URL is used verbatim as{" "}
+        <span className="text-text-secondary">
+          {effectiveUrl ?? "{base}"}/chat/completions
+        </span>
+        , so include the <span className="text-text-secondary">/v1</span> prefix if your server
+        uses one. API key is optional — save one under{" "}
+        <span className="text-text-secondary">custom</span> in API Keys and it is sent as a
+        Bearer token; without one, no Authorization header is sent. Models are listed manually
+        (one id per line) — the picker offers exactly these.
+      </div>
+      {status === "saved" && <div className="mt-1 text-[10px] text-accent-green">Saved.</div>}
+      {error && <div className="mt-1 text-[10px] text-accent-red">{error}</div>}
+    </div>
+  );
+}
+
 export function ProviderEndpointsCard() {
   return (
     <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
@@ -291,6 +430,8 @@ export function ProviderEndpointsCard() {
             </>
           )}
         />
+
+        <CustomCompatRow />
       </div>
     </div>
   );

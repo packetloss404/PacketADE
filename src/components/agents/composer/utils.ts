@@ -62,7 +62,7 @@ export const MODE_ORDER: AgentMode[] = ["agent", "ask", "manual", "plan"];
 export const PROVIDER_GROUPS: { label: string; agents: AgentCli[] }[] = [
   { label: "Anthropic", agents: ["api-claude-oauth" as AgentCli, "api-claude"] },
   { label: "OpenAI", agents: ["api-openai", "api-openai-agents"] },
-  { label: "Other", agents: ["api-openrouter", "api-minimax", "api-ollama"] },
+  { label: "Other", agents: ["api-openrouter", "api-minimax", "api-ollama", "api-custom"] },
 ];
 
 /**

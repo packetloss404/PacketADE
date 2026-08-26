@@ -131,6 +131,13 @@ pub fn load_api_key(provider: &str) -> Result<String, String> {
                     );
                 }
             }
+            // LM2: the custom OpenAI-compatible endpoint treats its key as
+            // optional — many local/self-hosted servers require none. An
+            // empty key makes `stream_chat_compat` skip the Authorization
+            // header entirely.
+            if provider == "custom" {
+                return Ok(String::new());
+            }
             Err(format!(
                 "No API key configured for {}. Set one in Settings > API Keys.",
                 provider

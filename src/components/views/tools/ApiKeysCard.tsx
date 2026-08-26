@@ -9,6 +9,9 @@ interface ProviderEntry {
   name: string;
   description: string;
   needsKey: boolean;
+  /** Key accepted but not required (LM2 custom endpoint): show the Set Key /
+   * Update / Delete controls without ever gating readiness on the key. */
+  optionalKey?: boolean;
 }
 
 const PROVIDERS: ProviderEntry[] = [
@@ -17,6 +20,13 @@ const PROVIDERS: ProviderEntry[] = [
   { id: "minimax", name: "MiniMax (Token Plan)", description: "Coding/Token Plan key · M3, M2.5, M2", needsKey: true },
   { id: "openrouter", name: "OpenRouter", description: "100+ models, one key", needsKey: true },
   { id: "ollama", name: "Ollama", description: "Local models, no key needed", needsKey: false },
+  {
+    id: "custom",
+    name: "Custom endpoint",
+    description: "OpenAI-compatible server · key optional, sent as Bearer when set",
+    needsKey: false,
+    optionalKey: true,
+  },
 ];
 
 export function ApiKeysCard() {
@@ -142,7 +152,7 @@ export function ApiKeysCard() {
                   <X size={11} />
                 </button>
               </div>
-            ) : provider.needsKey ? (
+            ) : provider.needsKey || provider.optionalKey ? (
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => {

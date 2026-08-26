@@ -1,12 +1,14 @@
-import { Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { Loader2, AlertCircle, RefreshCw, Settings2 } from "lucide-react";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import type { AgentCli } from "@/stores/agentTaskStore";
+import { useAppStore } from "@/stores/appStore";
 import {
   API_PROVIDERS,
   getModelSpeed,
   MODEL_SPEED_LABEL,
 } from "@/lib/api-models";
 import type { OllamaModelsState } from "../hooks/useOllamaModels";
+import { useCustomModels } from "../hooks/useCustomModels";
 
 /** Compact context-window label, e.g. 200_000 -> "200K ctx", 1_000_000 -> "1M ctx". */
 function formatContextWindow(tokens: number | undefined): string | null {
@@ -52,15 +54,26 @@ export function ModelSelector({
   openSignal,
   requiresTools = false,
 }: ModelSelectorProps) {
+  // LM2: the custom endpoint's models are a runtime-managed manual list, so
+  // (like Ollama's live list) the static catalog carries none. Self-contained
+  // here — the hook only fetches while `api-custom` is selected — so the
+  // Composer / tile-header hosts did not have to thread more state.
+  const { customModels, refresh: refreshCustomModels } =
+    useCustomModels(selectedAgent);
+  const openSettings = useAppStore((s) => s.openSettings);
+
   const provider = API_PROVIDERS.find((p) => p.agentCli === selectedAgent);
   if (!provider) return null;
 
   const isOllama = selectedAgent === "api-ollama";
+  const isCustom = selectedAgent === "api-custom";
 
   // Trigger label. In Ollama mode the label is the live-fetched model name
   // (just the `name` string; Ollama installs have no separate display label).
   let triggerLabel: string;
-  if (isOllama) {
+  if (isCustom) {
+    triggerLabel = selectedModel || "Select model";
+  } else if (isOllama) {
     if (Array.isArray(ollamaModels)) {
       const match = ollamaModels.find((m) => m.name === selectedModel);
       triggerLabel =
@@ -105,7 +118,51 @@ export function ModelSelector({
         </span>
       }
     >
-      {isOllama ? (
+      {isCustom ? (
+        <>
+          <div className="flex items-center justify-between px-3 py-1 text-meta uppercase tracking-wide text-text-muted">
+            <span>Configured models</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                refreshCustomModels();
+              }}
+              className="p-0.5 rounded hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors"
+              title="Reload the configured model list"
+            >
+              <RefreshCw size={10} />
+            </button>
+          </div>
+          {customModels === "loading" ? (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 text-text-muted">
+              <Loader2 size={10} className="animate-spin" />
+              Loading models…
+            </div>
+          ) : !Array.isArray(customModels) ? (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 text-accent-red">
+              <AlertCircle size={10} />
+              {customModels.error}
+            </div>
+          ) : customModels.length === 0 ? (
+            <div className="px-3 py-1.5 text-text-muted text-meta">
+              No models configured for the custom endpoint yet.
+            </div>
+          ) : (
+            customModels.map((name) => (
+              <DropdownItem key={name} onClick={() => onModelChange(name)}>
+                <span className="truncate">{name}</span>
+              </DropdownItem>
+            ))
+          )}
+          <DropdownItem onClick={() => openSettings({ section: "providers" })}>
+            <span className="flex items-center gap-1.5 text-text-secondary">
+              <Settings2 size={10} />
+              Edit models…
+            </span>
+          </DropdownItem>
+        </>
+      ) : isOllama ? (
         <>
           <div className="flex items-center justify-between px-3 py-1 text-meta uppercase tracking-wide text-text-muted">
             <span>Installed models</span>

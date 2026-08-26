@@ -3454,6 +3454,29 @@ export async function listOllamaModels(): Promise<OllamaModel[]> {
   return invoke("list_ollama_models");
 }
 
+// LM2 — custom OpenAI-compatible endpoint (vLLM / LM Studio / LiteLLM /
+// Together, …). The base URL is stored INCLUDING its `/v1`-style path prefix
+// and used verbatim as `{base}/chat/completions`; `null` means unconfigured
+// (there is no default). The model list is manual — no cross-server
+// discovery route exists.
+export async function getCustomCompatBaseUrl(): Promise<string | null> {
+  return invoke("get_custom_compat_base_url");
+}
+
+export async function setCustomCompatBaseUrl(
+  baseUrl: string | null,
+): Promise<string | null> {
+  return invoke("set_custom_compat_base_url", { baseUrl });
+}
+
+export async function getCustomCompatModels(): Promise<string[]> {
+  return invoke("get_custom_compat_models");
+}
+
+export async function setCustomCompatModels(models: string[]): Promise<string[]> {
+  return invoke("set_custom_compat_models", { models });
+}
+
 /**
  * Ollama local-runtime knobs, sent on every native `/api/chat` request.
  *

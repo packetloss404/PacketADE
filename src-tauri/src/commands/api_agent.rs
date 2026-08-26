@@ -830,6 +830,7 @@ fn provider_to_source(provider: &str) -> &'static str {
         "minimax-api" | "api-minimax-api" => "api-minimax-api",
         "openrouter" | "api-openrouter" => "api-openrouter",
         "ollama" | "api-ollama" => "api-ollama",
+        "custom" | "api-custom" => "api-custom",
         _ => "api-claude",
     }
 }
