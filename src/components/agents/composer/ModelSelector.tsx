@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Loader2, AlertCircle, ChevronDown, RefreshCw } from "lucide-react";
+import { Loader2, AlertCircle, ChevronDown, RefreshCw, Settings2 } from "lucide-react";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import type { AgentCli } from "@/stores/agentTaskStore";
+import { useAppStore } from "@/stores/appStore";
 import {
   API_PROVIDERS,
   getModelSpeed,
@@ -9,6 +10,7 @@ import {
   type ApiModel,
 } from "@/lib/api-models";
 import type { OllamaModelsState } from "../hooks/useOllamaModels";
+import { useCustomModels } from "../hooks/useCustomModels";
 
 /** Compact context-window label, e.g. 200_000 -> "200K ctx", 1_000_000 -> "1M ctx". */
 function formatContextWindow(tokens: number | undefined): string | null {
@@ -35,6 +37,9 @@ interface ModelRow {
   searchText: string;
   body: ReactNode;
   onSelect: () => void;
+  /** Tool-less Ollama model while the surface needs tool calling: shown but
+   * not selectable (backend pre-flight is the real enforcement point). */
+  disabled?: boolean;
 }
 
 interface ModelSelectorProps {
@@ -68,6 +73,10 @@ interface ModelSelectorProps {
    * the `openSignal` behaviour are the same either way.
    */
   dropUp?: boolean;
+  /** True when the surface this picker serves runs tool-carrying turns
+   * (conversation tiles always do). Ollama models the daemon reports as
+   * tool-less are disabled; unknown-capability models stay selectable. */
+  requiresTools?: boolean;
 }
 
 export function ModelSelector({
@@ -79,6 +88,7 @@ export function ModelSelector({
   refreshOllamaModels,
   openSignal,
   dropUp = false,
+  requiresTools = false,
 }: ModelSelectorProps) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
@@ -109,6 +119,12 @@ export function ModelSelector({
   }, [open]);
 
   const isOllama = selectedAgent === "api-ollama";
+  const isCustom = selectedAgent === "api-custom";
+  // LM2: the custom endpoint models are a runtime-managed manual list, so
+  // (like Ollama live list) the static catalog carries none.
+  const { customModels, refresh: refreshCustomModels } =
+    useCustomModels(selectedAgent);
+  const openSettings = useAppStore((s) => s.openSettings);
 
   // Capability first, catalog second. The catalog lookup is what used to gate
   // this whole component (`if (!provider) return null`), which meant a session
@@ -119,7 +135,7 @@ export function ModelSelector({
   const modelRows = models && models.length > 0 ? models : catalogModels;
   // Ollama draws its rows from the live daemon probe, so an empty catalog is
   // expected there and must not unmount the picker.
-  if (!isOllama && modelRows.length === 0) return null;
+  if (!isOllama && !isCustom && modelRows.length === 0) return null;
 
   // Trigger label. In Ollama mode the label is the live-fetched model name
   // (just the `name` string; Ollama installs have no separate display label).
@@ -134,6 +150,8 @@ export function ModelSelector({
     } else {
       triggerLabel = selectedModel || "Ollama unreachable";
     }
+  } else if (isCustom) {
+    triggerLabel = selectedModel || "Select model";
   } else {
     const currentModel =
       modelRows.find((m) => m.value === selectedModel) ?? modelRows[0];
@@ -209,23 +227,94 @@ export function ModelSelector({
       );
     } else {
       for (const m of ollamaModels) {
+        const toolless = requiresTools && m.supportsTools === false;
         rows.push({
           key: m.name,
           searchText: m.name,
-          onSelect: () => onModelChange(m.name),
+          disabled: toolless,
+          onSelect: toolless ? () => {} : () => onModelChange(m.name),
           body: (
-            <span className="flex w-full items-center justify-between gap-2">
+            <span
+              className={`flex w-full items-center justify-between gap-2 ${toolless ? "opacity-50" : ""}`}
+              title={
+                toolless
+                  ? "This model has no tools template — agent turns need tool calling"
+                  : undefined
+              }
+            >
               <span className="truncate">{m.name}</span>
-              {typeof m.size === "number" && (
-                <span className="shrink-0 text-meta text-text-muted">
-                  {(m.size / 1e9).toFixed(1)} GB
-                </span>
+              {toolless ? (
+                <span className="shrink-0 text-meta text-text-muted">no tools</span>
+              ) : (
+                typeof m.size === "number" && (
+                  <span className="shrink-0 text-meta text-text-muted">
+                    {(m.size / 1e9).toFixed(1)} GB
+                  </span>
+                )
               )}
             </span>
           ),
         });
       }
     }
+  } else if (isCustom) {
+    header = (
+      <div className="flex items-center justify-between px-3 py-1 text-meta uppercase tracking-wide text-text-muted">
+        <span>Configured models</span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            refreshCustomModels();
+          }}
+          className="rounded p-0.5 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
+          title="Reload the configured model list"
+        >
+          <RefreshCw size={10} />
+        </button>
+      </div>
+    );
+    if (customModels === "loading") {
+      notice = (
+        <div className="flex items-center gap-1.5 px-3 py-1.5 text-text-muted">
+          <Loader2 size={10} className="animate-spin motion-reduce:animate-none" />
+          Loading models…
+        </div>
+      );
+    } else if (!Array.isArray(customModels)) {
+      notice = (
+        <div className="flex items-center gap-1.5 px-3 py-1.5 text-accent-red">
+          <AlertCircle size={10} />
+          {customModels.error}
+        </div>
+      );
+    } else if (customModels.length === 0) {
+      notice = (
+        <div className="px-3 py-1.5 text-meta text-text-muted">
+          No models configured for the custom endpoint yet.
+        </div>
+      );
+    } else {
+      for (const name of customModels) {
+        rows.push({
+          key: name,
+          searchText: name,
+          onSelect: () => onModelChange(name),
+          body: <span className="truncate">{name}</span>,
+        });
+      }
+    }
+    rows.push({
+      key: "__edit_custom_models__",
+      searchText: "edit models settings",
+      onSelect: () => openSettings({ section: "providers" }),
+      body: (
+        <span className="flex items-center gap-1.5 text-text-secondary">
+          <Settings2 size={10} />
+          Edit models…
+        </span>
+      ),
+    });
   } else {
     for (const m of modelRows) {
       const ctx = formatContextWindow(m.contextWindow);
@@ -273,7 +362,10 @@ export function ModelSelector({
         {header}
         {notice}
         {rows.map((r) => (
-          <DropdownItem key={r.key} onClick={r.onSelect}>
+          <DropdownItem
+            key={r.key}
+            onClick={r.disabled ? () => {} : r.onSelect}
+          >
             {r.body}
           </DropdownItem>
         ))}
@@ -333,7 +425,9 @@ export function ModelSelector({
               type="button"
               role="option"
               aria-selected={r.key === selectedModel}
+              aria-disabled={r.disabled}
               onClick={() => {
+                if (r.disabled) return;
                 r.onSelect();
                 setOpen(false);
               }}

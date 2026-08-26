@@ -15,8 +15,44 @@ use crate::core::llm_types::{
 use crate::core::tool_runtime;
 use tokio::sync::mpsc;
 
-const SUBAGENT_MODEL: &str = "claude-haiku-4-5";
 const MAX_ITERATIONS: usize = 8;
+
+/// The provider/model of the SESSION whose tool loop is currently executing.
+///
+/// Q2 — sub-agent tools are agentic helpers, not auxiliary tasks: they derive
+/// their provider from the parent session instead of aux routing, so a
+/// MiniMax-only (or Ollama-only) user's `spawn_subagent` no longer dies on a
+/// missing Anthropic key. `api_agent.rs` opens this scope around each tool
+/// dispatch; nested sub-agent chains inherit it because the whole chain is
+/// awaited inside the scope.
+#[derive(Clone, Debug)]
+pub struct ParentLlm {
+    pub provider: String,
+    pub model: String,
+}
+
+tokio::task_local! {
+    pub static PARENT_LLM: ParentLlm;
+}
+
+/// The ambient parent-session LLM, when a tool loop opened the scope.
+pub(crate) fn current_parent_llm() -> Option<ParentLlm> {
+    PARENT_LLM.try_with(|parent| parent.clone()).ok()
+}
+
+/// Provider + cheap-tier model for a sub-agent turn: the parent session's
+/// provider when known (fixes the MiniMax-only-user defect), else the
+/// historical Anthropic default.
+pub(crate) fn subagent_provider_and_model() -> (String, String) {
+    match current_parent_llm() {
+        Some(parent) => {
+            let model =
+                crate::core::aux_llm::cheap_tier_model(&parent.provider, &parent.model);
+            (parent.provider, model)
+        }
+        None => ("anthropic".to_string(), "claude-haiku-4-5".to_string()),
+    }
+}
 
 const SUBAGENT_SYSTEM_PROMPT: &str = "You are a focused research sub-agent. Use the read-only tools to investigate the task. After 1-3 tool calls, return a concise one-paragraph summary. Do not produce code or recommendations beyond the summary.";
 
@@ -261,17 +297,20 @@ pub async fn execute_spawn_subagent(
         .ok_or("Missing 'task' parameter")?
         .to_string();
 
-    let api_key = crate::commands::api_keys::load_api_key("anthropic")
-        .map_err(|e| format!("spawn_subagent requires an Anthropic API key: {}", e))?;
+    // Q2: run on the PARENT session's provider at its cheap tier — never on
+    // a hardcoded vendor the user may have no key for.
+    let (provider_id, model) = subagent_provider_and_model();
+    let api_key = crate::commands::api_keys::load_api_key(&provider_id)
+        .map_err(|e| format!("spawn_subagent requires a {} API key: {}", provider_id, e))?;
 
-    let provider = get_provider("anthropic")?;
+    let provider = get_provider(&provider_id)?;
     let tools = read_only_tool_definitions().await;
 
     // `_depth_guard` (acquired above) stays alive across the whole loop.
     run_agent_loop(
         &*provider,
         &api_key,
-        SUBAGENT_MODEL.to_string(),
+        model,
         SUBAGENT_SYSTEM_PROMPT.to_string(),
         tools,
         2048,

@@ -4,12 +4,20 @@
  * The design question this file pins down: an engine session and a PacketADE
  * conversation are NOT the same object. A conversation owns a full local
  * transcript and opens into the chat pane; an engine session is a remote
- * handle — a name, a timestamp, a model and a message count — that PacketADE
- * cannot currently replay (ACP `session/load` has no Tauri command). Rendering
- * them in one list would make a row that cannot be opened look exactly like a
- * row that can, so they are two lists, and the engine one says what it is.
+ * handle — a name, a timestamp, a model and a message count — whose transcript
+ * lives in the engine and stays there. Rendering them in one list would make a
+ * row that cannot be opened look exactly like a row that can, so they are two
+ * lists, and the engine one says what it is.
+ *
+ * Opening an engine row ADOPTS it: a new conversation is bound to the engine's
+ * session id and the first message resumes it over ACP `session/load`. That is
+ * offered only where the engine advertised the spec `loadSession` capability —
+ * an engine that cannot resume leaves the directory exactly as read-only as it
+ * was — and adopting never claims to have the history: the engine's load
+ * replay omits the user's own turns, so nothing of it is rendered and the
+ * adopted conversation says so.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The partial store mock pulls in the real `agentTaskStore` module graph, whose
@@ -99,6 +107,7 @@ const renameConversation = vi.fn();
 const pushEngineRename = vi.fn();
 const renameEngineSession = vi.fn();
 const refreshEngineSessions = vi.fn().mockResolvedValue(undefined);
+const adoptEngineSession = vi.fn().mockResolvedValue("conv-adopted");
 
 function seedStore(over: Record<string, unknown> = {}) {
   engineStore.state = {
@@ -110,6 +119,7 @@ function seedStore(over: Record<string, unknown> = {}) {
     pushEngineRename,
     renameEngineSession,
     refreshEngineSessions,
+    adoptEngineSession,
     engineSessions: [engineSession()],
     engineSessionsStatus: "ready",
     engineCapabilities: engineCaps(),
@@ -157,25 +167,54 @@ describe("AgentSidebar — engine session directory", () => {
     expect(refreshEngineSessions).toHaveBeenCalled();
   });
 
-  it("keeps engine rows out of the conversation list and un-openable", () => {
+  it("keeps engine rows out of the conversation list", () => {
+    render(
+      <AgentSidebar selectedId={null} onSelect={vi.fn()} onNewAgent={vi.fn()} showEngineSessions />,
+    );
+    expand();
+
+    // Two lists, two headings. The engine row never appears among the
+    // project-grouped conversations above it.
+    expect(screen.getByText("Local conversation")).toBeInTheDocument();
+    expect(screen.getByText("Refactor the router")).toBeInTheDocument();
+    expect(screen.getByText(/on the engine/i)).toBeInTheDocument();
+  });
+
+  it("adopts an engine row and opens the conversation the adoption created", async () => {
     const onSelect = vi.fn();
     render(
       <AgentSidebar selectedId={null} onSelect={onSelect} onNewAgent={vi.fn()} showEngineSessions />,
     );
     expand();
 
-    // Both are on screen, but only the conversation is a control that opens
-    // something. The engine row is not a button at all.
-    const conversationRow = screen.getByText("Local conversation");
     const engineRow = screen.getByText("Refactor the router");
-    expect(conversationRow.closest("button")).not.toBeNull();
-    expect(engineRow.closest("button")).toBeNull();
+    expect(engineRow.closest("button")).not.toBeNull();
 
     fireEvent.click(engineRow);
-    expect(onSelect).not.toHaveBeenCalled();
 
-    fireEvent.click(conversationRow);
-    expect(onSelect).toHaveBeenCalledWith("conv-1");
+    expect(adoptEngineSession).toHaveBeenCalledWith("eng-1");
+    // The adoption resolves the new conversation id; opening it is the second
+    // half of the same gesture.
+    await waitFor(() => expect(onSelect).toHaveBeenCalledWith("conv-adopted"));
+  });
+
+  it("leaves the row un-openable when the engine cannot load a session", () => {
+    // `loadSession` is the ACP SPEC capability. Without it a resume is
+    // impossible, so a clickable row would be a control whose every use fails
+    // — the silent no-op the capability rule exists to prevent.
+    seedStore({ engineCapabilities: { ...engineCaps(), loadSession: false } });
+    const onSelect = vi.fn();
+    render(
+      <AgentSidebar selectedId={null} onSelect={onSelect} onNewAgent={vi.fn()} showEngineSessions />,
+    );
+    expand();
+
+    const engineRow = screen.getByText("Refactor the router");
+    expect(engineRow.closest("button")).toBeNull();
+    fireEvent.click(engineRow);
+    expect(adoptEngineSession).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.getByText(/cannot be opened here/i)).toBeInTheDocument();
   });
 
   it("says plainly that it holds no transcript for these sessions", () => {
@@ -184,7 +223,8 @@ describe("AgentSidebar — engine session directory", () => {
     );
     expand();
 
-    expect(screen.getByText(/cannot be opened here yet/i)).toBeInTheDocument();
+    // Openable, and still explicit that the transcript is not coming with it.
+    expect(screen.getByText(/PacketADE has no transcript for it/i)).toBeInTheDocument();
   });
 
   it("distinguishes an empty engine from an unreachable one", () => {

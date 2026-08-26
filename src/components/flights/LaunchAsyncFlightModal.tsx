@@ -40,6 +40,7 @@ import type {
   FlightPriority,
 } from "@/types/flight";
 import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
+import { useOllamaModels } from "@/components/agents/hooks/useOllamaModels";
 import { pathWithinAllowedRoots, validateAutonomyPolicy } from "@/lib/autonomyPolicy";
 
 interface LaunchAsyncFlightModalProps {
@@ -163,6 +164,35 @@ export function LaunchAsyncFlightModal({
   }, [unpinnedTargets]);
 
   const reviewerProvider = API_PROVIDERS.find((provider) => provider.agentCli === reviewerAgent);
+
+  // The reviewer runs a tool-carrying read-only loop, so an Ollama reviewer
+  // must be a tool-capable *installed* model. Fetch the live list when the
+  // Ollama row is selected; fall back to the static catalog when the daemon
+  // is unreachable (the launch will then fail at the backend pre-flight).
+  const { ollamaModels: reviewerOllamaModels } = useOllamaModels(
+    reviewerEnabled ? reviewerAgent : "",
+  );
+  const reviewerModelOptions = useMemo<
+    { value: string; label: string; disabled: boolean }[]
+  >(() => {
+    if (
+      reviewerAgent === "api-ollama" &&
+      Array.isArray(reviewerOllamaModels) &&
+      reviewerOllamaModels.length > 0
+    ) {
+      return reviewerOllamaModels.map((m) => ({
+        value: m.name,
+        label: m.supportsTools === false ? `${m.name} (no tools)` : m.name,
+        disabled: m.supportsTools === false,
+      }));
+    }
+    return (reviewerProvider?.models ?? []).map((m) => ({
+      value: m.value,
+      label: m.label,
+      disabled: false,
+    }));
+  }, [reviewerAgent, reviewerOllamaModels, reviewerProvider]);
+
   const parsedAcceptanceCriteria = useMemo(
     () =>
       acceptanceCriteria
@@ -174,8 +204,12 @@ export function LaunchAsyncFlightModal({
   const reviewerConfigurationError = useMemo(() => {
     if (!reviewerEnabled) return null;
     if (!reviewerProvider) return "Choose a supported API reviewer.";
-    if (!reviewerProvider.models.some((model) => model.value === reviewerModel)) {
+    const selected = reviewerModelOptions.find((option) => option.value === reviewerModel);
+    if (!selected) {
       return "Choose a model supported by the selected reviewer.";
+    }
+    if (selected.disabled) {
+      return "That Ollama model has no tools template — the reviewer needs tool calling.";
     }
     if (parsedAcceptanceCriteria.length === 0) {
       return "Add at least one acceptance criterion for the independent reviewer.";
@@ -184,7 +218,7 @@ export function LaunchAsyncFlightModal({
       return "Reviewer Gate supports at most 40 acceptance criteria.";
     }
     return null;
-  }, [parsedAcceptanceCriteria, reviewerEnabled, reviewerModel, reviewerProvider]);
+  }, [parsedAcceptanceCriteria, reviewerEnabled, reviewerModel, reviewerModelOptions, reviewerProvider]);
 
   const explicitYoloPolicy = useMemo<AutonomyPolicy>(
     () => ({
@@ -704,8 +738,8 @@ export function LaunchAsyncFlightModal({
                 onChange={(event) => setReviewerModel(event.target.value)}
                 className="focus:border-accent-green/40 rounded border border-bg-border bg-bg-primary px-2 py-1 text-[10px] text-text-secondary outline-none"
               >
-                {reviewerProvider?.models.map((model) => (
-                  <option key={model.value} value={model.value}>
+                {reviewerModelOptions.map((model) => (
+                  <option key={model.value} value={model.value} disabled={model.disabled}>
                     {model.label}
                   </option>
                 ))}

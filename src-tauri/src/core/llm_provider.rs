@@ -41,6 +41,7 @@ pub const IN_PROCESS_PROVIDERS: &[&str] = &[
     "minimax-api",
     "openrouter",
     "ollama",
+    "custom",
 ];
 
 /// Get a provider instance by name.
@@ -59,6 +60,9 @@ pub fn get_provider(name: &str) -> Result<Box<dyn LlmProvider>, String> {
         "minimax" | "minimax-api" => Ok(Box::new(super::llm_minimax::MiniMaxProvider)),
         "openrouter" => Ok(Box::new(super::llm_openrouter::OpenRouterProvider)),
         "ollama" => Ok(Box::new(super::llm_ollama::OllamaProvider)),
+        // LM2: user-supplied OpenAI-compatible endpoint (vLLM / LM Studio /
+        // LiteLLM / Together, …). Key optional — `api-key-custom` when set.
+        "custom" => Ok(Box::new(super::llm_custom_compat::CustomCompatProvider)),
         _ => Err(format!("Unknown provider: {}", name)),
     }
 }

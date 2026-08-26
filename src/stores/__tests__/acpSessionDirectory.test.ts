@@ -16,12 +16,20 @@
  *     describe an engine that has since changed. Stamping is best-effort and
  *     must never be able to fail the resume.
  *
- *  3. **Resume says out loud that the engine's context is empty.** ACP has no
- *     mid-life resume: `start_api_agent_session`'s ACP branch always calls
- *     `session/new` and ignores the `resumeMessages` every other transport
- *     replays. The transcript above the resume boundary is PacketADE's own,
- *     complete, and NOT shared with the model — which is invisible unless it
- *     is said.
+ *  3. **Resume says out loud that the engine's context is empty.** For a
+ *     conversation PacketADE started, ACP has no mid-life resume: the ACP
+ *     branch calls `session/new` and ignores the `resumeMessages` every other
+ *     transport replays. The transcript above the resume boundary is
+ *     PacketADE's own, complete, and NOT shared with the model — which is
+ *     invisible unless it is said.
+ *
+ *  4. **Adoption is the other direction, and is honest the other way round.**
+ *     A conversation bound to an engine session (`acpEngineSessionId`) resumes
+ *     it with `session/load`, so the model DOES have the history — and
+ *     PacketADE does not: ACP's replay omits the user's own turns, so none of
+ *     it is rendered. The adopted conversation says that once, at the top, and
+ *     the resume boundary then says nothing, because there is no context reset
+ *     to report.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -375,5 +383,152 @@ describe("agentTaskStore — resuming an ACP conversation", () => {
       .conversations.find((c) => c.id === "conv-acp");
     expect(conversation?.status).not.toBe("failed");
     expect(conversation?.engineCapabilities).toBeUndefined();
+  });
+});
+
+describe("agentTaskStore — adopting an engine session", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    localStorage.clear();
+    listenMock.mockResolvedValue(() => {});
+    invokeMock.mockResolvedValue(undefined);
+    acpStartMock.mockResolvedValue(undefined);
+    acpCapabilitiesMock.mockResolvedValue(engineCaps());
+    acpListModelsMock.mockResolvedValue([]);
+    acpListSessionsMock.mockResolvedValue([engineSession()]);
+    startApiAgentSessionMock.mockResolvedValue(undefined);
+  });
+
+  async function seededStore() {
+    const useAgentTaskStore = await store();
+    await useAgentTaskStore.getState().refreshEngineSessions();
+    return useAgentTaskStore;
+  }
+
+  it("binds a new conversation to the engine's session id", async () => {
+    const useAgentTaskStore = await seededStore();
+
+    const id = await useAgentTaskStore.getState().adoptEngineSession("eng-1");
+
+    expect(id).toBeTruthy();
+    const conversation = useAgentTaskStore.getState().conversations.find((c) => c.id === id);
+    expect(conversation?.acpEngineSessionId).toBe("eng-1");
+    expect(conversation?.provider).toBe("packetcode-acp");
+    // The row's own facts, not invented ones.
+    expect(conversation?.projectPath).toBe("D:/projects/example");
+    expect(conversation?.model).toBe("claude-opus-4-8");
+    expect(conversation?.title).toBe("Refactor the router");
+    // Selected, so the click that adopted it also opened it.
+    expect(useAgentTaskStore.getState().selectedConversationId).toBe(id);
+  });
+
+  it("starts nothing on the engine — adoption is a local record", async () => {
+    const useAgentTaskStore = await seededStore();
+    startApiAgentSessionMock.mockClear();
+
+    await useAgentTaskStore.getState().adoptEngineSession("eng-1");
+
+    // No session start and no load. `session/load` happens when the user
+    // sends, which is the moment the resumed session is actually needed and
+    // the moment a failure has somewhere honest to land.
+    expect(startApiAgentSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("says up front that it holds no transcript for the session", async () => {
+    const useAgentTaskStore = await seededStore();
+
+    const id = await useAgentTaskStore.getState().adoptEngineSession("eng-1");
+    const conversation = useAgentTaskStore.getState().conversations.find((c) => c.id === id);
+
+    // The whole honesty story for an adopted session, stated once and durably:
+    // the engine has the history, PacketADE does not, and the replay that
+    // would have carried it leaves out the user's own turns.
+    expect(conversation?.messages).toHaveLength(1);
+    const notice = conversation.messages[0];
+    expect(notice.role).toBe("system");
+    expect(notice.content).toMatch(/no copy/i);
+    expect(notice.content).toMatch(/leaves out your own prompts/i);
+    expect(notice.content).toMatch(/full history as context/i);
+  });
+
+  it("refuses on an engine that cannot load a session", async () => {
+    // `loadSession` is the ACP SPEC capability. Adopting without it would mint
+    // a conversation whose every send is guaranteed to fail.
+    acpCapabilitiesMock.mockResolvedValue({ ...engineCaps(), loadSession: false });
+    const useAgentTaskStore = await seededStore();
+
+    await expect(useAgentTaskStore.getState().adoptEngineSession("eng-1")).resolves.toBeNull();
+    expect(useAgentTaskStore.getState().conversations).toHaveLength(0);
+  });
+
+  it("refuses a row the directory does not have", async () => {
+    const useAgentTaskStore = await seededStore();
+
+    await expect(useAgentTaskStore.getState().adoptEngineSession("eng-nope")).resolves.toBeNull();
+    expect(useAgentTaskStore.getState().conversations).toHaveLength(0);
+  });
+
+  it("re-opens the existing conversation rather than binding a second one", async () => {
+    const useAgentTaskStore = await seededStore();
+
+    const first = await useAgentTaskStore.getState().adoptEngineSession("eng-1");
+    useAgentTaskStore.setState({ selectedConversationId: null });
+    const second = await useAgentTaskStore.getState().adoptEngineSession("eng-1");
+
+    expect(second).toBe(first);
+    expect(useAgentTaskStore.getState().conversations).toHaveLength(1);
+    expect(useAgentTaskStore.getState().selectedConversationId).toBe(first);
+  });
+
+  it("resumes the bound session instead of minting a new one", async () => {
+    const useAgentTaskStore = await seededStore();
+    const id = await useAgentTaskStore.getState().adoptEngineSession("eng-1");
+    startApiAgentSessionMock.mockClear();
+
+    await useAgentTaskStore.getState().resumeApiConversation(id, "carry on");
+
+    expect(startApiAgentSessionMock).toHaveBeenCalled();
+    // The ACP options object is the last positional argument; `engineSessionId`
+    // is what makes the backend answer with `session/load`.
+    const args = startApiAgentSessionMock.mock.calls[0];
+    expect(args[args.length - 1]).toMatchObject({ engineSessionId: "eng-1" });
+  });
+
+  it("does not claim the engine forgot a history it is about to reload", async () => {
+    const useAgentTaskStore = await seededStore();
+    const id = await useAgentTaskStore.getState().adoptEngineSession("eng-1");
+
+    await useAgentTaskStore.getState().resumeApiConversation(id, "carry on");
+
+    const conversation = useAgentTaskStore.getState().conversations.find((c) => c.id === id);
+    const notices = conversation.messages.filter((m) => m.role === "system");
+    // Only the adoption notice. The "new engine session, context is empty"
+    // line would be false here: `session/load` brings the history back.
+    expect(notices).toHaveLength(1);
+    expect(notices[0].content).not.toMatch(/does not carry the earlier turns/);
+  });
+
+  it("keeps the engine-MCP inheritance off unless it was granted", async () => {
+    const useAgentTaskStore = await seededStore();
+    const id = await useAgentTaskStore.getState().adoptEngineSession("eng-1");
+    startApiAgentSessionMock.mockClear();
+
+    await useAgentTaskStore.getState().resumeApiConversation(id, "carry on");
+
+    const args = startApiAgentSessionMock.mock.calls[0];
+    expect(args[args.length - 1]).toMatchObject({ inheritEngineMcp: false });
+  });
+
+  it("carries an affirmative engine-MCP consent onto the session", async () => {
+    const useAgentTaskStore = await seededStore();
+    const id = await useAgentTaskStore.getState().adoptEngineSession("eng-1");
+    useAgentTaskStore.getState().setAcpInheritEngineMcp(true);
+    startApiAgentSessionMock.mockClear();
+
+    await useAgentTaskStore.getState().resumeApiConversation(id, "carry on");
+
+    const args = startApiAgentSessionMock.mock.calls[0];
+    expect(args[args.length - 1]).toMatchObject({ inheritEngineMcp: true });
   });
 });

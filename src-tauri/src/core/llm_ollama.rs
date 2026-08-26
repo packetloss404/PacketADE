@@ -192,7 +192,7 @@ fn profile_cache() -> &'static Mutex<HashMap<String, OllamaModelProfile>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-async fn fetch_model_profile(base_url: &str, model: &str) -> Option<OllamaModelProfile> {
+pub(crate) async fn fetch_model_profile(base_url: &str, model: &str) -> Option<OllamaModelProfile> {
     let key = format!("{}|{}", base_url, model);
     if let Some(cached) = profile_cache()
         .lock()
@@ -597,7 +597,16 @@ async fn stream_native_chat(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Ollama request failed: {}", e))?;
+        .map_err(|e| {
+            // Connection-shaped failures get the same stable message as
+            // `commands::ollama::list_ollama_models`, which Q3's fail-closed
+            // retry in `core::aux_llm` keys on.
+            if e.is_connect() || e.is_timeout() {
+                format!("Ollama not reachable at {}", base_url)
+            } else {
+                format!("Ollama request failed: {}", e)
+            }
+        })?;
 
     if !response.status().is_success() {
         let status = response.status();

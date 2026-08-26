@@ -133,6 +133,19 @@ struct ProviderRuntimeSettings {
     /// How long Ollama keeps a model resident after a turn (`30m`, `-1`, …).
     #[serde(default)]
     ollama_keep_alive: Option<String>,
+    /// LM2 — user-supplied OpenAI-compatible endpoint (vLLM / LM Studio /
+    /// LiteLLM / Together, …). Stored INCLUDING any path prefix (typically
+    /// `/v1`) and used verbatim as `{base}/chat/completions` — unlike the
+    /// Ollama URL, whose `/v1` is stripped because the native routes live at
+    /// the root. There is no default: unset means the provider is
+    /// unconfigured.
+    #[serde(default)]
+    custom_compat_base_url: Option<String>,
+    /// Manual model list for the custom endpoint — there is no reliable
+    /// discovery route across OpenAI-compatible servers, so the user
+    /// maintains the list in Settings.
+    #[serde(default)]
+    custom_compat_models: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, Default)]
@@ -902,6 +915,89 @@ pub fn resolve_ollama_root_base_url() -> String {
 
 pub fn resolve_ollama_openai_base_url() -> String {
     format!("{}/v1", resolve_ollama_root_base_url())
+}
+
+/// Normalise the custom OpenAI-compatible base URL (LM2). Requirements:
+/// http(s), no query/fragment — and the path prefix is KEPT verbatim (the
+/// stored URL is used as `{base}/chat/completions`, so `/v1` and any
+/// gateway-specific prefix belong in it). Nothing is auto-appended: unlike
+/// MiniMax there is no documented shape to normalise toward, and guessing
+/// `/v1` would break gateways that don't use it.
+pub fn normalize_custom_compat_base_url(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("Endpoint URL cannot be empty.".to_string());
+    }
+
+    let parsed = reqwest::Url::parse(trimmed).map_err(|_| {
+        "Enter a full endpoint URL, for example http://localhost:8000/v1.".to_string()
+    })?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("Endpoint URL must start with http:// or https://.".to_string());
+    }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err("Endpoint URL cannot include query parameters or fragments.".to_string());
+    }
+
+    Ok(parsed.as_str().trim_end_matches('/').to_string())
+}
+
+pub fn load_saved_custom_compat_base_url() -> Option<String> {
+    load_provider_runtime_settings()
+        .custom_compat_base_url
+        .and_then(|url| normalize_custom_compat_base_url(&url).ok())
+}
+
+pub fn save_custom_compat_base_url(base_url: Option<String>) -> Result<(), String> {
+    let _lock = lock_provider_settings_mutex();
+    let mut settings = load_provider_runtime_settings();
+    settings.custom_compat_base_url = base_url;
+    save_provider_runtime_settings(&settings)
+}
+
+/// Saved endpoint wins, then `PACKETADE_CUSTOM_COMPAT_URL`. There is NO
+/// built-in default — `None` means the custom provider is unconfigured, and
+/// callers must fail with a Settings pointer rather than invent a host.
+pub fn resolve_custom_compat_base_url() -> Option<String> {
+    if let Some(saved) = load_saved_custom_compat_base_url() {
+        return Some(saved);
+    }
+    std::env::var("PACKETADE_CUSTOM_COMPAT_URL")
+        .ok()
+        .and_then(|url| normalize_custom_compat_base_url(&url).ok())
+}
+
+/// Normalise the manual model list: trim, drop empties, dedupe preserving
+/// first-seen order.
+pub fn normalize_custom_compat_models(models: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    models
+        .into_iter()
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty())
+        .filter(|m| seen.insert(m.clone()))
+        .collect()
+}
+
+pub fn load_custom_compat_models() -> Vec<String> {
+    normalize_custom_compat_models(
+        load_provider_runtime_settings()
+            .custom_compat_models
+            .unwrap_or_default(),
+    )
+}
+
+pub fn save_custom_compat_models(models: Vec<String>) -> Result<Vec<String>, String> {
+    let _lock = lock_provider_settings_mutex();
+    let normalized = normalize_custom_compat_models(models);
+    let mut settings = load_provider_runtime_settings();
+    settings.custom_compat_models = if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized.clone())
+    };
+    save_provider_runtime_settings(&settings)?;
+    Ok(normalized)
 }
 
 /// Normalise a MiniMax OpenAI-compatible base URL. Unlike Ollama's, the `/v1`

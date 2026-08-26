@@ -1,15 +1,29 @@
 /**
  * PacketAgent W9 consumer contract.
  *
- * Frozen from PacketAgent origin/main at dd8a5c93779a9ecc8af96bb232adcb5be0bdf16e.
+ * Frozen from PacketAgent main at cf910c170261d40e03fe82666c6d2363cf72a4b0
+ * (adds the contract descriptor route, packet-product attention operations,
+ * and the credential-mint CLI — all additive; digest fixture unchanged).
  * PacketAgent owns the normative runtime contract; this file deliberately
  * contains only the subset PacketADE emits or projects.
  */
 import { APP_NAME, APP_NAME_LOWER } from "@/lib/brand";
 
-export const PACKET_AGENT_CONTRACT_COMMIT = "dd8a5c93779a9ecc8af96bb232adcb5be0bdf16e";
+export const PACKET_AGENT_CONTRACT_COMMIT = "cf910c170261d40e03fe82666c6d2363cf72a4b0";
 export const WORKER_PACKAGE_SCHEMA_VERSION = "packetagent.worker-package/v1";
 export const WORKER_PACKAGE_CANONICALIZATION = "packetagent.worker-package-canonical-json/v1";
+
+/** W9 artifact-by-reference shape. Artifacts are references, never payloads —
+ * PacketAgent fetches content itself; PacketADE never inlines file bytes. */
+export interface PacketAgentWorkerArtifactReference {
+  reference: string;
+  name?: string;
+  mediaType: string;
+  byteLength: number;
+  contentDigest: string;
+  role: "source" | "configuration" | "acceptance" | "input" | "other";
+  classification: string;
+}
 
 export interface PacketAgentWorkerCapability {
   id: string;
@@ -36,7 +50,9 @@ export interface PacketAgentWorkerPackage {
     product: typeof APP_NAME;
     kind: typeof APP_NAME_LOWER;
     sourceId?: string;
-    flightId: string;
+    /** Optional since PH3 — PacketAgent's WorkerSourceProvenance never
+     * required it; conversation-kind packages have no Flight. */
+    flightId?: string;
     projectId?: string;
     conversationId?: string;
     repository?: string;
@@ -108,7 +124,7 @@ export interface PacketAgentWorkerPackage {
       }>;
     };
   };
-  artifacts: [];
+  artifacts: PacketAgentWorkerArtifactReference[];
   integrity: {
     canonicalization: typeof WORKER_PACKAGE_CANONICALIZATION;
     algorithm: "sha256";
@@ -117,6 +133,8 @@ export interface PacketAgentWorkerPackage {
 }
 
 export interface PacketAgentDeploymentProjection {
+  /** Local projection key — historically always a Flight id; conversation
+   * deployments (PH3) use the conversation id. */
   flightId: string;
   packageId: string;
   packageVersion: number;
@@ -131,6 +149,10 @@ export interface PacketAgentDeploymentProjection {
   lastEventType?: string;
   attentionCount: number;
   evidenceEventIds: string[];
+  /** PH6: checkpoint/progress events observed so far. */
+  checkpointCount?: number;
+  /** PH6: latest total cost reported by event summaries (USD). */
+  totalCostUsd?: number;
   updatedAt: number;
 }
 
@@ -142,6 +164,7 @@ export interface PacketAgentResponse {
 
 export type PacketAgentOperation =
   | "health"
+  | "contract"
   | "validate"
   | "deploy"
   | "inspect"
@@ -153,7 +176,9 @@ export type PacketAgentOperation =
   | "runs"
   | "events"
   | "ack_events"
-  | "evidence";
+  | "evidence"
+  | "attention"
+  | "respond_attention";
 
 export interface PacketAgentRequest {
   endpoint: string;
@@ -161,8 +186,61 @@ export interface PacketAgentRequest {
   operation: PacketAgentOperation;
   deploymentId?: string;
   eventId?: string;
+  attentionId?: string;
   cursor?: string;
   payload?: unknown;
   idempotencyKey?: string;
   ifMatch?: string;
+}
+
+/** PH8: consumer subset of PacketAgent's WorkerEvidenceEntry. */
+export interface PacketAgentEvidence {
+  id: string;
+  sequence: number;
+  summary: string;
+  classification: string;
+  sourceEventId: string;
+  workerRunId?: string;
+  traceId?: string;
+  artifactManifestIds?: string[];
+  evidenceDigest: string;
+  createdAt: string;
+}
+
+/** PH8: artifact returned BY REFERENCE from a worker run. Content is never
+ * inlined — landing records the reference; any fetch is a separate explicit
+ * user action. */
+export interface PacketAgentReturnedArtifact {
+  reference: string;
+  name?: string;
+  mediaType: string;
+  byteLength: number;
+  contentDigest: string;
+  producerKind: string;
+  role?: string;
+}
+
+/** PH7: decision verbs accepted by POST /api/worker-attention/:id/respond. */
+export type PacketAgentAttentionDecision = "approve_once" | "approve_for_run" | "reject";
+
+/** PH7: consumer subset of PacketAgent's WorkerOperatorAttentionView. Every
+ * field beyond `id` is optional — the server owns the normative shape and
+ * the card renders what it can. */
+export interface PacketAgentAttentionRequest {
+  id: string;
+  workerDeploymentId?: string;
+  workerRunId?: string;
+  status?: string;
+  summary?: string;
+  /** Requested capability descriptor (tool/verb/effect/resource schemes). */
+  operation?: {
+    tool?: string;
+    verb?: string;
+    effect?: string;
+    resources?: string[];
+  };
+  requestedAt?: string;
+  expiresAt?: string;
+  /** Optimistic-concurrency revision echoed back as expectedRevision. */
+  revision?: number;
 }

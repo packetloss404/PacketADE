@@ -306,6 +306,42 @@ export async function packetAgentRequest(
   return invoke<PacketAgentResponse>("packet_agent_request", { request });
 }
 
+/** PH6: payload of `packet-agent:event:{deploymentId}` — one SSE data frame. */
+export interface PacketAgentStreamEventPayload {
+  eventId?: string;
+  eventType?: string;
+  data: unknown;
+}
+
+/** PH6: payload of `packet-agent:stream-status:{deploymentId}`. */
+export interface PacketAgentStreamStatusPayload {
+  state: "connected" | "reconnecting" | "stopped" | "error";
+  cursor?: string;
+  message?: string;
+  consecutiveFailures: number;
+}
+
+/** Start (or restart) the Rust-side SSE consumer for one worker deployment.
+ * The bearer token never reaches the webview — Rust loads it from the OS
+ * credential store. */
+export async function startPacketAgentStream(args: {
+  endpoint: string;
+  workspaceId: string;
+  deploymentId: string;
+  cursor?: string;
+}): Promise<void> {
+  return invoke("start_packet_agent_stream", {
+    endpoint: args.endpoint,
+    workspaceId: args.workspaceId,
+    deploymentId: args.deploymentId,
+    cursor: args.cursor ?? null,
+  });
+}
+
+export async function stopPacketAgentStream(deploymentId: string): Promise<void> {
+  return invoke("stop_packet_agent_stream", { deploymentId });
+}
+
 /** True only when `path` exists and is a directory. Used by bootstrap to
  *  validate a persisted project path before adopting it. */
 export async function pathIsDir(path: string): Promise<boolean> {
@@ -3434,6 +3470,12 @@ export type OllamaModel = {
   name: string;
   size: number | null;
   modified_at: string | null;
+  /** `false` = daemon says the model has no tools template (disable in
+   * tool-carrying pickers); `null`/`undefined` = unknown (old daemon) and
+   * must render as a normal, selectable row. */
+  supportsTools?: boolean | null;
+  /** Trained context window in tokens, when reported. */
+  contextLength?: number | null;
 };
 
 export async function getOllamaBaseUrl(): Promise<string> {
@@ -3446,6 +3488,29 @@ export async function setOllamaBaseUrl(baseUrl: string | null): Promise<string> 
 
 export async function listOllamaModels(): Promise<OllamaModel[]> {
   return invoke("list_ollama_models");
+}
+
+// LM2 — custom OpenAI-compatible endpoint (vLLM / LM Studio / LiteLLM /
+// Together, …). The base URL is stored INCLUDING its `/v1`-style path prefix
+// and used verbatim as `{base}/chat/completions`; `null` means unconfigured
+// (there is no default). The model list is manual — no cross-server
+// discovery route exists.
+export async function getCustomCompatBaseUrl(): Promise<string | null> {
+  return invoke("get_custom_compat_base_url");
+}
+
+export async function setCustomCompatBaseUrl(
+  baseUrl: string | null,
+): Promise<string | null> {
+  return invoke("set_custom_compat_base_url", { baseUrl });
+}
+
+export async function getCustomCompatModels(): Promise<string[]> {
+  return invoke("get_custom_compat_models");
+}
+
+export async function setCustomCompatModels(models: string[]): Promise<string[]> {
+  return invoke("set_custom_compat_models", { models });
 }
 
 /**

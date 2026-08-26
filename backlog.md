@@ -97,6 +97,10 @@ environment or packaged matrix has actually run.
   PacketAgent URL/token/workspace; prove deploy, close/relaunch/reconnect,
   ordered-event continuation, evidence/artifact return, and the currently
   published control surface. PacketAgent remains the durable-execution owner.
+- **DONE 2026-08-26 - Re-pin `PACKET_AGENT_CONTRACT_COMMIT`.** The PacketAgent
+  server half (contract route, attention operations, mint CLI) merged to
+  PacketAgent main as `cf910c1`; the pin in `src/types/packet-agent.ts` now
+  references it and the digest fixture passes unchanged.
 - **P1 - PacketCode release proof.** Publish signed stable/preview artifacts;
   run clean-machine install/update/rollback, packaged PacketADE launch, and
   PacketAgent W9 compatibility smoke. Source detection and `doctor --json`

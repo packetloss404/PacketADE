@@ -114,6 +114,9 @@ const EXPECTED_PROVIDER_IDS: ReadonlyArray<[AgentCli, string]> = [
   // Diverges from the naive prefix-strip too: the backend provider is
   // `packetcode-acp`, not `packetcode` (which names the PTY CLI slot).
   ["api-packetcode", "packetcode-acp"],
+  // LM2 — user-supplied OpenAI-compatible endpoint. The prefix-strip happens
+  // to round-trip here, but the map stays the single authority.
+  ["api-custom", "custom"],
 ];
 
 describe("attemptProviderFor", () => {

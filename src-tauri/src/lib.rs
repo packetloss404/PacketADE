@@ -228,6 +228,8 @@ pub fn run() {
         // conversation starts (or `acp_start` is invoked), so managing it is
         // free on installs that never use the engine.
         .manage(acp::AcpState::default())
+        // PH6 — registry of live PacketAgent SSE consumer tasks.
+        .manage(commands::packet_agent_stream::PacketAgentStreamState::default())
         .setup(|app| {
             // Spawn the Node agent sidecar and stash the supervisor in
             // managed state so slice C's routing layer can reach it via
@@ -527,6 +529,8 @@ pub fn run() {
             commands::packet_agent::get_packet_agent_token_exists,
             commands::packet_agent::delete_packet_agent_token,
             commands::packet_agent::packet_agent_request,
+            commands::packet_agent_stream::start_packet_agent_stream,
+            commands::packet_agent_stream::stop_packet_agent_stream,
             commands::monitor_windows::open_monitor_window,
             commands::monitor_windows::get_monitor_window_route,
             commands::monitor_windows::close_monitor_window,
@@ -546,6 +550,11 @@ pub fn run() {
             commands::ollama::list_ollama_models,
             commands::ollama::get_ollama_runtime_options,
             commands::ollama::set_ollama_runtime_options,
+            // LM2 — custom OpenAI-compatible endpoint
+            commands::custom_compat::get_custom_compat_base_url,
+            commands::custom_compat::set_custom_compat_base_url,
+            commands::custom_compat::get_custom_compat_models,
+            commands::custom_compat::set_custom_compat_models,
             // API agent sessions
             commands::api_agent::start_api_agent_session,
             commands::api_agent::send_api_agent_message,
@@ -607,6 +616,9 @@ pub fn run() {
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
                 commands::syndicate::shutdown_tunnels();
+                // Stop the PacketAgent SSE consumer tasks so their sockets
+                // never outlive the window (PH6 clean-shutdown requirement).
+                commands::packet_agent_stream::shutdown_on_exit(app_handle);
                 // Reap PTY agent process trees BEFORE the sidecar: quitting the
                 // app otherwise leaves every running `claude` / `codex` alive
                 // and permanently unreachable — nothing in the app can find

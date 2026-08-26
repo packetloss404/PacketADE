@@ -834,6 +834,7 @@ fn provider_to_source(provider: &str) -> &'static str {
         // config, so the ledger attributes the spend to the transport rather
         // than silently billing it to api-claude via the fallback arm.
         crate::acp::routing::PROVIDER_ID => "packetcode-acp",
+        "custom" | "api-custom" => "api-custom",
         _ => "api-claude",
     }
 }
@@ -1930,6 +1931,7 @@ async fn finish_cancelled_agent_turn(
     state: &Arc<ApiAgentState>,
     session_id: &str,
     model: &str,
+    provider: &str,
     source: &str,
     input_tokens: u64,
     output_tokens: u64,
@@ -1973,6 +1975,7 @@ async fn finish_cancelled_agent_turn(
         ts: crate::commands::usage::current_timestamp_iso(),
         source: source.to_string(),
         model: model.to_string(),
+        provider: Some(provider.to_string()),
         agent_id: None,
         session_id: session_id.to_string(),
         input_tokens,
@@ -2092,6 +2095,7 @@ async fn run_agent_loop(
                 state,
                 session_id,
                 &model,
+                &provider_name,
                 source,
                 total_input_tokens,
                 total_output_tokens,
@@ -2172,6 +2176,7 @@ async fn run_agent_loop(
                         state,
                         session_id,
                         &model,
+                        &provider_name,
                         source,
                         total_input_tokens,
                         total_output_tokens,
@@ -2310,6 +2315,7 @@ async fn run_agent_loop(
                 ts: crate::commands::usage::current_timestamp_iso(),
                 source: source.to_string(),
                 model: model.clone(),
+                provider: Some(provider_name.clone()),
                 agent_id: None,
                 session_id: session_id.to_string(),
                 input_tokens: total_input_tokens,
@@ -2357,6 +2363,13 @@ async fn run_agent_loop(
                 let hooks_for_tool = all_hooks.clone();
                 let enabled_mcp_server_ids = enabled_mcp_server_ids.clone();
                 let mcp_trust_snapshot = mcp_trust_snapshot.clone();
+                // Q2: sub-agent / custom-agent tools inherit the SESSION's
+                // provider through this task-local scope (see
+                // core::tool_subagent::PARENT_LLM).
+                let parent_llm = crate::core::tool_subagent::ParentLlm {
+                    provider: provider_name.clone(),
+                    model: model.clone(),
+                };
                 async move {
                     // Plan mode gate
                     if plan_mode_active && !PLAN_MODE_ALLOWED.contains(&tc.name.as_str()) {
@@ -2806,14 +2819,20 @@ async fn run_agent_loop(
                         return (tc.id.clone(), err);
                     }
 
-                    // Execute tool
-                    let result = tool_runtime::execute_tool_with_mcp_trust(
-                        &tc,
-                        &execution,
-                        enabled_mcp_server_ids.as_deref(),
-                        mcp_trust_snapshot.as_deref(),
-                    )
-                    .await;
+                    // Execute tool. The PARENT_LLM scope hands sub-agent
+                    // tools the session's provider (Q2); everything else is
+                    // oblivious to it.
+                    let result = crate::core::tool_subagent::PARENT_LLM
+                        .scope(
+                            parent_llm,
+                            tool_runtime::execute_tool_with_mcp_trust(
+                                &tc,
+                                &execution,
+                                enabled_mcp_server_ids.as_deref(),
+                                mcp_trust_snapshot.as_deref(),
+                            ),
+                        )
+                        .await;
                     let _ = app_handle.emit(
                         &tool_result_event(&session_id),
                         ToolResultPayload {
@@ -2871,6 +2890,7 @@ async fn run_agent_loop(
                     state,
                     session_id,
                     &model,
+                    &provider_name,
                     source,
                     total_input_tokens,
                     total_output_tokens,
@@ -2944,6 +2964,7 @@ async fn run_agent_loop(
         ts: crate::commands::usage::current_timestamp_iso(),
         source: source.to_string(),
         model: model.clone(),
+        provider: Some(provider_name.clone()),
         agent_id: None,
         session_id: session_id.to_string(),
         input_tokens: total_input_tokens,

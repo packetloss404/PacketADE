@@ -70,6 +70,7 @@ const CHAT_FACE: Partial<Record<AgentCli, string>> = {
   // TUI slot) the same way "Claude API" is disambiguated from "Claude Code":
   // both sections legitimately carry the vendor, so the face names the runtime.
   "api-packetcode": "PacketCode ACP",
+  "api-custom": "Custom endpoint",
 };
 
 /**

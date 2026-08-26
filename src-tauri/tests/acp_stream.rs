@@ -1195,7 +1195,9 @@ async fn session_load_replays_a_transcript_that_cannot_be_rendered() {
     assert_eq!(chunk_text(&replayed[0]), "fix the router");
 
     // A resumed session is a working session — the point of loading it at all.
-    let outcome = timeout(STEP, prompt_on(&state, &session, "carry on"))
+    // ("garbage" is the mock's short turn, which completes without stopping to
+    // ask for a permission decision no test is here to make.)
+    let outcome = timeout(STEP, prompt_on(&state, &session, "garbage"))
         .await
         .expect("prompt timed out")
         .expect("a loaded session must be promptable");

@@ -37,6 +37,7 @@ import { CooperativeFlightCard } from "@/components/flights/CooperativeFlightCar
 import { FlightCoordinationInbox } from "@/components/flights/FlightCoordinationInbox";
 import { FlightAutonomyCard } from "@/components/flights/FlightAutonomyCard";
 import { PacketAgentHandoffCard } from "@/components/flights/PacketAgentHandoffCard";
+import { usePacketAgentStore } from "@/stores/packetAgentStore";
 import { IssueFlightMirrorCard } from "@/components/flights/IssueFlightMirrorCard";
 import { openMonitorWindow } from "@/lib/monitorWindows";
 import { relativeTime } from "@/lib/time";
@@ -756,8 +757,11 @@ function FlightDetailPane({ flight, status, onLaunchAttempt }: DetailProps) {
 }
 
 // E6: single "needs a human" strip — attempts awaiting review or failed.
+// PH9: the flight's PacketAgent deployment contributes when it has open
+// attention or ended in a terminal failure; its chip focuses the card below.
 function AttentionCard({ flight }: { flight: Flight }) {
-  const attention = summarizeFlightAttention(flight);
+  const packetAgentProjection = usePacketAgentStore((state) => state.deployments[flight.id]);
+  const attention = summarizeFlightAttention(flight, packetAgentProjection);
   if (attention.total === 0) return null;
   return (
     <div className="border-accent-amber/30 bg-accent-amber/10 rounded border px-3 py-2">
@@ -766,6 +770,24 @@ function AttentionCard({ flight }: { flight: Flight }) {
         <span className="bg-accent-amber/20 rounded-full px-1.5 text-[10px]">
           {attention.total}
         </span>
+        {attention.packetAgent && (
+          <button
+            type="button"
+            onClick={() =>
+              document
+                .getElementById(`packetagent-card-${flight.id}`)
+                ?.scrollIntoView({ behavior: "smooth", block: "center" })
+            }
+            className="bg-accent-amber/20 hover:bg-accent-amber/30 rounded-full px-1.5 text-[10px] font-medium"
+            title={
+              attention.packetAgent.terminalFailure
+                ? "PacketAgent worker ended without success — open the card"
+                : `${attention.packetAgent.attentionCount} PacketAgent approval event(s) — open the card`
+            }
+          >
+            PacketAgent
+          </button>
+        )}
       </div>
       <div className="mt-1 flex flex-col gap-0.5 text-[11px] text-text-secondary">
         {attention.reviewing.length > 0 && (
@@ -781,6 +803,13 @@ function AttentionCard({ flight }: { flight: Flight }) {
             diff, or reassign from the timeline when a suggestion appears.
           </span>
         ))}
+        {attention.packetAgent && (
+          <span className="text-text-muted">
+            {attention.packetAgent.terminalFailure
+              ? "PacketAgent worker ended without success — review its card."
+              : `PacketAgent worker has ${attention.packetAgent.attentionCount} approval event(s) waiting.`}
+          </span>
+        )}
       </div>
     </div>
   );

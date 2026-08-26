@@ -24,6 +24,12 @@ pub struct UsageEntry {
     pub ts: String,
     pub source: String,
     pub model: String,
+    /// Canonical provider id that served the turn (`anthropic`, `ollama`, …).
+    /// Added 2026-08 (LM7) so local-vs-metered spend can be split without
+    /// guessing from `source`/`model`. Absent on historical rows — same
+    /// backwards-compatibility posture as `repriced_at`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
     pub agent_id: Option<String>,
     pub session_id: String,
     pub input_tokens: u64,

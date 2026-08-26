@@ -87,16 +87,54 @@ pub enum AuxTaskClass {
     PrDescription,
     /// GitHub AI pre-flight PR review.
     PrReview,
+    // --- LM4 (3C-1) — classes for the surfaces migrating off run_claude. ---
+    /// Memory: codebase key-file scan (`scan_codebase_memory`).
+    MemoryScan,
+    /// Memory: session log → summary (`summarize_session`).
+    SessionSummarize,
+    /// Memory: session summaries → recurring patterns (`extract_patterns`).
+    PatternExtract,
+    /// Flight retrospective (`summarize_flight`).
+    FlightRetrospective,
+    /// Spec text → structured flight plan (`parse_spec_to_flight`).
+    SpecToFlight,
+    /// Spec text → ticket array (`parse_spec_to_tickets`).
+    SpecToTickets,
+    /// GitHub issue investigation (`github_investigate_issue`).
+    IssueInvestigate,
+    /// Insights agent chat (`ask_agent_chat_stream`).
+    AgentChat,
+    /// The floating side-chat overlay (`ask_side_chat_stream`).
+    SideChat,
+    /// GitHub "catch me up" digest (`github_ai_catch_up`).
+    /// (Explicit rename: kebab-case would split the camel hump into
+    /// `git-hub-catch-up`.)
+    #[serde(rename = "github-catch-up")]
+    GitHubCatchUp,
+    /// GitHub AI issue triage (`github_ai_triage`).
+    #[serde(rename = "github-triage")]
+    GitHubTriage,
 }
 
 impl AuxTaskClass {
     /// Every task class, in the order the settings card lists them.
     pub const ALL: &'static [AuxTaskClass] = &[
         AuxTaskClass::SpecImport,
+        AuxTaskClass::SpecToFlight,
+        AuxTaskClass::SpecToTickets,
         AuxTaskClass::CodeQualityExplain,
         AuxTaskClass::CodeQualitySummarize,
         AuxTaskClass::PrDescription,
         AuxTaskClass::PrReview,
+        AuxTaskClass::GitHubCatchUp,
+        AuxTaskClass::GitHubTriage,
+        AuxTaskClass::IssueInvestigate,
+        AuxTaskClass::MemoryScan,
+        AuxTaskClass::SessionSummarize,
+        AuxTaskClass::PatternExtract,
+        AuxTaskClass::FlightRetrospective,
+        AuxTaskClass::AgentChat,
+        AuxTaskClass::SideChat,
     ];
 
     /// Stable wire id, shared with the TypeScript `AuxTaskClass` union.
@@ -107,6 +145,17 @@ impl AuxTaskClass {
             AuxTaskClass::CodeQualitySummarize => "code-quality-summarize",
             AuxTaskClass::PrDescription => "pr-description",
             AuxTaskClass::PrReview => "pr-review",
+            AuxTaskClass::MemoryScan => "memory-scan",
+            AuxTaskClass::SessionSummarize => "session-summarize",
+            AuxTaskClass::PatternExtract => "pattern-extract",
+            AuxTaskClass::FlightRetrospective => "flight-retrospective",
+            AuxTaskClass::SpecToFlight => "spec-to-flight",
+            AuxTaskClass::SpecToTickets => "spec-to-tickets",
+            AuxTaskClass::IssueInvestigate => "issue-investigate",
+            AuxTaskClass::AgentChat => "agent-chat",
+            AuxTaskClass::SideChat => "side-chat",
+            AuxTaskClass::GitHubCatchUp => "github-catch-up",
+            AuxTaskClass::GitHubTriage => "github-triage",
         }
     }
 
@@ -118,6 +167,17 @@ impl AuxTaskClass {
             AuxTaskClass::CodeQualitySummarize => "Code Quality summary",
             AuxTaskClass::PrDescription => "AI PR description",
             AuxTaskClass::PrReview => "AI PR review",
+            AuxTaskClass::MemoryScan => "Codebase memory scan",
+            AuxTaskClass::SessionSummarize => "Session summary",
+            AuxTaskClass::PatternExtract => "Pattern extraction",
+            AuxTaskClass::FlightRetrospective => "Flight retrospective",
+            AuxTaskClass::SpecToFlight => "Spec → flight plan",
+            AuxTaskClass::SpecToTickets => "Spec → tickets",
+            AuxTaskClass::IssueInvestigate => "Issue investigation",
+            AuxTaskClass::AgentChat => "Agent chat",
+            AuxTaskClass::SideChat => "Side chat",
+            AuxTaskClass::GitHubCatchUp => "GitHub catch-up digest",
+            AuxTaskClass::GitHubTriage => "GitHub issue triage",
         }
     }
 
@@ -183,6 +243,30 @@ pub const AUX_PROVIDERS: &[AuxProviderCandidate] = &[
 
 pub fn aux_candidate(provider: &str) -> Option<&'static AuxProviderCandidate> {
     AUX_PROVIDERS.iter().find(|c| c.provider == provider)
+}
+
+/// Q2 — the cheap-tier model for a provider, for AGENTIC helpers (sub-agent /
+/// custom-agent tools) that derive their model from the PARENT session's
+/// provider rather than from aux routing (they are excluded from aux routing
+/// on purpose: they carry tools and run inside the parent's loop).
+///
+/// * Keyed cloud providers map to their [`AUX_PROVIDERS`] cheap default
+///   (anthropic → haiku, openai → o4-mini, …).
+/// * `ollama` (and `custom`) return the parent's own model: a local install
+///   has no knowable "cheap tier", and the parent's model is the one proven
+///   loaded.
+/// * Unknown providers also fall back to the parent model rather than
+///   guessing a vendor.
+pub fn cheap_tier_model(provider: &str, parent_model: &str) -> String {
+    match provider {
+        "ollama" | "custom" => parent_model.to_string(),
+        "minimax-api" => "MiniMax-M2".to_string(),
+        "openai-agents" => "o4-mini".to_string(),
+        other => match aux_candidate(other) {
+            Some(candidate) => candidate.default_model.to_string(),
+            None => parent_model.to_string(),
+        },
+    }
 }
 
 /// Representative auxiliary workload used to rank candidates: a big diff / log
@@ -277,9 +361,21 @@ pub fn resolve_aux_route(
                 ));
             }
 
-            let model = trimmed(&pinned.model)
-                .unwrap_or(candidate.default_model)
-                .to_string();
+            // 3E-4: pinning Ollama REQUIRES an explicit model. The candidate
+            // default ("qwen3:32b") is a guess about what the user has
+            // pulled, and a wrong guess fails at turn time with a confusing
+            // daemon error instead of here with an actionable one.
+            let model = match trimmed(&pinned.model) {
+                Some(model) => model.to_string(),
+                None if candidate.provider == "ollama" => {
+                    return Err(format!(
+                        "{} is routed to Ollama without a model. Pick an installed model in \
+                         Settings → AI Provider Routing, or set the route back to Auto.",
+                        task.label()
+                    ));
+                }
+                None => candidate.default_model.to_string(),
+            };
             return Ok(AuxRoute {
                 provider: provider.to_string(),
                 model,
@@ -515,6 +611,7 @@ fn record_usage(task: AuxTaskClass, route: &AuxRoute, session_id: &str, turn: &A
         ts: crate::commands::usage::current_timestamp_iso(),
         source: "aux".to_string(),
         model: route.model.clone(),
+        provider: Some(route.provider.clone()),
         agent_id: Some(task.id().to_string()),
         session_id: session_id.to_string(),
         input_tokens: turn.input_tokens,
@@ -525,6 +622,81 @@ fn record_usage(task: AuxTaskClass, route: &AuxRoute, session_id: &str, turn: &A
     };
     if let Err(e) = crate::commands::usage::append_usage_entry(&entry) {
         warn!(task = task.id(), error = %e, "aux_llm: failed to persist usage entry");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Q3 — local-route failure policy: fail CLOSED, one retry, typed error
+// ---------------------------------------------------------------------------
+
+/// Delay before the single retry of a connection-shaped local failure —
+/// enough for a daemon that is mid-restart, short enough not to feel hung.
+const OLLAMA_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Does this provider error look like "the daemon is not there" (as opposed
+/// to a real model/request error that a retry cannot fix)? Keyed on the
+/// stable messages `core::llm_ollama` / `commands::ollama` produce from
+/// reqwest's `is_connect() || is_timeout()`.
+fn is_ollama_connection_error(message: &str) -> bool {
+    message.contains("Ollama not reachable")
+}
+
+/// The Q3 typed, actionable error. NO automatic escalation to a cloud
+/// provider — the task was routed locally on purpose, and silently billing a
+/// cloud key instead would be worse than failing.
+fn local_route_unavailable_error(task: AuxTaskClass) -> String {
+    format!(
+        "Local model unavailable (Ollama at {} did not respond). This task is routed \
+         locally; run `ollama serve`, or switch {} to Auto in Settings → AI Provider Routing.",
+        crate::core::storage::resolve_ollama_root_base_url(),
+        task.label()
+    )
+}
+
+/// [`drive`], plus the local-route failure policy: when the route is Ollama
+/// and the failure is connection-shaped, retry exactly once after
+/// [`OLLAMA_RETRY_DELAY`]; if it still fails, replace the raw transport error
+/// with the typed, actionable message. Non-connection failures and cloud
+/// routes pass through untouched.
+async fn drive_with_local_policy(
+    task: AuxTaskClass,
+    route: &AuxRoute,
+    session_id: &str,
+    system_prompt: &str,
+    user_turn: &str,
+    emit_to: Option<(&tauri::AppHandle, &str)>,
+) -> Result<AuxTurn, String> {
+    let request = build_request(
+        route,
+        session_id,
+        system_prompt.to_string(),
+        user_turn.to_string(),
+    );
+    match drive(route, request, emit_to).await {
+        Ok(turn) => Ok(turn),
+        Err(message) if route.provider == "ollama" && is_ollama_connection_error(&message) => {
+            warn!(
+                task = task.id(),
+                session_id = %session_id,
+                error = %message,
+                "aux_llm: local route connection failure — retrying once"
+            );
+            tokio::time::sleep(OLLAMA_RETRY_DELAY).await;
+            let retry_request = build_request(
+                route,
+                session_id,
+                system_prompt.to_string(),
+                user_turn.to_string(),
+            );
+            match drive(route, retry_request, emit_to).await {
+                Ok(turn) => Ok(turn),
+                Err(retry_message) if is_ollama_connection_error(&retry_message) => {
+                    Err(local_route_unavailable_error(task))
+                }
+                Err(retry_message) => Err(retry_message),
+            }
+        }
+        Err(message) => Err(message),
     }
 }
 
@@ -546,8 +718,8 @@ pub async fn run_aux_oneshot(
         session_id = %session_id,
         "aux_llm: one-shot turn"
     );
-    let request = build_request(route, session_id, system_prompt, user_turn);
-    let turn = drive(route, request, None).await?;
+    let turn =
+        drive_with_local_policy(task, route, session_id, &system_prompt, &user_turn, None).await?;
     record_usage(task, route, session_id, &turn);
     Ok(turn.text)
 }
@@ -572,8 +744,16 @@ pub fn spawn_aux_stream(
         "aux_llm: streaming turn"
     );
     tokio::spawn(async move {
-        let request = build_request(&route, &session_id, system_prompt, user_turn);
-        match drive(&route, request, Some((&app_handle, &session_id))).await {
+        match drive_with_local_policy(
+            task,
+            &route,
+            &session_id,
+            &system_prompt,
+            &user_turn,
+            Some((&app_handle, &session_id)),
+        )
+        .await
+        {
             Ok(turn) => {
                 record_usage(task, &route, &session_id, &turn);
                 if turn.text.trim().is_empty() {
@@ -845,6 +1025,43 @@ mod tests {
     }
 
     #[test]
+    fn pinning_ollama_without_a_model_is_a_validation_error() {
+        // 3E-4: the static default ("qwen3:32b") is a guess about what the
+        // user has pulled; requiring an explicit model turns a confusing
+        // turn-time daemon error into an actionable settings error.
+        let mut overrides = AuxOverrides::new();
+        overrides.insert(
+            AuxTaskClass::CodeQualitySummarize,
+            AuxRouteOverride {
+                provider: Some("ollama".to_string()),
+                model: None,
+            },
+        );
+        let err = resolve_aux_route(AuxTaskClass::CodeQualitySummarize, &overrides, &[])
+            .unwrap_err();
+        assert!(err.contains("without a model"), "{}", err);
+        assert!(err.contains("Settings → AI Provider Routing"), "{}", err);
+
+        // Cloud pins keep their provider default — only Ollama requires the
+        // explicit choice.
+        let mut cloud = AuxOverrides::new();
+        cloud.insert(
+            AuxTaskClass::CodeQualitySummarize,
+            AuxRouteOverride {
+                provider: Some("anthropic".to_string()),
+                model: None,
+            },
+        );
+        let route = resolve_aux_route(
+            AuxTaskClass::CodeQualitySummarize,
+            &cloud,
+            &configured(&["anthropic"]),
+        )
+        .expect("a route");
+        assert_eq!(route.model, "claude-haiku-4-5");
+    }
+
+    #[test]
     fn blank_override_strings_fall_back_to_auto() {
         let mut overrides = AuxOverrides::new();
         overrides.insert(
@@ -862,6 +1079,56 @@ mod tests {
         .expect("a route");
         assert_eq!(route.provider, "anthropic");
         assert!(!route.explicit);
+    }
+
+    #[test]
+    fn cheap_tier_model_follows_the_parent_provider() {
+        // Q2 — the MiniMax-only-user defect: a sub-agent must never demand a
+        // vendor the parent session does not use.
+        assert_eq!(cheap_tier_model("anthropic", "claude-opus-4-8"), "claude-haiku-4-5");
+        assert_eq!(cheap_tier_model("openai", "gpt-5.5"), "o4-mini");
+        assert_eq!(cheap_tier_model("openai-agents", "gpt-5.5"), "o4-mini");
+        assert_eq!(cheap_tier_model("minimax", "MiniMax-M3"), "MiniMax-M2");
+        assert_eq!(cheap_tier_model("minimax-api", "MiniMax-M3"), "MiniMax-M2");
+        assert_eq!(
+            cheap_tier_model("openrouter", "openai/gpt-5.5"),
+            "anthropic/claude-haiku-4-5"
+        );
+        // Local providers keep the parent's own (proven-loaded) model.
+        assert_eq!(
+            cheap_tier_model("ollama", "qwen2.5-coder:7b"),
+            "qwen2.5-coder:7b"
+        );
+        assert_eq!(cheap_tier_model("custom", "some-model"), "some-model");
+        // Unknown providers fall back to the parent model, never to a vendor.
+        assert_eq!(cheap_tier_model("mystery", "parent-model"), "parent-model");
+    }
+
+    #[test]
+    fn connection_shaped_ollama_errors_are_recognised() {
+        // Q3 — keyed on the stable message llm_ollama/commands::ollama emit
+        // for reqwest is_connect()/is_timeout() failures.
+        assert!(is_ollama_connection_error(
+            "Ollama not reachable at http://localhost:11434"
+        ));
+        assert!(!is_ollama_connection_error(
+            "Ollama API error (500): model requires more system memory"
+        ));
+        assert!(!is_ollama_connection_error(
+            "The Ollama model 'x' does not support tool calling (no tools template)."
+        ));
+    }
+
+    #[test]
+    fn local_route_failure_error_is_typed_and_actionable() {
+        let err = local_route_unavailable_error(AuxTaskClass::SpecImport);
+        assert!(err.contains("Local model unavailable"), "{}", err);
+        assert!(err.contains("ollama serve"), "{}", err);
+        assert!(err.contains("Spec import"), "{}", err);
+        assert!(err.contains("Settings → AI Provider Routing"), "{}", err);
+        // NO automatic escalation: the error must not promise a cloud
+        // fallback of any kind.
+        assert!(!err.to_lowercase().contains("falling back"), "{}", err);
     }
 
     #[test]

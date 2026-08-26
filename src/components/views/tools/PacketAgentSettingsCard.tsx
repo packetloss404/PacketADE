@@ -6,8 +6,12 @@ import {
   setPacketAgentToken,
 } from "@/lib/tauri";
 import { usePacketAgentStore } from "@/stores/packetAgentStore";
-import { PACKET_AGENT_CONTRACT_COMMIT } from "@/types/packet-agent";
+import {
+  PACKET_AGENT_CONTRACT_COMMIT,
+  WORKER_PACKAGE_SCHEMA_VERSION,
+} from "@/types/packet-agent";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
+import { parseContractSummary, type ContractSummary } from "@/lib/packetAgentContract";
 
 export function PacketAgentSettingsCard() {
   const endpoint = usePacketAgentStore((state) => state.endpoint);
@@ -21,6 +25,7 @@ export function PacketAgentSettingsCard() {
   const [hasToken, setHasToken] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [contract, setContract] = useState<ContractSummary | null>(null);
   const [pendingRemoveToken, setPendingRemoveToken] = useState(false);
 
   useEffect(() => {
@@ -50,10 +55,25 @@ export function PacketAgentSettingsCard() {
   async function test() {
     setBusy(true);
     setNotice(null);
+    setContract(null);
     try {
       setConnection(draftEndpoint, draftWorkspace);
-      const response = await request("health");
-      setNotice(`PacketAgent responded successfully (HTTP ${response.status}).`);
+      const health = await request("health");
+      try {
+        const response = await request("contract");
+        setContract(parseContractSummary(response.body));
+        setNotice(`PacketAgent responded successfully (HTTP ${health.status}).`);
+      } catch (contractError) {
+        // The contract probe is informational: a healthy but older server (or
+        // a credential without inspect rights) still counts as reachable.
+        setContract({
+          schemaMatches: false,
+          operations: [],
+          allowedOperations: [],
+          probeWarning: String(contractError),
+        });
+        setNotice(`PacketAgent responded successfully (HTTP ${health.status}).`);
+      }
     } catch (error) {
       setNotice(String(error));
     } finally {
@@ -157,6 +177,40 @@ export function PacketAgentSettingsCard() {
         </button>
       </div>
       {notice && <p className="mt-2 text-[10px] leading-relaxed text-text-secondary">{notice}</p>}
+      {contract && (
+        <div className="mt-2 rounded border border-bg-border bg-bg-primary px-2 py-1.5 text-[10px] leading-relaxed">
+          {contract.probeWarning ? (
+            <p className="text-accent-amber">
+              Contract probe unavailable — server may predate the contract route.{" "}
+              <span className="font-mono text-[9px]">{contract.probeWarning}</span>
+            </p>
+          ) : (
+            <>
+              <p className={contract.schemaMatches ? "text-accent-green" : "text-accent-amber"}>
+                {contract.schemaMatches
+                  ? `Schema ${contract.schemaVersion} matches this app.`
+                  : `Schema mismatch: server speaks ${contract.schemaVersion ?? "an unknown version"}, this app emits ${WORKER_PACKAGE_SCHEMA_VERSION}. Proceed with caution.`}
+              </p>
+              {contract.allowedOperations.length > 0 && (
+                <p className="mt-1 text-text-secondary">
+                  Token operations: {contract.allowedOperations.join(", ")}
+                </p>
+              )}
+              {contract.operations.length > 0 && contract.allowedOperations.length === 0 && (
+                <p className="mt-1 text-text-secondary">
+                  Server operations: {contract.operations.join(", ")}
+                </p>
+              )}
+              {contract.credentialExpiresAt && (
+                <p className="mt-1 text-text-muted">
+                  Token expires {new Date(contract.credentialExpiresAt).toLocaleString()}
+                  {contract.credentialDisplayName ? ` · ${contract.credentialDisplayName}` : ""}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      )}
       <p className="mt-3 font-mono text-[9px] text-text-muted">
         W9 contract {PACKET_AGENT_CONTRACT_COMMIT.slice(0, 8)} · HTTPS required outside loopback
       </p>

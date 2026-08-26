@@ -153,6 +153,7 @@ export type ApiAgentCli =
   | "api-openrouter"
   | "api-ollama"
   | "api-packetcode";
+  | "api-custom";
 
 export type AgentCli =
   | "claude-code"
@@ -167,6 +168,7 @@ export type AgentCli =
   | "api-openrouter"
   | "api-ollama"
   | "api-packetcode"
+  | "api-custom"
   | (string & {});
 
 /** Retired provider-identity duplicates, mapped onto their canonical id.
@@ -262,6 +264,8 @@ export function apiAgentProvider(agent: AgentCli): string {
     // still mandatory: without it the fallback below would bill ACP turns to
     // the user's Anthropic key.
     "api-packetcode": "packetcode-acp",
+    // LM2 — user-supplied OpenAI-compatible endpoint. Key optional.
+    "api-custom": "custom",
   };
   // Canonicalise first so a legacy id hydrated from disk (`api-minimax-api`)
   // resolves through its alias instead of tripping the unknown-agent fallback.

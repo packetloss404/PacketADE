@@ -23,6 +23,7 @@ pub mod hooks;
 // v0.8.5: shared home for hand-authored Issue AI prompts (spec → tickets).
 pub mod issue_ai_prompts;
 pub mod llm_anthropic;
+pub mod llm_custom_compat;
 pub mod llm_minimax;
 pub mod llm_ollama;
 pub mod llm_openai;

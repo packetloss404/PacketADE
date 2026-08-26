@@ -12,7 +12,6 @@ use crate::core::llm_provider::get_provider;
 use crate::core::llm_types::ToolDefinition;
 use crate::core::tool_runtime;
 
-const DEFAULT_MODEL: &str = "claude-haiku-4-5";
 const TOOL_PREFIX: &str = "agent_";
 
 /// Default tool allowlist when an agent's frontmatter `tools` array is
@@ -145,17 +144,23 @@ pub async fn execute_custom_agent(
     let agent = find_agent(name, &project_path)
         .ok_or_else(|| format!("Custom agent not found for tool '{}'", name))?;
 
-    let api_key = crate::commands::api_keys::load_api_key("anthropic")
-        .map_err(|e| format!("Custom agent requires an Anthropic API key: {}", e))?;
+    // Q2: run on the PARENT session's provider — never on a hardcoded vendor
+    // the user may have no key for. An explicit frontmatter `model` still
+    // wins (it is the agent author's choice); the derived cheap-tier model is
+    // only the default.
+    let (provider_id, derived_model) =
+        crate::core::tool_subagent::subagent_provider_and_model();
+    let api_key = crate::commands::api_keys::load_api_key(&provider_id)
+        .map_err(|e| format!("Custom agent requires a {} API key: {}", provider_id, e))?;
 
-    let provider = get_provider("anthropic")?;
+    let provider = get_provider(&provider_id)?;
     let tools = build_allowed_tools(&agent).await;
     let model = agent
         .model
         .as_ref()
         .map(|m| m.trim().to_string())
         .filter(|m| !m.is_empty())
-        .unwrap_or_else(|| DEFAULT_MODEL.to_string());
+        .unwrap_or(derived_model);
 
     // `_depth_guard` (acquired above) stays alive across the whole loop.
     crate::core::tool_subagent::run_agent_loop(

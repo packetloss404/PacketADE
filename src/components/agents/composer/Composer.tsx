@@ -887,6 +887,7 @@ export function Composer(props: ComposerProps) {
                     ollamaModels={ollamaModels}
                     refreshOllamaModels={refreshOllamaModels}
                     openSignal={modelOpenSignal}
+                    requiresTools
                   />
                 ) : (
                   conversation.model && (
@@ -989,6 +990,7 @@ export function Composer(props: ComposerProps) {
                   onModelChange={launch.onModelChange}
                   ollamaModels={ollamaModels}
                   refreshOllamaModels={refreshOllamaModels}
+                  requiresTools
                 />
               </div>
 
