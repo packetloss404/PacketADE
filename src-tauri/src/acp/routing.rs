@@ -4,13 +4,13 @@
 //! each post-start command to whichever backend owns the session — the Node
 //! sidecar (`SidecarManager::owns_session`), the ACP engine ([`owns_session`]
 //! here), or the in-process `LlmProvider` runtime. This module is the ACP
-//! half: it turns PacketADE's conversation-shaped requests into ACP calls and
+//! half: it turns PacketBench's conversation-shaped requests into ACP calls and
 //! keeps the conversation-id ↔ ACP-session-id map in step.
 //!
-//! **Session identity.** PacketADE mints the conversation id and it is the
+//! **Session identity.** PacketBench mints the conversation id and it is the
 //! session id everywhere in the app (`sessionId === conversationId`). The
 //! engine mints its OWN id on `session/new`; that id never leaves this module
-//! except on the wire. Every `api-agent:*` event is keyed on PacketADE's id.
+//! except on the wire. Every `api-agent:*` event is keyed on PacketBench's id.
 
 use super::events;
 use super::AcpMcpPosture;
@@ -37,16 +37,16 @@ pub fn owns_session(state: &AcpState, conversation_id: &str) -> bool {
 // Permission modes
 // ---------------------------------------------------------------------------
 
-/// Translates a PacketADE permission posture onto the ACP vocabulary.
+/// Translates a PacketBench permission posture onto the ACP vocabulary.
 ///
-/// PacketADE's five postures live in
+/// PacketBench's five postures live in
 /// `src/components/agents/agentModeChipUtils.ts` and reach Rust as a
 /// `(plan_mode: bool, permission_mode: String)` pair, not as the posture name.
 /// ACP has one escalation ladder instead
 /// ([`PERMISSION_MODES`](super::PERMISSION_MODES), from packetcode's
 /// `internal/acp/server.go`). The mapping:
 ///
-/// | PacketADE posture | what Rust receives            | ACP mode      |
+/// | PacketBench posture | what Rust receives            | ACP mode      |
 /// |-------------------|-------------------------------|---------------|
 /// | default           | `permission_mode = "auto"`    | `auto`        |
 /// | plan              | `set_plan_mode(true)`         | `read-only`   |
@@ -62,7 +62,7 @@ pub fn owns_session(state: &AcpState, conversation_id: &str) -> bool {
 /// `set_plan_mode` / `set_approve_writes` already speak it — that keeps every
 /// caller working without the frontend having to learn a third dialect.
 ///
-/// Anything unrecognized becomes `auto`, which is exactly what PacketADE's own
+/// Anything unrecognized becomes `auto`, which is exactly what PacketBench's own
 /// `PermissionMode::default()` means.
 pub fn to_acp_permission_mode(mode: &str) -> &'static str {
     match mode.trim() {
@@ -155,7 +155,7 @@ async fn load_with_replay_window(
 /// so they are recorded as pending config (the same slot `set_model` writes)
 /// and apply to the next session this conversation creates.
 ///
-/// **MCP posture.** `mcp` is PacketADE's trust decision for this conversation,
+/// **MCP posture.** `mcp` is PacketBench's trust decision for this conversation,
 /// already resolved from the caller's frozen `mcp_trust_snapshot` (see
 /// [`super::mcp`]). It defaults to [`AcpMcpPosture::None`] — an explicit empty
 /// `mcpServers` list, not one subprocess started — and it is FROZEN here for
@@ -228,7 +228,7 @@ pub async fn start_session(
             let engine_session = super::new_session_on(
                 state,
                 &project_path,
-                // Provider selection is the engine's own concern: PacketADE picks
+                // Provider selection is the engine's own concern: PacketBench picks
                 // a model, and packetcode resolves the provider that serves it.
                 None,
                 model,
@@ -256,14 +256,14 @@ pub async fn start_session(
 
 /// Makes a persisted engine session resident without starting a conversation.
 ///
-/// Backs the `acp_load_session` command. `id` may be either a PacketADE
+/// Backs the `acp_load_session` command. `id` may be either a PacketBench
 /// conversation id (whose engine session and frozen posture are then used) or
 /// a raw engine session id from `acp_list_sessions` — the same either/or every
 /// other read-only `acp_*` command accepts, so a disclosure surface does not
 /// need a second command to talk about a session it can see.
 ///
 /// The posture is READ, never derived: a conversation resumes with the fleet
-/// it froze, and a raw engine id — which PacketADE has no consent record for —
+/// it froze, and a raw engine id — which PacketBench has no consent record for —
 /// resumes with [`AcpMcpPosture::None`].
 pub async fn load_session(
     app: &AppHandle,
@@ -406,7 +406,7 @@ pub async fn set_permission_mode(
 
 /// Answers a pending permission request.
 ///
-/// `request_id` is the id PacketADE emitted on the `permission-request` event
+/// `request_id` is the id PacketBench emitted on the `permission-request` event
 /// (a String, per the api-agent contract). The raw JSON-RPC id — a STRING on a
 /// real packetcode engine — was kept beside it, and that is what goes back on
 /// the wire, byte-identical to what arrived.
@@ -451,7 +451,7 @@ pub async fn cancel_pending_tools(state: &AcpState, conversation_id: &str) -> Re
 /// Releases the conversation's engine-side session and forgets the mapping.
 ///
 /// `session/close` on an engine that predates the method degrades to success,
-/// so eviction always frees PacketADE's side even when the engine keeps its
+/// so eviction always frees PacketBench's side even when the engine keeps its
 /// runtime until a re-load supersedes it.
 pub async fn close_session(state: &AcpState, conversation_id: &str) -> Result<(), String> {
     let Some(engine_session) = state.sessions.forget(conversation_id) else {
@@ -463,7 +463,7 @@ pub async fn close_session(state: &AcpState, conversation_id: &str) -> Result<()
 /// Answer for `get_provider_auth_status("packetcode-acp")`.
 ///
 /// The engine owns its own credentials (its `config.toml` provider blocks), so
-/// PacketADE holds no keyring slot for it — `api_keys::VALID_PROVIDERS`
+/// PacketBench holds no keyring slot for it — `api_keys::VALID_PROVIDERS`
 /// deliberately has no `packetcode-acp` entry. What CAN be checked is whether
 /// the engine binary is present and new enough, which is what the badge should
 /// reflect: an unmatched provider id is a hard `Err` that breaks the AuthBadge
@@ -515,7 +515,7 @@ mod tests {
 
     /// The posture table in [`to_acp_permission_mode`]'s doc comment, pinned.
     #[test]
-    fn packetade_postures_map_onto_the_acp_ladder() {
+    fn packetbench_postures_map_onto_the_acp_ladder() {
         // default
         assert_eq!(to_acp_permission_mode("auto"), "auto");
         assert_eq!(to_acp_permission_mode("default"), "auto");

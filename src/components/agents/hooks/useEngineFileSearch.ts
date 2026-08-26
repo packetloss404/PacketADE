@@ -34,7 +34,7 @@ export interface EngineFileSearchResult {
 /**
  * Project-file search for the `@` menu, served by the ACP engine.
  *
- * The engine owns the project's ignore rules, so it — not PacketADE's local
+ * The engine owns the project's ignore rules, so it — not PacketBench's local
  * directory walk — is the authority on what `@` may mention in an engine
  * session. Each query is a subprocess round trip, hence the debounce; results
  * are superseded (not merged) by the next query, and a query that lands out

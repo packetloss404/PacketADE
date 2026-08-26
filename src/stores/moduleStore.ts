@@ -3,8 +3,8 @@ import type { ModuleState } from "@/types/modules";
 import { moduleRegistry } from "@/modules/registry";
 import { loadFromStorage, saveToStorage, removeFromStorage } from "@/lib/storage";
 
-const STORAGE_KEY = "packetade:modules";
-const OLD_STORAGE_KEY = "packetade:extensions";
+const STORAGE_KEY = "packetbench:modules";
+const OLD_STORAGE_KEY = "packetbench:extensions";
 
 interface ModuleStore {
   states: Record<string, ModuleState>;

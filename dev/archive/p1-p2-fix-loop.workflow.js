@@ -16,7 +16,7 @@ export const meta = {
 const SPEC_FILE = "dev/p1-p2-fix-loop-spec.md"
 
 const CONTEXT = [
-  "PROJECT: PacketADE at /Users/ianwalmsley/projects/PacketADE. Tauri v2: Rust in src-tauri/, React/TS in src/, Node sidecar in agent-sidecar/.",
+  "PROJECT: PacketBench at /Users/ianwalmsley/projects/PacketADE. Tauri v2: Rust in src-tauri/, React/TS in src/, Node sidecar in agent-sidecar/.",
   "",
   "The FULL launch-ready spec is at " + SPEC_FILE + " — READ IT FIRST. It has one pinned section per item (root cause, exact file:line edits, tests, gate, risks). Do NOT re-derive; follow the spec.",
   "",

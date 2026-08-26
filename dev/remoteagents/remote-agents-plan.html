@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="PacketADE Remote Agents single-page implementation plan for cloud-relayed PWA control of PacketADE API agents."
+      content="PacketBench Remote Agents single-page implementation plan for cloud-relayed PWA control of PacketBench API agents."
     />
-    <title>PacketADE Remote Agents Plan</title>
+    <title>PacketBench Remote Agents Plan</title>
     <style>
       :root {
         color-scheme: dark;
@@ -793,7 +793,7 @@
   <body>
     <div class="page-shell">
       <header class="topbar">
-        <div class="brand" aria-label="PacketADE Remote Agents">
+        <div class="brand" aria-label="PacketBench Remote Agents">
           <span class="mark">PA</span>
           <span>Remote Agents Plan</span>
         </div>
@@ -815,12 +815,12 @@
         <section class="hero" aria-labelledby="page-title">
           <div>
             <div class="eyebrow">Implementation brief / 2026-05-26</div>
-            <h1 id="page-title">Use every PacketADE agent from your phone.</h1>
+            <h1 id="page-title">Use every PacketBench agent from your phone.</h1>
             <p class="lede">
               Remote Agents makes the desktop app an online agent host. The phone signs into Packet
               Cloud, controls trusted desktops through a secure relay, and uses the exact providers,
               models, profiles, workspaces, MCP setup, and approvals already configured in
-              PacketADE.
+              PacketBench.
             </p>
             <div class="hero-actions">
               <a class="button primary" href="./README.md">Open Canonical Docs</a>
@@ -889,11 +889,11 @@
             </article>
             <article class="card">
               <h3>Desktop host</h3>
-              <p>PacketADE desktop runs agents, tools, keyring access, OAuth, MCP, and files.</p>
+              <p>PacketBench desktop runs agents, tools, keyring access, OAuth, MCP, and files.</p>
             </article>
             <article class="card">
               <h3>PWA first</h3>
-              <p>Build <code>remote.packetade.app</code> before native iOS/TestFlight.</p>
+              <p>Build <code>remote.packetbench.app</code> before native iOS/TestFlight.</p>
             </article>
             <article class="card">
               <h3>WebSockets</h3>
@@ -1015,7 +1015,7 @@
             </article>
 
             <article class="node">
-              <span class="node-label">PacketADE Desktop</span>
+              <span class="node-label">PacketBench Desktop</span>
               <span class="node-title">Agent host and policy authority</span>
               <ul class="node-list">
                 <li><code>remote_agents</code> service</li>
@@ -1143,7 +1143,7 @@
                 </div>
                 <div class="phone-title">Needs Me</div>
                 <div class="mini-card">
-                  <strong>Ian-PC / PacketADE</strong>
+                  <strong>Ian-PC / PacketBench</strong>
                   Shell command approval waiting on <code>api-openai-codex</code>.
                 </div>
                 <div class="mini-card">
@@ -1300,7 +1300,7 @@
           <div class="north-star" aria-label="North star acceptance test">
             <strong>North-star acceptance test</strong>
             <span>
-              An iPhone PWA starts a real PacketADE API-agent conversation against
+              An iPhone PWA starts a real PacketBench API-agent conversation against
               <code>D:\projects\PacketADE</code>, streams within 2 seconds of desktop events,
               approves one risky tool, completes or cancels the run, and the same conversation opens
               on desktop.
@@ -1599,7 +1599,7 @@
         </section>
 
         <footer class="footer">
-          PacketADE Remote Agents one-page plan. Static HTML5, offline-friendly, printable, and
+          PacketBench Remote Agents one-page plan. Static HTML5, offline-friendly, printable, and
           intended as the kickoff page for the six-agent implementation team.
         </footer>
       </main>

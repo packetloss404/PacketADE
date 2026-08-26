@@ -4,7 +4,7 @@ import type { SyndicateGrantStatus } from "@/types/syndicate";
  * Typed controller failures.
  *
  * `CONTROLLER_PROTOCOL_V1` answers a rejected RPC with
- * `error: {code, retryable, correlationId}`. PacketADE used to flatten that
+ * `error: {code, retryable, correlationId}`. PacketBench used to flatten that
  * into a sentence and then re-derive the verdict with message regexes, which
  * is how `DEVICE_UNAUTHORIZED` — the code a Host returns for a grant that has
  * passed its 30-day expiry — became a permanent 5-second reconnect loop
@@ -78,7 +78,7 @@ export function toSyndicateError(value: unknown): Error {
  * `grant_expires_at` has passed, and `DEVICE_REVOKED` only for an explicitly
  * revoked device (`apps/host/src/controller-auth.ts:536-537`). Since revocation
  * has its own code, `DEVICE_UNAUTHORIZED` on a device we believe is paired is
- * the 30-day expiry cliff. `GRANT_EXPIRED` is PacketADE's own code for a relay
+ * the 30-day expiry cliff. `GRANT_EXPIRED` is PacketBench's own code for a relay
  * grant it can see has expired without asking the Host.
  */
 const DEAD_GRANT_CODES: Readonly<

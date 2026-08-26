@@ -42,7 +42,7 @@ pub fn deliver_dictation_text(text: String, paste: bool) -> Result<(), String> {
     {
         let _ = paste;
         Err(
-            "Native dictation delivery is currently available on Windows; the transcript remains available in PacketADE"
+            "Native dictation delivery is currently available on Windows; the transcript remains available in PacketBench"
                 .to_string(),
         )
     }

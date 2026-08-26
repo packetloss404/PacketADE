@@ -1,7 +1,7 @@
-//! PacketADE-owned Claude Code status-line collector.
+//! PacketBench-owned Claude Code status-line collector.
 //!
 //! Claude Code accepts an additional `--settings` JSON object for a session.
-//! PacketADE injects a status-line command through that seam and re-invokes
+//! PacketBench injects a status-line command through that seam and re-invokes
 //! its own executable in this lightweight helper mode. The helper normalizes
 //! Claude's stdin payload into the existing `statusline-state` contract that
 //! the frontend polls. This keeps Workspace panes self-contained: users do not
@@ -257,7 +257,7 @@ mod tests {
             "cwd": "C:\\repo\\fallback",
             "session_id": "session/abc",
             "model": { "id": "claude-opus-4-7", "display_name": "Opus" },
-            "workspace": { "current_dir": "D:\\projects\\PacketADE" },
+            "workspace": { "current_dir": "D:\\projects\\PacketBench" },
             "cost": { "total_cost_usd": 0.01234, "total_duration_ms": 125000 },
             "context_window": {
                 "total_input_tokens": 15500,
@@ -273,8 +273,8 @@ mod tests {
 
         assert_eq!(snapshot.session_id, "session/abc");
         assert_eq!(snapshot.model, "Opus");
-        assert_eq!(snapshot.cwd, "D:\\projects\\PacketADE");
-        assert_eq!(snapshot.dir_name, "PacketADE");
+        assert_eq!(snapshot.cwd, "D:\\projects\\PacketBench");
+        assert_eq!(snapshot.dir_name, "PacketBench");
         assert_eq!(snapshot.context_percent, 8);
         assert_eq!(snapshot.context_current_k, 15);
         assert_eq!(snapshot.context_max_k, 200);
@@ -290,7 +290,7 @@ mod tests {
 
         assert_eq!(path.file_name().unwrap(), "session_abc.json");
         let written: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-        assert_eq!(written["cwd"], "D:\\projects\\PacketADE");
+        assert_eq!(written["cwd"], "D:\\projects\\PacketBench");
         assert_eq!(written["model"], "Opus");
         assert!(fs::read_dir(dir.path())
             .unwrap()

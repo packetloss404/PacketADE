@@ -10,7 +10,7 @@ vi.mock("../McpServersCard", () => ({
   McpServersCard: () => <div>Configured servers editor</div>,
 }));
 vi.mock("../McpProviderCard", () => ({
-  McpProviderCard: () => <div>PacketADE provider controls</div>,
+  McpProviderCard: () => <div>PacketBench provider controls</div>,
 }));
 vi.mock("@/stores/agentTaskStore", () => ({
   useAgentTaskStore: (

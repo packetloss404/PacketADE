@@ -28,7 +28,7 @@ const mockStart = vi.mocked(startPacketAgentStream);
 const mockStop = vi.mocked(stopPacketAgentStream);
 
 const PACKAGE = {
-  packageId: "packetade:f:worker",
+  packageId: "packetbench:f:worker",
   packageVersion: 1,
   integrity: { digest: `sha256:${"a".repeat(64)}` },
 } as unknown as PacketAgentWorkerPackage;
@@ -115,7 +115,7 @@ describe("packetAgentStore ack batching", () => {
     const [ack] = ackCalls[0];
     expect(ack.payload).toEqual({ cursor: "evt_02" });
     expect(ack.ifMatch).toBe("W/1");
-    expect(ack.idempotencyKey).toMatch(/^packetade:dep-.*:cursor:evt_02$/);
+    expect(ack.idempotencyKey).toMatch(/^packetbench:dep-.*:cursor:evt_02$/);
     expect(usePacketAgentStore.getState().deployments[key].cursor).toBe("evt_02");
   });
 

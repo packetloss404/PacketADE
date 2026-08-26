@@ -206,7 +206,7 @@ const DEFAULT_ISSUE_STATE: IssueState = {
 };
 
 function loadState(): IssueState {
-  const parsed = loadFromStorage<IssueState>("packetade:issues", DEFAULT_ISSUE_STATE);
+  const parsed = loadFromStorage<IssueState>("packetbench:issues", DEFAULT_ISSUE_STATE);
   return { ...parsed, issues: (parsed.issues || []).map(migrateIssue) };
 }
 
@@ -259,7 +259,7 @@ function syncIssuesToBackend(issues: Issue[]) {
 }
 
 function saveState(state: IssueState) {
-  saveToStorage("packetade:issues", state);
+  saveToStorage("packetbench:issues", state);
   // Mirror to Rust PersistedState so server-side consumers (notably
   // `emit_fixes_events` in `commands/git.rs`) see the same data on every
   // mutation. Routed through a single helper here so every code path that
@@ -487,7 +487,7 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
     };
 
     set(nextState);
-    saveToStorage("packetade:issues", nextState);
+    saveToStorage("packetbench:issues", nextState);
     syncIssuesToBackend(issues);
     queueIssueFlightReconciliation();
   },
@@ -673,7 +673,7 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
 
     // v0.8.5 fix: provision a per-Issue git worktree BEFORE creating the
     // workspace. The Rust side installs a `prepare-commit-msg` hook in
-    // the worktree that appends `Fixes #N` + `Run-By: PacketADE issue
+    // the worktree that appends `Fixes #N` + `Run-By: PacketBench issue
     // I-<id>` to every commit, which is what closes the auto-Done loop
     // (git_commit emits `issue-watcher:fixed` → the listener below flips
     // the Issue to `done`). Without the worktree, the PTY runs in the
@@ -815,7 +815,7 @@ async function registerIssueWatcher() {
 
 // Read-only Monitor windows evaluate this module too (main.tsx statically
 // imports the whole App graph), but their issueStore snapshot is frozen at
-// window boot and this handler whole-slice-saves `packetade:issues` —
+// window boot and this handler whole-slice-saves `packetbench:issues` —
 // registering here would let a stale monitor copy clobber the shared
 // localStorage. The main window owns the close-loop. (Inline check instead
 // of `isMonitorBoot()` to avoid the issueStore → monitorWindows →

@@ -126,7 +126,7 @@ interface PacketAgentStore {
    * automatically when an approval_required/blocked event is observed. */
   fetchAttention: (key: string) => Promise<void>;
   /** PH7: approve/reject one attention request with an idempotency key of
-   * the form packetade:{attentionId}:{decision}:{revision}. A stale
+   * the form packetbench:{attentionId}:{decision}:{revision}. A stale
    * expectedRevision (409/412) refetches the attention list and rethrows. */
   respondAttention: (
     key: string,

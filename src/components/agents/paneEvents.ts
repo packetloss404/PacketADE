@@ -6,12 +6,12 @@
  * the tree with `document.querySelector` on data attributes plus a
  * setTimeout'd synthetic click; this replaces that with the same
  * window-CustomEvent convention the login flows already use
- * (`packetade:open-claude-login`). The owning component subscribes while
+ * (`packetbench:open-claude-login`). The owning component subscribes while
  * mounted and opens itself when the conversation id matches.
  */
 
-export const OPEN_MODE_CHIP_EVENT = "packetade:open-mode-chip";
-export const OPEN_MODEL_DROPDOWN_EVENT = "packetade:open-model-dropdown";
+export const OPEN_MODE_CHIP_EVENT = "packetbench:open-mode-chip";
+export const OPEN_MODEL_DROPDOWN_EVENT = "packetbench:open-model-dropdown";
 
 export interface PaneControlEventDetail {
   conversationId: string;

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { usePromptStore } from "../promptStore";
 
-const STORAGE_KEY = "packetade:prompt-templates";
+const STORAGE_KEY = "packetbench:prompt-templates";
 const store = () => usePromptStore.getState();
 
 describe("promptStore", () => {

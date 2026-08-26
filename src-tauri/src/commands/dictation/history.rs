@@ -18,7 +18,7 @@ pub struct DictationEntry {
     pub sentiment: Option<f64>,
 }
 
-/// Return the path to ~/.packetade/dictation.db, creating the directory if needed.
+/// Return the path to ~/.packetbench/dictation.db, creating the directory if needed.
 fn db_path() -> Result<PathBuf, String> {
     let home = home_dir().ok_or("Could not resolve home directory")?;
     let dir = PathBuf::from(&home).join(DATA_DIR_NAME);

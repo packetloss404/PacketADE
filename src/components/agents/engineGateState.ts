@@ -84,7 +84,7 @@ export function classifyInstallFailure(reason: unknown): InstallFailure {
  * a probe is fast but not instant. Without this, every visit would blank the
  * pane — or worse, flash a gate — before the answer arrived. With it, only the
  * first visit waits; later ones paint the known verdict immediately and
- * re-probe in the background, so an engine installed outside PacketADE is
+ * re-probe in the background, so an engine installed outside PacketBench is
  * still picked up.
  */
 let cachedProbe: AcpEngineProbe | null = null;

@@ -22,17 +22,17 @@ describe("SSH argument construction", () => {
       "/repo",
       "codex",
       [],
-      "C:/PacketADE/known_hosts",
+      "C:/PacketBench/known_hosts",
     );
 
     expect(args).toContain("StrictHostKeyChecking=yes");
-    expect(args).toContain("UserKnownHostsFile=C:/PacketADE/known_hosts");
+    expect(args).toContain("UserKnownHostsFile=C:/PacketBench/known_hosts");
     expect(args).not.toContain("StrictHostKeyChecking=accept-new");
   });
 
   it("uses accept-new for an unpinned legacy server", () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const args = buildSshExecArgs(server(), "true", "C:/PacketADE/known_hosts");
+    const args = buildSshExecArgs(server(), "true", "C:/PacketBench/known_hosts");
 
     expect(args).toContain("StrictHostKeyChecking=accept-new");
     expect(warning).toHaveBeenCalledOnce();
@@ -48,7 +48,7 @@ describe("SSH argument construction", () => {
         hostFingerprint: "SHA256:abc",
       }),
       "uname -a",
-      "C:/PacketADE/known_hosts",
+      "C:/PacketBench/known_hosts",
     );
 
     expect(args).toEqual(
@@ -67,7 +67,7 @@ describe("SSH argument construction", () => {
     const args = buildSshExecArgs(
       server({ authMethod: "password", hostFingerprint: "SHA256:abc" }),
       "node --version",
-      "C:/PacketADE/known_hosts",
+      "C:/PacketBench/known_hosts",
     );
 
     expect(args).not.toContain("-t");
@@ -81,7 +81,7 @@ describe("SSH argument construction", () => {
       "/repo with spaces",
       "packetcode",
       [],
-      "C:/PacketADE/known_hosts",
+      "C:/PacketBench/known_hosts",
       { PACKETCODE_HOME: "/srv/packet code/'isolated'" },
     );
     const remote = args[args.length - 1] ?? "";
@@ -104,7 +104,7 @@ describe("SSH argument construction", () => {
       "/repo",
       null,
       undefined,
-      "C:/PacketADE/known_hosts",
+      "C:/PacketBench/known_hosts",
     );
     const remote = args[args.length - 1] ?? "";
 

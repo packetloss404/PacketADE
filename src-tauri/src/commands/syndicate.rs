@@ -1,6 +1,6 @@
 //! Native Syndicate controller client.
 //!
-//! This is the single PacketADE boundary for controller protocol v1. The
+//! This is the single PacketBench boundary for controller protocol v1. The
 //! frontend never receives a device private key and can only invoke the typed
 //! operations below; there is deliberately no generic RPC, URL, command,
 //! argv, path, or environment escape hatch.
@@ -32,7 +32,7 @@ const CLAIM_PATH: &str = "/api/v1/controller/pairing/claim";
 const DEFAULT_PORT: u16 = 4317;
 const MAX_TERMINAL_INPUT_BYTES: usize = 32_768;
 
-/// PacketADE-local error code for the Settings kill switch. Host codes are
+/// PacketBench-local error code for the Settings kill switch. Host codes are
 /// defined by `CONTROLLER_PROTOCOL_V1`; this one never appears on the wire.
 pub const CODE_INTEGRATION_DISABLED: &str = "INTEGRATION_DISABLED";
 const INTEGRATION_DISABLED_MESSAGE: &str = "Syndicate integration is disabled in Settings.";
@@ -127,7 +127,7 @@ struct PairClaimRequest {
 // a cross-repo fixture, so strictness there is a conformance check. It says
 // nothing about the claim response, so rejecting unknown fields here would turn
 // any additive Host change into a silent pairing failure on already-shipped
-// PacketADE builds. Every field this client relies on is still required below.
+// PacketBench builds. Every field this client relies on is still required below.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PairClaimResponse {
@@ -210,7 +210,7 @@ struct RpcError {
 pub struct SyndicateRpcResult {
     pub request_id: String,
     pub result: Value,
-    /// PacketADE's carrier for this completed request. This is deliberately
+    /// PacketBench's carrier for this completed request. This is deliberately
     /// separate from machine.snapshot's Host-local controller transport.
     pub transport: &'static str,
 }
@@ -318,7 +318,7 @@ pub struct SyndicateCommandError {
 }
 
 impl SyndicateCommandError {
-    /// A failure PacketADE decided locally, with no Host verdict attached.
+    /// A failure PacketBench decided locally, with no Host verdict attached.
     pub fn local(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
@@ -328,7 +328,7 @@ impl SyndicateCommandError {
         }
     }
 
-    /// A failure PacketADE decided locally but can classify as authoritatively
+    /// A failure PacketBench decided locally but can classify as authoritatively
     /// as the Host would — an expired or revoked relay grant it holds itself.
     pub fn local_typed(code: &str, message: impl Into<String>) -> Self {
         Self {
@@ -438,7 +438,7 @@ fn resolve_server_config(
     }
     if !crate::core::execution::app_known_hosts_path().is_file() {
         return Err(
-            "PacketADE's pinned SSH known_hosts file is missing. Re-verify the server host key."
+            "PacketBench's pinned SSH known_hosts file is missing. Re-verify the server host key."
                 .into(),
         );
     }
@@ -476,7 +476,7 @@ fn tunnel_ssh_args(config: &SshConfig, local_port: u16, password_auth: bool) -> 
         .into_iter()
         .take_while(|argument| argument != &target)
     {
-        // PacketADE's general SSH helper enables ControlMaster on Unix. A
+        // PacketBench's general SSH helper enables ControlMaster on Unix. A
         // controller tunnel owns its child lifecycle, so inherited Control*
         // options are removed; OpenSSH uses the first value, not the last.
         if argument.starts_with("ControlMaster=")
@@ -671,7 +671,7 @@ fn sha256_base64url(bytes: &[u8]) -> String {
 
 fn stable_request_id(operation: &str, identities: &[&str]) -> String {
     let mut digest = Sha256::new();
-    digest.update(b"packetade-syndicate-request-v1\0");
+    digest.update(b"packetbench-syndicate-request-v1\0");
     digest.update(operation.as_bytes());
     for identity in identities {
         digest.update(b"\0");
@@ -1027,7 +1027,7 @@ fn parse_pairing_payload(input: &str) -> Result<ParsedPairingPackage, String> {
         .map_err(|_| "Paste the complete pairing payload printed by Syndicate.".to_string())?;
     if envelope.protocol_version != PROTOCOL_VERSION {
         return Err(format!(
-            "Unsupported Syndicate pairing protocol {} (PacketADE supports v1).",
+            "Unsupported Syndicate pairing protocol {} (PacketBench supports v1).",
             envelope.protocol_version
         ));
     }
@@ -1282,7 +1282,7 @@ async fn send_rpc_with_authority(
             retryable: false,
             correlation_id: None,
         });
-        // The Host sends no `message`, so the readable half stays PacketADE's.
+        // The Host sends no `message`, so the readable half stays PacketBench's.
         // `code` and `retryable` are forwarded untouched: they are the
         // frontend's only sound basis for retrying or marking a grant dead.
         return Err(SyndicateCommandError {
@@ -1449,7 +1449,7 @@ pub async fn syndicate_pair_machine(
     }
 
     // Persist only after the Host has consumed and accepted the invite. If the
-    // keyring write fails, the claim remains pending but PacketADE cannot use
+    // keyring write fails, the claim remains pending but PacketBench cannot use
     // it; surface that explicitly so the user can revoke it in Syndicate.
     save_controller_credential(
         &payload.machine_id,
@@ -1811,7 +1811,7 @@ mod tests {
             "approvalRequired": true,
             "device": {
                 "deviceId": "device-1",
-                "deviceName": "PacketADE controller",
+                "deviceName": "PacketBench controller",
                 "status": "pending",
                 "scopes": [],
                 "revocationEpoch": 0,
@@ -1866,7 +1866,7 @@ mod tests {
     // Syndicate's `docs/fixtures/` copies by design, and both repos load them
     // as cross-language conformance vectors. Their value is the byte-identity,
     // not the accuracy of the strings inside: the literal
-    // `"displayName": "PacketADE controller"` must survive the PacketBench
+    // `"displayName": "PacketBench controller"` must survive the PacketBench
     // rename, and the `relayEndpoint` must survive the relay moving hosts.
     // Exclude both files from any rename or find-and-replace tooling.
     #[test]
@@ -1964,7 +1964,7 @@ mod tests {
     }
 
     #[test]
-    fn rpc_result_serializes_packetade_carrier_separately() {
+    fn rpc_result_serializes_packetbench_carrier_separately() {
         let relay = serde_json::to_value(SyndicateRpcResult {
             request_id: "request-1".into(),
             result: json!({"ok": true}),

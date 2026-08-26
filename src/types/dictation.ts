@@ -35,7 +35,7 @@ export interface DictationSettings {
   autoPaste: boolean;
   /** Whisper language code, or "auto" for language detection. */
   language: string;
-  /** Paste into the foreground OS application when no PacketADE field is active. */
+  /** Paste into the foreground OS application when no PacketBench field is active. */
   systemWidePaste: boolean;
   /** OS-global accelerator for push-to-talk (hold). Optional — falls back to
    *  the hardcoded default in `useDictationGlobalShortcuts` when omitted. */

@@ -17,7 +17,7 @@ vi.mock("@/lib/logSwallowed", () => ({
 import { migrateSshTargetsToServers } from "@/lib/sshTargetMigration";
 import { useServerStore } from "@/stores/serverStore";
 
-const LEGACY_STORAGE_KEY = "packetade:ssh-targets";
+const LEGACY_STORAGE_KEY = "packetbench:ssh-targets";
 const LEGACY_PACKETCODE_KEY = "packetcode:ssh-targets";
 
 function legacyTarget(overrides: Record<string, unknown> = {}) {
@@ -113,7 +113,7 @@ describe("migrateSshTargetsToServers", () => {
     expect(localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull();
   });
 
-  it("merges packetade and packetcode legacy target namespaces before cleanup", async () => {
+  it("merges packetbench and packetcode legacy target namespaces before cleanup", async () => {
     localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify([legacyTarget()]));
     localStorage.setItem(
       LEGACY_PACKETCODE_KEY,

@@ -74,9 +74,9 @@ const TOO_OLD: AcpEngineProbe = {
 };
 
 const MANUAL_HINT =
-  "PacketADE cannot install the packetcode engine on this platform. Install it yourself " +
+  "PacketBench cannot install the packetcode engine on this platform. Install it yourself " +
   "(see the packetcode README), then make sure `packetcode` is on PATH or set " +
-  "PACKETADE_ACP_ENGINE to its full path.";
+  "PACKETBENCH_ACP_ENGINE to its full path.";
 
 const UNSUPPORTED: AcpEngineProbe = {
   found: false,
@@ -219,7 +219,7 @@ describe("state 4 — install unsupported", () => {
 });
 
 describe("manual re-probe", () => {
-  it("lets an engine installed outside PacketADE through without a restart", async () => {
+  it("lets an engine installed outside PacketBench through without a restart", async () => {
     harness.acpProbe.mockResolvedValueOnce(MISSING).mockResolvedValueOnce(READY);
     render(<PacketCodeEngineGate>{child()}</PacketCodeEngineGate>);
 

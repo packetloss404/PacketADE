@@ -20,7 +20,7 @@ type ProviderEntry = {
   description: string;
   /** The custom-event name App.tsx listens for to open a PTY with the right
    *  login command. */
-  loginEvent: "packetade:open-claude-login" | "packetade:open-codex-login";
+  loginEvent: "packetbench:open-claude-login" | "packetbench:open-codex-login";
   /** Manual fallback command shown if the user prefers to copy/paste. */
   loginCommand: string;
 };
@@ -31,7 +31,7 @@ const PROVIDERS: ProviderEntry[] = [
     name: "Anthropic (Claude subscription)",
     description:
       "Sign in with your Claude.ai account so terminal Claude Code sessions use your Pro / Max plan.",
-    loginEvent: "packetade:open-claude-login",
+    loginEvent: "packetbench:open-claude-login",
     loginCommand: "claude login",
   },
   {
@@ -39,7 +39,7 @@ const PROVIDERS: ProviderEntry[] = [
     name: "OpenAI (ChatGPT Plus/Pro)",
     description:
       "Sign in with your ChatGPT account so terminal Codex CLI sessions use your plan.",
-    loginEvent: "packetade:open-codex-login",
+    loginEvent: "packetbench:open-codex-login",
     loginCommand: "codex login",
   },
 ];
@@ -56,7 +56,7 @@ type StatusEntry = ProviderAuthStatus | "loading";
  *
  * SCOPE (2026-07): these credentials serve **PTY / terminal CLI sessions
  * only**, which are ordinary end-user use of the vendors' own tools. No
- * PacketADE API-agent row consumes them: every provider in the Agents
+ * PacketBench API-agent row consumes them: every provider in the Agents
  * picker authenticates with an API key, because Anthropic does not permit
  * third-party developers to route requests through Free/Pro/Max plan
  * credentials on behalf of their users

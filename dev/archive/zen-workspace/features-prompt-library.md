@@ -29,9 +29,9 @@ Observed behavior:
 
 This makes prompting feel like an operational tool, not just stored data.
 
-## What PacketADE Has Today
+## What PacketBench Has Today
 
-PacketADE already has partial overlap:
+PacketBench already has partial overlap:
 
 - `src/stores/promptStore.ts` stores prompt templates
 - `src/components/views/ToolsView.tsx` exposes template management
@@ -43,7 +43,7 @@ So this is not a greenfield gap.
 
 The gap is workflow shape, not storage.
 
-PacketADE now treats prompts as both:
+PacketBench now treats prompts as both:
 
 - reusable template records
 - quick-launch prompts from the workspace toolbar
@@ -54,9 +54,9 @@ Zen treats prompts as:
 
 ## Recommended Direction
 
-PacketADE should keep templates as a lightweight prompt library without overcomplicating the system.
+PacketBench should keep templates as a lightweight prompt library without overcomplicating the system.
 
-## Good PacketADE-first version
+## Good PacketBench-first version
 
 - reuse `promptStore.ts`
 - add built-in prompt entries without replacing custom templates

@@ -1,4 +1,4 @@
-// Registry regression smoke test for the PacketADE agent sidecar.
+// Registry regression smoke test for the PacketBench agent sidecar.
 //
 // Spawns `node agent-sidecar/dist/index.js` once and issues `start_session`
 // requests for every concrete provider, a RETIRED provider, and a bogus

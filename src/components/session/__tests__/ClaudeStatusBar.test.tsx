@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { ClaudeStatusBar } from "@/components/session/ClaudeStatusBar";
 import { useStatusLineStore } from "@/stores/statusLineStore";
 
-const PROJECT = "D:\\projects\\PacketADE";
+const PROJECT = "D:\\projects\\PacketBench";
 
 describe("ClaudeStatusBar", () => {
   beforeEach(() => {
@@ -24,7 +24,7 @@ describe("ClaudeStatusBar", () => {
         session_id: "session-1",
         model: "Opus",
         cwd: PROJECT,
-        dir_name: "PacketADE",
+        dir_name: "PacketBench",
         context_percent: 42,
         context_current_k: 84,
         context_max_k: 200,

@@ -20,7 +20,7 @@ export function CloseConfirmDialog({ summary, onCancel, onConfirm }: CloseConfir
 
   return (
     <Modal
-      title="Close PacketADE?"
+      title="Close PacketBench?"
       icon={<AlertTriangle size={14} className="text-accent-amber" />}
       onClose={onCancel}
       closeOnEscape

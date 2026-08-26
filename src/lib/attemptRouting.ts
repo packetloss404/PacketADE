@@ -12,7 +12,7 @@
  * Automatic launches now resolve through the routing settings' workflow roles
  * (Settings → AI Provider Routing), falling back to the same default a manual
  * Flight launch offers. Retired / non-catalog agents are refused outright
- * rather than obeyed, so nothing PacketADE routes on the user's behalf can
+ * rather than obeyed, so nothing PacketBench routes on the user's behalf can
  * land on a provider that cannot run.
  *
  * Since 2026-07 no picker row uses subscription credentials at all: the

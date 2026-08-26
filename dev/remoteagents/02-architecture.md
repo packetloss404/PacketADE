@@ -4,8 +4,8 @@
 
 ```mermaid
 flowchart LR
-  PWA["Mobile PWA\nremote.packetade.app"] <--> Relay["Packet Relay\nRust/Tokio service"]
-  Desktop["PacketADE Desktop\nremote_agents service"] <--> Relay
+  PWA["Mobile PWA\nremote.packetbench.app"] <--> Relay["Packet Relay\nRust/Tokio service"]
+  Desktop["PacketBench Desktop\nremote_agents service"] <--> Relay
   Desktop --> API["api_agent.rs\nin-process providers"]
   Desktop --> Sidecar["Node sidecar\nsubscription/API SDK providers"]
   Desktop --> Local["Local files, SSH, MCP,\nkeyring, OAuth files"]
@@ -16,7 +16,7 @@ flowchart LR
 
 ## Execution Ownership
 
-Desktop PacketADE is the agent host. It:
+Desktop PacketBench is the agent host. It:
 
 - creates conversations
 - selects provider/model/profile
@@ -54,10 +54,10 @@ PWA:
 The relay is the sibling repository at `D:\projects\packetrelay`. It is a
 standalone Rust 1.83 application built on Tokio and Tungstenite, with bounded
 connection/message limits and existing bridge, broadcast, and authenticated-room
-protocols. PacketADE must add a separate, versioned host/device protocol without
+protocols. PacketBench must add a separate, versioned host/device protocol without
 breaking those compatibility modes.
 
-The current binary is a transport baseline, not a finished PacketADE backend. At
+The current binary is a transport baseline, not a finished PacketBench backend. At
 this planning revision it has no account control plane, WebSocket tickets,
 Origin policy, durable replay, multiple devices per host, Web Push, audit store,
 or horizontally coordinated state. Those are implementation requirements below,
@@ -197,7 +197,7 @@ The exact PWA/shared folder can move, but the PWA/shared protocol should stay
 outside `src-tauri` so it can build independently of Tauri. Relay changes land
 in the standalone repository and are contract-tested against the shared schemas.
 
-## Current PacketADE Touchpoints
+## Current PacketBench Touchpoints
 
 ### Event Contract
 
@@ -284,7 +284,7 @@ It should reuse existing API-agent commands internally where possible, but it mu
 The PWA should be a separate React/Vite app initially:
 
 - avoids coupling mobile release to Tauri desktop bundle
-- can deploy to `remote.packetade.app`
+- can deploy to `remote.packetbench.app`
 - can use Workbox/service worker
 - can evolve toward native iOS later
 
@@ -366,6 +366,6 @@ Stores:
 
 ### Cloud Outage
 
-- Desktop PacketADE remains fully functional locally.
+- Desktop PacketBench remains fully functional locally.
 - PWA shows offline.
 - No remote execution occurs.

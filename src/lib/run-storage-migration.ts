@@ -1,4 +1,4 @@
-// Side-effect module: performs the packetcode:* -> packetade:* localStorage
+// Side-effect module: performs the packetcode:* -> packetbench:* localStorage
 // migration at module-evaluation time. Import this FIRST in main.tsx —
 // before App — so it runs before any store module reads localStorage at
 // init time. (A bare function call in main.tsx's body does NOT work: ESM
@@ -7,5 +7,5 @@ import { migrateIssuesMissionToFlight, migrateLegacyStorage } from "@/lib/storag
 
 migrateLegacyStorage();
 // Then canonicalize the legacy `missionId` flight link on persisted issues
-// (runs after the prefix copy above so `packetade:issues` is in place).
+// (runs after the prefix copy above so `packetbench:issues` is in place).
 migrateIssuesMissionToFlight();

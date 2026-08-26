@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { LAUNCH_DRAFT_KEY, useAgentDraftStore } from "../agentDraftStore";
 
-const STORAGE_KEY = "packetade:agent-drafts";
+const STORAGE_KEY = "packetbench:agent-drafts";
 
 const store = () => useAgentDraftStore.getState();
 

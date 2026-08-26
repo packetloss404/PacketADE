@@ -41,7 +41,7 @@ beforeEach(() => {
   useProjectMemoryStore.setState({
     snapshot: {
       schemaVersion: 1,
-      directory: ".packetade/memory",
+      directory: ".packetbench/memory",
       notes: [NOTE],
       warnings: [],
       revision: "r",

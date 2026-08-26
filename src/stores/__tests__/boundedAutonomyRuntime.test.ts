@@ -160,7 +160,7 @@ describe("bounded autonomy supervision", () => {
         agentConfigId: "api-openai",
         model: "gpt-5",
         provider: "openai",
-        branch: "packetade/attempt-1",
+        branch: "packetbench/attempt-1",
         baseBranch: "main",
         sessionId: "session-1",
         status: "running",

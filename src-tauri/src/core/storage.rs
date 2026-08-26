@@ -224,7 +224,7 @@ impl Default for PersistedState {
 //
 // The real storage writers (`with_state_lock`, `accumulate_*_cost`, the
 // `save_*` slice writers) all resolve their target through `data_dir()`, which
-// is hardcoded to `~/.packetade`. To exercise those writers HERMETICALLY in
+// is hardcoded to `~/.packetbench`. To exercise those writers HERMETICALLY in
 // the default `cargo test` pass — without the historic `#[ignore]`+`HOME`
 // rewrite that clobbered real user state — tests carry a PER-THREAD override
 // that redirects `data_dir()` at a tempdir. It is thread-local (not a global /
@@ -264,7 +264,7 @@ pub(crate) fn redirect_data_dir_for_test(dir: impl Into<PathBuf>) -> TestDataDir
     TestDataDirGuard { prev }
 }
 
-/// Get the PacketADE data directory (~/.packetade/).
+/// Get the PacketBench data directory (~/.packetbench/).
 ///
 /// Resolves the SAME directory for both reads and writes so a failed startup
 /// migration can't strand the user on an empty new dir while their data sits
@@ -906,7 +906,7 @@ pub fn resolve_ollama_root_base_url() -> String {
         return saved;
     }
 
-    std::env::var("PACKETADE_OLLAMA_URL")
+    std::env::var("PACKETBENCH_OLLAMA_URL")
         .or_else(|_| std::env::var("PACKETCODE_OLLAMA_URL"))
         .ok()
         .and_then(|url| normalize_ollama_root_base_url(&url).ok())
@@ -955,14 +955,14 @@ pub fn save_custom_compat_base_url(base_url: Option<String>) -> Result<(), Strin
     save_provider_runtime_settings(&settings)
 }
 
-/// Saved endpoint wins, then `PACKETADE_CUSTOM_COMPAT_URL`. There is NO
+/// Saved endpoint wins, then `PACKETBENCH_CUSTOM_COMPAT_URL`. There is NO
 /// built-in default — `None` means the custom provider is unconfigured, and
 /// callers must fail with a Settings pointer rather than invent a host.
 pub fn resolve_custom_compat_base_url() -> Option<String> {
     if let Some(saved) = load_saved_custom_compat_base_url() {
         return Some(saved);
     }
-    std::env::var("PACKETADE_CUSTOM_COMPAT_URL")
+    std::env::var("PACKETBENCH_CUSTOM_COMPAT_URL")
         .ok()
         .and_then(|url| normalize_custom_compat_base_url(&url).ok())
 }
@@ -1043,14 +1043,14 @@ pub fn save_minimax_base_url(base_url: Option<String>) -> Result<(), String> {
     save_provider_runtime_settings(&settings)
 }
 
-/// Saved endpoint wins, then `PACKETADE_MINIMAX_URL`, then the documented
+/// Saved endpoint wins, then `PACKETBENCH_MINIMAX_URL`, then the documented
 /// global host — the same precedence Ollama's resolver uses.
 pub fn resolve_minimax_base_url() -> String {
     if let Some(saved) = load_saved_minimax_base_url() {
         return saved;
     }
 
-    std::env::var("PACKETADE_MINIMAX_URL")
+    std::env::var("PACKETBENCH_MINIMAX_URL")
         .ok()
         .and_then(|url| normalize_minimax_base_url(&url).ok())
         .unwrap_or_else(|| DEFAULT_MINIMAX_BASE_URL.to_string())
@@ -1182,7 +1182,7 @@ mod tests {
             agent_config_id: "api-claude".to_string(),
             model: "claude-sonnet".to_string(),
             provider: "claude".to_string(),
-            branch: format!("packetade/{id}"),
+            branch: format!("packetbench/{id}"),
             base_branch: "main".to_string(),
             session_id: id.to_string(),
             status,
@@ -1325,7 +1325,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let dir = std::env::temp_dir().join(format!("packetade-storage-{}-{}", tag, nanos));
+        let dir = std::env::temp_dir().join(format!("packetbench-storage-{}-{}", tag, nanos));
         fs::create_dir_all(&dir).expect("create unique temp dir");
         dir
     }

@@ -201,7 +201,7 @@ describe("TileHeaderActions — overflow menu content", () => {
 
   it("shows memory stats and a preview item after expanding the flyout when memory is on", () => {
     memoryMocks.memoryState.composeMemoryBrief.mockReturnValue({
-      text: "## PacketADE Memory Brief\n...",
+      text: "## PacketBench Memory Brief\n...",
       items: [
         { id: "p1", kind: "pattern", title: "Prefer named exports", timestamp: 1, reason: "" },
         { id: "p2", kind: "pattern", title: "Run tests before commit", timestamp: 2, reason: "" },

@@ -132,7 +132,7 @@ pub struct WorktreeFlight {
 /// auto-trailer hook installer for Issue-bound worktrees. The hook for
 /// these worktrees writes two trailers:
 ///   `Fixes #{issue_number}`
-///   `Run-By: PacketADE issue I-{issue_id}`
+///   `Run-By: PacketBench issue I-{issue_id}`
 /// so that on commit the synchronous git_commit watcher can flip the
 /// matching Issue to `done` via the `issue-watcher:fixed` event.
 #[derive(Debug, Clone)]
@@ -210,7 +210,7 @@ pub async fn create_local_worktree_with_flight(
 /// install a `prepare-commit-msg` hook that appends two trailers to every
 /// commit made inside it:
 ///   `Fixes #{issue_number}`
-///   `Run-By: PacketADE issue I-{issue_id}`
+///   `Run-By: PacketBench issue I-{issue_id}`
 ///
 /// Mirrors `create_local_worktree_with_flight` but uses
 /// `install_prepare_commit_msg_hook_for_issue` for the trailer logic.
@@ -500,12 +500,12 @@ async fn install_prepare_commit_msg_hook(
             ));
             format!(
                 "#!/bin/sh\n\
-                 # PacketADE auto-trailer — appended to commits made inside this worktree.\n\
+                 # PacketBench auto-trailer — appended to commits made inside this worktree.\n\
                  # v0.8: installed by core/worktree.rs::install_prepare_commit_msg_hook.\n\
                  FILE=\"$1\"\n\
                  MSG=$(cat \"$FILE\")\n\
                  case \"$MSG\" in\n\
-                   *\"Run-By: PacketADE\"*) exit 0 ;;\n\
+                   *\"Run-By: PacketBench\"*) exit 0 ;;\n\
                  esac\n\
                  printf '\\n%s\\n' '{trailer}' >> \"$FILE\"\n",
                 trailer = trailer_line,
@@ -533,7 +533,7 @@ async fn install_prepare_commit_msg_hook(
 /// worktree that appends two trailers to every commit message:
 ///
 ///   `Fixes #{issue_number}`
-///   `Run-By: PacketADE issue I-{issue_id}`
+///   `Run-By: PacketBench issue I-{issue_id}`
 ///
 /// Idempotent: if the commit message already contains either trailer
 /// (e.g. the user typed `Fixes #N` themselves or a previous commit was
@@ -557,7 +557,7 @@ async fn install_prepare_commit_msg_hook_for_issue(
     //   - skip the `Fixes #N` write if the message already contains it
     //     (word-boundary anchored via grep -E so `Fixes #4` doesn't match
     //     a pre-existing `Fixes #42`)
-    //   - skip the `Run-By` write if any existing `Run-By: PacketADE` line
+    //   - skip the `Run-By` write if any existing `Run-By: PacketBench` line
     //     is present (so amended commits don't stack lineage trailers)
     //
     // Single-quoted printf literals — `$` / backticks inside the sanitized
@@ -567,17 +567,17 @@ async fn install_prepare_commit_msg_hook_for_issue(
         "Auto-trailer disabled in settings; skipping issue hook install",
         |_settings| {
             let fixes_trailer = format!("Fixes #{}", issue_number);
-            let run_by_trailer = format!("Run-By: PacketADE issue I-{}", issue_id_safe);
+            let run_by_trailer = format!("Run-By: PacketBench issue I-{}", issue_id_safe);
             format!(
                 "#!/bin/sh\n\
-                 # PacketADE auto-trailer (issue v0.8.5) — appended to commits made inside this issue worktree.\n\
+                 # PacketBench auto-trailer (issue v0.8.5) — appended to commits made inside this issue worktree.\n\
                  FILE=\"$1\"\n\
                  MSG=$(cat \"$FILE\")\n\
                  if ! printf '%s' \"$MSG\" | grep -Eq '(^|[^0-9])Fixes #{number}([^0-9]|$)'; then\n\
                    printf '\\n%s\\n' '{fixes}' >> \"$FILE\"\n\
                  fi\n\
                  case \"$MSG\" in\n\
-                   *\"Run-By: PacketADE\"*) ;;\n\
+                   *\"Run-By: PacketBench\"*) ;;\n\
                    *) printf '%s\\n' '{run_by}' >> \"$FILE\" ;;\n\
                  esac\n",
                 number = issue_number,
@@ -741,7 +741,7 @@ pub struct IntegrationMergeState {
 
 fn integration_branch_name(flight_id: &str) -> Result<String, String> {
     validate_worktree_component(flight_id)?;
-    Ok(format!("packetade/flight/{}", flight_id))
+    Ok(format!("packetbench/flight/{}", flight_id))
 }
 
 fn git_stdout(cwd: &str, args: &[&str]) -> Result<String, String> {
@@ -2031,12 +2031,12 @@ mod tests {
     fn render_trailer_format_substitutes_known_placeholders() {
         assert_eq!(
             render_trailer_format(
-                "Run-By: PacketADE flight F-{flightId} attempt A-{attemptId}",
+                "Run-By: PacketBench flight F-{flightId} attempt A-{attemptId}",
                 "abc",
                 "att1",
                 "Title",
             ),
-            "Run-By: PacketADE flight F-abc attempt A-att1"
+            "Run-By: PacketBench flight F-abc attempt A-att1"
         );
     }
 
@@ -2125,7 +2125,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let root = std::env::temp_dir().join(format!("packetade-wtdel-{}-{}", tag, nanos));
+        let root = std::env::temp_dir().join(format!("packetbench-wtdel-{}-{}", tag, nanos));
         std::fs::create_dir_all(&root).expect("create temp repo dir");
         let git = |args: &[&str]| {
             let ok = std::process::Command::new("git")
@@ -2138,8 +2138,8 @@ mod tests {
             assert!(ok, "git {:?} failed", args);
         };
         git(&["init", "-q"]);
-        git(&["config", "user.email", "test@packetade.test"]);
-        git(&["config", "user.name", "PacketADE Test"]);
+        git(&["config", "user.email", "test@packetbench.test"]);
+        git(&["config", "user.name", "PacketBench Test"]);
         git(&["checkout", "-q", "-b", "main"]);
         std::fs::write(root.join("f.txt"), "base\n").expect("write f.txt");
         git(&["add", "f.txt"]);
@@ -2568,7 +2568,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let root = std::env::temp_dir().join(format!("packetade-int-fail-{}", nanos));
+        let root = std::env::temp_dir().join(format!("packetbench-int-fail-{}", nanos));
         let path = root.join(".pkt-flight-integrations").join("flight-fail");
         std::fs::create_dir_all(&path).unwrap();
         let base = root.to_string_lossy().to_string();

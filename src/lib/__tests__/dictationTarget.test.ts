@@ -22,8 +22,8 @@ describe("dictation targets", () => {
     const target = findDictationTarget(textarea);
 
     expect(target?.kind).toBe("dom");
-    if (target?.kind === "dom") insertDictationText(target.element, "PacketADE");
-    expect(textarea.value).toBe("hello PacketADE");
+    if (target?.kind === "dom") insertDictationText(target.element, "PacketBench");
+    expect(textarea.value).toBe("hello PacketBench");
     expect(input).toHaveBeenCalledTimes(1);
   });
 

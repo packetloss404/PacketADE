@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Default capability for PacketADE",
+  "description": "Default capability for PacketBench",
   "windows": ["main"],
   "permissions": [
     "core:default",

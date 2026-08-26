@@ -12,7 +12,7 @@ This charter governs execution. It does not re-decide anything: every contested 
 
 ## 1. Objective and north star
 
-PacketADE becomes a **single-surface app**: Workspaces is the one place you work, and the standalone Agents tab retires. Concretely:
+PacketBench becomes a **single-surface app**: Workspaces is the one place you work, and the standalone Agents tab retires. Concretely:
 
 - The left sidebar becomes a **fleet list of sessions** — every agent, API-driven or CLI, is one row; anything needing your attention (pending approval, question) is pinned at top with an amber count.
 - A **"session" is not a new database object**. It is a read-only projection over the two engines that already exist (the API conversation store and the workspace/PTY store), unified into one five-word status vocabulary: `needs_you / working / idle / done / failed`.

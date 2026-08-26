@@ -6,7 +6,7 @@ packaged/SSH smoke remains environment-gated
 
 ## Product decision
 
-Keep the selected Option B behavior as PacketADE's safe default, while allowing
+Keep the selected Option B behavior as PacketBench's safe default, while allowing
 the user to enable **YOLO Mode** for the same capabilities. The UI may use the
 plain-language YOLO label; the persisted contract is an `AutonomyPolicy`.
 
@@ -15,7 +15,7 @@ Settings defines the default policy. Every Flight visibly chooses:
 - **Assisted** — automatic detection and recommendations; user launches,
   retries, integrates, and overrides.
 - **Use Settings default** — inherits the configured default.
-- **YOLO** — PacketADE may take the specifically enabled autonomous actions
+- **YOLO** — PacketBench may take the specifically enabled autonomous actions
   within the Flight's limits.
 
 ## Independent autonomy switches

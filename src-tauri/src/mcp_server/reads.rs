@@ -253,10 +253,10 @@ pub enum ResourceRoute<'a> {
     Unknown,
 }
 
-/// Parse a `packetade://…` resource URI into a route. Unknown/foreign schemes
+/// Parse a `packetbench://…` resource URI into a route. Unknown/foreign schemes
 /// and malformed paths map to `Unknown`.
 pub fn parse_resource_uri(uri: &str) -> ResourceRoute<'_> {
-    let Some(path) = uri.strip_prefix("packetade://") else {
+    let Some(path) = uri.strip_prefix("packetbench://") else {
         return ResourceRoute::Unknown;
     };
     let parts: Vec<&str> = path.split('/').collect();
@@ -526,52 +526,52 @@ mod tests {
     #[test]
     fn resource_uri_routing() {
         assert_eq!(
-            parse_resource_uri("packetade://project"),
+            parse_resource_uri("packetbench://project"),
             ResourceRoute::Project
         );
         assert_eq!(
-            parse_resource_uri("packetade://flights"),
+            parse_resource_uri("packetbench://flights"),
             ResourceRoute::Flights
         );
         assert_eq!(
-            parse_resource_uri("packetade://issues"),
+            parse_resource_uri("packetbench://issues"),
             ResourceRoute::Issues
         );
         assert_eq!(
-            parse_resource_uri("packetade://flights/f1"),
+            parse_resource_uri("packetbench://flights/f1"),
             ResourceRoute::Flight("f1")
         );
         assert_eq!(
-            parse_resource_uri("packetade://flights/f1/tasks"),
+            parse_resource_uri("packetbench://flights/f1/tasks"),
             ResourceRoute::FlightTasks("f1")
         );
         assert_eq!(
-            parse_resource_uri("packetade://flights/f1/inbox"),
+            parse_resource_uri("packetbench://flights/f1/inbox"),
             ResourceRoute::FlightInbox("f1")
         );
         assert_eq!(
-            parse_resource_uri("packetade://memory/patterns"),
+            parse_resource_uri("packetbench://memory/patterns"),
             ResourceRoute::MemoryPatterns
         );
         assert_eq!(
-            parse_resource_uri("packetade://workspaces"),
+            parse_resource_uri("packetbench://workspaces"),
             ResourceRoute::Workspaces
         );
         assert_eq!(
-            parse_resource_uri("packetade://reviews"),
+            parse_resource_uri("packetbench://reviews"),
             ResourceRoute::Reviews
         );
         assert_eq!(
-            parse_resource_uri("packetade://packetcode/health"),
+            parse_resource_uri("packetbench://packetcode/health"),
             ResourceRoute::PacketCodeHealth
         );
         assert_eq!(
-            parse_resource_uri("packetade://flights/"),
+            parse_resource_uri("packetbench://flights/"),
             ResourceRoute::Unknown
         );
         assert_eq!(parse_resource_uri("http://evil"), ResourceRoute::Unknown);
         assert_eq!(
-            parse_resource_uri("packetade://bogus/path"),
+            parse_resource_uri("packetbench://bogus/path"),
             ResourceRoute::Unknown
         );
     }

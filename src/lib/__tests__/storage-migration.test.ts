@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LEGACY_STORAGE_PREFIX, STORAGE_PREFIX } from "@/lib/brand";
 import { migrateIssuesMissionToFlight, migrateLegacyStorage } from "@/lib/storage-migration";
 
-const GUARD_KEY = STORAGE_PREFIX + "migrated-from-packetcode";
+const GUARD_KEY = STORAGE_PREFIX + "migrated-from-packetade";
 const MISSION_GUARD_KEY = STORAGE_PREFIX + "migrated-mission-to-flight";
 const ISSUES_KEY = STORAGE_PREFIX + "issues";
 

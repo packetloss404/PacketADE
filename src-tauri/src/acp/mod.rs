@@ -1,20 +1,20 @@
-//! The packetcode ACP engine bridge — PacketADE's third agent transport.
+//! The packetcode ACP engine bridge — PacketBench's third agent transport.
 //!
-//! Alongside the PTY-backed CLIs and the Node agent sidecar, PacketADE can
+//! Alongside the PTY-backed CLIs and the Node agent sidecar, PacketBench can
 //! drive a separately-installed `packetcode` engine (the sibling TUI product at
 //! `D:\projects\packetcode`, never bundled) over Agent Client Protocol v1.
 //!
 //! The bridge resolves the engine binary, gates on a minimum version via
 //! `packetcode doctor --json`, spawns `packetcode acp`, and speaks ACP v1 —
 //! NDJSON JSON-RPC 2.0 over stdio. Session updates and permission requests are
-//! handed to an [`AcpEvents`] sink; PacketADE's sink ([`events::ApiAgentSink`])
+//! handed to an [`AcpEvents`] sink; PacketBench's sink ([`events::ApiAgentSink`])
 //! translates them onto the `api-agent:{kind}:{sessionId}` contract so the
 //! frontend cannot tell which transport served a conversation.
 //!
 //! This module is the protocol layer ONLY. It knows nothing about the
 //! `api-agent:*` event vocabulary — every translation lives in [`events`], and
 //! every conversation-level routing decision in [`routing`]. Keeping
-//! [`AcpBridge::dispatch`] free of PacketADE semantics is what lets the
+//! [`AcpBridge::dispatch`] free of PacketBench semantics is what lets the
 //! integration suite in `tests/acp_stream.rs` drive the real code paths against
 //! a mock engine with a plain collecting sink.
 
@@ -54,7 +54,7 @@ const ENGINE_MCP_STARTUP_CEILING: Duration = Duration::from_secs(30);
 /// persists the session, so a client budget equal to that ceiling always loses
 /// the race whenever MCP startup runs long — and loses it in the worst
 /// possible way: the engine finishes moments later and registers a live
-/// session PacketADE has already given up on. Three times the ceiling leaves
+/// session PacketBench has already given up on. Three times the ceiling leaves
 /// room for the work layered on top while still failing fast enough to be a
 /// visible error rather than a hang. (`session/load` carries its own, larger
 /// [`LOAD_TIMEOUT`] for the same class of reason.)
@@ -79,7 +79,7 @@ const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 const KILL_GRACE: Duration = Duration::from_secs(2);
 
 /// Primary environment override for the engine binary.
-const ENGINE_PATH_ENV: &str = "PACKETADE_ACP_ENGINE";
+const ENGINE_PATH_ENV: &str = "PACKETBENCH_ACP_ENGINE";
 /// Legacy override honoured for convenience: the standalone packetcode GUI
 /// prototype this bridge was ported from used this name, and developers still
 /// have it exported.
@@ -276,7 +276,7 @@ fn parse_capabilities(result: &Value) -> EngineCapabilities {
     }
 }
 
-/// Sink for agent-initiated traffic. PacketADE's implementation translates
+/// Sink for agent-initiated traffic. PacketBench's implementation translates
 /// these onto `api-agent:*` Tauri events; tests collect them directly.
 pub trait AcpEvents: Send + Sync + 'static {
     /// Params of a `session/update` notification.
@@ -581,7 +581,7 @@ impl AcpBridge {
 
 /// Managed Tauri state for the ACP transport.
 ///
-/// `sessions` is PacketADE's addition to the ported bridge: the bidirectional
+/// `sessions` is PacketBench's addition to the ported bridge: the bidirectional
 /// conversation-id ↔ ACP-session-id map plus the per-conversation translation
 /// bookkeeping the `api-agent:*` sink needs. It is deliberately outside
 /// `inner` so it survives an engine restart — a conversation keeps its
@@ -683,7 +683,7 @@ fn engine_path_override() -> Option<String> {
 /// On Unix `is_file()` is not enough: `PATH` and the install directories
 /// routinely hold non-executable files, and an entry named `packetcode` that
 /// merely exists is not the engine. The executable bit is what distinguishes
-/// them, and skipping the check would have PacketADE "resolve" a path that
+/// them, and skipping the check would have PacketBench "resolve" a path that
 /// then fails at spawn with a permission error.
 ///
 /// On Windows the bit does not exist; executability is decided by the
@@ -747,7 +747,7 @@ fn path_search(name: &str) -> Option<std::path::PathBuf> {
 ///   `/usr/local/bin/packetcode`. `install.sh` defaults `INSTALL_DIR` to
 ///   `/usr/local/bin`, while the README and `docs/manual.md` document
 ///   `INSTALL_DIR="$HOME/.local/bin"` as the sudo-free variant — which is also
-///   what PacketADE's own in-app installer passes, since a GUI app cannot
+///   what PacketBench's own in-app installer passes, since a GUI app cannot
 ///   answer a sudo prompt. `$HOME/.local/bin` is checked first precisely
 ///   because it is the one most often missing from `PATH`; `/usr/local/bin` is
 ///   normally on `PATH` already and so is usually resolved a tier earlier.
@@ -931,7 +931,7 @@ fn probe_result(
         minimum_version: MINIMUM_ENGINE_VERSION.into(),
         compatible,
         install_supported: install::install_supported(),
-        // Where PacketADE cannot install the engine, say how to do it by hand
+        // Where PacketBench cannot install the engine, say how to do it by hand
         // rather than leaving the UI with a disabled button and no
         // explanation. A real diagnostic always wins: it is the more specific
         // answer to "why is there no engine".
@@ -949,7 +949,7 @@ pub async fn acp_start(
     start_default_engine(&app, &state).await
 }
 
-/// Starts the resolved engine with PacketADE's `api-agent:*` sink. Shared by
+/// Starts the resolved engine with PacketBench's `api-agent:*` sink. Shared by
 /// the `acp_start` command and the lazy start inside the api-agent routing
 /// layer, so a conversation started before anyone probed still works.
 pub async fn start_default_engine(
@@ -997,7 +997,7 @@ pub async fn start_engine(
     // Giving it its own process group is what makes those grandchildren
     // reapable on Unix: `kill_process_tree` signals `-pid`, which is the group
     // only because the child leads one. Without this the group would be
-    // PacketADE's, and signalling it would kill the app itself.
+    // PacketBench's, and signalling it would kill the app itself.
     #[cfg(unix)]
     command.process_group(0);
 
@@ -1082,7 +1082,7 @@ async fn bridge_of(state: &AcpState) -> Result<Arc<AcpBridge>, String> {
 ///
 /// Absence therefore starts local subprocesses that this app never launched
 /// itself, which is why the posture is a decision carried in from the caller
-/// (PacketADE's frozen MCP trust snapshot — see [`mcp`]) rather than a
+/// (PacketBench's frozen MCP trust snapshot — see [`mcp`]) rather than a
 /// default. It is intersected with the engine's `mcpDefaults` promise by
 /// [`resolve_posture`] before it reaches here.
 fn mcp_servers_param(posture: &AcpMcpPosture) -> Option<Value> {
@@ -1241,7 +1241,7 @@ pub async fn load_session_on(
 
 /// Makes a persisted engine session resident again.
 ///
-/// `sessionId` may be a PacketADE conversation id or a raw engine session id
+/// `sessionId` may be a PacketBench conversation id or a raw engine session id
 /// from [`acp_list_sessions`] — see
 /// [`routing::load_session`](routing::load_session) for the id and posture
 /// rules. `cwd` is the working directory to resume in; the engine's own
@@ -1589,7 +1589,7 @@ pub async fn acp_list_mcp_servers(
 ///
 /// The second half of the disclosure surface. [`acp_list_mcp_servers`] with no
 /// session id answers "what would the ENGINE start"; this answers "what would
-/// PACKETADE hand it, given what the user has trusted" — every configured
+/// PACKETBENCH hand it, given what the user has trusted" — every configured
 /// server, whether it is included, and the machine-readable reason when it is
 /// not. Nothing is spawned: this only reads configuration.
 ///
@@ -1628,9 +1628,9 @@ pub async fn acp_mcp_plan(
     )
     .await;
     if inherit_engine_defaults.unwrap_or(false) {
-        // Explicit beats inherit wherever PacketADE has trusted configs of its
+        // Explicit beats inherit wherever PacketBench has trusted configs of its
         // own: naming the exact servers is the honest form of the same
-        // consent, and it keeps PacketADE's and packetcode's MCP surfaces from
+        // consent, and it keeps PacketBench's and packetcode's MCP surfaces from
         // drifting apart silently.
         if plan.posture == AcpMcpPostureKind::None {
             if may_inherit_mcp(&state, true).await {
@@ -1734,14 +1734,14 @@ pub async fn acp_search_files(
     search_files_on(&state, &cwd, &query).await
 }
 
-/// The ENGINE's home directory, not PacketADE's.
+/// The ENGINE's home directory, not PacketBench's.
 ///
 /// `PACKETCODE_HOME` / `~/.packetcode` belongs to the sibling packetcode TUI
 /// product, which is what writes the `sessions/*.json` files read below. It is
-/// NOT PacketADE's legacy data dir (`core::brand::LEGACY_DATA_DIR_NAME`, which
+/// NOT PacketBench's legacy data dir (`core::brand::LEGACY_DATA_DIR_NAME`, which
 /// happens to have the same name and is migrated away on startup). Do not
-/// "fix" this to `.packetade` — that directory is a different product's and
-/// pointing at PacketADE's own would make the disk fallback read nothing.
+/// "fix" this to `.packetbench` — that directory is a different product's and
+/// pointing at PacketBench's own would make the disk fallback read nothing.
 fn packetcode_home() -> Option<std::path::PathBuf> {
     if let Ok(home) = std::env::var("PACKETCODE_HOME") {
         if !home.trim().is_empty() {
@@ -2380,7 +2380,7 @@ mod tests {
             );
         } else {
             // install.sh's sudo-free variant first (it is the one most likely
-            // to be off PATH, and the one PacketADE's own installer targets),
+            // to be off PATH, and the one PacketBench's own installer targets),
             // then install.sh's own INSTALL_DIR default.
             assert_eq!(
                 rendered,
@@ -2416,14 +2416,14 @@ mod tests {
     fn executable_check_rejects_directories_and_missing_paths() {
         let dir = std::env::temp_dir();
         assert!(!is_executable_file(&dir));
-        assert!(!is_executable_file(&dir.join("packetade-no-such-engine-9f3c1a")));
+        assert!(!is_executable_file(&dir.join("packetbench-no-such-engine-9f3c1a")));
     }
 
     #[cfg(unix)]
     #[test]
     fn executable_check_requires_the_executable_bit_on_unix() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join("packetade-acp-exec-test");
+        let dir = std::env::temp_dir().join("packetbench-acp-exec-test");
         let _ = std::fs::create_dir_all(&dir);
         let file = dir.join("packetcode");
         std::fs::write(&file, b"#!/bin/sh\nexit 0\n").expect("write probe file");
@@ -2456,7 +2456,7 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let restore = EnvRestore::capture(&["PATH", "PATHEXT"]);
 
-        let dir = std::env::temp_dir().join("packetade-acp-pathext-test");
+        let dir = std::env::temp_dir().join("packetbench-acp-pathext-test");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("create probe dir");
         // Extensionless: present, but not executable on Windows.

@@ -11,7 +11,7 @@
 import { create } from "zustand";
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
 
-const STORAGE_KEY = "packetade:cli-overrides";
+const STORAGE_KEY = "packetbench:cli-overrides";
 
 export interface CliOverrideEntry {
   manualPath: string;

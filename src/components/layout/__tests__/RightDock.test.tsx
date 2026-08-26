@@ -149,7 +149,7 @@ describe("RightDock", () => {
     fireEvent.pointerMove(window, { clientX: 700 });
     fireEvent.pointerUp(window);
 
-    const saved = JSON.parse(localStorage.getItem("packetade:right-dock-v1")!);
+    const saved = JSON.parse(localStorage.getItem("packetbench:right-dock-v1")!);
     expect(saved.agents.width).toBe(1024 - 700);
     // The Workspace surface keeps its own width.
     expect(saved.workspace.width).toBe(420);

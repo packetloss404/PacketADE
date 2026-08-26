@@ -8,7 +8,7 @@ describe("parseContractSummary", () => {
       schemaVersion: WORKER_PACKAGE_SCHEMA_VERSION,
       operations: ["deployment.inspect", "deployment.deploy"],
       credential: {
-        displayName: "PacketADE handoff",
+        displayName: "PacketBench handoff",
         allowedOperations: ["deployment.deploy"],
         expiresAt: "2027-01-01T00:00:00.000Z",
       },
@@ -17,7 +17,7 @@ describe("parseContractSummary", () => {
     expect(summary.schemaVersion).toBe(WORKER_PACKAGE_SCHEMA_VERSION);
     expect(summary.operations).toEqual(["deployment.inspect", "deployment.deploy"]);
     expect(summary.allowedOperations).toEqual(["deployment.deploy"]);
-    expect(summary.credentialDisplayName).toBe("PacketADE handoff");
+    expect(summary.credentialDisplayName).toBe("PacketBench handoff");
     expect(summary.credentialExpiresAt).toBe("2027-01-01T00:00:00.000Z");
   });
 

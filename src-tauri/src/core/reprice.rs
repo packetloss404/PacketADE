@@ -2,7 +2,7 @@
 //!
 //! # Why this exists
 //!
-//! Until commit `073cbf84` (CE2, 2026-07-31) PacketADE's model rate table was
+//! Until commit `073cbf84` (CE2, 2026-07-31) PacketBench's model rate table was
 //! wrong in three ways, and every dollar figure it ever stamped on disk
 //! inherited the error:
 //!
@@ -85,7 +85,7 @@
 //! anyway.) The practical consequence: a **per-flight** budget cap can still
 //! trip early on a flight whose spend predates CE2.
 //!
-//! Also untouched: `localStorage["packetade:cost-guardrails"]` (those dollars
+//! Also untouched: `localStorage["packetbench:cost-guardrails"]` (those dollars
 //! are user-authored *limits*, not recorded spend) and the dormant
 //! `conversations/<id>/checkpoints/*.json` snapshots (no live writer or reader
 //! anywhere in the app).
@@ -274,7 +274,7 @@ fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
 // Pass 1 — the usage ledger
 // ---------------------------------------------------------------------------
 
-/// Reprice `~/.packetade/usage.jsonl` in place.
+/// Reprice `~/.packetbench/usage.jsonl` in place.
 ///
 /// **Arithmetic.** The three writers in `commands::api_agent` stamp
 /// `cost_usd = pricing::calculate_cost(model, billable_input_tokens(...),
@@ -423,7 +423,7 @@ fn reprice_ledger(path: &Path, now_iso: &str, today: &str) -> Result<RepriceStat
 // Pass 2 — persisted conversation messages
 // ---------------------------------------------------------------------------
 
-/// Reprice `messages[].costUsd` across `~/.packetade/conversations/*.json`.
+/// Reprice `messages[].costUsd` across `~/.packetbench/conversations/*.json`.
 ///
 /// **Arithmetic.** These figures were stamped by `estimateTurnCostUsd` in
 /// `src/lib/conversationCost.ts`, whose `costForTurn` differs from the ledger
@@ -635,7 +635,7 @@ mod tests {
 
     fn tmpdir(label: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "packetade-reprice-{}-{}-{:?}",
+            "packetbench-reprice-{}-{}-{:?}",
             label,
             std::process::id(),
             std::thread::current().id()
@@ -648,7 +648,7 @@ mod tests {
     fn ledger_line(model: &str, ts: &str, input: u64, output: u64, cost: f64) -> String {
         serde_json::to_string(&json!({
             "ts": ts,
-            "source": "packetade-api",
+            "source": "packetbench-api",
             "model": model,
             "agent_id": null,
             "session_id": "s-1",
@@ -791,7 +791,7 @@ mod tests {
         let path = dir.join("usage.jsonl");
         let line = serde_json::to_string(&json!({
             "ts": "2026-06-01T10:00:00Z",
-            "source": "packetade-api",
+            "source": "packetbench-api",
             "model": "gpt-5",
             "agent_id": null,
             "session_id": "s-1",
@@ -826,7 +826,7 @@ mod tests {
         let path = dir.join("usage.jsonl");
         let line = serde_json::to_string(&json!({
             "ts": "2026-06-01T10:00:00Z",
-            "source": "packetade-api",
+            "source": "packetbench-api",
             "model": "claude-opus-4-8",
             "agent_id": null,
             "session_id": "s-1",

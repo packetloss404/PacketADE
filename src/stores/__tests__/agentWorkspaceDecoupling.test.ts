@@ -167,7 +167,7 @@ describe("agent/workspace store decoupling", () => {
       .getState()
       .createApiConversation({
         agent: "api-openai-agents",
-        projectPath: "/srv/packetade",
+        projectPath: "/srv/packetbench",
         model: "gpt-5.5",
         initialMessage: "Build remotely",
         thinkingEnabled: false,
@@ -178,7 +178,7 @@ describe("agent/workspace store decoupling", () => {
           host: "example.com",
           port: 2222,
           user: "ian",
-          remotePath: "/srv/packetade",
+          remotePath: "/srv/packetbench",
           keyPath: "C:/Users/ian/.ssh/id_ed25519",
           authMethod: "key",
           hostFingerprint: "SHA256:abc123",
@@ -193,13 +193,13 @@ describe("agent/workspace store decoupling", () => {
       name: "Staging",
       host: "example.com",
       user: "ian",
-      remotePath: "/srv/packetade",
+      remotePath: "/srv/packetbench",
     });
     expect(startApiAgentSessionMock).toHaveBeenCalledWith(
       id,
       "openai-agents",
       "gpt-5.5",
-      "/srv/packetade",
+      "/srv/packetbench",
       "Build remotely",
       null,
       false,
@@ -209,7 +209,7 @@ describe("agent/workspace store decoupling", () => {
         host: "example.com",
         port: 2222,
         user: "ian",
-        remote_path: "/srv/packetade",
+        remote_path: "/srv/packetbench",
         key_path: "C:/Users/ian/.ssh/id_ed25519",
         auth_method: "key",
         target_id: "srv-123",
@@ -229,7 +229,7 @@ describe("agent/workspace store decoupling", () => {
 
   it("injects compact local memory briefs into new API conversations", async () => {
     composeMemoryBriefMock.mockReturnValue({
-      text: "## PacketADE Memory Brief\nLearned patterns:\n- Prefer pnpm scripts.",
+      text: "## PacketBench Memory Brief\nLearned patterns:\n- Prefer pnpm scripts.",
       items: [],
       charBudget: 1800,
       truncated: false,
@@ -258,7 +258,7 @@ describe("agent/workspace store decoupling", () => {
     });
     const startCall =
       startApiAgentSessionMock.mock.calls[startApiAgentSessionMock.mock.calls.length - 1];
-    expect(startCall?.[5]).toContain("## PacketADE Memory Brief");
+    expect(startCall?.[5]).toContain("## PacketBench Memory Brief");
     expect(startCall?.[5]).toContain("You are focused.");
     expect(
       useAgentTaskStore.getState().conversations.find((c) => c.id === id)?.memoryContextEnabled,

@@ -6,7 +6,7 @@ import { CardHeader } from "./CardHeader";
 
 const STARTER_TEMPLATE = `# Project Rules
 
-PacketADE writes this file as both \`AGENTS.md\` and \`CLAUDE.md\` so the same
+PacketBench writes this file as both \`AGENTS.md\` and \`CLAUDE.md\` so the same
 rules apply whether you're using Claude Code, Codex, or another agent that
 follows the AGENTS.md convention.
 
@@ -38,7 +38,7 @@ type LoadState =
  *
  * The single biggest cross-tool gripe in the Codex sentiment research is
  * that `AGENTS.md` / `CLAUDE.md` / `DESIGN.md` doesn't transfer between
- * tools. PacketADE hosts both providers, so we can fix it: one editor,
+ * tools. PacketBench hosts both providers, so we can fix it: one editor,
  * Save writes BOTH files. Divergent files surface a warning + Unify
  * affordance so users can collapse them onto a canonical version.
  */
@@ -216,7 +216,7 @@ export function ProjectRulesCard() {
       </div>
 
       <p className="text-[10px] text-text-muted mb-3">
-        Rules saved here apply to every PacketADE conversation in this project,
+        Rules saved here apply to every PacketBench conversation in this project,
         and to Codex / Claude Code when they read these files directly. Saving
         writes the same content to both filenames so a single rule set works
         across tools.

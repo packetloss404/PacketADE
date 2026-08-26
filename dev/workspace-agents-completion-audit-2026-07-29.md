@@ -68,7 +68,7 @@ The isolated Windows release gate used the real saved three-Workspace state:
 5. Opening Workspace launched nothing until an actual Workspace was selected.
 6. Selecting SideStep launched exactly its saved Claude and Codex panes.
 7. Workspace → Agents → Workspace retained the same live PTY IDs.
-8. Closing PacketADE reaped both child CLIs.
+8. Closing PacketBench reaped both child CLIs.
 
 Monitor now uses a separate repeatable read-only snapshot instead of the
 main-renderer one-shot hydration function. Consecutive polls replace state
@@ -93,7 +93,7 @@ manufactured.
 | Local Windows hydration and Claude/Codex PTY lifecycle | **Pass**        | Packaged app starts only selected panes, preserves IDs across navigation, resolves `codex.cmd`, and reaps children on close. |
 | SSH Workspace/handoff runtime                          | **Unavailable** | No configured `ServerConfig`; source and fixture tests preserve exact server/worktree identity.                              |
 | Published PacketCode paste/launch                      | **Unavailable** | No PacketCode executable is installed in a declared location; missing-install recovery is test-covered.                      |
-| PacketAgent source contract                            | **Pass**        | PacketADE and PacketAgent W9 fixture contracts agree.                                                                        |
+| PacketAgent source contract                            | **Pass**        | PacketBench and PacketAgent W9 fixture contracts agree.                                                                        |
 | Credentialed PacketAgent close/restart interop         | **Unavailable** | No PacketAgent base URL, token, Workspace ID, or listener is configured.                                                     |
 
 These environment-gated proofs remain backlog/release work; they do not change

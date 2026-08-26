@@ -81,7 +81,7 @@ describe("codeQualityHistory", () => {
   });
 
   it("recovers from corrupt localStorage entries", () => {
-    window.localStorage.setItem("packetade:quality:history", "not json{");
+    window.localStorage.setItem("packetbench:quality:history", "not json{");
     expect(loadQualityHistory("D:/x")).toEqual([]);
     // And we can still write afterwards.
     appendQualityHistory(entry("D:/x", 75, 10));

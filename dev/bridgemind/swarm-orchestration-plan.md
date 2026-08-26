@@ -26,13 +26,13 @@ Last updated: 2026-06-15 (status corrected 2026-07-24)
 
 ## Goal
 
-Turn PacketADE's existing flight orchestration into a clear multi-agent swarm system with explicit roles, collision prevention, and visible coordination.
+Turn PacketBench's existing flight orchestration into a clear multi-agent swarm system with explicit roles, collision prevention, and visible coordination.
 
-This plan is intentionally built on the current PacketADE model rather than introducing a separate parallel system.
+This plan is intentionally built on the current PacketBench model rather than introducing a separate parallel system.
 
-## Why This Fits PacketADE
+## Why This Fits PacketBench
 
-PacketADE already has the key primitives:
+PacketBench already has the key primitives:
 
 - flights
 - milestones
@@ -111,7 +111,7 @@ Prevent multi-agent merge collisions by design.
 
 ## Product behavior
 
-- when two runnable tasks target overlapping file sets, PacketADE warns or defers one task
+- when two runnable tasks target overlapping file sets, PacketBench warns or defers one task
 - ownership is visible in task detail and running-task UI
 - the orchestrator prefers tasks that do not conflict with active ownership
 
@@ -148,7 +148,7 @@ Make swarm behavior understandable without digging through individual sessions.
 
 ## Notes
 
-PacketADE already has `TaskHandoff` and `ReviewPacket` structures. This phase should reuse those rather than inventing a new message system first.
+PacketBench already has `TaskHandoff` and `ReviewPacket` structures. This phase should reuse those rather than inventing a new message system first.
 
 ## Phase 4: Escalation and Supervision
 
@@ -211,5 +211,5 @@ no longer exist):
 ## Non-Goals
 
 - building a separate standalone swarm product
-- introducing complex distributed coordination beyond a single local PacketADE instance
+- introducing complex distributed coordination beyond a single local PacketBench instance
 - replacing the existing flight model with a new domain model

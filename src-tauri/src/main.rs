@@ -9,17 +9,17 @@ fn main() {
     {
         let argv: Vec<std::ffi::OsString> = std::env::args_os().collect();
         if argv.get(1).map(|a| a == "__pty_spawn").unwrap_or(false) {
-            packetade_lib::pty_spawn_helper(argv.get(2..).unwrap_or(&[]));
+            packetbench_lib::pty_spawn_helper(argv.get(2..).unwrap_or(&[]));
         }
     }
 
-    if let Some(code) = packetade_lib::core::ssh_askpass::helper_main() {
+    if let Some(code) = packetbench_lib::core::ssh_askpass::helper_main() {
         std::process::exit(code);
     }
 
-    if let Some(code) = packetade_lib::core::claude_statusline::helper_main() {
+    if let Some(code) = packetbench_lib::core::claude_statusline::helper_main() {
         std::process::exit(code);
     }
 
-    packetade_lib::run()
+    packetbench_lib::run()
 }

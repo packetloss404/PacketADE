@@ -9,7 +9,7 @@ import {
 } from "@/lib/dictationTarget";
 
 /**
- * Tracks the last safe PacketADE editing target and inserts a completed local
+ * Tracks the last safe PacketBench editing target and inserts a completed local
  * transcript. Password/OTP/sensitive regions are denied, terminals use the
  * PTY contract, and OS-global use falls back to explicit clipboard/paste rules.
  */

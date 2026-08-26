@@ -31,9 +31,9 @@ Use browser-based PKCE:
 2. Browser opens Packet Cloud auth.
 3. Auth redirects to loopback callback or custom URI.
 4. Desktop exchanges code for tokens.
-5. Desktop stores refresh token in OS keyring under PacketADE brand constants.
+5. Desktop stores refresh token in OS keyring under PacketBench brand constants.
 
-Desktop PacketADE is a public native client:
+Desktop PacketBench is a public native client:
 
 - do not embed client secrets
 - use the system browser, not an embedded webview

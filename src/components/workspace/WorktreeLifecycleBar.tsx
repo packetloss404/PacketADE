@@ -125,8 +125,8 @@ export function WorktreeLifecycleBar({
     }
     setBusy("pr");
     try {
-      const title = `[PacketADE] ${conversation?.title ?? worktree.branch}`.slice(0, 256);
-      const body = `Auto-generated from PacketADE conversation \`${conversationId}\`.`;
+      const title = `[PacketBench] ${conversation?.title ?? worktree.branch}`.slice(0, 256);
+      const body = `Auto-generated from PacketBench conversation \`${conversationId}\`.`;
       const result = await publishBranchAsPr({
         worktreePath: worktree.worktreePath,
         branch: worktree.branch,

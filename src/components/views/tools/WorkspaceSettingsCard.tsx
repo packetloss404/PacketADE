@@ -29,7 +29,7 @@ export function WorkspaceSettingsCard() {
 
         <Row
           title="Auto-detect GitHub repo on workspace creation"
-          description="Run `git remote get-url origin` when creating a workspace and link it to the detected GitHub repo. Disable if you don't want PacketADE making that call."
+          description="Run `git remote get-url origin` when creating a workspace and link it to the detected GitHub repo. Disable if you don't want PacketBench making that call."
           checked={autoBindGithubRepo}
           onChange={setAutoBindGithubRepo}
         />

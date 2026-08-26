@@ -1,6 +1,6 @@
 //! Host-agnostic web fetch tool for API-based agents.
 //!
-//! Always runs from the PacketADE process — never tunneled through SSH.
+//! Always runs from the PacketBench process — never tunneled through SSH.
 //! Fetches a URL, strips HTML to plain text when applicable, and truncates
 //! oversized payloads.
 
@@ -13,7 +13,7 @@ use tracing::info;
 
 const DEFAULT_MAX_CHARS: usize = 50_000;
 const FETCH_TIMEOUT_SECS: u64 = 15;
-const USER_AGENT: &str = concat!("PacketADE/1.0 (+desktop coding agent)");
+const USER_AGENT: &str = concat!("PacketBench/1.0 (+desktop coding agent)");
 /// RA2: hard ceiling on bytes buffered from a single fetch, independent of
 /// `max_chars`. Without it a malicious or accidental huge response can exhaust
 /// memory before the post-fetch `truncate` ever runs.

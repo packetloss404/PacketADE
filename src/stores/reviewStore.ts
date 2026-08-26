@@ -21,7 +21,7 @@ import { loadFromStorage, saveToStorage } from "@/lib/storage";
  *    from agentTaskStore's delete/cleanup path.
  */
 
-const VIEWED_STORAGE_KEY = "packetade:review-viewed-v1";
+const VIEWED_STORAGE_KEY = "packetbench:review-viewed-v1";
 
 /** conversationId → path → signature the user marked as viewed. */
 type ViewedMap = Record<string, Record<string, string>>;

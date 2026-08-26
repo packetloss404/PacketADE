@@ -462,7 +462,7 @@ const GITHUB_DEVICE_SCOPES: &str = "repo read:org notifications";
 
 /// The OAuth App client id: runtime override first, then the baked brand const.
 fn github_oauth_client_id() -> Option<String> {
-    if let Ok(id) = std::env::var("PACKETADE_GITHUB_CLIENT_ID") {
+    if let Ok(id) = std::env::var("PACKETBENCH_GITHUB_CLIENT_ID") {
         let id = id.trim().to_string();
         if !id.is_empty() {
             return Some(id);

@@ -7,7 +7,7 @@ host, while the desktop keeps the same `api-agent:*` event contract.
 
 ## Current Behavior
 
-PacketADE now lets workspace conversation tiles select SSH targets for
+PacketBench now lets workspace conversation tiles select SSH targets for
 sidecar-backed providers. On the backend, `start_api_agent_session` routes sidecar providers
 with `ssh_config` through a dedicated SSH sidecar process instead of the
 app-wide local sidecar.
@@ -27,9 +27,9 @@ Then it should wire stdin/stdout to the same newline-delimited sidecar protocol
 used by the local sidecar. Defaults:
 
 - `NODE_BIN`: remote `node` on PATH, or desktop
-  `PACKETADE_REMOTE_NODE_PATH` injected into the launch script.
-- `SIDECAR_ENTRY`: remote `~/.packetade/agent-sidecar/dist/index.js`, or
-  desktop `PACKETADE_REMOTE_SIDECAR_PATH` injected into the launch script.
+  `PACKETBENCH_REMOTE_NODE_PATH` injected into the launch script.
+- `SIDECAR_ENTRY`: remote `~/.packetbench/agent-sidecar/dist/index.js`, or
+  desktop `PACKETBENCH_REMOTE_SIDECAR_PATH` injected into the launch script.
 - `PROJECT_PATH`: the configured SSH workspace path.
 
 ## Targeted Automated Checks
@@ -73,10 +73,10 @@ Use one Unix SSH host with a pinned host key and a real git checkout.
    pinned.
 2. Confirm the remote project path exists and is a git worktree.
 3. Copy or build the sidecar on the remote host at
-   `~/.packetade/agent-sidecar/dist/index.js`, or start PacketADE with
-   `PACKETADE_REMOTE_SIDECAR_PATH` pointing at the remote entry path.
-4. Confirm `node` is on the remote PATH, or start PacketADE with
-   `PACKETADE_REMOTE_NODE_PATH` set to the remote Node binary path.
+   `~/.packetbench/agent-sidecar/dist/index.js`, or start PacketBench with
+   `PACKETBENCH_REMOTE_SIDECAR_PATH` pointing at the remote entry path.
+4. Confirm `node` is on the remote PATH, or start PacketBench with
+   `PACKETBENCH_REMOTE_NODE_PATH` set to the remote Node binary path.
 5. Start a conversation tile in a remote workspace with **Claude Agent SDK (API)**
    against the SSH project.
 6. Verify the local sidecar safety-net error does not appear:
@@ -94,7 +94,7 @@ Use one Unix SSH host with a pinned host key and a real git checkout.
     remote path, port, key path, and host fingerprint are used.
 12. Repeat the smoke with **OpenAI Agents SDK (API)**. It shares the same
     provider-agnostic remote-sidecar route but receives its API key transiently
-    from PacketADE's keyring. Confirm a multi-turn conversation, permission
+    from PacketBench's keyring. Confirm a multi-turn conversation, permission
     request, pending edit, cancellation, and resume all stay bound to the remote
     project. The retired `api-openai-codex` / `codex exec` chat provider is not
     part of this matrix; Codex CLI remains available separately as a PTY-backed
@@ -104,7 +104,7 @@ Current verification state (2026-08-01): automated route, remote-project,
 protocol, ordering, and MCP trust checks pass. The live provider matrix remains
 pending because this development profile contains no configured SSH server; it
 requires a real pinned Unix host with the installed sidecar and the relevant
-API keys configured in PacketADE.
+API keys configured in PacketBench.
 
 ## Failure Modes To Watch
 
@@ -124,7 +124,7 @@ API keys configured in PacketADE.
 
 `pnpm sidecar:check` passes the remote-project, protocol, ordering, MCP trust,
 and remote-MCP-from-filesystem smokes; the focused remote picker and Workspace
-decoupling tests pass too. PacketADE still has zero configured SSH servers, and
+decoupling tests pass too. PacketBench still has zero configured SSH servers, and
 the remote Node/sidecar overrides are absent. The live provider matrix therefore
 remains a real environment gate rather than an automated claim. See
 [`proof-audit-2026-08-01.md`](./proof-audit-2026-08-01.md).

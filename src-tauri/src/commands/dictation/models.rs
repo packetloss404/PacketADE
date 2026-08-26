@@ -129,14 +129,14 @@ fn model_spec(size: &str) -> Option<&'static ModelSpec> {
     MODEL_SPECS.iter().find(|spec| spec.size == size)
 }
 
-/// Returns the directory where Whisper models are stored: `~/.packetade/models/`
+/// Returns the directory where Whisper models are stored: `~/.packetbench/models/`
 pub fn models_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "Could not determine home directory".to_string())?;
     Ok(home.join(DATA_DIR_NAME).join("models"))
 }
 
 /// Returns the full path to a model file for the given size.
-/// e.g. `~/.packetade/models/ggml-base.bin`
+/// e.g. `~/.packetbench/models/ggml-base.bin`
 pub fn model_path(size: &str) -> Result<PathBuf, String> {
     Ok(models_dir()?.join(format!("ggml-{size}.bin")))
 }

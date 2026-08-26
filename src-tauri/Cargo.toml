@@ -1,14 +1,14 @@
 [package]
-name = "packetade"
+name = "packetbench"
 version = "0.10.5"
-description = "PacketADE — Agent Development Environment (IDE + multi-agent orchestration)"
-authors = ["PacketADE"]
+description = "PacketBench — Agent Development Environment (IDE + multi-agent orchestration)"
+authors = ["PacketBench"]
 edition = "2021"
 license = "Apache-2.0"
-default-run = "packetade"
+default-run = "packetbench"
 
 [lib]
-name = "packetade_lib"
+name = "packetbench_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
@@ -60,7 +60,7 @@ rustfft = "6"
 rusqlite = { version = "0.33", features = ["bundled"] }
 notify = "6"
 tauri-plugin-window-state = "2"
-# N3 — PacketADE-as-MCP-server (Streamable HTTP, loopback-only). `rmcp` is the
+# N3 — PacketBench-as-MCP-server (Streamable HTTP, loopback-only). `rmcp` is the
 # official Rust MCP SDK; axum hosts the transport service; tokio-util provides
 # the CancellationToken used for graceful shutdown.
 rmcp = { version = "2", features = ["transport-streamable-http-server"] }

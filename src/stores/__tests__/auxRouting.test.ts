@@ -62,7 +62,7 @@ describe("routingStore auxiliary routing", () => {
   it("persists pins across a reload and re-pushes them on boot", () => {
     useRoutingStore.getState().setAuxMapping("code-quality-explain", "openrouter", null);
 
-    const stored = JSON.parse(localStorage.getItem("packetade:routing-aux") ?? "[]");
+    const stored = JSON.parse(localStorage.getItem("packetbench:routing-aux") ?? "[]");
     expect(stored).toContainEqual({
       taskClass: "code-quality-explain",
       provider: "openrouter",

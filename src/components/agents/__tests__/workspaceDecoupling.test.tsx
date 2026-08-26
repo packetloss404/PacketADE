@@ -32,7 +32,7 @@ function conversation(overrides: Partial<AgentConversation> = {}): AgentConversa
     id: "conv-1",
     title: "Investigate agent pane",
     agent: "api-openai",
-    projectPath: "D:\\projects\\PacketADE",
+    projectPath: "D:\\projects\\PacketBench",
     status: "idle",
     messages: [
       {
@@ -80,7 +80,7 @@ describe("Agents pane workspace decoupling", () => {
       conversation({
         id: "conv-worktree",
         title: "Attempt worktree",
-        projectPath: "D:\\projects\\PacketADE\\.pkt-worktrees\\attempt-1",
+        projectPath: "D:\\projects\\PacketBench\\.pkt-worktrees\\attempt-1",
       }),
     ];
     agentStore.state.deleteConversation = vi.fn();
@@ -122,7 +122,7 @@ describe("Agents pane workspace decoupling", () => {
 
     await waitFor(() => {
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-        'cd "D:\\projects\\PacketADE" && codex',
+        'cd "D:\\projects\\PacketBench" && codex',
       );
     });
     expect(onFeedback).toHaveBeenCalledWith("Command copied - paste into your terminal");

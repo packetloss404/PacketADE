@@ -8,7 +8,7 @@ Product decision: **Option B — assisted execution**
 ## Objective
 
 Turn an explicitly applied Flight plan into cooperating, role-assigned tasks
-without restoring an autonomous planner. PacketADE computes readiness, proposes
+without restoring an autonomous planner. PacketBench computes readiness, proposes
 assignments, launches a user-approved ready batch into isolated worktrees, and
 integrates accepted results onto a Flight-owned integration branch. Dependent
 tasks start from that accepted state; the user's base branch is untouched until
@@ -18,8 +18,8 @@ the user lands the Flight.
 
 - Planning remains a normal read-only `AgentConversation`; the user explicitly
   applies the plan.
-- PacketADE validates dependencies, roles, ownership, and assignments.
-- PacketADE recommends the next ready batch. **Launch Ready Tasks** is a user
+- PacketBench validates dependencies, roles, ownership, and assignments.
+- PacketBench recommends the next ready batch. **Launch Ready Tasks** is a user
   action in assisted mode.
 - Each task runs in its own worktree and branch.
 - Accepted task output is integrated onto an isolated Flight integration branch.
@@ -35,7 +35,7 @@ the user lands the Flight.
 
 ## Existing substrate
 
-PacketADE already persists milestones, tasks, dependency IDs, roles,
+PacketBench already persists milestones, tasks, dependency IDs, roles,
 `ownedPaths`, Attempts, worktree targets, and coordination events. Option B
 planning already parses and applies a user-refined plan. Async Flights already
 provision local/SSH worktrees and launch provider-neutral agent conversations.
@@ -73,7 +73,7 @@ cooperative graphs with the gate disabled can be developed and tested earlier.
 ## Definition of done
 
 - An applied plan becomes an executable, validated dependency graph.
-- PacketADE can launch a user-approved batch of ready tasks.
+- PacketBench can launch a user-approved batch of ready tasks.
 - Every task retains worktree isolation while accepted work converges on one
   Flight-owned integration branch.
 - Downstream tasks always start from accepted upstream state.

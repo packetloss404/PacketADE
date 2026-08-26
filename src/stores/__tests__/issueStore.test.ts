@@ -102,7 +102,7 @@ describe("issueStore", () => {
 
     it("persists to localStorage", () => {
       store().addIssue(makeIssue());
-      const raw = localStorage.getItem("packetade:issues");
+      const raw = localStorage.getItem("packetbench:issues");
       expect(raw).toBeTruthy();
       const parsed = JSON.parse(raw!);
       expect(parsed.issues).toHaveLength(1);
@@ -141,7 +141,7 @@ describe("issueStore", () => {
     it("persists the removal", () => {
       const issue = store().addIssue(makeIssue());
       store().deleteIssue(issue.id);
-      const parsed = JSON.parse(localStorage.getItem("packetade:issues")!);
+      const parsed = JSON.parse(localStorage.getItem("packetbench:issues")!);
       expect(parsed.issues).toHaveLength(0);
     });
 
@@ -532,7 +532,7 @@ describe("issueStore", () => {
 
     it("persists the prefix to localStorage", () => {
       store().setTicketPrefix("NEW");
-      const raw = JSON.parse(localStorage.getItem("packetade:issues")!);
+      const raw = JSON.parse(localStorage.getItem("packetbench:issues")!);
       expect(raw.ticketPrefix).toBe("NEW");
     });
   });

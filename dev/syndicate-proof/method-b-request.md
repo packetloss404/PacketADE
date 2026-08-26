@@ -11,7 +11,7 @@ Subject: Request: opt-in short-lifetime relay grants for expiry testing
 
 Hi —
 
-PacketADE is proving its handling of the 30-day controller relay grant
+PacketBench is proving its handling of the 30-day controller relay grant
 expiry (warning window, expiry cliff, typed `DEVICE_UNAUTHORIZED` /
 `GRANT_EXPIRED` handling, no-retry-storm behaviour). We can drive the
 **Host-side** predicate by editing `grant_expires_at` in our own state DB,

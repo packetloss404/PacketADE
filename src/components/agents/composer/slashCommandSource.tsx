@@ -165,7 +165,7 @@ export interface SlashItemSources {
  * `/permissions` are how the composer's own model picker and mode chip are
  * opened from the keyboard (they dispatch `OPEN_MODEL_DROPDOWN_EVENT` /
  * `OPEN_MODE_CHIP_EVENT`); letting the engine take those names would turn two
- * documented PacketADE controls into engine round trips.
+ * documented PacketBench controls into engine round trips.
  */
 export function buildSlashItems(
   query: string,

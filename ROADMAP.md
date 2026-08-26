@@ -1,8 +1,8 @@
-# PacketADE Roadmap
+# PacketBench Roadmap
 
 Last reconciled: 2026-08-12
 
-PacketADE is a local-first Agent Development Environment and remains the
+PacketBench is a local-first Agent Development Environment and remains the
 flagship control surface. The desktop owns local providers, models, secrets,
 Workspaces, MCP configuration, permissions, Memory, and execution. A selected
 Syndicate target delegates only its typed Workspace/session authority to the
@@ -28,7 +28,7 @@ only product direction and ordering.
 - Selectable local Terminal shells and the self-bootstrapping Claude Code native
   status bar ship in v0.10.3.
 - The 30 low-rated Reliability findings are closed.
-- PacketADE, the flagship UI, now has a first-class Syndicate execution target:
+- PacketBench, the flagship UI, now has a first-class Syndicate execution target:
   scoped device pairing/revocation, Host-owned Workspace selection/creation,
   durable remote CLI panes and replay, a managed pinned-SSH bootstrap, and an
   application-encrypted PacketRelay transport are implemented and reviewed.
@@ -54,7 +54,7 @@ feature wave.
 | Git/Memory/MCP/Trust proof  |       P2 | Source implementations pass                                                                                      | Run real GitHub/Gitea, editor-watch, provider, MCP, SSH, restart, and visual matrices                                                                 |
 | Terminal shell proof        |       P2 | Source, package compile, detection, and command probes pass                                                      | Run interactive pane, persistence, unavailable-profile, CLI, and SSH matrix                                                                           |
 | Monitor proof               |       P2 | Read-only Agent/Flight v1 source complete                                                                        | Run packaged multi-display lifecycle and Rust-denial proof                                                                                            |
-| Syndicate acceptance proof  |       P1 | Production PacketRelay WSS and signed immutable Syndicate v0.1.3 x64/arm64 installer are live and smoke-verified | Run the packaged PacketADE clean-host, controller, network-fault, revocation, restart, upgrade, and rollback matrix                                   |
+| Syndicate acceptance proof  |       P1 | Production PacketRelay WSS and signed immutable Syndicate v0.1.3 x64/arm64 installer are live and smoke-verified | Run the packaged PacketBench clean-host, controller, network-fault, revocation, restart, upgrade, and rollback matrix                                   |
 
 ## Next
 
@@ -78,7 +78,7 @@ After the immediately available proof gates:
 
 ## Later
 
-- Syndicate expansion beyond the implemented first release: multiple PacketADE
+- Syndicate expansion beyond the implemented first release: multiple PacketBench
   devices per machine, existing-session import for view-only grants, WebSocket
   event subscriptions, API-agent/Flight target authority, and survival across
   `packet-host` restart or server reboot.
@@ -128,7 +128,7 @@ execution belongs in v1.
 2. Close available real-host, microphone, provider, MCP, and cross-product
    evidence gates.
 3. Resolve and implement Undo plus bounded Settings/MS4 work.
-4. Complete Syndicate's packaged PacketADE/real-host acceptance matrix against
+4. Complete Syndicate's packaged PacketBench/real-host acceptance matrix against
    the live relay and signed immutable Linux installer.
 5. (Paused 2026-08-16) Remote Agents: decide auth on pickup, then build the
    PWA/relay alpha. See `dev/remoteagents/10-pause-record.md`.

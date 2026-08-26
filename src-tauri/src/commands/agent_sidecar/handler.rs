@@ -79,17 +79,17 @@ impl SidecarManager {
                 if !protocol_meets_floor(protocol_version) {
                     let detail = match protocol_version {
                         Some(proto) => format!(
-                            "The agent sidecar speaks protocol v{proto}, but PacketADE requires \
+                            "The agent sidecar speaks protocol v{proto}, but PacketBench requires \
                              v{MINIMUM_PROTOCOL_VERSION} or newer. A sidecar this old ignores \
                              per-session MCP trust rules and would run every MCP server \
-                             unfiltered, so API-agent sessions are disabled. Reinstall PacketADE, \
-                             or clear PACKETADE_SIDECAR_PATH if you set it."
+                             unfiltered, so API-agent sessions are disabled. Reinstall PacketBench, \
+                             or clear PACKETBENCH_SIDECAR_PATH if you set it."
                         ),
                         None => format!(
                             "The agent sidecar completed its handshake without advertising a \
-                             protocol version, so PacketADE cannot confirm it enforces per-session \
+                             protocol version, so PacketBench cannot confirm it enforces per-session \
                              MCP trust rules (v{MINIMUM_PROTOCOL_VERSION}+). API-agent sessions \
-                             are disabled. Reinstall PacketADE, or clear PACKETADE_SIDECAR_PATH \
+                             are disabled. Reinstall PacketBench, or clear PACKETBENCH_SIDECAR_PATH \
                              if you set it."
                         ),
                     };
@@ -571,8 +571,8 @@ impl SidecarManager {
                 // hard-stop, launch guardrail, StatGrid cost chip) track the
                 // spend live instead of waiting for the next hydrate.
                 //
-                // The same delta also feeds the PacketADE-owned usage ledger
-                // (`~/.packetade/usage.jsonl`) — for EVERY sidecar session,
+                // The same delta also feeds the PacketBench-owned usage ledger
+                // (`~/.packetbench/usage.jsonl`) — for EVERY sidecar session,
                 // flight-linked or not — so sidecar spend reaches the
                 // analytics rollup and the daily/monthly budget guardrails
                 // that read it. The two writes are independent stores: the
@@ -612,7 +612,7 @@ impl SidecarManager {
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 tauri::async_runtime::spawn(async move {
                     // Two independent consumers of this turn's delta:
-                    //   * the usage ledger (`~/.packetade/usage.jsonl`) — fed for
+                    //   * the usage ledger (`~/.packetbench/usage.jsonl`) — fed for
                     //     EVERY sidecar session via the supervisor's start-time
                     //     provider/model registry, so standalone chats meter too;
                     //   * the flight cost rollup — only for sessions linked to a

@@ -71,7 +71,7 @@ export function buildHandoffPrompt(
   const sections: string[] = [];
 
   sections.push(
-    "You are taking over execution from a planning agent in PacketADE. " +
+    "You are taking over execution from a planning agent in PacketBench. " +
       "The plan below was approved by the user. Execute it step by step; " +
       "do not re-plan unless blocked.",
   );

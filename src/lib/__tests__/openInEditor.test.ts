@@ -35,16 +35,16 @@ describe("openInEditor", () => {
   });
 
   it("keeps an absolute path untouched and follows Windows separators", () => {
-    openInEditor("D:\\projects\\PacketADE\\src\\main.tsx", {
-      projectPath: "D:\\projects\\PacketADE",
+    openInEditor("D:\\projects\\PacketBench\\src\\main.tsx", {
+      projectPath: "D:\\projects\\PacketBench",
     });
     expect(useEditorStore.getState().openFiles[0].path).toBe(
-      "D:\\projects\\PacketADE\\src\\main.tsx",
+      "D:\\projects\\PacketBench\\src\\main.tsx",
     );
 
-    openInEditor("src\\lib\\brand.ts", { projectPath: "D:\\projects\\PacketADE" });
+    openInEditor("src\\lib\\brand.ts", { projectPath: "D:\\projects\\PacketBench" });
     expect(useEditorStore.getState().openFiles[1].path).toBe(
-      "D:\\projects\\PacketADE\\src\\lib\\brand.ts",
+      "D:\\projects\\PacketBench\\src\\lib\\brand.ts",
     );
   });
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>PacketADE — Mission→Flight Rename Audit &amp; Plan (2026-06-15)</title>
+<title>PacketBench — Mission→Flight Rename Audit &amp; Plan (2026-06-15)</title>
 <style>
   :root {
     --bg-0: #0b0e14;
@@ -321,7 +321,7 @@
 <body>
   <header class="topbar">
     <span class="dot" aria-hidden="true"></span>
-    <h1>PacketADE — Mission→Flight Rename Audit &amp; Plan (2026-06-15)</h1>
+    <h1>PacketBench — Mission→Flight Rename Audit &amp; Plan (2026-06-15)</h1>
   </header>
 
   <div class="layout">
@@ -407,7 +407,7 @@
     <li><strong>UI / IPC / schema rename:</strong> Mission Planner &rarr; Flight Planner, MissionsView &rarr; FlightsView, Mission Control &rarr; Flight Control (schema regen byte-identical).</li>
     <li><strong>Data-model ids:</strong> <code>mission_id</code> &rarr; <code>flight_id</code>, <code>missionId</code> &rarr; <code>flightId</code>.</li>
     <li><strong>Full eradication:</strong> <code>MissionApprovalRequest</code> &rarr; <code>FlightApprovalRequest</code>; <code>components/missions/*</code> merged into <code>components/flights/</code> (<code>MissionSpecPane</code> &rarr; <code>FlightSpecPane</code>); MCP tool <code>complete_mission</code> &rarr; <code>complete_flight</code>; file renames <code>core/mission_journal.rs</code> &rarr; <code>flight_journal.rs</code>, <code>lib/missionReview.ts</code> &rarr; <code>flightReview.ts</code>, sidecar <code>mission-planner-server.ts</code> &rarr; <code>flight-planner-server.ts</code>, <code>commands/mission_planner*.rs</code> &rarr; <code>flight_planner*.rs</code>.</li>
-    <li><strong>Intentionally preserved back-compat:</strong> 5 <code>#[serde(alias="missionId")]</code> attrs across 4 files; <code>issueStore.ts</code> + <code>goalStore.ts</code> legacy read shims; on-disk <code>~/.packetade/missions/</code> journal dir literal.</li>
+    <li><strong>Intentionally preserved back-compat:</strong> 5 <code>#[serde(alias="missionId")]</code> attrs across 4 files; <code>issueStore.ts</code> + <code>goalStore.ts</code> legacy read shims; on-disk <code>~/.packetbench/missions/</code> journal dir literal.</li>
   </ul>
 
   <!-- WHAT WAS VERIFIED -->
@@ -541,7 +541,7 @@
       </tr>
       <tr>
         <td><span class="rpt-badge rpt-low">NIT</span></td>
-        <td>Fix the <code>JournalTab.tsx:31</code> doc comment: over-renamed to <code>~/.packetade/flights/&hellip;</code> but the real on-disk dir is the deliberately-retained <code>~/.packetade/missions/</code> (flight_journal.rs:82 joins &ldquo;missions&rdquo;). Comment-only; would mislead a dev locating journal files. The filename portion is accurate.</td>
+        <td>Fix the <code>JournalTab.tsx:31</code> doc comment: over-renamed to <code>~/.packetbench/flights/&hellip;</code> but the real on-disk dir is the deliberately-retained <code>~/.packetbench/missions/</code> (flight_journal.rs:82 joins &ldquo;missions&rdquo;). Comment-only; would mislead a dev locating journal files. The filename portion is accurate.</td>
         <td><code>JournalTab.tsx:31</code></td>
       </tr>
       <tr>
@@ -793,8 +793,8 @@
     <article class="rpt-card rpt-card-pass">
       <h4 class="rpt-card-title"><code>JournalTab.tsx:31</code> &mdash; doc comment corrected</h4>
       <p>Both the dir <em>and</em> filename token were wrong:
-      <code>~/.packetade/flights/F-&lt;shortId&gt;_&lt;flight_id&gt;.md</code> &rarr;
-      <code>~/.packetade/missions/F-&lt;tail&gt;_&lt;flight_id&gt;.md</code> (verified vs flight_journal.rs:82/:124).</p>
+      <code>~/.packetbench/flights/F-&lt;shortId&gt;_&lt;flight_id&gt;.md</code> &rarr;
+      <code>~/.packetbench/missions/F-&lt;tail&gt;_&lt;flight_id&gt;.md</code> (verified vs flight_journal.rs:82/:124).</p>
     </article>
     <article class="rpt-card rpt-card-pass">
       <h4 class="rpt-card-title"><code>dev/moat/cost-dashboard-plan.md</code></h4>
@@ -1320,7 +1320,7 @@
         </tr>
         <tr>
           <td>D7</td>
-          <td>Fix the <code>JournalTab.tsx:31</code> doc comment: wrong on directory <em>and</em> filename token. Correct to <code>~/.packetade/missions/F-&lt;tail&gt;_&lt;flight_id&gt;.md</code> (real dir is retained <code>missions/</code>; code emits F-prefix form).</td>
+          <td>Fix the <code>JournalTab.tsx:31</code> doc comment: wrong on directory <em>and</em> filename token. Correct to <code>~/.packetbench/missions/F-&lt;tail&gt;_&lt;flight_id&gt;.md</code> (real dir is retained <code>missions/</code>; code emits F-prefix form).</td>
           <td><span class="rpt-badge rpt-pass">Apply</span></td>
         </tr>
         <tr>
@@ -1552,8 +1552,8 @@
       </tr>
       <tr>
         <td><code>src/components/flights/JournalTab.tsx</code></td>
-        <td>L31 doc comment <code>~/.packetade/flights/F-&lt;shortId&gt;_&lt;flight_id&gt;.md</code> &rarr;
-          code-accurate <code>~/.packetade/missions/F-&lt;tail&gt;_&lt;flight_id&gt;.md</code> (dir +
+        <td>L31 doc comment <code>~/.packetbench/flights/F-&lt;shortId&gt;_&lt;flight_id&gt;.md</code> &rarr;
+          code-accurate <code>~/.packetbench/missions/F-&lt;tail&gt;_&lt;flight_id&gt;.md</code> (dir +
           filename token both corrected). Comment-only.</td>
         <td><span class="rpt-badge rpt-pass">Applied</span></td>
       </tr>
@@ -1590,7 +1590,7 @@
         <td><span class="rpt-badge rpt-pass">Applied</span></td>
       </tr>
       <tr>
-        <td><code>dev/bridgemind/packetade-mcp-server-plan.md</code></td>
+        <td><code>dev/bridgemind/packetbench-mcp-server-plan.md</code></td>
         <td>Date bump; <code>get_active_flight</code> tool-naming confirmed; cross-link to
           <code>mcp-provider-transport.md</code> so &ldquo;Frontend only&rdquo; rows do not read as unstarted.</td>
         <td><span class="rpt-badge rpt-pass">Applied</span></td>
@@ -1664,7 +1664,7 @@
       <code>mission_planner*.rs&nbsp;&rarr;&nbsp;flight_planner*.rs</code> + <code>flight_planner_tools/</code>.</li>
     <li>Intentionally preserved back-compat: 5 <code>#[serde(alias="missionId")]</code> attrs across
       4 files, issueStore.ts + goalStore.ts legacy read shims, on-disk
-      <code>~/.packetade/missions/</code> journal dir literal.</li>
+      <code>~/.packetbench/missions/</code> journal dir literal.</li>
     <li>Verification: cargo 0, tsc 0, sidecar tsc 0, schema identical, eslint 0,
       flight-planner-wiring-smoke 13/13.</li>
   </ol>
@@ -1995,8 +1995,8 @@
       <span class="rpt-badge rpt-high">Nice-to-have (comment-only)</span>
       <h4 class="rpt-h4"><code>JournalTab.tsx:31</code> doc comment over-renamed the on-disk journal path</h4>
     </div>
-    <p>The comment was over-renamed to <code>~/.packetade/flights/F-&lt;shortId&gt;_&lt;flight_id&gt;.md</code> but the real on-disk dir is the deliberately-retained <code>~/.packetade/missions/</code> (<code>flight_journal.rs:82</code> joins <code>"missions"</code>; <code>flight_journal.rs:2</code> header still correctly says <code>missions/</code>). The filename token order was also wrong (code emits <code>F-&lt;tail&gt;_&lt;flight_id&gt;.md</code>). Comment-only; would mislead a dev locating journal files.</p>
-    <p class="rpt-status"><span class="rpt-badge rpt-pass">Applied</span> Corrected to <code>~/.packetade/missions/F-&lt;tail&gt;_&lt;flight_id&gt;.md</code>.</p>
+    <p>The comment was over-renamed to <code>~/.packetbench/flights/F-&lt;shortId&gt;_&lt;flight_id&gt;.md</code> but the real on-disk dir is the deliberately-retained <code>~/.packetbench/missions/</code> (<code>flight_journal.rs:82</code> joins <code>"missions"</code>; <code>flight_journal.rs:2</code> header still correctly says <code>missions/</code>). The filename token order was also wrong (code emits <code>F-&lt;tail&gt;_&lt;flight_id&gt;.md</code>). Comment-only; would mislead a dev locating journal files.</p>
+    <p class="rpt-status"><span class="rpt-badge rpt-pass">Applied</span> Corrected to <code>~/.packetbench/missions/F-&lt;tail&gt;_&lt;flight_id&gt;.md</code>.</p>
   </article>
 
   <!-- A.4 -->
@@ -2058,7 +2058,7 @@
   </div>
 
   <footer>
-    Generated by a multi-agent workflow on 2026-06-15. PacketADE — Mission→Flight Rename Audit &amp; Plan.
+    Generated by a multi-agent workflow on 2026-06-15. PacketBench — Mission→Flight Rename Audit &amp; Plan.
   </footer>
 </body>
 </html>

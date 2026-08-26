@@ -151,7 +151,7 @@ describe("memory export / import (M3)", () => {
       [note("a", "one")],
       [pat("p1", "high conf", 0.9, true), pat("p2", "low conf", 0.3)],
     );
-    expect(md).toContain("# PacketADE memory export");
+    expect(md).toContain("# PacketBench memory export");
     expect(md).toContain("- Events: 1");
     expect(md).toContain("- Learned patterns: 2");
     expect(md).toContain("📌 (90%) high conf");

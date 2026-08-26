@@ -1,14 +1,14 @@
-# PacketADE Mobile — Planning Folder
+# PacketBench Mobile — Planning Folder
 
 Status: **superseded for implementation** by
 [`../remoteagents/README.md`](../remoteagents/README.md). Keep this folder as
 May 2026 research/background only; the current phone/PWA plan is Packet account
 sign-in plus a Packet Cloud relay, starting as a PWA.
 
-Living folder for the **PacketADE Mobile companion** investigation (May 2026). The
+Living folder for the **PacketBench Mobile companion** investigation (May 2026). The
 phone client connects to the **API agents** in the desktop app — NOT to
 workspaces / PTYs / file editor. It mirrors Claude Code's "Remote Control"
-feature pattern, adapted for PacketADE's existing `api-agent:*` event contract.
+feature pattern, adapted for PacketBench's existing `api-agent:*` event contract.
 
 ## Decision log (latest first)
 
@@ -40,14 +40,14 @@ feature pattern, adapted for PacketADE's existing `api-agent:*` event contract.
 | `research-claude-code-ios.md` | How Claude Code's iOS "Remote Control" actually works (cloud-relayed via Anthropic API, QR pairing, APNs).                      |
 | `research-competitors.md`     | Mobile companion patterns across the AI-coding-agent market (Cursor, Codex, Devin, Replit, etc.) with verdicts.                 |
 | `research-ios-stack.md`       | iOS framework / transport / pairing / push tradeoffs. Native SwiftUI vs React Native vs PWA.                                    |
-| `architecture-fit.md`         | How the iOS client maps onto PacketADE's existing Rust core + sidecar + frontend stack. Specific file refs and module sketches. |
+| `architecture-fit.md`         | How the iOS client maps onto PacketBench's existing Rust core + sidecar + frontend stack. Specific file refs and module sketches. |
 | `distribution-and-pwa.md`     | TestFlight vs personal provisioning vs PWA distribution options; PWA fidelity analysis for matching Claude's look and feel.     |
 | `v0-plan.md`                  | Concrete v0 MVP: in-scope, out-of-scope, build order, new Rust modules.                                                         |
 | `mock.html`                   | Static visual mock of the 4 key PWA screens (conversation list, chat view, permission sheet, pairing).                          |
 
 ## Open questions still to settle
 
-1. **Tenant model.** Single tenant (one relay, anyone with PacketADE installed
+1. **Tenant model.** Single tenant (one relay, anyone with PacketBench installed
    pairs) or multi-tenant (accounts scoping each install)?
 2. **Desktop ↔ relay connection model.** Always-connected vs connect-on-demand.
    Leaning always-connected — trivial cost on small scale.

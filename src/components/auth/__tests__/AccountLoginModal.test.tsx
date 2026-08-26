@@ -97,7 +97,7 @@ describe("AccountLoginModal", () => {
   });
 
   // Without this the new account starts with no statusline hook and none of
-  // the MCP servers PacketADE writes into the ambient settings.json.
+  // the MCP servers PacketBench writes into the ambient settings.json.
   it("seeds the account config dir from the ambient dir BEFORE starting the login PTY", async () => {
     let resolveSeed: (v: unknown) => void = () => {};
     seedCliAccountConfigDir.mockReturnValue(

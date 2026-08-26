@@ -33,7 +33,7 @@ The cost dashboard is implemented across:
 
 The current flow:
 
-1. API agents append `UsageEntry` rows to `~/.packetade/usage.jsonl`.
+1. API agents append `UsageEntry` rows to `~/.packetbench/usage.jsonl`.
 2. `read_usage_analytics` also ingests Claude's `~/.claude/cost-tally.json` and Codex `~/.codex/sessions/**/*.jsonl`.
 3. `pricing.rs` estimates model costs where raw session logs provide token counts but not cost.
 4. `analyticsStore.ts` loads the aggregated `AnalyticsData`.
@@ -42,7 +42,7 @@ The current flow:
 ## What Works
 
 - Backend aggregation keeps frontend state simple.
-- Data survives restarts through provider logs and PacketADE's `usage.jsonl`.
+- Data survives restarts through provider logs and PacketBench's `usage.jsonl`.
 - Summary computation covers the most useful dimensions: total, sessions, tokens, per-day, and per-model.
 - Local/self-hosted models are priced at `$0`; known cloud models use the pricing table in `pricing.rs`.
 
@@ -50,7 +50,7 @@ The current flow:
 
 ### 1. Cost data is mixed-source
 
-Claude cost-tally entries may carry cost directly, PacketADE API-agent rows carry calculated cost, and Codex CLI sessions are estimated from token counts. This is useful operationally but should not be treated as provider-billing truth.
+Claude cost-tally entries may carry cost directly, PacketBench API-agent rows carry calculated cost, and Codex CLI sessions are estimated from token counts. This is useful operationally but should not be treated as provider-billing truth.
 
 ### 2. Unknown models price to zero
 

@@ -1,9 +1,9 @@
-// Remote-owned MCP config smoke for the PacketADE agent sidecar (S8-Phase-B,
+// Remote-owned MCP config smoke for the PacketBench agent sidecar (S8-Phase-B,
 // Slice A).
 //
 // This does not open an SSH connection. It exercises the end-to-end
 // `sourceMcpFromFs` path against the running sidecar process: with
-// PACKETADE_REMOTE_SIDECAR=1 and an SSH workspace, a `start_session` carrying
+// PACKETBENCH_REMOTE_SIDECAR=1 and an SSH workspace, a `start_session` carrying
 // `sourceMcpFromFs: true` and an EMPTY `mcpServers` must cause the sidecar to
 // read its OWN filesystem (a throwaway HOME's ~/.claude/settings.json plus the
 // project's .mcp.json), emit an `mcp_sources` event listing those servers, and
@@ -44,8 +44,8 @@ const cleanups = [];
  * @returns {Promise<{ mcpSources: object, done: boolean }>}
  */
 async function runVariant({ malformed }) {
-  const home = await mkdtemp(join(tmpdir(), "packetade-remote-mcp-home-"));
-  const projectDir = await mkdtemp(join(tmpdir(), "packetade-remote-mcp-proj-"));
+  const home = await mkdtemp(join(tmpdir(), "packetbench-remote-mcp-home-"));
+  const projectDir = await mkdtemp(join(tmpdir(), "packetbench-remote-mcp-proj-"));
   cleanups.push(home, projectDir);
 
   await mkdir(join(home, ".claude"), { recursive: true });
@@ -74,7 +74,7 @@ async function runVariant({ malformed }) {
       windowsHide: true,
       env: {
         ...process.env,
-        PACKETADE_REMOTE_SIDECAR: "1",
+        PACKETBENCH_REMOTE_SIDECAR: "1",
         HOME: home,
         USERPROFILE: home,
       },

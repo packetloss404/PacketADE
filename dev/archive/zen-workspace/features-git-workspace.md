@@ -39,16 +39,16 @@ From `GitDiffEditor.tsx`:
 - working tree versus index diff mode
 - syntax-aware language selection by file extension
 
-## What PacketADE Has Today
+## What PacketBench Has Today
 
-PacketADE already has meaningful git and GitHub support:
+PacketBench already has meaningful git and GitHub support:
 
 - git branch and status access via Tauri bindings
 - git commit, push, pull, branch creation, and safety checks in `src/lib/tauri.ts`
 - GitHub view and PR workflows
 - deploy and issue workflows that sit near source control usage
 
-But PacketADE still does not have:
+But PacketBench still does not have:
 
 - a dedicated in-app git dashboard
 - an embedded diff editor
@@ -58,18 +58,18 @@ But PacketADE still does not have:
 
 This is not just a convenience feature.
 
-Once PacketADE moves toward workspace-per-project behavior, git becomes part of the workspace identity. A workspace should be able to answer:
+Once PacketBench moves toward workspace-per-project behavior, git becomes part of the workspace identity. A workspace should be able to answer:
 
 - what branch am I on?
 - what changed in this project?
 - what should I review before approving agent output?
 - what should I commit from this workspace?
 
-## Recommendation For PacketADE
+## Recommendation For PacketBench
 
 The right goal is not to rebuild Zen's entire git UI verbatim.
 
-The right goal is to keep evolving a PacketADE-native git surface that is:
+The right goal is to keep evolving a PacketBench-native git surface that is:
 
 - workspace-scoped
 - review-friendly
@@ -94,11 +94,11 @@ Phase 3:
 - connect diff and commit flows to review packets and flight approvals
 - surface "files changed by this task" directly in the git panel
 
-## PacketADE Advantage If Done Well
+## PacketBench Advantage If Done Well
 
 Zen's git surface is useful, but generic.
 
-PacketADE can beat it by making git review part of the agent workflow itself:
+PacketBench can beat it by making git review part of the agent workflow itself:
 
 - review packet opens the diff editor
 - task handoff links to changed files

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useNotificationStore } from "../notificationStore";
 
-const STORAGE_KEY = "packetade:notifications";
+const STORAGE_KEY = "packetbench:notifications";
 const store = () => useNotificationStore.getState();
 
 describe("notificationStore", () => {

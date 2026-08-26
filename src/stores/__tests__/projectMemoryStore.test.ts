@@ -50,7 +50,7 @@ describe("projectMemoryStore", () => {
   it("keeps optimistic revision conflicts visible instead of overwriting", async () => {
     await useProjectMemoryStore.getState().load("D:\\repo");
     tauri.updateProjectMemory.mockRejectedValue(
-      new Error("revision conflict: note changed outside PacketADE"),
+      new Error("revision conflict: note changed outside PacketBench"),
     );
 
     const result = await useProjectMemoryStore.getState().updateNote({

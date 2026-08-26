@@ -101,7 +101,7 @@ describe("buildWorkerPackage — attempt kind", () => {
     const flight = makeFlight();
     const attempt = makeAttempt();
     const pkg = await buildWorkerPackage({ kind: "attempt", flight, attempt });
-    expect(pkg.packageId).toBe("packetade:flight-1:attempt:attempt-1:worker");
+    expect(pkg.packageId).toBe("packetbench:flight-1:attempt:attempt-1:worker");
     expect(pkg.source.sourceId).toBe("attempt-1");
     expect(pkg.source.flightId).toBe("flight-1");
     expect(pkg.source.revision).toBe("pkt/attempt-1");
@@ -151,7 +151,7 @@ describe("buildWorkerPackage — conversation kind", () => {
       },
     });
     const pkg = await buildWorkerPackage({ kind: "conversation", conversation });
-    expect(pkg.packageId).toBe("packetade:conversation:conv-1:worker");
+    expect(pkg.packageId).toBe("packetbench:conversation:conv-1:worker");
     expect(pkg.source.flightId).toBeUndefined();
     expect(pkg.source.conversationId).toBe("conv-1");
     expect(pkg.source.sourceId).toBe("conv-1");

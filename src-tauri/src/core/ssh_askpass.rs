@@ -1,7 +1,7 @@
 //! OpenSSH askpass bridge for password-authenticated Unix connections.
 //!
 //! Unix OpenSSH reads passwords from a TTY or an askpass program, never from
-//! stdin. PacketADE briefly writes the keyring password to a random file with
+//! stdin. PacketBench briefly writes the keyring password to a random file with
 //! mode 0600 inside a mode-0700 temporary directory, then reinvokes its own
 //! executable as `SSH_ASKPASS`. The secret is never placed in argv or an
 //! environment value, and the guard removes both file and directory on drop.

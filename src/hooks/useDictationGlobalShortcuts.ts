@@ -38,7 +38,7 @@ async function unregisterOwned() {
 }
 
 /**
- * Registers opt-in OS-global dictation shortcuts. PacketADE only unregisters
+ * Registers opt-in OS-global dictation shortcuts. PacketBench only unregisters
  * accelerators it successfully registered itself; an existing OS/app binding
  * is reported as a conflict and is never taken over.
  */

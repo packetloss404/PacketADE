@@ -4,7 +4,7 @@ test.describe("Welcome screen", () => {
   test("app loads and renders the welcome screen", async ({ page }) => {
     await page.goto("/");
 
-    await expect(page.getByRole("heading", { name: "PacketADE" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "PacketBench" })).toBeVisible();
 
     // Primary navigation should be present. Tile program (P5): the Agents rail
     // item was retired; Workspace is the primary surface.
@@ -16,7 +16,7 @@ test.describe("Welcome screen", () => {
     page.on("pageerror", (err) => errors.push(err.message));
 
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "PacketADE" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "PacketBench" })).toBeVisible();
 
     expect(errors, `page errors: ${errors.join("\n")}`).toEqual([]);
   });

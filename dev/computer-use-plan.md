@@ -53,8 +53,8 @@ work up front but is the durable home. Sidecar support is Phase 3.
   recommended accuracy/cost point. Higher-res capture must be downscaled with
   coordinate mapping back to physical pixels.
 - **Companion tools:** Anthropic recommends pairing with text-editor and bash
-  tools; PacketADE already has both.
-- **Compliance:** third-party products must use API-key auth (PacketADE already
+  tools; PacketBench already has both.
+- **Compliance:** third-party products must use API-key auth (PacketBench already
   does, exclusively) and must **inform users of computer-use risks and obtain
   consent before enabling** (Anthropic Usage Policy, eff. 2025-09-15). The
   opt-in toggle's confirm dialog is the consent surface.
@@ -111,7 +111,7 @@ can reach neither the model nor the user:
   `execute_tool_with_mcp_trust` (`:268-393`). The `mcp__` / `gh_` / `agent_`
   prefix arms (`:355/:364/:369`) are the precedent for a `computer_*` family.
 - Computer-use tools are **host-agnostic in the code sense but local-only in
-  the product sense**: they must run in the PacketADE process (the pattern of
+  the product sense**: they must run in the PacketBench process (the pattern of
   `web_fetch`/`gh_*`: `let _ = target;`) and must **refuse outright when the
   session's execution target is SSH or Syndicate** — "the screen" is
   unambiguously the local machine. Frontend gate: `isRemoteConversation`

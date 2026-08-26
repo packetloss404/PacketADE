@@ -141,7 +141,7 @@ fn read_usage_analytics_blocking() -> String {
         }
     }
 
-    // Ingest ~/.packetade/usage.jsonl (written by the in-process API agents,
+    // Ingest ~/.packetbench/usage.jsonl (written by the in-process API agents,
     // the aux router, and the sidecar turn_summary handler)
     let usage_jsonl_path = PathBuf::from(&home)
         .join(crate::core::brand::DATA_DIR_NAME)
@@ -291,7 +291,7 @@ fn read_usage_analytics_blocking() -> String {
     serde_json::to_string(&data).unwrap_or_else(|_| empty_analytics())
 }
 
-/// Fold `~/.packetade/usage.jsonl` lines into the aggregation accumulators.
+/// Fold `~/.packetbench/usage.jsonl` lines into the aggregation accumulators.
 /// One row = one `UsageEntry` = one session-turn's spend; malformed or blank
 /// lines are skipped. Extracted from `read_usage_analytics_blocking` so the
 /// ledger→rollup behaviour — the input the daily/monthly budget guardrails

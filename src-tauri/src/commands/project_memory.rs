@@ -1,7 +1,7 @@
 //! Human-readable, project-local Markdown memory.
 //!
 //! The repository deliberately derives its graph and revisions from files.
-//! There is no side database and no implicit migration of PacketADE's existing
+//! There is no side database and no implicit migration of PacketBench's existing
 //! global memory. All user-provided identifiers are resolved by scanning the
 //! confined `.agents/memory` directory, so callers never supply a file path.
 
@@ -308,7 +308,7 @@ fn parse_note(path: &Path, root: &Path) -> Result<ProjectMemoryNote, ProjectMemo
             relative_path: relative,
             code: "unsupported_schema".to_string(),
             message: format!(
-                "Schema {} is not supported by this PacketADE build",
+                "Schema {} is not supported by this PacketBench build",
                 metadata.schema_version
             ),
         });
@@ -507,7 +507,7 @@ fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
         .and_then(|_| temp.as_file().sync_all())
         .map_err(|error| format!("Cannot write project-memory note: {error}"))?;
     if path.exists() {
-        let backup = path.with_extension("md.packetade-backup");
+        let backup = path.with_extension("md.packetbench-backup");
         fs::copy(path, &backup).map_err(|error| format!("Cannot create note backup: {error}"))?;
         fs::remove_file(path).map_err(|error| format!("Cannot replace note: {error}"))?;
         if let Err(error) = temp.persist(path) {
@@ -568,7 +568,7 @@ pub fn update_project_memory_inner(
     let current = find_note(project_path, &input.id)?;
     if current.revision != input.expected_revision {
         return Err(
-            "Project-memory conflict: the note changed outside PacketADE. Reload before saving."
+            "Project-memory conflict: the note changed outside PacketBench. Reload before saving."
                 .to_string(),
         );
     }
@@ -601,7 +601,7 @@ pub fn archive_project_memory_inner(
     let current = find_note(project_path, id)?;
     if current.revision != expected_revision {
         return Err(
-            "Project-memory conflict: the note changed outside PacketADE. Reload before archiving."
+            "Project-memory conflict: the note changed outside PacketBench. Reload before archiving."
                 .to_string(),
         );
     }

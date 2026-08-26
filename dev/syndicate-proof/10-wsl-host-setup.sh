@@ -75,4 +75,4 @@ fi
 syndicate doctor --json | tee "$HOME/syndicate-doctor-$(date -u +%Y%m%dT%H%M%SZ).json"
 
 log "DONE. Host state DB (once the host has run): ~/.local/state/syndicate/data/syndicate.db"
-log "Next: pair PacketADE (Method D), then run rows per 40-expiry-row-runbook.md using 20-method-a.sh."
+log "Next: pair PacketBench (Method D), then run rows per 40-expiry-row-runbook.md using 20-method-a.sh."

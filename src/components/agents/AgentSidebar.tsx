@@ -355,7 +355,7 @@ export function AgentSidebar({
     // whatever the engine goes on to say.
     renameConversation(id, next);
     // Then push it outward, so an ACP session keeps the name outside
-    // PacketADE. `canRename` is the engine's own `sessionsRename` flag on an
+    // PacketBench. `canRename` is the engine's own `sessionsRename` flag on an
     // ACP conversation and plain `true` on every other transport, where the
     // store action then no-ops on the provider check. Un-awaited and
     // failure-swallowing by contract: a refused engine rename must not revert
@@ -501,7 +501,7 @@ export function AgentSidebar({
    *
    * A `<button>` only where the engine advertised the spec `loadSession`
    * capability, because only there does a click DO something: adopting binds a
-   * new PacketADE conversation to the engine's session id, and the first
+   * new PacketBench conversation to the engine's session id, and the first
    * message resumes it over ACP `session/load`. Where the engine cannot
    * resume, the row stays the non-button it has always been — a row that
    * looked clickable-to-open and then did nothing is precisely the silent
@@ -666,15 +666,15 @@ export function AgentSidebar({
       {engineOpen && (
         <>
           {/* The honest framing, stated once at the top rather than implied by
-              each row: these are the engine's records, PacketADE holds no
+              each row: these are the engine's records, PacketBench holds no
               transcript for them, and opening one resumes it on the engine
               rather than reconstructing a history here. */}
           <p className="px-2 pb-1.5 text-meta leading-snug text-text-muted">
             Sessions the packetcode engine is holding — from its own TUI, or from an earlier
             run.{" "}
             {canAdoptEngineSessions
-              ? "Opening one resumes it on the engine, which keeps the history as context; PacketADE has no transcript for it, so the conversation starts from the point you open it."
-              : "PacketADE has no transcript for these, and this engine cannot resume a session, so they cannot be opened here."}
+              ? "Opening one resumes it on the engine, which keeps the history as context; PacketBench has no transcript for it, so the conversation starts from the point you open it."
+              : "PacketBench has no transcript for these, and this engine cannot resume a session, so they cannot be opened here."}
             {engineCaps.canRename ? " They can be renamed." : " Renaming is unavailable."}
           </p>
           {engineStatus === "loading" && engineRows.length === 0 && (
@@ -799,7 +799,7 @@ export function AgentSidebar({
         )}
 
         {/* Engine sessions are a SEPARATE list, below and visually unlike the
-            conversation groups above. A PacketADE conversation owns a full
+            conversation groups above. A PacketBench conversation owns a full
             local transcript; an engine session is a remote handle with a
             summary and nothing behind it. Blending them would make a row that
             cannot be opened look exactly like one that can. */}

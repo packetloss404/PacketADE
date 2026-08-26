@@ -1,10 +1,10 @@
-# PacketADE Mobile — v0 MVP Plan
+# PacketBench Mobile — v0 MVP Plan
 
 > Captured 2026-05-12.
 
 ## North star
 
-A PWA at `app.packetade.dev` that lets a phone:
+A PWA at `app.packetbench.dev` that lets a phone:
 - See live agent chunks from one or more conversations.
 - Approve / deny one pending tool call.
 - Send a follow-up message.
@@ -51,7 +51,7 @@ Without:
 
 ### 3. Pairing UX on desktop
 - New `src/components/views/MobileView.tsx`.
-- New `src/stores/mobileStore.ts` (persisted under `packetade:mobile-devices`).
+- New `src/stores/mobileStore.ts` (persisted under `packetbench:mobile-devices`).
 - New `AppView` entry `"mobile"` in `appStore.ts`.
 - Backend: `src-tauri/src/commands/mobile.rs` with `mobile_start_pairing`, `mobile_list_devices`, `mobile_revoke_device`.
 - QR encodes `{relay URL, sessionId, desktopPubkey, expiry}`.
@@ -107,7 +107,7 @@ Desktop + phone in the same room. Agent streams to phone. Approval works. ~2 wee
 Single static Rust binary behind nginx/Caddy for TLS termination.
 
 ```
-relay.packetade.dev
+relay.packetbench.dev
 ├── /pair/start          POST — issue pairing slot
 ├── /pair/complete       POST — complete pairing handshake
 ├── /ws/desktop/:token   WS  — desktop outbound connection

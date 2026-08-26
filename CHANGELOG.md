@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to PacketADE are documented in this file. Outstanding work
+All notable changes to PacketBench are documented in this file. Outstanding work
 lives in [`backlog.md`](./backlog.md) at the project root.
 
 For current direction, use [`ROADMAP.md`](./ROADMAP.md). For planning briefs and
@@ -13,8 +13,8 @@ Windows artifacts, built 2026-08-15 02:51 from `a9d5d702`, **unsigned**:
 
 | Artifact                                         | SHA-256                                                            |
 | ------------------------------------------------ | ------------------------------------------------------------------ |
-| `PacketADE_0.10.5_x64-setup.exe` (NSIS, 89.4 MB) | `8c0233fe31a5b39fef0c1e98082c392054610ab892e7053d0b7fb21985977303` |
-| `PacketADE_0.10.5_x64_en-US.msi` (139.5 MB)      | `fca82769b8b48115d35294b2b84ed4346370c92c2804628e8859f7fac2387b45` |
+| `PacketBench_0.10.5_x64-setup.exe` (NSIS, 89.4 MB) | `8c0233fe31a5b39fef0c1e98082c392054610ab892e7053d0b7fb21985977303` |
+| `PacketBench_0.10.5_x64_en-US.msi` (139.5 MB)      | `fca82769b8b48115d35294b2b84ed4346370c92c2804628e8859f7fac2387b45` |
 
 > **These are not the released 0.10.5.** The version was never bumped, so these
 > installers carry the same `0.10.5` string as the artifacts recorded under
@@ -22,13 +22,13 @@ Windows artifacts, built 2026-08-15 02:51 from `a9d5d702`, **unsigned**:
 > are a development build of unreleased work. **Bump the version before any
 > release build of this branch**, and do not distribute these — an installer
 > that claims a released version but is not it cannot be told apart by a user
-> or an updater. They live in `C:\Users\ianwalmsley\packetade-build\release\`,
+> or an updater. They live in `C:\Users\ianwalmsley\packetbench-build\release\`,
 > not in the repo.
 
 ### Added — Syndicate integration toggle
 
 Settings → Tools now carries an explicit switch for the Syndicate integration.
-Turning it off closes every PacketADE-managed SSH forward, removes Syndicate
+Turning it off closes every PacketBench-managed SSH forward, removes Syndicate
 from new Workspace targets, and pauses remote panes. Pairings, Workspace data,
 pane identities, cursors, and Host sessions are all retained. A native
 fail-closed gate backs the preference, so the boundary holds against a direct
@@ -48,7 +48,7 @@ different reason: to report the remote work it pauses.
 
 Sessions on the sidecar providers (`api-claude-oauth`, `api-openai-agents`)
 computed cost for the flight rollup but never wrote a row to the
-PacketADE-owned usage ledger (`~/.packetade/usage.jsonl`) — the input the
+PacketBench-owned usage ledger (`~/.packetbench/usage.jsonl`) — the input the
 analytics rollup and the daily/monthly budget guardrails read. Since the OAuth
 removal turned those providers into metered API-key spend, real money was
 missing from the caps.
@@ -65,7 +65,7 @@ twice.
 
 Syndicate grants last 30 days and cannot be renewed, so every paired device
 reaches this. A Host answers an expired grant with `DEVICE_UNAUTHORIZED` while
-leaving the device's status `active`, and PacketADE understood neither half:
+leaving the device's status `active`, and PacketBench understood neither half:
 
 - The terminal pane's stop condition matched fragments of the error _message_,
   and `DEVICE_UNAUTHORIZED` was not among them — so an expired grant re-signed
@@ -78,7 +78,7 @@ leaving the device's status `active`, and PacketADE understood neither half:
   cliff — only a diagnosis after it.
 
 The protocol has always answered with a typed `error.retryable` and a stable
-`error.code`; PacketADE flattened both into a sentence and then tried to read
+`error.code`; PacketBench flattened both into a sentence and then tried to read
 them back out of it. The native layer now forwards the typed fields verbatim,
 retry decisions branch on `retryable`, grant state branches on `code`, and the
 Host's `expiresAt` reaches the machines card — which warns in the last week of
@@ -126,7 +126,7 @@ most once every 30 seconds; a change of carrier is still recorded immediately.
 
 The controller protocol pins the pairing _invitation_ field-by-field and backs
 it with a fixture shared byte-for-byte with Syndicate, but says nothing about
-the claim response. PacketADE rejected unknown fields in both, which meant any
+the claim response. PacketBench rejected unknown fields in both, which meant any
 additive change to the claim response would have silently broken pairing on
 already-shipped builds. The claim response and its device record are now
 forward-compatible; the invitation envelope stays strict, deliberately.
@@ -137,8 +137,8 @@ Windows artifacts, built 2026-08-07 19:32, **unsigned**:
 
 | Artifact                                         | SHA-256                                                            |
 | ------------------------------------------------ | ------------------------------------------------------------------ |
-| `PacketADE_0.10.5_x64-setup.exe` (NSIS, 89.0 MB) | `501efd6923de88e1b9bf58112f5e6a39d54d4ba8b4761c8009a4bdb617b38ab5` |
-| `PacketADE_0.10.5_x64_en-US.msi` (138.8 MB)      | `b2cc1d99caa8faef0436ede87cb78b16bcecdadd4b74c9957302f2e5e8893626` |
+| `PacketBench_0.10.5_x64-setup.exe` (NSIS, 89.0 MB) | `501efd6923de88e1b9bf58112f5e6a39d54d4ba8b4761c8009a4bdb617b38ab5` |
+| `PacketBench_0.10.5_x64_en-US.msi` (138.8 MB)      | `b2cc1d99caa8faef0436ede87cb78b16bcecdadd4b74c9957302f2e5e8893626` |
 
 Workspace quality-of-life work, plus four defects the accompanying pane-system
 review turned up. Two of those defects corrupted live agent sessions on
@@ -322,7 +322,7 @@ previously a log warning.
 Sessions are now refused outright when the sidecar advertises a protocol below
 v11, and the status chip reports the incompatibility instead of failing
 silently. Newer-than-expected versions still warn only. The
-`PACKETADE_SIDECAR_PATH` and `PACKETADE_NODE_PATH` overrides now require a
+`PACKETBENCH_SIDECAR_PATH` and `PACKETBENCH_NODE_PATH` overrides now require a
 debug build or an explicit opt-in, because a substituted sidecar receives live
 provider API keys.
 
@@ -413,7 +413,7 @@ Land and Open PR still work afterwards.
 
 ### Fixed — Claude Code native status line (2026-08-02)
 
-- Claude Code panes now receive a PacketADE-owned, session-scoped status-line
+- Claude Code panes now receive a PacketBench-owned, session-scoped status-line
   collector through Claude's supported `--settings` option. The native pane
   bar no longer depends on a separately installed `claude-code-tools` script
   or a user-edited `~/.claude/settings.json`.
@@ -425,7 +425,7 @@ Land and Open PR still work afterwards.
 
 ### Fixed — runtime authority and operational truth (2026-08-01)
 
-A correctness pass over the places where PacketADE's UI could report something
+A correctness pass over the places where PacketBench's UI could report something
 the runtime had not actually done.
 
 - Closing a Terminal pane now confirms before destroying live work.
@@ -445,7 +445,7 @@ the runtime had not actually done.
 
 ### Changed — API agents now use API keys, never subscription logins (2026-07-31)
 
-PacketADE no longer signs API agents in with a Claude.ai or ChatGPT
+PacketBench no longer signs API agents in with a Claude.ai or ChatGPT
 subscription. Every row in the Agents provider picker authenticates with an API
 key from Settings → API Keys.
 
@@ -490,7 +490,7 @@ spec into issues, Code Quality's "explain this error" and "summarize", writing
 a pull-request description, reviewing a pull request, and drafting a patch.
 All five quietly used your Claude subscription login.
 
-- **They now run on the cheapest API provider you have configured.** PacketADE
+- **They now run on the cheapest API provider you have configured.** PacketBench
   prices the providers you hold a key for against a representative small task
   and picks the cheapest — so if you have both an Anthropic and an OpenAI key,
   these background jobs land wherever they cost least, and the main agent
@@ -531,7 +531,7 @@ All five quietly used your Claude subscription login.
   Ollama drops the front of the conversation rather than reporting an error.
   This is what "the local model forgot the system prompt" and "it loops on
   tools" actually were: a configuration fault, not model quality.
-- **PacketADE now asks each model what context window it was trained for** and
+- **PacketBench now asks each model what context window it was trained for** and
   uses it, up to a ceiling you can change in Settings → Tools → Provider
   Endpoints (16k by default, which is four times Ollama's own).
 - **Models stay loaded for 30 minutes** instead of unloading after 5, so a
@@ -546,7 +546,7 @@ All five quietly used your Claude subscription login.
 ### Fixed — launching a Flight on the default agent failed with a misleading error (2026-07-31)
 
 - **"No API key configured for claude" was wrong twice over**: there is no
-  provider called "claude", and adding a key would not have helped. PacketADE
+  provider called "claude", and adding a key would not have helped. PacketBench
   was deriving the wrong internal name when starting a Flight attempt, and the
   one agent it broke on happened to be the default. Flights now launch on every
   provider, and an unrecognised one is reported by name instead of being turned
@@ -585,14 +585,14 @@ All five quietly used your Claude subscription login.
   (The Ollama field lives in the same card and is unchanged.)
 - **MiniMax M3 lost its train of thought between tool calls.** M3 reasons
   _between_ tool steps, and MiniMax's API requires the model's reasoning to be
-  handed back with each follow-up request to keep that chain intact. PacketADE
+  handed back with each follow-up request to keep that chain intact. PacketBench
   was dropping it, so every tool result arrived with the model's own prior
   reasoning erased — which made M3 look far weaker at multi-step work than it
   is. The reasoning is now captured and replayed. As a bonus, it shows up in the
   thinking panel where it belongs, instead of as raw `<think>` markup in the
   middle of the reply.
 - **Auto-failover no longer retries into the same wall.** When MiniMax reported
-  an exhausted quota, PacketADE would announce "retrying on MiniMax M2" and
+  an exhausted quota, PacketBench would announce "retrying on MiniMax M2" and
   retry against a different MiniMax tier — which draws on the same account
   quota, so the retry could not possibly succeed. Auto-failover now recognises
   account-level exhaustion (a spent quota, a drained credit balance, a billing
@@ -613,7 +613,7 @@ All five quietly used your Claude subscription login.
 ### Fixed — historical spend repriced at the corrected rates (2026-07-31)
 
 - **Your recorded spend history changed, on purpose.** Until the rate-table
-  correction earlier the same day, PacketADE priced Claude Opus 4.5–4.8 at the
+  correction earlier the same day, PacketBench priced Claude Opus 4.5–4.8 at the
   deprecated Opus 4.1 rate (`$15/$75` instead of `$5/$25`), Claude Haiku 4.5 at
   the retired Haiku 3.5 rate (`$0.80/$4` instead of `$1/$5`), and the MiniMax
   M2 family at `$0.40/$2.20` instead of the official `$0.30/$1.20`. Every dollar
@@ -621,8 +621,8 @@ All five quietly used your Claude subscription login.
   overstated roughly **3x**, MiniMax M2 roughly **1.6x**, Haiku 4.5 understated
   roughly **20%**.
 - A one-time migration now rewrites those figures on first launch. It runs over
-  `~/.packetade/usage.jsonl` and the `costUsd` stamped on messages in
-  `~/.packetade/conversations/*.json`, and it **recomputes each figure from that
+  `~/.packetbench/usage.jsonl` and the `costUsd` stamped on messages in
+  `~/.packetbench/conversations/*.json`, and it **recomputes each figure from that
   record's own stored token counts** — nothing is scaled or estimated. Each
   record is priced at the rates in effect on **its own date**, so a turn that
   predates a scheduled rate change keeps that era's rate.
@@ -850,7 +850,7 @@ All five quietly used your Claude subscription login.
 
 ### Fixed — trust, schema, and reliability
 
-- Codex CLI subscription sessions now receive PacketADE's frozen MCP authority
+- Codex CLI subscription sessions now receive PacketBench's frozen MCP authority
   through a local trust proxy. Only allowlisted servers/tools are advertised,
   and path/write/credential/protected-publish denial floors are rechecked on
   each forwarded call.
@@ -909,7 +909,7 @@ All five quietly used your Claude subscription login.
 - Saved microphone selection, waveform/error event shapes, language selection,
   custom dictionary prompting, history, analytics, and no-device diagnostics
   are wired end to end.
-- Successful transcription inserts into the tracked PacketADE input or copies
+- Successful transcription inserts into the tracked PacketBench input or copies
   through the native Windows clipboard path, with foreground-app paste kept
   explicit and opt-in.
 
@@ -925,7 +925,7 @@ All five quietly used your Claude subscription login.
   with conflict recovery instead of silent resolution.
 - **Coordination Inbox (CI1–CI8).** Persisted typed messages, acknowledgements,
   role/attempt/task/Flight targeting, safe API-agent delivery, and an opt-in
-  PacketADE MCP inbox give builders and operators one steering channel without
+  PacketBench MCP inbox give builders and operators one steering channel without
   background terminal keystroke injection.
 - **Bounded YOLO policy (AP1–AP8).** Assisted remains the default. Settings and
   per-Flight policy snapshots independently control recovery, review
@@ -944,7 +944,7 @@ All five quietly used your Claude subscription login.
   local absolute path. Missing remote installations use the existing
   detect/install flow.
 - Stable/preview install actions are explicit and re-detect on completion.
-  PacketCode remains an independent product and is not bundled into PacketADE.
+  PacketCode remains an independent product and is not bundled into PacketBench.
 
 ### Added / Changed — GitHub Pane v0.9+ (`dev/github-pane-v9-loop.md`, GP1–GP7)
 
@@ -1089,7 +1089,7 @@ remains deliberately deferred (do it only if keyword misses are measured).
 - **Backlog cleanup batch (`chore/backlog-cleanup-loop`).** Closed the
   self-contained cleanup items: the API-agent system prompt now injects
   `brand::APP_NAME` instead of hardcoding the name; internal SSH/heredoc
-  sentinels renamed to `PACKETADE_*` with the heredoc terminator hoisted into
+  sentinels renamed to `PACKETBENCH_*` with the heredoc terminator hoisted into
   `core::shared` and seeded from OS randomness so it is no longer predictable
   from the payload; the local PR-body temp file is now removed via an RAII
   guard (survives async cancellation/panic); the dead `set_ssh_password`,
@@ -1110,7 +1110,7 @@ remains deliberately deferred (do it only if keyword misses are measured).
   the legacy `missionId` key to the canonical `flightId`:
   `core::migration::migrate_mission_to_flight` re-saves persisted state when the
   raw file still carries a `missionId` (canonicalizing flight-approval records),
-  and `migrateIssuesMissionToFlight` rewrites the link on `packetade:issues`.
+  and `migrateIssuesMissionToFlight` rewrites the link on `packetbench:issues`.
   Both are guarded/idempotent. This is the eager pass the read-side
   `#[serde(alias = "missionId")]` / `issueStore` fallbacks needed before they can
   be retired (one release cycle later). See `backlog.md` → Mission→Flight.
@@ -1159,14 +1159,14 @@ remains deliberately deferred (do it only if keyword misses are measured).
   remote host's MCP integrations on that host. The session meta line now shows
   which remote MCP servers were sourced (and flags any unreadable config),
   replacing the previous silent backend warning. Sidecar protocol bumped v7 → v8.
-- **PacketADE as an MCP server (N3).** PacketADE now exposes its own state to
+- **PacketBench as an MCP server (N3).** PacketBench now exposes its own state to
   external agents (Claude Code, Codex, Cursor) over **Streamable HTTP** (the
   current MCP transport) via the official `rmcp` crate, hosted in the Rust core
   and bound to `127.0.0.1`. Enable it from Tools → MCP Provider: the card shows
   the URL + a bearer token to paste into a client's MCP config, plus a live
   activity feed. Exposes 5 read tools (`get_active_flight`, `list_runnable_tasks`,
   `read_task_details`, `read_memory_context`, `list_workspaces`) and 7
-  `packetade://…` resources (project, flights, flight/tasks, memory patterns,
+  `packetbench://…` resources (project, flights, flight/tasks, memory patterns,
   workspaces, reviews), sourced from the same persisted state the app owns.
   Optionally (**off by default** — a separate "Allow writes" toggle) agents can
   post append-only notes to a flight's coordination timeline: `append_handoff`
@@ -1376,7 +1376,7 @@ shipped data-loss / orchestration-trust review fixes.
   `MissionsView` → `FlightsView`, `mission_id`/`missionId` →
   `flight_id`/`flightId`, `core/mission_journal.rs` → `core/flight_journal.rs`,
   and the full sibling rename set), with a README pass against the code.
-  Read-time `missionId` aliases and the on-disk `~/.packetade/missions/`
+  Read-time `missionId` aliases and the on-disk `~/.packetbench/missions/`
   journal path are deliberately preserved as back-compat; removal is gated on a
   one-shot migration tracked in [`backlog.md`](./backlog.md).
 
@@ -1733,7 +1733,7 @@ human-orchestrated CLI agents in Workspace panes**. Complements Missions
   1. Provisions an Issue-bound worktree via the new
      `create_issue_worktree` Tauri command.
   2. Installs a `prepare-commit-msg` hook in that worktree that
-     idempotently appends `Fixes #{n}` and `Run-By: PacketADE issue
+     idempotently appends `Fixes #{n}` and `Run-By: PacketBench issue
 I-{id}` trailers to every commit made inside.
   3. Spins up a workspace (one `claude-code` pane) at the worktree path
      and seeds the conversation with the Issue title + body + acceptance
@@ -2109,7 +2109,7 @@ work from the v0.7 backlog.
   record. A small linked-repo badge surfaces in the sidebar.
 - **Auto-trailers on agent commits.** A `prepare-commit-msg` hook installed
   per worktree appends
-  `Run-By: PacketADE mission F-<flightId> attempt A-<attemptId>` to every
+  `Run-By: PacketBench mission F-<flightId> attempt A-<attemptId>` to every
   commit made inside that worktree, idempotently (existing trailer is left
   alone).
 
@@ -2201,7 +2201,7 @@ context compaction.
   needs to escalate.
 - **Mission journal.** Every planner action is recorded in
   append-only markdown at
-  `~/.packetade/missions/<shortId>_<id>.md`. A new Journal tab on
+  `~/.packetbench/missions/<shortId>_<id>.md`. A new Journal tab on
   the mission detail pane renders it live.
 - **Cost split.** StatGrid shows Planner vs Executor spend
   separately, with a cumulative-token chip for OAuth subscriptions.
@@ -2283,7 +2283,7 @@ See [`backlog.md`](./backlog.md) for the full list. Headlines:
 - **`AgentInputArea`** now uses `serverStore` + `ServerSelectorPopover` for
   SSH selection. New URI scheme `ssh://<serverId>?path=<encoded>`
   in `src/lib/ssh-uri.ts` for per-conversation remote paths.
-- **One-time migration** of legacy `packetade:ssh-targets` localStorage
+- **One-time migration** of legacy `packetbench:ssh-targets` localStorage
   records into `serverStore` at app bootstrap
   (`src/lib/sshTargetMigration.ts`); preserves IDs so persisted
   `AgentConversation.sshTarget.id` references still resolve. Reads both new
@@ -2428,7 +2428,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 ### Fixed
 
 - **macOS title bar shows native traffic-light controls** — config switched to `decorations: true` + `titleBarStyle: "Overlay"` + `hiddenTitle: true`; `lib.rs` setup hook strips decorations at runtime on Windows + Linux so the custom chrome stays the only chrome there. `TitleBar.tsx` detects macOS via userAgent, hides the Win-style min/max/close cluster, reserves 78 px of left padding for the traffic-light area
-- **Standalone `target/<profile>/packetade.exe` reported "Sidecar down"** — two stacked bugs:
+- **Standalone `target/<profile>/packetbench.exe` reported "Sidecar down"** — two stacked bugs:
   - Capability gate: `app.shell().sidecar("node")` is rejected by Tauri's permission layer unless an explicit `shell:allow-execute` entry lists `node` with `sidecar: true` (added in `74e6ba9`)
   - Per-triple Node binary missing: Tauri's shell plugin on Windows resolves `sidecar("node")` to `<exe_dir>/node-<target-triple>.exe`, not generic `node.exe`; `build.rs` now copies `binaries/node-<triple>.<ext>` into the cargo output directory at compile time (added in `8f49083`)
 

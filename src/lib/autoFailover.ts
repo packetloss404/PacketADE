@@ -2,7 +2,7 @@
  * Auto-failover policy. When a model returns a rate-limit / overload error,
  * the conversation can transparently retry against a cheaper / faster model
  * on the same provider before surfacing the failure to the user. Multi-
- * provider parity is one of PacketADE's distinguishing wins (no single-vendor
+ * provider parity is one of PacketBench's distinguishing wins (no single-vendor
  * tool can do this); see plan T3.E for context.
  */
 

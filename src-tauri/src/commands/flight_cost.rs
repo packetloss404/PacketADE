@@ -167,7 +167,7 @@ pub fn flight_for_executor_session(
 }
 
 /// E8-ACCUM — executor-cost round-trips through the on-disk PersistedState.
-/// Gated `#[ignore]` because each test rewrites the real `~/.packetade`
+/// Gated `#[ignore]` because each test rewrites the real `~/.packetbench`
 /// state file via `storage::with_state_lock` — the suite can't redirect
 /// HOME hermetically, mirroring the
 /// `flight_journal::tests::append_journal_creates_file_and_appends`
@@ -256,7 +256,7 @@ mod e8_accum {
     /// `total_cost = 1.5` / `total_tokens = 100`, accumulate
     /// `(300, 0.5)`, expect `total_cost = 2.0` / `total_tokens = 400`.
     #[tokio::test]
-    #[ignore = "touches real ~/.packetade state file; run with --ignored --test-threads=1"]
+    #[ignore = "touches real ~/.packetbench state file; run with --ignored --test-threads=1"]
     async fn accumulate_executor_cost_adds_to_existing() {
         let mid = format!(
             "e8-accum-exec-add-{}",
@@ -286,7 +286,7 @@ mod e8_accum {
     /// exist on disk MUST surface an `Err` so the api_agent / sidecar
     /// caller can log the warning. Same contract as the planner helper.
     #[tokio::test]
-    #[ignore = "touches real ~/.packetade state file; run with --ignored --test-threads=1"]
+    #[ignore = "touches real ~/.packetbench state file; run with --ignored --test-threads=1"]
     async fn accumulate_executor_cost_errors_on_missing_flight() {
         let mid = format!(
             "e8-accum-exec-missing-{}",
@@ -312,7 +312,7 @@ mod e8_accum {
 // C1-S1 — HERMETIC money-path guards.
 //
 // The `e8_accum` module above is `#[ignore]`d because it rewrites the real
-// `~/.packetade` state file. This module gives the SAME live cost path
+// `~/.packetbench` state file. This module gives the SAME live cost path
 // CI-run coverage instead: the pure reverse-lookup
 // (`flight_for_executor_session`) needs no storage at all, and the persisting
 // helper (`accumulate_executor_cost`) is exercised end-to-end against a
@@ -448,7 +448,7 @@ mod hermetic_money_path {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let dir = std::env::temp_dir().join(format!("packetade-c1s1-{}-{}", tag, nanos));
+        let dir = std::env::temp_dir().join(format!("packetbench-c1s1-{}-{}", tag, nanos));
         std::fs::create_dir_all(&dir).expect("create unique temp dir");
         dir
     }

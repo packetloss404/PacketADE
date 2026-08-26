@@ -65,7 +65,7 @@ pub async fn list_directory(dir_path: String, workspace: String) -> Result<Vec<D
                 Ok(e) => e,
                 Err(e) => {
                     warn!(
-                        target: "packetade::fs::list_directory",
+                        target: "packetbench::fs::list_directory",
                         parent = %dir_path,
                         error = %e,
                         "skipping unreadable directory entry"
@@ -101,7 +101,7 @@ pub async fn list_directory(dir_path: String, workspace: String) -> Result<Vec<D
                 Ok(m) => m,
                 Err(e) => {
                     warn!(
-                        target: "packetade::fs::list_directory",
+                        target: "packetbench::fs::list_directory",
                         path = %entry.path().display(),
                         error = %e,
                         "skipping entry: failed to read metadata"
@@ -191,7 +191,7 @@ pub async fn list_subdirectories(dir_path: String) -> Result<Vec<String>, String
                 }
                 Err(e) => {
                     warn!(
-                        target: "packetade::fs::list_subdirectories",
+                        target: "packetbench::fs::list_subdirectories",
                         path = %entry.path().display(),
                         error = %e,
                         "skipping entry: failed to read metadata"
@@ -201,7 +201,7 @@ pub async fn list_subdirectories(dir_path: String) -> Result<Vec<String>, String
         }
         if skipped_count > 0 {
             warn!(
-                target: "packetade::fs::list_subdirectories",
+                target: "packetbench::fs::list_subdirectories",
                 parent = %dir_path,
                 count = skipped_count,
                 "skipped unreadable directory entries"
@@ -302,7 +302,7 @@ fn walk_collect(
         Ok(rd) => rd,
         Err(e) => {
             warn!(
-                target: "packetade::fs::walk_collect",
+                target: "packetbench::fs::walk_collect",
                 path = %current.display(),
                 error = %e,
                 "skipping directory: failed to read_dir"
@@ -318,7 +318,7 @@ fn walk_collect(
             Ok(e) => e,
             Err(e) => {
                 warn!(
-                    target: "packetade::fs::walk_collect",
+                    target: "packetbench::fs::walk_collect",
                     parent = %current.display(),
                     error = %e,
                     "skipping unreadable directory entry"
@@ -332,7 +332,7 @@ fn walk_collect(
             Ok(m) => m,
             Err(e) => {
                 warn!(
-                    target: "packetade::fs::walk_collect",
+                    target: "packetbench::fs::walk_collect",
                     path = %path.display(),
                     error = %e,
                     "skipping entry: failed to read metadata"
@@ -350,7 +350,7 @@ fn walk_collect(
                 Ok(r) => r.to_string_lossy().replace('\\', "/"),
                 Err(e) => {
                     warn!(
-                        target: "packetade::fs::walk_collect",
+                        target: "packetbench::fs::walk_collect",
                         path = %path.display(),
                         root = %root.display(),
                         error = %e,

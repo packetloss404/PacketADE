@@ -425,7 +425,7 @@ fn log_cache_usage(
     }
     let hit = cache_read as f64 / denominator as f64;
     tracing::info!(
-        target: "packetade::cache",
+        target: "packetbench::cache",
         session_id = %session_id,
         model = %model,
         iteration,
@@ -1018,7 +1018,7 @@ pub async fn start_api_agent_session(
     // `mcp_trust_snapshot`: the user affirmatively asked this session to run
     // the packetcode engine's OWN configured `[mcp.<name>]` fleet, the servers
     // `acp_list_mcp_servers` (called with no session id) disclosed. Absent or
-    // false is the safe default. It only takes effect when PacketADE's own
+    // false is the safe default. It only takes effect when PacketBench's own
     // trust decision yields nothing to send, because naming the exact servers
     // is the more honest form of the same consent; and it is refused outright
     // against an engine that never advertised `mcpDefaults`.
@@ -1039,7 +1039,7 @@ pub async fn start_api_agent_session(
 
     // ACP transport: bring the packetcode engine up if needed, create an
     // engine-side session for this conversation, register the id mapping, and
-    // run the first turn. PacketADE's `session_id` stays the identity
+    // run the first turn. PacketBench's `session_id` stays the identity
     // everywhere — the engine's own id lives only inside `crate::acp`.
     if crate::acp::routing::is_acp_provider(&provider) {
         if ssh_config.is_some() {
@@ -1056,7 +1056,7 @@ pub async fn start_api_agent_session(
             return Err(message);
         }
         super::validate_project_path(&project_path)?;
-        // Resolve the session's MCP posture from PacketADE's OWN trust model —
+        // Resolve the session's MCP posture from PacketBench's OWN trust model —
         // the same `enabled_mcp_server_ids` + `mcp_trust_snapshot` pair the
         // sidecar path freezes — rather than from a second, ACP-only consent
         // dialog. `crate::acp::mcp` documents how the two map onto ACP's
@@ -1072,7 +1072,7 @@ pub async fn start_api_agent_session(
         )
         .await;
         let mcp_posture = match mcp_posture {
-            // Explicit beats inherit: PacketADE has configs the user trusted,
+            // Explicit beats inherit: PacketBench has configs the user trusted,
             // so name them instead of telling the engine to use whatever it
             // happens to have.
             posture @ crate::acp::AcpMcpPosture::Explicit(_) => posture,
@@ -1544,7 +1544,7 @@ pub async fn set_permission_mode(
     session_id: String,
     mode: String,
 ) -> Result<(), String> {
-    // ACP: map PacketADE's posture onto the engine's permission ladder (see
+    // ACP: map PacketBench's posture onto the engine's permission ladder (see
     // `acp::routing::to_acp_permission_mode`) and record it for the next
     // engine session — ACP has no mid-session mode method.
     if crate::acp::routing::owns_session(&acp, &session_id) {
@@ -1580,7 +1580,7 @@ pub async fn respond_permission(
     decision: String,
     reason: Option<String>,
 ) -> Result<(), String> {
-    // ACP: `tool_id` is the id PacketADE emitted on the permission-request
+    // ACP: `tool_id` is the id PacketBench emitted on the permission-request
     // event; the routing layer maps it back to the engine's raw JSON-RPC id
     // and to the `optionId` the engine actually offered. ACP has no channel
     // for the user's deny-with-steering text, so `reason` is dropped.

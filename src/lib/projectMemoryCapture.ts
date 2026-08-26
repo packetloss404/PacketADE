@@ -49,7 +49,7 @@ export function captureFromGlobalMemoryEvent(
   return buildProjectMemoryCapture({
     title,
     body: [
-      `Captured from PacketADE global memory event \`${event.id}\`.`,
+      `Captured from PacketBench global memory event \`${event.id}\`.`,
       "",
       "```json",
       JSON.stringify(event.payload, null, 2),

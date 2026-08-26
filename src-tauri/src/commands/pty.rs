@@ -73,7 +73,7 @@ fn command_program_name(command: &str) -> String {
 
 /// Resolve a CLI agent command to an absolute executable path.
 ///
-/// 1. An app pin (`~/.packetade/<command>-bin` containing an absolute path) wins
+/// 1. An app pin (`~/.packetbench/<command>-bin` containing an absolute path) wins
 ///    if present — an escape hatch to force a specific binary (e.g. when a CLI
 ///    release crashes in our PTY).
 /// 2. Otherwise, resolve a bare command name against PATH to an absolute path.
@@ -86,7 +86,7 @@ fn command_program_name(command: &str) -> String {
 #[cfg(not(windows))]
 fn resolve_pinned_cli_binary(command: &str) -> String {
     if let Some(home) = dirs::home_dir() {
-        let pin = home.join(".packetade").join(format!("{command}-bin"));
+        let pin = home.join(".packetbench").join(format!("{command}-bin"));
         if let Ok(contents) = std::fs::read_to_string(&pin) {
             let path = contents.trim();
             if !path.is_empty() && std::path::Path::new(path).exists() {
@@ -611,7 +611,7 @@ fn kill_pty_process_tree(session_id: &str, session: &mut PtySession) {
 
 /// Tear down every live PTY session's process tree.
 ///
-/// Called on app exit: without it, quitting PacketADE leaves every running
+/// Called on app exit: without it, quitting PacketBench leaves every running
 /// `claude` / `codex` agent alive and unreachable — nothing in the app can find
 /// them again once the process is gone.
 pub fn shutdown_pty_sessions(manager: &SharedPtyManager) {
@@ -795,11 +795,11 @@ pub fn create_pty_session(
 
     // Clear env vars that make Claude think it's inside another session
     if program == "claude" {
-        // PacketADE owns the native Claude status bar. Inject a session-local
+        // PacketBench owns the native Claude status bar. Inject a session-local
         // collector through Claude's supported `--settings` seam instead of
         // requiring users to install a script or edit ~/.claude/settings.json.
         // User settings remain loaded; this additional object overrides only
-        // statusLine for the PacketADE-launched process.
+        // statusLine for the PacketBench-launched process.
         cmd.arg("--settings");
         cmd.arg(crate::core::claude_statusline::settings_json());
         cmd.env_remove("CLAUDECODE");
@@ -809,9 +809,9 @@ pub fn create_pty_session(
         // its first PTY write). Stop the launched binary from self-updating so a
         // pinned-good version (see `resolve_pinned_cli_binary`) stays put.
         cmd.env("DISABLE_AUTOUPDATER", "1");
-        // Tell statusline.ps1 to suppress terminal output (PacketADE has its own native status bar).
+        // Tell statusline.ps1 to suppress terminal output (PacketBench has its own native status bar).
         // PACKETCODE env var retained for backwards compatibility with any existing scripts.
-        cmd.env("PACKETADE", "1");
+        cmd.env("PACKETBENCH", "1");
         cmd.env("PACKETCODE", "1");
     }
 
@@ -1665,7 +1665,7 @@ mod tests {
 
     #[test]
     fn pty_kill_never_signals_our_own_group_or_init() {
-        // `kill(-0, …)` broadcasts to OUR group and would take down PacketADE
+        // `kill(-0, …)` broadcasts to OUR group and would take down PacketBench
         // itself; 1 is init.
         assert!(pty_kill_group_ids(Some(0), Some(1)).is_empty());
         assert!(pty_kill_group_ids(None, None).is_empty());

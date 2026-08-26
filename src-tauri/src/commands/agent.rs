@@ -160,7 +160,7 @@ pub async fn detect_cli_catalog(
     Ok(futures::future::join_all(futures).await)
 }
 
-/// Verify the complete PacketADE ↔ PacketCode integration contract:
+/// Verify the complete PacketBench ↔ PacketCode integration contract:
 /// executable identity, version handshake, isolated data home, and the
 /// machine-readable doctor report. The doctor JSON is returned even when its
 /// own status is `fail`, allowing the UI to present actionable findings.

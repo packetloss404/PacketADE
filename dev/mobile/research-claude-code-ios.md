@@ -60,7 +60,7 @@ Claude Code does not ship a standalone iOS app. Mobile access is the **"Code" ta
 - **Tool-call approval mobile UX details.**
 - **Whether QR pairing for Dispatch uses any device-bound key material**, or is purely an OAuth-deep-link.
 
-## 6. What PacketADE inherits from this
+## 6. What PacketBench inherits from this
 
 Patterns to copy:
 - **Outbound-only relay** — desktop never exposes inbound ports. Survives any NAT / corp firewall.
@@ -70,8 +70,8 @@ Patterns to copy:
 - **Sessions die when desktop is offline; no cloud queue** — keeps the trust boundary clean.
 
 Patterns to avoid:
-- **Anthropic's relay sees plaintext.** PacketADE should do E2E (relay sees ciphertext only) since we're not Anthropic and not trusted-by-default.
-- **One global push toggle is too coarse.** PacketADE can do per-conversation push preferences cheaply.
+- **Anthropic's relay sees plaintext.** PacketBench should do E2E (relay sees ciphertext only) since we're not Anthropic and not trusted-by-default.
+- **One global push toggle is too coarse.** PacketBench can do per-conversation push preferences cheaply.
 
 ## Sources
 

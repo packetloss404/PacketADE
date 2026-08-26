@@ -211,7 +211,7 @@ describe("SyndicateTerminalPane reconnect behaviour", () => {
       if (command === "syndicate_session_attach") {
         return nativeRejection({
           message:
-            "PacketRelay request failed without an automatic retry over SSH: This PacketADE device was revoked by Syndicate.",
+            "PacketRelay request failed without an automatic retry over SSH: This PacketBench device was revoked by Syndicate.",
           code: "DEVICE_REVOKED",
           retryable: false,
         });

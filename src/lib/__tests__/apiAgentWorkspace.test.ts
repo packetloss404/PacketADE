@@ -40,7 +40,7 @@ describe("startApiAgentSession workspace metadata", () => {
       host: "example.com",
       port: 2222,
       user: "ian",
-      remote_path: "/srv/packetade",
+      remote_path: "/srv/packetbench",
       key_path: "C:/Users/ian/.ssh/id_ed25519",
       auth_method: "key",
       target_id: "srv-123",
@@ -51,7 +51,7 @@ describe("startApiAgentSession workspace metadata", () => {
       "conv-ssh",
       "openai-codex",
       "gpt-5-codex",
-      "/srv/packetade",
+      "/srv/packetbench",
       "hello",
       null,
       false,
@@ -63,7 +63,7 @@ describe("startApiAgentSession workspace metadata", () => {
     expect(invokeMock).toHaveBeenCalledWith(
       "start_api_agent_session",
       expect.objectContaining({
-        projectPath: "/srv/packetade",
+        projectPath: "/srv/packetbench",
         sshConfig,
         workspace: {
           kind: "ssh",
@@ -71,7 +71,7 @@ describe("startApiAgentSession workspace metadata", () => {
           host: "example.com",
           port: 2222,
           user: "ian",
-          remotePath: "/srv/packetade",
+          remotePath: "/srv/packetbench",
           keyPath: "C:/Users/ian/.ssh/id_ed25519",
           authMethod: "key",
           hostFingerprint: "SHA256:abc123",

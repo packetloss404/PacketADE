@@ -2,7 +2,7 @@
 /**
  * cache-hit-rate.mjs — CE4 instrumentation (temporary, not a product feature).
  *
- * Reads `~/.packetade/usage.jsonl` and prints the prompt-cache token mix per
+ * Reads `~/.packetbench/usage.jsonl` and prints the prompt-cache token mix per
  * model. Its only job is to prove CE6 (Anthropic automatic prompt caching)
  * actually took effect: prompt caching fails **silently** when the prefix is
  * below a model's minimum cacheable length, so "it compiled" proves nothing and
@@ -35,7 +35,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function parseArgs(argv) {
-  const args = { since: null, file: join(homedir(), ".packetade", "usage.jsonl") };
+  const args = { since: null, file: join(homedir(), ".packetbench", "usage.jsonl") };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--since") args.since = argv[++i];
     else if (argv[i] === "--file") args.file = argv[++i];

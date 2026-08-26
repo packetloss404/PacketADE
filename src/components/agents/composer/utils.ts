@@ -52,7 +52,7 @@ export const MODE_ORDER: AgentMode[] = ["agent", "ask", "manual", "plan"];
 /**
  * Provider dropdown grouping. Only includes `api-*` agents (PTY CLI agents
  * like `claude-code` / `codex` are handled elsewhere). Every row here
- * authenticates with an API key from the OS keyring — PacketADE offers no
+ * authenticates with an API key from the OS keyring — PacketBench offers no
  * Claude.ai / ChatGPT subscription login for API agents.
  *
  * `api-claude-oauth` is a historical id, not an OAuth row: it is the Claude

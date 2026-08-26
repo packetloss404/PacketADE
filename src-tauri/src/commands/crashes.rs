@@ -90,7 +90,7 @@ pub fn delete_crash(path: String) -> Result<(), String> {
     std::fs::remove_file(&validated).map_err(|e| format!("Failed to delete crash: {}", e))
 }
 
-/// Installs a panic hook that writes crash info to ~/.packetade/crashes/crash-<timestamp>.log.
+/// Installs a panic hook that writes crash info to ~/.packetbench/crashes/crash-<timestamp>.log.
 pub fn install_panic_hook() {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {

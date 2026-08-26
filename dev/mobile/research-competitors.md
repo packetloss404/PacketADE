@@ -72,7 +72,7 @@
 - **Takeaway:** useful as a *transport* if you want zero-config LAN reach from phone to desktop without exposing ports. Anthropic explicitly avoided this in favor of relay.
 
 ### Anthropic Claude iOS app + Claude Code Remote Control
-See `research-claude-code-ios.md` for the detailed teardown. Closest analog to PacketADE; best-documented design in the comparable set.
+See `research-claude-code-ios.md` for the detailed teardown. Closest analog to PacketBench; best-documented design in the comparable set.
 
 ## Patterns worth stealing
 
@@ -94,7 +94,7 @@ See `research-claude-code-ios.md` for the detailed teardown. Closest analog to P
 
 Build a PWA shell over an outbound-only relay you run yourself. Desktop sidecar already speaks outbound to Anthropic/OpenAI — extend it to also register with your relay and stream `api-agent:*` events upward. Pair via QR (sidecar shows it, browser scans → device-bound short-lived token). Phone is chat-first: pick provider, send prompt, see streamed chunks/tool calls, approve permission requests, get Web Push when the agent's `done` or `permission-request` event fires. Skip Tailscale dependency, skip PTY mirroring, skip a phone-side code editor.
 
-This is essentially the Claude Code Remote Control architecture, adapted for PacketADE's existing event contract.
+This is essentially the Claude Code Remote Control architecture, adapted for PacketBench's existing event contract.
 
 ## Sources
 

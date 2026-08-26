@@ -99,7 +99,7 @@ export default function App() {
   useSideChatHotkey();
   // Tracks the last-focused text input and inserts dictated transcripts at its cursor
   useDictationTarget();
-  // OS-level global hotkeys so dictation works even when PacketADE is not focused
+  // OS-level global hotkeys so dictation works even when PacketBench is not focused
   useDictationGlobalShortcuts();
   useIssueFlightMirrorPoller();
   useMonitorMainRouter();
@@ -183,7 +183,7 @@ export default function App() {
   const projectPath = useLayoutStore((s) => s.projectPath);
   useEffect(() => {
     if (!projectPath) return;
-    localStorage.setItem("packetade:project-path", projectPath);
+    localStorage.setItem("packetbench:project-path", projectPath);
     useProjectHistoryStore.getState().recordOpen(projectPath);
   }, [projectPath]);
 
@@ -205,8 +205,8 @@ export default function App() {
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
 
   // Global listeners for agent-login requests dispatched from the Agents pane.
-  // AgentInputArea dispatches `packetade:open-claude-login` /
-  // `packetade:open-codex-login` when the user clicks "Log in" on an
+  // AgentInputArea dispatches `packetbench:open-claude-login` /
+  // `packetbench:open-codex-login` when the user clicks "Log in" on an
   // auth-required agent row. The login PTY is one-shot and rendered into
   // a floating modal via `useTransientPty` — no legacy mosaic pane is
   // created.
@@ -220,11 +220,11 @@ export default function App() {
     };
     const handleClaudeLogin = () => openLogin("claude");
     const handleCodexLogin = () => openLogin("codex");
-    window.addEventListener("packetade:open-claude-login", handleClaudeLogin);
-    window.addEventListener("packetade:open-codex-login", handleCodexLogin);
+    window.addEventListener("packetbench:open-claude-login", handleClaudeLogin);
+    window.addEventListener("packetbench:open-codex-login", handleCodexLogin);
     return () => {
-      window.removeEventListener("packetade:open-claude-login", handleClaudeLogin);
-      window.removeEventListener("packetade:open-codex-login", handleCodexLogin);
+      window.removeEventListener("packetbench:open-claude-login", handleClaudeLogin);
+      window.removeEventListener("packetbench:open-codex-login", handleCodexLogin);
     };
   }, []);
 
@@ -239,7 +239,7 @@ export default function App() {
   }, [activeView]);
 
   return (
-    <ErrorBoundary fallbackMessage="PacketADE encountered an error">
+    <ErrorBoundary fallbackMessage="PacketBench encountered an error">
       {/* Tile program (P4-S3): mount the in-app Toast host app-wide so the
           existing Toast infrastructure is a live consumer (e.g. the archive
           "worktree pending — Review worktree" toast). Wraps the whole shell so

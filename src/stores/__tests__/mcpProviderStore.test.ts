@@ -24,7 +24,7 @@ vi.mock("@/stores/memoryStore", () => ({
 
 import { useMcpProviderStore, mergeActivity } from "@/stores/mcpProviderStore";
 
-const STORAGE_KEY = "packetade:mcp-provider";
+const STORAGE_KEY = "packetbench:mcp-provider";
 
 function persistedEnabled(): boolean {
   return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}").enabled === true;
@@ -122,8 +122,8 @@ describe("mcpProviderStore server lifecycle", () => {
     useMcpProviderStore.getState().refreshResources();
     expect(useMcpProviderStore.getState().resources).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ uri: "packetade://issues" }),
-        expect.objectContaining({ uri: "packetade://packetcode/health" }),
+        expect.objectContaining({ uri: "packetbench://issues" }),
+        expect.objectContaining({ uri: "packetbench://packetcode/health" }),
       ]),
     );
   });

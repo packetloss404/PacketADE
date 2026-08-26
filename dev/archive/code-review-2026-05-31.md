@@ -1,4 +1,4 @@
-# PacketADE Two-Team Code Review — 2026-05-31
+# PacketBench Two-Team Code Review — 2026-05-31
 
 > Method: two independent subagent review teams (Backend = Rust/Tauri + Node sidecar; Frontend = React/TS) fanned out across 15 subsystems. Every finding was adversarially verified by an independent skeptic prompted to *refute* it; only findings that survived refutation are recorded here. **Backend: 21 verified findings. Frontend: 22 verified findings.** 76 agents, ~3.7M tokens.
 
@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-PacketADE is **structurally sound and functionally mature**. Both teams independently converged on the same root cause: **failure-path and async-lifecycle discipline is the weak link, not architecture.** The happy paths are well-built; what breaks is what happens on timeout, cancel, rejection, crash, or hostile input.
+PacketBench is **structurally sound and functionally mature**. Both teams independently converged on the same root cause: **failure-path and async-lifecycle discipline is the weak link, not architecture.** The happy paths are well-built; what breaks is what happens on timeout, cancel, rejection, crash, or hostile input.
 
 No critical steady-state data-corruptor was found. The backend surfaced a genuine **data-durability hole** (persisted-state reset-to-default), and the frontend surfaced a genuine **correctness lie** (failed deploys shown green). Severity skews medium/low — but the *recurrence* of the same defect class across independent modules is the real signal: these are systemic patterns, not isolated bugs.
 
@@ -131,11 +131,11 @@ The `brand.ts` one-file-rename guarantee is violated in ~5 sites. Individually t
 | low | PR diff renders under wrong PR header on fast switches | `stores/githubStore.ts:595-609` |
 | low | Async launch displays raw prompt but sends memory-augmented one | `stores/asyncFlightStore.ts:450` |
 | low | NewFlightModal drops forward-reference task dependencies | `flights/NewFlightModal.tsx:58-69` |
-| low | Hardcoded "PacketADE" in StatusStrip | `layout/StatusStrip.tsx:160` |
+| low | Hardcoded "PacketBench" in StatusStrip | `layout/StatusStrip.tsx:160` |
 | low | Hardcoded brand string in autoCommitTrailerFormat default | `lib/tauri.ts:1440` |
 | low | Tab "+" dispatches events with no listener (dead control) | `layout/SessionTabBar.tsx:15` |
 | low | mcpProviderStore writes localStorage directly, bypasses brand helpers | `stores/mcpProviderStore.ts:90` |
-| low | layoutStore hardcodes `packetade:` workspaces-cache key | `stores/layoutStore.ts:74` |
+| low | layoutStore hardcodes `packetbench:` workspaces-cache key | `stores/layoutStore.ts:74` |
 | low | PromptLibrary clipboard write unhandled, no failure feedback | `workspace/PromptLibrary.tsx:86-88` |
 | low | failoverGuard Set entries never removed on deleteConversation | `stores/agentTaskStore.ts:318` |
 | low | Redundant SSH workspace payload built then discarded by both backends | `lib/tauri.ts:2457` |
@@ -144,4 +144,4 @@ The `brand.ts` one-file-rename guarantee is violated in ~5 sites. Individually t
 
 ---
 
-*Full per-finding evidence and adversarial-verification verdicts are in the workflow transcript:* `C:\Users\IANWAL~1\AppData\Local\Temp\claude\D--projects-PacketADE\8ce5ddab-...\tasks\w5qcvnl5p.output`
+*Full per-finding evidence and adversarial-verification verdicts are in the workflow transcript:* `C:\Users\IANWAL~1\AppData\Local\Temp\claude\D--projects-PacketBench\8ce5ddab-...\tasks\w5qcvnl5p.output`

@@ -1,4 +1,4 @@
-"""Render PacketADE's Workspace/Agents/Settings decision Markdown as a PDF."""
+"""Render PacketBench's Workspace/Agents/Settings decision Markdown as a PDF."""
 
 from __future__ import annotations
 
@@ -366,7 +366,7 @@ def parse_markdown(text: str, available: float):
 
 def title_page():
     title = Paragraph(
-        "PacketADE<br/>Workspace, Agents, and Settings",
+        "PacketBench<br/>Workspace, Agents, and Settings",
         ParagraphStyle(
             "Title",
             fontName=FONT_BOLD,
@@ -446,7 +446,7 @@ def title_page():
         )
     )
     note = Paragraph(
-        "Prepared from a three-way source audit: PacketADE implementation, current "
+        "Prepared from a three-way source audit: PacketBench implementation, current "
         "first-party competitor documentation, and the complete Settings control/"
         "persistence/runtime path. Recommendations are separated from facts.",
         ParagraphStyle(
@@ -480,7 +480,7 @@ def page_header_footer(canvas, doc):
         canvas.line(doc.leftMargin, height - 0.52 * inch, width - doc.rightMargin, height - 0.52 * inch)
         canvas.setFont(FONT_BOLD, 7.5)
         canvas.setFillColor(GREEN_DARK)
-        canvas.drawString(doc.leftMargin, height - 0.39 * inch, "PACKETADE DECISION REPORT")
+        canvas.drawString(doc.leftMargin, height - 0.39 * inch, "PACKETBENCH DECISION REPORT")
         canvas.setFont(FONT, 7.5)
         canvas.setFillColor(MUTED)
         canvas.drawRightString(
@@ -507,8 +507,8 @@ def render(source: Path, destination: Path):
         leftMargin=0.64 * inch,
         topMargin=0.70 * inch,
         bottomMargin=0.64 * inch,
-        title="PacketADE Workspace, Agents, and Settings Decision Report",
-        author="PacketADE",
+        title="PacketBench Workspace, Agents, and Settings Decision Report",
+        author="PacketBench",
         subject="Product-surface and Settings audit",
     )
     available = letter[0] - doc.leftMargin - doc.rightMargin

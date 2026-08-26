@@ -1,4 +1,4 @@
-# PacketADE Codebase State — main @ ca2e248 (2026-07-16)
+# PacketBench Codebase State — main @ ca2e248 (2026-07-16)
 
 > **⚠️ Dated snapshot — partially superseded (noted 2026-07-24).** This is a
 > point-in-time survey, not a live map. Notable drift since: the legacy task
@@ -18,10 +18,10 @@
 
 The pulled range `a6021cf..ca2e248` is **94 commits (2026-07-06 → 07-16)**, net-negative in lines because it contains two large amputations alongside heavy feature work. The headlines:
 
-- **The "Tile program" landed: the standalone Agents tab is gone.** PacketADE is now a single-surface app. `AgentsView`/`AgentSidebar`/`AgentInputArea` are deleted; API-agent chats render as **ConversationTiles** inside the workspace mosaic. `FleetSidebar` replaced `WorkspaceSidebar` (now on the left edge), and a new **AgentInspectorPane** (Inspector/Plan/Preview/Diff/Files tabs) mounts on the right (`e357e91`). The two engines — `agentTaskStore` (conversations) and `workspaceStore` (placement) — are bridged solely by `src/stores/sessionGlue.ts`, enforced by eslint.
+- **The "Tile program" landed: the standalone Agents tab is gone.** PacketBench is now a single-surface app. `AgentsView`/`AgentSidebar`/`AgentInputArea` are deleted; API-agent chats render as **ConversationTiles** inside the workspace mosaic. `FleetSidebar` replaced `WorkspaceSidebar` (now on the left edge), and a new **AgentInspectorPane** (Inspector/Plan/Preview/Diff/Files tabs) mounts on the right (`e357e91`). The two engines — `agentTaskStore` (conversations) and `workspaceStore` (placement) — are bridged solely by `src/stores/sessionGlue.ts`, enforced by eslint.
 - **Flight Planner backend amputated** (2026-07-11, ~13,300 lines deleted): `commands/flight_planner.rs` and `flightPlannerStore.ts` are gone; the money path survives as `commands/flight_cost.rs`. Sidecar protocol bumped to **v7**.
 - **Sidecar protocol is now v8** (CLAUDE.md still says 6). v8 = S8-Phase-B "stdio MCP over SSH via remote-owned config": remote sidecars source their *own* MCP config from the remote filesystem (`sourceMcpFromFs` flag, new `mcp_sources` event, new `agent-sidecar/src/mcp-config.ts`). **Behavior change:** remote sessions no longer inherit local MCP config.
-- **PacketADE is now itself an MCP server** (N3): new `src-tauri/src/mcp_server/` module (rmcp, Streamable HTTP at `/mcp`, bearer/Origin auth, 5 read tools + 7 `packetade://` resources, opt-in append-only `append_handoff`/`escalate` writes).
+- **PacketBench is now itself an MCP server** (N3): new `src-tauri/src/mcp_server/` module (rmcp, Streamable HTTP at `/mcp`, bearer/Origin auth, 5 read tools + 7 `packetbench://` resources, opt-in append-only `append_handoff`/`escalate` writes).
 - **Sidecar-over-SSH is real**: the supervisor spawns a dedicated per-session Node sidecar *on the remote host* with OAuth preflight (exit codes 91/96/97); remote git write actions, remote worktrees, and Codex-over-SSH all shipped.
 - **Deploy view, Ideation module, orchestrationStore, NewFlightModal/FlightChatPanel all deleted** (P2-20 state pruning); orchestration converged onto `asyncFlightStore`. Flights launch as parallel worktree-bound **Attempts** via `LaunchAsyncFlightModal`.
 - **N2 swarm escalation** (suggests-not-acts, `src/lib/flightCoordination.ts`), **N4 review packets**, **N5 cost-threshold notifications**, GitHub PR line comments + notifications inbox, memory injection restored and on-by-default.
@@ -46,11 +46,11 @@ The pulled range `a6021cf..ca2e248` is **94 commits (2026-07-06 → 07-16)**, ne
 - `src/components/agents/AgentInspectorPane.tsx` — right rail: Inspector / Plan / Preview / Diff / Files.
 - `src/stores/sessionGlue.ts` — the ONE bridge between `agentTaskStore` ↔ `workspaceStore`: one-directional conversation→pane GC, reconciliation, `openSession()` (deterministic `ws-wrap-<convId>` wrapper workspaces).
 - `src/stores/layoutStore.ts` — legacy-thin shim; `projectPath` mirrors the active workspace (canonical source: workspaceStore).
-- Login CTAs (`packetade:open-claude-login` / `open-codex-login`) open a floating `src/components/auth/LoginPtyModal.tsx` — no workspace pane.
+- Login CTAs (`packetbench:open-claude-login` / `open-codex-login`) open a floating `src/components/auth/LoginPtyModal.tsx` — no workspace pane.
 
 ### Frontend state (43 Zustand stores, two persistence planes)
-- **Plane 1 (Rust `PersistedState`)** — `~/.packetade/state.v1.json`, hydrated by `src/lib/bootstrap.ts`, written via per-slice commands (`saveFlightsSlice`, `saveIssuesSlice`, …). Backend-truth stores: flightStore, serverStore, workspaceStore (+ localStorage cache), memoryStore, issueStore (dual-writes).
-- **Plane 2 (localStorage)** — `packetade:*` prefix (`src/lib/brand.ts`), one-shot `packetcode:` migration.
+- **Plane 1 (Rust `PersistedState`)** — `~/.packetbench/state.v1.json`, hydrated by `src/lib/bootstrap.ts`, written via per-slice commands (`saveFlightsSlice`, `saveIssuesSlice`, …). Backend-truth stores: flightStore, serverStore, workspaceStore (+ localStorage cache), memoryStore, issueStore (dual-writes).
+- **Plane 2 (localStorage)** — `packetbench:*` prefix (`src/lib/brand.ts`), one-shot `packetcode:` migration.
 - **Conversations** — per-conversation JSON files via `agentConversationPersistence.ts` (debounced); this record is also `agentPlanStore`'s *only* persistence.
 - `src/stores/agentTaskStore.ts` (1,402 lines) — hub; defines `AgentCli`/`ApiAgentCli` unions, `canonicalizeAgentCli()` (`api-minimax-api` → `api-minimax` alias). Satellite stores split for churn isolation: agentApprovalStore, agentPlanStore, agentStreamingStore, agentDraftStore, editBaselineStore, reviewStore.
 - `src/stores/apiAgentListeners.ts` — installs **14** per-session `api-agent:{kind}:{sessionId}` listeners (event names in `src/lib/events.ts`): the documented 9 plus `edit-baseline`, `plan-block`, `tool-output-extended`, `turn-summary`, `mcp-sources`.
@@ -59,17 +59,17 @@ The pulled range `a6021cf..ca2e248` is **94 commits (2026-07-06 → 07-16)**, ne
 - Catalogs: `src/lib/api-models.ts` (API providers, **8 rows**, single minimax row) vs `src/lib/models.ts` (PTY CLI `--model` flags) — intentionally different.
 
 ### Rust command layer (`src-tauri/src/commands/`, ~45 modules, ~200 commands)
-- `lib.rs` — strict startup order: `fix_path_for_gui_launch()` **first statement** → tracing → `migrate_data_dir()` (~/.packetcode → ~/.packetade) → panic hook → PTY orphan reap. Managed state incl. SidecarManager, ApiAgentState, McpServerState.
+- `lib.rs` — strict startup order: `fix_path_for_gui_launch()` **first statement** → tracing → `migrate_data_dir()` (~/.packetcode → ~/.packetbench) → panic hook → PTY orphan reap. Managed state incl. SidecarManager, ApiAgentState, McpServerState.
 - `commands/api_agent.rs` — `start_api_agent_session` branches on `is_sidecar_provider` (SIDECAR_PROVIDERS = claude-oauth, openai-codex, openai-agents, echo); everything else runs the in-process `LlmProvider` loop (MAX_TOOL_ITERATIONS=150), Local or Ssh. Local sidecar MCP config merged from global+project; remote sessions get `remote_mcp_directive()` (empty map + `sourceMcpFromFs=true`).
 - `commands/agent_sidecar/` — **directory module** (mod/supervisor/handler/events/protocol/status). `EXPECTED_PROTOCOL_VERSION = 8`; local supervision (≤3 restarts/60s, `sidecar-status:changed`) plus per-session **remote sidecars over SSH** with POSIX preflight.
 - `commands/provider_auth.rs` — statuses `ready | login_required | missing_key | service_down` (no more `coming_soon`); refresh-token-aware OAuth probes; new `sign_out_provider`. `auth_watcher.rs` — 500ms *trailing-edge* debounce, `$HOME` fallback.
 - `commands/mcp.rs` — global (`~/.claude/settings.json`) + project (`.mcp.json`) scopes; lenient reads, strict atomic writes; `raw_config` round-trip.
 - `commands/state.rs` — slice savers; bulk save *ignores* issues/retrospectives. (`orchestration.rs` and its orchestrator lock were **removed 2026-07-24**.)
 - `commands/flight_attempts.rs` — async "one prompt → N agents" engine (local/SSH worktrees per attempt).
-- `src-tauri/src/mcp_server/` — N3 PacketADE-as-MCP-server. `src-tauri/src/api/` — ts-rs DTO layer (**replaces the deleted `src-tauri/src/session/`**).
+- `src-tauri/src/mcp_server/` — N3 PacketBench-as-MCP-server. `src-tauri/src/api/` — ts-rs DTO layer (**replaces the deleted `src-tauri/src/session/`**).
 
 ### Rust core (`src-tauri/src/core/`)
-- `brand.rs` — all identity constants (APP_NAME, DATA_DIR `.packetade`, KEYRING_SERVICE `packetade` + legacy fallbacks).
+- `brand.rs` — all identity constants (APP_NAME, DATA_DIR `.packetbench`, KEYRING_SERVICE `packetbench` + legacy fallbacks).
 - LLM layer: `llm_provider.rs` trait + registry (anthropic | openai | minimax/minimax-api | openrouter | ollama); `llm_anthropic.rs` native SSE; everything else through `llm_openai_compat.rs`. MiniMax base URL is `https://api.minimaxi.chat/v1` (the extra "i" is correct).
 - `execution.rs` — `SshConfig` + `ExecutionTarget`; host-fingerprint pinning (StrictHostKeyChecking=yes + app-managed known_hosts) vs TOFU fallback when fingerprint absent; ControlMaster unix-only.
 - `storage.rs` — `PersistedState`; two-level lock discipline (ASYNC_STATE_LOCK before STATE_LOCK), `write_with_backup`, quarantine-first read-only recovery ladder.
@@ -77,12 +77,12 @@ The pulled range `a6021cf..ca2e248` is **94 commits (2026-07-06 → 07-16)**, ne
 - `src-tauri/src/claude/binary.rs` — Claude CLI discovery + headless `run_claude()` with retry.
 
 ### Node agent-sidecar (`agent-sidecar/`, separate pnpm package v0.5.0)
-- `src/protocol.ts` — **PROTOCOL_VERSION = 8** (source of truth). `src/index.ts` stdio dispatcher; `src/session-registry.ts` per-session promise queues + SSH-workspace guard (`PACKETADE_REMOTE_SIDECAR=1`); `src/mcp-config.ts` (v8, never-throws FS loader).
+- `src/protocol.ts` — **PROTOCOL_VERSION = 8** (source of truth). `src/index.ts` stdio dispatcher; `src/session-registry.ts` per-session promise queues + SSH-workspace guard (`PACKETBENCH_REMOTE_SIDECAR=1`); `src/mcp-config.ts` (v8, never-throws FS loader).
 - Providers: `echo` (smoke), `anthropic.ts` (claude-oauth, single long-lived Agent SDK `query()`), `openai-codex.ts` (one-shot `codex exec --json` per turn, dual 0.121/0.135+ schema, stdin closed — sandbox flags are the safety boundary), `openai-agents.ts` (BYOK, 5 project-confined tools, RunState approvals).
 - 10 smoke tests; `pnpm sidecar:check` chains 9 (codex-0142-schema-smoke is manual-only).
 
 ### Build & tooling
-- **Not a pnpm workspace** — root (`packetade` v0.10.1, pnpm@9.15.4) + `agent-sidecar/` stitched via `pnpm -C`.
+- **Not a pnpm workspace** — root (`packetbench` v0.10.1, pnpm@9.15.4) + `agent-sidecar/` stitched via `pnpm -C`.
 - Release: `prebundle` = clean:dmg-scratch → `scripts/fetch-node.js` (pinned Node 24.15.0, 5 triples, SHA-verified, → gitignored `src-tauri/binaries/`) → sidecar install/build → `scripts/prune-sidecar.js` (**destructive** hoisted prod-only reinstall). `tauri.conf.json` embeds node as externalBin + sidecar dist/node_modules as resources.
 - Quality ladder (all local, **intentionally no CI** — no `.github/`): `pnpm preflight` → `pnpm check` → `pnpm release:gate[:strict]` → `pnpm release:readiness` (see `dev/local-quality-gates.md`). macOS: use `pnpm build:macos` (DMG retry wrapper).
 - Rust builds a vendored patched `portable-pty` (`src-tauri/vendor/portable-pty`) — do not upgrade back to crates.io.
@@ -95,7 +95,7 @@ The pulled range `a6021cf..ca2e248` is **94 commits (2026-07-06 → 07-16)**, ne
 ## 3) Recent change themes
 
 1. **Conversation-as-tile program** (~20 commits): pane kind schema across TS+Rust, sessionIndex/sessionGlue, ConversationTile, FleetSidebar, AddAgentPicker, `merge_conversation_branch`, WorktreeLifecycleBar, then outright deletion of the Agents tab. Layout polish at `e357e91` (Fleet left, inspector right).
-2. **MCP expansion in three waves**: HTTP/SSE MCP over SSH → N3 PacketADE-as-MCP-server (5 slices) → S8-Phase-B remote-owned stdio MCP config (protocol v8).
+2. **MCP expansion in three waves**: HTTP/SSE MCP over SSH → N3 PacketBench-as-MCP-server (5 slices) → S8-Phase-B remote-owned stdio MCP config (protocol v8).
 3. **Remote/SSH parity**: per-session remote sidecars with OAuth preflight, remote git writes, remote worktrees, ServerConfig-driven host-key pinning, Codex-over-SSH.
 4. **Amputations**: Flight Planner backend (v7), Agents tab, Deploy/Ideation/orchestrationStore/goal state (P2-20). Net range delta is −1,771 lines excluding the LF commit.
 5. **Hardening batches**: P2 Rust + sidecar/frontend passes, F40 SSRF block in `tool_web.rs`, G16 parallel tool calls, F02 UTF-8 PTY freeze, storage lock discipline + corruption recovery ladder.
@@ -119,7 +119,7 @@ The pulled range `a6021cf..ca2e248` is **94 commits (2026-07-06 → 07-16)**, ne
 - `ServersView.tsx` exists but is unrouted (likely dead); servers live in ToolsView's ServersSettingsCard.
 - OS notification permission must stay on first user gesture (macOS WKWebView rejects non-gesture requests).
 - OpenCode agent slot has no bypass flag on purpose (it would print `--help` and exit).
-- Despite the "never hardcode `packetade:`" rule, ~20 stores hardcode the literal prefix — a future rename will churn.
+- Despite the "never hardcode `packetbench:`" rule, ~20 stores hardcode the literal prefix — a future rename will churn.
 
 **Rust**
 - `fix_path_for_gui_launch()` must remain the literal first statement of `run()` (pre-threads env mutation).
@@ -131,12 +131,12 @@ The pulled range `a6021cf..ca2e248` is **94 commits (2026-07-06 → 07-16)**, ne
 - Expired OAuth access token + present refresh token = `ready`, not `login_required`. Auth-watcher debounce must stay trailing-edge.
 - Rust wire provider ids are unprefixed (`claude-oauth`, `anthropic`); frontend `AgentCli` carries the `api-` prefix. `minimax-api` survives in Rust as a legacy id only.
 - `stream_options.include_usage` intentionally NOT sent to Ollama. Ollama base URL is now configurable.
-- `data_dir()` prefers `~/.packetade` only if it exists, else falls back to `~/.packetcode`.
-- Keyring: `api-key-{provider}` and `ssh-<ServerConfig.id>` under service `packetade` with legacy-service read fallback.
+- `data_dir()` prefers `~/.packetbench` only if it exists, else falls back to `~/.packetcode`.
+- Keyring: `api-key-{provider}` and `ssh-<ServerConfig.id>` under service `packetbench` with legacy-service read fallback.
 
 **Sidecar**
 - Stdout is protocol-only — any `console.log` corrupts the NDJSON stream; log to stderr.
-- Remote sessions deliberately send workspace `kind:"local"` to the remote sidecar — do not "fix". Local sidecar refuses `kind:"ssh"` unless `PACKETADE_REMOTE_SIDECAR=1`.
+- Remote sessions deliberately send workspace `kind:"local"` to the remote sidecar — do not "fix". Local sidecar refuses `kind:"ssh"` unless `PACKETBENCH_REMOTE_SIDECAR=1`.
 - Sidecar-over-SSH requires key/agent auth (password rejected — stdin carries the protocol), Unix remote, Unix-style absolute remote path; preflight sentinel exits 91/96/97.
 - Codex: stdin closed immediately, so interactive approvals can never fire (permission plumbing in openai-codex.ts is retained dead code); `stream_error` is transient, not terminal; overlapping turns rejected; mcpServers/allowedTools logged-and-ignored.
 - Anthropic provider: never break the long-lived `query()` pump on first `result`; `edit_response` with `mergedContent` writes then *denies* the SDK write.

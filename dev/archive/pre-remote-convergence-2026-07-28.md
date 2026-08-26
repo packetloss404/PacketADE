@@ -44,9 +44,9 @@ publication, secret change, or protected-branch bypass was performed.
   capture, UI, and permission-gated MCP access.
 - The MCP Hub now unifies catalog review, config, diagnostics, trust,
   provenance, suite resources, and explicit reconnect. Protocol v11 freezes
-  authority for PacketADE-managed MCP runtimes.
+  authority for PacketBench-managed MCP runtimes.
 - Codex subscription MCP now receives a generated MCP configuration that
-  exposes PacketADE's frozen session snapshot through a local trust proxy.
+  exposes PacketBench's frozen session snapshot through a local trust proxy.
   The proxy advertises only allowlisted servers/tools and re-checks write,
   credential, protected-publish, and workspace-root denial floors before
   forwarding calls. The deterministic target/proxy smoke is green; a real
@@ -74,7 +74,7 @@ publication, secret change, or protected-branch bypass was performed.
 | `pnpm build`                        | pass, production frontend                                                                                                        |
 | `pnpm e2e`                          | pass, 7/7 Chromium web-mode smokes                                                                                               |
 | `pnpm run sidecar:check`            | pass, protocol v11 and deterministic provider/MCP smokes                                                                         |
-| Live Anthropic multi-turn           | gated; two 60-second attempts produced no terminal event, deterministic suite now requires `PACKETADE_LIVE_ANTHROPIC_SMOKE=1`    |
+| Live Anthropic multi-turn           | gated; two 60-second attempts produced no terminal event, deterministic suite now requires `PACKETBENCH_LIVE_ANTHROPIC_SMOKE=1`    |
 | `cargo fmt --check`                 | pass                                                                                                                             |
 | `cargo check`                       | pass; existing ts-rs `missionId` alias warning only                                                                              |
 | `cargo test --no-run`               | pass; both Rust test executables compiled                                                                                        |
@@ -87,9 +87,9 @@ publication, secret change, or protected-branch bypass was performed.
 
 | Artifact                                                                                  |       Size | SHA-256                                                            |
 | ----------------------------------------------------------------------------------------- | ---------: | ------------------------------------------------------------------ |
-| `C:\Users\ianwalmsley\packetade-build\release\packetade.exe`                              |  42.25 MiB | `E69A6973180293590C1A467473B19579173716A45F7BC09F322B2409B31EC352` |
-| `C:\Users\ianwalmsley\packetade-build\release\bundle\msi\PacketADE_0.10.2_x64_en-US.msi`  | 131.76 MiB | `95B04AC1AC4E3F1F4CDD6AB2AE99EFC45C8AFA3CEE2D498414CEE6F9B77C0A4F` |
-| `C:\Users\ianwalmsley\packetade-build\release\bundle\nsis\PacketADE_0.10.2_x64-setup.exe` |  84.37 MiB | `F566D88D2A220015D2FC03A8525EF854B31601EC149CF4DFA8DC0EA0B6209C3A` |
+| `C:\Users\ianwalmsley\packetbench-build\release\packetbench.exe`                              |  42.25 MiB | `E69A6973180293590C1A467473B19579173716A45F7BC09F322B2409B31EC352` |
+| `C:\Users\ianwalmsley\packetbench-build\release\bundle\msi\PacketBench_0.10.2_x64_en-US.msi`  | 131.76 MiB | `95B04AC1AC4E3F1F4CDD6AB2AE99EFC45C8AFA3CEE2D498414CEE6F9B77C0A4F` |
+| `C:\Users\ianwalmsley\packetbench-build\release\bundle\nsis\PacketBench_0.10.2_x64-setup.exe` |  84.37 MiB | `F566D88D2A220015D2FC03A8525EF854B31601EC149CF4DFA8DC0EA0B6209C3A` |
 
 These artifacts prove local compilation and bundling only. They are unsigned
 and were not installed, published, or represented as release candidates.

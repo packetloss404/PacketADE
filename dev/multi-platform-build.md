@@ -1,6 +1,6 @@
 # Multi-Platform Build Guide
 
-PacketADE is developed day-to-day on Windows x64, but the app is designed to
+PacketBench is developed day-to-day on Windows x64, but the app is designed to
 ship on macOS and Linux as well. This doc tells a future macOS or Linux
 developer everything they need to produce a working local bundle on their
 platform. If you are adding a new target triple, extend this doc.
@@ -49,7 +49,7 @@ sudo apt-get install -y \
 ```
 
 Ubuntu 20.04 and older ship the older `libwebkit2gtk-4.0-dev` instead of 4.1.
-PacketADE targets 4.1 by default; on 20.04 you will need to either upgrade
+PacketBench targets 4.1 by default; on 20.04 you will need to either upgrade
 the distro or patch `src-tauri/Cargo.toml` to pin an older `tauri` that still
 allows 4.0.
 
@@ -91,7 +91,7 @@ target, release quality-gate scripts are present, and signing / updater
 signals are visible. It does not require certificates to be present on
 ordinary developer machines and does not print secret values.
 
-Set `PACKETADE_RELEASE_TARGET=windows`, `macos`, or `linux` when checking
+Set `PACKETBENCH_RELEASE_TARGET=windows`, `macos`, or `linux` when checking
 artifacts for a target other than the current host.
 
 For cross-compiling (e.g. producing an ARM64 Linux bundle on an x64 host),
@@ -121,7 +121,7 @@ targets a v1.1 arm64 DMG.
   is launched. The workaround for **local testing only** is:
 
   ```bash
-  xattr -cr /Applications/PacketADE.app
+  xattr -cr /Applications/PacketBench.app
   ```
 
   This removes the quarantine xattr. **Do not ship this workaround to end
@@ -158,7 +158,7 @@ targets a v1.1 arm64 DMG.
 - Cross-compiling **between macOS architectures on a Mac** is ordinary and
   supported: an Apple Silicon Mac can produce an `x86_64-apple-darwin` bundle
   with `rustup target add x86_64-apple-darwin` plus
-  `TAURI_TARGET=x86_64-apple-darwin pnpm fetch-node`. PacketADE ships per-arch
+  `TAURI_TARGET=x86_64-apple-darwin pnpm fetch-node`. PacketBench ships per-arch
   DMGs rather than a universal binary — there is no universal Node tarball, so
   universal would mean `lipo`-ing two ~90 MB runtimes. See
   [`macos-release-plan.md`](./macos-release-plan.md) §5.
@@ -182,7 +182,7 @@ pruned — `pnpm sidecar:prune` runs automatically in the `prebundle` chain.
 - **Symlink-free sidecar `node_modules`** — pnpm's default symlinked store
   does not bundle cleanly. The sidecar is installed with a hoisted / pruned
   layout (v2 Tier 1 fix). No action needed.
-- **`PACKETADE_SIDECAR_PATH` / `PACKETADE_NODE_PATH`** — at runtime these
+- **`PACKETBENCH_SIDECAR_PATH` / `PACKETBENCH_NODE_PATH`** — at runtime these
   override the bundled locations, useful when running a packaged build
   against a working-copy sidecar.
 - **Release readiness warnings** — warnings from `pnpm run release:readiness`

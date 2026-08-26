@@ -9,7 +9,7 @@
     "machineSigningFingerprint": "Mkvi3qi8REYbAjPlH6SJAu1rHMZx53Oa8lUeC_5o9U4",
     "machineKeyAgreementPublicKey": "MCowBQYDK2VuAyEAMdSras7slhE3kXA3k25gcW-sVzr-lNnahKgCBEjfwRI",
     "machineKeyAgreementFingerprint": "XPnN_KuJwJ58Yr1P1DKL5wblySlbxg6DdAAxVvYxLFU",
-    "displayName": "PacketADE controller",
+    "displayName": "PacketBench controller",
     "requestedScopes": [
       "machine.read",
       "workspace.read",

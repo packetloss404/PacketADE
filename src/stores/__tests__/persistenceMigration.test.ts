@@ -190,7 +190,7 @@ describe("flightStore backend persistence", () => {
 });
 
 describe("storage utility migration pattern", () => {
-  const TEST_KEY = "packetade:test-migration";
+  const TEST_KEY = "packetbench:test-migration";
 
   beforeEach(() => {
     localStorage.clear();
@@ -257,11 +257,11 @@ describe("orphaned localStorage keys from cut stores are silently ignored", () =
   });
 
   it("moduleStore ignores a persisted 'ideation' entry and only carries registry modules", async () => {
-    // Legacy `packetade:modules` blob from a build that still had the
+    // Legacy `packetbench:modules` blob from a build that still had the
     // ideation module enabled. `mergeWithDefaults` iterates the current
     // registry only, so the orphaned "ideation" key must not survive.
     localStorage.setItem(
-      "packetade:modules",
+      "packetbench:modules",
       JSON.stringify({
         ideation: { enabled: true },
         quality: { enabled: true },
@@ -270,11 +270,11 @@ describe("orphaned localStorage keys from cut stores are silently ignored", () =
     // Brand-storageKey'd orphans from the cut goal/ideation stores — never
     // read again, but must not throw on presence.
     localStorage.setItem(
-      "packetade:goals",
+      "packetbench:goals",
       JSON.stringify({ version: 1, goals: [{ id: "goal-1", title: "Stale goal" }] }),
     );
     localStorage.setItem(
-      "packetade:ideation-sessions",
+      "packetbench:ideation-sessions",
       JSON.stringify({ "session-1": { id: "session-1", ideas: [] } }),
     );
 

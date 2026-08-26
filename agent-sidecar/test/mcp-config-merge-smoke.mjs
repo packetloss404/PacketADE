@@ -39,8 +39,8 @@ const cleanups = [];
  * Returns the loader result for `loadMcpFromFs(projectDir, sessionId)`.
  */
 async function runScenario(global, project) {
-  const home = await mkdtemp(join(tmpdir(), "packetade-mcp-home-"));
-  const projectDir = await mkdtemp(join(tmpdir(), "packetade-mcp-proj-"));
+  const home = await mkdtemp(join(tmpdir(), "packetbench-mcp-home-"));
+  const projectDir = await mkdtemp(join(tmpdir(), "packetbench-mcp-proj-"));
   cleanups.push(home, projectDir);
 
   if (global !== undefined) {
@@ -181,7 +181,7 @@ async function run() {
   //     independent of homedir) must still load; a homedir failure, if any, is
   //     folded into readErrors rather than escaping to fail the session.
   {
-    const projectDir = await mkdtemp(join(tmpdir(), "packetade-mcp-proj-"));
+    const projectDir = await mkdtemp(join(tmpdir(), "packetbench-mcp-proj-"));
     cleanups.push(projectDir);
     await writeFile(
       join(projectDir, ".mcp.json"),

@@ -1,4 +1,4 @@
-# PacketADE — Multi-Agent Code Review & Remediation Plan (2026-06-07)
+# PacketBench — Multi-Agent Code Review & Remediation Plan (2026-06-07)
 
 > **How this was produced.** Three-round subagent review: 10 subsystem deep-passes
 >

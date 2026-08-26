@@ -12,7 +12,7 @@ Locked contract:
 
 ## Result
 
-PacketADE now has explicit transitions between Workspace, Agents, Flight Deck,
+PacketBench now has explicit transitions between Workspace, Agents, Flight Deck,
 PacketCode, PacketAgent, Git endings, and Monitor. Presentation changes reuse
 the original IDs. No handoff clones a conversation, transcript, approval
 queue, review record, Flight attempt, or worktree.
@@ -37,7 +37,7 @@ missing PacketCode, and unavailable SSH targets.
 
 ## PacketCode v1 payload
 
-The copied payload is headed `packetade-packetcode-handoff/v1` and contains:
+The copied payload is headed `packetbench-packetcode-handoff/v1` and contains:
 
 - source conversation ID, visible title, and update timestamp;
 - exact local or SSH target and active worktree identity;
@@ -112,7 +112,7 @@ a safe single-writer contract.
 ## 2026-08-01 proof refresh
 
 Focused Workspace decoupling, remote-project picker, sidecar remote-path, and
-CLI catalog tests pass. PacketADE has zero configured SSH servers, PacketCode
+CLI catalog tests pass. PacketBench has zero configured SSH servers, PacketCode
 is available only as a sibling source/dev binary rather than a published
 install, and no live PacketAgent credential is configured. All three manual
 gates above therefore remain open. See

@@ -26,7 +26,7 @@
 //      AGAIN"` yields at least one new `chunk` and exactly one new `done`.
 //   4. Both turns terminate within their per-turn timeout.
 //
-// Deterministic/offline checks skip unless PACKETADE_LIVE_ANTHROPIC_SMOKE=1.
+// Deterministic/offline checks skip unless PACKETBENCH_LIVE_ANTHROPIC_SMOKE=1.
 // A credentials file can exist while its session/network is unavailable, and
 // that external state must not make `sidecar:check` nondeterministic.
 
@@ -42,9 +42,9 @@ const __dirname = dirname(__filename);
 // Live test: explicit opt-in plus an Anthropic API key. The provider is
 // API-key only as of 2026-07 — a `~/.claude/.credentials.json` file is
 // irrelevant here and no longer counts as auth for this smoke.
-if (process.env.PACKETADE_LIVE_ANTHROPIC_SMOKE !== "1") {
+if (process.env.PACKETBENCH_LIVE_ANTHROPIC_SMOKE !== "1") {
   console.log(
-    "[multi-turn-smoke] [skip] set PACKETADE_LIVE_ANTHROPIC_SMOKE=1 to run the live provider round-trip",
+    "[multi-turn-smoke] [skip] set PACKETBENCH_LIVE_ANTHROPIC_SMOKE=1 to run the live provider round-trip",
   );
   process.exit(0);
 }

@@ -13,7 +13,7 @@ export type TerminalShellProfileId =
  * Persisted shell choice for a raw local Terminal pane.
  *
  * An absent selection and `profile: "auto"` are deliberately equivalent:
- * both preserve the historical PacketADE launch (`powershell` on Windows,
+ * both preserve the historical PacketBench launch (`powershell` on Windows,
  * `bash` elsewhere). Dedicated coding CLI panes and SSH sessions do not read
  * this setting.
  */

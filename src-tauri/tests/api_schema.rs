@@ -5,7 +5,7 @@ fn export_api_bindings() {
     std::fs::create_dir_all(&out_dir).unwrap();
     std::fs::write(
         out_dir.join("tauri-schema.ts"),
-        packetade_lib::api::generated_typescript_schema(),
+        packetbench_lib::api::generated_typescript_schema(),
     )
     .unwrap();
 }

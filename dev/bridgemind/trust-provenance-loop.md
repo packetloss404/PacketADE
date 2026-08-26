@@ -8,7 +8,7 @@ Canonical backlog: [`../../backlog.md`](../../backlog.md)
 
 ## Decision
 
-Build trust and provenance as a cross-cutting PacketADE capability, not as a
+Build trust and provenance as a cross-cutting PacketBench capability, not as a
 separate app. External content must remain visibly attributable and must never
 gain execution authority merely because an agent read it.
 
@@ -122,7 +122,7 @@ with `backlog.md`, `ROADMAP.md`, and this ledger reconciled.
 - No mandatory cloud service, hosted content scanner, or public telemetry.
 - No blockchain/ledger dependency.
 - No blanket prompt for every read or every agent action.
-- No trust label that bypasses PacketADE's permission, review, or autonomy
+- No trust label that bypasses PacketBench's permission, review, or autonomy
   limits.
 
 ## 2026-08-01 proof refresh

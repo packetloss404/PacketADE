@@ -3,7 +3,7 @@
  * aux-spend-split.mjs — LM7 instrumentation (temporary, not a product feature;
  * same posture as cache-hit-rate.mjs / CE3–CE4).
  *
- * Reads `~/.packetade/usage.jsonl`, keeps `source == "aux"` rows, and splits
+ * Reads `~/.packetbench/usage.jsonl`, keeps `source == "aux"` rows, and splits
  * them into:
  *   local   — provider == "ollama" OR cost_usd == 0 (the provider field only
  *             exists on rows written after 2026-08; the zero-cost fallback
@@ -31,7 +31,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function parseArgs(argv) {
-  const args = { since: null, file: join(homedir(), ".packetade", "usage.jsonl") };
+  const args = { since: null, file: join(homedir(), ".packetbench", "usage.jsonl") };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--since") args.since = argv[++i];
     else if (argv[i] === "--file") args.file = argv[++i];

@@ -22,7 +22,7 @@ fn init_tracing() {
     use tracing_subscriber::{fmt, EnvFilter};
 
     let log_dir = dirs_log_dir();
-    let file_appender = tracing_appender::rolling::daily(log_dir, "packetade.log");
+    let file_appender = tracing_appender::rolling::daily(log_dir, "packetbench.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 
     // Leak the guard so the writer stays alive for the process lifetime
@@ -69,7 +69,7 @@ fn dirs_log_dir() -> std::path::PathBuf {
 }
 
 /// PTY spawn helper. Re-invoked as
-/// `packetade __pty_spawn <cwd> <program> <args...>` by the vendored
+/// `packetbench __pty_spawn <cwd> <program> <args...>` by the vendored
 /// portable-pty (`UnixSlavePty::spawn_command`), with the slave pty wired to
 /// fd 0/1/2. This runs in a fresh, single-threaded process that the parent
 /// created via `posix_spawn` (fork-safe in a multi-threaded host), so it can
@@ -156,7 +156,7 @@ pub fn run() {
     core::shell_path::fix_path_for_gui_launch();
 
     init_tracing();
-    // Rename ~/.packetcode → ~/.packetade once per upgrade. Must run before
+    // Rename ~/.packetcode → ~/.packetbench once per upgrade. Must run before
     // any command that reads/writes the data dir.
     core::migration::migrate_data_dir();
     // Canonicalize any lingering legacy `missionId` keys in persisted
@@ -605,7 +605,7 @@ pub fn run() {
             commands::pricing::calculate_turn_cost,
             // Sidecar lifecycle status (for the status-bar chip)
             commands::agent_sidecar::get_sidecar_status,
-            // N3 — PacketADE-as-MCP-server lifecycle
+            // N3 — PacketBench-as-MCP-server lifecycle
             mcp_server::mcp_server_start,
             mcp_server::mcp_server_stop,
             mcp_server::mcp_server_status,

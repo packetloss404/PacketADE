@@ -121,7 +121,7 @@ const HALLUCINATION_ARTIFACTS: &[&str] = &[
 /// # Arguments
 /// * `whisper_state` - Shared Whisper context state managed by Tauri
 /// * `audio` - PCM audio samples as f32, mono channel, 16 kHz sample rate
-/// * `model_path` - Path to the GGML model file (e.g. `~/.packetade/models/ggml-base.bin`)
+/// * `model_path` - Path to the GGML model file (e.g. `~/.packetbench/models/ggml-base.bin`)
 ///
 /// # Returns
 /// The transcribed text with hallucination artifacts removed, or an error string.
@@ -383,14 +383,14 @@ mod tests {
     #[test]
     fn custom_dictionary_is_normalized_deduplicated_and_bounded() {
         let prompt = build_initial_prompt(&[
-            " PacketADE ".to_string(),
-            "packetade".to_string(),
+            " PacketBench ".to_string(),
+            "packetbench".to_string(),
             "Flight   Deck".to_string(),
             "\0".to_string(),
             "x".repeat(2_000),
         ]);
-        assert!(prompt.starts_with("PacketADE Flight Deck "));
-        assert_eq!(prompt.matches("PacketADE").count(), 1);
+        assert!(prompt.starts_with("PacketBench Flight Deck "));
+        assert_eq!(prompt.matches("PacketBench").count(), 1);
         assert!(prompt.len() <= PROGRAMMING_VOCAB_PROMPT.len() + 1 + 1_024);
     }
 }

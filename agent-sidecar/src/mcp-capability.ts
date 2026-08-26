@@ -53,7 +53,7 @@ const DEFAULT_PROBE_TIMEOUT_MS = 30_000;
 /// unavailable — so this is the knob to reach for when a legitimate MCP
 /// server is being denied on a slow machine.
 function probeTimeoutMs(): number {
-  const raw = Number(process.env.PACKETADE_MCP_PROBE_TIMEOUT_MS);
+  const raw = Number(process.env.PACKETBENCH_MCP_PROBE_TIMEOUT_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_PROBE_TIMEOUT_MS;
 }
 
@@ -136,7 +136,7 @@ export const probeMcpServerCapabilities: McpCapabilityProbe = async (
     }
     const { Client: McpClient } = await import("@modelcontextprotocol/sdk/client/index.js");
     client = new McpClient(
-      { name: "packetade-trust-probe", version: "1.0.0" },
+      { name: "packetbench-trust-probe", version: "1.0.0" },
       { capabilities: {} },
     );
   } catch (err) {
@@ -151,7 +151,7 @@ export const probeMcpServerCapabilities: McpCapabilityProbe = async (
         reject(
           new Error(
             `capability probe timed out after ${budgetMs}ms — raise ` +
-              `PACKETADE_MCP_PROBE_TIMEOUT_MS if this server is simply slow to start`,
+              `PACKETBENCH_MCP_PROBE_TIMEOUT_MS if this server is simply slow to start`,
           ),
         ),
       budgetMs,

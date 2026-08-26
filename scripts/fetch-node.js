@@ -433,7 +433,7 @@ async function processTarget(triple, shasumsText) {
   // Download + extract in a scratch dir.
   const workDir = path.join(
     tmpdir(),
-    `packetade-fetch-node-${triple}-${process.pid}-${Date.now()}`,
+    `packetbench-fetch-node-${triple}-${process.pid}-${Date.now()}`,
   );
   mkdirSync(workDir, { recursive: true });
   const archivePath = path.join(workDir, entry.distBasename);

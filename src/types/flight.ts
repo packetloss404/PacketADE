@@ -425,7 +425,7 @@ export interface Flight {
   gitBranch?: string;
   milestones: Milestone[];
   linkedSessionIds: string[];
-  /** Legacy issue linking (PacketADE-specific) */
+  /** Legacy issue linking (PacketBench-specific) */
   issueIds: string[];
   createdAt: number;
   updatedAt: number;

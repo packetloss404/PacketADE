@@ -230,7 +230,7 @@ fn has_eslint_config(base: &Path) -> bool {
 }
 
 fn has_cargo(base: &Path) -> Option<PathBuf> {
-    // Prefer src-tauri/Cargo.toml (the PacketADE convention) so cargo fix
+    // Prefer src-tauri/Cargo.toml (the PacketBench convention) so cargo fix
     // operates on the right crate; fall back to project-root Cargo.toml.
     let preferred = base.join("src-tauri/Cargo.toml");
     if preferred.exists() {
@@ -570,7 +570,7 @@ mod tests {
     #[test]
     fn probe_returns_all_false_for_empty_dir() {
         let dir = std::env::temp_dir().join(format!(
-            "packetade-autofix-empty-{}",
+            "packetbench-autofix-empty-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -588,7 +588,7 @@ mod tests {
     #[test]
     fn probe_detects_eslint_and_prettier_via_package_json() {
         let dir = std::env::temp_dir().join(format!(
-            "packetade-autofix-pkg-{}",
+            "packetbench-autofix-pkg-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -614,7 +614,7 @@ mod tests {
     #[test]
     fn probe_detects_cargo_in_src_tauri() {
         let dir = std::env::temp_dir().join(format!(
-            "packetade-autofix-cargo-{}",
+            "packetbench-autofix-cargo-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -656,7 +656,7 @@ mod tests {
     fn run_fix_rejects_empty_run_id() {
         // Smoke-test the run_id guard without actually spawning. Uses a
         // path that won't be touched because validation fails first.
-        let dir = std::env::temp_dir().join("packetade-autofix-rejected");
+        let dir = std::env::temp_dir().join("packetbench-autofix-rejected");
         fs::create_dir_all(&dir).ok();
         // The async command can't be invoked directly in a sync test
         // harness without a runtime, but we can validate the run_id

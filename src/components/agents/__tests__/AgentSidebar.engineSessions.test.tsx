@@ -1,7 +1,7 @@
 /**
  * The sidebar's engine-session directory.
  *
- * The design question this file pins down: an engine session and a PacketADE
+ * The design question this file pins down: an engine session and a PacketBench
  * conversation are NOT the same object. A conversation owns a full local
  * transcript and opens into the chat pane; an engine session is a remote
  * handle — a name, a timestamp, a model and a message count — whose transcript
@@ -224,7 +224,7 @@ describe("AgentSidebar — engine session directory", () => {
     expand();
 
     // Openable, and still explicit that the transcript is not coming with it.
-    expect(screen.getByText(/PacketADE has no transcript for it/i)).toBeInTheDocument();
+    expect(screen.getByText(/PacketBench has no transcript for it/i)).toBeInTheDocument();
   });
 
   it("distinguishes an empty engine from an unreachable one", () => {

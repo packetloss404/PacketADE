@@ -54,7 +54,7 @@ describe("ProjectNotesTab", () => {
   it("surfaces external changes, graph health, provenance, and an accessible editor", () => {
     render(<ProjectNotesTab projectPath="D:\\repo" globalEvents={[]} />);
 
-    expect(screen.getByText(/Files changed outside PacketADE/i)).toBeInTheDocument();
+    expect(screen.getByText(/Files changed outside PacketBench/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Architecture/ }));
     expect(screen.getByText("Keep the boundary explicit.")).toBeInTheDocument();
     expect(screen.getByText(/prov-1/)).toBeInTheDocument();

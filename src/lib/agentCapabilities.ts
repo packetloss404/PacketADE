@@ -44,11 +44,11 @@ export interface SessionCapabilities {
   /** Which wording the postures are labelled with. */
   permissionVocabulary: "approval" | "sandbox";
   /**
-   * The backend's OWN name for the posture a session lands on when PacketADE
-   * sends no override — set only when that posture has no 1:1 PacketADE
+   * The backend's OWN name for the posture a session lands on when PacketBench
+   * sends no override — set only when that posture has no 1:1 PacketBench
    * equivalent, and `null` everywhere else (including every non-ACP session).
    *
-   * This exists because ACP's ladder is not a bijection onto PacketADE's five
+   * This exists because ACP's ladder is not a bijection onto PacketBench's five
    * postures. The live engine defaults to `read-only`, which BOTH `plan` and
    * `deny` map onto, so no single posture can honestly be shown as "what this
    * session is currently doing". `src-tauri/src/acp/mod.rs` is explicit that
@@ -110,7 +110,7 @@ export interface SessionCapabilities {
   /** A prior user turn can be edited/retried, forking the conversation. */
   canFork: boolean;
   /**
-   * This session authenticates through a provider credential PacketADE holds,
+   * This session authenticates through a provider credential PacketBench holds,
    * so a live auth badge is meaningful. PTY/CLI sessions carry their own login
    * and surface it elsewhere.
    */
@@ -135,7 +135,7 @@ export type CapabilityConversation = Pick<
 >;
 
 /**
- * PacketADE posture → ACP permission mode.
+ * PacketBench posture → ACP permission mode.
  *
  * MIRRORS `to_acp_permission_mode` in `src-tauri/src/acp/routing.rs`, which is
  * the authority — that function is what actually decides which ACP mode a
@@ -164,7 +164,7 @@ const ACP_MODE_FOR_POSTURE: Record<AgentMode, string> = {
 };
 
 /**
- * Narrow PacketADE's postures to the ones this engine will actually accept.
+ * Narrow PacketBench's postures to the ones this engine will actually accept.
  *
  * The engine trims its `permissionModes` to the operator's configured ceiling
  * and answers `-32602` for anything above it; Rust's `resolve_permission_mode`
@@ -180,9 +180,9 @@ const ACP_MODE_FOR_POSTURE: Record<AgentMode, string> = {
  *    `postures` untouched. Narrowing on absent data would make the chip flip
  *    from five postures to two on every session start.
  * 2. **Colliding postures collapse to one.** ACP's ladder is not a bijection
- *    onto PacketADE's five: `plan` and `deny` BOTH map to `read-only`. Keeping
+ *    onto PacketBench's five: `plan` and `deny` BOTH map to `read-only`. Keeping
  *    both would offer two rows that produce byte-identical engine behavior —
- *    and `deny`'s PacketADE meaning ("every risky tool is auto-refused, the
+ *    and `deny`'s PacketBench meaning ("every risky tool is auto-refused, the
  *    agent keeps going and sees the denials") is not what `read-only` does
  *    (the engine withholds the mutating tools outright). The earliest posture
  *    in the session's own cycle order wins, which keeps `plan` — the honest
@@ -230,7 +230,7 @@ function engineDefaultModeLabel(engine: AcpEngineCapabilities | undefined): stri
 
 /**
  * One engine-enumerated model as a picker row. The engine reports a
- * `(provider, model)` pair; PacketADE picks a MODEL and lets the engine
+ * `(provider, model)` pair; PacketBench picks a MODEL and lets the engine
  * resolve the provider that serves it (see `routing.rs::start_session`, which
  * always sends `provider: None`), so the model id is both the label and the
  * value. Context/pricing come from the same shared helpers `api-models.ts`

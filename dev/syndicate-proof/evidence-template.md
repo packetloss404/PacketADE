@@ -10,7 +10,7 @@
 - **Date / time (UTC):**
 - **Host:** WSL Ubuntu-26.04 / Hyper-V VM (name, image)
 - **Syndicate version:** (`syndicate doctor --json` → version field)
-- **PacketADE build:** (commit / installer version)
+- **PacketBench build:** (commit / installer version)
 - **Relay:** local `packet-relay.exe` (commit) — production is never used for
   stateful rows.
 
@@ -27,14 +27,14 @@
    (`valid` / `expiring (N days)` / `expired` / `unknown`) or grant status
    (`revoked` / `expired`).
    - `card-before.png`, `card-after.png`, `banner.png` (as applicable)
-2. **HAR filtered to `session.attach`** — export from the PacketADE webview
+2. **HAR filtered to `session.attach`** — export from the PacketBench webview
    devtools, filtered to the attach RPC(s) for this row. Include the error
    body when the row expects a typed failure
    (`DEVICE_UNAUTHORIZED` / `DEVICE_REVOKED` / `GRANT_EXPIRED`, plus
    `retryable: false`).
    - `session-attach.har`
-3. **`packetade:syndicate-machines-v1` dump** — from the webview console:
-   `copy(localStorage.getItem('packetade:syndicate-machines-v1'))`, saved as
+3. **`packetbench:syndicate-machines-v1` dump** — from the webview console:
+   `copy(localStorage.getItem('packetbench:syndicate-machines-v1'))`, saved as
    `syndicate-machines-v1.json`. Must show the machine's persisted
    `grantExpiresAt` / status the UI rendered from.
 4. **Host journal excerpt with correlationId** —

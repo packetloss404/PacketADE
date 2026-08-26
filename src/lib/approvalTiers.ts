@@ -43,7 +43,7 @@ export type ApprovalTier = "read" | "edit_in_project" | "blocking";
 export type ApprovalGateMode = "default" | "plan" | "manual" | "deny" | "yolo";
 
 /**
- * Read/search tool names across every runtime PacketADE fronts. Anything
+ * Read/search tool names across every runtime PacketBench fronts. Anything
  * NOT in this set that also isn't a recognized edit tool is blocking —
  * the list is deliberately conservative (no network tools: WebFetch /
  * WebSearch stay blocking per the consensus ruling).

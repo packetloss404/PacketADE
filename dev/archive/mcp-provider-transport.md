@@ -12,7 +12,7 @@
 
 ### What shipped (N3, 2026-07-15) — read-only server
 
-Decision (user): **v1 is read-only** — no external agent may mutate PacketADE.
+Decision (user): **v1 is read-only** — no external agent may mutate PacketBench.
 Auth: **bearer token + Origin check + `127.0.0.1` bind**.
 
 - **Transport correction:** the original plan below specced "HTTP/SSE", but that
@@ -64,11 +64,11 @@ which would re-enable the task-scoped tools (`request_review`, `mark_blocked`,
 
 ## Context
 
-PacketADE currently manages MCP client configs (connecting TO other MCP servers) and has a frontend MCP-provider settings surface, but it does not expose itself AS an MCP server yet. Phase 1 (frontend types, store, settings UI) was implemented in the Track M work. Phases 2-3 add the actual Rust transport layer so external tools can query PacketADE's state.
+PacketBench currently manages MCP client configs (connecting TO other MCP servers) and has a frontend MCP-provider settings surface, but it does not expose itself AS an MCP server yet. Phase 1 (frontend types, store, settings UI) was implemented in the Track M work. Phases 2-3 add the actual Rust transport layer so external tools can query PacketBench's state.
 
-**Deferred because:** No current demand — PacketADE is the primary ADE, not a backing service for other tools. The MCP ecosystem is still evolving. Foundation is laid; the Rust server can be built against existing interfaces when needed.
+**Deferred because:** No current demand — PacketBench is the primary ADE, not a backing service for other tools. The MCP ecosystem is still evolving. Foundation is laid; the Rust server can be built against existing interfaces when needed.
 
-**Trigger to implement:** When external agents (Claude Code CLI, Codex CLI, Cursor, etc.) need to read PacketADE flights, tasks, or memory from outside the app.
+**Trigger to implement:** When external agents (Claude Code CLI, Codex CLI, Cursor, etc.) need to read PacketBench flights, tasks, or memory from outside the app.
 
 ## Phase 2: Local MCP Server + Resources + Safe Tools
 
@@ -79,7 +79,7 @@ PacketADE currently manages MCP client configs (connecting TO other MCP servers)
 > `127.0.0.1:<port>` (default 3100) via `rmcp` 2.2.
 
 Localhost, configurable port. Chosen over stdio because:
-- External agents connect to a running PacketADE instance
+- External agents connect to a running PacketBench instance
 - Multiple clients can connect simultaneously
 - Port already configurable in `McpProviderCard.tsx`
 
@@ -97,13 +97,13 @@ Server reads from `PersistedState` (same source as TUI) to access flights, memor
 
 | URI | Description |
 |-----|-------------|
-| `packetade://project` | Active project metadata (path, git branch) |
-| `packetade://flights` | List of flights with status |
-| `packetade://flights/{id}` | Full flight detail with milestones/tasks |
-| `packetade://flights/{id}/tasks` | Tasks for a flight |
-| `packetade://memory/patterns` | Learned patterns from memory layer |
-| `packetade://workspaces` | Active workspaces |
-| `packetade://reviews` | Pending review packets |
+| `packetbench://project` | Active project metadata (path, git branch) |
+| `packetbench://flights` | List of flights with status |
+| `packetbench://flights/{id}` | Full flight detail with milestones/tasks |
+| `packetbench://flights/{id}/tasks` | Tasks for a flight |
+| `packetbench://memory/patterns` | Learned patterns from memory layer |
+| `packetbench://workspaces` | Active workspaces |
+| `packetbench://reviews` | Pending review packets |
 
 ### Safe workflow tools
 

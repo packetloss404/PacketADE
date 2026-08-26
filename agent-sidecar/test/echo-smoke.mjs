@@ -1,4 +1,4 @@
-// End-to-end smoke test for the PacketADE agent sidecar.
+// End-to-end smoke test for the PacketBench agent sidecar.
 //
 // Spawns `node agent-sidecar/dist/index.js` directly, sends a single
 // `start_session` request for the `echo` provider, and validates the

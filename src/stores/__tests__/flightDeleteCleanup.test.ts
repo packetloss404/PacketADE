@@ -120,12 +120,12 @@ function attempt(overrides: Partial<Attempt> = {}): Attempt {
     target: {
       kind: "local",
       basePath: "D:\\Repo",
-      worktreePath: `D:\\Repo\\.git\\packetade-worktrees\\${id}`,
+      worktreePath: `D:\\Repo\\.git\\packetbench-worktrees\\${id}`,
     },
     agentConfigId: "api-claude",
     model: "claude-sonnet-4-6",
     provider: "claude",
-    branch: `packetade/${id}`,
+    branch: `packetbench/${id}`,
     baseBranch: "main",
     sessionId: `sess-${id}`,
     status: "running",
@@ -139,12 +139,12 @@ function sshAttempt(overrides: Partial<Attempt> = {}): Attempt {
   return attempt({
     id: "att-ssh",
     sessionId: "sess-ssh",
-    branch: "packetade/att-ssh",
+    branch: "packetbench/att-ssh",
     target: {
       kind: "ssh",
       serverId: "server-1",
       basePath: "/srv/repo",
-      worktreePath: "/srv/repo/.git/packetade-worktrees/att-ssh",
+      worktreePath: "/srv/repo/.git/packetbench-worktrees/att-ssh",
     },
     ...overrides,
   });
@@ -191,7 +191,7 @@ function outcome(overrides: Partial<WorktreeCleanupOutcome> = {}): WorktreeClean
 }
 
 const INTEGRATION: NonNullable<Flight["integrationBranch"]> = {
-  branch: "packetade/flight/flight-1",
+  branch: "packetbench/flight/flight-1",
   baseBranch: "main",
   baseSha: "aaa",
   headSha: "bbb",
@@ -327,11 +327,11 @@ describe("deleteFlightWithAttemptCleanup", () => {
     expect(mocks.cancelFlightAttempt.mock.calls.map((c) => c[1])).toEqual(["a-bad", "a-good"]);
     expect(failures).toHaveLength(1);
     expect(failures[0].attemptId).toBe("a-bad");
-    expect(failures[0].branch).toBe("packetade/a-bad");
+    expect(failures[0].branch).toBe("packetbench/a-bad");
     expect(failures[0].message).toContain("pty is wedged");
     // The message names the worktree that may survive, so the user can go
     // clean it up by hand.
-    expect(failures[0].message).toContain("packetade-worktrees");
+    expect(failures[0].message).toContain("packetbench-worktrees");
   });
 
   it("reports a worktree the backend could not remove, instead of a clean delete", async () => {
@@ -353,7 +353,7 @@ describe("deleteFlightWithAttemptCleanup", () => {
     expect(useFlightStore.getState().flights).toEqual([]);
     expect(failures).toHaveLength(1);
     expect(failures[0].attemptId).toBe("att-stuck");
-    expect(failures[0].branch).toBe("packetade/att-stuck");
+    expect(failures[0].branch).toBe("packetbench/att-stuck");
     // Names the path AND the git reason so the user can finish by hand.
     expect(failures[0].message).toContain("D:\\Repo\\.pkt-worktrees\\att-stuck");
     expect(failures[0].message).toContain("git worktree remove failed");
@@ -377,7 +377,7 @@ describe("deleteFlightWithAttemptCleanup", () => {
       .deleteFlightWithAttemptCleanup("flight-1");
 
     expect(failures).toHaveLength(1);
-    expect(failures[0].message).toContain("/srv/repo/.git/packetade-worktrees/att-ssh");
+    expect(failures[0].message).toContain("/srv/repo/.git/packetbench-worktrees/att-ssh");
     expect(failures[0].message).toContain("no longer configured");
   });
 
@@ -487,7 +487,7 @@ describe("deleteFlightWithAttemptCleanup", () => {
 
     expect(useFlightStore.getState().flights).toEqual([]);
     expect(failures).toHaveLength(1);
-    expect(failures[0].branch).toBe("packetade/flight/flight-1");
+    expect(failures[0].branch).toBe("packetbench/flight/flight-1");
     expect(failures[0].attemptId).toBe("");
     expect(failures[0].message).toContain(INTEGRATION.worktreePath);
     expect(failures[0].message).toContain("locked");
@@ -566,7 +566,7 @@ describe("inspectFlightDeleteImpact", () => {
 
     expect(mocks.getGitStatusRemote).toHaveBeenCalledWith(
       { id: "server-1" },
-      "/srv/repo/.git/packetade-worktrees/att-ssh",
+      "/srv/repo/.git/packetbench-worktrees/att-ssh",
     );
     expect(impact.dirtyCount).toBe(1);
   });
@@ -599,7 +599,7 @@ describe("inspectFlightDeleteImpact", () => {
     expect(impact.attemptCount).toBe(1);
     expect(impact.dirtyCount).toBe(0);
     expect(impact.integration).toEqual({
-      branch: "packetade/flight/flight-1",
+      branch: "packetbench/flight/flight-1",
       worktreePath: INTEGRATION.worktreePath,
       cleanliness: "dirty",
     });
@@ -631,21 +631,21 @@ describe("describeFlightDeleteImpact", () => {
       summarizeFlightDeleteImpact([
         {
           attemptId: "a1",
-          branch: "packetade/a1",
+          branch: "packetbench/a1",
           status: "running",
           worktreePath: "/w/a1",
           cleanliness: "dirty",
         },
         {
           attemptId: "a2",
-          branch: "packetade/a2",
+          branch: "packetbench/a2",
           status: "running",
           worktreePath: "/w/a2",
           cleanliness: "clean",
         },
         {
           attemptId: "a3",
-          branch: "packetade/a3",
+          branch: "packetbench/a3",
           status: "reviewing",
           worktreePath: "/w/a3",
           cleanliness: "unknown",
@@ -655,21 +655,21 @@ describe("describeFlightDeleteImpact", () => {
 
     expect(lines[0]).toBe("3 attempts will be cancelled (2 running, 1 reviewing).");
     expect(lines[1]).toBe("3 git worktrees will be removed.");
-    expect(lines[2]).toBe("1 worktree has uncommitted changes that will be lost: packetade/a1.");
+    expect(lines[2]).toBe("1 worktree has uncommitted changes that will be lost: packetbench/a1.");
     expect(lines[3]).toBe("1 worktree could not be checked for uncommitted changes.");
   });
 
   it("names the integration worktree even when no attempt is live", () => {
     const lines = describeFlightDeleteImpact(
       summarizeFlightDeleteImpact([], {
-        branch: "packetade/flight/flight-1",
+        branch: "packetbench/flight/flight-1",
         worktreePath: "/repo/.pkt-flight-integrations/flight-1",
         cleanliness: "clean",
       }),
     );
 
     expect(lines).toEqual([
-      "The cooperative integration worktree (packetade/flight/flight-1) will be removed; the branch is kept if it still holds unlanded work.",
+      "The cooperative integration worktree (packetbench/flight/flight-1) will be removed; the branch is kept if it still holds unlanded work.",
     ]);
   });
 
@@ -678,7 +678,7 @@ describe("describeFlightDeleteImpact", () => {
       summarizeFlightDeleteImpact([
         {
           attemptId: "a1",
-          branch: "packetade/a1",
+          branch: "packetbench/a1",
           status: "queued",
           worktreePath: "/w/a1",
           cleanliness: "clean",

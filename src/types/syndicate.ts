@@ -57,7 +57,7 @@ export interface SyndicateMachineSnapshot {
   };
   controller: {
     protocolVersion: 1;
-    /** Host-reported local controller transport. PacketADE may carry these
+    /** Host-reported local controller transport. PacketBench may carry these
      * signed requests through PacketRelay or its pinned SSH forward. */
     transport: "ssh-forward";
     device: {
@@ -168,7 +168,7 @@ export interface SyndicateMachineConnection {
 export interface SyndicateRpcResult<T = unknown> {
   requestId: string;
   result: T;
-  /** PacketADE's selected carrier for this successful request. */
+  /** PacketBench's selected carrier for this successful request. */
   transport: SyndicateTransport;
 }
 

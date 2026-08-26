@@ -14,7 +14,7 @@ use crate::core::shared::home_dir;
 
 /// Persistent lifetime counters for the sidecar (v2 Tier 4 slice A).
 ///
-/// Survives app restarts via `~/.packetade/sidecar-stats.json`. Tracks
+/// Survives app restarts via `~/.packetbench/sidecar-stats.json`. Tracks
 /// cumulative health signals that the per-run `SidecarStatusInner` cannot,
 /// because the latter resets every time the process starts.
 ///
@@ -67,7 +67,7 @@ pub struct SidecarStatus {
     pub pid: Option<u32>,
     /// Version string reported by the most recent `ready` event.
     pub version: Option<String>,
-    /// Cross-restart counters persisted to `~/.packetade/sidecar-stats.json`.
+    /// Cross-restart counters persisted to `~/.packetbench/sidecar-stats.json`.
     /// Populated on every `get_sidecar_status` poll and every
     /// `sidecar-status:changed` event emission.
     pub lifetime: SidecarLifetimeStats,
@@ -137,7 +137,7 @@ impl SidecarStatusInner {
 // ---------------------------------------------------------------------------
 // Lifetime stats persistence (v2 Tier 4 slice A)
 //
-// Stored at `$HOME/.packetade/sidecar-stats.json`. The schema is whatever
+// Stored at `$HOME/.packetbench/sidecar-stats.json`. The schema is whatever
 // `SidecarLifetimeStats` currently serializes to — all fields use
 // `#[serde(default)]` so older/newer files load cleanly across schema
 // changes.
@@ -151,7 +151,7 @@ impl SidecarStatusInner {
 /// Filename (inside `DATA_DIR_NAME`) holding the persisted counters.
 const SIDECAR_STATS_FILENAME: &str = "sidecar-stats.json";
 
-/// Absolute path to the persisted stats file under `~/.packetade/`.
+/// Absolute path to the persisted stats file under `~/.packetbench/`.
 fn lifetime_stats_path() -> PathBuf {
     let home = home_dir().unwrap_or_else(|| ".".to_string());
     PathBuf::from(home)
@@ -191,7 +191,7 @@ pub(super) fn load_lifetime_stats() -> SidecarLifetimeStats {
     }
 }
 
-/// Persist lifetime counters atomically. Creates `~/.packetade/` on demand.
+/// Persist lifetime counters atomically. Creates `~/.packetbench/` on demand.
 pub(super) fn save_lifetime_stats(stats: &SidecarLifetimeStats) -> Result<(), String> {
     let path = lifetime_stats_path();
     if let Some(parent) = path.parent() {

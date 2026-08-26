@@ -50,7 +50,7 @@ vi.mock("@/components/agents/review/ReviewSurface", () => ({
 
 import { AgentInspectorPane } from "@/components/agents/AgentInspectorPane";
 
-const DOCK_STORAGE_KEY = "packetade:right-dock-v1";
+const DOCK_STORAGE_KEY = "packetbench:right-dock-v1";
 
 function makeConversation(overrides: Partial<AgentConversation> = {}): AgentConversation {
   const now = new Date("2026-05-17T12:00:00Z").getTime();
@@ -58,7 +58,7 @@ function makeConversation(overrides: Partial<AgentConversation> = {}): AgentConv
     id: "conv-1",
     title: "Inspector pane test",
     agent: "api-openai",
-    projectPath: "D:\\projects\\PacketADE",
+    projectPath: "D:\\projects\\PacketBench",
     status: "idle",
     messages: [],
     sessionId: "conv-1",

@@ -5,9 +5,9 @@ fn main() {
     enable_windows_common_controls();
 
     // Copy the per-triple Node externalBin binary into the cargo output
-    // directory alongside `packetade.exe` so the Tauri shell plugin can
+    // directory alongside `packetbench.exe` so the Tauri shell plugin can
     // resolve `app.shell().sidecar("node")` when the user runs the
-    // standalone `target/<profile>/packetade.exe` directly (without
+    // standalone `target/<profile>/packetbench.exe` directly (without
     // installing via the MSI/NSIS bundle, which handles this for us).
     //
     // `OUT_DIR` is `target/<profile>/build/<crate>-<hash>/out`; the cargo
@@ -15,7 +15,7 @@ fn main() {
     // warning, never a build failure.
     if let Err(e) = copy_per_triple_node() {
         println!(
-            "cargo:warning=copy_per_triple_node skipped: {} (standalone packetade.exe will report sidecar down — install via MSI/NSIS or copy `binaries/node-<triple>.<ext>` next to the exe manually)",
+            "cargo:warning=copy_per_triple_node skipped: {} (standalone packetbench.exe will report sidecar down — install via MSI/NSIS or copy `binaries/node-<triple>.<ext>` next to the exe manually)",
             e
         );
     }

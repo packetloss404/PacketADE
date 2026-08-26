@@ -1,16 +1,16 @@
 # Syndicate grant-expiry acceptance runbook
 
 Status: **acceptance not yet run.** The day-30 fix is verified against the
-Host's source and against mocked payloads in PacketADE's own suites. It has
+Host's source and against mocked payloads in PacketBench's own suites. It has
 never been exercised against a grant that actually expired on real
 infrastructure. This document is what someone follows to close that gap.
 
 Written 2026-08-15. Companion to
 [`syndicate-execution-target.md`](./syndicate-execution-target.md) (the target
 contract and its broader acceptance matrix). The Host-side record of the
-defect chain is Syndicate's `docs/PACKETADE_COORDINATION.md` §5.
+defect chain is Syndicate's `docs/PACKETBENCH_COORDINATION.md` §5.
 
-Owner split: PacketADE owns this document and every client-side observation in
+Owner split: PacketBench owns this document and every client-side observation in
 it. Syndicate owns the Host tree — **do not edit anything under
 `/mnt/d/projects/syndicate` while running this runbook.** Method B below needs
 a Host source change; that change is requested from Syndicate, not made here.
@@ -117,7 +117,7 @@ Date.parse(row.grant_expires_at) <= this.now())` — and its
 This is the _real_ Host code path. Nothing is simulated on the Host side.
 
 **What it gives up.** It does not expire the Host-signed relay grant, so
-PacketADE's own `validate_material` check never fires. Method A cannot produce
+PacketBench's own `validate_material` check never fires. Method A cannot produce
 `GRANT_EXPIRED`.
 
 **Notes.**
@@ -139,7 +139,7 @@ PacketADE's own `validate_material` check never fires. Method A cannot produce
 
 Ask Syndicate to change `30 * 24 * 60 * 60 * 1_000` at `controller-auth.ts:420`
 to, say, `10 * 60 * 1_000`, on a **test host only**, then restart the service
-and re-pair PacketADE against it.
+and re-pair PacketBench against it.
 
 **What it exercises.** Everything, at full fidelity, in the correct order: a
 genuinely Host-signed short-lived grant means the row and the signed certificate
@@ -226,13 +226,13 @@ syndicate.service`), reachable through a verified `ServerConfig` with
    relay endpoint, one **without**. `use_relay_transport` needs both an endpoint
    and a stored grant (`syndicate.rs:745-747`), so leaving the relay endpoint
    blank in the pairing form is what makes a pairing SSH-only.
-3. PacketADE running from `pnpm tauri dev` so the devtools console and
+3. PacketBench running from `pnpm tauri dev` so the devtools console and
    localStorage are available.
 4. Keep these open while testing:
    - **Tools → Syndicate machines** card (`SyndicateMachinesCard.tsx`).
    - The Workspace with the Syndicate-targeted terminal pane.
    - Devtools → Application → Local Storage → key
-     `packetade:syndicate-machines-v1` (`syndicateStore.ts:32`, prefix from
+     `packetbench:syndicate-machines-v1` (`syndicateStore.ts:32`, prefix from
      `src/lib/brand.ts:14`). `grantStatus` and `grantExpiresAt` are visible
      there and are the store's own record, independent of what the card paints.
    - Devtools → Network, filtered to the loopback forward, to count
@@ -355,10 +355,10 @@ response.` (`syndicate_relay.rs:35-36,236-238`), classified identically. Hard
 
 ### 6. Grant already expired at app start
 
-- **Preconditions.** Grant expired (Method A or B). PacketADE **closed**. A
+- **Preconditions.** Grant expired (Method A or B). PacketBench **closed**. A
   Workspace with a Syndicate pane that has `autoStart` on and a persisted
   `syndicateSessionId`.
-- **Steps.** Start PacketADE. Open the Workspace. Do not touch the card.
+- **Steps.** Start PacketBench. Open the Workspace. Do not touch the card.
 - **Expected.**
   - `startOrAttach` runs after its 200 ms delay
     (`SyndicateTerminalPane.tsx:529-537`), the attach is rejected, and the pane
@@ -435,7 +435,7 @@ comments disagree.**
   a revocation behind an "it just expired, re-pair it" message — the opposite of
   the security signal intended.
 - **Relay variant.** If PacketRelay reports the revocation itself, the message is
-  `This PacketADE device was revoked by Syndicate.` and classifies as
+  `This PacketBench device was revoked by Syndicate.` and classifies as
   `DEVICE_REVOKED` too (`syndicate_relay.rs:34,50-52`) — the same status from
   either detector.
 
@@ -453,7 +453,7 @@ comments disagree.**
   is local-only, deletes the OS-keychain record, opens no transport, and is
   deliberately ungated (`syndicate.rs:1684-1691`, `syndicateStore.ts:427-435`).
   The machine disappears from the card and from
-  `packetade:syndicate-machines-v1`.
+  `packetbench:syndicate-machines-v1`.
 - **Also confirm** both buttons are enabled while the integration switch is
   **off** — they are deliberately not gated on it
   (`SyndicateMachinesCard.tsx:544-571`, `syndicateStore.ts:411-414`).
@@ -468,7 +468,7 @@ comments disagree.**
 - **Steps.**
   1. On the Host, create a fresh controller invite and approve the new device in
      the local Syndicate UI.
-  2. In PacketADE: **Pair machine**, same SSH server, paste the payload.
+  2. In PacketBench: **Pair machine**, same SSH server, paste the payload.
   3. Refresh the card.
   4. Return to the Workspace pane and restart it from the pane header.
 - **Expected.**
@@ -538,7 +538,7 @@ chip prefers `offline` (red) when a `connectionError` is set, which can mask the
 grant status momentarily (`SyndicateMachinesCard.tsx:414-432`) — the
 paragraph below and the authority summary are the reliable reads.
 
-**localStorage `packetade:syndicate-machines-v1`** is the store's own truth,
+**localStorage `packetbench:syndicate-machines-v1`** is the store's own truth,
 unmediated by rendering: `grantStatus`, `grantExpiresAt`, `scopes`,
 `lastConnectedAt`. Check it whenever the card and the pane seem to disagree.
 
@@ -549,7 +549,7 @@ final rejected request and then nothing. Approximate expected counts over
 
 **Host side**, if you have shell access: the rejected request appears in the
 Syndicate service log with its `correlationId`, which is echoed verbatim in
-PacketADE's banner (`syndicate.rs:1292-1295`) — that is how you tie a specific
+PacketBench's banner (`syndicate.rs:1292-1295`) — that is how you tie a specific
 UI message to a specific Host decision.
 
 ---

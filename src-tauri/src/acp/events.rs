@@ -1,11 +1,11 @@
 //! ACP → `api-agent:*` translation.
 //!
-//! The bridge in [`super`] speaks raw Agent Client Protocol. PacketADE's
+//! The bridge in [`super`] speaks raw Agent Client Protocol. PacketBench's
 //! frontend speaks `api-agent:{kind}:{sessionId}` and cannot tell which
 //! backend served a conversation. This module is the whole of the seam:
 //!
 //!  * [`AcpSessions`] holds the bidirectional conversation-id ↔ ACP-session-id
-//!    map (PacketADE mints the conversation id; the engine mints its own on
+//!    map (PacketBench mints the conversation id; the engine mints its own on
 //!    `session/new`), plus the per-conversation translation state a stream
 //!    needs — whether a thinking run is open, which tool calls are in flight,
 //!    and the raw JSON-RPC ids of unanswered permission requests.
@@ -30,7 +30,7 @@ use tauri::{AppHandle, Emitter};
 // ---------------------------------------------------------------------------
 
 /// One option the engine offered on a permission request, kept so a
-/// PacketADE decision ("allow_once" / "allow_always" / "deny") can be matched
+/// PacketBench decision ("allow_once" / "allow_always" / "deny") can be matched
 /// to the engine's own `optionId` instead of guessing at its spelling.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PermissionOption {
@@ -39,7 +39,7 @@ pub struct PermissionOption {
     pub kind: String,
 }
 
-/// One unanswered `session/request_permission`, as PacketADE sees it.
+/// One unanswered `session/request_permission`, as PacketBench sees it.
 ///
 /// `id` is what went out on the `permission-request` payload (a String, per
 /// the api-agent contract). `raw_id` is the JSON-RPC id exactly as the engine
@@ -56,7 +56,7 @@ pub struct PendingPermission {
 }
 
 impl PendingPermission {
-    /// The engine `optionId` for a PacketADE decision, or `None` when the
+    /// The engine `optionId` for a PacketBench decision, or `None` when the
     /// engine offered nothing of that shape.
     ///
     /// `allow_always` degrades to `allow_once` and `reject_always` to
@@ -93,7 +93,7 @@ struct ToolMeta {
     input: String,
 }
 
-/// Everything PacketADE tracks for one ACP-backed conversation.
+/// Everything PacketBench tracks for one ACP-backed conversation.
 #[derive(Debug, Default)]
 struct ConversationState {
     /// The engine's own session id, once `session/new` has answered.
@@ -130,10 +130,10 @@ struct ConversationState {
 
 #[derive(Default)]
 struct Inner {
-    /// PacketADE conversation id → state (including the engine's session id).
+    /// PacketBench conversation id → state (including the engine's session id).
     conversations: HashMap<String, ConversationState>,
-    /// Engine session id → PacketADE conversation id. Every `api-agent:*`
-    /// event is keyed on the PacketADE id, so this is the lookup the sink
+    /// Engine session id → PacketBench conversation id. Every `api-agent:*`
+    /// event is keyed on the PacketBench id, so this is the lookup the sink
     /// makes on every single `session/update`.
     by_engine_session: HashMap<String, String>,
     /// Emitted permission id → the record needed to answer it.
@@ -157,7 +157,7 @@ impl AcpSessions {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Registers a freshly created engine session against its PacketADE
+    /// Registers a freshly created engine session against its PacketBench
     /// conversation id, replacing any previous binding for that conversation.
     pub fn register(&self, conversation_id: &str, engine_session_id: &str, cwd: &str) {
         let mut inner = self.lock();
@@ -264,7 +264,7 @@ impl AcpSessions {
             .map(|c| (c.cwd.clone(), c.model.clone(), c.permission_mode.clone()))
     }
 
-    /// The engine session id for a PacketADE conversation id.
+    /// The engine session id for a PacketBench conversation id.
     pub fn engine_id(&self, conversation_id: &str) -> Option<String> {
         self.lock()
             .conversations
@@ -272,7 +272,7 @@ impl AcpSessions {
             .and_then(|c| c.engine_session.clone())
     }
 
-    /// The engine session id for a PacketADE conversation, or the argument
+    /// The engine session id for a PacketBench conversation, or the argument
     /// unchanged when it is not one. Lets the read-only `acp_*` query commands
     /// accept either a live conversation id or a raw engine session id (as
     /// returned by `acp_list_sessions`) without a second command surface.
@@ -280,7 +280,7 @@ impl AcpSessions {
         self.engine_id(id).unwrap_or_else(|| id.to_string())
     }
 
-    /// The PacketADE conversation id for an engine session id.
+    /// The PacketBench conversation id for an engine session id.
     pub fn conversation_id(&self, engine_session_id: &str) -> Option<String> {
         self.lock()
             .by_engine_session
@@ -442,7 +442,7 @@ fn close_thinking(state: &mut ConversationState, conversation_id: &str) -> Optio
 /// | `tool_call_update` (completed/failed)  | `tool-result` |
 /// | `tool_call_update` (pending/in_progress)| — (nothing) |
 /// | `plan`                                 | `plan-block` |
-/// | `user_message_chunk`                   | — (load replay; PacketADE owns the transcript) |
+/// | `user_message_chunk`                   | — (load replay; PacketBench owns the transcript) |
 /// | anything else                          | — (ignored) |
 ///
 /// # The `session/load` replay window emits NOTHING
@@ -456,7 +456,7 @@ fn close_thinking(state: &mut ConversationState, conversation_id: &str) -> Optio
 /// the api-agent event contract has no user-turn event, so the ONLY thing the
 /// translation layer could do with the user's own prompts is drop them (which
 /// is exactly what the live path must keep doing: during a live turn the
-/// engine echoes the prompt PacketADE just sent, and emitting it would
+/// engine echoes the prompt PacketBench just sent, and emitting it would
 /// duplicate every message).
 ///
 /// Admitting the rest of the replay anyway would produce a transcript with
@@ -464,7 +464,7 @@ fn close_thinking(state: &mut ConversationState, conversation_id: &str) -> Optio
 /// missing — and, because `chunk` payloads stream into whatever assistant
 /// message is currently open, the whole of that history welded into one
 /// bubble. An adopted conversation has no local record to interleave, so
-/// PacketADE cannot repair it either. A half-transcript that LOOKS complete is
+/// PacketBench cannot repair it either. A half-transcript that LOOKS complete is
 /// a worse answer than no transcript plus a plain statement that the history
 /// lives in the engine, which is what the adopting conversation carries
 /// instead (`agentTaskStore.adoptEngineSession`).
@@ -603,7 +603,7 @@ fn translate_update(
                 to_value(api::PlanBlockPayload { items }),
             ));
         }
-        // Load-replay only. PacketADE rebuilds transcripts from its own
+        // Load-replay only. PacketBench rebuilds transcripts from its own
         // conversation store, so replaying the user's own turns back at it
         // would duplicate every message.
         "user_message_chunk" => {}
@@ -700,7 +700,7 @@ pub fn done_payload(outcome: Option<&super::PromptOutcome>) -> Value {
             .map(|o| o.stop_reason == "cancelled")
             .unwrap_or(false),
         // ACP resumption goes through `session/load` against the engine's own
-        // session id, which PacketADE already holds in `AcpSessions` — there
+        // session id, which PacketBench already holds in `AcpSessions` — there
         // is no opaque token for the frontend to carry.
         resume_token: None,
     })
@@ -716,7 +716,7 @@ pub fn error_payload(message: impl Into<String>) -> Value {
 // The sink
 // ---------------------------------------------------------------------------
 
-/// [`AcpEvents`](super::AcpEvents) implementation that emits PacketADE's
+/// [`AcpEvents`](super::AcpEvents) implementation that emits PacketBench's
 /// `api-agent:*` contract.
 pub struct ApiAgentSink {
     app: AppHandle,
@@ -741,7 +741,7 @@ impl super::AcpEvents for ApiAgentSink {
             return;
         };
         let mut inner = self.sessions.lock();
-        // Every api-agent event is keyed on PacketADE's conversation id. An
+        // Every api-agent event is keyed on PacketBench's conversation id. An
         // update for a session we never registered has nowhere to go — drop it
         // rather than emit an event no listener is subscribed to.
         let Some(conversation_id) = inner.by_engine_session.get(engine_session).cloned() else {
@@ -1065,13 +1065,13 @@ mod tests {
                 "content": { "type": "text", "text": "replayed prompt" }
             }),
         );
-        assert!(out.is_empty(), "PacketADE owns the transcript, not the engine");
+        assert!(out.is_empty(), "PacketBench owns the transcript, not the engine");
     }
 
     /// The `session/load` replay window renders NOTHING.
     ///
     /// Not an optimisation: ACP's replay carries the assistant's turns and the
-    /// tool calls but PacketADE has no event for the user's own prompts, so
+    /// tool calls but PacketBench has no event for the user's own prompts, so
     /// admitting the rest would paint a transcript with every question missing
     /// and every answer welded into one bubble. The engine keeps the history
     /// as the model's context either way; only the rendering is declined, and

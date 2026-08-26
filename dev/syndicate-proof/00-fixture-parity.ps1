@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   Phase 0 / A1 — SHA-256 parity across the three controller-relay-crypto-v1
-  fixture copies (PacketADE, Syndicate docs, PacketRelay testdata).
+  fixture copies (PacketBench, Syndicate docs, PacketRelay testdata).
 
 .DESCRIPTION
   Read-only. PASS = all three SHA-256 hashes identical.
@@ -15,14 +15,14 @@
 #>
 [CmdletBinding()]
 param(
-  [string]$PacketAdeFixture  = 'D:\projects\PacketADE\src-tauri\tests\fixtures\controller-relay-crypto-v1.json',
+  [string]$PacketBenchFixture  = 'D:\projects\PacketADE\src-tauri\tests\fixtures\controller-relay-crypto-v1.json',
   [string]$SyndicateFixture  = 'D:\projects\syndicate\docs\fixtures\controller-relay-crypto-v1.json',
   [string]$PacketRelayFixture = 'D:\projects\packetrelay\testdata\controller_relay_crypto_v1.json'
 )
 
 $ErrorActionPreference = 'Stop'
 $fixtures = [ordered]@{
-  'PacketADE '  = $PacketAdeFixture
+  'PacketBench '  = $PacketBenchFixture
   'Syndicate '  = $SyndicateFixture
   'PacketRelay' = $PacketRelayFixture
 }

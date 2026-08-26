@@ -2,14 +2,14 @@
 
 Created: 2026-07-31
 Status: **proposed — not started.** No CTL item is implemented.
-Product decision: **Packet Control Phases 1–2 land in PacketADE**, not in
+Product decision: **Packet Control Phases 1–2 land in PacketBench**, not in
 packetcode. Source proposal:
 `D:\projects\packetcode\PACKETCOMPUTERS.md` (research, phase list, and the
 Packet Computers half, which stays a packetcode proposal).
 
 ## Objective
 
-Give PacketADE a trust-and-truth layer: a first-class workflow for proving a
+Give PacketBench a trust-and-truth layer: a first-class workflow for proving a
 claim with real captured evidence, so a user can ask not just "did you change
 it?" but "prove it works."
 
@@ -17,15 +17,15 @@ A **control run** states a claim, executes a real workflow, captures artifacts,
 judges the artifacts against the claim, and returns a verdict. Phases 1–2 cover
 the evidence format and terminal-based verification only.
 
-## Why PacketADE rather than packetcode
+## Why PacketBench rather than packetcode
 
 Evidence wants a viewer. A manifest, command output, snapshots, and a verdict
 are cramped in a TUI and natural in a desktop app that already has
 `DiffViewer`, `AttemptReviewGate`, and the Flight Deck. "Prove this attempt
-actually works" is a review-gate input, so it slots into machinery PacketADE
+actually works" is a review-gate input, so it slots into machinery PacketBench
 already ships.
 
-PacketADE also already has the execution substrate: local and SSH command
+PacketBench also already has the execution substrate: local and SSH command
 execution, `ServerConfig` with pinned host keys, and per-attempt worktrees.
 Phases 1–2 need **no daemon and no new transport**.
 
@@ -35,7 +35,7 @@ The Packet family is four separate repositories. This loop touches one.
 
 | Repo | Path | Role in this loop |
 |---|---|---|
-| **PacketADE** | `D:\projects\PacketADE` | **Implements CTL1–CTL9.** Owns the manifest schema. |
+| **PacketBench** | `D:\projects\PacketADE` | **Implements CTL1–CTL9.** Owns the manifest schema. |
 | packetcode | `D:\projects\packetcode` | Source of the proposal. No code change. If it later wants Control, it consumes CTL1's schema rather than defining a second one. |
 | PacketAgent | `D:\projects\PacketAgent` | Independent evidence **producer** (see contract below). No code change in this loop. |
 | PacketChat | `D:\projects\packetchat` | Unrelated (multi-user chat deployment). Out of scope. |
@@ -49,11 +49,11 @@ deliberately — the evidence contract must be stable before automation grows.
 
 ## Evidence-format contract
 
-The single most important constraint: **PacketADE must end up with one evidence
+The single most important constraint: **PacketBench must end up with one evidence
 format, not three.** Three producers already exist or are proposed, and they
 currently share nothing:
 
-1. **Control runs** (this loop) — PacketADE captures evidence by executing
+1. **Control runs** (this loop) — PacketBench captures evidence by executing
    commands itself. New.
 2. **PacketAgent returns** — `dev/bridgemind/packetagent-handoff-loop.md` PH8
    ("Evidence and return artifacts") ingests evidence produced by a remote
@@ -100,7 +100,7 @@ evidence layer starts lying.
 
 ### Storage layout
 
-Under the PacketADE data dir (`core::brand::DATA_DIR_NAME`, i.e. `.packetade`)
+Under the PacketBench data dir (`core::brand::DATA_DIR_NAME`, i.e. `.packetbench`)
 — **never** `~/.packetcode`, which the source doc's layout specifies because it
 was written for the TUI:
 
@@ -209,7 +209,7 @@ A rule that cannot be evaluated yields `inconclusive`, never `passed`.
 Attempt completion does **not** auto-propose or auto-start a control run. The
 user starts every run explicitly.
 
-Rationale: PacketADE deliberately withholds this class of autonomy —
+Rationale: PacketBench deliberately withholds this class of autonomy —
 `flight_attempts.rs` starts flights fresh and
 `recover_never_resumes_bounded_autonomy_after_restart` exists on purpose.
 Auto-running captured commands after an agent finishes work is exactly the

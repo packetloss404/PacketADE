@@ -1,4 +1,4 @@
-// Protocol v11 regression smoke test for the PacketADE agent sidecar.
+// Protocol v11 regression smoke test for the PacketBench agent sidecar.
 // The historical filename is retained for package-script compatibility.
 //
 // Validates that the protocol v2 request types plus the v4

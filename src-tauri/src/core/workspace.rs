@@ -71,7 +71,7 @@ pub struct WorkspacePane {
     #[serde(default)]
     pub file_view: Option<String>,
     /// Host-owned identities/cursor for a Syndicate terminal pane. These are
-    /// inert for local/SSH panes and survive PacketADE restarts so attach can
+    /// inert for local/SSH panes and survive PacketBench restarts so attach can
     /// resume exactly once from the last applied durable sequence.
     #[serde(default)]
     pub syndicate_pane_id: Option<String>,

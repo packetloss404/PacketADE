@@ -1,4 +1,4 @@
-# Architecture Fit — Mobile Client ↔ PacketADE Codebase
+# Architecture Fit — Mobile Client ↔ PacketBench Codebase
 
 > Captured 2026-05-12. Codebase snapshot at v0.6.0. Superseded for
 > implementation by `dev/remoteagents/README.md` on 2026-05-27. Keep this as
@@ -6,7 +6,7 @@
 > account sign-in, and the live sidecar protocol version in
 > `agent-sidecar/src/protocol.ts`.
 >
-> Current correction (2026-08-01): PacketADE has **seven** API-agent rows. The
+> Current correction (2026-08-01): PacketBench has **seven** API-agent rows. The
 > OpenAI Agents SDK row remains, the Claude Agent SDK row now uses an API key,
 > and the former `api-openai-codex` subscription row is retired. The shared
 > `api-agent:*` event contract remains the integration boundary.
@@ -46,14 +46,14 @@
 
 ### Key facts pulled from code
 
-- **Conversation persistence is frontend-only.** Rust never persists `messages` history. `agentTaskStore.scheduleSave` debounces a 500 ms call to `save_conversation` writing `~/.packetade/conversations/<id>.json` containing the frontend's serialized `AgentConversation` (`commands/conversations.rs:37–46`). On boot, `load_conversations` reads them back.
+- **Conversation persistence is frontend-only.** Rust never persists `messages` history. `agentTaskStore.scheduleSave` debounces a 500 ms call to `save_conversation` writing `~/.packetbench/conversations/<id>.json` containing the frontend's serialized `AgentConversation` (`commands/conversations.rs:37–46`). On boot, `load_conversations` reads them back.
 - **Resume.** Sidecar providers emit an opaque `resumeToken` in their `done` event (`protocol.ts:155–163`, plumbed into `agent_sidecar.rs:1231–1244`). Frontend stores it on `AgentConversation.resumeToken` and re-supplies via `start_api_agent_session.resume_token` (`api_agent.rs:335`). In-process providers don't use resume; they rebuild context by re-sending frontend-held `messages` history each turn.
 - **Wire schema — end-to-end.** Both backends emit identical Tauri events: `api-agent:{chunk|thinking|thinking-stop|tool-start|tool-result|permission-request|pending-edit|done|error|plan-block|tool-output-extended|turn-summary}:<sessionId>`. Payload shapes mirrored byte-for-byte (`agent_sidecar.rs:116–225` matches `api_agent.rs:152–229`).
 - **State location:**
   - Rust process memory: in-flight sessions, pending permissions/edits, cancel channels.
   - Sidecar memory: live `AbortController`s, model-side conversation handles (Agent SDK objects per session).
   - Frontend Zustand + localStorage: full transcript, model, mode flags, queued messages.
-  - On disk: `~/.packetade/conversations/<id>.json` (transcripts), `~/.packetade/sidecar-stats.json` (telemetry), usage CSV, keyring blobs.
+  - On disk: `~/.packetbench/conversations/<id>.json` (transcripts), `~/.packetbench/sidecar-stats.json` (telemetry), usage CSV, keyring blobs.
 
 ## 2. Mobile surface area mapping
 
@@ -73,7 +73,7 @@
 - **Cons:** Requires LAN reachability + port punch. mDNS/Bonjour discovery is fiddly inside iOS sandbox. Useless from a coffee shop. **APNs still needed for wake** — and APNs requires a cloud endpoint, so this option doesn't avoid hosting; it adds a redundant LAN path.
 - **Codebase fit:** Easy. New file `src-tauri/src/core/mobile_relay.rs`. Tauri's `Emitter`/`Listener` already export events to listen on. Add `tokio-tungstenite` or `axum`.
 
-### Option B — Cloud relay (PacketADE relay service) [CHOSEN]
+### Option B — Cloud relay (PacketBench relay service) [CHOSEN]
 
 - **Pros:** Works from anywhere. Push naturally lives on same host. Pairing token model well understood. Scales to multiple devices per desktop.
 - **Cons:** Infra to maintain. Latency cost on every chunk (desktop → relay → phone). Trust boundary: compromised relay sees every chunk unless E2E.
@@ -155,7 +155,7 @@ See `v0-plan.md` for the full plan. Quick summary:
 **Frontend additions (desktop side):**
 
 - `src/components/views/MobileView.tsx` — pairing QR, device list, revoke button.
-- `src/stores/mobileStore.ts` — paired-device list, persisted under `packetade:mobile-devices`.
+- `src/stores/mobileStore.ts` — paired-device list, persisted under `packetbench:mobile-devices`.
 - A new `AppView` enum entry `"mobile"` in `appStore.ts`.
 
 ## 8. Security playbook (echo the SSH hardening)
@@ -165,7 +165,7 @@ See `v0-plan.md` for the full plan. Quick summary:
 - **Transport.** TLS even on LAN (self-signed cert per desktop install, fingerprint surfaced in pairing). For cloud-relay path, relay sees only ciphertext.
 - **Secret handling.** API keys NEVER leave the desktop. Phone receives streamed _output_ only.
 - **Per-device capability scope:** `read_only` (subscribe + list), `respond` (+permission/edit decisions), `send` (+message), `full` (+new conversation). Default v0: `respond` only.
-- **Audit log.** Every mobile-originated action lands in `~/.packetade/mobile-audit.log` (append-only, JSON-lines). Parallels `commands/usage.rs`.
+- **Audit log.** Every mobile-originated action lands in `~/.packetbench/mobile-audit.log` (append-only, JSON-lines). Parallels `commands/usage.rs`.
 - **Rate limits.** Per-device cap on `send_message` (e.g. 30/min). Defense against compromised phone. Implement with `tokio::sync::Semaphore` or token bucket in `mobile_relay.rs`.
 - **Shell-escape lessons from v0.6.0.** Any string the phone supplies must go through the same shell-escape/path-validate gauntlet the SSH commands use — see `src/lib/ssh.ts shellEscape` and `super::validate_project_path` (`api_agent.rs:404`).
 

@@ -8,7 +8,7 @@ Use cloud sign-in as the main flow. Do not use QR as primary pairing. QR may be 
 
 ### Execution
 
-Desktop PacketADE owns execution. Cloud relay does not call providers or run tools.
+Desktop PacketBench owns execution. Cloud relay does not call providers or run tools.
 
 ### MVP Platform
 
@@ -25,7 +25,7 @@ WebSocket relay for real-time control. Web Push for notifications only.
 ### Relay Architecture
 
 Use the standalone Rust service at `D:\projects\packetrelay`. Extend it with
-PacketADE-specific HTTP/WebSocket routes, PostgreSQL persistence, durable replay
+PacketBench-specific HTTP/WebSocket routes, PostgreSQL persistence, durable replay
 and outbox processing, Web Push, audit, and object-storage references. Do not
 build a second relay on Cloudflare.
 
@@ -33,7 +33,7 @@ build a second relay on Cloudflare.
 
 The relay remains an independently built/deployed sibling repository at
 `D:\projects\packetrelay`. Shared protocol schemas and the PWA begin under
-PacketADE's `remoteagents/` workspace so desktop and mobile can evolve in
+PacketBench's `remoteagents/` workspace so desktop and mobile can evolve in
 lockstep. Contract fixtures gate changes across both repositories.
 
 ## Open Decisions
@@ -113,11 +113,11 @@ should be created.
 **Relay architecture and code location** — Resolved.
 
 - Use and extend the standalone Rust service at `D:\projects\packetrelay`.
-- Keep PacketADE host/device messages separate from inherited relay protocols.
+- Keep PacketBench host/device messages separate from inherited relay protocols.
 - Use PostgreSQL for durable account/device/ticket/replay/audit/outbox state.
 - Keep live routing single-instance for v1; require explicit coordination work
   before horizontal scaling.
-- Keep `remoteagents/shared` and `remoteagents/pwa` in PacketADE initially.
+- Keep `remoteagents/shared` and `remoteagents/pwa` in PacketBench initially.
 - Cloudflare Workers, Durable Objects, D1, R2, and Queues are not the target
   implementation.
 
@@ -139,7 +139,7 @@ should be created.
 **(c) Code location (in-repo `remoteagents/` vs `apps/` vs separate repo)** — Resolved 2026-08-02.
 
 - Relay: standalone `D:\projects\packetrelay` repository.
-- PWA/shared schemas: PacketADE `remoteagents/` workspace initially.
+- PWA/shared schemas: PacketBench `remoteagents/` workspace initially.
 - Decision owner: implementation lead.
 
 Note: decision (a) remains BLOCKING; (b) was resolved 2026-08-16. Decision (c)

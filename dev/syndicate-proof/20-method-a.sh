@@ -9,7 +9,7 @@
 # What this exercises: the Host-side auth predicate
 #   apps/host/src/controller-auth.ts:536
 #   (row.status !== 'active' || Date.parse(row.grant_expires_at) <= now)
-# and PacketADE's card/banner states derived from grantExpiresAt
+# and PacketBench's card/banner states derived from grantExpiresAt
 #   (SYNDICATE_GRANT_WARNING_DAYS = 7, Math.ceil days-remaining).
 # What it does NOT exercise: the relay-side expiry of the SIGNED grant
 # (relay_grant_json / relay_grant_signature_base64url are left untouched and

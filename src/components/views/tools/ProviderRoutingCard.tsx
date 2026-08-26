@@ -26,7 +26,7 @@ import type { TaskType } from "@/types/flight";
  * API executors selectable as a workflow-role default.
  *
  * Subscription-OAuth rows are excluded on purpose (WI-1): a user may still pick
- * one by hand in a conversation, but nothing PacketADE routes automatically —
+ * one by hand in a conversation, but nothing PacketBench routes automatically —
  * including "Draft patch" — may resolve to subscription credentials.
  */
 const ROUTABLE_API_PROVIDERS = API_PROVIDERS.filter(
@@ -156,7 +156,7 @@ export function ProviderRoutingCard() {
 }
 
 /**
- * WI-1 — routing for the auxiliary AI tasks PacketADE runs on the user's
+ * WI-1 — routing for the auxiliary AI tasks PacketBench runs on the user's
  * behalf (spec import, Code Quality explanations, PR prose).
  *
  * These used to be hardwired to the Claude subscription sidecar with no user
@@ -258,7 +258,7 @@ function AuxRoutingSection() {
       </div>
 
       <p className="text-[10px] text-text-muted mb-3">
-        Short generation tasks PacketADE runs for you. <span className="text-text-secondary">Auto</span>{" "}
+        Short generation tasks PacketBench runs for you. <span className="text-text-secondary">Auto</span>{" "}
         picks the cheapest provider you have an API key for. These never use a Claude or
         ChatGPT subscription login.
       </p>

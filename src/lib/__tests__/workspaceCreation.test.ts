@@ -48,7 +48,7 @@ describe("nextWorkspaceName", () => {
   });
 
   it("fills the first gap and ignores unrelated names", () => {
-    expect(nextWorkspaceName(["Workspace", "Workspace 3", "PacketADE"])).toBe("Workspace 2");
+    expect(nextWorkspaceName(["Workspace", "Workspace 3", "PacketBench"])).toBe("Workspace 2");
   });
 });
 

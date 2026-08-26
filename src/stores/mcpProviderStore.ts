@@ -181,7 +181,7 @@ const PROVIDER_TOOLS: McpTool[] = [
 
 // --- Persistence ---
 
-const STORAGE_KEY = "packetade:mcp-provider";
+const STORAGE_KEY = "packetbench:mcp-provider";
 
 function loadConfig(): McpProviderConfig {
   try {
@@ -341,13 +341,13 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
     const resources: McpResource[] = [];
 
     resources.push({
-      uri: "packetade://issues",
+      uri: "packetbench://issues",
       name: "Issue board",
-      description: "Current PacketADE issues and workflow state",
+      description: "Current PacketBench issues and workflow state",
       mimeType: "application/json",
     });
     resources.push({
-      uri: "packetade://packetcode/health",
+      uri: "packetbench://packetcode/health",
       name: "PacketCode integration health",
       description: "Availability, doctor status, home, version, and provider summary",
       mimeType: "application/json",
@@ -357,7 +357,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
     const flights = useFlightStore.getState().flights;
     for (const flight of flights) {
       resources.push({
-        uri: `packetade://flights/${flight.id}`,
+        uri: `packetbench://flights/${flight.id}`,
         name: flight.title,
         description: `Flight [${flight.status}] — ${flight.objective || "No objective"}`,
         mimeType: "application/json",
@@ -367,7 +367,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
       for (const milestone of flight.milestones) {
         for (const task of milestone.tasks) {
           resources.push({
-            uri: `packetade://flights/${flight.id}/tasks/${task.id}`,
+            uri: `packetbench://flights/${flight.id}/tasks/${task.id}`,
             name: task.title,
             description: `Task [${task.status}] in ${flight.title} / ${milestone.title}`,
             mimeType: "application/json",
@@ -380,7 +380,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
     const patterns = useMemoryStore.getState().patterns;
     if (patterns.length > 0) {
       resources.push({
-        uri: "packetade://memory/patterns",
+        uri: "packetbench://memory/patterns",
         name: "Memory Patterns",
         description: `${patterns.length} learned pattern(s)`,
         mimeType: "application/json",
@@ -390,7 +390,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
     for (const workspace of useWorkspaceStore.getState().workspaces) {
       if (!isLocalWorkspace(workspace)) continue;
       resources.push({
-        uri: `packetade://memory/project/${workspace.id}`,
+        uri: `packetbench://memory/project/${workspace.id}`,
         name: `${workspace.name} Project Memory`,
         description: "Version-controlled-capable Markdown notes",
         mimeType: "application/json",
@@ -401,7 +401,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
     const workspaces = useWorkspaceStore.getState().workspaces;
     for (const ws of workspaces) {
       resources.push({
-        uri: `packetade://workspaces/${ws.id}`,
+        uri: `packetbench://workspaces/${ws.id}`,
         name: ws.name,
         description: `Workspace — ${ws.panes.length} pane(s)`,
         mimeType: "application/json",

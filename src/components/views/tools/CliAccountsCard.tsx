@@ -222,7 +222,7 @@ export function CliAccountsCard({ onRequestLogin }: CliAccountsCardProps = {}) {
           entityName={`${pendingDelete.label} (${CLI_ACCOUNT_LABELS[pendingDelete.cli] ?? pendingDelete.cli})`}
           description={
             <>
-              is removed from PacketADE, along with any project that defaults to it. The config
+              is removed from PacketBench, along with any project that defaults to it. The config
               directory <span className="font-mono">{pendingDelete.configDir}</span> and the login
               inside it are left untouched on disk — re-add the account to use it again.
             </>

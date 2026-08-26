@@ -1,15 +1,15 @@
 # Native controller protocol v1 — device ↔ relay half
 
-Status: implemented and shipping in PacketADE. This document is the companion to
+Status: implemented and shipping in PacketBench. This document is the companion to
 [`CONTROLLER_PROTOCOL_V1.md`](https://github.com/packetloss404/syndicate/blob/main/docs/CONTROLLER_PROTOCOL_V1.md)
 in the Syndicate repository, which specifies the controller → Host authority and
-the Host → relay leg. Syndicate owns the merged document; PacketADE wrote this
-half because PacketADE owns the only device implementation.
+the Host → relay leg. Syndicate owns the merged document; PacketBench wrote this
+half because PacketBench owns the only device implementation.
 
 Everything here was derived from source, not from intent:
 
-- `packetade/src-tauri/src/commands/syndicate_relay.rs` — the device transport.
-- `packetade/src-tauri/src/commands/syndicate.rs` — grant capture, canonical
+- `packetbench/src-tauri/src/commands/syndicate_relay.rs` — the device transport.
+- `packetbench/src-tauri/src/commands/syndicate.rs` — grant capture, canonical
   JSON, credential storage, and envelope construction.
 - `packetrelay/src/product_route.rs` — the relay's admission and forwarding.
 - `packetrelay/src/rate_limit.rs` — the relay's connection and message budgets.
@@ -33,9 +33,9 @@ changes the transport and nothing else: the Host still verifies the
 `SYNDICATE-CONTROLLER-V1` signature, the timestamp, the nonce, and the device's
 scopes exactly as it does for an HTTP request.
 
-**One RPC per connection.** PacketADE opens a fresh WSS connection for each
+**One RPC per connection.** PacketBench opens a fresh WSS connection for each
 controller request, sends one frame, waits for one response, and closes
-(`packetade/src-tauri/src/commands/syndicate_relay.rs:141-252`, `:247`). There
+(`packetbench/src-tauri/src/commands/syndicate_relay.rs:141-252`, `:247`). There
 is no long-lived device socket today. A per-`(machineId, deviceId)` async mutex
 serializes the whole exchange, because the relay admits one live socket per
 device and because durable receive-counter ordering depends on it
@@ -45,12 +45,12 @@ device and because durable receive-counter ordering depends on it
 reused, and the Host may already have executed a request whose response was
 lost (`syndicate_relay.rs:125-139`). A failed relay request is also never
 resent over the SSH forward
-(`packetade/src-tauri/src/commands/syndicate.rs:1213-1223`).
+(`packetbench/src-tauri/src/commands/syndicate.rs:1213-1223`).
 
 ## Endpoint policy
 
 The route is the exact path `/v1/product-route` over `wss://`
-(`syndicate_relay.rs:64`, `:572-585`). PacketADE rejects, before any secret is
+(`syndicate_relay.rs:64`, `:572-585`). PacketBench rejects, before any secret is
 used:
 
 - a scheme other than `wss`, except `ws` to `127.0.0.1`, `localhost`, or `::1`;
@@ -59,8 +59,8 @@ used:
 - any userinfo (`user:password@`) in the authority.
 
 The endpoint is chosen from the pairing envelope's top-level `relayEndpoint`, or
-from an explicit PacketADE override, which wins
-(`syndicate.rs:1091-1097`). PacketADE validates the packaged endpoint through
+from an explicit PacketBench override, which wins
+(`syndicate.rs:1091-1097`). PacketBench validates the packaged endpoint through
 the same policy _before_ claiming the one-use invitation
 (`syndicate.rs:1068-1084`), so a hostile endpoint cannot burn the invite.
 
@@ -84,9 +84,9 @@ Three independent parties recompute it and must agree:
 
 - the relay, against the key in `host_hello` and again against the key inside
   every `device_hello` grant (`product_route.rs:203`, `:274-277`);
-- PacketADE, when it first captures a grant, against the Host key pinned at
+- PacketBench, when it first captures a grant, against the Host key pinned at
   pairing (`syndicate.rs:950-956`);
-- PacketADE, again on every relay connection, against the Host key inside the
+- PacketBench, again on every relay connection, against the Host key inside the
   grant itself (`syndicate_relay.rs:361-371`).
 
 A client must derive the route id and refuse a grant whose `routeId` does not
@@ -101,7 +101,7 @@ if the route is absent or has no connected Host
 ## The device grant certificate
 
 The grant is a Host-signed certificate that admits one device to one route. Its
-schema is closed — both the relay and PacketADE parse it with
+schema is closed — both the relay and PacketBench parse it with
 `deny_unknown_fields` (`product_route.rs:72-89`,
 `syndicate_relay.rs:255-272`), so an extra field breaks admission on both
 sides rather than being ignored.
@@ -140,7 +140,7 @@ sides rather than being ignored.
 | `expiresAt`                            | string   | RFC 3339.                                                                       |
 | `revocationEpoch`                      | integer  | Monotonic per device; must exceed any epoch the relay has already seen revoked. |
 
-The SPKI encodings are the RFC 8410 forms. PacketADE checks the exact 12-byte
+The SPKI encodings are the RFC 8410 forms. PacketBench checks the exact 12-byte
 prefixes and a 44-byte total length (`syndicate_relay.rs:88-93`, `:618-628`):
 
 ```text
@@ -181,7 +181,7 @@ The relay also enforces expiry _during_ a connection: it arms a timer at
 `expiresAt` and drops the device socket when it fires
 (`product_route.rs:542-555`), and it refuses to route a Host frame to a device
 whose certificate has expired, isolating that device instead of tearing down
-the shared Host route (`product_route.rs:374-379`, `:482-510`). PacketADE
+the shared Host route (`product_route.rs:374-379`, `:482-510`). PacketBench
 re-checks expiry on every inbound frame while a request is in flight
 (`syndicate_relay.rs:236-238`).
 
@@ -189,14 +189,14 @@ re-checks expiry on every inbound frame while a request is in flight
 
 The grant is not delivered over the relay. It arrives in the `machine.snapshot`
 result at `/controller/device/relayGrant`, as
-`{grant, grantSignatureBase64Url}`, and PacketADE captures it only from that
+`{grant, grantSignatureBase64Url}`, and PacketBench captures it only from that
 method (`syndicate.rs:921-934`, `:1308-1310`). Because the first
 post-approval snapshot must therefore travel over the pinned SSH forward, relay
 selection is a proven pre-send condition, not a fallback: the transport is only
 chosen when a relay endpoint is configured **and** a grant is already stored
 (`syndicate.rs:745-747`, `:1187-1189`).
 
-On capture, PacketADE verifies — before persisting anything — that the grant's
+On capture, PacketBench verifies — before persisting anything — that the grant's
 `protocolVersion`, `type`, `machineId`, and `deviceId` match the paired target;
 that `routeId` matches the derivation from the Host key pinned at pairing; that
 the grant's Host signing and key-agreement keys equal the pinned ones; that the
@@ -237,14 +237,14 @@ to every later frame (`product_route.rs:524`).
 
 Field order on the wire is irrelevant — the relay parses with serde and
 recomputes the grant's canonical form from the parsed struct
-(`product_route.rs:280`). PacketADE happens to transmit the whole hello in
+(`product_route.rs:280`). PacketBench happens to transmit the whole hello in
 canonical (key-sorted) form because every outbound frame goes through
 `send_bounded` (`syndicate_relay.rs:540-552`).
 
 `timestampMs` is Unix milliseconds and must be within **60 seconds** of the
 relay's clock in either direction (`product_route.rs:21`, `:626-628`).
 `nonceBase64Url` must decode to **16–32 bytes** (`product_route.rs:660-662`);
-PacketADE sends 24 random bytes (`syndicate_relay.rs:161`). The nonce is
+PacketBench sends 24 random bytes (`syndicate_relay.rs:161`). The nonce is
 inserted into a per-route replay cache that holds at most 4,096 entries and
 retains them for two clock windows; a repeat is `hello replayed`
 (`product_route.rs:315`, `:645-659`).
@@ -273,7 +273,7 @@ must be the same value carried in the frame's `timestampMs` field. The final
 line is the base64url-unpadded SHA-256 of the UTF-8 canonical grant JSON — the
 same bytes the grant signature covers, not the bytes as transmitted.
 
-PacketADE builds it at `syndicate_relay.rs:163-167`; the relay reconstructs it
+PacketBench builds it at `syndicate_relay.rs:163-167`; the relay reconstructs it
 byte-for-byte at `product_route.rs:289-293`. Both use the trailing `\n` of the
 `DEVICE_DOMAIN` / format-string constant to attach the separator
 (`product_route.rs:23`).
@@ -303,7 +303,7 @@ stops a copied grant from being replayed by a party without the private key.
 **Every failure is silent.** The relay returns from the connection handler
 without sending a frame and without a WebSocket close code
 (`product_route.rs:532-535`). A device sees only "the socket closed before
-`routeReady`" — PacketADE reports `PacketRelay closed the route.`
+`routeReady`" — PacketBench reports `PacketRelay closed the route.`
 (`syndicate_relay.rs:561`). A client cannot distinguish an expired grant from a
 revoked one, a clock skew, or an offline Host from this leg alone. That is
 deliberate on the relay's part but it does mean the device must fall back to the
@@ -332,15 +332,15 @@ The relay's first and only frame before data flows:
 literal string `"host"` (`:237`).
 
 A device must validate, at minimum, `protocolVersion == 1`, `type ==
-"routeReady"`, and `routeId` equal to its own grant's `routeId`. PacketADE
+"routeReady"`, and `routeId` equal to its own grant's `routeId`. PacketBench
 checks exactly those three and treats any mismatch as a fatal
 `PacketRelay rejected or mismatched the device route.`
-(`syndicate_relay.rs:194-200`). PacketADE does not currently validate the
+(`syndicate_relay.rs:194-200`). PacketBench does not currently validate the
 `sender` object; a client that does should compare `sender.machineId` and
 `sender.deviceId` against its grant, which costs nothing and closes a
 mis-routing failure mode.
 
-PacketADE waits up to 10 seconds for this frame (`syndicate_relay.rs:66`,
+PacketBench waits up to 10 seconds for this frame (`syndicate_relay.rs:66`,
 `:194`) and requires it to be a WebSocket **text** frame; a binary or control
 frame here is fatal (`:563-565`).
 
@@ -413,7 +413,7 @@ counter.
 ### AEAD
 
 **AES-256-GCM.** `ciphertextBase64Url` decodes to the GCM ciphertext followed by
-the 16-byte tag. PacketADE accepts 17 to 65,536 bytes decoded
+the 16-byte tag. PacketBench accepts 17 to 65,536 bytes decoded
 (`syndicate_relay.rs:516-518`); the relay independently caps the base64url
 _string_ at 60,000 characters (`product_route.rs:710`), which is the binding
 limit in practice.
@@ -483,7 +483,7 @@ it (`product_route.rs:130-147`, `:577`):
 A device must require `protocolVersion == 1`, `type == "routedEncrypted"`,
 `routeId` equal to its grant's, `sender.role == "host"`, `sender.machineId`
 equal to its own machine id, and `sender.deviceId` exactly the literal
-`"host"`; PacketADE fails with
+`"host"`; PacketBench fails with
 `PacketRelay response sender stamp is invalid.` otherwise
 (`syndicate_relay.rs:471-480`). It must then check the inner frame's
 `protocolVersion`, `type`, `routeId`, `machineId`, `deviceId`, and
@@ -500,14 +500,14 @@ Host also sends bare frames and receives stamped ones.
 Each direction carries a durable, strictly increasing counter per
 `(deviceId, direction)`.
 
-**Send.** PacketADE reserves and persists the next send counter _before_ the
+**Send.** PacketBench reserves and persists the next send counter _before_ the
 socket is opened, under a process-wide credential lock
 (`syndicate.rs:719-733`, `syndicate_relay.rs:142`). A counter is therefore
 consumed even when the exchange fails, and is never reused. The consequence
 worth stating: gaps in the Host's received counter sequence are normal and must
 not be treated as loss.
 
-**Receive.** PacketADE verifies the frame signature, recomputes the nonce,
+**Receive.** PacketBench verifies the frame signature, recomputes the nonce,
 decrypts, correlates `requestId`, and only then commits the counter
 (`syndicate_relay.rs:239-248`, `:141-151`). The commit itself rejects any
 counter less than or equal to the stored value with
@@ -522,7 +522,7 @@ endpoints.
 
 ## Liveness
 
-The device may send a keepalive at any time after `routeReady`. PacketADE sends
+The device may send a keepalive at any time after `routeReady`. PacketBench sends
 one every 15 seconds while waiting for a response
 (`syndicate_relay.rs:68`, `:208-215`).
 
@@ -544,7 +544,7 @@ drops the socket** (`product_route.rs:575`). For a device mid-request that
 surfaces as `PacketRelay closed before the response arrived.`
 (`syndicate_relay.rs:217`), with no diagnostic anywhere.
 
-PacketADE currently emits a matching string only by coincidence of two
+PacketBench currently emits a matching string only by coincidence of two
 mechanisms lining up: every outbound frame is serialized through
 `canonical_json`, which sorts object keys (`syndicate.rs:898-912`), and
 `"protocolVersion"` happens to sort before `"type"`. Nothing tests this, and
@@ -584,7 +584,7 @@ signature. The relay emits it after it has verified a Host-signed
 `grant_revoked` and removed the device from the route; dropping the device's
 channel then closes its socket (`:439-479`, `:556-563`).
 
-PacketADE treats any frame with `type == "routeRevoked"` as authoritative,
+PacketBench treats any frame with `type == "routeRevoked"` as authoritative,
 failing the request with the typed code `DEVICE_REVOKED` — the same code the
 Host uses — and does not check `deviceId` or `revocationEpoch`
 (`syndicate_relay.rs:233-235`, `:34`, `:42`, `:49-61`). This is safe in the
@@ -605,13 +605,13 @@ remains the authority; the relay notice is acceleration.
 **`routeReplaced` (relay → device).**
 `{"protocolVersion":1,"type":"routeReplaced"}`, sent to a socket that a newer
 connection for the same `deviceId` has superseded
-(`product_route.rs:344-348`). **PacketADE does not handle this frame.** It
+(`product_route.rs:344-348`). **PacketBench does not handle this frame.** It
 falls through to the response path and fails as
 `PacketRelay response sender stamp is invalid.`
 (`syndicate_relay.rs:471-480`) — a misleading message for what is really "a
 second connection took your slot". An independent client should match on
 `type` and report replacement explicitly. Documented here as a known gap in the
-PacketADE implementation, not as intended behaviour.
+PacketBench implementation, not as intended behaviour.
 
 **Close codes.** The relay does not use WebSocket status codes on the product
 route. Admission failure returns from the handler without a close frame
@@ -622,7 +622,7 @@ isolated peer receives `Message::Close(None)` — a close with no code
 Host's, applied to frames the Host receives. **A device must not attempt to
 classify a failure by close code on this leg.**
 
-**After a revocation.** Because PacketADE only holds a socket during an RPC,
+**After a revocation.** Because PacketBench only holds a socket during an RPC,
 a revocation is observed as `routeRevoked` only if it lands inside that ~30
 second window. Otherwise the next `device_hello` is rejected by the relay's
 `revoked_epochs` check (`product_route.rs:308-314`) and the device sees nothing
@@ -649,7 +649,7 @@ time, as an unclassified connection failure followed by a Host-side
 | Hello nonce, decoded                      | 16 – 32 bytes                      | `product_route.rs:660-662`                                                                                                                                                 |
 | Hello clock skew                          | ± 60 s                             | `product_route.rs:21`, `:626-628`                                                                                                                                          |
 | Grant span                                | ≤ 31 days (30-day issuance policy) | `syndicate_relay.rs:336`, `product_route.rs:262`                                                                                                                           |
-| `machineId` / `deviceId`                  | 8 – 128 bytes, `[A-Za-z0-9._-]`    | `product_route.rs:672-677`; PacketADE composes `require_id` (≤128, `syndicate.rs:361-372`) with `valid_id` (≥8, `syndicate_relay.rs:587-596`) for the same effective range |
+| `machineId` / `deviceId`                  | 8 – 128 bytes, `[A-Za-z0-9._-]`    | `product_route.rs:672-677`; PacketBench composes `require_id` (≤128, `syndicate.rs:361-372`) with `valid_id` (≥8, `syndicate_relay.rs:587-596`) for the same effective range |
 | Devices per route                         | 64                                 | `product_route.rs:341`                                                                                                                                                     |
 | Routes per relay                          | 10,000                             | `product_route.rs:217`                                                                                                                                                     |
 | Nonce replay cache                        | 4,096 entries, 2 × 60 s retention  | `product_route.rs:645-659`                                                                                                                                                 |
@@ -659,14 +659,14 @@ time, as an unclassified connection failure followed by a Host-side
 WebSocket read/write buffers on the device are 8 KiB with a write cap of
 `MAX_FRAME_BYTES + 8 KiB`, and both `max_message_size` and `max_frame_size` are
 pinned to 64 KiB, so an oversized relay frame is rejected by the WebSocket layer
-before PacketADE sees it (`syndicate_relay.rs:179-184`).
+before PacketBench sees it (`syndicate_relay.rs:179-184`).
 
 ## Conformance coverage
 
 ### What the shared fixture already pins
 
 `controller-relay-crypto-v1.json` is byte-identical in three repositories —
-`packetade/src-tauri/tests/fixtures/controller-relay-crypto-v1.json`,
+`packetbench/src-tauri/tests/fixtures/controller-relay-crypto-v1.json`,
 `syndicate/docs/fixtures/controller-relay-crypto-v1.json`, and
 `packetrelay/testdata/controller_relay_crypto_v1.json` — and is loaded as a
 conformance vector by all three
@@ -689,17 +689,17 @@ Nothing in any of the three repositories pins:
 
 - **`device_hello` and its proof signature.** The five-field newline payload —
   the protocol's one deviation from canonical-JSON signing — has no
-  cross-language vector. PacketADE's end-to-end test asserts only
+  cross-language vector. PacketBench's end-to-end test asserts only
   `hello["type"] == "device_hello"` and never verifies the proof
   (`syndicate_relay.rs:811`); the relay's test constructs a proof with the same
   helper it verifies with (`product_route.rs:1081-1085`), so a shared
   misunderstanding would pass both. **This is the highest-value fixture gap.**
 - **The liveness frames.** The byte-exact `ping` literal and its `pong` response
-  are untested on both sides. The only thing keeping PacketADE's ping matching
+  are untested on both sides. The only thing keeping PacketBench's ping matching
   is incidental key-sort ordering, and no test would catch a change to it.
 - **`routeReady`, `routeRevoked`, and `routeReplaced` shapes.** The relay test
   asserts a substring `contains("routeReady")` (`product_route.rs:1051-1058`)
-  and `revoked["type"] == "routeRevoked"` (`:1124`); PacketADE's fake relay
+  and `revoked["type"] == "routeRevoked"` (`:1124`); PacketBench's fake relay
   emits a `routeReady` it wrote itself (`syndicate_relay.rs:812-823`). No frame
   shape is cross-pinned.
 - **The grant certificate and its `SYNDICATE-RELAY-GRANT-V1` signature.** Each
@@ -723,28 +723,28 @@ independent client would have to answer. They are listed rather than guessed.
 
 1. **Multiple in-flight requests on one device socket.** The relay supports it —
    it forwards frames continuously and enforces no request/response pairing. The
-   Host half describes a serialized inbound chain. PacketADE never exercises it
+   Host half describes a serialized inbound chain. PacketBench never exercises it
    (one request per connection). Whether a device may pipeline, and what the
    counter and ordering obligations then are, is undefined by any
    implementation.
 
 2. **Long-lived device connections.** Nothing forbids one, and the relay does
-   not time out an idle device. But every timeout PacketADE applies is scoped to
+   not time out an idle device. But every timeout PacketBench applies is scoped to
    a single request, and the keepalive interval was chosen for a ≤30 s window.
    A client holding a socket for hours has no specified keepalive cadence.
 
-3. **`routeReady.sender` semantics.** The relay always sends it; PacketADE
+3. **`routeReady.sender` semantics.** The relay always sends it; PacketBench
    ignores it; the Host spec omits it. Whether it is required, optional, or
    advisory is not settled anywhere.
 
 4. **`routeRevoked` authenticity.** The frame is unsigned and carries no
-   `routeId`. Whether a device is _permitted_ to act on it (PacketADE does) or
+   `routeId`. Whether a device is _permitted_ to act on it (PacketBench does) or
    must treat it as a hint pending Host confirmation is stated nowhere. The
    conservative reading — it can only reduce the device's own authority, so
    acting on it is safe — is this document's inference, not a source claim.
 
 5. **Grant refresh.** `CONTROLLER_PROTOCOL_V1.md` says grants "may be refreshed
-   only by a future locally approved flow". PacketADE captures a grant solely
+   only by a future locally approved flow". PacketBench captures a grant solely
    from `machine.snapshot` (`syndicate.rs:1308-1310`), and that snapshot is
    reachable over the relay once a grant exists — so a refreshed grant would in
    principle arrive over the relay itself. Whether that is the intended refresh

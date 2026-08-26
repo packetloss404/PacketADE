@@ -72,7 +72,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
         // a new public action on workspaceStore.
         try {
           if (typeof localStorage !== "undefined") {
-            localStorage.setItem("packetade:workspaces-cache", JSON.stringify(nextWorkspaces));
+            localStorage.setItem("packetbench:workspaces-cache", JSON.stringify(nextWorkspaces));
           }
         } catch {
           // quota / storage unavailable — backend persistence below still

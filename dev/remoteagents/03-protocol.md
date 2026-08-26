@@ -13,14 +13,14 @@
 ## `packet-relay` Binding
 
 The production transport is the standalone Rust service at
-`D:\projects\packetrelay`. PacketADE adds the `/ws/host` and `/ws/device`
+`D:\projects\packetrelay`. PacketBench adds the `/ws/host` and `/ws/device`
 routes plus the HTTPS control plane described below. Its envelopes remain
 distinct from the existing `desktop_hello`, `mobile_hello`, broadcast, and room
 messages so extracting the relay does not silently break inherited clients.
 
-The shared protocol schemas are authoritative across PacketADE Desktop, the
+The shared protocol schemas are authoritative across PacketBench Desktop, the
 PWA, and the Rust relay. The relay validates routing metadata and ciphertext
-shape but never imports PacketADE's Tauri command surface.
+shape but never imports PacketBench's Tauri command surface.
 
 ## Envelope
 
@@ -154,7 +154,7 @@ Deferred for MVP except attachment references:
 export type HostRegisterPayload = {
   hostId: string;
   hostName: string;
-  packetadeVersion: string;
+  packetbenchVersion: string;
   protocolVersion: 1;
   platform: "windows" | "macos" | "linux";
   startedAt: string;
@@ -279,7 +279,7 @@ Returns a 60-second, single-use ticket:
 {
   "ticket": "wst_...",
   "expiresAt": 1779811260000,
-  "relayUrl": "wss://relay.packetade.app/ws/device"
+  "relayUrl": "wss://relay.packetbench.app/ws/device"
 }
 ```
 

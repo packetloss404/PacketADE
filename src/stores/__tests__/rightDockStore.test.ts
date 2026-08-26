@@ -1,7 +1,7 @@
 /**
  * D2 / P0-2 — the right dock's width contract and ownership rules.
  *
- * The audit's core arithmetic: at PacketADE's supported 800px minimum window
+ * The audit's core arithmetic: at PacketBench's supported 800px minimum window
  * the old fixed panels (480px Editor + 280px Git, or a 280–720px Inspector)
  * plus the 44px rail and the ~240px surface sidebar left the centre canvas
  * with nothing. These tests pin the replacement rule.
@@ -19,7 +19,7 @@ import {
   useRightDockStore,
 } from "@/stores/rightDockStore";
 
-const STORAGE_KEY = "packetade:right-dock-v1";
+const STORAGE_KEY = "packetbench:right-dock-v1";
 
 describe("dockWidthContract", () => {
   it("never lets total chrome exceed the viewport at the 800px minimum window", () => {

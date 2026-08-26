@@ -14,7 +14,7 @@
 import { create } from "zustand";
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
 
-const STORAGE_KEY = "packetade:agent-drafts";
+const STORAGE_KEY = "packetbench:agent-drafts";
 
 /**
  * Draft key for the launch composer (the "new agent" box). It has no

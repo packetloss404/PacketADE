@@ -13,7 +13,7 @@ Implementation contract:
 [`workspace-agents-wa0-route-contract.md`](./workspace-agents-wa0-route-contract.md)
 
 > [!IMPORTANT]
-> Make new PacketADE Workspaces CLI/PacketCode-first. Move new GUI-agent
+> Make new PacketBench Workspaces CLI/PacketCode-first. Move new GUI-agent
 > creation into a first-class Agents surface in the existing main window.
 > Preserve existing conversation-pane compatibility during the transition.
 > Connect the surfaces with explicit handoffs. Do not build an interactive
@@ -90,7 +90,7 @@ saved three-Workspace state:
   desktop executable.
 - Workspace → Agents → Workspace preserved the same two PTY session ids with
   no duplicate launch or teardown.
-- Closing PacketADE terminated the exact test process and both child CLIs.
+- Closing PacketBench terminated the exact test process and both child CLIs.
 
 This completed goal remains the canonical product contract for Workspace and
 Agents. Remote Agents remains planned and paused at its existing Sprint-0
@@ -100,7 +100,7 @@ decision gate until the owner resumes it.
 
 Change where agent work is presented, not what the agent system can do.
 
-PacketADE keeps its GUI/API-agent engine, provider abstraction, approvals,
+PacketBench keeps its GUI/API-agent engine, provider abstraction, approvals,
 plans, diffs, Memory, review, worktree endings, cost tracking, and resumable
 conversations. Those capabilities gain an agent-first home instead of being an
 equal default tile in every Workspace.
@@ -110,11 +110,11 @@ equal default tile in every Workspace.
 | Product or surface  | Primary responsibility                                                       |
 | ------------------- | ---------------------------------------------------------------------------- |
 | PacketCode          | Fast terminal-native coding-agent inner loop                                 |
-| PacketADE Workspace | High-density CLI/PTY workroom for active, hands-on work                      |
-| PacketADE Agents    | Delegated AI work, attention, approvals, plans, diffs, and review            |
+| PacketBench Workspace | High-density CLI/PTY workroom for active, hands-on work                      |
+| PacketBench Agents    | Delegated AI work, attention, approvals, plans, diffs, and review            |
 | Flight Deck         | Structured delivery across plans, tasks, attempts, reviewers, and publishing |
 | Monitor             | Read-only operational awareness on another display                           |
-| PacketAgent         | Durable bounded execution after PacketADE closes                             |
+| PacketAgent         | Durable bounded execution after PacketBench closes                             |
 
 These are different presentations over connected projects, conversations,
 worktrees, reviews, and execution state. They must not become isolated products
@@ -144,7 +144,7 @@ belongs to Agents.
 
 ## Agents contract
 
-Agents is a first-class route in the existing PacketADE main window.
+Agents is a first-class route in the existing PacketBench main window.
 
 Its baseline layout should provide:
 
@@ -330,7 +330,7 @@ definition of done.
 
 ## Session-start reminder
 
-For any new PacketADE planning or implementation session:
+For any new PacketBench planning or implementation session:
 
 1. Read this document first.
 2. State which WA phase is active.

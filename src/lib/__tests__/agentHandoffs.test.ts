@@ -76,7 +76,7 @@ function conversation(overrides: Partial<AgentConversation> = {}): AgentConversa
     id: "conv-1",
     title: "Finish the handoff",
     agent: "api-openai",
-    projectPath: "D:\\projects\\PacketADE",
+    projectPath: "D:\\projects\\PacketBench",
     status: "idle",
     messages: [],
     sessionId: "session-1",
@@ -133,7 +133,7 @@ describe("WA3 agent handoffs", () => {
     expect(result).toMatchObject({ ok: true, created: true });
     const workspace = useWorkspaceStore.getState().workspaces[0];
     expect(workspace.agents).toEqual(["packetcode"]);
-    expect(workspace.projectPath).toBe("D:\\projects\\PacketADE");
+    expect(workspace.projectPath).toBe("D:\\projects\\PacketBench");
     expect(workspace.panes.some((pane) => pane.kind === "conversation")).toBe(false);
     expect(useAgentTaskStore.getState().selectedConversationId).toBe("conv-1");
     expect(useAppStore.getState().activeView).toBe("workspace");
@@ -375,7 +375,7 @@ describe("WA3 agent handoffs", () => {
       title: "WA3",
       objective: "Ship handoffs",
       priority: "high",
-      projectPath: "D:\\projects\\PacketADE",
+      projectPath: "D:\\projects\\PacketBench",
     });
 
     const first = linkConversationToFlight("conv-1", flight.id);

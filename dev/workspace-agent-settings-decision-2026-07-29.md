@@ -1,14 +1,14 @@
-# PacketADE Workspace, Agents, and Settings Decision Report
+# PacketBench Workspace, Agents, and Settings Decision Report
 
 Date: 2026-07-29
 Status: Workspace/Agents recommendation, six-group Settings IA, and the
 2026-08-01 P1 Settings authority/security pass are source-complete; bounded P2
 and packaged/live proof remain
-Scope: PacketADE Workspaces, GUI agent placement, PacketCode positioning, and Settings
+Scope: PacketBench Workspaces, GUI agent placement, PacketCode positioning, and Settings
 
 ## Executive answer
 
-Do not remove agents from PacketADE. Do stop making a GUI agent conversation an
+Do not remove agents from PacketBench. Do stop making a GUI agent conversation an
 equal default tile inside every Workspace.
 
 The strongest product model is:
@@ -16,11 +16,11 @@ The strongest product model is:
 | Surface             | Primary job                                                                                                                |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | PacketCode          | Best terminal-native coding agent and automation-friendly inner loop                                                       |
-| PacketADE Workspace | High-density professional workroom for PacketCode, Claude Code, Codex CLI, Gemini, OpenCode, shells, files, and Git        |
-| PacketADE Agents    | Agent-first command center for API/subscription conversations, approvals, plans, visual diffs, and cross-project attention |
+| PacketBench Workspace | High-density professional workroom for PacketCode, Claude Code, Codex CLI, Gemini, OpenCode, shells, files, and Git        |
+| PacketBench Agents    | Agent-first command center for API/subscription conversations, approvals, plans, visual diffs, and cross-project attention |
 | Flight Deck         | Structured delivery: plans, tasks, attempts, reviewers, integration, and publish decisions                                 |
 | Monitor             | Read-only operational visibility on another display                                                                        |
-| PacketAgent         | Durable bounded execution after PacketADE closes                                                                           |
+| PacketAgent         | Durable bounded execution after PacketBench closes                                                                           |
 
 This is the pro-user version of the BridgeSpace idea: keep the excellent CLI
 workroom, but do not force CLI operation, asynchronous agent supervision, and
@@ -55,7 +55,7 @@ called out below.
 | A. Keep the current mixed Workspace        |      Medium-low |                  Good for two to four adjacent actors |                                  Low | Do not choose as the north star |
 | B. CLI-first Workspace plus Agents surface |            High | Best balance across foreground CLI and delegated work |              Medium and controllable | **Recommended**                 |
 | C. Interactive native Agent window now     |   High visually |                       Excellent for multiple monitors | High with current frontend ownership | Target later, not first         |
-| D. Delete PacketADE GUI agents             |             Low | Throws away provider, review, and approval advantages |                    High product loss | Reject                          |
+| D. Delete PacketBench GUI agents             |             Low | Throws away provider, review, and approval advantages |                    High product loss | Reject                          |
 
 ## Why the pro user still uses agents
 
@@ -68,7 +68,7 @@ whole product. The same person changes modes throughout the day:
 - hand durable work to PacketAgent when the ADE should be allowed to close.
 
 PacketCode strengthens the case for a CLI-first Workspace. It does not make
-PacketADE's GUI-agent engine redundant. The GUI engine owns capabilities a TUI
+PacketBench's GUI-agent engine redundant. The GUI engine owns capabilities a TUI
 should not have to reproduce:
 
 - seven API-agent provider/auth identities with live status;
@@ -82,7 +82,7 @@ should not have to reproduce:
 
 The product mistake would be making either mode swallow the other.
 
-## Facts from the current PacketADE code
+## Facts from the current PacketBench code
 
 ### Workspaces are already a substantial CLI product
 
@@ -131,7 +131,7 @@ Option B primarily changes navigation and presentation.
 
 ### The current mixed surface carries real product tax
 
-To combine both models, PacketADE needs:
+To combine both models, PacketBench needs:
 
 - conversation pane kinds and downgrade-compatible carriers;
 - transient draft leaves;
@@ -178,7 +178,7 @@ retaining the ability to switch to the IDE. Cursor 3.1 added a persistent tiled
 layout for supervising and comparing several agents. The agent-first surface
 still includes files, diffs, browser, commit, and PR workflow.
 
-Inference for PacketADE: local foreground work may remain close to the
+Inference for PacketBench: local foreground work may remain close to the
 Workspace, while high-concurrency and cross-project supervision deserves an
 agent-first surface.
 
@@ -191,7 +191,7 @@ Microsoft now documents the split explicitly:
 - Both surfaces share the same sessions and settings.
 - A chat may live in a sidebar, editor tab, or separate window.
 
-This is the cleanest validation of a hybrid PacketADE design. PacketADE's
+This is the cleanest validation of a hybrid PacketBench design. PacketBench's
 foreground anchor should be PTY/CLI rather than a full IDE.
 
 ### OpenAI Codex
@@ -208,7 +208,7 @@ file, plan, task, and subagent views. Anthropic positions Desktop for parallel
 supervision and visual review, and CLI for scripting, automation, or terminal
 preference.
 
-This maps directly to PacketADE plus PacketCode. PacketADE can eventually do
+This maps directly to PacketBench plus PacketCode. PacketBench can eventually do
 better by preserving one conversation identity across presentations.
 
 ### BridgeMind BridgeSpace
@@ -227,7 +227,7 @@ The market has converged on three layers:
 2. an agent-first supervision surface;
 3. asynchronous or remote execution that can outlive the foreground.
 
-PacketADE already has the primitives for all three. Its opportunity is to give
+PacketBench already has the primitives for all three. Its opportunity is to give
 them clear jobs and stronger handoffs instead of copying an IDE chat sidebar.
 
 ## Recommended Workspace and Agents contract
@@ -264,7 +264,7 @@ them clear jobs and stronger handoffs instead of copying an IDE chat sidebar.
 ## Why the native Agent window should be phase two
 
 The market case for a native window is strong, especially for multiple
-monitors. The current PacketADE frontend is not ready for two interactive
+monitors. The current PacketBench frontend is not ready for two interactive
 writers:
 
 - Zustand stores and listener cleanup maps are WebView-local.
@@ -374,7 +374,7 @@ navigation, search, scopes, and compatibility routing.
 
 ### Resolved 2026-08-01 - unenforced MCP controls are hidden
 
-The audit found that the PacketADE MCP provider UI exposed Project/Global scope
+The audit found that the PacketBench MCP provider UI exposed Project/Global scope
 and individual tool checkboxes even though `mcp_server_start` received only port
 and `allowWrites` and Rust constructed the full static tool router.
 
@@ -560,7 +560,7 @@ changes:
 
 High confidence:
 
-- current PacketADE source behavior and coupling;
+- current PacketBench source behavior and coupling;
 - current first-party product layouts;
 - the runtime gaps identified by missing production consumers;
 - the risk of two interactive WebViews owning current frontend state.
@@ -575,7 +575,7 @@ Not established:
 
 - a neutral cross-product user study proving separate windows improve
   productivity;
-- PacketADE-specific telemetry for session placement;
+- PacketBench-specific telemetry for session placement;
 - live validation of the Settings controls against every configured external
   account/server.
 

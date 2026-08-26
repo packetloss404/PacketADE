@@ -623,7 +623,7 @@ mod tests {
         let home = tmp.path().join("home");
         let claude = home.join(".claude");
         let codex = home.join(".codex");
-        let data = home.join(".packetade");
+        let data = home.join(".packetbench");
         let oss = tmp.path().join("claude-oss");
         let client = tmp.path().join("codex-client");
         for d in [&home, &claude, &codex, &data, &oss, &client] {
@@ -647,7 +647,7 @@ mod tests {
         let home = tmp.path().join("home");
         let claude = home.join(".claude");
         let codex = home.join(".codex");
-        let data = home.join(".packetade");
+        let data = home.join(".packetbench");
         std::fs::create_dir_all(&home).expect("mkdir");
         let not_yet = tmp.path().join("accounts").join("fresh");
         std::fs::create_dir_all(not_yet.parent().unwrap()).expect("mkdir");
@@ -667,7 +667,7 @@ mod tests {
         let home = tmp.path().join("home");
         let claude = home.join(".claude");
         let codex = home.join(".codex");
-        let data = home.join(".packetade");
+        let data = home.join(".packetbench");
         let gone = tmp.path().join("removed-account");
         for d in [&home, &claude, &codex, &data, &gone] {
             std::fs::create_dir_all(d).expect("mkdir");
@@ -758,14 +758,14 @@ mod tests {
 
     #[test]
     fn state_file_events_include_atomic_write_siblings() {
-        let state = Path::new("/home/u/.packetade/state.v1.json");
+        let state = Path::new("/home/u/.packetbench/state.v1.json");
         assert!(is_state_file_event(state, state));
         assert!(is_state_file_event(
-            Path::new("/home/u/.packetade/state.v1.json.tmp"),
+            Path::new("/home/u/.packetbench/state.v1.json.tmp"),
             state
         ));
         assert!(!is_state_file_event(
-            Path::new("/home/u/.packetade/analytics.json"),
+            Path::new("/home/u/.packetbench/analytics.json"),
             state
         ));
     }

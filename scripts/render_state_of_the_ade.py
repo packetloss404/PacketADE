@@ -62,7 +62,7 @@ EMBEDDED_SHOTS = {
     "13-modal-new-flight-1280.png",
 }
 
-TITLE = "PacketADE \u2014 State of the ADE \u2014 2026-07"
+TITLE = "PacketBench \u2014 State of the ADE \u2014 2026-07"
 
 
 def register_fonts() -> tuple[str, str, str]:
@@ -529,11 +529,11 @@ def cover(meta: list[str]) -> list:
     title = Paragraph(
         '<font name="%s" size="30">State of the ADE</font><br/><br/>'
         '<font name="%s" size="14" color="#8FE9BE">Living product-state report for the '
-        "PacketADE Agent Development Environment</font>" % (FONT_BOLD, FONT),
+        "PacketBench Agent Development Environment</font>" % (FONT_BOLD, FONT),
         ParagraphStyle("CoverTitle", fontName=FONT_BOLD, fontSize=30, leading=36, textColor=WHITE),
     )
     kicker = Paragraph(
-        '<font name="%s" size="10" color="#00C878">PACKET ADE &nbsp;//&nbsp; FLAGSHIP DELIVERABLE</font>'
+        '<font name="%s" size="10" color="#00C878">PACKET BENCH &nbsp;//&nbsp; FLAGSHIP DELIVERABLE</font>'
         % FONT_BOLD,
         ParagraphStyle("Kicker", fontName=FONT, fontSize=10, leading=14, textColor=GREEN),
     )
@@ -633,7 +633,7 @@ def page_furniture(canvas, doc):
         canvas.line(doc.leftMargin, height - 0.52 * inch, width - doc.rightMargin, height - 0.52 * inch)
         canvas.setFont(FONT_BOLD, 7.3)
         canvas.setFillColor(GREEN_DARK)
-        canvas.drawString(doc.leftMargin, height - 0.39 * inch, "PACKETADE \u2014 STATE OF THE ADE")
+        canvas.drawString(doc.leftMargin, height - 0.39 * inch, "PACKETBENCH \u2014 STATE OF THE ADE")
         canvas.setFont(FONT, 7.3)
         canvas.setFillColor(MUTED)
         canvas.drawRightString(
@@ -661,7 +661,7 @@ def render(source: Path, destination: Path):
         topMargin=0.70 * inch,
         bottomMargin=0.64 * inch,
         title=TITLE,
-        author="PacketADE engineering review",
+        author="PacketBench engineering review",
         subject="Living State of the ADE report, status pass 2026-08-03",
     )
     frame = Frame(

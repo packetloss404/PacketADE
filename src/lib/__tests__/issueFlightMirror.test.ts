@@ -334,17 +334,17 @@ describe("advanceMirrorRecord", () => {
 
 describe("body marker", () => {
   it("builds with and without a task id", () => {
-    expect(buildBodyMarker("F1", "T2")).toBe("<!-- packetade:flight=F1;task=T2 -->");
-    expect(buildBodyMarker("F1")).toBe("<!-- packetade:flight=F1 -->");
-    expect(buildBodyMarker("F1", null)).toBe("<!-- packetade:flight=F1 -->");
+    expect(buildBodyMarker("F1", "T2")).toBe("<!-- packetbench:flight=F1;task=T2 -->");
+    expect(buildBodyMarker("F1")).toBe("<!-- packetbench:flight=F1 -->");
+    expect(buildBodyMarker("F1", null)).toBe("<!-- packetbench:flight=F1 -->");
   });
 
   it("parses flight + task, and flight-only", () => {
-    expect(parseBodyMarker("body\n<!-- packetade:flight=F1;task=T2 -->")).toEqual({
+    expect(parseBodyMarker("body\n<!-- packetbench:flight=F1;task=T2 -->")).toEqual({
       flightId: "F1",
       taskId: "T2",
     });
-    expect(parseBodyMarker("<!-- packetade:flight=F1 -->")).toEqual({ flightId: "F1" });
+    expect(parseBodyMarker("<!-- packetbench:flight=F1 -->")).toEqual({ flightId: "F1" });
   });
 
   it("returns null when no marker is present", () => {
@@ -361,7 +361,7 @@ describe("body marker", () => {
     const once = embedBodyMarker("desc", "F", "T");
     const twice = embedBodyMarker(once, "F", "T");
     expect(twice).toBe(once);
-    const markerCount = (twice.match(/packetade:flight=/g) ?? []).length;
+    const markerCount = (twice.match(/packetbench:flight=/g) ?? []).length;
     expect(markerCount).toBe(1);
   });
 
@@ -369,35 +369,35 @@ describe("body marker", () => {
     const first = embedBodyMarker("desc", "F1", "T1");
     const second = embedBodyMarker(first, "F2", "T2");
     expect(parseBodyMarker(second)).toEqual({ flightId: "F2", taskId: "T2" });
-    expect((second.match(/packetade:flight=/g) ?? []).length).toBe(1);
+    expect((second.match(/packetbench:flight=/g) ?? []).length).toBe(1);
   });
 
   it("stripBodyMarker leaves the human body intact", () => {
-    expect(stripBodyMarker("hello\n\n<!-- packetade:flight=F -->")).toBe("hello");
+    expect(stripBodyMarker("hello\n\n<!-- packetbench:flight=F -->")).toBe("hello");
     expect(stripBodyMarker("no marker here")).toBe("no marker here");
   });
 
   it("embedding into an empty body yields just the marker", () => {
-    expect(embedBodyMarker("", "F", "T")).toBe("<!-- packetade:flight=F;task=T -->");
+    expect(embedBodyMarker("", "F", "T")).toBe("<!-- packetbench:flight=F;task=T -->");
   });
 
   it("parses a flight-only marker embedded in a longer multi-line body", () => {
-    const body = "## Task\n\nDo the thing.\n\nMore detail.\n\n<!-- packetade:flight=flight-42 -->";
+    const body = "## Task\n\nDo the thing.\n\nMore detail.\n\n<!-- packetbench:flight=flight-42 -->";
     expect(parseBodyMarker(body)).toEqual({ flightId: "flight-42" });
   });
 
   it("returns the LAST marker when a stray earlier one is present", () => {
     const body =
-      "<!-- packetade:flight=FAKE;task=TFAKE -->\nreal body\n<!-- packetade:flight=F1;task=T1 -->";
+      "<!-- packetbench:flight=FAKE;task=TFAKE -->\nreal body\n<!-- packetbench:flight=F1;task=T1 -->";
     // The authoritative marker is the one we append at the end.
     expect(parseBodyMarker(body)).toEqual({ flightId: "F1", taskId: "T1" });
   });
 
   it("strips ALL markers and re-embeds exactly one (idempotent over duplicates)", () => {
     const dirty =
-      "<!-- packetade:flight=old -->\ndesc\n<!-- packetade:flight=old2;task=t -->";
+      "<!-- packetbench:flight=old -->\ndesc\n<!-- packetbench:flight=old2;task=t -->";
     const cleaned = embedBodyMarker(dirty, "F", "T");
-    expect((cleaned.match(/packetade:flight=/g) ?? []).length).toBe(1);
+    expect((cleaned.match(/packetbench:flight=/g) ?? []).length).toBe(1);
     expect(parseBodyMarker(cleaned)).toEqual({ flightId: "F", taskId: "T" });
     expect(cleaned).toContain("desc");
   });

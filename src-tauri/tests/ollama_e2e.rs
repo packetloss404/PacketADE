@@ -10,7 +10,7 @@
 //!
 //! Preconditions (skip-with-message, never fail, when unmet):
 //! * `GET {base}/api/version` answers.
-//! * The model (`PACKETADE_E2E_OLLAMA_MODEL`, default `qwen2.5-coder:7b`)
+//! * The model (`PACKETBENCH_E2E_OLLAMA_MODEL`, default `qwen2.5-coder:7b`)
 //!   appears in `/api/tags`.
 //!
 //! What it proves:
@@ -25,23 +25,23 @@
 //!    daemons omit the field; then the canary plus a printed warning is the
 //!    best available evidence.
 //! 3. **`expires_at`** ≈ now + 30m, validating `keep_alive`.
-//! 4. **Negative control**: with `PACKETADE_OLLAMA_NUM_CTX_CAP=4096` the
+//! 4. **Negative control**: with `PACKETBENCH_OLLAMA_NUM_CTX_CAP=4096` the
 //!    same turn reports `context_length == 4096` in `/api/ps` and the
 //!    transcript carries the "context overflow" truncation notice.
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use packetade_lib::core::aux_llm::{run_aux_oneshot, AuxRoute, AuxTaskClass};
-use packetade_lib::core::llm_ollama::{resolve_keep_alive, resolve_num_ctx_cap};
+use packetbench_lib::core::aux_llm::{run_aux_oneshot, AuxRoute, AuxTaskClass};
+use packetbench_lib::core::llm_ollama::{resolve_keep_alive, resolve_num_ctx_cap};
 
 const DEFAULT_MODEL: &str = "qwen2.5-coder:7b";
 
 fn base_url() -> String {
-    packetade_lib::core::storage::resolve_ollama_root_base_url()
+    packetbench_lib::core::storage::resolve_ollama_root_base_url()
 }
 
 fn e2e_model() -> String {
-    std::env::var("PACKETADE_E2E_OLLAMA_MODEL")
+    std::env::var("PACKETBENCH_E2E_OLLAMA_MODEL")
         .ok()
         .map(|m| m.trim().to_string())
         .filter(|m| !m.is_empty())
@@ -217,7 +217,7 @@ async fn negotiated_num_ctx_reaches_the_daemon() {
         .unwrap_or(false);
     if !model_present {
         eprintln!(
-            "SKIP: model '{}' not present in {}/api/tags — `ollama pull {}` or set PACKETADE_E2E_OLLAMA_MODEL",
+            "SKIP: model '{}' not present in {}/api/tags — `ollama pull {}` or set PACKETBENCH_E2E_OLLAMA_MODEL",
             model, base, model
         );
         return;
@@ -283,20 +283,20 @@ async fn negotiated_num_ctx_reaches_the_daemon() {
     // --- Negative control: cap the window below the prompt and observe the
     // truncation surfacing. The saved Settings cap outranks the env var, so
     // skip when one is present. ---
-    std::env::set_var("PACKETADE_OLLAMA_NUM_CTX_CAP", "4096");
+    std::env::set_var("PACKETBENCH_OLLAMA_NUM_CTX_CAP", "4096");
     if resolve_num_ctx_cap() != 4_096 {
         eprintln!(
             "SKIP negative control: a saved num_ctx cap override outranks the env var \
              (effective cap {})",
             resolve_num_ctx_cap()
         );
-        std::env::remove_var("PACKETADE_OLLAMA_NUM_CTX_CAP");
+        std::env::remove_var("PACKETBENCH_OLLAMA_NUM_CTX_CAP");
         return;
     }
     let (_, capped_transcript) = run_canary_turn(&model, "ollama-e2e-negative")
         .await
         .expect("negative-control turn failed");
-    std::env::remove_var("PACKETADE_OLLAMA_NUM_CTX_CAP");
+    std::env::remove_var("PACKETBENCH_OLLAMA_NUM_CTX_CAP");
 
     assert!(
         capped_transcript.contains("context overflow"),

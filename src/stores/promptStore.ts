@@ -12,7 +12,7 @@ import {
 } from "@/lib/scout-config";
 import type { PromptTemplate } from "@/types/prompt";
 
-const STORAGE_KEY = "packetade:prompt-templates";
+const STORAGE_KEY = "packetbench:prompt-templates";
 
 const BUILTIN_TEMPLATES: PromptTemplate[] = [
   {

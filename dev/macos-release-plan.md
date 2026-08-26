@@ -20,7 +20,7 @@ on the stated grounds that no Apple hardware was documented as available and tha
 `multi-platform-build.md` says macOS cannot be cross-compiled from anywhere else.
 
 The first half of that is now false. **The owner has a Mac and has been running
-PacketADE on it for months** (owner statement, 2026-08-06) — not a one-off
+PacketBench on it for months** (owner statement, 2026-08-06) — not a one-off
 build, but sustained real use. The git history corroborates this independently —
 three commits in June 2026 fix defects that can only be observed on a real Mac:
 
@@ -161,7 +161,7 @@ work; treat those as approximate and the others as exact.
   `commands/pty.rs:589-598` explicitly avoid `$HOME` because scanning it walks into
   `~/Music`, `~/Pictures`, `~/Documents` and triggers macOS permission prompts.
 - **Unix CLI resolution exists** — `commands/pty.rs:86-118`
-  (`#[cfg(not(windows))]`): pin file at `~/.packetade/<command>-bin`, pass-through
+  (`#[cfg(not(windows))]`): pin file at `~/.packetbench/<command>-bin`, pass-through
   for anything containing `/`, then a manual `PATH` scan checking
   `mode() & 0o111`.
 - **`claude/binary.rs`** carries macOS/Homebrew/npm fallback candidates (added by
@@ -200,7 +200,7 @@ work; treat those as approximate and the others as exact.
 - **The release-readiness script already knows about macOS.**
   `scripts/release-readiness.mjs:182-201` checks
   `bundle.macOS.signingIdentity` / `providerShortName` and the `APPLE_*` env vars,
-  emitting `WARN` today. `PACKETADE_RELEASE_TARGET=macos` selects macOS artifacts.
+  emitting `WARN` today. `PACKETBENCH_RELEASE_TARGET=macos` selects macOS artifacts.
 
 ### The honest summary
 
@@ -238,7 +238,7 @@ release; the rest are quality items.
    #[cfg(not(target_os = "windows"))]
    {
        let _ = paste;
-       Err("Native dictation delivery is currently available on Windows; the transcript remains available in PacketADE".to_string())
+       Err("Native dictation delivery is currently available on Windows; the transcript remains available in PacketBench".to_string())
    }
    ```
 
@@ -304,11 +304,11 @@ release; the rest are quality items.
    `components/workspace/WorkspacePane.tsx:181-185`).
 
 9. **No `Info.dev.plist`.** `tauri dev` on macOS runs the bare
-   `target/debug/packetade` binary rather than an `.app`, so the microphone usage
+   `target/debug/packetbench` binary rather than an `.app`, so the microphone usage
    string is absent in dev and dictation's TCC behaviour under `tauri dev` is
    unverified.
 
-10. **`~/.packetade` rather than `~/Library/Application Support`.**
+10. **`~/.packetbench` rather than `~/Library/Application Support`.**
     `commands/dictation/models.rs:133-136` (and the general data dir) use
     `dirs::home_dir()` + a dotfolder. The log dir is macOS-correct
     (`lib.rs:48-55`) but the data dir is not. This is a **deliberate
@@ -418,7 +418,7 @@ security surface.
 **Explicitly NOT needed:**
 
 - **`com.apple.security.network.client`** — this is an **App Sandbox** entitlement.
-  PacketADE is not sandboxed and is not going to the Mac App Store (an app that
+  PacketBench is not sandboxed and is not going to the Mac App Store (an app that
   spawns arbitrary user CLIs cannot be sandboxed). Outbound network from a
   non-sandboxed, hardened-runtime app needs no entitlement. Do not add it; adding
   sandbox entitlements to a non-sandboxed app is a common cargo-cult mistake.
@@ -435,20 +435,20 @@ the user's project folders:
 
 ```xml
 <key>NSDocumentsFolderUsageDescription</key>
-<string>PacketADE needs access to open projects you select in Documents.</string>
+<string>PacketBench needs access to open projects you select in Documents.</string>
 <key>NSDownloadsFolderUsageDescription</key>
-<string>PacketADE needs access to open projects you select in Downloads.</string>
+<string>PacketBench needs access to open projects you select in Downloads.</string>
 <key>NSDesktopFolderUsageDescription</key>
-<string>PacketADE needs access to open projects you select on the Desktop.</string>
+<string>PacketBench needs access to open projects you select on the Desktop.</string>
 ```
 
 **TCC responsibility note, worth understanding before the acceptance run:** child
-processes spawned by PacketADE — every PTY shell, every `claude`/`codex` CLI, the
-`node` sidecar — inherit PacketADE as their TCC _responsible process_. So when the
+processes spawned by PacketBench — every PTY shell, every `claude`/`codex` CLI, the
+`node` sidecar — inherit PacketBench as their TCC _responsible process_. So when the
 `claude` CLI reads a file in `~/Documents`, macOS attributes the access to
-PacketADE and prompts under PacketADE's name. This is correct and expected, but it
+PacketBench and prompts under PacketBench's name. This is correct and expected, but it
 means the app can produce permission prompts for things the user did not
-consciously ask _PacketADE_ to do. The existing `$HOME`-scan avoidance
+consciously ask _PacketBench_ to do. The existing `$HOME`-scan avoidance
 (`commands/pty.rs:124-130`) is the right instinct; expect more of these during
 acceptance.
 
@@ -463,7 +463,7 @@ Two rules govern everything here:
    inside-out.** Nested code is signed first, the outer bundle last, because the
    outer signature seals a hash of the inner ones.
 
-For PacketADE the nested-code inventory is short:
+For PacketBench the nested-code inventory is short:
 
 - `Contents/MacOS/node` — the bundled Node 24.15.0 (`externalBin`). **This is the
   only nested Mach-O.** It must be signed with the Developer ID Application
@@ -485,7 +485,7 @@ different sets), and silently skips things. Sign explicitly.
 **Verification before every submission:**
 
 ```bash
-APP="src-tauri/target/release/bundle/macos/PacketADE.app"
+APP="src-tauri/target/release/bundle/macos/PacketBench.app"
 
 # Every Mach-O is signed, sealed resources are intact
 codesign --verify --deep --strict --verbose=4 "$APP"
@@ -530,7 +530,7 @@ that cannot be confirmed from this machine (see §9), so run the manual path at
 least once and record what was already done:
 
 ```bash
-DMG="src-tauri/target/release/bundle/dmg/PacketADE_1.1.0_aarch64.dmg"
+DMG="src-tauri/target/release/bundle/dmg/PacketBench_1.1.0_aarch64.dmg"
 
 # Submit and wait (minutes, typically)
 xcrun notarytool submit "$DMG" \
@@ -720,11 +720,11 @@ during 1.1. Items marked ⚠ can only be truly proven on the signed build.
 | ID     | Item                                                                                                                                                             | Pass criterion                                                                                                                                                                                                                   |
 | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | MAC-01 | ⚠ **Gatekeeper first run.** Download the DMG over HTTPS (do not `scp` it — quarantine only attaches on a real download), mount, drag to `/Applications`, launch. | Opens with **no** security dialog. `spctl -a -t open --context context:primary-signature -vvv` reports `source=Notarized Developer ID`.                                                                                          |
-| MAC-02 | **Bundled sidecar + bundled Node conversation.** One full API-agent turn on `api-claude-oauth` (Claude Agent SDK). Highest packaging risk on every platform.     | Response streams; `sidecar-status:changed` reports ready; protocol version reconciles at 11; no `PACKETADE_SIDECAR_PATH`/`PACKETADE_NODE_PATH` set.                                                                              |
+| MAC-02 | **Bundled sidecar + bundled Node conversation.** One full API-agent turn on `api-claude-oauth` (Claude Agent SDK). Highest packaging risk on every platform.     | Response streams; `sidecar-status:changed` reports ready; protocol version reconciles at 11; no `PACKETBENCH_SIDECAR_PATH`/`PACKETBENCH_NODE_PATH` set.                                                                              |
 | MAC-03 | ⚠ **Node JIT under hardened runtime.** Implied by MAC-02 but check the failure mode explicitly.                                                                  | Sidecar process stays alive; no `Killed: 9`; Console.app shows no `CODESIGNING` / `MAP_JIT` denials.                                                                                                                             |
-| MAC-04 | **First run creates its data dirs.**                                                                                                                             | `~/.packetade/` and `~/Library/Application Support/<LOG_DIR_NAME>/logs` created; log file written (`lib.rs:48-55`).                                                                                                              |
+| MAC-04 | **First run creates its data dirs.**                                                                                                                             | `~/.packetbench/` and `~/Library/Application Support/<LOG_DIR_NAME>/logs` created; log file written (`lib.rs:48-55`).                                                                                                              |
 | MAC-05 | **GUI-launch CLI detection.** Launch from **Finder/Spotlight, not a terminal** — this is the `launchd` minimal-`PATH` case `8a872d44` fixed.                     | Homebrew/npm/nvm-installed `claude`, `codex`, `gh`, `git`, `node` are all detected in Settings.                                                                                                                                  |
-| MAC-06 | **Sidecar binary actually shipped.** `build.rs:16-21` makes a missing Node a warning, not an error.                                                              | `PacketADE.app/Contents/MacOS/node` exists, is executable, and `--version` reports 24.15.0.                                                                                                                                      |
+| MAC-06 | **Sidecar binary actually shipped.** `build.rs:16-21` makes a missing Node a warning, not an error.                                                              | `PacketBench.app/Contents/MacOS/node` exists, is executable, and `--version` reports 24.15.0.                                                                                                                                      |
 | MAC-07 | **PTY pane with the default shell.**                                                                                                                             | Pane opens, prompt renders, `echo $0` and `ls` work, resize reflows, colour is correct.                                                                                                                                          |
 | MAC-08 | **PTY shell profiles.** Auto, Bash, Zsh, and one Custom (`/opt/homebrew/bin/fish`) — Custom is the only route to fish today (§3 item 7).                         | Each launches and reports the effective shell in the pane header. **Record whether Auto gives bash or zsh** — §3 item 6 says bash, which is wrong for macOS; this is the evidence that drives that fix.                          |
 | MAC-09 | **Login-shell environment.** In an Auto pane, check an alias and a `PATH` entry defined only in `~/.zshrc`/`~/.zprofile`.                                        | Expected to **FAIL** as written (`terminalShells.ts:219-222` passes no `-l`). Record it; it is a known 1.1 fix, not a discovery.                                                                                                 |
@@ -732,7 +732,7 @@ during 1.1. Items marked ⚠ can only be truly proven on the signed build.
 | MAC-11 | ⚠ **Keychain: API key set/read/delete.** Settings → add an Anthropic API key, restart the app, use it, delete it.                                                | Value round-trips. Note how many ACL prompts appear and whether "Always Allow" sticks across relaunch — a changed signing identity resets this.                                                                                  |
 | MAC-12 | ⚠ **Keychain: SSH password.** Same cycle for an `ssh-<ServerConfig.id>` entry.                                                                                   | Round-trips; legacy-service migration path is not triggered on a fresh install.                                                                                                                                                  |
 | MAC-13 | ⚠ **Microphone permission for dictation.** First dictation start.                                                                                                | macOS prompts with the `NSMicrophoneUsageDescription` text from `Info.plist`; granting it lets capture start; **denying it produces a comprehensible error** (§3 item 11 says it currently does not — record the actual string). |
-| MAC-14 | **Dictation end to end.** Record → transcribe → insert into the composer.                                                                                        | Transcript appears. First run downloads the Whisper model to `~/.packetade/models/` (`models.rs:133-136`) with SHA-256 verification.                                                                                             |
+| MAC-14 | **Dictation end to end.** Record → transcribe → insert into the composer.                                                                                        | Transcript appears. First run downloads the Whisper model to `~/.packetbench/models/` (`models.rs:133-136`) with SHA-256 verification.                                                                                             |
 | MAC-15 | **Dictation native delivery is honest.** Toggle `systemWidePaste`.                                                                                               | Expected to **FAIL** — `delivery.rs:40-48` returns the Windows-only error. The pass criterion for 1.1 is that this control is **hidden on macOS**, not that it works.                                                            |
 | MAC-16 | **Monitor on two displays.** Open a Monitor window, move it to a second display, resize, close.                                                                  | Renders correctly on both; closes with the main process; does not mount a PTY (Monitor v1 is read-only).                                                                                                                         |
 | MAC-17 | **Traffic lights and window chrome.**                                                                                                                            | Native traffic lights present and functional; no duplicate Windows-style controls; the 78 px left inset looks right (`TitleBar.tsx:55-74`); full-screen works.                                                                   |
@@ -740,7 +740,7 @@ during 1.1. Items marked ⚠ can only be truly proven on the signed build.
 | MAC-19 | **Flight attempt end to end.** One worktree-backed attempt: launch → run → accept.                                                                               | Worktree created and removed; `pkt/*` branch handled per the current contract; no leaked `git worktree` entries.                                                                                                                 |
 | MAC-20 | **Relaunch and state restore.**                                                                                                                                  | Workspaces, panes, flights, issues, and settings all survive.                                                                                                                                                                    |
 | MAC-21 | **TCC prompt inventory.** Open a project in `~/Documents` and let an agent read a file.                                                                          | Record every permission prompt macOS raises, its wording, and what triggered it (see the responsible-process note in §4.3). Deliverable is the list, not a pass/fail.                                                            |
-| MAC-22 | ⚠ **Clean-machine install.** A Mac (or account) that has never run PacketADE.                                                                                    | Installs and reaches MAC-02 without any developer tooling present.                                                                                                                                                               |
+| MAC-22 | ⚠ **Clean-machine install.** A Mac (or account) that has never run PacketBench.                                                                                    | Installs and reaches MAC-02 without any developer tooling present.                                                                                                                                                               |
 
 Record results in a dated evidence file under `dev/` following the
 `release-v0.10.3.md` pattern. **Build success is not acceptance** — the existing

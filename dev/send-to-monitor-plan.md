@@ -7,16 +7,16 @@ proof and later expansion remain.**
 
 ## Summary
 
-**Send to Monitor** is PacketADE's proposed multi-window, multi-monitor
+**Send to Monitor** is PacketBench's proposed multi-window, multi-monitor
 operations feature. It is intentionally not a Cursor-style agent pane popout.
-The main PacketADE window remains the cockpit: navigation, provider/model
+The main PacketBench window remains the cockpit: navigation, provider/model
 selection, agent launch, mission orchestration, permissions, settings, secrets,
 and destructive controls stay there. Detached Monitor windows are focused
 operational displays for selected work.
 
 Product rule:
 
-> PacketADE does not pop out side panels. It sends operational views to monitors.
+> PacketBench does not pop out side panels. It sends operational views to monitors.
 
 Implemented v1 footprint:
 
@@ -36,7 +36,7 @@ Implemented v1 footprint:
   `Focus in Main Window` through a backend event.
 - Agent header and Flight header actions open or reroute the Monitor.
 
-The feature is useful for multi-display setups while reinforcing PacketADE's
+The feature is useful for multi-display setups while reinforcing PacketBench's
 identity as an agent operations desk rather than an editor with a detachable
 chat panel.
 
@@ -45,7 +45,7 @@ chat panel.
 | Decision                                    | Current answer                                           |
 | ------------------------------------------- | -------------------------------------------------------- |
 | Should the Agents pane pop out?             | No. Keep the left rail anchored as the dispatch surface. |
-| Should PacketADE support multiple monitors? | Later; v1 reuses one `monitor-main` window.              |
+| Should PacketBench support multiple monitors? | Later; v1 reuses one `monitor-main` window.              |
 | Should Monitor windows be writable?         | Not in v1. Start read-only / control-lite.               |
 | Should v1 support arbitrary pane detach?    | No. Only approved monitor surfaces.                      |
 | Should this be implemented now?             | V1 is implemented; later surfaces remain gated.          |
@@ -175,7 +175,7 @@ Behavior:
 5. If it does not exist, backend creates it with an app URL such as:
 
 ```text
-index.html?packetadeWindow=monitor&label=monitor-main
+index.html?packetbenchWindow=monitor&label=monitor-main
 ```
 
 References:
@@ -191,7 +191,7 @@ Add a parallel monitor boot path in `src/main.tsx`:
 
 ```text
 normal URL -> render <App />
-packetadeWindow=monitor -> render <MonitorApp />
+packetbenchWindow=monitor -> render <MonitorApp />
 ```
 
 New files:
@@ -259,7 +259,7 @@ shell, process, global shortcut, PTY write/kill, agent start/send/cancel,
 approval response, GitHub mutation, deploy mutation, settings, keyring, or file
 write permissions to Monitor windows.
 
-Tauri plugin capabilities do not by themselves restrict PacketADE's registered
+Tauri plugin capabilities do not by themselves restrict PacketBench's registered
 application commands. `lib.rs` therefore checks every application invoke from a
 non-main label before the generated handler runs. Unreviewed secondary windows
 are denied all application commands; the v1 `monitor-*` allowlist is:
@@ -491,7 +491,7 @@ Menu placement:
 - Cost dashboard toolbar
 
 Do not put `Send to Monitor` inside `Continue in`; that menu means external
-tools and follow-on agent surfaces, not PacketADE Monitor windows.
+tools and follow-on agent surfaces, not PacketBench Monitor windows.
 
 ## Implementation Sprints
 
@@ -631,7 +631,7 @@ Security/regression:
 
 Manual:
 
-1. Open PacketADE on primary monitor.
+1. Open PacketBench on primary monitor.
 2. Start or select an API-agent conversation.
 3. Click `Send to Monitor`.
 4. Move Monitor window to another physical display.

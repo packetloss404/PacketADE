@@ -1,6 +1,6 @@
 /**
  * Phase 2: one-time migration of legacy `SshTarget` records (persisted
- * under `packetade:ssh-targets` in localStorage) into the unified
+ * under `packetbench:ssh-targets` in localStorage) into the unified
  * `serverStore`. The two stacks both modeled "an SSH endpoint"; the only
  * meaningful difference was that `SshTarget.remotePath` was a single
  * required field, whereas `ServerConfig.remotePath` is optional and acts
@@ -19,7 +19,7 @@ import { loadFromStorage, removeFromStorage } from "@/lib/storage";
 import { logSwallowed } from "@/lib/logSwallowed";
 import { getSshPasswordExists, saveServersSlice } from "@/lib/tauri";
 
-const LEGACY_STORAGE_KEY = "packetade:ssh-targets";
+const LEGACY_STORAGE_KEY = "packetbench:ssh-targets";
 // Older builds used the pre-rename prefix; check both for safety.
 const LEGACY_PACKETCODE_KEY = "packetcode:ssh-targets";
 

@@ -331,7 +331,7 @@ pub async fn execute_write_file(
 
     // Embed the content via a single-quoted heredoc so we don't depend on
     // the SSH stdin (which may be carrying the password).
-    let eof = crate::core::shared::pick_heredoc_terminator(content, "PACKETADE_EOF_");
+    let eof = crate::core::shared::pick_heredoc_terminator(content, "PACKETBENCH_EOF_");
     // Confine the nearest existing ancestor before creation, then create and
     // re-confine the final parent/leaf immediately before writing. The `cat >
     // ... <<'EOF'` and its heredoc body must stay adjacent and untouched.

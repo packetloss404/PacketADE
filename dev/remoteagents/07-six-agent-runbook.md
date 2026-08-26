@@ -25,7 +25,7 @@ Owns:
 
 Tasks:
 
-- Feature-isolated PacketADE module in the existing Rust service.
+- Feature-isolated PacketBench module in the existing Rust service.
 - Host-room router with host/device sockets.
 - Auth middleware stub.
 - Host registration.
@@ -61,7 +61,7 @@ Tasks:
 
 First checkpoint:
 
-- PacketADE desktop connects to fake relay and shows connected/disconnected state.
+- PacketBench desktop connects to fake relay and shows connected/disconnected state.
 
 ## Agent 3 - Backend Conversation Service
 
@@ -76,7 +76,7 @@ Tasks:
 
 - backend create-conversation method.
 - backend send/cancel/retry/set-model wrappers.
-- map mobile launch modes to PacketADE API-agent config.
+- map mobile launch modes to PacketBench API-agent config.
 - persist snapshots.
 - fan out `api-agent:*` events to remote service.
 - bridge approval responses.
@@ -214,7 +214,7 @@ Day 5:
 ## Merge Order
 
 1. Shared protocol schemas.
-2. Rust relay PacketADE skeleton.
+2. Rust relay PacketBench skeleton.
 3. Desktop feature flag and no-op remote module.
 4. PWA skeleton.
 5. Host presence.

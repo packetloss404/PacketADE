@@ -2,18 +2,18 @@
 
 ## One-Liner
 
-PacketADE Remote Agents lets a signed-in user start, monitor, steer, approve, cancel, and resume PacketADE API-agent conversations from a phone PWA through a secure cloud relay, using the desktop app's configured providers, models, profiles, auth, workspaces, MCP servers, and permission settings.
+PacketBench Remote Agents lets a signed-in user start, monitor, steer, approve, cancel, and resume PacketBench API-agent conversations from a phone PWA through a secure cloud relay, using the desktop app's configured providers, models, profiles, auth, workspaces, MCP servers, and permission settings.
 
 ## User-Facing Mental Model
 
-"My desktop PacketADE is an online agent host. My phone signs into Packet Cloud and controls that host."
+"My desktop PacketBench is an online agent host. My phone signs into Packet Cloud and controls that host."
 
 The user should not have to think about relay sockets, Packet Relay deployment, provider routing, sidecar processes, or local ports.
 
 ## Primary Personas
 
 - Solo builder away from desk who wants to approve tools, send follow-up prompts, and see when work finishes.
-- Power user with multiple desktops/workspaces who wants all configured PacketADE providers and models available from mobile.
+- Power user with multiple desktops/workspaces who wants all configured PacketBench providers and models available from mobile.
 - Future team lead who wants remote Flights monitoring and approval, but team/org controls are not in MVP.
 
 ## MVP Feature Set
@@ -30,7 +30,7 @@ The user should not have to think about relay sockets, Packet Relay deployment, 
 
 ### Discovery
 
-- PWA lists available PacketADE hosts.
+- PWA lists available PacketBench hosts.
 - PWA lists workspaces/projects available on the selected host.
 - PWA lists configured API providers/models from the selected host.
 - PWA shows provider auth badges from the desktop (`ready`, `login_required`, `missing_key`, `service_down`, `coming_soon`).
@@ -74,7 +74,7 @@ The user should not have to think about relay sockets, Packet Relay deployment, 
 - Native iOS app or TestFlight build.
 - Raw PTY sessions.
 - Full file browser/editor.
-- Running agents in the cloud without desktop PacketADE online.
+- Running agents in the cloud without desktop PacketBench online.
 - Cloud-stored provider API keys or OAuth tokens.
 - Team/org sharing.
 - Billing plans.
@@ -101,13 +101,13 @@ The user should not have to think about relay sockets, Packet Relay deployment, 
 
 ### First-Time Setup
 
-1. User opens PacketADE desktop.
+1. User opens PacketBench desktop.
 2. User opens Tools or Settings and toggles Remote Agents.
-3. PacketADE asks user to sign into Packet Cloud.
+3. PacketBench asks user to sign into Packet Cloud.
 4. Browser opens auth flow.
-5. PacketADE receives callback/deep link and stores refresh credentials securely.
+5. PacketBench receives callback/deep link and stores refresh credentials securely.
 6. Desktop registers host as `Ian-PC`.
-7. User opens `remote.packetade.app` on phone and signs in.
+7. User opens `remote.packetbench.app` on phone and signs in.
 8. Phone sees `Ian-PC` but shows `Approval needed`.
 9. Desktop shows "Ian's iPhone wants Remote Agents access."
 10. User approves.

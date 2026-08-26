@@ -937,7 +937,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                 ) : (
                   <>
                     <p className="text-[9px] leading-relaxed text-text-muted">
-                      Creating PacketADE panes requires a Full control grant. View-only devices can
+                      Creating PacketBench panes requires a Full control grant. View-only devices can
                       browse machine status and the Host catalog in Settings, but must be re-paired
                       with a new Full control invite before execution.
                     </p>
@@ -987,7 +987,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                     <div className="rounded border border-bg-border bg-bg-secondary p-2">
                       <p className="mb-2 text-[9px] leading-relaxed text-text-muted">
                         Need a fresh Host Workspace? Choose one of the server's registered repositories.
-                        Syndicate owns the repository path and isolated worktrees; PacketADE never sends a path.
+                        Syndicate owns the repository path and isolated worktrees; PacketBench never sends a path.
                       </p>
                       <div className="flex gap-2">
                         <select

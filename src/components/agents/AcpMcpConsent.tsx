@@ -5,9 +5,9 @@
  * # Why this surface exists
  *
  * An ACP session's MCP servers are local subprocesses the ENGINE spawns on the
- * user's machine, named by PacketADE at `session/new`. Unlike the Node sidecar,
+ * user's machine, named by PacketBench at `session/new`. Unlike the Node sidecar,
  * packetcode owns the MCP client and dispatches every tool call itself, so
- * PacketADE cannot filter anything after the fact: the only enforceable
+ * PacketBench cannot filter anything after the fact: the only enforceable
  * question is *may this server run at all*, and it has to be answered before
  * the session starts. This is where it is asked and answered.
  *
@@ -354,7 +354,7 @@ export function AcpMcpConsent({ projectPath, caps }: AcpMcpConsentProps) {
 
               {plan.servers.length === 0 && (
                 <p className="px-2 py-1 text-meta text-text-faint">
-                  PacketADE has no MCP servers configured for this project.
+                  PacketBench has no MCP servers configured for this project.
                 </p>
               )}
 
@@ -439,10 +439,10 @@ export function AcpMcpConsent({ projectPath, caps }: AcpMcpConsentProps) {
           {fleetOpen && (
             <>
               <p className="px-2 pb-1 text-meta leading-snug text-text-muted">
-                These are configured in the engine, not in PacketADE. Inheriting them means
+                These are configured in the engine, not in PacketBench. Inheriting them means
                 running whatever its configuration lists at the time — it cannot be granted
                 server by server, and it applies only to sessions started in this run of the
-                app. Where PacketADE has servers of its own allowed above, those are sent by
+                app. Where PacketBench has servers of its own allowed above, those are sent by
                 name instead and this has no effect.
               </p>
               <label className="mx-2 mb-1 flex items-start gap-1.5 rounded-md border border-bg-border bg-bg-primary px-2 py-1.5">

@@ -1217,7 +1217,7 @@ export async function mergeConversationBranch(
 /**
  * v0.8.5 fix: provision a git worktree bound to a specific Issue. The
  * Rust side installs a `prepare-commit-msg` hook that appends
- * `Fixes #{issueNumber}` and `Run-By: PacketADE issue I-{issueId}` to
+ * `Fixes #{issueNumber}` and `Run-By: PacketBench issue I-{issueId}` to
  * every commit, so the `git_commit` watcher can flip the matching
  * Issue to `done` via the `issue-watcher:fixed` event. Returns the
  * absolute worktree path the workspace should use as its
@@ -1488,7 +1488,7 @@ export async function cancelFlightAttempt(
 
 /**
  * Remove a Flight's cooperative integration worktree (and, when asked, its
- * `packetade/flight/<id>` branch). Flight-keyed rather than attempt-keyed, so
+ * `packetbench/flight/<id>` branch). Flight-keyed rather than attempt-keyed, so
  * none of the attempt cleanup commands can reach it — without this a deleted
  * cooperative Flight left `.pkt-flight-integrations/<id>` behind forever.
  *
@@ -2415,7 +2415,7 @@ function toDtoPersistedState(state: PersistedState): PersistedStateDto {
       autoCommitTrailerEnabled: state.settings.autoCommitTrailerEnabled ?? true,
       autoCommitTrailerFormat:
         state.settings.autoCommitTrailerFormat ??
-        "Run-By: PacketADE flight F-{flightId} attempt A-{attemptId}",
+        "Run-By: PacketBench flight F-{flightId} attempt A-{attemptId}",
       autonomyDefaultMode: state.settings.autonomyDefaultMode ?? "assisted",
       autonomyDefaultPolicy: state.settings.autonomyDefaultPolicy ?? {
         schemaVersion: 1,
@@ -3229,7 +3229,7 @@ export async function diagnoseMcpServer(
   });
 }
 
-// N3 — PacketADE-as-MCP-server lifecycle (the Rust-hosted Streamable HTTP server)
+// N3 — PacketBench-as-MCP-server lifecycle (the Rust-hosted Streamable HTTP server)
 export interface McpServerStatus {
   running: boolean;
   port: number | null;
@@ -3356,7 +3356,7 @@ export async function deleteApiKey(provider: string): Promise<void> {
 
 // === WI-1: auxiliary AI routing ===========================================
 //
-// The routing store owns persistence (localStorage `packetade:routing-aux`)
+// The routing store owns persistence (localStorage `packetbench:routing-aux`)
 // and mirrors it into the backend, which is where resolution happens — only
 // Rust can see the OS keyring, so only Rust can answer "which providers are
 // actually configured, and which is cheapest". See
@@ -3439,7 +3439,7 @@ export type CliAccountSeedResult = {
  *
  * `CLAUDE_CONFIG_DIR` / `CODEX_HOME` relocate the CLI's whole state root, so a
  * fresh account dir would otherwise start with no statusline hook and none of
- * the MCP servers PacketADE writes into `~/.claude/settings.json` — a blank
+ * the MCP servers PacketBench writes into `~/.claude/settings.json` — a blank
  * status bar and missing tools with nothing on screen to explain it.
  *
  * Credential files are never copied (the allowlist is hard-coded in Rust):
@@ -3642,10 +3642,10 @@ export interface StartApiAgentAcpOptions {
    * Affirmative, session-scoped consent to run the packetcode ENGINE's own
    * configured `[mcp.<name>]` fleet — the servers `acpListMcpServers()` (no
    * session id) discloses. A SEPARATE decision from `mcpTrustSnapshot`, which
-   * covers PacketADE's own configured servers.
+   * covers PacketBench's own configured servers.
    *
    * Absent or false is the safe default and must stay that way. It also only
-   * takes effect when PacketADE's own trust decision yields nothing to send
+   * takes effect when PacketBench's own trust decision yields nothing to send
    * (naming the exact servers is the more honest form of the same consent),
    * and the backend refuses it outright against an engine that never
    * advertised `mcpDefaults` — surfaced as `AcpMcpPlan.inheritRefused`.
@@ -3894,7 +3894,7 @@ export async function cancelSideChatStream(requestId: string): Promise<boolean> 
 // The Node agent-sidecar is supervised by the Rust backend. This surface lets
 // the status-bar chip show its current state and react to transitions.
 
-// Cross-restart counters persisted in `~/.packetade/sidecar-stats.json`
+// Cross-restart counters persisted in `~/.packetbench/sidecar-stats.json`
 // (v2 Tier 4 slice A). Populated on every `getSidecarStatus` poll and every
 // `sidecar-status:changed` event. All fields snake_case to match the Rust
 // wire format verbatim.
@@ -4010,7 +4010,7 @@ export async function codeQualityAiSummarize(
 
 // === PacketCode ACP engine =================================================
 //
-// PacketADE's third agent transport: a separately-installed `packetcode`
+// PacketBench's third agent transport: a separately-installed `packetcode`
 // engine driven over Agent Client Protocol v1 (`src-tauri/src/acp/`). Chat
 // itself still routes through the `api_agent` surface above — these bindings
 // cover the engine-scoped queries that have no `api-agent:*` equivalent:
@@ -4041,7 +4041,7 @@ export interface AcpEngineProbe {
   minimumVersion: string;
   /** `version >= minimumVersion` (source builds reporting "dev" pass). */
   compatible: boolean;
-  /** Always false — PacketADE never runs the engine's PowerShell installer. */
+  /** Always false — PacketBench never runs the engine's PowerShell installer. */
   installSupported: boolean;
   /** Human-readable reason when the probe could not conclude. */
   detail?: string;
@@ -4126,7 +4126,7 @@ export interface AcpMcpServerStatus {
   toolCount: number;
   /**
    * "agent" for the engine's own configuration, "client" for servers an ACP
-   * client supplied. PacketADE supplies none, so this is "agent" in practice.
+   * client supplied. PacketBench supplies none, so this is "agent" in practice.
    */
   source: string;
   /** The executable the engine would run — the disclosure payload. */
@@ -4196,7 +4196,7 @@ export async function acpListSessions(): Promise<AcpSessionSummary[]> {
  * Make a persisted engine session resident again (ACP `session/load`), so the
  * next turn on it runs with its stored history as context.
  *
- * `sessionId` may be a PacketADE conversation id or a raw engine session id
+ * `sessionId` may be a PacketBench conversation id or a raw engine session id
  * from {@link acpListSessions} — the same either/or the read-only queries
  * accept. `cwd` is the directory to resume in; for a directory row that is its
  * own `workingDir`.
@@ -4204,7 +4204,7 @@ export async function acpListSessions(): Promise<AcpSessionSummary[]> {
  * This does NOT bind a conversation to the session. Binding happens at session
  * start, via {@link StartApiAgentAcpOptions.engineSessionId}. The transcript
  * the engine replays during the load is deliberately not rendered anywhere —
- * ACP's replay omits the user's own turns and PacketADE holds no local record
+ * ACP's replay omits the user's own turns and PacketBench holds no local record
  * to interleave, so a rendered replay would be a transcript with every
  * question missing. Rejects when the engine cannot be started or refuses.
  */
@@ -4248,7 +4248,7 @@ export async function acpSearchFiles(cwd: string, query: string): Promise<string
 /**
  * Usage for one conversation. `null` when the engine predates the extension —
  * not an error, the statusline simply has nothing to show. `sessionId` is
- * PacketADE's conversation id; the backend maps it to the engine's own id.
+ * PacketBench's conversation id; the backend maps it to the engine's own id.
  */
 export async function acpSessionUsage(sessionId: string): Promise<AcpSessionUsage | null> {
   return invoke<AcpSessionUsage | null>("acp_session_usage", { sessionId });
@@ -4256,7 +4256,7 @@ export async function acpSessionUsage(sessionId: string): Promise<AcpSessionUsag
 
 /**
  * Rename a persisted session. Silently a no-op on engines that predate the
- * extension — titles then stay engine-generated. `sessionId` is PacketADE's
+ * extension — titles then stay engine-generated. `sessionId` is PacketBench's
  * conversation id.
  */
 export async function acpRenameSession(sessionId: string, name: string): Promise<void> {
@@ -4268,7 +4268,7 @@ export async function acpRenameSession(sessionId: string, name: string): Promise
 // `acp_install_engine` downloads and runs packetcode's own published install
 // script (install.ps1 on Windows, install.sh on macOS/Linux). The URL is a
 // compile-time constant in `src-tauri/src/acp/install.rs` and is deliberately
-// NOT a parameter — accepting one would let any caller make PacketADE execute
+// NOT a parameter — accepting one would let any caller make PacketBench execute
 // arbitrary remote code. It MUST only ever run from an explicit user click.
 
 /** Payload of the `acp:install-output` event: one line of installer output. */
@@ -4318,7 +4318,7 @@ export interface AcpMcpPlannedServer {
 
 export interface AcpMcpPlan {
   posture: "none" | "inheritEngineDefaults" | "explicit";
-  /** Servers PacketADE considered, each with its admission verdict. */
+  /** Servers PacketBench considered, each with its admission verdict. */
   servers: AcpMcpPlannedServer[];
   /** Names that would actually go on the wire. */
   selected: string[];
@@ -4327,7 +4327,7 @@ export interface AcpMcpPlan {
 }
 
 /**
- * What PacketADE *would* hand the engine for a given trust decision. Reads
+ * What PacketBench *would* hand the engine for a given trust decision. Reads
  * configuration only — spawns nothing — so it is safe to call while building a
  * consent dialog. Pair with `acpListMcpServers()` (no session id) to show the
  * engine's own fleet alongside it.

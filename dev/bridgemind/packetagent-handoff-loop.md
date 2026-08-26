@@ -1,26 +1,26 @@
-# PacketAgent Deploy & Supervise Handoff — PacketADE Loop
+# PacketAgent Deploy & Supervise Handoff — PacketBench Loop
 
 Created: 2026-07-27
 Last updated: 2026-07-29
-Status: W9 published; PacketADE Flight consumer source implemented; live
+Status: W9 published; PacketBench Flight consumer source implemented; live
 cross-repository continuation and remaining contract/UI slices gated
 Product decision: **Option B — deploy and supervise**
 
 ## Objective
 
-PacketADE can turn approved development work into a bounded PacketAgent Worker,
+PacketBench can turn approved development work into a bounded PacketAgent Worker,
 deploy and activate it, follow its durable progress, and reconnect after
-PacketADE restarts. PacketAgent owns execution and remains alive when PacketADE
-closes; PacketADE remains the planning and supervision cockpit.
+PacketBench restarts. PacketAgent owns execution and remains alive when PacketBench
+closes; PacketBench remains the planning and supervision cockpit.
 
 The receiving contract is designed in
-`D:\projects\PacketAgent\dev\packetade-packetagent-handoff.md` and implemented by
-PacketAgent backlog loop W9. This document owns only the PacketADE side and the
+`D:\projects\PacketAgent\dev\packetbench-packetagent-handoff.md` and implemented by
+PacketAgent backlog loop W9. This document owns only the PacketBench side and the
 cross-repository compatibility gates.
 
 PacketAgent implementation remains active in its own repository and Codex
 project. W9 was published at
-`dd8a5c93779a9ecc8af96bb232adcb5be0bdf16e`; PacketADE pins that revision and
+`dd8a5c93779a9ecc8af96bb232adcb5be0bdf16e`; PacketBench pins that revision and
 verifies the PacketAgent-owned v1 fixture digest. No PacketAgent source is
 modified here.
 
@@ -37,11 +37,11 @@ modified here.
   references only.
 - PacketAgent independently validates, may narrow capabilities, and rejects
   unbounded or unauthorized deployments.
-- PacketADE snapshots the policy used for deployment; later Settings changes do
+- PacketBench snapshots the policy used for deployment; later Settings changes do
   not silently broaden an active Worker.
 - PacketAgent owns checkpoints, leases, retries, triggers, durability, and side
   effects after activation.
-- PacketADE may inspect, pause, resume, stop/revoke, and respond to approvals.
+- PacketBench may inspect, pause, resume, stop/revoke, and respond to approvals.
 - Reconnection uses monotonic event cursors and idempotency keys; replay cannot
   duplicate a deployment or action.
 - Completion returns evidence and artifact references such as a branch, draft
@@ -60,10 +60,10 @@ named PacketAgent contract/runtime dependency is not yet available.
 | **PH4** | Validate-before-deploy flow | The user sees exact requested capabilities, credential references, budgets, triggers, and validation errors before activation. Validation has no side effect. | Component/API idempotency tests | PH2, PH3; PacketAgent W9 validate | closed for Flight source |
 | **PH5** | Deploy / Keep running | Deploy is idempotent; Keep running deploys then explicitly activates. Persist deployment/version/run references back onto the source without changing its local execution history. | Retry/replay/crash tests | PH4; PacketAgent W9 deploy/activate | closed in source; live replay gate pending |
 | **PH6** | Durable event projection | Subscribe to ordered PacketAgent events with a persisted cursor, dedupe on reconnect, and project progress, attention, cost, checkpoints, and terminal state into Flight Deck without rewriting source truth. | SSE disconnect/replay/out-of-order tests | PH5; PacketAgent W8/W9 events | in-progress — persisted cursor polling/ack landed; SSE and richer projections pending |
-| **PH7** | Supervision controls | Inspect, Pause, Resume, Stop/Revoke, and approval responses operate on the durable deployment/run and show confirmed PacketAgent state. Controls remain available after PacketADE restart. | Permission/idempotency/stale-run tests | PH6; PacketAgent W7/W9 | in-progress — inspect/pause/resume/revoke landed; W9 has no approval-response route |
-| **PH8** | Evidence and return artifacts | Completion surfaces evidence, checks, cost, branch/PR/artifact references, and review verdict. Importing or landing returned code remains an explicit PacketADE action. | Artifact integrity/provenance and missing-evidence tests | PH6; PacketAgent W8/W9 | in-progress — latest evidence inspection landed; typed artifact return/landing pending |
-| **PH9** | PacketAgent attention integration | Approval, blocked, budget-exhausted, failed, and cancelled events enter the PacketADE attention queue and coordination inbox with deep links to the durable run. | Projection/dedupe/deep-link tests | PH6; Coordination CI3 | queued |
-| **PH10** | End-to-end contract gate | A Flight can Keep running, PacketADE can close, PacketAgent continues, and a restarted PacketADE reconnects to the same run and evidence trail. Cover policy rejection, revoke, network loss, and schema skew. | Cross-repo automated contract suite plus manual smoke | PH1–PH9 | gated — requires configured live PacketAgent |
+| **PH7** | Supervision controls | Inspect, Pause, Resume, Stop/Revoke, and approval responses operate on the durable deployment/run and show confirmed PacketAgent state. Controls remain available after PacketBench restart. | Permission/idempotency/stale-run tests | PH6; PacketAgent W7/W9 | in-progress — inspect/pause/resume/revoke landed; W9 has no approval-response route |
+| **PH8** | Evidence and return artifacts | Completion surfaces evidence, checks, cost, branch/PR/artifact references, and review verdict. Importing or landing returned code remains an explicit PacketBench action. | Artifact integrity/provenance and missing-evidence tests | PH6; PacketAgent W8/W9 | in-progress — latest evidence inspection landed; typed artifact return/landing pending |
+| **PH9** | PacketAgent attention integration | Approval, blocked, budget-exhausted, failed, and cancelled events enter the PacketBench attention queue and coordination inbox with deep links to the durable run. | Projection/dedupe/deep-link tests | PH6; Coordination CI3 | queued |
+| **PH10** | End-to-end contract gate | A Flight can Keep running, PacketBench can close, PacketAgent continues, and a restarted PacketBench reconnects to the same run and evidence trail. Cover policy rejection, revoke, network loss, and schema skew. | Cross-repo automated contract suite plus manual smoke | PH1–PH9 | gated — requires configured live PacketAgent |
 
 ## Sequencing
 
@@ -74,15 +74,15 @@ PacketAgent W1-W7 -> W9 contract/runtime
                                                \-> PH9 -/
 ```
 
-PacketADE implementation must not simulate durability while PacketAgent W9 is
+PacketBench implementation must not simulate durability while PacketAgent W9 is
 absent. UI work may use contract fixtures, but no feature is marked shipped
 until the close/reconnect continuation gate passes against the real runtime.
 
 ## Definition of done
 
 - One click can validate, deploy, activate, and follow approved work.
-- PacketAgent continues after PacketADE closes.
-- PacketADE reconnects without losing or duplicating events.
+- PacketAgent continues after PacketBench closes.
+- PacketBench reconnects without losing or duplicating events.
 - Policies and credentials respect the cross-product trust boundary.
 - The operator can always inspect, pause, revoke, and understand cost and stop
   reason.
@@ -90,7 +90,7 @@ until the close/reconnect continuation gate passes against the real runtime.
 
 ## 2026-08-01 proof refresh
 
-PacketADE's focused package-consumer tests passed. On clean PacketAgent `main`
+PacketBench's focused package-consumer tests passed. On clean PacketAgent `main`
 `f71021c`, the focused package/trust tests passed **11/11**, and the event,
 lifecycle, serialized disconnect/process-reconstruction, and validation tests
 passed **25/25** with the one opt-in live interoperability test skipped. The
