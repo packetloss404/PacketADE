@@ -3434,6 +3434,12 @@ export type OllamaModel = {
   name: string;
   size: number | null;
   modified_at: string | null;
+  /** `false` = daemon says the model has no tools template (disable in
+   * tool-carrying pickers); `null`/`undefined` = unknown (old daemon) and
+   * must render as a normal, selectable row. */
+  supportsTools?: boolean | null;
+  /** Trained context window in tokens, when reported. */
+  contextLength?: number | null;
 };
 
 export async function getOllamaBaseUrl(): Promise<string> {

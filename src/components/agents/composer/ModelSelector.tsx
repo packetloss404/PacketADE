@@ -35,6 +35,12 @@ interface ModelSelectorProps {
   /** Imperative "open now" channel threaded to the underlying Dropdown, e.g.
    * so the `/model` slash command can open the header's picker. */
   openSignal?: number;
+  /** True when the surface this picker serves runs tool-carrying turns
+   * (conversation tiles always do — the mode can change mid-conversation).
+   * Ollama models the daemon reports as tool-less are disabled; models with
+   * unknown capability (old daemons) stay selectable — the backend
+   * pre-flight remains the enforcement point. */
+  requiresTools?: boolean;
 }
 
 export function ModelSelector({
@@ -44,6 +50,7 @@ export function ModelSelector({
   ollamaModels,
   refreshOllamaModels,
   openSignal,
+  requiresTools = false,
 }: ModelSelectorProps) {
   const provider = API_PROVIDERS.find((p) => p.agentCli === selectedAgent);
   if (!provider) return null;
@@ -141,21 +148,38 @@ export function ModelSelector({
               in a terminal.
             </div>
           ) : (
-            ollamaModels.map((m) => (
-              <DropdownItem
-                key={m.name}
-                onClick={() => onModelChange(m.name)}
-              >
-                <span className="flex items-center justify-between gap-2 w-full">
-                  <span className="truncate">{m.name}</span>
-                  {typeof m.size === "number" && (
-                    <span className="text-text-muted text-meta shrink-0">
-                      {(m.size / 1e9).toFixed(1)} GB
+            ollamaModels.map((m) => {
+              const toolless = requiresTools && m.supportsTools === false;
+              return (
+                <DropdownItem
+                  key={m.name}
+                  onClick={toolless ? () => {} : () => onModelChange(m.name)}
+                >
+                  <span
+                    className={`flex items-center justify-between gap-2 w-full ${
+                      toolless ? "opacity-50" : ""
+                    }`}
+                    title={
+                      toolless
+                        ? "This model has no tools template — agent turns need tool calling"
+                        : undefined
+                    }
+                  >
+                    <span className="truncate">{m.name}</span>
+                    <span className="flex items-center gap-2 shrink-0 text-text-muted text-meta">
+                      {toolless && (
+                        <span className="px-1 py-px rounded bg-bg-hover text-text-muted">
+                          no tools
+                        </span>
+                      )}
+                      {typeof m.size === "number" && (
+                        <span>{(m.size / 1e9).toFixed(1)} GB</span>
+                      )}
                     </span>
-                  )}
-                </span>
-              </DropdownItem>
-            ))
+                  </span>
+                </DropdownItem>
+              );
+            })
           )}
         </>
       ) : (

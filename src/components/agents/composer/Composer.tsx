@@ -727,6 +727,7 @@ export function Composer(props: ComposerProps) {
                   onModelChange={launch.onModelChange}
                   ollamaModels={ollamaModels}
                   refreshOllamaModels={refreshOllamaModels}
+                  requiresTools
                 />
               </div>
 

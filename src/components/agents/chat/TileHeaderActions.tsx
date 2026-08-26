@@ -165,6 +165,7 @@ export function TileHeaderActions({
             ollamaModels={ollamaModels}
             refreshOllamaModels={refreshOllamaModels}
             openSignal={modelOpenSignal}
+            requiresTools
           />
           <ContextUsageRing conversation={conversation} />
         </>

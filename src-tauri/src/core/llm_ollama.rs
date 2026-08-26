@@ -192,7 +192,7 @@ fn profile_cache() -> &'static Mutex<HashMap<String, OllamaModelProfile>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-async fn fetch_model_profile(base_url: &str, model: &str) -> Option<OllamaModelProfile> {
+pub(crate) async fn fetch_model_profile(base_url: &str, model: &str) -> Option<OllamaModelProfile> {
     let key = format!("{}|{}", base_url, model);
     if let Some(cached) = profile_cache()
         .lock()

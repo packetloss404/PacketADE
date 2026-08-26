@@ -19,20 +19,64 @@ pub struct OllamaModel {
     pub size: Option<u64>,
     /// RFC3339 timestamp of the last modification, if reported.
     pub modified_at: Option<String>,
+    /// Whether the model can call tools. `Some(false)` disables the row in
+    /// tool-carrying pickers; `None` means the daemon did not say (old
+    /// daemons) and must NOT disable anything — the backend pre-flight in
+    /// `core::llm_ollama` stays the enforcement point.
+    #[serde(rename = "supportsTools")]
+    pub supports_tools: Option<bool>,
+    /// Trained context window in tokens, when the daemon reported it.
+    #[serde(rename = "contextLength")]
+    pub context_length: Option<u32>,
 }
 
-/// Raw `/api/tags` response shape. Only the fields we care about — digest
-/// and details are dropped.
+/// Raw `/api/tags` response shape.
 #[derive(Deserialize)]
 struct TagsResponse {
     models: Option<Vec<TagsEntry>>,
 }
 
+/// One `/api/tags` row. Ollama v0.32+ reports `capabilities` and
+/// `details.context_length` inline, sparing us an `/api/show` per model;
+/// older daemons omit both.
 #[derive(Deserialize)]
 struct TagsEntry {
     name: String,
     size: Option<u64>,
     modified_at: Option<String>,
+    #[allow(dead_code)]
+    digest: Option<String>,
+    capabilities: Option<Vec<String>>,
+    details: Option<TagsDetails>,
+}
+
+#[derive(Deserialize)]
+struct TagsDetails {
+    context_length: Option<u32>,
+}
+
+/// Convert one tags row into the wire model. Pure so the with/without-
+/// capabilities shapes are testable against fixtures. Capabilities present →
+/// tool support is decided here (v0.32+ path, zero extra round trips);
+/// absent → `supports_tools: None`, and the caller may fan out to
+/// `/api/show` to fill it in.
+fn model_from_tags_entry(entry: TagsEntry) -> OllamaModel {
+    let supports_tools = entry
+        .capabilities
+        .as_ref()
+        .map(|caps| caps.iter().any(|c| c == "tools"));
+    let context_length = entry
+        .details
+        .as_ref()
+        .and_then(|d| d.context_length)
+        .filter(|len| *len > 0);
+    OllamaModel {
+        name: entry.name,
+        size: entry.size,
+        modified_at: entry.modified_at,
+        supports_tools,
+        context_length,
+    }
 }
 
 pub(crate) fn resolve_base_url() -> String {
@@ -146,16 +190,46 @@ pub async fn list_ollama_models() -> Result<Vec<OllamaModel>, String> {
         .await
         .map_err(|e| format!("Failed to parse Ollama /api/tags response: {}", e))?;
 
-    let models = parsed
+    let mut models: Vec<OllamaModel> = parsed
         .models
         .unwrap_or_default()
         .into_iter()
-        .map(|m| OllamaModel {
-            name: m.name,
-            size: m.size,
-            modified_at: m.modified_at,
-        })
+        .map(model_from_tags_entry)
         .collect();
+
+    // Old daemons omit `capabilities` from /api/tags entirely. Fan out to
+    // `/api/show` (bounded, memoised per process in llm_ollama's profile
+    // cache) so the picker can still gate tool-less models. A probe failure
+    // leaves the field `None`, which renders as "unknown" and never disables
+    // a row.
+    const MAX_SHOW_PROBES: usize = 8;
+    let missing: Vec<usize> = models
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.supports_tools.is_none())
+        .map(|(i, _)| i)
+        .take(MAX_SHOW_PROBES)
+        .collect();
+    if !missing.is_empty() {
+        let probes = missing.iter().map(|&i| {
+            let name = models[i].name.clone();
+            let base = base.clone();
+            async move {
+                (
+                    i,
+                    crate::core::llm_ollama::fetch_model_profile(&base, &name).await,
+                )
+            }
+        });
+        for (i, profile) in futures::future::join_all(probes).await {
+            if let Some(profile) = profile {
+                models[i].supports_tools = profile.supports_tools();
+                if models[i].context_length.is_none() {
+                    models[i].context_length = profile.context_length;
+                }
+            }
+        }
+    }
 
     Ok(models)
 }
@@ -163,6 +237,85 @@ pub async fn list_ollama_models() -> Result<Vec<OllamaModel>, String> {
 #[cfg(test)]
 mod tests {
     use std::sync::{Mutex, OnceLock};
+
+    use super::{model_from_tags_entry, TagsResponse};
+
+    /// Fixture from a live Ollama v0.32.15 `/api/tags` answer (fields we do
+    /// not model trimmed): per-model `capabilities` + `details.context_length`
+    /// are present.
+    const TAGS_V0_32: &str = r#"{
+        "models": [
+            {
+                "name": "qwen2.5-coder:7b",
+                "size": 4683087519,
+                "modified_at": "2026-08-10T11:22:33.000000000Z",
+                "digest": "2b0496514337a3d6901a1a1a1a1a1a1a",
+                "details": { "format": "gguf", "context_length": 32768 },
+                "capabilities": ["completion", "tools", "insert"]
+            },
+            {
+                "name": "nomic-embed-text:latest",
+                "size": 274302450,
+                "modified_at": "2026-08-10T11:00:00.000000000Z",
+                "digest": "0a109f422b47a3d6901a1a1a1a1a1a1a",
+                "details": { "format": "gguf", "context_length": 2048 },
+                "capabilities": ["embedding"]
+            }
+        ]
+    }"#;
+
+    /// Fixture in the pre-capabilities shape old daemons still serve.
+    const TAGS_LEGACY: &str = r#"{
+        "models": [
+            { "name": "llama3:8b", "size": 4661224676, "modified_at": "2025-01-01T00:00:00Z" }
+        ]
+    }"#;
+
+    #[test]
+    fn tags_with_capabilities_decide_tool_support_inline() {
+        let parsed: TagsResponse = serde_json::from_str(TAGS_V0_32).unwrap();
+        let models: Vec<_> = parsed
+            .models
+            .unwrap()
+            .into_iter()
+            .map(model_from_tags_entry)
+            .collect();
+
+        assert_eq!(models[0].name, "qwen2.5-coder:7b");
+        assert_eq!(models[0].supports_tools, Some(true));
+        assert_eq!(models[0].context_length, Some(32768));
+
+        // Capabilities present but no "tools" → definitively not tool-capable.
+        assert_eq!(models[1].supports_tools, Some(false));
+        assert_eq!(models[1].context_length, Some(2048));
+    }
+
+    #[test]
+    fn tags_without_capabilities_stay_unknown_not_disabled() {
+        let parsed: TagsResponse = serde_json::from_str(TAGS_LEGACY).unwrap();
+        let models: Vec<_> = parsed
+            .models
+            .unwrap()
+            .into_iter()
+            .map(model_from_tags_entry)
+            .collect();
+        // `None` = "the daemon did not say" — must never render as disabled.
+        assert_eq!(models[0].supports_tools, None);
+        assert_eq!(models[0].context_length, None);
+        assert_eq!(models[0].size, Some(4_661_224_676));
+    }
+
+    #[test]
+    fn wire_shape_uses_camel_case_for_new_fields() {
+        let parsed: TagsResponse = serde_json::from_str(TAGS_V0_32).unwrap();
+        let entry = parsed.models.unwrap().into_iter().next().unwrap();
+        let model = model_from_tags_entry(entry);
+        let json = serde_json::to_value(&model).unwrap();
+        assert_eq!(json["supportsTools"], serde_json::json!(true));
+        assert_eq!(json["contextLength"], serde_json::json!(32768));
+        // Pre-existing fields keep their historical snake_case names.
+        assert!(json.get("modified_at").is_some());
+    }
 
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
