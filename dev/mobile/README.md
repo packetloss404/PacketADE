@@ -13,7 +13,7 @@ feature pattern, adapted for PacketADE's existing `api-agent:*` event contract.
 ## Decision log (latest first)
 
 - **2026-08-02** — The canonical Remote Agents plan selected the standalone
-  Rust service at `D:\projects\packet-relay`. Packet Cloud remains the product
+  Rust service at `D:\projects\packetrelay`. Packet Cloud remains the product
   surface, but its relay implementation is no longer Cloudflare-based.
 - **2026-05-27** — Superseded by the Remote Agents plan in
   `dev/remoteagents/`: that revision proposed a Cloudflare-based Packet Cloud

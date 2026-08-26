@@ -13,7 +13,7 @@
 ## `packet-relay` Binding
 
 The production transport is the standalone Rust service at
-`D:\projects\packet-relay`. PacketADE adds the `/ws/host` and `/ws/device`
+`D:\projects\packetrelay`. PacketADE adds the `/ws/host` and `/ws/device`
 routes plus the HTTPS control plane described below. Its envelopes remain
 distinct from the existing `desktop_hello`, `mobile_hello`, broadcast, and room
 messages so extracting the relay does not silently break inherited clients.

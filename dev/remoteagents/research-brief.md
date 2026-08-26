@@ -139,7 +139,7 @@ Disposition (owner decision 2026-08-02):
 - Preserve the useful host-room, bounded replay, and hibernation lessons as
   provider-neutral requirements.
 - Implement those requirements in the standalone Rust service at
-  `D:\projects\packet-relay` with PostgreSQL-backed durable state.
+  `D:\projects\packetrelay` with PostgreSQL-backed durable state.
 - Keep the desktop/PWA protocol relay-neutral and contract-tested.
 
 ### Web Push And iOS PWA Constraints

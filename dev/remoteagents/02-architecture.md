@@ -51,7 +51,7 @@ PWA:
 
 ### Standalone `packet-relay` service
 
-The relay is the sibling repository at `D:\projects\packet-relay`. It is a
+The relay is the sibling repository at `D:\projects\packetrelay`. It is a
 standalone Rust 1.83 application built on Tokio and Tungstenite, with bounded
 connection/message limits and existing bridge, broadcast, and authenticated-room
 protocols. PacketADE must add a separate, versioned host/device protocol without
@@ -190,7 +190,7 @@ Future PWA:
 ```text
 remoteagents/pwa/
 remoteagents/shared/
-D:\projects\packet-relay/   # independently built/deployed Rust service
+D:\projects\packetrelay/   # independently built/deployed Rust service
 ```
 
 The exact PWA/shared folder can move, but the PWA/shared protocol should stay

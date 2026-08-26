@@ -24,7 +24,7 @@ WebSocket relay for real-time control. Web Push for notifications only.
 
 ### Relay Architecture
 
-Use the standalone Rust service at `D:\projects\packet-relay`. Extend it with
+Use the standalone Rust service at `D:\projects\packetrelay`. Extend it with
 PacketADE-specific HTTP/WebSocket routes, PostgreSQL persistence, durable replay
 and outbox processing, Web Push, audit, and object-storage references. Do not
 build a second relay on Cloudflare.
@@ -32,7 +32,7 @@ build a second relay on Cloudflare.
 ### Code Location
 
 The relay remains an independently built/deployed sibling repository at
-`D:\projects\packet-relay`. Shared protocol schemas and the PWA begin under
+`D:\projects\packetrelay`. Shared protocol schemas and the PWA begin under
 PacketADE's `remoteagents/` workspace so desktop and mobile can evolve in
 lockstep. Contract fixtures gate changes across both repositories.
 
@@ -40,31 +40,33 @@ lockstep. Contract fixtures gate changes across both repositories.
 
 ### Auth Provider
 
-Options:
+Options (reframed 2026-08-16 — "buy" splits into two sub-flavors):
 
-- build passkey/magic-link auth in the Rust relay backed by PostgreSQL
-- use a product-grade OIDC/passkey provider and validate its tokens in the Rust relay
-- use a compile/runtime-gated dev identity provider for internal smoke tests only
+- hosted SaaS identity provider (Clerk/Auth0/Stytch class): vendor runs
+  sign-in, passkeys, magic links, and recovery; the Rust relay only validates
+  tokens. Least owned surface; per-active-user pricing after free tiers.
+- self-hosted open-source IdP (Keycloak/Zitadel/Ory class): standard OIDC, no
+  vendor or per-user fees, but one more service to deploy, patch, and secure.
+- build passkey/magic-link auth in the Rust relay backed by PostgreSQL —
+  fully owned, including the WebAuthn ceremony, session design, recovery, and
+  the security review.
+- compile/runtime-gated dev identity provider for internal smoke tests only
 
 Recommendation:
 
 - internal prototype can use explicitly dev-only auth
 - private beta should use a product-grade passkey/magic-link provider or a carefully scoped in-house implementation
 
-Decision owner: Security/Auth agent.
+Decision owner: Security/Auth agent. Still OPEN as of 2026-08-16.
 
-### Payload Encryption Timing
+### Payload Encryption Timing — RESOLVED 2026-08-16
 
-Options:
+Decision (owner-ratified, 2026-08-16): the written recommendation is adopted as
+the launch gate.
 
-- implement before any external user
-- ship private beta with TLS-only and no sensitive projects
-- encrypt only diffs/tool payloads first
-
-Recommendation:
-
-- allow plaintext for local/internal development only
-- require encrypted agent/approval/file payloads before external private beta
+- plaintext (TLS-only) is permitted for local/internal development only
+- encrypted agent, approval, and file payloads are a hard gate before any
+  external private beta
 
 Decision owner: project owner plus Security/Auth agent.
 
@@ -101,15 +103,16 @@ Decision owner: project owner after PWA beta.
 
 ## Decision Log
 
-Dated record of the Sprint-0 kickoff decisions. Auth and payload-encryption
-timing remain blocking. Relay/code location was resolved by the owner on
-2026-08-02; no Cloudflare relay scaffold should be created.
+Dated record of the Sprint-0 kickoff decisions. Auth remains the sole blocking
+decision; payload-encryption timing was resolved 2026-08-16. Relay/code
+location was resolved by the owner on 2026-08-02; no Cloudflare relay scaffold
+should be created.
 
 ### 2026-08-02 — Rust Packet Relay selected
 
 **Relay architecture and code location** — Resolved.
 
-- Use and extend the standalone Rust service at `D:\projects\packet-relay`.
+- Use and extend the standalone Rust service at `D:\projects\packetrelay`.
 - Keep PacketADE host/device messages separate from inherited relay protocols.
 - Use PostgreSQL for durable account/device/ticket/replay/audit/outbox state.
 - Keep live routing single-instance for v1; require explicit coordination work
@@ -126,20 +129,22 @@ timing remain blocking. Relay/code location was resolved by the owner on
 - Resolution / date: _pending_.
 - Decision owner: Security/Auth agent.
 
-**(b) Payload-encryption launch gate** — Open.
+**(b) Payload-encryption launch gate** — Resolved 2026-08-16.
 
-- See "Payload Encryption Timing" under Open Decisions for options and recommendation.
-- Resolution / date: _pending_.
+- The written recommendation was ratified by the owner: plaintext for
+  local/internal development only; encrypted agent/approval/file payloads
+  required before any external private beta.
 - Decision owner: project owner plus Security/Auth agent.
 
 **(c) Code location (in-repo `remoteagents/` vs `apps/` vs separate repo)** — Resolved 2026-08-02.
 
-- Relay: standalone `D:\projects\packet-relay` repository.
+- Relay: standalone `D:\projects\packetrelay` repository.
 - PWA/shared schemas: PacketADE `remoteagents/` workspace initially.
 - Decision owner: implementation lead.
 
-Note: decisions (a) and (b) remain BLOCKING. Decision (c) is closed and must not
-be reopened implicitly by creating a provider-specific relay scaffold.
+Note: decision (a) remains BLOCKING; (b) was resolved 2026-08-16. Decision (c)
+is closed and must not be reopened implicitly by creating a provider-specific
+relay scaffold.
 
 ## Deferred Decisions
 

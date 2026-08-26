@@ -44,8 +44,8 @@ feature wave.
 | Packaged Windows acceptance |       P1 | v0.10.3 app/NSIS/MSI compiled; interactive matrix open                                                           | Dogfood real Terminal panes, Claude statusline, close/lifecycle, Monitor, accessibility, and denial behavior                                          |
 | Distribution trust          |       P1 | 0 failures / 6 readiness warnings; artifacts unsigned                                                            | Add hosted CI; acquire Windows Authenticode and Apple Developer ID credentials in parallel on day 0; wire notarization and updater                    |
 | macOS release               |       P1 | Builds, bundles a DMG, and runs from source on real hardware; never signed, notarized, or interactively accepted | Enroll in the Apple Developer Program now; run the unsigned acceptance matrix in the 1.0 buffer; ship arm64 DMG in v1.1 (`dev/macos-release-plan.md`) |
-| Remote Agents decisions     |       P1 | Rust relay/code location decided; implementation paused                                                          | Choose auth provider and E2EE launch gate                                                                                                             |
-| Global Undo                 |       P1 | Confirmations and cleanup are implemented; no recovery path                                                      | Choose durable soft-delete/restore or a time-boxed delayed-delete toast                                                                               |
+| Remote Agents decisions     |   PAUSED | Program paused by owner 2026-08-16; E2EE gate ratified; auth parked as first pickup action                       | On pickup, run the runbook in `dev/remoteagents/10-pause-record.md` (auth decision first)                                                             |
+| Global Undo                 |       P1 | Confirmations and cleanup are implemented; no recovery path                                                      | Decided 2026-08-16: time-boxed delayed-delete toast (soft-delete declined); implementation not yet scheduled                                          |
 | Flight supervision proof    |       P1 | Reviewer/graph/inbox/YOLO source complete                                                                        | Run packaged local and disposable pinned-SSH matrices                                                                                                 |
 | PacketAgent handoff proof   |       P1 | W9 consumer source and fixtures pass                                                                             | Run separately hosted close/relaunch/reconnect and evidence-return matrix                                                                             |
 | PacketCode release proof    |       P1 | Source integration and doctor contract pass                                                                      | Publish signed artifacts; run clean-machine upgrade/rollback and compatibility smoke                                                                  |
@@ -67,8 +67,9 @@ After the immediately available proof gates:
 4. Run the Syndicate clean-host, controller, network-fault, revocation,
    restart, upgrade, and rollback acceptance matrix against the live relay and
    signed Linux release.
-5. Resolve Remote Agents auth and E2EE; execute Sprint 0 against the standalone
-   Rust `packet-relay` service.
+5. (Paused 2026-08-16) Remote Agents: on pickup, resolve auth per
+   `dev/remoteagents/10-pause-record.md` (E2EE already ratified), then execute
+   Sprint 0 against the standalone Rust relay at `D:\projects\packetrelay`.
 6. Land a private PWA/relay alpha with desktop-owned execution, narrow audited
    commands, device trust, reconnect/replay, approvals, and attention push.
 7. Acquire distribution credentials and publish signed, updateable builds:
@@ -129,7 +130,8 @@ execution belongs in v1.
 3. Resolve and implement Undo plus bounded Settings/MS4 work.
 4. Complete Syndicate's packaged PacketADE/real-host acceptance matrix against
    the live relay and signed immutable Linux installer.
-5. Decide Remote Agents auth and E2EE, then build the PWA/relay alpha.
+5. (Paused 2026-08-16) Remote Agents: decide auth on pickup, then build the
+   PWA/relay alpha. See `dev/remoteagents/10-pause-record.md`.
 6. Add hosted CI, signing, notarization, and updater infrastructure.
 7. Expand E2E coverage across session creation, API-agent launch, Remote Agents
    approvals, and Flight attempt lifecycle.

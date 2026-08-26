@@ -13,7 +13,7 @@ Deliverables:
 - Create `remoteagents/shared` with protocol schemas.
 - Create `remoteagents/pwa` skeleton.
 - Add a feature-isolated PacketADE protocol/control-plane skeleton to the
-  standalone Rust repo at `D:\projects\packet-relay`.
+  standalone Rust repo at `D:\projects\packetrelay`.
 - Add desktop feature flag: `remoteAgents.enabled`.
 - Add docs link from `dev/README.md`.
 - Decide auth provider build-vs-buy for v1.
@@ -32,7 +32,7 @@ Checkpoint:
 
 Goal: desktop and PWA can sign into dev auth, connect to the relay, and see host presence.
 
-Rust relay (`D:\projects\packet-relay`):
+Rust relay (`D:\projects\packetrelay`):
 
 - HTTPS control-plane and `/ws/host` + `/ws/device` routes.
 - In-process host-room router.

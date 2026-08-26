@@ -1,7 +1,10 @@
 # PacketADE Remote Agents
 
-Status: planning package for implementation
-Last updated: 2026-08-02
+Status: **PAUSED by owner decision 2026-08-16** — read
+[`10-pause-record.md`](./10-pause-record.md) first; it is the pickup entry
+point (exact state at pause, staleness map, invariants, ordered resume
+runbook). The planning package below remains the design of record.
+Last updated: 2026-08-16
 
 This directory is the canonical implementation brief for **PacketADE Remote Agents**: a cloud-relayed, PWA-first way to use PacketADE Agents from a phone while the desktop app keeps ownership of providers, models, secrets, workspaces, MCP config, permissions, and execution.
 
@@ -17,7 +20,7 @@ All your PacketADE agents, providers, models, profiles, workspaces, and approval
 - **Mobile app: PWA first.** Native iOS via TestFlight is a later track after relay, auth, and mobile UX prove out.
 - **Transport: WebSocket relay.** Foreground real-time channel is bidirectional WebSocket. Web Push is for notifications only.
 - **MVP scope: API agents only.** Remote raw PTY and full desktop command control are explicitly out of v1.
-- **Relay implementation: the standalone Rust service at `D:\projects\packet-relay`.** PacketADE extends that service with its versioned host/device protocol, HTTPS control plane, durable replay, auth, audit, and Web Push; it does not create a Cloudflare relay implementation.
+- **Relay implementation: the standalone Rust service at `D:\projects\packetrelay`.** PacketADE extends that service with its versioned host/device protocol, HTTPS control plane, durable replay, auth, audit, and Web Push; it does not create a Cloudflare relay implementation.
 
 ## Why This Shape
 

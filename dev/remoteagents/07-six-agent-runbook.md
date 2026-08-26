@@ -17,7 +17,7 @@ This is the kickoff plan for a six-agent team. Each agent owns a separate write 
 
 Owns:
 
-- the sibling `D:\projects\packet-relay` repository
+- the sibling `D:\projects\packetrelay` repository
 - PostgreSQL migrations
 - in-process host-room router
 - durable outbox workers

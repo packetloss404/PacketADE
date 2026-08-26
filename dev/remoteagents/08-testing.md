@@ -234,7 +234,7 @@ PWA:
 - Playwright mobile tests
 - Lighthouse PWA smoke
 
-Rust relay (`D:\projects\packet-relay`):
+Rust relay (`D:\projects\packetrelay`):
 
 - `cargo fmt --all -- --check`
 - `cargo clippy --locked --all-targets -- -D warnings`

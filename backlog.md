@@ -14,17 +14,28 @@ Priority: **P1** = release blocker, real bug, or major user-facing gap;
 
 These are the only current product decisions blocking implementation.
 
-1. **P1 - Remote Agents authentication.** Choose a product-grade OIDC/passkey
-   provider or a carefully scoped in-house passkey/magic-link implementation.
-   Dev-only identity may be used only for internal smoke tests.
-2. **P1 - Remote Agents payload encryption timing.** Current recommendation:
-   plaintext is acceptable only for local/internal development; encrypted
-   agent, approval, and file payloads are required before any external beta.
-3. **P1 - Global Undo.** Choose durable soft-delete/restore with retention, or
-   a time-boxed undo toast that delays destructive commits. Confirmations are
-   the current safety net; do not start a cross-store implementation until the
-   persistence/retention choice is explicit.
-4. **P1 - v1.0.0 scope adoption.** The 2026-08-05 Fable 5 review recommends a
+1. **PARKED 2026-08-16 - Remote Agents authentication.** The program was
+   deliberately paused by the owner, so this decision no longer blocks current
+   work — it is the first action of the pickup runbook instead. The clarified
+   menu (hosted SaaS IdP / self-hosted IdP / in-house passkey-magic-link /
+   dev-only) and full pause state live in
+   [`dev/remoteagents/10-pause-record.md`](./dev/remoteagents/10-pause-record.md).
+2. **RESOLVED 2026-08-16 - Remote Agents payload encryption timing.** The
+   recommendation was ratified: plaintext (TLS-only) is acceptable only for
+   local/internal development; encrypted agent, approval, and file payloads
+   are a hard gate before any external beta. See
+   [`dev/remoteagents/09-open-decisions.md`](./dev/remoteagents/09-open-decisions.md).
+3. **RESOLVED 2026-08-16 - Global Undo.** Shape chosen: a **time-boxed undo
+   toast** that delays destructive commits for a short window; durable
+   soft-delete/restore was declined. Confirmations remain the safety net until
+   the toast is implemented (post-1.0-scope work; not yet scheduled).
+4. **P1 - v1.0.0 scope adoption.** DECIDED IN PART 2026-08-16: the owner
+   **rejected** adopting the v1.0.0 definition for now — PacketADE continues
+   the 0.10.x cadence with no 1.0 milestone. Still open within this item: the
+   signing-identity question (the review holds that the Azure Trusted Signing
+   + OV application should start immediately regardless of the 1.0 label; no
+   owner call has been recorded either way). Original context: the 2026-08-05
+   Fable 5 review recommends a
    Windows-only, signed, installer-proven v1.0.0 with the updater client
    shipped but the first served update deferred to 1.1, and an explicit "1.0 is
    NOT" list (macOS/Linux, Remote Agents, Global Undo, hosted CI, the
@@ -40,7 +51,7 @@ These are the only current product decisions blocking implementation.
    application.
 
 Remote Agents relay architecture and code location are already decided: extend
-the standalone Rust service at `D:\projects\packet-relay`; keep shared schemas
+the standalone Rust service at `D:\projects\packetrelay`; keep shared schemas
 and the initial PWA under PacketADE's `remoteagents/` workspace. See
 [`dev/remoteagents/09-open-decisions.md`](./dev/remoteagents/09-open-decisions.md).
 
@@ -213,6 +224,32 @@ environment or packaged matrix has actually run.
 ## Bounded source work
 
 These are real code changes, not substitutes for the proof matrices above.
+
+### Three-track build-out residue (2026-08-26)
+
+Deliberate leftovers from the LM / PacketAgent-handoff implementation wave
+(branches `feat/lm-and-packetagent-handoff` in this repo and
+`feat/packet-product-handoff-surface` in PacketAgent):
+
+- **P2 - LM 3C-3 codebase-dependent aux migrations.** `scan_codebase_memory`,
+  `github_investigate_issue`, and `ask_agent_chat_stream` remain on the Claude
+  CLI (`run_claude`/`claude_command`) because they depend on its file tools.
+  Migrating them needs Rust-side context assembly (memory scan) and a bounded
+  read-only tool loop parameterized on an `AuxRoute` (investigate/agent-chat).
+  `run_claude` cannot be deleted until then. See
+  [`dev/local-model-routing.md`](./dev/local-model-routing.md).
+- **P2 - LM local-opt-in surface.** The "route aux tasks locally" banner and
+  one-click pin are gated on a green `cargo test --test ollama_e2e -- --ignored`
+  run against the live daemon (test ships ignored-by-default).
+- **P3 - PacketAgent handoff polish.** "Review branch…" landing action into the
+  existing diff/review surface; optional `flagLinkedIssuesNeedHuman` on
+  budget_exhausted/failed; a subscriber surface for conversation-keyed
+  deployments (only the Flight card subscribes today). PH10 live e2e runbook is
+  in [`dev/bridgemind/packetagent-handoff-loop.md`](./dev/bridgemind/packetagent-handoff-loop.md)
+  scope — mint a credential with the new CLI first.
+- **P3 - Ollama capability cache staleness.** The `/api/show` capability memo
+  is keyed `{base}|{model}` for process lifetime; a model re-pull mid-process
+  can serve a stale tools-capability answer until restart.
 
 ### Workspace pane-system review (2026-08-07)
 
@@ -577,6 +614,20 @@ These are approved concepts, not current implementation commitments.
   terminal evidence capture, redaction, approval, capped retention, and
   read-only review surfaces. No daemon or autonomy expansion. See
   [`dev/packet-control-loop.md`](./dev/packet-control-loop.md).
+- **P2 - Computer use (browser tier first). PAUSED 2026-08-16** — deliberately
+  parked the same day it was designed, as part of the portfolio sequencing
+  pass; do not schedule until the owner unpauses. Pickup runbook and staleness
+  map: §7-PAUSE of
+  [`dev/computer-use-plan.md`](./dev/computer-use-plan.md).
+  Agent-driven screen interaction
+  for API-agent conversations. Owner decisions are settled (2026-08-16):
+  browser tier via CDP first, then full desktop; in-process Rust backend with
+  native `computer_20251124` for Anthropic providers; approval-gated +
+  kill-switch safety model with a Syndicate-pattern opt-in; Windows-only v1;
+  local-only (SSH/Syndicate refused); flights excluded. Phase 0 is
+  image-capable tool results end-to-end (also fixes MCP image results being
+  silently dropped today). See
+  [`dev/computer-use-plan.md`](./dev/computer-use-plan.md).
 - **P3 - PacketBBS connection preset.** Add a non-secret endpoint, bounded
   `/healthz` probe, safe external Web launch, and structured-argv Telnet pane
   only after current release gates. Do not share credentials or databases. See
