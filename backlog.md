@@ -267,6 +267,22 @@ frontend files / 2305 tests). Deliberate leftovers:
   `plan` both map to ACP `read-only`, so `deny` is dropped. This is a property
   of the posture mapping, not the operator ceiling, and applies even to a
   fully permissive engine.
+- **P2 - No idle-session eviction policy for ACP sessions.** The mechanism is
+  wired (`close_session_on` -> ACP `session/close`, idempotent and degrading to
+  success on engines without it), but nothing drives it, so engine-side session
+  runtimes accumulate over a long run. The retired packetcode-gui carried the
+  policy this should copy: an LRU over resident sessions with
+  `MAX_IDLE_RESIDENT = 5`, and an `isEngaged` guard that never evicts a session
+  that is running or holding an unanswered permission request. Re-selecting an
+  evicted session just resumes it via `session/load`. Roughly 40 lines; recorded
+  here because the source repo is now archived.
+- **P3 - ACP contract fixtures live only in PacketADE.** The original product
+  split put ACP extensions and contract fixtures upstream in `packetcode`, so
+  the engine owns its own protocol contract. In practice `mock-engine.mjs` and
+  the `acp_stream.rs` suite exist only here. That is defensible (they test the
+  client, not the engine), but it means a packetcode-side protocol change has no
+  fixture upstream to break. Decide whether to mirror them into `packetcode` or
+  to record that PacketADE is the contract's home.
 - **P3 - Launch composer shows the seeded model catalog for the ACP row.**
   Engine-advertised models reach the picker only once a conversation exists;
   fetching them pre-launch would require branching on provider id, which the
