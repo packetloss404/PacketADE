@@ -220,6 +220,8 @@ pub fn run() {
         // until the frontend routing store pushes; an empty map means
         // "auto (cheapest configured API key)", never a subscription login.
         .manage(core::aux_llm::AuxRoutingState::default())
+        // PH6 — registry of live PacketAgent SSE consumer tasks.
+        .manage(commands::packet_agent_stream::PacketAgentStreamState::default())
         .setup(|app| {
             // Spawn the Node agent sidecar and stash the supervisor in
             // managed state so slice C's routing layer can reach it via
@@ -519,6 +521,8 @@ pub fn run() {
             commands::packet_agent::get_packet_agent_token_exists,
             commands::packet_agent::delete_packet_agent_token,
             commands::packet_agent::packet_agent_request,
+            commands::packet_agent_stream::start_packet_agent_stream,
+            commands::packet_agent_stream::stop_packet_agent_stream,
             commands::monitor_windows::open_monitor_window,
             commands::monitor_windows::get_monitor_window_route,
             commands::monitor_windows::close_monitor_window,
@@ -581,6 +585,9 @@ pub fn run() {
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
                 commands::syndicate::shutdown_tunnels();
+                // Stop the PacketAgent SSE consumer tasks so their sockets
+                // never outlive the window (PH6 clean-shutdown requirement).
+                commands::packet_agent_stream::shutdown_on_exit(app_handle);
                 // Reap PTY agent process trees BEFORE the sidecar: quitting the
                 // app otherwise leaves every running `claude` / `codex` alive
                 // and permanently unreachable — nothing in the app can find

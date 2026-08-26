@@ -12,28 +12,20 @@ import { usePacketAgentStore } from "@/stores/packetAgentStore";
 import type { Flight } from "@/types/flight";
 import type { PacketAgentWorkerPackage } from "@/types/packet-agent";
 
-function object(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function eventList(value: unknown): Array<Record<string, unknown>> {
-  const events = object(value)?.events;
-  return Array.isArray(events)
-    ? events.filter((event): event is Record<string, unknown> => Boolean(object(event)))
-    : [];
-}
+const TERMINAL_LOCAL_STATUSES = ["revoked", "retired"];
 
 export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
   const endpoint = usePacketAgentStore((state) => state.endpoint);
   const workspaceId = usePacketAgentStore((state) => state.workspaceId);
   const projection = usePacketAgentStore((state) => state.deployments[flight.id]);
+  const streamStatus = usePacketAgentStore((state) => state.streamStatus[flight.id]);
   const request = usePacketAgentStore((state) => state.request);
   const recordDeployment = usePacketAgentStore((state) => state.recordDeployment);
   const mergeProjection = usePacketAgentStore((state) => state.mergeProjection);
-  const updateProjection = usePacketAgentStore((state) => state.updateProjection);
   const removeDeployment = usePacketAgentStore((state) => state.removeDeployment);
+  const subscribe = usePacketAgentStore((state) => state.subscribe);
+  const unsubscribe = usePacketAgentStore((state) => state.unsubscribe);
+  const pollEventsOnce = usePacketAgentStore((state) => state.pollEventsOnce);
   const [workerPackage, setWorkerPackage] = useState<PacketAgentWorkerPackage | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -195,50 +187,14 @@ export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
     }
   }
 
-  async function refresh() {
+  /** Manual sync — one multi-page poll pass through the store. The live SSE
+   * subscription (below) is the steady-state event source. */
+  async function syncNow() {
     if (!projection) return;
     setBusy(true);
     try {
-      const inspected = await request("inspect", { deploymentId: projection.deploymentId });
-      mergeProjection(flight.id, inspected);
-      const page = await request("events", {
-        deploymentId: projection.deploymentId,
-        cursor: projection.cursor,
-      });
-      const events = eventList(page.body);
-      const latest = events[events.length - 1];
-      const latestId = typeof latest?.id === "string" ? latest.id : undefined;
-      const latestType = typeof latest?.type === "string" ? latest.type : undefined;
-      const attentionCount = events.filter((event) =>
-        String(event.type ?? "").includes("attention"),
-      ).length;
-      if (latestId && page.etag) {
-        const acknowledged = await request("ack_events", {
-          deploymentId: projection.deploymentId,
-          payload: { cursor: latestId },
-          idempotencyKey: `${APP_NAME_LOWER}:${projection.deploymentId}:cursor:${latestId}`,
-          ifMatch: page.etag,
-        });
-        const cursor = object(acknowledged.body)?.cursor;
-        updateProjection(flight.id, {
-          cursor: latestId,
-          cursorEtag: acknowledged.etag ?? object(cursor)?.etag?.toString(),
-          lastEventId: latestId,
-          lastEventType: latestType,
-          attentionCount: projection.attentionCount + attentionCount,
-          evidenceEventIds: [
-            ...new Set([
-              ...projection.evidenceEventIds,
-              ...events
-                .filter((event) => object(event.evidence)?.available === true)
-                .map((event) => String(event.id)),
-            ]),
-          ],
-        });
-      }
-      setNotice(
-        events.length ? `Received ${events.length} ordered event(s).` : "Worker is current.",
-      );
+      const applied = await pollEventsOnce(flight.id);
+      setNotice(applied ? `Received ${applied} ordered event(s).` : "Worker is current.");
     } catch (error) {
       setNotice(String(error));
     } finally {
@@ -263,13 +219,17 @@ export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
     }
   }
 
+  // PH6: live SSE subscription owned by the store. The card only mounts and
+  // unmounts it; projection updates and acks happen inside the store.
+  const deploymentId = projection?.deploymentId;
+  const terminal = projection ? TERMINAL_LOCAL_STATUSES.includes(projection.status) : false;
   useEffect(() => {
-    if (!projection || ["revoked", "retired"].includes(projection.status)) return;
-    const timer = window.setInterval(() => void refresh(), 30_000);
-    return () => window.clearInterval(timer);
-    // Refresh deliberately tracks the durable identity/cursor, not each status update.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projection?.deploymentId, projection?.cursor]);
+    if (!deploymentId || terminal) return;
+    void subscribe(flight.id);
+    return () => {
+      void unsubscribe(flight.id);
+    };
+  }, [deploymentId, terminal, flight.id, subscribe, unsubscribe]);
 
   return (
     <div className="rounded border border-bg-border bg-bg-secondary p-3">
@@ -369,12 +329,12 @@ export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
         ) : (
           <>
             <button
-              onClick={() => void refresh()}
+              onClick={() => void syncNow()}
               disabled={busy}
               className="inline-flex items-center gap-1 rounded border border-bg-border px-2 py-1.5 text-[10px] text-text-secondary hover:bg-bg-hover disabled:opacity-50"
             >
               <RefreshCw size={11} className={busy ? "animate-spin" : ""} />
-              Refresh
+              Sync
             </button>
             {projection.status === "paused" ? (
               <button
@@ -413,6 +373,17 @@ export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
             {projection.deploymentId}
           </span>
           <span className="text-right">revision {projection.revision}</span>
+          {streamStatus && streamStatus.state !== "idle" && (
+            <span className="col-span-2 truncate text-text-muted" title={streamStatus.message}>
+              stream: {streamStatus.state}
+              {streamStatus.consecutiveFailures > 0
+                ? ` (${streamStatus.consecutiveFailures} failed connect${streamStatus.consecutiveFailures === 1 ? "" : "s"})`
+                : ""}
+            </span>
+          )}
+          {projection.totalCostUsd !== undefined && (
+            <span className="col-span-2">cost ${projection.totalCostUsd.toFixed(2)}</span>
+          )}
           {projection.lastEventType && (
             <span className="col-span-2">{projection.lastEventType}</span>
           )}

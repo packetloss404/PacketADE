@@ -41,7 +41,7 @@ fn token_entry() -> Result<keyring::Entry, String> {
         .map_err(|error| format!("Credential store unavailable: {error}"))
 }
 
-fn load_token() -> Result<String, String> {
+pub(crate) fn load_token() -> Result<String, String> {
     token_entry()?.get_password().map_err(|error| match error {
         keyring::Error::NoEntry => {
             "PacketAgent token is not configured. Open Settings > PacketAgent.".to_string()
@@ -50,7 +50,7 @@ fn load_token() -> Result<String, String> {
     })
 }
 
-fn normalized_endpoint(endpoint: &str) -> Result<Url, String> {
+pub(crate) fn normalized_endpoint(endpoint: &str) -> Result<Url, String> {
     let mut url = Url::parse(endpoint.trim())
         .map_err(|_| "PacketAgent endpoint must be an absolute HTTP(S) URL.".to_string())?;
     if !url.username().is_empty() || url.password().is_some() {
@@ -77,7 +77,7 @@ fn normalized_endpoint(endpoint: &str) -> Result<Url, String> {
     Ok(url)
 }
 
-fn push_path(url: &mut Url, segments: &[&str]) -> Result<(), String> {
+pub(crate) fn push_path(url: &mut Url, segments: &[&str]) -> Result<(), String> {
     let mut path = url
         .path_segments_mut()
         .map_err(|_| "PacketAgent endpoint cannot be used as a base URL.".to_string())?;

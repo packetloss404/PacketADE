@@ -306,6 +306,42 @@ export async function packetAgentRequest(
   return invoke<PacketAgentResponse>("packet_agent_request", { request });
 }
 
+/** PH6: payload of `packet-agent:event:{deploymentId}` — one SSE data frame. */
+export interface PacketAgentStreamEventPayload {
+  eventId?: string;
+  eventType?: string;
+  data: unknown;
+}
+
+/** PH6: payload of `packet-agent:stream-status:{deploymentId}`. */
+export interface PacketAgentStreamStatusPayload {
+  state: "connected" | "reconnecting" | "stopped" | "error";
+  cursor?: string;
+  message?: string;
+  consecutiveFailures: number;
+}
+
+/** Start (or restart) the Rust-side SSE consumer for one worker deployment.
+ * The bearer token never reaches the webview — Rust loads it from the OS
+ * credential store. */
+export async function startPacketAgentStream(args: {
+  endpoint: string;
+  workspaceId: string;
+  deploymentId: string;
+  cursor?: string;
+}): Promise<void> {
+  return invoke("start_packet_agent_stream", {
+    endpoint: args.endpoint,
+    workspaceId: args.workspaceId,
+    deploymentId: args.deploymentId,
+    cursor: args.cursor ?? null,
+  });
+}
+
+export async function stopPacketAgentStream(deploymentId: string): Promise<void> {
+  return invoke("stop_packet_agent_stream", { deploymentId });
+}
+
 /** True only when `path` exists and is a directory. Used by bootstrap to
  *  validate a persisted project path before adopting it. */
 export async function pathIsDir(path: string): Promise<boolean> {

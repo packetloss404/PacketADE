@@ -131,6 +131,8 @@ export interface PacketAgentWorkerPackage {
 }
 
 export interface PacketAgentDeploymentProjection {
+  /** Local projection key — historically always a Flight id; conversation
+   * deployments (PH3) use the conversation id. */
   flightId: string;
   packageId: string;
   packageVersion: number;
@@ -145,6 +147,10 @@ export interface PacketAgentDeploymentProjection {
   lastEventType?: string;
   attentionCount: number;
   evidenceEventIds: string[];
+  /** PH6: checkpoint/progress events observed so far. */
+  checkpointCount?: number;
+  /** PH6: latest total cost reported by event summaries (USD). */
+  totalCostUsd?: number;
   updatedAt: number;
 }
 

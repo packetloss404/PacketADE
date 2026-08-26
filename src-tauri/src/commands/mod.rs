@@ -32,6 +32,7 @@ pub mod minimax;
 pub mod monitor_windows;
 pub mod ollama;
 pub mod packet_agent;
+pub mod packet_agent_stream;
 pub mod pricing;
 pub mod project_memory;
 pub mod provider_auth;
