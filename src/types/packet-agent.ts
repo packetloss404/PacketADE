@@ -174,7 +174,9 @@ export type PacketAgentOperation =
   | "runs"
   | "events"
   | "ack_events"
-  | "evidence";
+  | "evidence"
+  | "attention"
+  | "respond_attention";
 
 export interface PacketAgentRequest {
   endpoint: string;
@@ -182,8 +184,34 @@ export interface PacketAgentRequest {
   operation: PacketAgentOperation;
   deploymentId?: string;
   eventId?: string;
+  attentionId?: string;
   cursor?: string;
   payload?: unknown;
   idempotencyKey?: string;
   ifMatch?: string;
+}
+
+/** PH7: decision verbs accepted by POST /api/worker-attention/:id/respond. */
+export type PacketAgentAttentionDecision = "approve_once" | "approve_for_run" | "reject";
+
+/** PH7: consumer subset of PacketAgent's WorkerOperatorAttentionView. Every
+ * field beyond `id` is optional — the server owns the normative shape and
+ * the card renders what it can. */
+export interface PacketAgentAttentionRequest {
+  id: string;
+  workerDeploymentId?: string;
+  workerRunId?: string;
+  status?: string;
+  summary?: string;
+  /** Requested capability descriptor (tool/verb/effect/resource schemes). */
+  operation?: {
+    tool?: string;
+    verb?: string;
+    effect?: string;
+    resources?: string[];
+  };
+  requestedAt?: string;
+  expiresAt?: string;
+  /** Optimistic-concurrency revision echoed back as expectedRevision. */
+  revision?: number;
 }

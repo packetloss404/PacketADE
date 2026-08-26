@@ -22,6 +22,7 @@ pub struct PacketAgentRequest {
     pub operation: String,
     pub deployment_id: Option<String>,
     pub event_id: Option<String>,
+    pub attention_id: Option<String>,
     pub cursor: Option<String>,
     pub payload: Option<Value>,
     pub idempotency_key: Option<String>,
@@ -95,6 +96,7 @@ fn request_target(input: &PacketAgentRequest) -> Result<(Method, Url, bool), Str
     let mut url = normalized_endpoint(&input.endpoint)?;
     let deployment = input.deployment_id.as_deref();
     let event = input.event_id.as_deref();
+    let attention = input.attention_id.as_deref();
     let (method, segments, requires_auth): (Method, Vec<&str>, bool) =
         match input.operation.as_str() {
             "health" => (Method::GET, vec!["api", "health"], false),
@@ -169,6 +171,28 @@ fn request_target(input: &PacketAgentRequest) -> Result<(Method, Url, bool), Str
                 ],
                 true,
             ),
+            // PH7 — open attention requests for a deployment.
+            "attention" => (
+                Method::GET,
+                vec![
+                    "api",
+                    "worker-deployments",
+                    deployment.ok_or("PacketAgent deployment ID is required.")?,
+                    "attention",
+                ],
+                true,
+            ),
+            // PH7 — approve/reject one attention request.
+            "respond_attention" => (
+                Method::POST,
+                vec![
+                    "api",
+                    "worker-attention",
+                    attention.ok_or("PacketAgent attention ID is required.")?,
+                    "respond",
+                ],
+                true,
+            ),
             _ => return Err("Unsupported PacketAgent operation.".to_string()),
         };
     push_path(&mut url, &segments)?;
@@ -182,6 +206,9 @@ fn request_target(input: &PacketAgentRequest) -> Result<(Method, Url, bool), Str
             query.append_pair("cursor", cursor);
         }
         query.append_pair("limit", "100");
+    }
+    if input.operation == "attention" {
+        url.query_pairs_mut().append_pair("status", "open");
     }
     Ok((method, url, requires_auth))
 }
@@ -320,6 +347,7 @@ mod tests {
             operation: "arbitrary".to_string(),
             deployment_id: None,
             event_id: None,
+            attention_id: None,
             cursor: None,
             payload: None,
             idempotency_key: None,
@@ -336,6 +364,7 @@ mod tests {
             operation: "contract".to_string(),
             deployment_id: None,
             event_id: None,
+            attention_id: None,
             cursor: None,
             payload: None,
             idempotency_key: None,
@@ -345,5 +374,49 @@ mod tests {
         assert_eq!(method, Method::GET);
         assert_eq!(url.path(), "/api/worker-packages/contract");
         assert!(requires_auth);
+    }
+
+    #[test]
+    fn attention_arms_target_the_attention_routes() {
+        let list = PacketAgentRequest {
+            endpoint: "https://agent.example.test".to_string(),
+            workspace_id: Some("workspace".to_string()),
+            operation: "attention".to_string(),
+            deployment_id: Some("dep-1".to_string()),
+            event_id: None,
+            attention_id: None,
+            cursor: None,
+            payload: None,
+            idempotency_key: None,
+            if_match: None,
+        };
+        let (method, url, requires_auth) = request_target(&list).expect("attention arm");
+        assert_eq!(method, Method::GET);
+        assert_eq!(url.path(), "/api/worker-deployments/dep-1/attention");
+        assert_eq!(url.query(), Some("status=open"));
+        assert!(requires_auth);
+
+        let respond = PacketAgentRequest {
+            endpoint: "https://agent.example.test".to_string(),
+            workspace_id: Some("workspace".to_string()),
+            operation: "respond_attention".to_string(),
+            deployment_id: None,
+            event_id: None,
+            attention_id: Some("att-1".to_string()),
+            cursor: None,
+            payload: None,
+            idempotency_key: Some("key".to_string()),
+            if_match: None,
+        };
+        let (method, url, requires_auth) = request_target(&respond).expect("respond arm");
+        assert_eq!(method, Method::POST);
+        assert_eq!(url.path(), "/api/worker-attention/att-1/respond");
+        assert!(requires_auth);
+
+        let missing = PacketAgentRequest {
+            attention_id: None,
+            ..respond
+        };
+        assert!(request_target(&missing).is_err());
     }
 }

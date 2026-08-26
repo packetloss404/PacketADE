@@ -26,6 +26,9 @@ export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
   const subscribe = usePacketAgentStore((state) => state.subscribe);
   const unsubscribe = usePacketAgentStore((state) => state.unsubscribe);
   const pollEventsOnce = usePacketAgentStore((state) => state.pollEventsOnce);
+  const attention = usePacketAgentStore((state) => state.attention[flight.id]);
+  const fetchAttention = usePacketAgentStore((state) => state.fetchAttention);
+  const respondAttention = usePacketAgentStore((state) => state.respondAttention);
   const [workerPackage, setWorkerPackage] = useState<PacketAgentWorkerPackage | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -44,6 +47,7 @@ export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
   );
 
   const configured = Boolean(endpoint && workspaceId);
+  const openAttention = attention ?? [];
   const attempts = flight.attempts ?? [];
   const hasSourceChoices = attempts.length > 0 || Boolean(planningConversation);
   const packageJson = useMemo(
@@ -226,10 +230,25 @@ export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
   useEffect(() => {
     if (!deploymentId || terminal) return;
     void subscribe(flight.id);
+    // PH7: seed the open-attention list; stream events keep it fresh after.
+    void fetchAttention(flight.id).catch(() => undefined);
     return () => {
       void unsubscribe(flight.id);
     };
-  }, [deploymentId, terminal, flight.id, subscribe, unsubscribe]);
+  }, [deploymentId, terminal, flight.id, subscribe, unsubscribe, fetchAttention]);
+
+  async function respond(attentionId: string, decision: Parameters<typeof respondAttention>[2]) {
+    setBusy(true);
+    setNotice(null);
+    try {
+      await respondAttention(flight.id, attentionId, decision);
+      setNotice(`Attention request ${decision.replaceAll("_", " ")} sent.`);
+    } catch (error) {
+      setNotice(String(error));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="rounded border border-bg-border bg-bg-secondary p-3">
@@ -410,6 +429,60 @@ export function PacketAgentHandoffCard({ flight }: { flight: Flight }) {
               Inspect latest evidence
             </button>
           )}
+        </div>
+      )}
+      {projection && openAttention.length > 0 && (
+        <div className="border-accent-amber/30 bg-accent-amber/10 mt-2 space-y-2 rounded border px-2 py-2">
+          <div className="text-[10px] font-semibold text-accent-amber">
+            {openAttention.length} approval{openAttention.length === 1 ? "" : "s"} requested
+          </div>
+          {openAttention.map((request) => (
+            <div key={request.id} className="rounded bg-bg-primary px-2 py-1.5">
+              {request.operation && (
+                <div className="font-mono text-[9px] text-text-primary">
+                  {[request.operation.tool, request.operation.verb, request.operation.effect]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </div>
+              )}
+              {request.operation?.resources && request.operation.resources.length > 0 && (
+                <div
+                  className="truncate font-mono text-[9px] text-text-muted"
+                  title={request.operation.resources.join(", ")}
+                >
+                  {request.operation.resources.join(", ")}
+                </div>
+              )}
+              {request.summary && (
+                <div className="mt-0.5 text-[9px] leading-relaxed text-text-secondary">
+                  {request.summary}
+                </div>
+              )}
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                <button
+                  onClick={() => void respond(request.id, "approve_once")}
+                  disabled={busy}
+                  className="rounded bg-accent-green px-2 py-1 text-[9px] font-medium text-bg-primary disabled:opacity-50"
+                >
+                  Approve once
+                </button>
+                <button
+                  onClick={() => void respond(request.id, "approve_for_run")}
+                  disabled={busy}
+                  className="rounded border border-bg-border px-2 py-1 text-[9px] text-text-secondary hover:bg-bg-hover disabled:opacity-50"
+                >
+                  Approve for run
+                </button>
+                <button
+                  onClick={() => void respond(request.id, "reject")}
+                  disabled={busy}
+                  className="border-accent-red/30 hover:bg-accent-red/10 rounded border px-2 py-1 text-[9px] text-accent-red disabled:opacity-50"
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
       {evidence && (

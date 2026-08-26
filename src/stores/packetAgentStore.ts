@@ -2,7 +2,9 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { APP_NAME_LOWER, storageKey } from "@/lib/brand";
+import { parsePacketAgentAttentionList } from "@/lib/packetAgentAttention";
 import {
+  isPacketAgentAttentionEvent,
   projectPacketAgentEvent,
   type ObservedPacketAgentEvent,
 } from "@/lib/packetAgentProjection";
@@ -14,6 +16,8 @@ import {
   type PacketAgentStreamStatusPayload,
 } from "@/lib/tauri";
 import type {
+  PacketAgentAttentionDecision,
+  PacketAgentAttentionRequest,
   PacketAgentDeploymentProjection,
   PacketAgentResponse,
   PacketAgentWorkerPackage,
@@ -79,6 +83,8 @@ interface PacketAgentStore {
   deployments: Record<string, PacketAgentDeploymentProjection>;
   /** PH6: live stream/poll status per projection key. Not persisted. */
   streamStatus: Record<string, PacketAgentStreamStatus>;
+  /** PH7: open attention requests per projection key. Not persisted. */
+  attention: Record<string, PacketAgentAttentionRequest[]>;
   setConnection: (endpoint: string, workspaceId: string) => void;
   removeDeployment: (key: string) => void;
   updateProjection: (key: string, updates: Partial<PacketAgentDeploymentProjection>) => void;
@@ -115,6 +121,17 @@ interface PacketAgentStore {
   /** PH6: one multi-page events poll pass (fallback path / manual sync).
    * Returns the number of newly-applied events. */
   pollEventsOnce: (key: string) => Promise<number>;
+  /** PH7: refresh the open attention list for this deployment. Called
+   * automatically when an approval_required/blocked event is observed. */
+  fetchAttention: (key: string) => Promise<void>;
+  /** PH7: approve/reject one attention request with an idempotency key of
+   * the form packetade:{attentionId}:{decision}:{revision}. A stale
+   * expectedRevision (409/412) refetches the attention list and rethrows. */
+  respondAttention: (
+    key: string,
+    attentionId: string,
+    decision: PacketAgentAttentionDecision,
+  ) => Promise<void>;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -205,6 +222,7 @@ export const usePacketAgentStore = create<PacketAgentStore>()(
       workspaceId: "",
       deployments: {},
       streamStatus: {},
+      attention: {},
       setConnection: (endpoint, workspaceId) =>
         set({ endpoint: endpoint.trim().replace(/\/+$/, ""), workspaceId: workspaceId.trim() }),
       removeDeployment: (key) => {
@@ -214,7 +232,9 @@ export const usePacketAgentStore = create<PacketAgentStore>()(
           delete deployments[key];
           const streamStatus = { ...state.streamStatus };
           delete streamStatus[key];
-          return { deployments, streamStatus };
+          const attention = { ...state.attention };
+          delete attention[key];
+          return { deployments, streamStatus, attention };
         });
       },
       updateProjection: (key, updates) =>
@@ -364,6 +384,13 @@ export const usePacketAgentStore = create<PacketAgentStore>()(
         }
         const updates = projectPacketAgentEvent(projection, observed);
         get().updateProjection(key, updates);
+        // PH7: an approval_required/blocked event means there is (probably) a
+        // new open attention request — fetch the authoritative list.
+        if (isPacketAgentAttentionEvent(observed.type)) {
+          void get()
+            .fetchAttention(key)
+            .catch(() => undefined);
+        }
         if (observed.eventId) {
           runtime.pendingAckEventId = observed.eventId;
           runtime.unackedCount += 1;
@@ -529,6 +556,51 @@ export const usePacketAgentStore = create<PacketAgentStore>()(
         }
         if (applied > 0) await get().flushAck(key);
         return applied;
+      },
+
+      fetchAttention: async (key) => {
+        const projection = get().deployments[key];
+        if (!projection) return;
+        const response = await get().request("attention", {
+          deploymentId: projection.deploymentId,
+        });
+        const open = parsePacketAgentAttentionList(response.body);
+        set((state) => ({ attention: { ...state.attention, [key]: open } }));
+      },
+
+      respondAttention: async (key, attentionId, decision) => {
+        const projection = get().deployments[key];
+        if (!projection) throw new Error("Unknown PacketAgent deployment.");
+        const request = (get().attention[key] ?? []).find((entry) => entry.id === attentionId);
+        const expectedRevision = request?.revision ?? 1;
+        try {
+          await get().request("respond_attention", {
+            attentionId,
+            payload: { decision, expectedRevision },
+            idempotencyKey: `${APP_NAME_LOWER}:${attentionId}:${decision}:${expectedRevision}`,
+          });
+          // Optimistically drop the answered request; the follow-up fetch is
+          // authoritative.
+          set((state) => ({
+            attention: {
+              ...state.attention,
+              [key]: (state.attention[key] ?? []).filter((entry) => entry.id !== attentionId),
+            },
+          }));
+          void get()
+            .fetchAttention(key)
+            .catch(() => undefined);
+        } catch (error) {
+          const message = String(error);
+          if (message.includes("PacketAgent 409") || message.includes("PacketAgent 412")) {
+            // Stale expectedRevision — someone else answered or the run
+            // moved. Refresh the list so the card shows current reality.
+            await get()
+              .fetchAttention(key)
+              .catch(() => undefined);
+          }
+          throw error;
+        }
       },
     }),
     {
