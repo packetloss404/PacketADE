@@ -87,16 +87,54 @@ pub enum AuxTaskClass {
     PrDescription,
     /// GitHub AI pre-flight PR review.
     PrReview,
+    // --- LM4 (3C-1) — classes for the surfaces migrating off run_claude. ---
+    /// Memory: codebase key-file scan (`scan_codebase_memory`).
+    MemoryScan,
+    /// Memory: session log → summary (`summarize_session`).
+    SessionSummarize,
+    /// Memory: session summaries → recurring patterns (`extract_patterns`).
+    PatternExtract,
+    /// Flight retrospective (`summarize_flight`).
+    FlightRetrospective,
+    /// Spec text → structured flight plan (`parse_spec_to_flight`).
+    SpecToFlight,
+    /// Spec text → ticket array (`parse_spec_to_tickets`).
+    SpecToTickets,
+    /// GitHub issue investigation (`github_investigate_issue`).
+    IssueInvestigate,
+    /// Insights agent chat (`ask_agent_chat_stream`).
+    AgentChat,
+    /// The floating side-chat overlay (`ask_side_chat_stream`).
+    SideChat,
+    /// GitHub "catch me up" digest (`github_ai_catch_up`).
+    /// (Explicit rename: kebab-case would split the camel hump into
+    /// `git-hub-catch-up`.)
+    #[serde(rename = "github-catch-up")]
+    GitHubCatchUp,
+    /// GitHub AI issue triage (`github_ai_triage`).
+    #[serde(rename = "github-triage")]
+    GitHubTriage,
 }
 
 impl AuxTaskClass {
     /// Every task class, in the order the settings card lists them.
     pub const ALL: &'static [AuxTaskClass] = &[
         AuxTaskClass::SpecImport,
+        AuxTaskClass::SpecToFlight,
+        AuxTaskClass::SpecToTickets,
         AuxTaskClass::CodeQualityExplain,
         AuxTaskClass::CodeQualitySummarize,
         AuxTaskClass::PrDescription,
         AuxTaskClass::PrReview,
+        AuxTaskClass::GitHubCatchUp,
+        AuxTaskClass::GitHubTriage,
+        AuxTaskClass::IssueInvestigate,
+        AuxTaskClass::MemoryScan,
+        AuxTaskClass::SessionSummarize,
+        AuxTaskClass::PatternExtract,
+        AuxTaskClass::FlightRetrospective,
+        AuxTaskClass::AgentChat,
+        AuxTaskClass::SideChat,
     ];
 
     /// Stable wire id, shared with the TypeScript `AuxTaskClass` union.
@@ -107,6 +145,17 @@ impl AuxTaskClass {
             AuxTaskClass::CodeQualitySummarize => "code-quality-summarize",
             AuxTaskClass::PrDescription => "pr-description",
             AuxTaskClass::PrReview => "pr-review",
+            AuxTaskClass::MemoryScan => "memory-scan",
+            AuxTaskClass::SessionSummarize => "session-summarize",
+            AuxTaskClass::PatternExtract => "pattern-extract",
+            AuxTaskClass::FlightRetrospective => "flight-retrospective",
+            AuxTaskClass::SpecToFlight => "spec-to-flight",
+            AuxTaskClass::SpecToTickets => "spec-to-tickets",
+            AuxTaskClass::IssueInvestigate => "issue-investigate",
+            AuxTaskClass::AgentChat => "agent-chat",
+            AuxTaskClass::SideChat => "side-chat",
+            AuxTaskClass::GitHubCatchUp => "github-catch-up",
+            AuxTaskClass::GitHubTriage => "github-triage",
         }
     }
 
@@ -118,6 +167,17 @@ impl AuxTaskClass {
             AuxTaskClass::CodeQualitySummarize => "Code Quality summary",
             AuxTaskClass::PrDescription => "AI PR description",
             AuxTaskClass::PrReview => "AI PR review",
+            AuxTaskClass::MemoryScan => "Codebase memory scan",
+            AuxTaskClass::SessionSummarize => "Session summary",
+            AuxTaskClass::PatternExtract => "Pattern extraction",
+            AuxTaskClass::FlightRetrospective => "Flight retrospective",
+            AuxTaskClass::SpecToFlight => "Spec → flight plan",
+            AuxTaskClass::SpecToTickets => "Spec → tickets",
+            AuxTaskClass::IssueInvestigate => "Issue investigation",
+            AuxTaskClass::AgentChat => "Agent chat",
+            AuxTaskClass::SideChat => "Side chat",
+            AuxTaskClass::GitHubCatchUp => "GitHub catch-up digest",
+            AuxTaskClass::GitHubTriage => "GitHub issue triage",
         }
     }
 

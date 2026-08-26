@@ -7,6 +7,7 @@
 //! or stopping the overlay cancels the matching provider task explicitly.
 
 use crate::commands::api_keys;
+use crate::core::aux_llm::{AuxRoutingState, AuxTaskClass};
 use crate::core::llm_provider::get_provider;
 use crate::core::llm_types::{ChatMessage, ChatRole, LlmRequest, MessageContent, StreamChunk};
 use serde::Serialize;
@@ -17,10 +18,12 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
-/// Default provider/model for the side chat. Anthropic + a small Haiku
-/// keeps latency low for these short, context-only questions.
-const DEFAULT_PROVIDER: &str = "anthropic";
-const DEFAULT_MODEL: &str = "claude-haiku-4-5";
+// LM4 (3C-5): the provider/model used to be hardcoded here
+// (anthropic / claude-haiku-4-5). They now come from the auxiliary routing
+// seam under the `side-chat` task class — whatever is pinned in Settings →
+// AI Provider Routing, else the cheapest configured provider. Only the
+// provider/model CHOICE moved: this module keeps its own request building,
+// streaming, and per-request cancellation.
 
 const SIDE_CHAT_CHUNK_EVENT: &str = "side-chat:chunk";
 const SIDE_CHAT_DONE_EVENT: &str = "side-chat:done";
@@ -104,6 +107,7 @@ fn emit_error(app_handle: &tauri::AppHandle, request_id: &str, message: impl Int
 pub async fn ask_side_chat_stream(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, Arc<SideChatState>>,
+    routing: tauri::State<'_, AuxRoutingState>,
     request_id: String,
     question: String,
     context: String,
@@ -122,16 +126,21 @@ pub async fn ask_side_chat_stream(
     super::validate_input_size(trimmed, super::MAX_INPUT_SIZE, "Side chat question")?;
     super::validate_input_size(&context, super::MAX_INPUT_SIZE, "Side chat context")?;
 
-    let api_key = match api_keys::load_api_key(DEFAULT_PROVIDER) {
+    // Resolve provider + model through the aux seam, and drop the State
+    // borrow before the first await into the stream.
+    let route = routing.resolve(AuxTaskClass::SideChat)?;
+
+    let api_key = match api_keys::load_api_key(&route.provider) {
         Ok(key) => key,
         Err(e) => {
-            return Err(format!("Side chat requires an Anthropic API key. {}", e));
+            return Err(format!("Side chat needs a {} API key. {}", route.provider, e));
         }
     };
 
     info!(
-        provider = DEFAULT_PROVIDER,
-        model = DEFAULT_MODEL,
+        provider = %route.provider,
+        model = %route.model,
+        explicit_route = route.explicit,
         question_len = trimmed.len(),
         context_len = context.len(),
         "Side chat query"
@@ -154,7 +163,7 @@ pub async fn ask_side_chat_stream(
     }];
 
     let request = LlmRequest {
-        model: DEFAULT_MODEL.to_string(),
+        model: route.model.clone(),
         messages,
         tools: Vec::new(),
         system_prompt: Some(SYSTEM_PROMPT.to_string()),
@@ -166,7 +175,7 @@ pub async fn ask_side_chat_stream(
         cache_key: None,
     };
 
-    let provider = match get_provider(DEFAULT_PROVIDER) {
+    let provider = match get_provider(&route.provider) {
         Ok(p) => p,
         Err(e) => {
             emit_error(&app_handle, &request_id, e.clone());

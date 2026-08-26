@@ -45,14 +45,36 @@ export type AuxTaskClass =
   | "code-quality-explain"
   | "code-quality-summarize"
   | "pr-description"
-  | "pr-review";
+  | "pr-review"
+  | "memory-scan"
+  | "session-summarize"
+  | "pattern-extract"
+  | "flight-retrospective"
+  | "spec-to-flight"
+  | "spec-to-tickets"
+  | "issue-investigate"
+  | "agent-chat"
+  | "side-chat"
+  | "github-catch-up"
+  | "github-triage";
 
 export const ALL_AUX_TASK_CLASSES: AuxTaskClass[] = [
   "spec-import",
+  "spec-to-flight",
+  "spec-to-tickets",
   "code-quality-explain",
   "code-quality-summarize",
   "pr-description",
   "pr-review",
+  "github-catch-up",
+  "github-triage",
+  "issue-investigate",
+  "memory-scan",
+  "session-summarize",
+  "pattern-extract",
+  "flight-retrospective",
+  "agent-chat",
+  "side-chat",
 ];
 
 export const AUX_TASK_CLASS_LABELS: Record<
@@ -60,6 +82,8 @@ export const AUX_TASK_CLASS_LABELS: Record<
   { label: string; description: string }
 > = {
   "spec-import": { label: "Spec import", description: "Spec / PRD → issue drafts" },
+  "spec-to-flight": { label: "Spec → flight plan", description: "Spec text → structured flight" },
+  "spec-to-tickets": { label: "Spec → tickets", description: "Spec text → ticket array" },
   "code-quality-explain": {
     label: "Explain diagnostic",
     description: "Code Quality error explanations",
@@ -70,6 +94,21 @@ export const AUX_TASK_CLASS_LABELS: Record<
   },
   "pr-description": { label: "PR description", description: "GitHub PR write-ups" },
   "pr-review": { label: "PR review", description: "GitHub pre-flight reviews" },
+  "github-catch-up": { label: "Catch-up digest", description: "GitHub activity digest" },
+  "github-triage": { label: "Issue triage", description: "GitHub AI label/priority triage" },
+  "issue-investigate": {
+    label: "Issue investigation",
+    description: "GitHub issue deep-dive (file tools)",
+  },
+  "memory-scan": { label: "Codebase scan", description: "Key-file memory scan (file tools)" },
+  "session-summarize": { label: "Session summary", description: "Session log → summary" },
+  "pattern-extract": { label: "Pattern extraction", description: "Summaries → recurring patterns" },
+  "flight-retrospective": {
+    label: "Flight retrospective",
+    description: "Completed-flight lessons",
+  },
+  "agent-chat": { label: "Agent chat", description: "Insights agent chat (file tools)" },
+  "side-chat": { label: "Side chat", description: "Floating side-chat overlay" },
 };
 
 /**
@@ -78,9 +117,17 @@ export const AUX_TASK_CLASS_LABELS: Record<
  * every class must appear in exactly one group.
  */
 export const AUX_TASK_CLASS_GROUPS: { label: string; classes: AuxTaskClass[] }[] = [
-  { label: "Spec & issues", classes: ["spec-import"] },
+  { label: "Spec & issues", classes: ["spec-import", "spec-to-flight", "spec-to-tickets"] },
   { label: "Code Quality", classes: ["code-quality-explain", "code-quality-summarize"] },
-  { label: "GitHub", classes: ["pr-description", "pr-review"] },
+  {
+    label: "GitHub",
+    classes: ["pr-description", "pr-review", "github-catch-up", "github-triage", "issue-investigate"],
+  },
+  {
+    label: "Memory & flights",
+    classes: ["memory-scan", "session-summarize", "pattern-extract", "flight-retrospective"],
+  },
+  { label: "Chat", classes: ["agent-chat", "side-chat"] },
 ];
 
 /**

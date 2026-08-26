@@ -148,6 +148,35 @@ mod tests {
         }
     }
 
+    /// LM4 (3C-2/3C-5) — the migrated pure-text surfaces must stay off the
+    /// Claude CLI, and the de-hardcoded surfaces must stay off a literal
+    /// model id. `scan_codebase_memory` is the one sanctioned `run_claude`
+    /// survivor in memory.rs (3C-3, deferred: it needs the CLI's file tools).
+    #[test]
+    fn migrated_surfaces_stay_on_the_aux_seam() {
+        assert!(
+            !include_str!("spec.rs").contains("run_claude("),
+            "spec.rs regressed onto the Claude CLI"
+        );
+        assert_eq!(
+            include_str!("memory.rs").matches("run_claude(").count(),
+            1,
+            "memory.rs must keep exactly one run_claude caller (scan_codebase_memory) until 3C-3"
+        );
+        // Mechanism-1 sites: the provider/model choice must come from the
+        // routing seam, never a string literal.
+        for (name, source) in [
+            ("side_chat.rs", include_str!("side_chat.rs")),
+            ("github.rs", include_str!("github.rs")),
+        ] {
+            assert!(
+                !source.contains("\"claude-haiku-4-5\""),
+                "{} re-hardcoded a model id",
+                name
+            );
+        }
+    }
+
     /// Every auxiliary feature must be reachable from the routing settings, or
     /// it is silently unroutable and the settings card lies again.
     #[test]

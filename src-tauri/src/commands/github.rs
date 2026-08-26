@@ -2134,8 +2134,11 @@ pub async fn github_set_pr_milestone(
 // `apiAgentChunkEvent` / `apiAgentDoneEvent` / `apiAgentErrorEvent` from
 // the agent infrastructure rather than inventing a parallel event family.
 
-const CATCH_UP_PROVIDER: &str = "anthropic";
-const CATCH_UP_MODEL: &str = "claude-haiku-4-5";
+// LM4 (3C-5): the catch-up / triage provider+model used to be hardcoded here
+// (anthropic / claude-haiku-4-5). Both now resolve through the auxiliary
+// routing seam under the `github-catch-up` / `github-triage` task classes.
+// Only the provider/model CHOICE moved — each feature keeps its own request
+// building, streaming, and parsing.
 const TRIAGE_BATCH_MAX: usize = 20;
 
 /// Lightweight `YYYY-MM-DDTHH:MM:SSZ` parser. Hand-rolled to avoid
@@ -2369,6 +2372,7 @@ fn render_activity_block(
 pub async fn github_ai_catch_up(
     app_handle: AppHandle,
     auth: State<'_, GitHubAuthState>,
+    routing: State<'_, crate::core::aux_llm::AuxRoutingState>,
     session_id: String,
     owner: String,
     repo: String,
@@ -2491,13 +2495,16 @@ pub async fn github_ai_catch_up(
 
     super::validate_input_size(&user_turn, super::MAX_INPUT_SIZE, "Catch-up user turn")?;
 
-    let api_key = crate::commands::api_keys::load_api_key("anthropic")
-        .map_err(|e| format!("AI digest needs an Anthropic API key. {}", e))?;
+    let route = routing.resolve(crate::core::aux_llm::AuxTaskClass::GitHubCatchUp)?;
+    let api_key = crate::commands::api_keys::load_api_key(&route.provider)
+        .map_err(|e| format!("AI digest needs a {} API key. {}", route.provider, e))?;
 
     info!(
         owner = %owner,
         repo = %repo,
         since = %since,
+        provider = %route.provider,
+        model = %route.model,
         events = events.len(),
         closed_issues = closed_issues.len(),
         merged_prs = merged_prs.len(),
@@ -2505,7 +2512,7 @@ pub async fn github_ai_catch_up(
         "github_ai_catch_up: streaming digest",
     );
 
-    let provider = crate::core::llm_provider::get_provider(CATCH_UP_PROVIDER)
+    let provider = crate::core::llm_provider::get_provider(&route.provider)
         .map_err(|e| format!("Provider unavailable: {}", e))?;
 
     let messages = vec![crate::core::llm_types::ChatMessage {
@@ -2513,7 +2520,7 @@ pub async fn github_ai_catch_up(
         content: crate::core::llm_types::MessageContent::text(user_turn),
     }];
     let request = crate::core::llm_types::LlmRequest {
-        model: CATCH_UP_MODEL.to_string(),
+        model: route.model.clone(),
         messages,
         tools: Vec::new(),
         system_prompt: Some(system_prompt),
@@ -2621,6 +2628,7 @@ fn strip_json_fences(s: &str) -> &str {
 #[tauri::command]
 pub async fn github_ai_triage(
     auth: State<'_, GitHubAuthState>,
+    routing: State<'_, crate::core::aux_llm::AuxRoutingState>,
     owner: String,
     repo: String,
     issue_numbers: Vec<u32>,
@@ -2692,18 +2700,21 @@ pub async fn github_ai_triage(
 
     super::validate_input_size(&user_turn, super::MAX_INPUT_SIZE, "Triage user turn")?;
 
-    let api_key = crate::commands::api_keys::load_api_key("anthropic")
-        .map_err(|e| format!("AI triage needs an Anthropic API key. {}", e))?;
+    let route = routing.resolve(crate::core::aux_llm::AuxTaskClass::GitHubTriage)?;
+    let api_key = crate::commands::api_keys::load_api_key(&route.provider)
+        .map_err(|e| format!("AI triage needs a {} API key. {}", route.provider, e))?;
 
     info!(
         owner = %owner,
         repo = %repo,
+        provider = %route.provider,
+        model = %route.model,
         issue_count = issue_numbers.len(),
         label_count = label_names.len(),
         "github_ai_triage: running",
     );
 
-    let provider = crate::core::llm_provider::get_provider(CATCH_UP_PROVIDER)
+    let provider = crate::core::llm_provider::get_provider(&route.provider)
         .map_err(|e| format!("Provider unavailable: {}", e))?;
 
     let messages = vec![crate::core::llm_types::ChatMessage {
@@ -2711,7 +2722,7 @@ pub async fn github_ai_triage(
         content: crate::core::llm_types::MessageContent::text(user_turn),
     }];
     let request = crate::core::llm_types::LlmRequest {
-        model: CATCH_UP_MODEL.to_string(),
+        model: route.model.clone(),
         messages,
         tools: Vec::new(),
         system_prompt: Some(system_prompt),
