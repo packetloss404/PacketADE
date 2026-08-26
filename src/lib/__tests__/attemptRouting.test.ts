@@ -110,6 +110,9 @@ const EXPECTED_PROVIDER_IDS: ReadonlyArray<[AgentCli, string]> = [
   ["api-minimax", "minimax"],
   ["api-openrouter", "openrouter"],
   ["api-ollama", "ollama"],
+  // LM2 — user-supplied OpenAI-compatible endpoint. The prefix-strip happens
+  // to round-trip here, but the map stays the single authority.
+  ["api-custom", "custom"],
 ];
 
 describe("attemptProviderFor", () => {

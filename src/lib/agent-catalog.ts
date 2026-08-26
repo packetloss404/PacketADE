@@ -66,6 +66,7 @@ const CHAT_FACE: Partial<Record<AgentCli, string>> = {
   "api-minimax": "MiniMax",
   "api-openrouter": "OpenRouter",
   "api-ollama": "Ollama",
+  "api-custom": "Custom endpoint",
 };
 
 /** Local-only chat runtimes cannot inherit an SSH execution context. */

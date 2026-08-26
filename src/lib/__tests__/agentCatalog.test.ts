@@ -14,13 +14,19 @@ import {
  */
 describe("agent-catalog merged registry", () => {
   it("exposes every API provider as a Chat agent with a face + default model", () => {
-    // Claude Agent SDK + Claude API, OpenAI(+Agents), OpenRouter, MiniMax, Ollama.
+    // Claude Agent SDK + Claude API, OpenAI(+Agents), OpenRouter, MiniMax,
+    // Ollama, Custom endpoint.
     const faces = CHAT_AGENTS.map((c) => c.face);
     expect(faces).toContain("Claude Agent SDK");
     expect(faces).toContain("Claude API");
     expect(faces).toContain("Ollama");
+    expect(faces).toContain("Custom endpoint");
     for (const c of CHAT_AGENTS) {
       expect(c.section).toBe("chat");
+      // LM2: `api-custom`'s models are a runtime-managed manual list
+      // (Settings → Provider Endpoints), so its STATIC catalog row is
+      // legitimately model-less. Every other row must carry models.
+      if (c.agentCli === "api-custom") continue;
       expect(c.defaultModel.length).toBeGreaterThan(0);
       expect(c.models.length).toBeGreaterThan(0);
     }
