@@ -17,7 +17,6 @@ describe("Settings navigation", () => {
       "cli-clients",
       "cli-accounts",
       "servers",
-      "syndicate-machines",
       "project-rules",
       "agents",
       "providers",

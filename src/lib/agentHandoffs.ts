@@ -11,7 +11,6 @@ import type { AgentConversation, PermissionMode } from "@/types/agent-conversati
 import type { McpTrustSnapshot } from "@/types/mcp";
 import {
   isLocalWorkspace,
-  isSyndicateWorkspace,
   type Workspace,
   type WorkspaceAgentSlot,
 } from "@/types/workspace";
@@ -196,14 +195,6 @@ export function delegateWorkspaceToAgents(
       message: "That Workspace no longer exists.",
     };
   }
-  if (isSyndicateWorkspace(workspace)) {
-    return {
-      ok: false,
-      code: "unsupported_target",
-      message: "Agent handoff for Syndicate Workspaces is not exposed in this release.",
-    };
-  }
-
   const selectedRepo = workspace.serverId
     ? makeSshUri(workspace.serverId, workspace.remoteProjectPath ?? workspace.projectPath)
     : workspace.projectPath;

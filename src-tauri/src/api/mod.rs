@@ -108,22 +108,6 @@ pub struct WorkspacePaneDto {
     #[serde(default)]
     #[ts(optional)]
     pub file_view: Option<String>,
-    #[serde(default)]
-    #[ts(optional)]
-    pub syndicate_pane_id: Option<String>,
-    #[serde(default)]
-    #[ts(optional)]
-    pub syndicate_terminal_session_id: Option<String>,
-    #[serde(default)]
-    #[ts(optional)]
-    pub syndicate_session_id: Option<String>,
-    #[serde(default)]
-    #[ts(optional)]
-    #[ts(type = "number")]
-    pub syndicate_cursor: Option<u64>,
-    #[serde(default)]
-    #[ts(optional)]
-    pub syndicate_operation_generation: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -138,14 +122,6 @@ pub enum ExecutionTargetRefDto {
     Ssh {
         #[ts(rename = "serverId")]
         server_id: String,
-    },
-    Syndicate {
-        #[ts(rename = "machineId")]
-        machine_id: String,
-        #[ts(rename = "workspaceId")]
-        workspace_id: String,
-        #[ts(rename = "serverConfigId")]
-        server_config_id: String,
     },
 }
 
@@ -1318,11 +1294,6 @@ impl From<core_workspace::WorkspacePane> for WorkspacePaneDto {
             terminal_shell: value.terminal_shell.map(Into::into),
             file_path: value.file_path,
             file_view: value.file_view,
-            syndicate_pane_id: value.syndicate_pane_id,
-            syndicate_terminal_session_id: value.syndicate_terminal_session_id,
-            syndicate_session_id: value.syndicate_session_id,
-            syndicate_cursor: value.syndicate_cursor,
-            syndicate_operation_generation: value.syndicate_operation_generation,
         }
     }
 }
@@ -1348,11 +1319,6 @@ impl From<WorkspacePaneDto> for core_workspace::WorkspacePane {
             terminal_shell: value.terminal_shell.map(Into::into),
             file_path: value.file_path,
             file_view: value.file_view,
-            syndicate_pane_id: value.syndicate_pane_id,
-            syndicate_terminal_session_id: value.syndicate_terminal_session_id,
-            syndicate_session_id: value.syndicate_session_id,
-            syndicate_cursor: value.syndicate_cursor,
-            syndicate_operation_generation: value.syndicate_operation_generation,
         }
     }
 }
@@ -1362,15 +1328,6 @@ impl From<core_workspace::ExecutionTargetRef> for ExecutionTargetRefDto {
         match value {
             core_workspace::ExecutionTargetRef::Local => Self::Local,
             core_workspace::ExecutionTargetRef::Ssh { server_id } => Self::Ssh { server_id },
-            core_workspace::ExecutionTargetRef::Syndicate {
-                machine_id,
-                workspace_id,
-                server_config_id,
-            } => Self::Syndicate {
-                machine_id,
-                workspace_id,
-                server_config_id,
-            },
         }
     }
 }
@@ -1380,15 +1337,6 @@ impl From<ExecutionTargetRefDto> for core_workspace::ExecutionTargetRef {
         match value {
             ExecutionTargetRefDto::Local => Self::Local,
             ExecutionTargetRefDto::Ssh { server_id } => Self::Ssh { server_id },
-            ExecutionTargetRefDto::Syndicate {
-                machine_id,
-                workspace_id,
-                server_config_id,
-            } => Self::Syndicate {
-                machine_id,
-                workspace_id,
-                server_config_id,
-            },
         }
     }
 }

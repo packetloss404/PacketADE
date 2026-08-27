@@ -12,7 +12,6 @@ export type SettingsSection =
   | "github"
   | "issues"
   | "servers"
-  | "syndicate-machines"
   | "mcp"
   | "project-rules"
   | "modules"

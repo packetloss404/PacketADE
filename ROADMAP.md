@@ -4,10 +4,10 @@ Last reconciled: 2026-08-12
 
 PacketBench is a local-first Agent Development Environment and remains the
 flagship control surface. The desktop owns local providers, models, secrets,
-Workspaces, MCP configuration, permissions, Memory, and execution. A selected
-Syndicate target delegates only its typed Workspace/session authority to the
-paired Linux Host; provider credentials and paths stay on that Host. Phone and
+Workspaces, MCP configuration, permissions, Memory, and execution. Phone and
 cloud surfaces supervise their configured authority; they do not replace it.
+(Syndicate separated from the Packet\* product family on 2026-08-27; its
+execution-target integration was removed — see `CHANGELOG.md` [Unreleased].)
 
 The detailed task ledger is [`backlog.md`](./backlog.md). This file contains
 only product direction and ordering.
@@ -28,14 +28,15 @@ only product direction and ordering.
 - Selectable local Terminal shells and the self-bootstrapping Claude Code native
   status bar ship in v0.10.3.
 - The 30 low-rated Reliability findings are closed.
-- PacketBench, the flagship UI, now has a first-class Syndicate execution target:
-  scoped device pairing/revocation, Host-owned Workspace selection/creation,
-  durable remote CLI panes and replay, a managed pinned-SSH bootstrap, and an
-  application-encrypted PacketRelay transport are implemented and reviewed.
+- The first-class Syndicate execution target (scoped device pairing/revocation,
+  Host-owned Workspaces, durable remote CLI panes, managed pinned-SSH
+  bootstrap, encrypted PacketRelay transport) was implemented, reviewed, and
+  then removed on 2026-08-27 when Syndicate separated from the Packet\*
+  family. The pre-removal implementation is at `d87fb125`; the controller
+  protocol and relay continue in Syndicate's own repos.
 
-The public Syndicate distribution and relay are now live. The remaining
-bottleneck is packaged, real-host acceptance proof, not another broad source
-feature wave.
+The remaining bottleneck is packaged, real-host acceptance proof, not another
+broad source feature wave.
 
 ## Now
 
@@ -54,7 +55,6 @@ feature wave.
 | Git/Memory/MCP/Trust proof  |       P2 | Source implementations pass                                                                                      | Run real GitHub/Gitea, editor-watch, provider, MCP, SSH, restart, and visual matrices                                                                 |
 | Terminal shell proof        |       P2 | Source, package compile, detection, and command probes pass                                                      | Run interactive pane, persistence, unavailable-profile, CLI, and SSH matrix                                                                           |
 | Monitor proof               |       P2 | Read-only Agent/Flight v1 source complete                                                                        | Run packaged multi-display lifecycle and Rust-denial proof                                                                                            |
-| Syndicate acceptance proof  |       P1 | Production PacketRelay WSS and signed immutable Syndicate v0.1.3 x64/arm64 installer are live and smoke-verified | Run the packaged PacketBench clean-host, controller, network-fault, revocation, restart, upgrade, and rollback matrix                                   |
 
 ## Next
 
@@ -64,9 +64,8 @@ After the immediately available proof gates:
 2. Close bounded Settings and main-shell MS4 work.
 3. Finish Ollama capability-aware selection, auxiliary-task routing, retired
    conversation provider switching, and edit/diff honesty.
-4. Run the Syndicate clean-host, controller, network-fault, revocation,
-   restart, upgrade, and rollback acceptance matrix against the live relay and
-   signed Linux release.
+4. (Closed 2026-08-27) ~~Run the Syndicate acceptance matrix~~ — moot; the
+   integration was removed when Syndicate separated from the Packet\* family.
 5. (Paused 2026-08-16) Remote Agents: on pickup, resolve auth per
    `dev/remoteagents/10-pause-record.md` (E2EE already ratified), then execute
    Sprint 0 against the standalone Rust relay at `D:\projects\packetrelay`.
@@ -78,10 +77,6 @@ After the immediately available proof gates:
 
 ## Later
 
-- Syndicate expansion beyond the implemented first release: multiple PacketBench
-  devices per machine, existing-session import for view-only grants, WebSocket
-  event subscriptions, API-agent/Flight target authority, and survival across
-  `packet-host` restart or server reboot.
 - Packet Control: deterministic, user-initiated local/SSH evidence capture
   using one contract shared with PacketAgent.
 - PacketBBS: bounded non-secret connection preset with safe external Web and
@@ -128,8 +123,8 @@ execution belongs in v1.
 2. Close available real-host, microphone, provider, MCP, and cross-product
    evidence gates.
 3. Resolve and implement Undo plus bounded Settings/MS4 work.
-4. Complete Syndicate's packaged PacketBench/real-host acceptance matrix against
-   the live relay and signed immutable Linux installer.
+4. (Closed 2026-08-27) ~~Syndicate packaged acceptance matrix~~ — moot; the
+   integration was removed with Syndicate's separation from the family.
 5. (Paused 2026-08-16) Remote Agents: decide auth on pickup, then build the
    PWA/relay alpha. See `dev/remoteagents/10-pause-record.md`.
 6. Add hosted CI, signing, notarization, and updater infrastructure.

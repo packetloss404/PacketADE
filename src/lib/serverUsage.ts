@@ -67,10 +67,7 @@ export function summarizeServerUsage(
       .filter((w) => {
         if (w.status === "archived") return false;
         const target = executionTargetForWorkspace(w);
-        return (
-          (target.kind === "ssh" && target.serverId === serverId) ||
-          (target.kind === "syndicate" && target.serverConfigId === serverId)
-        );
+        return target.kind === "ssh" && target.serverId === serverId;
       })
       .map((w) => w.name),
   };

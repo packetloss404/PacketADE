@@ -34,19 +34,8 @@ import type { ServerConfig } from "@/types/server";
 import type { CliAccount, CliAccountCli } from "@/types/cliAccount";
 import type { PacketAgentRequest, PacketAgentResponse } from "@/types/packet-agent";
 import type { TerminalShellProbe } from "@/types/terminal-shell";
-import type {
-  SyndicateMachineConnection,
-  SyndicatePairResult,
-  SyndicateRpcResult,
-} from "@/types/syndicate";
 import { normalizeTerminalShellSelection } from "@/lib/terminalShells";
 import { isValidMosaicTree } from "@/lib/mosaicPresets";
-import {
-  assertSyndicateIntegrationEnabled,
-  isSyndicateIntegrationEnabled,
-} from "@/lib/syndicateIntegration";
-import { forgetSyndicateTransport, recordSyndicateTransport } from "@/lib/syndicateTransportStatus";
-import { toSyndicateError } from "@/lib/syndicateErrors";
 
 type WorkspacePaneDtoWithFrontendMetadata = WorkspaceDto["panes"][number] &
   Pick<Workspace["panes"][number], "pinnedCommands">;
@@ -55,232 +44,6 @@ type WorkspaceDtoWithFrontendMetadata = Omit<WorkspaceDto, "panes"> & {
   panes: WorkspacePaneDtoWithFrontendMetadata[];
   githubRepo?: Workspace["githubRepo"];
 };
-
-// Syndicate controller protocol v1. Every wrapper maps to one allowlisted
-// native command; there is intentionally no generic RPC binding.
-
-/**
- * Native Syndicate commands reject with a typed `{message, code, retryable,
- * correlationId}` payload, not a string. Rehydrating it here is what lets
- * every caller keep reading `error.message` while retry and grant-state
- * decisions branch on the protocol's own fields.
- */
-async function invokeSyndicate<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  try {
-    return await (args === undefined ? invoke<T>(command) : invoke<T>(command, args));
-  } catch (reason) {
-    throw toSyndicateError(reason);
-  }
-}
-
-export async function pairSyndicateMachine(
-  pairingPayload: string,
-  deviceName: string,
-  serverConfigId: string,
-  relayEndpoint?: string,
-): Promise<SyndicatePairResult> {
-  assertSyndicateIntegrationEnabled();
-  const result = await invokeSyndicate<SyndicatePairResult>("syndicate_pair_machine", {
-    request: { pairingPayload, deviceName, serverConfigId, relayEndpoint },
-  });
-  // Claim, approval bootstrap, and the first verified snapshot all use the
-  // pinned managed SSH forward before a relay grant is available.
-  if (isSyndicateIntegrationEnabled()) {
-    recordSyndicateTransport(result.machineId, result.deviceId, "ssh-forward");
-  }
-  return result;
-}
-
-async function invokeSyndicateRpc(
-  command: string,
-  args: Record<string, unknown>,
-  machineId: string,
-  deviceId: string,
-  /**
-   * Only `device.revoke_self` sets this. The kill switch must not block the
-   * remedy it exists to enable — revocation is the one controller call that
-   * reduces this device's authority rather than exercising it. The native
-   * boundary enforces the same exemption.
-   */
-  allowWhileDisabled = false,
-): Promise<SyndicateRpcResult> {
-  if (!allowWhileDisabled) assertSyndicateIntegrationEnabled();
-  const response = await invokeSyndicate<SyndicateRpcResult>(command, args);
-  if (response.transport !== "packet-relay" && response.transport !== "ssh-forward") {
-    throw new Error("Native Syndicate response is missing valid transport metadata");
-  }
-  if (isSyndicateIntegrationEnabled()) {
-    recordSyndicateTransport(machineId, deviceId, response.transport);
-  }
-  return response;
-}
-
-export async function syndicateWorkspaceCreate(input: {
-  connection: SyndicateMachineConnection;
-  repositoryId: string;
-  name: string;
-  clientOperationId: string;
-}): Promise<SyndicateRpcResult> {
-  return invokeSyndicateRpc(
-    "syndicate_workspace_create",
-    { request: input },
-    input.connection.machineId,
-    input.connection.deviceId,
-  );
-}
-
-export async function syndicateMachineSnapshot(
-  connection: SyndicateMachineConnection,
-): Promise<SyndicateRpcResult> {
-  return invokeSyndicateRpc(
-    "syndicate_machine_snapshot",
-    { connection },
-    connection.machineId,
-    connection.deviceId,
-  );
-}
-
-export async function syndicateWorkspaceList(
-  connection: SyndicateMachineConnection,
-): Promise<SyndicateRpcResult> {
-  return invokeSyndicateRpc(
-    "syndicate_workspace_list",
-    { connection },
-    connection.machineId,
-    connection.deviceId,
-  );
-}
-
-export async function syndicateSessionStart(input: {
-  connection: SyndicateMachineConnection;
-  paneId: string;
-  terminalSessionId: string;
-  profileId: "codex" | "claude" | "packetcode";
-  cols: number;
-  rows: number;
-}): Promise<SyndicateRpcResult> {
-  return invokeSyndicateRpc(
-    "syndicate_session_start",
-    { request: input },
-    input.connection.machineId,
-    input.connection.deviceId,
-  );
-}
-
-export async function syndicatePaneCreate(input: {
-  connection: SyndicateMachineConnection;
-  workspaceId: string;
-  title: string;
-  profileId: "codex" | "claude" | "packetcode";
-  clientOperationId: string;
-}): Promise<SyndicateRpcResult> {
-  return invokeSyndicateRpc(
-    "syndicate_pane_create",
-    { request: input },
-    input.connection.machineId,
-    input.connection.deviceId,
-  );
-}
-
-export async function syndicateSessionAttach(input: {
-  connection: SyndicateMachineConnection;
-  paneId: string;
-  terminalSessionId: string;
-  sessionId: string;
-  afterSequence: number;
-}): Promise<SyndicateRpcResult> {
-  return invokeSyndicateRpc(
-    "syndicate_session_attach",
-    { request: input },
-    input.connection.machineId,
-    input.connection.deviceId,
-  );
-}
-
-export async function syndicateEventsRead(input: {
-  connection: SyndicateMachineConnection;
-  afterSequence: number;
-  limit?: number;
-}): Promise<SyndicateRpcResult> {
-  return invokeSyndicateRpc(
-    "syndicate_events_read",
-    { request: input },
-    input.connection.machineId,
-    input.connection.deviceId,
-  );
-}
-
-export async function syndicateSessionInput(input: {
-  connection: SyndicateMachineConnection;
-  sessionId: string;
-  frameId: string;
-  inputBase64: string;
-}): Promise<SyndicateRpcResult> {
-  return invokeSyndicateRpc(
-    "syndicate_session_input",
-    { request: input },
-    input.connection.machineId,
-    input.connection.deviceId,
-  );
-}
-
-export async function syndicateSessionResize(input: {
-  connection: SyndicateMachineConnection;
-  sessionId: string;
-  cols: number;
-  rows: number;
-}): Promise<SyndicateRpcResult> {
-  return invokeSyndicateRpc(
-    "syndicate_session_resize",
-    { request: input },
-    input.connection.machineId,
-    input.connection.deviceId,
-  );
-}
-
-export async function syndicateSessionStop(input: {
-  connection: SyndicateMachineConnection;
-  sessionId: string;
-}): Promise<SyndicateRpcResult> {
-  return invokeSyndicateRpc(
-    "syndicate_session_stop",
-    { request: input },
-    input.connection.machineId,
-    input.connection.deviceId,
-  );
-}
-
-export async function revokeSyndicateMachine(
-  connection: SyndicateMachineConnection,
-): Promise<SyndicateRpcResult> {
-  return invokeSyndicateRpc(
-    "syndicate_revoke_self",
-    { connection },
-    connection.machineId,
-    connection.deviceId,
-    true,
-  );
-}
-
-/**
- * Delete the local device credential. Deliberately not gated on the Settings
- * switch: it opens no transport, and a user who has disabled the integration
- * must still be able to destroy a key they have decided to abandon.
- */
-export async function forgetSyndicateMachine(machineId: string): Promise<void> {
-  await invokeSyndicate("syndicate_forget_machine", { machineId });
-  forgetSyndicateTransport(machineId);
-}
-
-/** Close every managed SSH forward when the user disables the integration. */
-export async function disableSyndicateIntegration(): Promise<void> {
-  return invokeSyndicate("syndicate_disable_integration");
-}
-
-/** Synchronize the persisted frontend preference into the native fail-closed gate. */
-export async function setNativeSyndicateIntegrationEnabled(enabled: boolean): Promise<void> {
-  return invokeSyndicate("syndicate_set_integration_enabled", { enabled });
-}
 
 // Filesystem
 export async function getCwd(): Promise<string> {
@@ -2196,15 +1959,6 @@ function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
       terminalShell: pane.terminalShell
         ? normalizeTerminalShellSelection(pane.terminalShell)
         : undefined,
-      syndicatePaneId: pane.syndicatePaneId,
-      syndicateTerminalSessionId: pane.syndicateTerminalSessionId,
-      syndicateSessionId: pane.syndicateSessionId,
-      syndicateCursor:
-        typeof pane.syndicateCursor === "number" ? Number(pane.syndicateCursor) : undefined,
-      syndicateOperationGeneration:
-        typeof pane.syndicateOperationGeneration === "number"
-          ? Number(pane.syndicateOperationGeneration)
-          : undefined,
     })),
     projectPath: workspace.projectPath,
     prompt: workspace.prompt,
@@ -2265,17 +2019,6 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDtoWithFrontendMetadata 
       // pre-multi-account shape, so an old binary round-trip is unaffected.
       ...(pane.accountId ? { accountId: pane.accountId } : {}),
       ...(pane.terminalShell ? { terminalShell: pane.terminalShell } : {}),
-      ...(pane.syndicatePaneId ? { syndicatePaneId: pane.syndicatePaneId } : {}),
-      ...(pane.syndicateTerminalSessionId
-        ? { syndicateTerminalSessionId: pane.syndicateTerminalSessionId }
-        : {}),
-      ...(pane.syndicateSessionId ? { syndicateSessionId: pane.syndicateSessionId } : {}),
-      ...(typeof pane.syndicateCursor === "number"
-        ? { syndicateCursor: pane.syndicateCursor }
-        : {}),
-      ...(typeof pane.syndicateOperationGeneration === "number"
-        ? { syndicateOperationGeneration: pane.syndicateOperationGeneration }
-        : {}),
     })),
     projectPath: workspace.projectPath,
     prompt: workspace.prompt,

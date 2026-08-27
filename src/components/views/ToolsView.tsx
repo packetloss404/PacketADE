@@ -41,7 +41,6 @@ import { DictationSettingsCard } from "./tools/DictationSettingsCard";
 import { KeyboardShortcutsCard } from "./tools/KeyboardShortcutsCard";
 import { ApiKeysCard } from "./tools/ApiKeysCard";
 import { ServersSettingsCard } from "./tools/ServersSettingsCard";
-import { SyndicateMachinesCard } from "./tools/SyndicateMachinesCard";
 import { AgentProfilesCard } from "./tools/AgentProfilesCard";
 import { AgentSettingsCard } from "./tools/AgentSettingsCard";
 import { CliAgentsCard } from "./tools/CliAgentsCard";
@@ -361,12 +360,6 @@ export function ToolsView() {
           {activeSection === "servers" && (
             <div className="max-w-2xl">
               <ServersSettingsCard />
-            </div>
-          )}
-
-          {activeSection === "syndicate-machines" && (
-            <div className="max-w-3xl">
-              <SyndicateMachinesCard />
             </div>
           )}
 

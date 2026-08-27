@@ -134,72 +134,37 @@ environment or packaged matrix has actually run.
   ones (both sets are recorded in `CHANGELOG.md`). Nothing distinguishes them to
   a user or an updater, so the unreleased pair must not be distributed and the
   version must move before the next `pnpm tauri build`.
-- **P1 - Syndicate packaged acceptance gate.** The PacketBench flagship target,
-  typed/scoped pairing and revocation, Host-owned Workspaces, durable panes,
-  managed pinned-SSH bootstrap, encrypted PacketRelay transport, and target
-  isolation pass automated review. The public PacketRelay
-  `wss://packet-relay-1038865114903.us-central1.run.app/v1/product-route` and
-  signed immutable Syndicate `v0.1.3` x64/arm64 installer are live and
-  independently smoke-verified. Remaining: run packaged PacketBench against clean
-  Ubuntu plus network-loss, revocation, scope, replay, Node Host-restart,
-  upgrade, and rollback matrices before treating “control from anywhere” as a
-  broadly accepted release promise. See
-  [`dev/syndicate-execution-target.md`](./dev/syndicate-execution-target.md).
-  The expiry matrix is now the sharpest of these: grants last 30 days with no
-  renewal path, so every paired device reaches it. PacketBench handles the cliff
-  correctly as of the integration-toggle work, but the fix has never been
-  exercised against a real expired grant. The 11-row matrix, and how to produce
-  an expired grant without waiting 30 days, is
-  [`dev/syndicate-expiry-acceptance.md`](./dev/syndicate-expiry-acceptance.md).
-  Note it establishes that Revoke cannot succeed on an expired grant — the
-  revocation RPC is itself rejected with `DEVICE_UNAUTHORIZED` — so local
-  Forget is the only cleanup path in that state.
-- **P2 - Syndicate `device.refresh` client half.** Grants expire at 30 days and
-  Syndicate has no renewal method yet; it is designing and building the host
-  half (its backlog item P4#2) and PacketBench implements the client call
-  afterwards. Agree the method shape before either side builds. Until it lands,
-  the only remedy for an expired grant is re-pairing, which PacketBench now warns
-  about in the final week rather than discovering at the cliff. PacketBench's
-  client-side proposal, including the security tradeoff of refreshing an
-  already-expired grant, is
-  [`dev/syndicate-device-refresh-proposal.md`](./dev/syndicate-device-refresh-proposal.md);
-  delivered to Syndicate on 2026-08-15 as branch
-  `packetbench/device-refresh-proposal` (commit `3844d3e`, one new file
-  `docs/PACKETBENCH_DEVICE_REFRESH_PROPOSAL.md`, branched from their `main`).
-  Blocked on Syndicate merging it and answering the six questions in its §10;
-  PacketBench builds nothing until the shape is settled.
-- **P2 - Contribute the device→relay protocol spec.** `CONTROLLER_PROTOCOL_V1`
-  documents the controller→Host half only. The device→relay half — `device_hello`
-  and its `SYNDICATE-RELAY-DEVICE-HELLO-V1` separator (signed over a five-field
-  newline payload rather than canonical JSON, unlike every other signature in
-  the protocol), the device keepalive, and `routeRevoked` — exists only as
-  PacketBench's implementation in `src-tauri/src/commands/syndicate_relay.rs`.
-  Syndicate owns the document and asked us to write that half, since we own the
-  only implementation. Its stated goal is that an independent client be
-  buildable from the spec alone, which today it is not. Drafted in
-  [`dev/controller-protocol-device-relay-half.md`](./dev/controller-protocol-device-relay-half.md),
-  cross-checked against the relay's own `product_route.rs` rather than our side
-  alone; remaining work is to hand it to Syndicate for integration. It also
-  records that the shared crypto fixture pins neither route-id derivation nor
-  either liveness frame, which is narrower coverage than the fixture's presence
-  suggests.
-- **P3 - Syndicate SSH forward pins the remote port to 4317.**
-  `SyndicateMachineConnection.local_port` is configurable but
-  `commands/syndicate.rs` builds the forward as
-  `127.0.0.1:{local_port}:127.0.0.1:{DEFAULT_PORT}`, so a Host listening on a
-  non-default `SYNDICATE_PORT` is unreachable over SSH.
-- **P3 - PacketRelay opens one WebSocket per RPC.** Each relayed call costs a
-  TLS handshake plus `device_hello` plus `routeReady` before it sends anything.
-  Fine for occasional control, poor for `session.input`; connection reuse is the
-  fix if terminal streaming over the relay is ever wanted.
-- **P3 - Relay keepalive is coupled by an exact string.** PacketRelay compares
-  received text byte-for-byte against the literal
-  `{"protocolVersion":1,"type":"ping"}`, and
-  `syndicate_relay.rs` emits exactly that. It currently matches only because
-  serde_json sorts keys and `protocolVersion` happens to sort before `type`. Any
-  reformat, key reorder, or added field breaks liveness silently — no `pong`,
-  then a close-1013 reconnect loop after 45s. Covered by no fixture or test;
-  Syndicate tracks the cross-repo fixture as its P4#11.
+- **CLOSED 2026-08-27 - Syndicate packaged acceptance gate.** Moot: Syndicate
+  was separated from the Packet\* product family and the whole execution-target
+  integration was removed from PacketBench (see `CHANGELOG.md` [Unreleased];
+  pre-removal code is at `d87fb125`). The clean-Ubuntu, expiry, revocation, and
+  rollback matrices in
+  [`dev/syndicate-execution-target.md`](./dev/syndicate-execution-target.md) and
+  [`dev/syndicate-expiry-acceptance.md`](./dev/syndicate-expiry-acceptance.md)
+  are Syndicate's to run against its own client now; the docs stay as records.
+- **CLOSED 2026-08-27 - Syndicate `device.refresh` client half.** Moot with the
+  integration's removal: PacketBench no longer holds grants to refresh. The
+  proposal ([`dev/syndicate-device-refresh-proposal.md`](./dev/syndicate-device-refresh-proposal.md),
+  delivered to Syndicate 2026-08-15 as `packetbench/device-refresh-proposal`)
+  is Syndicate's to adopt or drop.
+- **CLOSED 2026-08-27 - Contribute the device→relay protocol spec.** The draft
+  ([`dev/controller-protocol-device-relay-half.md`](./dev/controller-protocol-device-relay-half.md))
+  was handed to Syndicate before the split and stays in `dev/` as the record;
+  the reference implementation it documents lives at
+  `src-tauri/src/commands/syndicate_relay.rs` @ `d87fb125` (removed from the
+  tree with the integration) and remains the device-half reference for the
+  future Remote Agents work.
+- **CLOSED 2026-08-27 - Syndicate SSH forward pins the remote port to 4317.**
+  Moot: `commands/syndicate.rs` and the forward it built were removed with the
+  integration.
+- **CLOSED 2026-08-27 - PacketRelay opens one WebSocket per RPC.** Moot:
+  `syndicate_relay.rs` was removed with the integration; connection reuse is a
+  Syndicate/PacketRelay concern now.
+- **CLOSED 2026-08-27 - Relay keepalive is coupled by an exact string.** Moot
+  for PacketBench: the emitting side (`syndicate_relay.rs`) was removed with
+  the integration. The byte-exact ping/pong coupling and its missing fixture
+  remain real on the Syndicate/PacketRelay side (Syndicate tracks it as its
+  P4#11).
 - **P1 - Dictation hardware/platform matrix.** Run default/USB/Bluetooth,
   44.1/48 kHz, fast-PTT, cancel, disconnect, repeated phrase, first-model-load,
   history, in-app, clipboard, and opt-in external-paste tests on Windows with an
@@ -725,14 +690,13 @@ These are approved concepts, not current implementation commitments.
 
 Do not reopen these from historical plans:
 
-- PacketBench's first Syndicate execution-target source boundary is complete:
-  `kind: "syndicate"` persistence, OS-keychain device credentials, scoped
-  pairing/revocation, machine capability health, Host repository/Workspace
-  selection and creation, pane/session lifecycle, durable cursor replay,
-  managed pinned SSH bootstrap, encrypted PacketRelay frames, and local-path
-  authority fences are implemented. The public relay and signed installer are
-  deployed; the remaining work is the packaged real-host proof gate above, not
-  a redesign of the target or controller protocol.
+- (Removed 2026-08-27) PacketBench's Syndicate execution-target source boundary
+  was completed and then deleted whole when Syndicate separated from the
+  Packet\* family — `kind: "syndicate"` persistence, OS-keychain device
+  credentials, scoped pairing/revocation, pane/session lifecycle, managed
+  pinned SSH bootstrap, and encrypted PacketRelay frames all lived at
+  `d87fb125`. Do not rebuild it here; the controller protocol and relay
+  continue in Syndicate's own repos.
 
 - Workspace/Agents restructuring and WA0-WA4 are complete: Workspaces are
   CLI/PacketCode-first; Agents is a first-class same-window GUI-agent surface;
@@ -758,7 +722,7 @@ Do not reopen these from historical plans:
 - Current audit summary: [`docs/reports/state-of-the-ade-2026-07-30.md`](./docs/reports/state-of-the-ade-2026-07-30.md), Section 0
 - Current release record: [`dev/release-v0.10.3.md`](./dev/release-v0.10.3.md)
 - Remote Agents: [`dev/remoteagents/README.md`](./dev/remoteagents/README.md)
-- Syndicate execution target: [`dev/syndicate-execution-target.md`](./dev/syndicate-execution-target.md)
+- Syndicate execution target (removed 2026-08-27; historical): [`dev/syndicate-execution-target.md`](./dev/syndicate-execution-target.md)
 - Main shell: [`dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md)
 - Workspace/Agents: [`dev/workspace-agents-restructuring-goal.md`](./dev/workspace-agents-restructuring-goal.md)
 - Settings: [`dev/workspace-agent-settings-decision-2026-07-29.md`](./dev/workspace-agent-settings-decision-2026-07-29.md)

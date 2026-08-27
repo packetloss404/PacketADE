@@ -290,22 +290,6 @@ pub fn run() {
             commands::ssh_keys::get_ssh_password_exists,
             commands::ssh_keys::set_ssh_password,
             commands::ssh_keys::delete_ssh_password,
-            // Syndicate execution targets (typed controller protocol v1)
-            commands::syndicate::syndicate_pair_machine,
-            commands::syndicate::syndicate_disable_integration,
-            commands::syndicate::syndicate_set_integration_enabled,
-            commands::syndicate::syndicate_machine_snapshot,
-            commands::syndicate::syndicate_workspace_list,
-            commands::syndicate::syndicate_workspace_create,
-            commands::syndicate::syndicate_pane_create,
-            commands::syndicate::syndicate_session_start,
-            commands::syndicate::syndicate_session_attach,
-            commands::syndicate::syndicate_events_read,
-            commands::syndicate::syndicate_session_input,
-            commands::syndicate::syndicate_session_resize,
-            commands::syndicate::syndicate_session_stop,
-            commands::syndicate::syndicate_revoke_self,
-            commands::syndicate::syndicate_forget_machine,
             // Git
             commands::git::get_git_branch,
             commands::git::get_git_status,
@@ -615,7 +599,6 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
-                commands::syndicate::shutdown_tunnels();
                 // Stop the PacketAgent SSE consumer tasks so their sockets
                 // never outlive the window (PH6 clean-shutdown requirement).
                 commands::packet_agent_stream::shutdown_on_exit(app_handle);

@@ -18,7 +18,6 @@ import { useAppStore } from "@/stores/appStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { useServerStore } from "@/stores/serverStore";
-import { useSyndicateStore } from "@/stores/syndicateStore";
 import { isAccountAwareSlot } from "@/lib/sessionAccountDefaults";
 import { SessionAccountPicker } from "@/components/workspace/SessionAccountPicker";
 import type { Workspace, WorkspaceAgentSlot } from "@/types/workspace";
@@ -206,8 +205,6 @@ function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentPro
   >(undefined);
   const agents = useAgentStore((state) => state.agents);
   const servers = useServerStore((state) => state.servers);
-  const syndicateEnabled = useSyndicateStore((state) => state.enabled && state.nativeReady);
-  const syndicateMachines = useSyndicateStore((state) => state.machines);
   const addPane = useWorkspaceStore((state) => state.addPane);
   const addFilePane = useWorkspaceStore((state) => state.addFilePane);
   const openSettings = useAppStore((state) => state.openSettings);
@@ -217,46 +214,7 @@ function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentPro
     (profile) => profile !== "custom" || defaultTerminalShell.profile === "custom",
   );
 
-  if (workspace.executionTarget?.kind === "syndicate" && !syndicateEnabled) {
-    return (
-      <div className="p-3">
-        <div role="alert" className="rounded border border-bg-border bg-bg-primary p-3">
-          <p className="text-[11px] font-medium text-text-primary">
-            Syndicate integration is disabled
-          </p>
-          <p className="mt-1 text-[9px] leading-relaxed text-text-muted">
-            Re-enable it to add or reconnect remote coding-agent panes. Existing Host sessions and
-            paired-machine records are preserved.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              openSettings({ section: "syndicate-machines" });
-              onClose();
-            }}
-            className="mt-2 inline-flex items-center gap-1 text-[10px] text-accent-green hover:underline"
-          >
-            <Settings2 size={10} /> Open Syndicate settings
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   const isInstalled = (slot: WorkspaceAgentSlot): boolean => {
-    if (workspace.executionTarget?.kind === "syndicate") {
-      const target = workspace.executionTarget;
-      if (slot === "terminal" || slot === "opencode") return false;
-      const machine = syndicateMachines.find(
-        (candidate) => candidate.machineId === target.machineId,
-      );
-      const profileId = slot === "claude-code" ? "claude" : slot;
-      return (
-        machine?.cachedSnapshot?.agents.some(
-          (agent) => agent.profileId === profileId && agent.state === "ready",
-        ) ?? false
-      );
-    }
     if (slot === "terminal") return true;
     if (workspace.serverId) {
       const server = servers.find((candidate) => candidate.id === workspace.serverId);
@@ -337,7 +295,7 @@ function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentPro
    * `EditorPane` to open rendered. SSH workspaces have no local FS, so the rows
    * are disabled rather than hidden (same honesty rule the Editor dock uses).
    */
-  const viewersDisabled = Boolean(workspace.serverId || workspace.executionTarget?.kind === "syndicate");
+  const viewersDisabled = Boolean(workspace.serverId);
 
   const pickViewer = (mode: "any" | "markdown") => {
     // Close first: the native dialog is modal and would otherwise sit behind a

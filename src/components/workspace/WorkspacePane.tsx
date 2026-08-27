@@ -25,8 +25,6 @@ import { accountLoginCliForSlot, useAccountLaunchGate } from "@/hooks/useAccount
 import type { WorkspacePane as WorkspacePaneType } from "@/types/workspace";
 import { useTerminalSettingsStore } from "@/stores/terminalSettingsStore";
 import { resolveTerminalShellLaunch } from "@/lib/terminalShells";
-import { executionTargetForWorkspace } from "@/types/workspace";
-import { SyndicateTerminalPane } from "@/components/session/SyndicateTerminalPane";
 
 /** Per-agent CLI flag to bypass all permission prompts.
  * OpenCode is intentionally omitted — it has no equivalent launch flag and
@@ -179,14 +177,12 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
   const server = workspace?.serverId
     ? useServerStore.getState().getServer(workspace.serverId)
     : undefined;
-  const executionTarget = workspace ? executionTargetForWorkspace(workspace) : { kind: "local" as const };
-  const isSyndicate = executionTarget.kind === "syndicate";
   const knownHostsPath = useServerStore((s) => s.knownHostsPath);
   const isRemote = !!server;
   const paneIdentity =
     pane.agentId === "terminal"
-      ? `${agentName} · ${isSyndicate ? "Syndicate" : isRemote ? "Remote login shell" : terminalShellLaunch.label}`
-      : `${agentName}${isSyndicate ? " · Syndicate" : ""}`;
+      ? `${agentName} · ${isRemote ? "Remote login shell" : terminalShellLaunch.label}`
+      : agentName;
   const localPlatform =
     typeof navigator !== "undefined" &&
     /windows|win32|win64/i.test(navigator.userAgent || navigator.platform || "")
@@ -734,28 +730,6 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
               }}
             />
           )}
-        </div>
-        {closeConfirmation}
-      </>
-    );
-  }
-
-  if (workspace && executionTarget.kind === "syndicate") {
-    return (
-      <>
-        <div
-          data-pane-zoomed={isZoomed || undefined}
-          className={`flex h-full flex-col overflow-hidden rounded-md ${wrapperBorderClass} ${flashClass}`}
-        >
-          <SyndicateTerminalPane
-            pane={pane}
-            workspaceId={workspaceId}
-            machineId={executionTarget.machineId}
-            hostWorkspaceId={executionTarget.workspaceId}
-            initialPrompt={initialPrompt}
-            autoStart={autoStart}
-            renderHeader={renderHeader}
-          />
         </div>
         {closeConfirmation}
       </>

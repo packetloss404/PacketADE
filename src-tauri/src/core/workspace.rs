@@ -70,19 +70,6 @@ pub struct WorkspacePane {
     /// editor's per-extension default (markdown renders, everything else raw).
     #[serde(default)]
     pub file_view: Option<String>,
-    /// Host-owned identities/cursor for a Syndicate terminal pane. These are
-    /// inert for local/SSH panes and survive PacketBench restarts so attach can
-    /// resume exactly once from the last applied durable sequence.
-    #[serde(default)]
-    pub syndicate_pane_id: Option<String>,
-    #[serde(default)]
-    pub syndicate_terminal_session_id: Option<String>,
-    #[serde(default)]
-    pub syndicate_session_id: Option<String>,
-    #[serde(default)]
-    pub syndicate_cursor: Option<u64>,
-    #[serde(default)]
-    pub syndicate_operation_generation: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -96,11 +83,19 @@ pub enum ExecutionTargetRef {
     Ssh {
         server_id: String,
     },
-    Syndicate {
-        machine_id: String,
-        workspace_id: String,
-        server_config_id: String,
-    },
+}
+
+/// Tolerant deserializer for `Workspace::execution_target`. The Syndicate
+/// integration was removed in 2026-08 (Syndicate is no longer part of the
+/// Packet* family), but state files written while it existed can still carry
+/// `{"kind": "syndicate", ...}` targets. Any unknown kind loads as `None`
+/// (⇒ legacy local/SSH normalization) instead of failing the whole state load.
+fn tolerant_execution_target<'de, D>(deserializer: D) -> Result<Option<ExecutionTargetRef>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|v| serde_json::from_value(v).ok()))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,8 +147,10 @@ pub struct Workspace {
     pub layout: Option<serde_json::Value>,
     /// New workspaces persist the tagged execution target. `None` is retained
     /// only for legacy records and normalizes to local/SSH from the historical
-    /// fields in the frontend.
-    #[serde(default)]
+    /// fields in the frontend. Deserialization is tolerant: a target of an
+    /// unknown kind (e.g. `"syndicate"`, written before that integration was
+    /// removed) degrades to `None` rather than rejecting the record.
+    #[serde(default, deserialize_with = "tolerant_execution_target")]
     pub execution_target: Option<ExecutionTargetRef>,
 }
 
@@ -183,11 +180,6 @@ mod tests {
             terminal_shell: None,
             file_path: None,
             file_view: None,
-            syndicate_pane_id: None,
-            syndicate_terminal_session_id: None,
-            syndicate_session_id: None,
-            syndicate_cursor: None,
-            syndicate_operation_generation: None,
         }
     }
 
@@ -243,11 +235,6 @@ mod tests {
             terminal_shell: None,
             file_path: None,
             file_view: None,
-            syndicate_pane_id: None,
-            syndicate_terminal_session_id: None,
-            syndicate_session_id: None,
-            syndicate_cursor: None,
-            syndicate_operation_generation: None,
         };
         let json = serde_json::to_string(&pane).unwrap();
         let back: WorkspacePane = serde_json::from_str(&json).unwrap();
@@ -276,6 +263,32 @@ mod tests {
             terminal_shell: None,
             execution_target: None,
         }
+    }
+
+    #[test]
+    fn persisted_syndicate_target_degrades_to_none_not_an_error() {
+        // A workspace saved while the (now removed) Syndicate integration
+        // existed can carry a tagged `syndicate` execution target. It must
+        // load — with the target dropped — not fail the whole state file.
+        let json = serde_json::to_string(&wrapper_workspace()).unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value["execution_target"] = serde_json::json!({
+            "kind": "syndicate",
+            "machineId": "machine-1",
+            "workspaceId": "ws-host-1",
+            "serverConfigId": "srv-1"
+        });
+        let back: Workspace = serde_json::from_value(value).unwrap();
+        assert!(back.execution_target.is_none());
+
+        // Known kinds still round-trip through the tolerant path.
+        let mut ssh = wrapper_workspace();
+        ssh.execution_target = Some(ExecutionTargetRef::Ssh {
+            server_id: "srv-1".to_string(),
+        });
+        let json = serde_json::to_string(&ssh).unwrap();
+        let back: Workspace = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.execution_target, ssh.execution_target);
     }
 
     #[test]

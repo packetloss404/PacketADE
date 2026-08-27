@@ -53,7 +53,7 @@ import { timeAgo } from "@/components/views/github/shared";
 import { CtaFeedbackRow, type CtaFeedback } from "@/components/views/github/CtaFeedbackRow";
 import type { GitHubIssue } from "@/types/github";
 import { relativeTime } from "@/lib/time";
-import { isLocalWorkspace, isSyndicateWorkspace } from "@/types/workspace";
+import { isLocalWorkspace } from "@/types/workspace";
 
 // v0.8-D — turn an issue title into a git-branch-safe slug. Lowercase,
 // non-alphanumerics collapsed to `-`, trimmed to 40 chars after dropping
@@ -1015,7 +1015,6 @@ function IssueDetail({
   }
 
   const workspaceIsRemote = Boolean(activeWorkspace && !isLocalWorkspace(activeWorkspace));
-  const workspaceIsSyndicate = isSyndicateWorkspace(activeWorkspace);
   const resolvedProjectPath = activeWorkspace
     ? workspaceIsRemote
       ? (activeWorkspace.remoteProjectPath ?? activeWorkspace.projectPath)
@@ -1065,9 +1064,7 @@ function IssueDetail({
       setFeedback({
         tone: "error",
         message:
-          workspaceIsSyndicate
-            ? "Branch from issue is not exposed for Syndicate targets in this release."
-            : "Branch from issue is local-only here. Use the Workspace Git panel for this SSH project.",
+          "Branch from issue is local-only here. Use the Workspace Git panel for this SSH project.",
       });
       return;
     }
@@ -1183,8 +1180,7 @@ function IssueDetail({
         <button
           type="button"
           onClick={() => void handlePlanFlight()}
-          disabled={actionBusy === "plan" || workspaceIsSyndicate}
-          title={workspaceIsSyndicate ? "Flights cannot target Syndicate Workspaces yet" : undefined}
+          disabled={actionBusy === "plan"}
           className="hover:bg-accent-green/15 inline-flex items-center gap-1.5 rounded border border-accent-line bg-accent-soft px-2.5 py-1 text-[10.5px] font-medium text-accent-green transition-colors disabled:opacity-50"
         >
           {actionBusy === "plan" ? (
@@ -1203,9 +1199,7 @@ function IssueDetail({
           disabled={actionBusy === "branch" || workspaceIsRemote}
           title={
             workspaceIsRemote
-              ? workspaceIsSyndicate
-                ? "Branch creation for Syndicate targets is not exposed in this release"
-                : "Use the Workspace Git panel to create a branch on this SSH project"
+              ? "Use the Workspace Git panel to create a branch on this SSH project"
               : "Create and check out a branch in the active local Workspace"
           }
           className="inline-flex items-center gap-1.5 px-2 py-1 text-[10.5px] text-text-secondary hover:text-text-primary disabled:opacity-50"

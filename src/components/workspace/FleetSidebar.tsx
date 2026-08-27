@@ -52,7 +52,7 @@ import {
 } from "@/lib/fleetRows";
 import { AddSessionPicker } from "@/components/workspace/AddSessionPicker";
 import { SidebarFileTree } from "@/components/workspace/SidebarFileTree";
-import { isLocalWorkspace, isSyndicateWorkspace, type Workspace, type WorkspacePane } from "@/types/workspace";
+import { isLocalWorkspace, type Workspace, type WorkspacePane } from "@/types/workspace";
 import { createInstantWorkspace } from "@/lib/workspaceCreation";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { ConfirmDeleteConversationModal } from "@/components/agents/ConfirmDeleteConversationModal";
@@ -306,16 +306,6 @@ export function FleetSidebar() {
    * the P1-S2 reference direction) it never deletes the conversation itself.
    */
   const closePane = (workspaceId: string, pane: WorkspacePane) => {
-    const workspace = useWorkspaceStore
-      .getState()
-      .workspaces.find((candidate) => candidate.id === workspaceId);
-    if (isSyndicateWorkspace(workspace)) {
-      focusPane(workspaceId, pane.id);
-      toast.show(
-        "Close Syndicate panes from the pane header so PacketBench can confirm the remote stop.",
-      );
-      return;
-    }
     if (pane.kind !== "conversation" && pane.kind !== "file" && pane.sessionId) {
       void killPty(pane.sessionId).catch(() => {});
     }

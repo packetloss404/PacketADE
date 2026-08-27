@@ -26,8 +26,8 @@ const harness = vi.hoisted(() => ({
   outputHandlers: [] as ((event: { payload: unknown }) => void)[],
 }));
 
-// Whole-module factory: the real `@/lib/tauri` drags in the Syndicate,
-// workspace and flight graphs, none of which this component touches.
+// Whole-module factory: the real `@/lib/tauri` drags in the workspace and
+// flight graphs, none of which this component touches.
 vi.mock("@/lib/tauri", () => ({
   acpProbe: harness.acpProbe,
   acpInstallEngine: harness.acpInstallEngine,

@@ -27,7 +27,7 @@ import { Modal } from "@/components/ui/Modal";
 import { getPreferredWorkspaceCli } from "@/lib/workspaceCliDefaults";
 import { openWorkspaceCreationModal } from "@/lib/workspaceCreation";
 import { TERMINAL_AGENTS } from "@/lib/agent-catalog";
-import { isLocalWorkspace, isSyndicateWorkspace } from "@/types/workspace";
+import { isLocalWorkspace } from "@/types/workspace";
 
 // Lazy-loaded so the markdown vendor chunk leaves the entry chunk; only
 // fetched when the New Flight modal opens.
@@ -299,9 +299,7 @@ export function Toolbar() {
             ? (activeWorkspace.remoteProjectPath ?? activeWorkspace.projectPath)
             : projectPath;
           const folderTooltip = activeWorkspace && !isLocalWorkspace(activeWorkspace)
-            ? isSyndicateWorkspace(activeWorkspace)
-              ? `Syndicate project: ${activeProjectPath || "(unset)"} (${activeWorkspace.name}) — managed on its execution host`
-              : `Remote project: ${activeProjectPath || "(unset)"} (${activeWorkspace.name}) — change it in Workspace settings`
+            ? `Remote project: ${activeProjectPath || "(unset)"} (${activeWorkspace.name}) — change it in Workspace settings`
             : activeWorkspace
               ? `Project: ${activeProjectPath || "(unset)"} (${activeWorkspace.name}) — click to change`
               : projectPath

@@ -96,13 +96,4 @@ describe("ToolsView six-group Settings IA", () => {
     expect(screen.getByText("CLI clients card packetcode")).toBeInTheDocument();
   });
 
-  it("finds the Syndicate enable toggle through Settings search", () => {
-    render(<ToolsView />);
-
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
-      target: { value: "disable" },
-    });
-
-    expect(screen.getByRole("button", { name: /Syndicate Machines/i })).toBeInTheDocument();
-  });
 });

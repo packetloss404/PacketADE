@@ -2,7 +2,7 @@ import { GitBranch, FolderGit2, Mic, Loader2 } from "lucide-react";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { isSshWorkspace, isSyndicateWorkspace } from "@/types/workspace";
+import { isSshWorkspace } from "@/types/workspace";
 import { useAppStore } from "@/stores/appStore";
 import { useDictationStore } from "@/stores/dictationStore";
 import { useSidecarStatus } from "@/hooks/useSidecarStatus";
@@ -113,18 +113,10 @@ export function StatusStrip() {
           <span
             className="font-mono text-text-secondary"
             title={
-              isSshWorkspace(activeWorkspace)
-                ? `SSH: ${effectiveProjectPath}`
-                : isSyndicateWorkspace(activeWorkspace)
-                  ? `Syndicate: ${effectiveProjectPath}`
-                  : effectiveProjectPath
+              isSshWorkspace(activeWorkspace) ? `SSH: ${effectiveProjectPath}` : effectiveProjectPath
             }
           >
-            {isSshWorkspace(activeWorkspace)
-              ? `SSH:${projectName}`
-              : isSyndicateWorkspace(activeWorkspace)
-                ? `Syndicate:${projectName}`
-                : projectName}
+            {isSshWorkspace(activeWorkspace) ? `SSH:${projectName}` : projectName}
           </span>
         </span>
       )}

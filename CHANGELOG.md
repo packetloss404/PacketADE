@@ -25,6 +25,32 @@ Windows artifacts, built 2026-08-15 02:51 from `a9d5d702`, **unsigned**:
 > or an updater. They live in `C:\Users\ianwalmsley\packetbench-build\release\`,
 > not in the repo.
 
+### Removed — the Syndicate execution-target integration
+
+Syndicate has been separated from the Packet\* product family (operator
+decision, 2026-08-27), and the integration is deleted rather than switched
+off: the native controller commands and the relay device-half
+(`src-tauri/src/commands/syndicate.rs`, `syndicate_relay.rs`), the frontend
+store/lib/component surface (machines settings card, remote terminal pane,
+Workspace-creation target, status-strip and picker branches), the
+`kind: "syndicate"` execution-target variant, the Settings toggle the entry
+below this one introduced, and the two controller-protocol conformance
+fixtures shared byte-for-byte with Syndicate's repo. The generic SSH/remote
+machinery, terminal panes, and Workspace model are untouched.
+
+State written while the integration existed still loads: a persisted
+`syndicate` execution target now degrades to `None`/local on both sides of
+the DTO boundary instead of failing the state file, and unknown pane fields
+were always ignored. No live pairings existed at removal time (no
+`syndicate-controller-*` keys in the OS credential store), and any grant a
+stray device still holds hard-expires at most 30 days after issuance.
+
+The pre-removal implementation remains in history at `d87fb125` — the
+`syndicate_relay.rs` there is the reference device-half implementation of the
+controller relay protocol for the future Remote Agents work. The `dev/`
+design documents (`dev/syndicate-*.md`, `dev/controller-protocol-device-relay-half.md`,
+`dev/syndicate-proof/`) stay in the tree as historical records.
+
 ### Added — Syndicate integration toggle
 
 Settings → Tools now carries an explicit switch for the Syndicate integration.

@@ -49,8 +49,6 @@ pub mod spec;
 pub mod ssh_keys;
 pub mod state;
 pub mod statusline;
-pub mod syndicate;
-pub mod syndicate_relay;
 pub mod usage;
 
 use std::path::Path;

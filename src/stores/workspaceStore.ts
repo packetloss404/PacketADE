@@ -10,8 +10,6 @@ import { saveWorkspacesSlice } from "@/lib/tauri";
 import { logSwallowed } from "@/lib/logSwallowed";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useServerStore } from "@/stores/serverStore";
-import { useSyndicateStore } from "@/stores/syndicateStore";
-import { SYNDICATE_INTEGRATION_DISABLED_MESSAGE } from "@/lib/syndicateIntegration";
 import { rememberAccountChoice, resolveAccountId } from "@/lib/sessionAccountDefaults";
 import { normalizeTerminalShellSelection } from "@/lib/terminalShells";
 import type { TerminalShellSelection } from "@/types/terminal-shell";
@@ -526,38 +524,6 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       }
     }
 
-    if (executionTarget.kind === "syndicate") {
-      const integration = useSyndicateStore.getState();
-      if (!integration.enabled || !integration.nativeReady) {
-        throw new Error(`createWorkspace: ${SYNDICATE_INTEGRATION_DISABLED_MESSAGE}`);
-      }
-      if (serverId || remoteProjectPath) {
-        throw new Error("createWorkspace: Syndicate targets cannot carry SSH fields");
-      }
-      const machine = useSyndicateStore.getState().getMachine(executionTarget.machineId);
-      if (!machine) {
-        throw new Error(
-          `createWorkspace: Syndicate machine "${executionTarget.machineId}" is not paired`,
-        );
-      }
-      if (machine.grantStatus !== "active") {
-        throw new Error("createWorkspace: Syndicate controller grant is not active");
-      }
-      if (machine.serverConfigId !== executionTarget.serverConfigId) {
-        throw new Error("createWorkspace: Syndicate target and SSH server config disagree");
-      }
-      const server = useServerStore.getState().getServer(executionTarget.serverConfigId);
-      if (!server?.hostFingerprint) {
-        throw new Error("createWorkspace: Syndicate SSH server is missing or no longer verified");
-      }
-      if (!executionTarget.workspaceId.trim()) {
-        throw new Error("createWorkspace: Syndicate workspace id is required");
-      }
-      if (!projectPath.trim()) {
-        throw new Error("createWorkspace: Syndicate host did not provide a display path");
-      }
-    }
-
     // For remote workspaces the legacy `projectPath` becomes the remote
     // path string so any code that reads `workspace.projectPath` without
     // checking `serverId` still gets a stable label (used in workspace
@@ -576,9 +542,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       // Multi-account CLI support: panes resolve their account from the
       // caller's explicit choice, else the sticky per-project default. Keyed
       // on `effectiveProjectPath` so remote workspaces stick per remote path.
-      panes: buildPanes(agents, effectiveProjectPath, sessionConfig?.accountIds).map((pane) =>
-        executionTarget.kind === "syndicate" ? { ...pane, syndicateCursor: 0 } : pane,
-      ),
+      panes: buildPanes(agents, effectiveProjectPath, sessionConfig?.accountIds),
       projectPath: effectiveProjectPath,
       prompt: sessionConfig?.prompt,
       createdAt: now,
@@ -767,31 +731,6 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // Resolved once, outside the (potentially re-run) updater, so the sticky
     // default is written exactly once per add.
     const target = get().workspaces.find((w) => w.id === workspaceId);
-    if (target?.executionTarget?.kind === "syndicate") {
-      const integration = useSyndicateStore.getState();
-      if (!integration.enabled || !integration.nativeReady) {
-        throw new Error(SYNDICATE_INTEGRATION_DISABLED_MESSAGE);
-      }
-      if (!(["codex", "claude-code", "packetcode"] as WorkspaceAgentSlot[]).includes(agentId)) {
-        throw new Error("Syndicate supports only Codex, Claude Code, and PacketCode panes");
-      }
-      const machine = useSyndicateStore
-        .getState()
-        .getMachine(target.executionTarget.machineId);
-      if (!machine) throw new Error("The paired Syndicate machine no longer exists");
-      const profileId = agentId === "claude-code" ? "claude" : agentId;
-      const available = machine?.cachedSnapshot?.agents.some(
-        (agent) => agent.profileId === profileId && agent.state === "ready",
-      );
-      if (!available) throw new Error(`${agentId} is not ready on the Syndicate machine`);
-      if (
-        !machine.scopes.includes("workspace.create") ||
-        !machine.scopes.includes("session.start") ||
-        !machine.scopes.includes("terminal.view")
-      ) {
-        throw new Error("The Syndicate device grant cannot create and start panes");
-      }
-    }
     const accountId = target
       ? settleAccountId(target.projectPath, agentId, options?.accountId)
       : undefined;
