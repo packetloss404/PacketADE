@@ -3,6 +3,6 @@
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>PacketADE uses the microphone only when you start local dictation.</string>
+  <string>PacketBench uses the microphone only when you start local dictation.</string>
 </dict>
 </plist>

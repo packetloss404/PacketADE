@@ -1,4 +1,4 @@
-//! N3 — PacketADE exposes ITSELF as an MCP server so external agents (Claude
+//! N3 — PacketBench exposes ITSELF as an MCP server so external agents (Claude
 //! Code, Codex, Cursor) can READ its live state, and (opt-in) post append-only
 //! coordination notes back to a flight's timeline. Reads never mutate; the
 //! writes (`append_handoff`, `escalate`) are gated behind `allow_writes`
@@ -8,7 +8,7 @@
 //!
 //! Transport: **Streamable HTTP** (the current MCP transport; the 2024 HTTP+SSE
 //! transport is deprecated) via the official `rmcp` crate, mounted at `/mcp`.
-//! The server reads from the same `~/.packetade/state.v1.json` the Tauri core
+//! The server reads from the same `~/.packetbench/state.v1.json` the Tauri core
 //! owns (`storage::load_state`), so it lives here in Rust, not the sidecar.
 
 mod reads;
@@ -417,8 +417,8 @@ fn local_workspace_path(workspace_id: &str) -> Result<String, McpError> {
 /// transport's service factory; state is read on demand from disk, so the
 /// handler is cheap and shares only the audit sink.
 #[derive(Clone)]
-pub struct PacketAdeMcp {
-    tool_router: ToolRouter<PacketAdeMcp>,
+pub struct PacketBenchMcp {
+    tool_router: ToolRouter<PacketBenchMcp>,
     audit: Arc<McpAuditLog>,
     /// When false the server is strictly read-only — `append_handoff` is
     /// rejected. Opt-in so a user who wants read-only keeps that guarantee.
@@ -426,7 +426,7 @@ pub struct PacketAdeMcp {
 }
 
 #[tool_router]
-impl PacketAdeMcp {
+impl PacketBenchMcp {
     pub fn new(audit: Arc<McpAuditLog>, allow_writes: bool) -> Self {
         Self {
             tool_router: Self::tool_router(),
@@ -518,7 +518,7 @@ impl PacketAdeMcp {
     ) -> Result<CallToolResult, McpError> {
         if !self.allow_writes {
             return Err(McpError::invalid_params(
-                "writes are disabled; enable them in PacketADE's MCP Provider settings",
+                "writes are disabled; enable them in PacketBench's MCP Provider settings",
                 None,
             ));
         }
@@ -548,7 +548,7 @@ impl PacketAdeMcp {
     ) -> Result<CallToolResult, McpError> {
         if !self.allow_writes {
             return Err(McpError::invalid_params(
-                "writes are disabled; enable them in PacketADE's MCP Provider settings",
+                "writes are disabled; enable them in PacketBench's MCP Provider settings",
                 None,
             ));
         }
@@ -580,7 +580,7 @@ impl PacketAdeMcp {
     ) -> Result<CallToolResult, McpError> {
         if !self.allow_writes {
             return Err(McpError::invalid_params(
-                "writes are disabled; enable them in PacketADE's MCP Provider settings",
+                "writes are disabled; enable them in PacketBench's MCP Provider settings",
                 None,
             ));
         }
@@ -654,7 +654,7 @@ impl PacketAdeMcp {
     ) -> Result<CallToolResult, McpError> {
         if !self.allow_writes {
             return Err(McpError::invalid_params(
-                "writes are disabled; enable them in PacketADE's MCP Provider settings",
+                "writes are disabled; enable them in PacketBench's MCP Provider settings",
                 None,
             ));
         }
@@ -696,7 +696,7 @@ impl PacketAdeMcp {
     ) -> Result<CallToolResult, McpError> {
         if !self.allow_writes {
             return Err(McpError::invalid_params(
-                "writes are disabled; enable them in PacketADE's MCP Provider settings",
+                "writes are disabled; enable them in PacketBench's MCP Provider settings",
                 None,
             ));
         }
@@ -731,7 +731,7 @@ impl PacketAdeMcp {
     ) -> Result<CallToolResult, McpError> {
         if !self.allow_writes {
             return Err(McpError::invalid_params(
-                "writes are disabled; enable them in PacketADE's MCP Provider settings",
+                "writes are disabled; enable them in PacketBench's MCP Provider settings",
                 None,
             ));
         }
@@ -758,7 +758,7 @@ impl PacketAdeMcp {
 }
 
 #[tool_handler(router = self.tool_router)]
-impl ServerHandler for PacketAdeMcp {
+impl ServerHandler for PacketBenchMcp {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(
             ServerCapabilities::builder()
@@ -768,11 +768,11 @@ impl ServerHandler for PacketAdeMcp {
         )
         .with_server_info(Implementation::from_build_env())
         .with_instructions(if self.allow_writes {
-            "PacketADE MCP server — read access to flights, tasks, memory, and \
+            "PacketBench MCP server — read access to flights, tasks, memory, and \
              workspaces, plus append-only coordination notes (append_handoff, \
              escalate) and the structured coordination inbox."
         } else {
-            "PacketADE MCP server — read-only access to flights, tasks, memory, \
+            "PacketBench MCP server — read-only access to flights, tasks, memory, \
              and workspaces."
         })
     }
@@ -784,31 +784,31 @@ impl ServerHandler for PacketAdeMcp {
     ) -> Result<ListResourcesResult, McpError> {
         let state = load();
         let mut resources = vec![
-            Resource::new("packetade://project", "Project overview"),
-            Resource::new("packetade://flights", "All flights"),
-            Resource::new("packetade://issues", "Issue board"),
-            Resource::new("packetade://memory/patterns", "Memory patterns"),
-            Resource::new("packetade://workspaces", "Workspaces"),
-            Resource::new("packetade://reviews", "Review packets"),
+            Resource::new("packetbench://project", "Project overview"),
+            Resource::new("packetbench://flights", "All flights"),
+            Resource::new("packetbench://issues", "Issue board"),
+            Resource::new("packetbench://memory/patterns", "Memory patterns"),
+            Resource::new("packetbench://workspaces", "Workspaces"),
+            Resource::new("packetbench://reviews", "Review packets"),
             Resource::new(
-                "packetade://packetcode/health",
+                "packetbench://packetcode/health",
                 "PacketCode integration health",
             ),
         ];
         for f in &state.flights {
             resources.push(Resource::new(
-                format!("packetade://flights/{}", f.id),
+                format!("packetbench://flights/{}", f.id),
                 f.title.clone(),
             ));
             resources.push(Resource::new(
-                format!("packetade://flights/{}/inbox", f.id),
+                format!("packetbench://flights/{}/inbox", f.id),
                 format!("{} coordination inbox", f.title),
             ));
         }
         for workspace in &state.workspaces {
             if workspace.server_id.is_none() {
                 resources.push(Resource::new(
-                    format!("packetade://memory/project/{}", workspace.id),
+                    format!("packetbench://memory/project/{}", workspace.id),
                     format!("{} project memory", workspace.name),
                 ));
             }

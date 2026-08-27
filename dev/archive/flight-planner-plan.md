@@ -38,7 +38,7 @@ API credit):
    helper-planner _(deferred to v1.1)_.
 4. Maintains a per-flight **journal** (markdown rendered in a new
    Journal tab on `FlightDetailPane`, exportable to
-   `~/.packetade/missions/F-<TAIL>_<flight_id>.md`; early drafts used
+   `~/.packetbench/missions/F-<TAIL>_<flight_id>.md`; early drafts used
    `<shortId>.md`).
 
 ## Locked decisions

@@ -1,14 +1,14 @@
 /**
- * CLI catalog metadata for PacketADE's Tier 1 CLI detection grid.
+ * CLI catalog metadata for PacketBench's Tier 1 CLI detection grid.
  *
- * Pure frontend metadata describing the coding-agent CLIs that PacketADE can
+ * Pure frontend metadata describing the coding-agent CLIs that PacketBench can
  * detect on the host PATH. The detection backend consumes `getCliBinaries()`
  * to probe for each binary; the UI consumes `CLI_CATALOG` directly to render
  * detection cards (icon, label, color, description).
  *
  * Ordering note: PacketCode is intentionally placed immediately
  * after OpenCode — PacketCode is the sibling terminal TUI to
- * PacketADE and the two are visually paired in the grid.
+ * PacketBench and the two are visually paired in the grid.
  */
 
 export type CliBrandColor =
@@ -124,7 +124,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
     binary: "packetcode",
     iconName: "Terminal",
     color: "amber",
-    description: "PacketADE's sibling terminal coding TUI",
+    description: "PacketBench's sibling terminal coding TUI",
     installCommand: packetCodeInstallCommand("stable", false),
     installCommandWindows: packetCodeInstallCommand("stable", true),
   },

@@ -17,16 +17,16 @@
  *     must never be able to fail the resume.
  *
  *  3. **Resume says out loud that the engine's context is empty.** For a
- *     conversation PacketADE started, ACP has no mid-life resume: the ACP
+ *     conversation PacketBench started, ACP has no mid-life resume: the ACP
  *     branch calls `session/new` and ignores the `resumeMessages` every other
  *     transport replays. The transcript above the resume boundary is
- *     PacketADE's own, complete, and NOT shared with the model — which is
+ *     PacketBench's own, complete, and NOT shared with the model — which is
  *     invisible unless it is said.
  *
  *  4. **Adoption is the other direction, and is honest the other way round.**
  *     A conversation bound to an engine session (`acpEngineSessionId`) resumes
  *     it with `session/load`, so the model DOES have the history — and
- *     PacketADE does not: ACP's replay omits the user's own turns, so none of
+ *     PacketBench does not: ACP's replay omits the user's own turns, so none of
  *     it is rendered. The adopted conversation says that once, at the top, and
  *     the resume boundary then says nothing, because there is no context reset
  *     to report.
@@ -246,7 +246,7 @@ describe("agentTaskStore — engine-side rename", () => {
     useAgentTaskStore.getState().renameConversation("conv-acp", "New title");
     await useAgentTaskStore.getState().pushEngineRename("conv-acp", "New title");
 
-    // PacketADE's conversation id — the backend maps it to the engine's own.
+    // PacketBench's conversation id — the backend maps it to the engine's own.
     expect(acpRenameSessionMock).toHaveBeenCalledWith("conv-acp", "New title");
     expect(
       useAgentTaskStore.getState().conversations.find((c) => c.id === "conv-acp")?.title,
@@ -409,7 +409,7 @@ describe("agentTaskStore — adopting an engine session", () => {
   it("binds a new conversation to the engine's session id", async () => {
     const useAgentTaskStore = await seededStore();
 
-    const id = await useAgentTaskStore.getState().adoptEngineSession("eng-1");
+    const id = (await useAgentTaskStore.getState().adoptEngineSession("eng-1"))!;
 
     expect(id).toBeTruthy();
     const conversation = useAgentTaskStore.getState().conversations.find((c) => c.id === id);
@@ -438,11 +438,11 @@ describe("agentTaskStore — adopting an engine session", () => {
   it("says up front that it holds no transcript for the session", async () => {
     const useAgentTaskStore = await seededStore();
 
-    const id = await useAgentTaskStore.getState().adoptEngineSession("eng-1");
+    const id = (await useAgentTaskStore.getState().adoptEngineSession("eng-1"))!;
     const conversation = useAgentTaskStore.getState().conversations.find((c) => c.id === id);
 
     // The whole honesty story for an adopted session, stated once and durably:
-    // the engine has the history, PacketADE does not, and the replay that
+    // the engine has the history, PacketBench does not, and the replay that
     // would have carried it leaves out the user's own turns.
     expect(conversation?.messages).toHaveLength(1);
     const notice = conversation!.messages[0];
@@ -472,9 +472,9 @@ describe("agentTaskStore — adopting an engine session", () => {
   it("re-opens the existing conversation rather than binding a second one", async () => {
     const useAgentTaskStore = await seededStore();
 
-    const first = await useAgentTaskStore.getState().adoptEngineSession("eng-1");
+    const first = (await useAgentTaskStore.getState().adoptEngineSession("eng-1"))!;
     useAgentTaskStore.setState({ selectedConversationId: null });
-    const second = await useAgentTaskStore.getState().adoptEngineSession("eng-1");
+    const second = (await useAgentTaskStore.getState().adoptEngineSession("eng-1"))!;
 
     expect(second).toBe(first);
     expect(useAgentTaskStore.getState().conversations).toHaveLength(1);

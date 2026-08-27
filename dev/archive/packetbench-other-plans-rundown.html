@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Single-file PacketADE planning rundown for all active plans outside Remote Agents."
+      content="Single-file PacketBench planning rundown for all active plans outside Remote Agents."
     />
-    <title>PacketADE Other Plans Rundown</title>
+    <title>PacketBench Other Plans Rundown</title>
     <style>
       :root {
         color-scheme: dark;
@@ -657,7 +657,7 @@
     <section class="hero">
       <div>
         <span class="kicker">Planning review - generated 2026-05-27</span>
-        <h1>The rest of PacketADE's planning surface, in one place.</h1>
+        <h1>The rest of PacketBench's planning surface, in one place.</h1>
         <p>
           This single-file HTML covers every active or reference-worthy plan outside
           Remote Agents: Mission Planner follow-ups, SSH and remote workspaces, MCP
@@ -727,7 +727,7 @@
               <div class="section-label">01 - Portfolio snapshot</div>
               <h2>What matters besides Remote Agents</h2>
               <p class="section-lede">
-                The rest of the planning surface is mostly about making PacketADE safer,
+                The rest of the planning surface is mostly about making PacketBench safer,
                 shippable, and more composable around the features already built.
               </p>
             </div>
@@ -759,7 +759,7 @@
               <tr>
                 <td>MCP provider transport</td>
                 <td>Frontend settings/types done; Rust server deferred.</td>
-                <td>Build local HTTP/SSE MCP server when external agents need PacketADE state.</td>
+                <td>Build local HTTP/SSE MCP server when external agents need PacketBench state.</td>
                 <td><a href="./mcp-provider-transport.md">mcp-provider-transport.md</a></td>
               </tr>
               <tr>
@@ -848,9 +848,9 @@
                 <span>Integration layer</span>
               </div>
               <div>
-                <h3>PacketADE as MCP provider</h3>
+                <h3>PacketBench as MCP provider</h3>
                 <p>
-                  PacketADE manages MCP clients today. The deferred plan turns PacketADE
+                  PacketBench manages MCP clients today. The deferred plan turns PacketBench
                   itself into a local MCP server exposing flights, tasks, workspaces,
                   review packets, and memory to external tools.
                 </p>
@@ -882,7 +882,7 @@
               <div class="section-label">03 - Mission Planner</div>
               <h2>Locked v1 design, live runbook, v1.1 backlog</h2>
               <p class="section-lede">
-                Mission Planner moved PacketADE missions from launch-modal friction to a
+                Mission Planner moved PacketBench missions from launch-modal friction to a
                 conversational spec mode with a long-lived planner agent.
               </p>
             </div>
@@ -934,10 +934,10 @@
           <div class="section-header">
             <div>
               <div class="section-label">04 - MCP provider</div>
-              <h2>PacketADE as a local context provider</h2>
+              <h2>PacketBench as a local context provider</h2>
               <p class="section-lede">
                 The MCP provider plan is strategically valuable, but deliberately deferred
-                until external agents need PacketADE as a shared local context layer.
+                until external agents need PacketBench as a shared local context layer.
               </p>
             </div>
             <a class="source-pill" href="./mcp-provider-transport.md">mcp-provider-transport.md</a>
@@ -974,11 +974,11 @@
           <details style="margin-top: 14px">
             <summary>Good first MCP provider slice</summary>
             <div>
-              Start with <code>packetade.get_active_project</code>,
-              <code>packetade.list_flights</code>, <code>packetade.get_flight</code>,
-              <code>packetade.list_tasks</code>, and
-              <code>packetade.get_memory_context</code>. That proves external agents can
-              consume PacketADE planning context without scraping local files.
+              Start with <code>packetbench.get_active_project</code>,
+              <code>packetbench.list_flights</code>, <code>packetbench.get_flight</code>,
+              <code>packetbench.list_tasks</code>, and
+              <code>packetbench.get_memory_context</code>. That proves external agents can
+              consume PacketBench planning context without scraping local files.
             </div>
           </details>
         </section>
@@ -1361,7 +1361,7 @@
                 <td>Mission Planner locked design, spike proof, and manual sign-off criteria.</td>
               </tr>
               <tr>
-                <td><a href="./mcp-provider-transport.md">mcp-provider-transport.md</a>, <a href="./bridgemind/packetade-mcp-server-plan.md">packetade-mcp-server-plan.md</a></td>
+                <td><a href="./mcp-provider-transport.md">mcp-provider-transport.md</a>, <a href="./bridgemind/packetbench-mcp-server-plan.md">packetbench-mcp-server-plan.md</a></td>
                 <td>MCP provider transport and product positioning.</td>
               </tr>
               <tr>
@@ -1399,7 +1399,7 @@
     </main>
 
     <footer class="footer">
-      PacketADE planning rundown. Remote Agents has its own master page; this file covers the rest.
+      PacketBench planning rundown. Remote Agents has its own master page; this file covers the rest.
     </footer>
   </body>
 </html>

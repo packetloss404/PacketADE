@@ -95,7 +95,7 @@ describe("buildSlashItems — the single slash-command source of truth", () => {
 
 /**
  * ACP engine commands merged into the SAME menu. The engine owns commands
- * PacketADE has never heard of, but PacketADE owns `/model` and `/permissions`
+ * PacketBench has never heard of, but PacketBench owns `/model` and `/permissions`
  * — those open the composer's own pickers via `paneEvents`, so a same-named
  * engine command must not be able to take them over.
  */

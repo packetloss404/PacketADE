@@ -25,9 +25,9 @@ Native iOS apps must pass through Apple's gatekeeping. Three realistic paths for
 
 - Build as web app, "Add to Home Screen" on iPhone.
 - **Real push notifications since iOS 16.4** via Web Push API — don't lose the critical "approval needed" wake.
-- **Completely bypasses gatekeeping.** Serve from `app.packetade.dev`, tell users to add to home screen.
+- **Completely bypasses gatekeeping.** Serve from `app.packetbench.dev`, tell users to add to home screen.
 
-## Why PWA-first for PacketADE
+## Why PWA-first for PacketBench
 
 1. **Massive code reuse with existing React frontend.** Components like `PermissionPrompt`, chat-bubble layouts, theme tokens (Graphite) — all portable.
 2. **No App Store / TestFlight maintenance treadmill** for a 1-person tool.
@@ -62,7 +62,7 @@ None affect the in-app feel. Ecosystem integration, not look-and-feel.
 - **Custom pull-to-refresh** — disable Safari's default, implement with CSS transform.
 - **Smooth 60 fps scroll** — modern iOS Safari handles natively.
 
-PacketADE already has most of the visual language in "Graphite theme" tokens (`bg-bg-primary`, `accent-green`, `text-text-secondary` per CLAUDE.md). Reusing those tokens means the PWA inherits desktop design language for free.
+PacketBench already has most of the visual language in "Graphite theme" tokens (`bg-bg-primary`, `accent-green`, `text-text-secondary` per CLAUDE.md). Reusing those tokens means the PWA inherits desktop design language for free.
 
 ## Tricky but solvable
 
@@ -90,7 +90,7 @@ For component shortcuts: [Konsta UI](https://konstaui.com/) is a Tailwind kit li
 
 ## What the experience feels like
 
-User opens `app.packetade.dev`, taps "Add to Home Screen" once. From then on the icon is on their dock; tapping it launches full-screen with the PacketADE splash. They see a conversation list that looks like Claude's mobile home tab. Tap a conversation → smooth slide animation (Framer Motion) into a chat view with streaming chunks. When desktop agent asks for permission, a bottom sheet (Vaul) slides up with allow/deny buttons. Phone vibrates briefly. Tap allow → sheet slides down, agent continues.
+User opens `app.packetbench.dev`, taps "Add to Home Screen" once. From then on the icon is on their dock; tapping it launches full-screen with the PacketBench splash. They see a conversation list that looks like Claude's mobile home tab. Tap a conversation → smooth slide animation (Framer Motion) into a chat view with streaming chunks. When desktop agent asks for permission, a bottom sheet (Vaul) slides up with allow/deny buttons. Phone vibrates briefly. Tap allow → sheet slides down, agent continues.
 
 If handed someone the phone they wouldn't notice it wasn't native unless they tried the edge-swipe back gesture.
 

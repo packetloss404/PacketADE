@@ -7,7 +7,7 @@ test.describe("Settings information architecture", () => {
     await page.goto("/");
     // Parallel web-mode workers (incl. the heavy visual-audit captures) can
     // push the initial render past the five-second assertion default.
-    await expect(page.getByRole("heading", { name: "PacketADE" })).toBeVisible({
+    await expect(page.getByRole("heading", { name: "PacketBench" })).toBeVisible({
       timeout: 15_000,
     });
     await page.getByRole("button", { name: "Settings", exact: true }).click();

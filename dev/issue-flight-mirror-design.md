@@ -47,7 +47,7 @@ Every mirrored entity carries a stable link in **both** directions:
 - **App → host:** persist a `mirror` record on the Flight/task:
   `{ hostConnectionId, owner, repo, issueNumber, lastSyncedHostUpdatedAt, lastSyncedLocalRev }`.
 - **Host → app:** stamp a hidden marker in the issue body,
-  e.g. an HTML comment `<!-- packetade:flight=<flightId>;task=<taskId> -->`.
+  e.g. an HTML comment `<!-- packetbench:flight=<flightId>;task=<taskId> -->`.
   On pull, this marker (not a title/label heuristic) authoritatively identifies
   which local entity an issue belongs to — so re-imports never duplicate.
 

@@ -298,7 +298,7 @@ function buildResumeFallbackPrompt(
     .join("\n\n");
   if (!transcript) return nextUserMessage;
   return [
-    "Continue this PacketADE conversation using the persisted transcript below.",
+    "Continue this PacketBench conversation using the persisted transcript below.",
     "<conversation_history>",
     transcript,
     "</conversation_history>",
@@ -498,7 +498,7 @@ export class AnthropicProvider implements ProviderHandler {
         message:
           "No Anthropic API key was provided to the Claude Agent SDK provider. " +
           "Add your Anthropic API key in Settings → API Keys. " +
-          "PacketADE does not use Claude subscription (Claude.ai) login for API agents.",
+          "PacketBench does not use Claude subscription (Claude.ai) login for API agents.",
       });
       return;
     }

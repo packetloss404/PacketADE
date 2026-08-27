@@ -523,7 +523,7 @@ export function mergeMemoryImport(
 
 /** M3: a human-readable Markdown digest of the memory corpus. */
 export function serializeMemoryMarkdown(events: MemoryEvent[], patterns: LearnedPattern[]): string {
-  const lines: string[] = ["# PacketADE memory export", ""];
+  const lines: string[] = ["# PacketBench memory export", ""];
   const byType = new Map<string, number>();
   for (const ev of events) byType.set(ev.type, (byType.get(ev.type) ?? 0) + 1);
   lines.push(`- Events: ${events.length}`);
@@ -1159,7 +1159,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     }
 
     const lines: string[] = [
-      "## PacketADE Memory Brief",
+      "## PacketBench Memory Brief",
       "Use this project memory when relevant. Prefer current repository files over stale notes.",
       "",
     ];

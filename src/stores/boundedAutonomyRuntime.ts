@@ -73,7 +73,7 @@ function stopForAttention(flightId: string, reason: string): void {
   });
   useFlightStore.getState().appendCoordinationEvent(flightId, {
     type: "escalation",
-    agentId: "packetade:bounded-autonomy",
+    agentId: "packetbench:bounded-autonomy",
     summary: `Bounded autonomy stopped: ${reason}`,
     metadata: { source: "bounded_autonomy", hardStop: "true" },
   });

@@ -4,7 +4,7 @@ const port = Number(process.env.PLAYWRIGHT_PORT ?? 1420);
 const baseURL = `http://127.0.0.1:${port}`;
 
 /**
- * Playwright E2E configuration for PacketADE.
+ * Playwright E2E configuration for PacketBench.
  *
  * This runs the React frontend against the Vite dev server (web mode).
  * Tauri-specific IPC calls are mocked via `e2e/setup/mock-tauri.ts`.

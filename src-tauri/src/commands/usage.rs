@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::commands::shared::home_dir;
 use crate::core::brand::DATA_DIR_NAME;
 
-/// One append-only row of `~/.packetade/usage.jsonl`.
+/// One append-only row of `~/.packetbench/usage.jsonl`.
 ///
 /// Token counts are the vendor's **raw** numbers — for OpenAI-family models
 /// `input_tokens` is a superset that already contains `cache_read`. Callers
@@ -39,7 +39,7 @@ pub struct UsageEntry {
     pub cost_usd: f64,
 }
 
-/// Returns `<home>/.packetade/usage.jsonl` if the home directory is resolvable.
+/// Returns `<home>/.packetbench/usage.jsonl` if the home directory is resolvable.
 pub fn usage_log_path() -> Option<PathBuf> {
     let home = home_dir()?;
     let mut p = PathBuf::from(home);

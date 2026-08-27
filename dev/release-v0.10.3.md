@@ -1,4 +1,4 @@
-# PacketADE v0.10.3 Release Record
+# PacketBench v0.10.3 Release Record
 
 Release date: 2026-08-02
 
@@ -22,7 +22,7 @@ commits do not change the binaries described here.
 - Detection, WSL distribution discovery, bounded command probes, install help,
   and custom-shell allowlisting.
 - Effective shell identity in raw Terminal pane headers.
-- PacketADE-owned Claude Code status collector injected through a session-
+- PacketBench-owned Claude Code status collector injected through a session-
   scoped `--settings` file; global Claude settings remain untouched.
 - Visible `Collecting session status...` state before the first Claude model,
   context, cost, and duration snapshot.
@@ -64,15 +64,15 @@ run afterward to restore them.
 
 | Artifact                         |       Bytes |       Size | SHA-256                                                            |
 | -------------------------------- | ----------: | ---------: | ------------------------------------------------------------------ |
-| `packetade.exe`                  |  45,935,616 |  43.81 MiB | `B09463BA9F59D4AA4B1E6C807303C77FFE7F53F95F3F233F167A4ABCB92A04FB` |
-| `PacketADE_0.10.3_x64-setup.exe` |  88,796,209 |  84.68 MiB | `6A2AA8F94721B55A098E1CC74782E4D60C67C2C7E8285FD5AF19DDFE3492D2DD` |
-| `PacketADE_0.10.3_x64_en-US.msi` | 138,613,880 | 132.19 MiB | `A9631E279F15017D9DF11B379E94E9E5792CACBAC674AB3A0329F3EF5B7E4460` |
+| `packetbench.exe`                  |  45,935,616 |  43.81 MiB | `B09463BA9F59D4AA4B1E6C807303C77FFE7F53F95F3F233F167A4ABCB92A04FB` |
+| `PacketBench_0.10.3_x64-setup.exe` |  88,796,209 |  84.68 MiB | `6A2AA8F94721B55A098E1CC74782E4D60C67C2C7E8285FD5AF19DDFE3492D2DD` |
+| `PacketBench_0.10.3_x64_en-US.msi` | 138,613,880 | 132.19 MiB | `A9631E279F15017D9DF11B379E94E9E5792CACBAC674AB3A0329F3EF5B7E4460` |
 
 Local paths:
 
-- `C:\Users\ianwalmsley\packetade-build\release\packetade.exe`
-- `C:\Users\ianwalmsley\packetade-build\release\bundle\nsis\PacketADE_0.10.3_x64-setup.exe`
-- `C:\Users\ianwalmsley\packetade-build\release\bundle\msi\PacketADE_0.10.3_x64_en-US.msi`
+- `C:\Users\ianwalmsley\packetbench-build\release\packetbench.exe`
+- `C:\Users\ianwalmsley\packetbench-build\release\bundle\nsis\PacketBench_0.10.3_x64-setup.exe`
+- `C:\Users\ianwalmsley\packetbench-build\release\bundle\msi\PacketBench_0.10.3_x64_en-US.msi`
 
 ## Distribution status
 

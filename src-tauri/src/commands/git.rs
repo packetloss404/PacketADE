@@ -445,7 +445,7 @@ pub async fn merge_conversation_branch(
 
 /// v0.8.5 fix: provision a git worktree bound to a specific Issue and
 /// install the `prepare-commit-msg` hook that appends `Fixes #N` plus a
-/// `Run-By: PacketADE issue I-<id>` trailer to every commit made inside
+/// `Run-By: PacketBench issue I-<id>` trailer to every commit made inside
 /// the worktree. The worktree lives at
 /// `<project_path>/.pkt-worktrees/<issue_id>` on branch `pkt/<issue_id>`.
 ///
@@ -1087,7 +1087,7 @@ mod tests {
 
     #[test]
     fn parse_fixes_trailers_matches_canonical_trailer() {
-        let msg = "feat: add the thing\n\nFixes #42\nRun-By: PacketADE issue I-abc\n";
+        let msg = "feat: add the thing\n\nFixes #42\nRun-By: PacketBench issue I-abc\n";
         assert_eq!(parse_fixes_trailers(msg), vec![42]);
     }
 

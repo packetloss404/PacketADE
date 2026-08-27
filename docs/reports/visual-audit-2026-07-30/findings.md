@@ -1,4 +1,4 @@
-# PacketADE Visual Layout Audit — 2026-07-30
+# PacketBench Visual Layout Audit — 2026-07-30
 
 **Method.** Rendered-pixel review, not code reading. Screenshots were captured with
 `e2e/visual-audit.spec.ts` (Playwright web mode: Vite dev server + mocked Tauri IPC from
@@ -50,7 +50,7 @@ modal.
   nice touch and well-rendered.
 
 ### 02-workspace-onboarding-1920.png — Workspace, no sessions
-- `medium` — The onboarding column ("Welcome to PacketADE / 1. Open a project folder / 2.
+- `medium` — The onboarding column ("Welcome to PacketBench / 1. Open a project folder / 2.
   Pick at least one agent") is vertically pushed down: the logo block starts at ~55% of the
   viewport height, so step 2 and the CLI list run toward the fold while the top half of the
   canvas is empty. The whole column should be centered as a unit or top-anchored.
@@ -93,7 +93,7 @@ modal.
   looks broken.
 - `low` — Row-one columns and the wrapped Done column have different heights, adding to the
   broken impression.
-- `polish` — Header row (title chip "Backlog · packetade", filter input, label/flight
+- `polish` — Header row (title chip "Backlog · packetbench", filter input, label/flight
   dropdowns, Import spec, New issue) is dense but well-aligned; the dashed "+ Add" targets
   are clear.
 

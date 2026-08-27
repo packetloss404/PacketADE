@@ -51,7 +51,7 @@ describe("PathContextMenu — Open in editor", () => {
       workspace: "/home/ian/proj",
     });
     expect(useRightDockStore.getState().surfaces.agents.activePanel).toBe("editor");
-    // No OS handoff — the file stays inside PacketADE.
+    // No OS handoff — the file stays inside PacketBench.
     expect(shellOpen).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
   });

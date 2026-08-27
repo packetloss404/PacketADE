@@ -412,7 +412,7 @@ mod tests {
             .expect("system time")
             .as_nanos();
         let dir = std::env::temp_dir().join(format!(
-            "packetade-mcp-{}-{}-{}",
+            "packetbench-mcp-{}-{}-{}",
             test_name,
             std::process::id(),
             suffix

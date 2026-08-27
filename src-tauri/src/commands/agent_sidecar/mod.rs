@@ -53,7 +53,7 @@ pub const SIDECAR_PROVIDERS: &[&str] = &["claude-oauth", "openai-agents", "echo"
 /// v2 (Tier 3 slice B): added `set_permission_mode`, `set_model`, and `retry`
 /// request types on the wire.
 ///
-/// v3 (PacketADE Tier 3 slice A): added typed `attachments` on start/send,
+/// v3 (PacketBench Tier 3 slice A): added typed `attachments` on start/send,
 /// `mergedContent` on edit_response, `batchId`/`batchSize` on
 /// `permission_request`, `resumeToken` on `done`, and three new events:
 /// `plan_block`, `tool_output_extended`, `turn_summary`.
@@ -127,7 +127,7 @@ pub fn is_sidecar_provider(provider: &str) -> bool {
     SIDECAR_PROVIDERS.contains(&provider)
 }
 
-/// Build the `~/.packetade/usage.jsonl` row for one sidecar `turn_summary`
+/// Build the `~/.packetbench/usage.jsonl` row for one sidecar `turn_summary`
 /// delta — the sidecar counterpart of the `UsageEntry` construction sites in
 /// `api_agent.rs`, and the reason sidecar spend reaches the analytics rollup
 /// (`read_usage_analytics`) and the daily/monthly budget guardrails at all.

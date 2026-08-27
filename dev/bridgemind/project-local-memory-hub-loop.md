@@ -2,21 +2,21 @@
 
 Created: 2026-07-28
 Status: source-complete through MH7; MH8/MH9 packaged interoperability gated
-Product decision: **Option B — project-native memory inside PacketADE**
+Product decision: **Option B — project-native memory inside PacketBench**
 
 ## Objective
 
-Extend PacketADE's existing Memory surface with a human-readable,
+Extend PacketBench's existing Memory surface with a human-readable,
 version-controlled-capable project memory source. Users and agents can inspect
 and edit Markdown notes, follow links and backlinks, find orphaned knowledge,
 understand provenance, search across project and existing global memory, and
-share the same bounded source through PacketADE's MCP provider.
+share the same bounded source through PacketBench's MCP provider.
 
-This is a PacketADE capability, not a separate PacketMemory product.
+This is a PacketBench capability, not a separate PacketMemory product.
 
 ## Product boundary
 
-- Existing persisted/global PacketADE memory remains supported and is not
+- Existing persisted/global PacketBench memory remains supported and is not
   destructively migrated.
 - Project-local memory is a distinct source class shown inside the existing
   Memory view.
@@ -29,7 +29,7 @@ This is a PacketADE capability, not a separate PacketMemory product.
   embeddings remain separately evidence-gated.
 - MCP reads are scoped and bounded. Writes require the existing `allow_writes`
   posture plus project/path validation and an audit entry.
-- External file edits are expected. PacketADE watches/reloads safely and never
+- External file edits are expected. PacketBench watches/reloads safely and never
   silently overwrites a changed note.
 - Symlink escapes, oversized files, malformed metadata, binary content, and
   suspected secrets fail closed or become visible warnings.
@@ -46,8 +46,8 @@ Status values: `queued` → `in-progress` → `gated` → `closed`.
 | **MH4** | Unified retrieval                   | Extend current IDF-ranked search and “Ask your project” context selection across eligible global and project-local memory with source/scope filters and bounded excerpts.                                        | Ranking, dedupe, scope, provenance, and context-budget tests       | MH2           | closed |
 | **MH5** | Provenance and capture flows        | Promote a transcript, Flight event, review finding, artifact, or global memory entry into a project note with source references; preserve origin and never copy secrets automatically.                           | Capture fixtures, redaction, idempotency, and missing-source tests | MH1, MH2      | closed |
 | **MH6** | Memory Hub UI                       | Add project/global source controls, Markdown note detail/editor, backlinks, graph/list toggle, orphan/broken-link health, external-change warnings, and clear conflict recovery inside the existing Memory view. | Component tests, keyboard/accessibility pass, and visual QA        | MH2–MH5       | closed |
-| **MH7** | Scoped MCP surface                  | Expose bounded project-memory search/read/graph resources and permission-gated create/update/archive tools through the existing PacketADE MCP provider and audit controls.                                       | MCP schema, auth, `allow_writes`, confinement, and audit tests     | MH2–MH5       | closed |
-| **MH8** | Watch, reload, and interoperability | Coalesce filesystem events, ignore PacketADE's own completed writes, reload external changes, surface conflicts, and keep CLI/editor-authored Markdown interoperable.                                            | Watch-storm, partial-write, rename, reload, and restart tests      | MH2, MH3, MH6 | gated  |
+| **MH7** | Scoped MCP surface                  | Expose bounded project-memory search/read/graph resources and permission-gated create/update/archive tools through the existing PacketBench MCP provider and audit controls.                                       | MCP schema, auth, `allow_writes`, confinement, and audit tests     | MH2–MH5       | closed |
+| **MH8** | Watch, reload, and interoperability | Coalesce filesystem events, ignore PacketBench's own completed writes, reload external changes, surface conflicts, and keep CLI/editor-authored Markdown interoperable.                                            | Watch-storm, partial-write, rename, reload, and restart tests      | MH2, MH3, MH6 | gated  |
 | **MH9** | Migration, regression, and docs     | Offer opt-in copy/export from existing memory without deleting originals; cover empty/large/dirty/gitignored projects and update public/backlog/schema docs.                                                     | Full Vitest/Rust/build gates plus packaged manual smoke            | MH1–MH8       | gated  |
 
 ## Frozen contract and implementation record
@@ -61,7 +61,7 @@ Status values: `queued` → `in-progress` → `gated` → `closed`.
 - Writes use revision hashes plus temp/backup recovery and refuse stale edits.
   Confinement, symlink, binary, UTF-8, size/count, malformed-metadata, and
   suspected-secret checks fail closed or surface bounded warnings.
-- `.agents/memory` is version-control-capable by default. PacketADE never
+- `.agents/memory` is version-control-capable by default. PacketBench never
   changes `.gitignore`; the repository owner chooses whether notes are tracked.
 - The existing global memory store remains unchanged. Promotion copies a
   redacted note with provenance references and is idempotent; originals are not
@@ -82,7 +82,7 @@ MH1 -> MH2 -> MH3 -> MH6 -> MH8 -> MH9
 
 ## Definition of done
 
-- Project knowledge is readable and editable outside PacketADE.
+- Project knowledge is readable and editable outside PacketBench.
 - Links, backlinks, orphans, provenance, and retrieval agree after restart and
   external edits.
 - Existing global memory remains available and clearly distinguished.

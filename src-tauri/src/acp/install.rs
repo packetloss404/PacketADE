@@ -8,7 +8,7 @@
 //! definition, and every constraint below exists to keep it from becoming
 //! remote code execution *by anyone other than the user in front of the app*:
 //!
-//! 1. **Never automatic.** Nothing in PacketADE calls this. It runs only when
+//! 1. **Never automatic.** Nothing in PacketBench calls this. It runs only when
 //!    the `acp_install_engine` command is invoked, which the UI gates behind an
 //!    explicit button press. Engine resolution, probing, and lazy engine start
 //!    all fail with "not installed" rather than reaching for this.
@@ -17,7 +17,7 @@
 //!    URL parameter and no script parameter**, on purpose: a URL that crossed
 //!    the IPC boundary would let anything able to reach a Tauri command — a
 //!    compromised renderer, an injected script in a webview, a malicious
-//!    prompt that reached a tool — make PacketADE download and run arbitrary
+//!    prompt that reached a tool — make PacketBench download and run arbitrary
 //!    code as the user. Do not add such a parameter. If a future caller needs
 //!    a different script, add another compile-time constant.
 //! 3. **The only override is an environment variable**, [`INSTALL_URL_ENV`],
@@ -57,7 +57,7 @@ const UNIX_INSTALL_URL: &str =
 /// Development-only override for the install script URL. See the module doc:
 /// this is an env var and NOT a command parameter, and that distinction is the
 /// whole security story of this module.
-const INSTALL_URL_ENV: &str = "PACKETADE_ACP_INSTALL_URL";
+const INSTALL_URL_ENV: &str = "PACKETBENCH_ACP_INSTALL_URL";
 /// Legacy name from the standalone packetcode GUI prototype, honoured for the
 /// same reason [`super::LEGACY_ENGINE_PATH_ENV`] is.
 const LEGACY_INSTALL_URL_ENV: &str = "PACKETCODE_GUI_INSTALL_URL";
@@ -68,7 +68,7 @@ const LEGACY_INSTALL_URL_ENV: &str = "PACKETCODE_GUI_INSTALL_URL";
 /// box is not user-writable and makes the script call `sudo`. A GUI app has no
 /// terminal to answer a password prompt on, so that default would simply hang
 /// until [`INSTALL_TIMEOUT`]. The README's own sudo-free variant
-/// (`INSTALL_DIR="$HOME/.local/bin"`) is therefore what PacketADE uses — and
+/// (`INSTALL_DIR="$HOME/.local/bin"`) is therefore what PacketBench uses — and
 /// [`super::install_dir_candidates`] looks there first as a result.
 const UNIX_INSTALL_DIR: &str = "$HOME/.local/bin";
 
@@ -84,11 +84,11 @@ const INSTALL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// so the log tail (install location, error text) lands before the result.
 const DRAIN_GRACE: Duration = Duration::from_secs(5);
 
-/// What to tell a user PacketADE cannot install for.
+/// What to tell a user PacketBench cannot install for.
 pub const MANUAL_INSTALL_HINT: &str =
-    "PacketADE cannot install the packetcode engine on this platform. Install it yourself \
+    "PacketBench cannot install the packetcode engine on this platform. Install it yourself \
      (see the packetcode README), then make sure `packetcode` is on PATH or set \
-     PACKETADE_ACP_ENGINE to its full path.";
+     PACKETBENCH_ACP_ENGINE to its full path.";
 
 /// Whether [`acp_install_engine`] can run here. Windows, macOS, and Linux are
 /// the three platforms packetcode publishes an install script for; anything
@@ -108,7 +108,7 @@ pub struct InstallOutput {
     pub stream: &'static str,
 }
 
-/// The compile-time install URL for this platform, or `None` where PacketADE
+/// The compile-time install URL for this platform, or `None` where PacketBench
 /// does not install the engine at all.
 const fn platform_install_url() -> Option<&'static str> {
     if cfg!(windows) {

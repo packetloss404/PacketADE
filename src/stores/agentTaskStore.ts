@@ -204,7 +204,7 @@ export const RETIRED_API_AGENTS: ReadonlySet<string> = new Set(["api-openai-code
 /**
  * The agent a retired id's *automation* consumers should fall back to.
  *
- * Applies only where PacketADE picks an executor on the user's behalf and a
+ * Applies only where PacketBench picks an executor on the user's behalf and a
  * silent skip would be worse than a substitution — chiefly a persisted
  * Reviewer Gate policy pinned to `api-openai-codex`, which must review with
  * *something* rather than quietly pass the attempt. It is NOT applied to
@@ -260,7 +260,7 @@ export function apiAgentProvider(agent: AgentCli): string {
     "api-ollama": "ollama",
     // The PacketCode ACP engine, driven over Agent Client Protocol as a local
     // subprocess. It authenticates itself (its own provider config / keyring),
-    // so PacketADE holds no credential for it — but the identity entry is
+    // so PacketBench holds no credential for it — but the identity entry is
     // still mandatory: without it the fallback below would bill ACP turns to
     // the user's Anthropic key.
     "api-packetcode": "packetcode-acp",
@@ -390,7 +390,7 @@ export async function stampEngineCapabilities(
  * that to nothing at all, so an empty list is a real answer that must render
  * as such. `unavailable` is the strictly different case where the query
  * itself could not be made (no engine on PATH, handshake refused, transport
- * error) and PacketADE therefore knows NOTHING about engine-side history.
+ * error) and PacketBench therefore knows NOTHING about engine-side history.
  * Conflating the two would either invent an error where there is none or
  * claim "no sessions" for a question that was never answered.
  */
@@ -399,7 +399,7 @@ export type EngineSessionsStatus = "idle" | "loading" | "ready" | "unavailable";
 /**
  * A synthetic {@link CapabilityConversation}-shaped record for the engine
  * ITSELF, so surfaces that act on engine-known sessions — which have no
- * PacketADE conversation behind them — can still render every affordance from
+ * PacketBench conversation behind them — can still render every affordance from
  * `capabilitiesFor()` instead of testing the provider id.
  *
  * `agent`/`mode` name the ACP transport (that is identity feeding a LABEL,
@@ -461,8 +461,8 @@ export function retiredApiAgentNotice(agent: AgentCli): string {
   const replacement = RETIRED_API_AGENT_REPLACEMENTS[canonical];
   const base =
     canonical === "api-openai-codex"
-      ? "This conversation used the OpenAI (ChatGPT Plus/Pro) provider, which PacketADE no longer offers — it required a ChatGPT subscription login. The transcript is preserved and stays fully readable."
-      : `This conversation used a provider PacketADE no longer offers (${canonical}). The transcript is preserved and stays fully readable.`;
+      ? "This conversation used the OpenAI (ChatGPT Plus/Pro) provider, which PacketBench no longer offers — it required a ChatGPT subscription login. The transcript is preserved and stays fully readable."
+      : `This conversation used a provider PacketBench no longer offers (${canonical}). The transcript is preserved and stays fully readable.`;
   return replacement === "api-openai-agents"
     ? `${base} To continue, switch it to OpenAI Agents SDK (API) — the same OpenAI models, billed to your OpenAI API key.`
     : base;
@@ -639,7 +639,7 @@ interface AgentTaskStore {
   // --- Engine session directory (ACP) ---
   //
   // Sessions the packetcode ENGINE knows about — created by its TUI, or by a
-  // PacketADE run whose conversation record is gone. These are REMOTE HANDLES,
+  // PacketBench run whose conversation record is gone. These are REMOTE HANDLES,
   // not conversations: a summary row and nothing else. They are held in their
   // own slice, never merged into `conversations`, precisely so no surface can
   // accidentally render one as a local conversation with a transcript.
@@ -668,13 +668,13 @@ interface AgentTaskStore {
   renameEngineSession: (engineSessionId: string, name: string) => Promise<void>;
   /**
    * Push a local conversation's new title to the engine so it survives
-   * outside PacketADE. The CAPABILITY gate is the caller's (`canRename`); this
+   * outside PacketBench. The CAPABILITY gate is the caller's (`canRename`); this
    * only enforces the transport check and swallows every failure — a rename
    * the engine refused must never revert or throw over the local one.
    */
   pushEngineRename: (conversationId: string, title: string) => Promise<void>;
   /**
-   * Turn a row of the engine's session directory into a PacketADE
+   * Turn a row of the engine's session directory into a PacketBench
    * conversation BOUND to it — the "open" the directory could not offer while
    * `session/load` had no command behind it.
    *
@@ -684,9 +684,9 @@ interface AgentTaskStore {
    * needed and the moment a failure has somewhere honest to land.
    *
    * The new conversation opens with ONE durable `system` message stating that
-   * PacketADE holds no transcript for it. That is the whole honesty story for
+   * PacketBench holds no transcript for it. That is the whole honesty story for
    * adopted sessions: ACP's load replay omits the user's own turns and
-   * PacketADE has no local record to interleave, so the backend renders none
+   * PacketBench has no local record to interleave, so the backend renders none
    * of the replay (`acp/events.rs`) rather than showing answers to questions
    * that are not there.
    *
@@ -701,7 +701,7 @@ interface AgentTaskStore {
    * configured MCP fleet.
    *
    * A separate consent from the per-server trust snapshot — that one covers
-   * PacketADE's OWN configured servers and is named server by server; this one
+   * PacketBench's OWN configured servers and is named server by server; this one
    * says "run whatever your config.toml lists", which can only ever be granted
    * wholesale against the engine's disclosure list (`acpListMcpServers()` with
    * no session id).
@@ -912,7 +912,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         engineSessionsStatus: "ready",
       });
     } catch (e) {
-      // No engine on PATH, a refused handshake, a transport error: PacketADE
+      // No engine on PATH, a refused handshake, a transport error: PacketBench
       // knows nothing about engine-side history, which is a different claim
       // from "there is none". Previously-listed rows are dropped rather than
       // left to go stale behind an engine we can no longer reach.
@@ -939,7 +939,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     });
     try {
       // The engine's own session id — `acp_rename_session` resolves a
-      // PacketADE conversation id when it has one and passes anything else
+      // PacketBench conversation id when it has one and passes anything else
       // through verbatim, which is what makes an engine-only row renamable.
       await acpRenameSession(engineSessionId, next);
     } catch (e) {
@@ -959,7 +959,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     );
     if (!conversation || conversation.provider !== ACP_PROVIDER_ID) return;
     try {
-      // PacketADE's conversation id: the backend maps it to the engine's own
+      // PacketBench's conversation id: the backend maps it to the engine's own
       // session id (`engine_id_or_raw`).
       await acpRenameSession(conversationId, next);
     } catch (e) {
@@ -1014,7 +1014,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
             `Adopted the packetcode engine session "${row.name || engineSessionId}" ` +
             `(${row.messageCount} message${row.messageCount === 1 ? "" : "s"}, ` +
             `${row.provider}/${row.model}).\n\n` +
-            "Its transcript stays in the engine. PacketADE has no copy, and the engine's " +
+            "Its transcript stays in the engine. PacketBench has no copy, and the engine's " +
             "replay leaves out your own prompts — so rather than show answers with the " +
             "questions missing, nothing above this line is shown at all. Your next message " +
             "resumes the session on the engine, which still has the full history as context.",
@@ -1099,7 +1099,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     // System-prompt assembly. Order (lowest in the prompt → highest):
     //   1. AGENTS.md / CLAUDE.md from the project root (the de-facto standard
     //      cross-tool instructions file).
-    //   2. PacketADE memory layer (learned patterns + recent summaries),
+    //   2. PacketBench memory layer (learned patterns + recent summaries),
     //      gated on the per-conversation `memoryContextEnabled` flag.
     //   3. Profile / explicit `systemPromptOverride` (lives last so it wins
     //      conflicts of intent — the user picked this profile deliberately).
@@ -1265,7 +1265,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           // sees a field it has no branch for. `inheritEngineMcp` is the
           // session-scoped, affirmatively-granted consent to run the ENGINE's
           // own MCP fleet — false unless someone said yes in this app run, and
-          // ignored entirely when PacketADE's trust snapshot already names
+          // ignored entirely when PacketBench's trust snapshot already names
           // servers of its own.
           provider === ACP_PROVIDER_ID
             ? { inheritEngineMcp: get().acpInheritEngineMcp }
@@ -2071,7 +2071,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     // A conversation BOUND to an engine session (`acpEngineSessionId`, set by
     // `adoptEngineSession`) resumes it with `session/load`: the engine still
     // holds that session's history, so the model does have the earlier turns —
-    // just not the ones PacketADE can show, because ACP's replay omits the
+    // just not the ones PacketBench can show, because ACP's replay omits the
     // user's own prompts and none of the replay is rendered. Nothing needs
     // saying at this boundary; the adoption notice already said it, once, at
     // the top of the conversation.
@@ -2079,7 +2079,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     // Every OTHER ACP conversation gets a brand-new engine session, because
     // ACP has no mid-life resume and the ACP branch ignores the
     // `resumeMessages` every other transport replays. So the transcript above
-    // this point is PacketADE's OWN complete record while the engine's side
+    // this point is PacketBench's OWN complete record while the engine's side
     // starts empty — the model genuinely does not have the earlier turns. That
     // asymmetry is invisible unless it is said out loud, and a transcript the
     // user reasonably reads as shared context is exactly the kind of quiet lie
@@ -2093,7 +2093,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
               id: generateId("msg"),
               role: "system",
               content:
-                "Resumed on a new engine session. The transcript above is PacketADE's own " +
+                "Resumed on a new engine session. The transcript above is PacketBench's own " +
                 "record — the packetcode engine does not carry the earlier turns into this " +
                 "session, so restate anything it still needs.",
               timestamp: Date.now(),
@@ -2194,7 +2194,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         frozenMcpTrust,
         // ACP extras. `engineSessionId` is what makes an ADOPTED conversation
         // resume its engine session instead of silently starting an empty new
-        // one; it is undefined for every conversation PacketADE started
+        // one; it is undefined for every conversation PacketBench started
         // itself, which keeps the pre-existing `session/new` behaviour.
         conv.provider === ACP_PROVIDER_ID
           ? {

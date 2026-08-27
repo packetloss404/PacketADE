@@ -312,7 +312,7 @@ export function FleetSidebar() {
     if (isSyndicateWorkspace(workspace)) {
       focusPane(workspaceId, pane.id);
       toast.show(
-        "Close Syndicate panes from the pane header so PacketADE can confirm the remote stop.",
+        "Close Syndicate panes from the pane header so PacketBench can confirm the remote stop.",
       );
       return;
     }

@@ -3191,8 +3191,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "packetade"
-version = "0.10.5"
+name = "packetbench"
+version = "0.11.0"
 dependencies = [
  "aes-gcm",
  "async-trait",

@@ -28,7 +28,7 @@ describe("syndicateStore integration setting", () => {
     expect(invoke).toHaveBeenCalledWith("syndicate_set_integration_enabled", { enabled: true });
   });
 
-  it("persists disabled and closes PacketADE-managed tunnels", async () => {
+  it("persists disabled and closes PacketBench-managed tunnels", async () => {
     const { useSyndicateStore } = await loadStore();
 
     await useSyndicateStore.getState().setEnabled(false);
@@ -250,7 +250,7 @@ describe("syndicateStore integration setting", () => {
         "device-1",
         toSyndicateError({
           message:
-            "PacketRelay request failed without an automatic retry over SSH: This PacketADE device was revoked by Syndicate.",
+            "PacketRelay request failed without an automatic retry over SSH: This PacketBench device was revoked by Syndicate.",
           code: "DEVICE_REVOKED",
           retryable: false,
         }),
@@ -438,7 +438,7 @@ describe("syndicateStore integration setting", () => {
       .recordControllerFailure(
         "machine-1",
         "device-old",
-        new Error("This PacketADE device was revoked by Syndicate."),
+        new Error("This PacketBench device was revoked by Syndicate."),
       );
 
     expect(useSyndicateStore.getState().machines[0].grantStatus).toBe("active");

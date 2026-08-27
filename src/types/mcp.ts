@@ -5,7 +5,7 @@ export interface McpServerConfig {
 }
 
 export type McpTransport = "stdio" | "http" | "sse";
-export type McpExecutionOwner = "local" | "ssh" | "packetade-provider";
+export type McpExecutionOwner = "local" | "ssh" | "packetbench-provider";
 
 export interface McpCapabilitySnapshot {
   schemaVersion: 1;

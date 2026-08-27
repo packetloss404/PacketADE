@@ -1,5 +1,5 @@
 // === MCP Provider Types ===
-// PacketADE acting as an MCP server, exposing flights, tasks, and memory as resources.
+// PacketBench acting as an MCP server, exposing flights, tasks, and memory as resources.
 
 export interface McpResource {
   uri: string;

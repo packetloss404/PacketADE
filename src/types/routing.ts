@@ -33,7 +33,7 @@ export interface RouteMapping {
 // === Auxiliary AI task routing (WI-1) ===
 //
 // Distinct from the `TaskType` routing above, which assigns a coding AGENT to a
-// workflow role. These are the short, single-shot generation tasks PacketADE
+// workflow role. These are the short, single-shot generation tasks PacketBench
 // runs on the user's behalf: parse a spec, explain a lint failure, write PR
 // prose. They do not need a frontier model and they are never routed through a
 // Claude / ChatGPT subscription login — see `src-tauri/src/core/aux_llm.rs`.

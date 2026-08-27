@@ -4,9 +4,9 @@
 // CodeQualityModal consults this before running its analyzer/lint pass
 // so the next run can pre-apply ESLint --fix + Prettier --write.
 //
-// Keyed under the `packetade:` namespace per CLAUDE.md.
+// Keyed under the `packetbench:` namespace per CLAUDE.md.
 
-export const QUALITY_AUTOFIX_STORAGE_KEY = "packetade:quality-autofix";
+export const QUALITY_AUTOFIX_STORAGE_KEY = "packetbench:quality-autofix";
 
 export function normalizeAutoFixProjectPath(projectPath: string): string {
   const trimmed = projectPath.trim();

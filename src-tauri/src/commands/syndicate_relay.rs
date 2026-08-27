@@ -28,10 +28,10 @@ use super::syndicate::{
 };
 
 // PacketRelay reports revocation and grant expiry to this module rather than to
-// the typed controller layer, so these are the only two failures PacketADE can
+// the typed controller layer, so these are the only two failures PacketBench can
 // classify as authoritatively as the Host would. They are named once here and
 // mapped by `classify_relay_error` so no consumer has to match on prose.
-const DEVICE_REVOKED_MESSAGE: &str = "This PacketADE device was revoked by Syndicate.";
+const DEVICE_REVOKED_MESSAGE: &str = "This PacketBench device was revoked by Syndicate.";
 const GRANT_EXPIRED_IN_FLIGHT_MESSAGE: &str =
     "The Syndicate relay grant expired while awaiting the Host response.";
 const GRANT_EXPIRED_MESSAGE: &str = "The Syndicate relay grant is expired or has an invalid lifetime.";
@@ -40,7 +40,7 @@ const GRANT_EXPIRED_MESSAGE: &str = "The Syndicate relay grant is expired or has
 /// `CONTROLLER_PROTOCOL_V1` so a relay-detected revocation and a Host-reported
 /// one classify identically.
 const CODE_DEVICE_REVOKED: &str = "DEVICE_REVOKED";
-/// PacketADE-local code for a grant this device knows has passed `expiresAt`.
+/// PacketBench-local code for a grant this device knows has passed `expiresAt`.
 /// The Host answers the same situation with `DEVICE_UNAUTHORIZED`; both mean
 /// the grant is dead and retrying cannot help.
 const CODE_GRANT_EXPIRED: &str = "GRANT_EXPIRED";
@@ -379,24 +379,24 @@ fn validate_material(
     )?;
     let device_signing_bytes = decode_32(
         &stored.signing_private_key_base64_url,
-        "PacketADE signing private key",
+        "PacketBench signing private key",
     )?;
     let device_signing = SigningKey::from_bytes(&device_signing_bytes);
     if URL_SAFE_NO_PAD.encode(ed25519_spki(device_signing.verifying_key().as_bytes()))
         != grant.device_signing_public_key_base64_url
     {
-        return Err("The relay grant does not match the PacketADE signing key.".into());
+        return Err("The relay grant does not match the PacketBench signing key.".into());
     }
     let device_agreement_bytes = decode_32(
         &stored.key_agreement_private_key_base64_url,
-        "PacketADE key agreement private key",
+        "PacketBench key agreement private key",
     )?;
     let device_secret = X25519Secret::from(device_agreement_bytes);
     let device_public = X25519PublicKey::from(&device_secret);
     if URL_SAFE_NO_PAD.encode(x25519_spki(device_public.as_bytes()))
         != grant.device_key_agreement_public_key_base64_url
     {
-        return Err("The relay grant does not match the PacketADE agreement key.".into());
+        return Err("The relay grant does not match the PacketBench agreement key.".into());
     }
     let host_agreement = X25519PublicKey::from(decode_spki(
         &grant.host_key_agreement_public_key_base64_url,

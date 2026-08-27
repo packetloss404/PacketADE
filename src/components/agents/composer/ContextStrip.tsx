@@ -41,7 +41,7 @@ interface ContextStripProps {
  * its 30s `gitSafetyCheck` poll — MOVED here rather than being duplicated;
  * there is exactly one interval per mounted conversation, as before.
  *
- * The MCP chip is READ-ONLY on purpose. PacketADE has no per-session MCP
+ * The MCP chip is READ-ONLY on purpose. PacketBench has no per-session MCP
  * consent toggle, so a clickable chip would be a false affordance.
  */
 export function ContextStrip({ conversation, caps }: ContextStripProps) {

@@ -472,7 +472,7 @@ export function Composer(props: ComposerProps) {
       if (sel.kind === "engine") {
         // The ENGINE expands `/name` itself when the turn arrives, so the
         // invocation is spliced in literally (keeping its slash) rather than
-        // replaced by a body PacketADE does not have. The trailing space lets
+        // replaced by a body PacketBench does not have. The trailing space lets
         // the user type arguments straight after — that's what argumentHint
         // is advertising.
         const invocation = `/${sel.def.name} `;
@@ -550,7 +550,7 @@ export function Composer(props: ComposerProps) {
   // provider in the picker authenticates with an API key from Settings → API
   // Keys, so a not-ready badge resolves to "missing_key" and the hint already
   // points at the right place. The old inline "Log in" button (which fired
-  // `packetade:open-claude-login` / `packetade:open-codex-login`) is gone
+  // `packetbench:open-claude-login` / `packetbench:open-codex-login`) is gone
   // from this surface.
   //
   // Interactive `claude login` / `codex login` still exists in Settings →

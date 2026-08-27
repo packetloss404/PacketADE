@@ -17,7 +17,7 @@ pairing check, then the day-29 / day-31 calendar checks.
   rejected `401` — `DEVICE_REVOKED` when revoked, else `DEVICE_UNAUTHORIZED`.
 - **30-day literal** (`controller-auth.ts:420`): grants are minted
   `now + 30d`; there is **no renewal path**, so every pairing reaches expiry.
-- **PacketADE typed seam** (`src/lib/syndicateErrors.ts:84-89,:104`):
+- **PacketBench typed seam** (`src/lib/syndicateErrors.ts:84-89,:104`):
   `DEVICE_UNAUTHORIZED`/`GRANT_EXPIRED`/`DEVICE_EXPIRED` → grant status
   `expired`; `DEVICE_REVOKED` → `revoked`; Host `retryable:false` is the
   fatal verdict — no reconnect loop.
@@ -29,7 +29,7 @@ pairing check, then the day-29 / day-31 calendar checks.
 
 ## Setup (once per session)
 
-1. WSL host prepared via `10-wsl-host-setup.sh`; PacketADE paired (Method D
+1. WSL host prepared via `10-wsl-host-setup.sh`; PacketBench paired (Method D
    below); a **local** `packet-relay.exe` serving the route — production is
    probe-only, never used here.
 2. `20-method-a.sh backup` — never mutate without a fresh backup.
@@ -50,7 +50,7 @@ UI-only, the Host predicate still passes.
 
 ### Row 7 — Expired at connect
 `20-method-a.sh expired`, then start a **new** attach. **Expect:** first RPC
-rejected `401 DEVICE_UNAUTHORIZED`, `retryable:false`; PacketADE marks the
+rejected `401 DEVICE_UNAUTHORIZED`, `retryable:false`; PacketBench marks the
 machine `expired`, banner shows the terminal verdict, **no reconnect loop**.
 Capture the HAR error body + matching `correlationId` in the Host journal.
 
@@ -66,7 +66,7 @@ attach succeeds.
 Attach with a valid grant, then `20-method-a.sh expired` **while attached**.
 **Expect:** the session's next RPC fails `DEVICE_UNAUTHORIZED`
 (`retryable:false`); banner flips to expired **without** a retry storm; card
-persists `expired` into `packetade:syndicate-machines-v1`.
+persists `expired` into `packetbench:syndicate-machines-v1`.
 
 ### Row 8 — Rounding boundary: +6d20h
 `20-method-a.sh plus6d20h`. **Expect:** `Math.ceil(6.83) = 7` →
@@ -82,7 +82,7 @@ expiry date.
 Revoke the device on the Host (Host UI/CLI, or
 `UPDATE controller_devices SET status='revoked' ...` after a backup).
 **Expect:** RPC fails `DEVICE_REVOKED` (not `DEVICE_UNAUTHORIZED`);
-PacketADE grant status `revoked`, distinct card/banner copy, fatal.
+PacketBench grant status `revoked`, distinct card/banner copy, fatal.
 
 ### Row 11 — Restore and recover (LAST)
 `20-method-a.sh restore <backup>`, restart `syndicate.service`, then re-pair
@@ -105,7 +105,7 @@ in evidence until then.
 
 ## Method D — fresh pairing check (after row 11)
 
-1. Remove the device row (or use a pristine host), pair PacketADE from
+1. Remove the device row (or use a pristine host), pair PacketBench from
    scratch via the pairing invitation flow.
 2. **Expect:** `controller_devices` gains an `active` row with
    `grant_expires_at ≈ now + 30d` (the `:420` literal), matching signed

@@ -18,7 +18,7 @@ interface NotificationStore extends NotificationPreferences {
   setOnCostThreshold: (v: boolean) => void;
 }
 
-const STORAGE_KEY = "packetade:notifications";
+const STORAGE_KEY = "packetbench:notifications";
 
 function loadPreferences(): Partial<NotificationPreferences> {
   try {

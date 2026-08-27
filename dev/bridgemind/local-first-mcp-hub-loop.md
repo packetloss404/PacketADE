@@ -3,11 +3,11 @@
 Created: 2026-07-28
 Last updated: 2026-07-29
 Status: MCPH1–MCPH2/MCPH4–MCPH7 source-complete; MCPH3/MCPH8 live/packaged gated
-Product decision: **Option B — consolidate MCP inside PacketADE**
+Product decision: **Option B — consolidate MCP inside PacketBench**
 
 ## Objective
 
-Turn PacketADE's already-shipped MCP client and provider capabilities into one
+Turn PacketBench's already-shipped MCP client and provider capabilities into one
 coherent local-first Hub. Users can discover and configure useful servers,
 understand live capabilities and health, apply explicit trust profiles, inspect
 provenance and audit history, and expose scoped Packet suite resources without
@@ -19,7 +19,7 @@ Implementation begins only when this track is promoted from Later.
 
 - MCP client configuration for local and project servers.
 - MCP servers owned by remote SSH targets.
-- PacketADE's localhost Streamable HTTP provider with bearer/origin controls.
+- PacketBench's localhost Streamable HTTP provider with bearer/origin controls.
 - Read resources/tools plus opt-in event-routed `append_handoff` and
   `escalate` writes.
 - Bounded activity/audit history and provider Settings UI.
@@ -73,7 +73,7 @@ Status values: `queued` → `in-progress` → `gated` → `closed`.
   latency/state/tool/version. HTTP/SSE config stays lossless but reports the
   exact stdio-only doctor limitation.
 - Sidecar protocol v11 and the in-process Rust MCP bridge enforce the same
-  frozen read/write/root/tool posture on PacketADE-managed MCP paths.
+  frozen read/write/root/tool posture on PacketBench-managed MCP paths.
   Old/absent snapshots migrate to conservative read-only behavior; explicit
   empty snapshots grant no servers. Credential, outside-workspace, and
   protected publish/merge/deploy floors cannot be disabled.
@@ -85,7 +85,7 @@ Status values: `queued` → `in-progress` → `gated` → `closed`.
   trust/tool controls, bounded redacted activity, and an explicit selected
   conversation reconnect. Trust changes apply only after that reconnect/new
   session.
-- PacketADE's loopback provider now groups Flights, Issues, coordination,
+- PacketBench's loopback provider now groups Flights, Issues, coordination,
   review, global/project Memory, workspaces, and PacketCode health. PacketAgent
   has published W9, but no PacketAgent MCP resource has been added; its direct
   versioned handoff API remains the authority.
@@ -110,7 +110,7 @@ MCPH1 -> MCPH2 ---------> MCPH7 -> MCPH8
 
 ## Definition of done
 
-- MCP servers and PacketADE's provider are understandable from one surface.
+- MCP servers and PacketBench's provider are understandable from one surface.
 - Installation and trust changes remain explicit and reviewable.
 - Every MCP-derived action or context fragment carries useful provenance.
 - Existing local/project/SSH configs continue to work.
@@ -120,6 +120,6 @@ MCPH1 -> MCPH2 ---------> MCPH7 -> MCPH8
 
 Focused Hub/write-contract tests pass, and `pnpm sidecar:check` passes the
 remote-project, MCP configuration, frozen-trust, and remote-from-filesystem
-smokes. PacketADE has zero configured SSH servers and no remote-sidecar
+smokes. PacketBench has zero configured SSH servers and no remote-sidecar
 override, so real local/SSH lifecycle and packaged provider proof remain
 open. See [`proof-audit-2026-08-01.md`](../proof-audit-2026-08-01.md).

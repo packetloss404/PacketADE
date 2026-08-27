@@ -1,8 +1,8 @@
 # Syndicate Proof Kit
 
-Proof matrices and runbooks for the PacketADE ↔ Syndicate (controller relay)
+Proof matrices and runbooks for the PacketBench ↔ Syndicate (controller relay)
 integration, per the 2026-08-16 execution plan. Everything here is additive —
-nothing in this directory modifies the PacketADE working tree, the Syndicate
+nothing in this directory modifies the PacketBench working tree, the Syndicate
 source tree, or the PacketRelay repo.
 
 ## Hard rules
@@ -42,7 +42,7 @@ source tree, or the PacketRelay repo.
 ## Phases and buckets
 
 - **Phase 0 (bucket a — all safe from Windows, run now):**
-  - A0: PacketADE's own syndicate suites — `pnpm vitest run` on the four
+  - A0: PacketBench's own syndicate suites — `pnpm vitest run` on the four
     `syndicate*` test files + `cargo test syndicate` in `src-tauri`.
   - A1: `00-fixture-parity.ps1`.
   - A2: `01-relay-readonly-probe.ps1` (production read-only — explicitly permitted).
@@ -52,7 +52,7 @@ source tree, or the PacketRelay repo.
 - **Phase 1 (WSL2):** `10-wsl-host-setup.sh`, then the Method-A expiry rows per
   `40-expiry-row-runbook.md`, evidencing each row per `evidence-template.md`.
 - **Phase 2 (Hyper-V VM):** clean-install / boot / upgrade / rollback /
-  packaged-e2e rows per `30-vm-matrix.md`. Needs a PacketADE version bump
+  packaged-e2e rows per `30-vm-matrix.md`. Needs a PacketBench version bump
   first for any packaged build (see drift notes).
 - **Method B (blocked on Syndicate):** rows 5 / 5b / 6b need short-lifetime
   *signed* grants, which cannot be forged locally
@@ -81,8 +81,8 @@ source tree, or the PacketRelay repo.
 
 ## Drift notes (state of the world, 2026-08-16, re-verified 2026-08-25)
 
-- **`backlog.md:143` is stale**: the PacketADE device-refresh proposal
-  (PR #6, `packetade/device-refresh-proposal`) is **merged** upstream —
+- **`backlog.md:143` is stale**: the PacketBench device-refresh proposal
+  (PR #6, `packetbench/device-refresh-proposal`) is **merged** upstream —
   `origin/main` is `baf1a3d`, while the local checkout sits at `d24d334`.
   Fetching/updating the local Syndicate checkout is the **owner's** call.
 - **Typed-error seam (commit `53f98f83`) verified intact.** Anchors current:

@@ -12,7 +12,7 @@
  *
  * Before the PTY starts, the config dir is seeded from the ambient dir. Those
  * env vars relocate the CLI's ENTIRE state root, so an unseeded account starts
- * with no statusline hook and none of the MCP servers PacketADE writes into
+ * with no statusline hook and none of the MCP servers PacketBench writes into
  * `~/.claude/settings.json`: the pane's status bar goes blank and its tools go
  * missing, with nothing on screen to explain why. Seeding is best-effort and
  * never blocks the login — a failed copy costs configuration, not access.

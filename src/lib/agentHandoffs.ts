@@ -462,7 +462,7 @@ export function buildPacketCodeHandoffPayload(input: {
 
 export function formatPacketCodeHandoffPayload(payload: PacketCodeHandoffPayload): string {
   return [
-    "packetade-packetcode-handoff/v1",
+    "packetbench-packetcode-handoff/v1",
     JSON.stringify(payload, null, 2),
     "",
     "Continue this objective in the exact target above. Treat the listed permission posture as",

@@ -277,7 +277,7 @@ export function MemoryView() {
 
   function handleExportJson() {
     downloadBlob(
-      "packetade-memory.json",
+      "packetbench-memory.json",
       serializeMemoryExport(events, patterns),
       "application/json",
     );
@@ -285,7 +285,7 @@ export function MemoryView() {
 
   function handleExportMarkdown() {
     downloadBlob(
-      "packetade-memory.md",
+      "packetbench-memory.md",
       serializeMemoryMarkdown(events, patterns),
       "text/markdown",
     );
@@ -298,7 +298,7 @@ export function MemoryView() {
     void file.text().then((text) => {
       const result = importMemory(text);
       if (!result) {
-        window.alert("Import failed: the file is not a valid PacketADE memory export.");
+        window.alert("Import failed: the file is not a valid PacketBench memory export.");
         return;
       }
       window.alert(
@@ -1164,7 +1164,7 @@ function AskTab({
               value === "all"
                 ? "All"
                 : value === "global"
-                  ? "PacketADE"
+                  ? "PacketBench"
                   : "Project Markdown"
             }
             onClick={() => setSource(value)}

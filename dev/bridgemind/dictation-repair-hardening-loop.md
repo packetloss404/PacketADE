@@ -1,4 +1,4 @@
-# PacketADE Dictation Repair and Hardening Loop
+# PacketBench Dictation Repair and Hardening Loop
 
 Status: **DV1–DV16 source work complete; packaged microphone/platform matrix
 and DV17 benchmark evidence-gated**
@@ -7,7 +7,7 @@ Last updated: 2026-07-28
 
 ## Decision
 
-Keep Dictation inside PacketADE and make the existing local-first package
+Keep Dictation inside PacketBench and make the existing local-first package
 reliable. Do not create a standalone PacketVoice product, add a cloud
 dependency, or chase every BridgeVoice model before the basic path is proven.
 
@@ -18,7 +18,7 @@ ready model + active microphone
   → native capture
   → mono 16 kHz audio
   → local Whisper
-  → PacketADE field / clipboard / opt-in Windows paste
+  → PacketBench field / clipboard / opt-in Windows paste
   → history + analytics
 ```
 
@@ -66,7 +66,7 @@ connected or enabled; the repaired UI now reports the condition.
   bound custom dictionary hints, place user terms before curated vocabulary,
   and keep local Whisper as the only engine.
 - [x] **DV7 — Delivery.** Preserve React-aware in-app insertion; clear stale
-  targets when PacketADE loses focus; copy natively on Windows; add opt-in
+  targets when PacketBench loses focus; copy natively on Windows; add opt-in
   foreground Ctrl+V without restoring an older, potentially sensitive
   clipboard value; report delivery outcome.
 - [x] **DV8 — History and analytics.** Persist successful transcriptions with
@@ -108,7 +108,7 @@ test executables now launch.
 - [x] **DV13 — Global-shortcut trust.** Global shortcuts default off, use the
   safer `Ctrl/Cmd+Alt+Space` and `Ctrl/Cmd+Alt+R` defaults, reject duplicate
   bindings, serialize rebind/cleanup, report readiness/conflicts, and only
-  unregister bindings PacketADE successfully acquired.
+  unregister bindings PacketBench successfully acquired.
 - [x] **DV14 — Native insertion coverage.** React inputs/textareas,
   contenteditable surfaces, and live PTYs are supported. PTYs use `write_pty`;
   password, OTP, `data-sensitive`, disconnected, and changed-session targets

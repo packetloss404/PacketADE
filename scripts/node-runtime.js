@@ -3,7 +3,7 @@
  * node-runtime.js
  *
  * Single source of truth for the Node.js runtime that ships inside the
- * PacketADE installer as a Tauri `externalBin` sidecar: which version, which
+ * PacketBench installer as a Tauri `externalBin` sidecar: which version, which
  * dist archive per Rust target triple, and — critically — the SHA-256 digest
  * each archive must have.
  *

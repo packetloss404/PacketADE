@@ -17,7 +17,7 @@ pub struct DictationConfig {
     pub auto_paste: bool,
     /// Whisper language code, or "auto" to let Whisper detect the language.
     pub language: String,
-    /// Opt-in native paste into the foreground application when no PacketADE
+    /// Opt-in native paste into the foreground application when no PacketBench
     /// text field is active. Clipboard-only fallback remains the safe default.
     pub system_wide_paste: bool,
     /// OS-global accelerator string for push-to-talk (hold). See
@@ -62,7 +62,7 @@ fn normalize_config(mut config: DictationConfig) -> DictationConfig {
     config
 }
 
-/// Return the path to ~/.packetade/dictation.json.
+/// Return the path to ~/.packetbench/dictation.json.
 fn config_path() -> Result<PathBuf, String> {
     let home = home_dir().ok_or("Could not resolve home directory")?;
     let dir = PathBuf::from(&home).join(DATA_DIR_NAME);
@@ -145,7 +145,7 @@ mod tests {
             r#"{
                 "modelSize": "base",
                 "deviceIndex": null,
-                "customDictionary": ["PacketADE"],
+                "customDictionary": ["PacketBench"],
                 "autoPaste": true
             }"#,
         )
@@ -156,7 +156,7 @@ mod tests {
         assert!(!config.global_shortcuts_enabled);
         assert_eq!(config.max_duration_seconds, 300);
         assert_eq!(config.device_id, None);
-        assert_eq!(config.custom_dictionary, vec!["PacketADE"]);
+        assert_eq!(config.custom_dictionary, vec!["PacketBench"]);
     }
 
     #[test]

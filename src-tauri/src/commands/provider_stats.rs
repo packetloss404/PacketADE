@@ -4,7 +4,7 @@
 //! provider over the app's lifetime, along with the last-launch timestamp.
 //! Purely local — nothing is reported externally.
 //!
-//! Storage: `<home>/.packetade/provider-launches.json`.
+//! Storage: `<home>/.packetbench/provider-launches.json`.
 //!
 //! Persistence strategy: in-memory `Mutex<ProviderLaunchStats>` plus an atomic
 //! file write on every update (write to `*.tmp` then `rename`). These writes
@@ -40,7 +40,7 @@ fn stats() -> &'static Mutex<ProviderLaunchStats> {
     STATS.get_or_init(|| Mutex::new(load_from_disk_or_default()))
 }
 
-/// Resolve `<home>/.packetade/provider-launches.json`.
+/// Resolve `<home>/.packetbench/provider-launches.json`.
 fn stats_file_path() -> Option<PathBuf> {
     let home = home_dir()?;
     let mut p = PathBuf::from(home);

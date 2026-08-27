@@ -2,11 +2,11 @@
 
 Status: **public infrastructure live and independently reviewed**; the signed
 Linux installer and production PacketRelay route are deployed. Packaged
-PacketADE/real-host proof remains a release acceptance gate.
+PacketBench/real-host proof remains a release acceptance gate.
 
 Last reconciled: 2026-08-12.
 
-Product owner: PacketADE. Host contract owner: Syndicate.
+Product owner: PacketBench. Host contract owner: Syndicate.
 
 Syndicate positioning:
 
@@ -14,12 +14,12 @@ Syndicate positioning:
 > existing agents there and control them from any browser.
 
 The companion host-side contract is
-[`docs/PACKETADE_EXECUTION_TARGET.md`](https://github.com/packetloss404/syndicate/blob/main/docs/PACKETADE_EXECUTION_TARGET.md)
+[`docs/PACKETBENCH_EXECUTION_TARGET.md`](https://github.com/packetloss404/syndicate/blob/main/docs/PACKETBENCH_EXECUTION_TARGET.md)
 in the Syndicate repository.
 
 ## Implementation status
 
-The first PacketADE flagship target boundary is implemented across PacketADE,
+The first PacketBench flagship target boundary is implemented across PacketBench,
 Syndicate, `packet-host`, and PacketRelay:
 
 - [x] Tagged, persisted `kind: "syndicate"` execution target, with centralized
@@ -28,13 +28,13 @@ Syndicate, `packet-host`, and PacketRelay:
 - [x] Short-lived invitation claim, device Ed25519/X25519 keys, OS-keychain
       private-key storage, local Host approval, narrowed scopes, capability/health
       refresh, revocation, and explicit offline forget.
-- [x] Host-owned repository catalog and Workspace list/create. PacketADE sends
+- [x] Host-owned repository catalog and Workspace list/create. PacketBench sends
       an opaque `repositoryId`, never a client-selected absolute path.
 - [x] Typed `pane.create`, `session.start/attach/input/resize/stop`, and
       `events.read` controller v1 operations with durable request IDs, bounded
       input, response correlation, scope gates, and no generic RPC exposed to the
       frontend.
-- [x] Durable pane/session identities and replay cursor persistence. PacketADE
+- [x] Durable pane/session identities and replay cursor persistence. PacketBench
       resumes output without duplicating input, surfaces replay gaps, and preserves
       recoverable remote ownership when stop fails.
 - [x] Managed loopback SSH bootstrap through the canonical verified
@@ -51,7 +51,7 @@ Syndicate, `packet-host`, and PacketRelay:
 - [x] Installed `packet-host` service owns PTYs independently from the Node
       Host, so a Node Host-only restart can reconcile and reattach exact durable
       sessions. `packet-host` restart and server reboot remain separate limits.
-- [x] Automated source gates: PacketADE's 2,000 frontend tests and 647 Rust
+- [x] Automated source gates: PacketBench's 2,000 frontend tests and 647 Rust
       tests pass; focused direct/relay/tunnel/fixture/bootstrap coverage passes and
       independent review found no remaining P0/P1 issue.
 
@@ -71,28 +71,28 @@ Public deployment status and remaining promises:
       rollback acceptance matrix.
 - [ ] Prove recovery across `packet-host` service restart or server reboot
       before promising either; Node Host-only restart is the implemented boundary.
-- [ ] Add multiple PacketADE device credentials per machine, view-only import
+- [ ] Add multiple PacketBench device credentials per machine, view-only import
       of arbitrary existing Host panes, and WebSocket event subscription if user
-      demand justifies them. V1 uses one PacketADE credential per machine and HTTP
+      demand justifies them. V1 uses one PacketBench credential per machine and HTTP
       `session.attach` replay as the canonical recovery path.
 
 ## Decision
 
-PacketADE remains the flagship and the user's primary workspace. Syndicate is a
+PacketBench remains the flagship and the user's primary workspace. Syndicate is a
 first-class execution target: a user can install Syndicate and the official
-agent CLIs on an owned Linux server, pair that machine with PacketADE, and start
-or reattach coding-agent sessions on the server from PacketADE.
+agent CLIs on an owned Linux server, pair that machine with PacketBench, and start
+or reattach coding-agent sessions on the server from PacketBench.
 
 This is deliberately not:
 
 - another generic SSH integration;
-- a second PacketADE workspace implementation;
-- PacketADE Remote Agents, whose v1 controller is a phone/PWA and whose
-  execution owner remains PacketADE Desktop;
-- a route for moving provider credentials through PacketADE or a relay.
+- a second PacketBench workspace implementation;
+- PacketBench Remote Agents, whose v1 controller is a phone/PWA and whose
+  execution owner remains PacketBench Desktop;
+- a route for moving provider credentials through PacketBench or a relay.
 
 SSH is useful for installation and for a private alpha tunnel. Once connected,
-PacketADE must use Syndicate's typed, authorized workspace/session API.
+PacketBench must use Syndicate's typed, authorized workspace/session API.
 Syndicate remains the authority for paths, worktrees, processes, input, replay,
 and cleanup.
 
@@ -103,7 +103,7 @@ Linux or macOS machine over SSH and using the desktop application as the
 interface. That validates the basic “powerful remote machine, local UI” demand,
 but it also means raw SSH launch is not the product advantage.
 
-Syndicate differentiates the PacketADE experience by making the remote machine
+Syndicate differentiates the PacketBench experience by making the remote machine
 a durable, multi-agent execution authority: Codex, Claude Code, and PacketCode;
 browser access; host-owned Workspaces; isolated writer worktrees; typed policy;
 reconnect/replay; resource governance; and one target contract that can later
@@ -111,7 +111,7 @@ serve API agents and Flights after their separate authority rules are proven.
 
 ## Why it is a separate target kind
 
-PacketADE currently models API-agent execution as `Local` or `Ssh`, and its
+PacketBench currently models API-agent execution as `Local` or `Ssh`, and its
 saved `ServerConfig` is specifically an SSH connection. A Workspace stores
 `serverId` and `remoteProjectPath` for that model. Syndicate has materially
 different semantics:
@@ -155,12 +155,12 @@ The flow is:
 2. Sign into Codex, Claude Code, and/or PacketCode on that host using each
    CLI's own supported login.
 3. Ask Syndicate to create a short-lived pairing package.
-4. In PacketADE, select the already verified SSH `ServerConfig`, paste the
-   package, and claim it. PacketADE validates the Host signing and key-agreement
+4. In PacketBench, select the already verified SSH `ServerConfig`, paste the
+   package, and claim it. PacketBench validates the Host signing and key-agreement
    SPKIs and fingerprints before consuming the invite.
 5. Approve the pending device and its requested scopes in Syndicate's local
-   browser UI, then refresh the machine in PacketADE.
-6. PacketADE keeps the Ed25519/X25519 private material in the operating-system
+   browser UI, then refresh the machine in PacketBench.
+6. PacketBench keeps the Ed25519/X25519 private material in the operating-system
    keychain. Syndicate stores the revocable public device grant and later
    returns the Host-signed relay certificate.
 
@@ -174,7 +174,7 @@ The release pairing package has this additive envelope shape:
 }
 ```
 
-`relayEndpoint` is optional. An explicitly entered PacketADE endpoint wins;
+`relayEndpoint` is optional. An explicitly entered PacketBench endpoint wins;
 both forms are validated as exact versioned WSS product-route URLs before the
 one-time claim is consumed. The production URL above is live and is emitted by
 the deployed Syndicate Host unless the operator explicitly overrides or
@@ -193,7 +193,7 @@ The Workspace creation flow has an **Execution target** selector:
 - paired Syndicate machines
 
 Choosing a Syndicate machine loads host-owned repositories and Workspaces.
-PacketADE shows the machine name, connection state, coarse capacity, Syndicate
+PacketBench shows the machine name, connection state, coarse capacity, Syndicate
 version, installed agents, agent versions, and redacted auth readiness. It must
 not browse arbitrary absolute paths supplied by the client.
 
@@ -201,14 +201,14 @@ A Workspace is bound to its target while it has live sessions. Moving work
 between targets is a later explicit clone/import operation, not a dropdown
 mutation.
 
-### Work in PacketADE
+### Work in PacketBench
 
 The normal Workspace surface remains primary:
 
 - every remote pane is visibly labeled `Syndicate · <machine>`;
 - the displayed remote path is host-reported and read-only;
 - **New pane** selects an available CLI profile and access posture;
-- disconnecting PacketADE leaves the agent running on Syndicate;
+- disconnecting PacketBench leaves the agent running on Syndicate;
 - reconnecting attaches at a durable output cursor without duplicating input;
 - stop, resize, approval, and attention states map to explicit host operations;
 - stale, revoked, upgrading, capacity-limited, and auth-required states have
@@ -235,7 +235,7 @@ silently included.
 
 ```mermaid
 flowchart LR
-    ADE["PacketADE · flagship UI"] -->|"paired controller protocol"| Host["Syndicate Host"]
+    ADE["PacketBench · flagship UI"] -->|"paired controller protocol"| Host["Syndicate Host"]
     ADE -. "pairing + grant bootstrap" .-> SSH["Managed pinned SSH"]
     SSH -.-> Host
     ADE -. "application-encrypted controller frames" .-> Relay["PacketRelay · opaque ciphertext route"]
@@ -263,7 +263,7 @@ ssh -N \
   <user>@<host>
 ```
 
-PacketADE reuses its pinned host-key machinery, never enables SSH agent
+PacketBench reuses its pinned host-key machinery, never enables SSH agent
 forwarding, keeps the forwarded listener on loopback, disables OpenSSH
 connection sharing, supervises the dedicated tunnel process, and tears it down
 with the machine/app lifecycle.
@@ -275,7 +275,7 @@ and a paired device grant.
 ### Implemented and publicly deployed: PacketRelay
 
 Syndicate keeps the Host outbound-only and PacketRelay treats routed payloads
-as opaque ciphertext. PacketADE and the Host implement Host-signed grants,
+as opaque ciphertext. PacketBench and the Host implement Host-signed grants,
 device proof of possession, X25519/HKDF-SHA256 key derivation, AES-256-GCM,
 Ed25519 frame signatures, durable counters, replay rejection, expiry/scope
 validation, reconnect, and response correlation. The public WSS product route
@@ -283,7 +283,7 @@ is live and has passed an exact-path TLS WebSocket upgrade smoke. A private
 LAN/VPN direct route may later use the same application protocol and device
 identity.
 
-PacketADE uses pinned SSH only while no verified relay grant exists. Once the
+PacketBench uses pinned SSH only while no verified relay grant exists. Once the
 grant is captured, a configured relay request is never retried over SSH after a
 transport error because its mutation/input outcome may be uncertain.
 
@@ -293,7 +293,7 @@ enough to start or control a session.
 
 ## Controller protocol v1
 
-The PacketADE-to-Syndicate contract is distinct from both the browser API and
+The PacketBench-to-Syndicate contract is distinct from both the browser API and
 the Node-to-`packet-host` local protocol. Version 1 is frozen and implemented
 with:
 
@@ -320,7 +320,7 @@ with:
 Every mutating request needs a request ID, idempotency rule, caller device ID,
 scope check, target identity, expiry, and audit event. The Host resolves
 canonical paths and executable profiles. Version 1 accepts no raw executable,
-`argv`, environment map, shell command, or absolute path from PacketADE.
+`argv`, environment map, shell command, or absolute path from PacketBench.
 
 ### Event behavior
 
@@ -335,7 +335,7 @@ canonical paths and executable profiles. Version 1 accepts no raw executable,
   environment values, and provider metadata by default.
 
 WebSocket `Origin` validation remains required for browser clients, but native
-PacketADE authentication must use its device key. A native client can choose
+PacketBench authentication must use its device key. A native client can choose
 any `Origin` string, so `Origin` is not an identity proof.
 
 ## Security and credential boundary
@@ -367,7 +367,7 @@ Provider authentication remains on the server:
 - Claude Code owns its login and credential storage on that machine.
 - PacketCode reads its configured provider credentials on that machine and can
   report readiness through `packetcode doctor --json`.
-- PacketADE and the relay receive only redacted status. They never read,
+- PacketBench and the relay receive only redacted status. They never read,
   upload, copy, refresh, or back up credential files.
 - SSH agent forwarding is never a prerequisite.
 
@@ -385,15 +385,15 @@ Syndicate is the source of truth for:
 - approvals and audit events;
 - capacity and local policy.
 
-PacketADE persists only the target reference, display/cache data, its controller
+PacketBench persists only the target reference, display/cache data, its controller
 key, and last applied cursors. Cached host state must be replaceable by an
 authoritative snapshot.
 
-The reconnect promise applies to PacketADE or network loss. In an installed
+The reconnect promise applies to PacketBench or network loss. In an installed
 Linux deployment, the separately supervised `packet-host` service owns PTYs
 independently from the Node Host. A Node Host-only crash/restart preserves the
 native session; startup reconciliation reclaims only an exact durable
-pane/profile/worktree binding, and PacketADE resumes from its cursor. Stopping
+pane/profile/worktree binding, and PacketBench resumes from its cursor. Stopping
 or restarting `packet-host`, or rebooting the server, still terminates PTYs and
 must not be advertised as survivable until a later runtime proves it.
 
@@ -421,7 +421,7 @@ need an explicitly supported runtime and usually an appropriate GPU.
 
 ## Failure behavior
 
-| Condition                                  | PacketADE behavior                                                                                                      |
+| Condition                                  | PacketBench behavior                                                                                                      |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
 | Host offline                               | Keep cached identity, disable launch/input, offer reconnect                                                             |
 | Tunnel or relay interrupted                | Mark reconnecting; never replay unsafely; resume from cursor                                                            |
@@ -459,17 +459,17 @@ These are implementation and release-proof boundaries, not parallel backlogs:
    diagnostics.
 8. **ST7 — Complete.** Put the same controller protocol over the reviewed
    application-encrypted outbound relay; deploy and verify its public WSS route.
-9. **ST8 — Open release matrix.** Run packaged PacketADE against clean Ubuntu x64
+9. **ST8 — Open release matrix.** Run packaged PacketBench against clean Ubuntu x64
    and arm64 hosts, each supported CLI, Windows/macOS/Linux controllers,
    network faults, revocation, upgrades, and rollback.
 
 ### Current cross-product foundation
 
-The PacketADE and Syndicate working trees now contain the usable source
+The PacketBench and Syndicate working trees now contain the usable source
 boundary:
 
 - authenticated machine/capability schema v1 with redacted CLI readiness;
-- local browser approval plus PacketADE pairing, narrowed device scopes,
+- local browser approval plus PacketBench pairing, narrowed device scopes,
   capability health, and revocation;
 - a tested rootless Linux release installer with verified, atomic version
   switching and a loopback `systemd --user` service contract;
@@ -478,14 +478,14 @@ boundary:
   test;
 - a pinned x64/arm64 tag-release workflow for archives, checksums, and GitHub
   provenance attestations;
-- the tagged PacketADE execution target, Host-owned Workspace/pane/session
+- the tagged PacketBench execution target, Host-owned Workspace/pane/session
   operations, cursor replay, and strict isolation from local path consumers;
 - controller v1 over managed pinned SSH and application-encrypted PacketRelay;
 - Node Host-only restart reconciliation through the independently supervised
   `packet-host` service.
 
 The public PacketRelay route and signed immutable `v0.1.3` curl installer are
-live. ST1/ST6/ST8 retain the broader packaged PacketADE/real-host acceptance
+live. ST1/ST6/ST8 retain the broader packaged PacketBench/real-host acceptance
 matrix rather than representing missing core implementation or deployment.
 
 ## Acceptance matrix
@@ -495,15 +495,15 @@ demonstrated:
 
 1. A clean Ubuntu machine installs Syndicate without running the service or
    agents as root.
-2. PacketADE pairs and later revokes a controller without exposing a reusable
+2. PacketBench pairs and later revokes a controller without exposing a reusable
    secret in logs or UI state.
 3. Capability discovery reports installed CLI versions and redacted readiness,
    never token or credential-file contents.
-4. PacketADE selects or creates a host-owned Workspace without accepting a
+4. PacketBench selects or creates a host-owned Workspace without accepting a
    client-selected absolute path.
 5. Three writable panes on one repository receive distinct locked worktrees and
    branches; none can acquire another pane's writer lease.
-6. PacketADE disconnects, the agents keep running, and reconnect resumes once
+6. PacketBench disconnects, the agents keep running, and reconnect resumes once
    from the last durable cursor without duplicate input.
 7. Stop terminates and reaps the complete descendant process tree or places the
    session/worktree into durable quarantine.
@@ -515,7 +515,7 @@ demonstrated:
     memory pressure, and recovery.
 11. Node Host-only restart preserves and exactly reconciles live
     `packet-host` sessions; `packet-host` restart/reboot is represented as an
-    interruption rather than inferred from stale PacketADE cache.
+    interruption rather than inferred from stale PacketBench cache.
 12. The managed SSH tunnel and application-encrypted PacketRelay transport
     pass the same controller contract tests, and the deployed public route
     passes an end-to-end smoke.
@@ -524,7 +524,7 @@ demonstrated:
 
 Frozen by this contract:
 
-- PacketADE is the flagship control surface.
+- PacketBench is the flagship control surface.
 - Syndicate is a distinct execution target, not an SSH-server subtype.
 - Syndicate owns remote execution and durable workspace/session identity.
 - CLI credentials stay on the Syndicate machine.
@@ -536,13 +536,13 @@ Frozen by this contract:
 - Managed pinned SSH bootstraps pairing/grant capture. PacketRelay is the
   outbound Internet transport once a verified grant exists.
 - `session.input` ships only with `terminal.input`; view-only devices cannot
-  launch PacketADE execution panes.
-- Repository registration is Host-local configuration. PacketADE receives
+  launch PacketBench execution panes.
+- Repository registration is Host-local configuration. PacketBench receives
   opaque catalog IDs and can create a Workspace from a registered repository.
 
 Remaining bounded choices:
 
-- whether/when to support multiple PacketADE devices per machine instead of
+- whether/when to support multiple PacketBench devices per machine instead of
   the v1 revoke-or-forget-before-re-pair rule;
 - whether view-only grants need an import/attach flow for existing Host panes;
 - whether WebSocket subscriptions materially improve on canonical bounded HTTP
@@ -554,7 +554,7 @@ Remaining bounded choices:
 
 ## Research basis
 
-This contract was reconciled against the current PacketADE target/SSH model,
+This contract was reconciled against the current PacketBench target/SSH model,
 Syndicate's loopback Host, remote-deployment boundary, `packet-host` protocol,
 durable Workspace schema, interactive worktree design, and PacketCode's
 `doctor --json` contract.

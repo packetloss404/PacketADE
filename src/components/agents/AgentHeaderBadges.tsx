@@ -40,7 +40,7 @@ export function AgentHeaderBadges({ conversation }: AgentHeaderBadgesProps) {
   );
 
   // Capability, not identity: "does this session authenticate through a
-  // provider credential PacketADE holds?" The `agent.startsWith("api-")` test
+  // provider credential PacketBench holds?" The `agent.startsWith("api-")` test
   // that used to live on this line now lives once, in lib/agentCapabilities.ts.
   // Identity still feeds the LABEL — which keyring slot the badge probes.
   const caps = capabilitiesFor(conversation);

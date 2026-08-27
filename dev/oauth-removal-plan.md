@@ -148,7 +148,7 @@ store code path explicitly skips importing `.credentials.json` when
 > plan.** Everything below that reads "HARD BLOCKER: WI-0" is now advisory: the
 > only surviving concern is that the budget **guardrails** see less spend from
 > the vendor-CLI files afterwards, and migrated traffic on `api-claude` /
-> `api-openai` does write `~/.packetade/usage.jsonl`, so coverage moves rather
+> `api-openai` does write `~/.packetbench/usage.jsonl`, so coverage moves rather
 > than disappears. `CostDashboardView.tsx` references below are dead file paths;
 > the `SOURCE_LABELS` / `SOURCE_PILL_CLASSES` maps they point at were deleted
 > with the view. `costGuardrails.ts` read-compat (WI-7) still matters.
@@ -176,7 +176,7 @@ Free, Pro, or Max plan credentials on behalf of their users", and that
 enforcement may occur "without prior notice". The Agent SDK overview carries a
 matching note.
 
-PacketADE's `api-claude-oauth` row reads `~/.claude/.credentials.json` and drives
+PacketBench's `api-claude-oauth` row reads `~/.claude/.credentials.json` and drives
 the Claude Agent SDK inside the Node sidecar
 (`agent-sidecar/src/providers/anthropic.ts:8`;
 `agent-sidecar/src/session-registry.ts:31`) — squarely the configuration the
@@ -458,7 +458,7 @@ two different agents.
 | SSH remote | yes | yes (`core/tool_runtime_ssh.rs`) |
 | Prompt caching | assumed on (SDK-internal); unresolved — `cost-efficiency-loop.md:658` SPIKE-2 | **definitely off** — `cache_control` appears in no file under `src-tauri/src` (`cost-efficiency-loop.md:30`) |
 | Billing | flat subscription | metered per token |
-| PacketADE-owned usage ledger | ~~none — writes zero rows to `usage.jsonl`~~ **yes since 2026-08-16** — the sidecar `turn_summary` handler appends a row per turn delta (source `api-claude-oauth`) | **yes** — via the three `api_agent.rs` construction sites |
+| PacketBench-owned usage ledger | ~~none — writes zero rows to `usage.jsonl`~~ **yes since 2026-08-16** — the sidecar `turn_summary` handler appends a row per turn delta (source `api-claude-oauth`) | **yes** — via the three `api_agent.rs` construction sites |
 
 **Verdict:** migrating `api-claude-oauth` → `api-claude` is a real capability
 downgrade (no edit tool, no structured plan, weaker plan mode, no Claude Code
@@ -512,7 +512,7 @@ Verified end-to-end. **Nothing crashes, nothing vanishes.**
 
 1. `AgentCli` is an open union — `agentTaskStore.ts:158` ends `| (string & {})`.
 2. Conversations persist as one opaque JSON file per conversation under
-   `~/.packetade/conversations/<id>.json`. **Rust never parses them**
+   `~/.packetbench/conversations/<id>.json`. **Rust never parses them**
    (`src-tauri/src/commands/conversations.rs:1-6`, `:77-84`); unreadable files
    are warn-and-skipped.
 3. Hydration (`src/stores/agentConversationPersistence.ts:123-176`) wraps each
@@ -572,7 +572,7 @@ Do **not** silently remap. Do **not** hide. Do this:
    honest banner:
 
    > *This conversation used the Anthropic subscription provider, which
-   > PacketADE no longer offers. The transcript is preserved. To continue,
+   > PacketBench no longer offers. The transcript is preserved. To continue,
    > switch it to Claude (API) — new turns will be billed to your Anthropic API
    > key.*  **[ Switch provider ]  [ Learn why ]**
 
@@ -658,7 +658,7 @@ CHANGELOG entry.
 
 Mechanism: there is no existing feature-flag infrastructure — `src/lib/env.ts`
 has only `isDev`/`isProd`, and `src-tauri/Cargo.toml` has no `[features]`
-section. So this introduces one: a `VITE_PACKETADE_ALLOW_SUBSCRIPTION_OAUTH`
+section. So this introduces one: a `VITE_PACKETBENCH_ALLOW_SUBSCRIPTION_OAUTH`
 build var read once in `src/lib/env.ts`, mirrored by a Cargo feature (compile-time,
 not an env var — an env var would let a distributed binary be re-enabled at
 runtime by an end user, which re-creates the exposure).
@@ -670,7 +670,7 @@ OAuth" in the picker and stop auto-picking them (`AUTO_PICK_ORDER`). Ship the
 deleted. Repoint the `api-openai-codex` consumers (§1.5).
 
 **Stage C — Delete, later, on evidence.**
-Once CE5 has produced at least one real usage period of PacketADE-owned ledger
+Once CE5 has produced at least one real usage period of PacketBench-owned ledger
 data on the surviving rows (§5, WI-0), and the owner confirms they no longer use
 the gated path, delete `anthropic.ts`, `openai-codex.ts`, `codex-mcp.ts`,
 `mcp-trust-proxy.ts`, the two dependencies, and the flag. Keep the §3.3
@@ -690,7 +690,7 @@ after the eager migration ships.
 3. **CE5 has not landed** (§5). Deleting first creates a measurement blind window
    across exactly the transition being measured.
 4. **A gate is cheap and reversible; a deletion of 2,600+ lines of sidecar
-   provider code is not.** If Anthropic's policy or PacketADE's distribution
+   provider code is not.** If Anthropic's policy or PacketBench's distribution
    model changes, Stage A is a one-line default flip.
 
 ### 4.4 Why not just do nothing and keep it gated forever
@@ -712,7 +712,7 @@ period~~ — DROPPED 2026-07-31.** CE5 is cut and the dashboard it protected is
 deleted (`cost-efficiency-loop.md` §0), so this is **no longer a blocker for
 anything**. The paragraph below is retained as the record of what the concern
 was; read "dashboard" as "guardrail inputs". ~~Today `api-claude-oauth`, `api-openai-codex`,
-and `api-openai-agents` write **zero** rows to `~/.packetade/usage.jsonl`
+and `api-openai-agents` write **zero** rows to `~/.packetbench/usage.jsonl`
 (`append_usage_entry` is called only from `api_agent.rs:1649,1944,2528`); their
 spend is reconstructed by scraping `~/.claude/cost-tally.json` and
 `~/.codex/sessions/*.jsonl`, files the **vendor CLIs** write.~~ **No longer
@@ -720,7 +720,7 @@ true since 2026-08-16:** the sidecar `turn_summary` handler now appends
 `usage.jsonl` rows for the surviving sidecar providers (see
 `cost-efficiency-loop.md` §1 item 5), so metered sidecar spend feeds the
 guardrails directly. Removing the rows
-before CE5 lands freezes roughly half the dashboard's history with no PacketADE
+before CE5 lands freezes roughly half the dashboard's history with no PacketBench
 replacement, precisely across the transition being measured
 (`cost-efficiency-loop.md:728-731`).
 
@@ -755,7 +755,7 @@ Deleted: the bare `SidecarManager::forward_start`
 Notes for later items:
 * The streaming features keep the `api-agent:chunk|done|error:<sid>` contract,
   so their frontend listeners were untouched.
-* Auxiliary turns now write `~/.packetade/usage.jsonl` rows with
+* Auxiliary turns now write `~/.packetbench/usage.jsonl` rows with
   `source: "aux"` and `agent_id: <task class>`. The OAuth sidecar wrote none,
   so this is coverage gained, relevant to the WI-0 discussion above.
 * Ollama is deliberately excluded from *automatic* selection (no credential to
@@ -780,7 +780,7 @@ Compile-time on the Rust side, not an env var — see §4.2.
 
 **WI-3 — Release Stage A. — FOLDED into the single re-auth release.**
 Original text:
- CHANGELOG entry stating plainly that PacketADE no
+ CHANGELOG entry stating plainly that PacketBench no
 longer offers Claude.ai / ChatGPT subscription login for API agents and why.
 Effort **S**. Depends on: WI-1, WI-2.
 

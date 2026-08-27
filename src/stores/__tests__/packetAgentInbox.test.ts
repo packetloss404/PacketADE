@@ -30,7 +30,7 @@ import { useFlightStore } from "@/stores/flightStore";
 import type { PacketAgentWorkerPackage } from "@/types/packet-agent";
 
 const PACKAGE = {
-  packageId: "packetade:f:worker",
+  packageId: "packetbench:f:worker",
   packageVersion: 1,
   integrity: { digest: `sha256:${"a".repeat(64)}` },
 } as unknown as PacketAgentWorkerPackage;

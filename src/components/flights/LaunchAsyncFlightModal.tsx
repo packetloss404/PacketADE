@@ -664,7 +664,7 @@ export function LaunchAsyncFlightModal({
                 <p className="mt-2 text-[10px] leading-relaxed text-text-muted">
                   {autonomyMode === "settings_default"
                     ? "Settings currently resolves this Flight to Assisted mode."
-                    : "PacketADE detects and recommends; you launch, retry, accept, and integrate."}
+                    : "PacketBench detects and recommends; you launch, retry, accept, and integrate."}
                 </p>
               )}
               {autonomyConfigurationError && (

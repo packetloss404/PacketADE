@@ -12,7 +12,7 @@ export function saveToStorage(key: string, value: unknown): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch (e) {
-    console.error(`[PacketADE] Failed to save to localStorage key "${key}":`, e);
+    console.error(`[PacketBench] Failed to save to localStorage key "${key}":`, e);
   }
 }
 

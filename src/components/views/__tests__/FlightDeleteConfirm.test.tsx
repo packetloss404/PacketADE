@@ -124,7 +124,7 @@ function impactOf(
   return summarizeFlightDeleteImpact(
     entries.map(([id, cleanliness, status]) => ({
       attemptId: id,
-      branch: `packetade/${id}`,
+      branch: `packetbench/${id}`,
       status: status as FlightDeleteImpact["entries"][number]["status"],
       worktreePath: `/w/${id}`,
       cleanliness,
@@ -181,7 +181,7 @@ describe("flight delete confirm", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("3 git worktrees will be removed.")).toBeInTheDocument();
     expect(
-      screen.getByText("1 worktree has uncommitted changes that will be lost: packetade/a1."),
+      screen.getByText("1 worktree has uncommitted changes that will be lost: packetbench/a1."),
     ).toBeInTheDocument();
     expect(
       screen.getByText("1 worktree could not be checked for uncommitted changes."),
@@ -266,7 +266,7 @@ describe("flight delete confirm", () => {
   it("surfaces cleanup failures after the flight is gone", async () => {
     mocks.inspectFlightDeleteImpact.mockResolvedValue(impactOf([["a1", "clean", "running"]]));
     mocks.asyncState.deleteFlightWithAttemptCleanup.mockResolvedValue([
-      { attemptId: "a1", branch: "packetade/a1", message: "pty is wedged" },
+      { attemptId: "a1", branch: "packetbench/a1", message: "pty is wedged" },
     ]);
 
     await openConfirm();

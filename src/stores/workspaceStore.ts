@@ -204,8 +204,8 @@ interface WorkspaceStore {
   hydrateFromBackend: (workspaces?: Workspace[]) => void;
 }
 
-const DEFAULT_BYPASS_KEY = "packetade:workspace-default-bypass";
-const AUTO_BIND_GITHUB_KEY = "packetade:workspace-auto-bind-github";
+const DEFAULT_BYPASS_KEY = "packetbench:workspace-default-bypass";
+const AUTO_BIND_GITHUB_KEY = "packetbench:workspace-auto-bind-github";
 
 function readBooleanFlag(key: string, fallback: boolean): boolean {
   if (typeof localStorage === "undefined") return fallback;
@@ -282,7 +282,7 @@ function buildPanes(
   });
 }
 
-const WORKSPACES_CACHE_KEY = "packetade:workspaces-cache";
+const WORKSPACES_CACHE_KEY = "packetbench:workspaces-cache";
 
 /**
  * Historical deterministic wrapper-workspace id for a conversation. New

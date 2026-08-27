@@ -1,6 +1,6 @@
-# packetade-agent-sidecar
+# packetbench-agent-sidecar
 
-Node sidecar that hosts LLM provider integrations for PacketADE. The Rust
+Node sidecar that hosts LLM provider integrations for PacketBench. The Rust
 Tauri backend (the "supervisor") spawns this process and talks to it over
 newline-delimited JSON on stdin/stdout.
 
@@ -24,7 +24,7 @@ pnpm dev          # tsc --watch
 ```
 
 The supervisor launches the sidecar by running `node <path-to-dist/index.js>`.
-It finds the entry point via the `PACKETADE_SIDECAR_PATH` environment variable
+It finds the entry point via the `PACKETBENCH_SIDECAR_PATH` environment variable
 (set by the Rust side; falls back to a known bundled location in release
 builds). No direct invocation from the CLI is expected in normal use.
 
@@ -78,7 +78,7 @@ The factory lives in `src/session-registry.ts`. Currently wired:
 
 - **`openai-agents`** — OpenAI Agents SDK via `@openai/agents`
   (`src/providers/openai-agents.ts`). Auth uses the existing OpenAI API key
-  from the PacketADE keyring; Rust passes it to the sidecar only on
+  from the PacketBench keyring; Rust passes it to the sidecar only on
   `start_session` and the sidecar does not persist it. V1 focuses on parity
   with the Agents pane event contract: streaming text, local project-path
   tools, permission prompts, pending edit review, cancellation, MCP stdio
@@ -148,7 +148,7 @@ stream.
 
 ## Production bundling
 
-When packaging PacketADE for release (`pnpm tauri build`), the sidecar is
+When packaging PacketBench for release (`pnpm tauri build`), the sidecar is
 shipped alongside the app rather than relying on a system `node` or a
 system-installed sidecar source tree:
 
@@ -186,9 +186,9 @@ Two environment variables override the bundled locations at runtime —
 useful for running a packaged build against a working-copy sidecar or a
 custom Node binary:
 
-- `PACKETADE_SIDECAR_PATH` — absolute path to the compiled sidecar entry
+- `PACKETBENCH_SIDECAR_PATH` — absolute path to the compiled sidecar entry
   script (normally `agent-sidecar/dist/index.js`).
-- `PACKETADE_NODE_PATH` — absolute path to the `node` binary the
+- `PACKETBENCH_NODE_PATH` — absolute path to the `node` binary the
   supervisor should spawn (normally the bundled `externalBin`).
 
 ### Auto-updates

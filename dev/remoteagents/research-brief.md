@@ -12,7 +12,7 @@ Anthropic's Remote Control connects `claude.ai/code` and the Claude mobile apps 
 
 Source: [Claude Code Remote Control docs](https://code.claude.com/docs/en/remote-control)
 
-Important interpretation for PacketADE:
+Important interpretation for PacketBench:
 
 - The QR command mentioned by Claude is for downloading the mobile app, not the core trust model.
 - The primary cloud UX is account sign-in, same-account discovery, and a local session registered through a vendor cloud.
@@ -24,9 +24,9 @@ Claude Code on the web is distinct from Remote Control. It runs tasks on Anthrop
 
 Source: [Claude Code on the web docs](https://code.claude.com/docs/en/claude-code-on-the-web)
 
-PacketADE implication:
+PacketBench implication:
 
-- PacketADE Remote Agents should be modeled on "remote control of local runtime", not "cloud VM coding task", because PacketADE needs local provider config, MCP, workspaces, and secrets.
+- PacketBench Remote Agents should be modeled on "remote control of local runtime", not "cloud VM coding task", because PacketBench needs local provider config, MCP, workspaces, and secrets.
 - A future "Packet Cloud Workers" feature could run remote cloud workspaces, but that is a separate product surface.
 
 ### What Codex Cloud Teaches Us
@@ -35,10 +35,10 @@ OpenAI Codex web delegates tasks to Codex cloud environments. It is a cloud-agen
 
 Source: [OpenAI Codex web docs](https://developers.openai.com/codex/cloud)
 
-PacketADE implication:
+PacketBench implication:
 
 - Codex is useful for UX expectations: start tasks from phone, monitor, steer, continue later.
-- It is less useful as a direct architecture because PacketADE's configured providers/models live on the desktop.
+- It is less useful as a direct architecture because PacketBench's configured providers/models live on the desktop.
 
 ## Research Lane 2: Auth And Device Trust
 
@@ -69,19 +69,19 @@ Sources:
 
 Recommendation:
 
-- Desktop PacketADE signs into Packet Cloud through the system browser using Auth Code + PKCE, loopback redirect, and refresh token rotation.
+- Desktop PacketBench signs into Packet Cloud through the system browser using Auth Code + PKCE, loopback redirect, and refresh token rotation.
 - The PWA should use a browser session model with HttpOnly Secure SameSite cookies and short-lived WebSocket tickets minted by the backend.
 - Do not put long-lived access or refresh tokens in localStorage.
 
 ### Device Authorization Flow And QR
 
-RFC 8628 Device Authorization Grant exists for input-constrained devices. It allows QR/NFC as a non-textual optimization, but still relies on user code confirmation. PacketADE desktop is not input constrained; it has a full UI and can use browser PKCE.
+RFC 8628 Device Authorization Grant exists for input-constrained devices. It allows QR/NFC as a non-textual optimization, but still relies on user code confirmation. PacketBench desktop is not input constrained; it has a full UI and can use browser PKCE.
 
 Source: [RFC 8628: OAuth 2.0 Device Authorization Grant](https://www.rfc-editor.org/rfc/rfc8628)
 
 Recommendation:
 
-- Do not use OAuth device flow for PacketADE desktop v1.
+- Do not use OAuth device flow for PacketBench desktop v1.
 - Keep device flow in reserve for a future FlightDeck/TUI flow where the client is terminal-first.
 - Do not use QR for primary cloud trust. Use account sign-in plus desktop approval.
 
@@ -135,7 +135,7 @@ Source: [Cloudflare Durable Objects WebSockets docs](https://developers.cloudfla
 
 Disposition (owner decision 2026-08-02):
 
-- Do not implement the PacketADE relay on Cloudflare.
+- Do not implement the PacketBench relay on Cloudflare.
 - Preserve the useful host-room, bounded replay, and hibernation lessons as
   provider-neutral requirements.
 - Implement those requirements in the standalone Rust service at
@@ -155,7 +155,7 @@ Sources:
 Recommendation:
 
 - PWA push is good enough for MVP, but treat iOS delivery as best-effort.
-- Push payloads should be redacted: "PacketADE needs approval" rather than command content.
+- Push payloads should be redacted: "PacketBench needs approval" rather than command content.
 - PWA must provide in-app reconnect and attention badges because push may be delayed or suppressed by iOS Focus modes.
 - Native iOS later can use APNs, Keychain, and better background behavior.
 
@@ -182,7 +182,7 @@ Source: [RFC 9420: Messaging Layer Security](https://www.ietf.org/rfc/rfc9420)
 Recommendation:
 
 - Do not adopt MLS for MVP. One desktop plus one or a few devices is simpler than MLS justifies.
-- Revisit MLS when PacketADE supports team spaces, multiple desktops, shared conversations, or simultaneous multi-device editing.
+- Revisit MLS when PacketBench supports team spaces, multiple desktops, shared conversations, or simultaneous multi-device editing.
 
 ## Resolved Arguments
 
@@ -233,11 +233,11 @@ Reasoning:
 - Owning the relay avoids a second provider-specific implementation and keeps
   deployment portable.
 - The service can preserve its inherited bridge/broadcast/room protocols while
-  adding a separately versioned PacketADE host/device surface.
+  adding a separately versioned PacketBench host/device surface.
 - PostgreSQL provides durable tickets, replay, audit, and outbox state while
   active socket routing stays simple and single-instance for v1.
 
-Required evolution before PacketADE beta:
+Required evolution before PacketBench beta:
 
 - HTTPS auth/control plane and short-lived single-use WebSocket tickets.
 - Origin validation, device ACL/revocation, and multiple devices per host.

@@ -3,7 +3,7 @@
 Status: **source implementation and independent review complete; external proof remains**
 
 This is the canonical plan and evidence record for the 2026-08-01 pass over
-PacketADE's highest-priority source-completable work. It separates real code
+PacketBench's highest-priority source-completable work. It separates real code
 gaps from owner decisions and environment-only proof so a green fixture is
 never promoted into a packaged or live claim.
 
@@ -110,7 +110,7 @@ revisions; keep real hardware, external-service, packaged, cross-platform, and
 credential-dependent gates open.
 
 Implementation: the proof team produced `dev/proof-audit-2026-08-01.md`,
-rechecked PacketADE plus the PacketAgent and PacketCode siblings, and found no
+rechecked PacketBench plus the PacketAgent and PacketCode siblings, and found no
 falsely closed external gate. A separate documentation peer identified stale
 provider, retired-S11, and newly closed-source claims; those contradictions were
 corrected. Final integrated counts are recorded after the repository-wide

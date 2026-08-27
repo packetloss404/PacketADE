@@ -333,7 +333,7 @@ export function PermissionPrompt({
               </div>
             )}
           </div>
-          {/* Equal weight with Allow — this is a safety gate, and PacketADE
+          {/* Equal weight with Allow — this is a safety gate, and PacketBench
               does not know which answer is right, so neither verb may
               dominate. Escalation lives in the card's spine, eyebrow and
               Destructive badge, never in the verbs. */}

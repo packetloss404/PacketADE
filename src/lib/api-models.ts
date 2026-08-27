@@ -154,7 +154,7 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
   {
     // The sibling PacketCode TUI, driven over Agent Client Protocol as a local
     // subprocess. `needsKey: false` for the same reason as Ollama: the engine
-    // owns its own provider credentials (its config + keyring), so PacketADE
+    // owns its own provider credentials (its config + keyring), so PacketBench
     // never holds an API key for this row and the auth badge reflects engine
     // reachability rather than a keyring slot.
     //

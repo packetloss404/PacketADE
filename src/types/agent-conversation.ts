@@ -216,14 +216,14 @@ export interface AgentConversation {
    * start for this conversation passes it as
    * `StartApiAgentAcpOptions.engineSessionId`, so the engine answers with
    * `session/load` and the stored history is the model's context. Absent — the
-   * case for every conversation PacketADE started itself, and for every other
+   * case for every conversation PacketBench started itself, and for every other
    * transport — keeps the pre-existing `session/new` behaviour.
    *
    * Persisted, because the binding is the whole point: a conversation that
    * forgot which engine session it adopted would silently start a fresh, empty
    * one on the next app run.
    *
-   * NOT a transcript. PacketADE holds no local copy of an adopted session's
+   * NOT a transcript. PacketBench holds no local copy of an adopted session's
    * history and the engine's replay omits the user's own turns, so an adopted
    * conversation says so in a durable `system` message rather than pretending
    * the messages above the boundary are the whole story.

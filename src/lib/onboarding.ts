@@ -6,7 +6,7 @@
  * chain would be churn for a single boolean.
  */
 
-const KEY = "packetade:onboarding-complete";
+const KEY = "packetbench:onboarding-complete";
 
 export function isOnboardingComplete(): boolean {
   return typeof localStorage !== "undefined" && localStorage.getItem(KEY) === "true";

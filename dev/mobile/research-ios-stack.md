@@ -90,7 +90,7 @@ Total moving parts: one self-hosted relay (~$0–5/mo on Fly), one Rust command,
 
 ## Open questions
 
-- **Self-hosted vs you-host:** users bring their own relay (set `PACKETADE_RELAY=…`) like Remodex, or PacketADE operates a shared one? Latter is friendlier but carries APNs/VAPID rotation + abuse risk. [Product call]
+- **Self-hosted vs you-host:** users bring their own relay (set `PACKETBENCH_RELAY=…`) like Remodex, or PacketBench operates a shared one? Latter is friendlier but carries APNs/VAPID rotation + abuse risk. [Product call]
 - **iOS 26 `BGContinuedProcessingTask`** real-world WebSocket viability — worth a TestFlight spike before committing to "APNs wake only." [UNKNOWN]
 - **Multi-conversation fan-out:** `api-agent:*` events are per `sessionId`. Verify relay can multiplex N concurrent agent sessions to one phone without re-architecting `agentTaskStore`. [INFERRED yes]
 - **Permission-request replay semantics:** if phone is offline when tool needs approval and user approves 4 min later, does desktop's `permission-request` future still exist? In-process `LlmProvider` path stays parked; sidecar path is [UNKNOWN]. Worth a code check in `src-tauri/src/commands/api_agent.rs`.

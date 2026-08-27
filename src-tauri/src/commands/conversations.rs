@@ -1,7 +1,7 @@
 //! Persistence for API agent conversations.
 //!
 //! Stores each conversation as a JSON file under
-//! `<home>/.packetade/conversations/<id>.json`. The frontend is responsible
+//! `<home>/.packetbench/conversations/<id>.json`. The frontend is responsible
 //! for the JSON schema; this module treats `data` as an opaque, pre-serialized
 //! string and only does filesystem management + basic path-escape guards.
 
@@ -12,7 +12,7 @@ use tracing::warn;
 use super::shared::home_dir;
 use crate::core::brand::DATA_DIR_NAME;
 
-/// Resolve the conversations directory (`<home>/.packetade/conversations`).
+/// Resolve the conversations directory (`<home>/.packetbench/conversations`).
 ///
 /// `pub(crate)` so the one-time cost-reprice migration (`core::reprice`) can
 /// target the exact same directory this module writes, rather than

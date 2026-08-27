@@ -719,7 +719,7 @@ fn detect_checks_for_path(project_path: &Path) -> Vec<QualityCheck> {
     let pkg_path = project_path.join("package.json");
     if let Ok(pkg_raw) = std::fs::read_to_string(&pkg_path) {
         if let Ok(pkg_val) = serde_json::from_str::<serde_json::Value>(&pkg_raw) {
-            // Prefer pnpm if the project declares it (covers PacketADE).
+            // Prefer pnpm if the project declares it (covers PacketBench).
             // Otherwise prefer npm — yarn is rarer and would need its own
             // detection (presence of yarn.lock).
             let pkg_mgr = if pkg_val
@@ -797,7 +797,7 @@ fn detect_checks_for_path(project_path: &Path) -> Vec<QualityCheck> {
     }
 
     // ---- Rust ----
-    // `Cargo.toml` may be at the project root OR in a subdir (the PacketADE
+    // `Cargo.toml` may be at the project root OR in a subdir (the PacketBench
     // layout has it in `src-tauri/`).  We probe both.
     let cargo_locations: Vec<(&str, PathBuf)> = vec![
         (".", project_path.join("Cargo.toml")),
@@ -1073,7 +1073,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let dir = std::env::temp_dir().join(format!("packetade-qr-{}-{}", prefix, unique));
+        let dir = std::env::temp_dir().join(format!("packetbench-qr-{}-{}", prefix, unique));
         fs::create_dir_all(&dir).expect("create tmp dir");
         dir
     }

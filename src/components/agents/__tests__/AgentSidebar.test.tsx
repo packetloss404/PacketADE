@@ -39,7 +39,7 @@ function conversation(overrides: Partial<AgentConversation> = {}): AgentConversa
     id: "conv-1",
     title: "Investigate agent pane",
     agent: "api-openai",
-    projectPath: "D:\\projects\\PacketADE",
+    projectPath: "D:\\projects\\PacketBench",
     status: "idle",
     messages: [
       {
@@ -81,7 +81,7 @@ describe("AgentSidebar", () => {
     fireEvent.click(screen.getByText("Investigate agent pane"));
 
     expect(onSelect).toHaveBeenCalledWith("conv-1");
-    expect(screen.getByText("PacketADE")).toBeInTheDocument();
+    expect(screen.getByText("PacketBench")).toBeInTheDocument();
   });
 
   it("offers exactly ONE New agent control (the labelled footer CTA) and it works", () => {

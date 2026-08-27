@@ -1059,7 +1059,7 @@ pub async fn cancel_flight_attempt(
 /// The integration worktree is flight-keyed, not attempt-keyed, so none of the
 /// attempt cleanup commands can reach it — deleting a cooperative Flight used
 /// to leave `<base>/.pkt-flight-integrations/<flight_id>` (and its
-/// `packetade/flight/<flight_id>` branch) behind forever.
+/// `packetbench/flight/<flight_id>` branch) behind forever.
 ///
 /// `server_id` selects the remote twin and is resolved from saved servers, so
 /// a deleted server surfaces as `deferred` rather than a silent no-op.
@@ -1329,12 +1329,12 @@ mod tests {
             flight_id: "flight-1".to_string(),
             target: AttemptTarget::Local {
                 base_path: path.to_string(),
-                worktree_path: format!("{}/.git/packetade-worktrees/{}", path, id),
+                worktree_path: format!("{}/.git/packetbench-worktrees/{}", path, id),
             },
             agent_config_id: "api-claude".to_string(),
             model: "claude-sonnet-4-6".to_string(),
             provider: "claude".to_string(),
-            branch: format!("packetade/{}", id),
+            branch: format!("packetbench/{}", id),
             base_branch: "main".to_string(),
             session_id: id.to_string(),
             status,
@@ -1571,7 +1571,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let root = std::env::temp_dir().join(format!("packetade-cleanup-{}-{}", tag, nanos));
+        let root = std::env::temp_dir().join(format!("packetbench-cleanup-{}-{}", tag, nanos));
         std::fs::create_dir_all(&root).expect("create temp repo dir");
         let git = |args: &[&str]| {
             let ok = std::process::Command::new("git")
@@ -1584,8 +1584,8 @@ mod tests {
             assert!(ok, "git {:?} failed", args);
         };
         git(&["init", "-q"]);
-        git(&["config", "user.email", "test@packetade.test"]);
-        git(&["config", "user.name", "PacketADE Test"]);
+        git(&["config", "user.email", "test@packetbench.test"]);
+        git(&["config", "user.name", "PacketBench Test"]);
         git(&["checkout", "-q", "-b", "main"]);
         std::fs::write(root.join("f.txt"), "base\n").expect("write f.txt");
         git(&["add", "f.txt"]);
@@ -1625,7 +1625,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let root = std::env::temp_dir().join(format!("packetade-cleanup-bad-{}", nanos));
+        let root = std::env::temp_dir().join(format!("packetbench-cleanup-bad-{}", nanos));
         let wt = root.join(".pkt-worktrees").join("att-bad");
         std::fs::create_dir_all(&wt).unwrap();
         let base = root.to_string_lossy().to_string();
@@ -1700,7 +1700,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let dir = std::env::temp_dir().join(format!("packetade-gate-{}-{}", tag, nanos));
+        let dir = std::env::temp_dir().join(format!("packetbench-gate-{}-{}", tag, nanos));
         std::fs::create_dir_all(&dir).expect("create unique temp dir");
         dir
     }

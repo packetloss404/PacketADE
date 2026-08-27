@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useProjectHistoryStore } from "../projectHistoryStore";
 
-const STORAGE_KEY = "packetade:project-history";
+const STORAGE_KEY = "packetbench:project-history";
 const store = () => useProjectHistoryStore.getState();
 
 describe("projectHistoryStore", () => {

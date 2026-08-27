@@ -4,7 +4,7 @@
  * Before this store the right side of the shell had no owner: Workspace could
  * render a 480px Editor *and* a 280px Git panel at the same time, while the
  * Agents surface added a 280–720px inspector. Combined with the 44px primary
- * rail and the ~240px surface sidebar those fixed widths blow past PacketADE's
+ * rail and the ~240px surface sidebar those fixed widths blow past PacketBench's
  * supported 800px minimum window before the centre canvas gets any room.
  *
  * This module owns, per surface:

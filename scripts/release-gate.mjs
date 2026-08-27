@@ -14,11 +14,11 @@ const root = path.resolve(__dirname, "..");
 
 const args = new Set(process.argv.slice(2));
 const requireClean =
-  args.has("--require-clean") || process.env.PACKETADE_RELEASE_REQUIRE_CLEAN === "1";
+  args.has("--require-clean") || process.env.PACKETBENCH_RELEASE_REQUIRE_CLEAN === "1";
 const requireSigning =
-  args.has("--require-signing") || process.env.PACKETADE_RELEASE_REQUIRE_SIGNING === "1";
+  args.has("--require-signing") || process.env.PACKETBENCH_RELEASE_REQUIRE_SIGNING === "1";
 const requireUpdater =
-  args.has("--require-updater") || process.env.PACKETADE_RELEASE_REQUIRE_UPDATER === "1";
+  args.has("--require-updater") || process.env.PACKETBENCH_RELEASE_REQUIRE_UPDATER === "1";
 
 const checks = [];
 

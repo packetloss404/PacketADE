@@ -248,7 +248,7 @@ describe("capabilitiesFor — environment", () => {
  */
 describe("capabilitiesFor — engine capabilities (ACP)", () => {
   it("offers only the postures the engine's advertised modes cover", () => {
-    // The real engine advertises exactly this pair. PacketADE's postures map
+    // The real engine advertises exactly this pair. PacketBench's postures map
     // onto ACP via `to_acp_permission_mode` (routing.rs): default→auto,
     // plan→read-only, manual→ask, deny→read-only, yolo→bypass. `default`
     // (auto) and `yolo` (bypass) are dropped because session/new would refuse
@@ -285,7 +285,7 @@ describe("capabilitiesFor — engine capabilities (ACP)", () => {
   it("collapses `plan` and `deny` onto the single `read-only` rung", () => {
     // Both map to `read-only`, so offering both would put two rows in the
     // popover that do byte-identical things. `plan` — "read-only exploration"
-    // — is the honest reading of that rung; PacketADE's `deny` means "auto-
+    // — is the honest reading of that rung; PacketBench's `deny` means "auto-
     // refuse each risky tool and let the agent see the denial", which is NOT
     // what the engine does under `read-only`. Earliest-in-cycle-order wins.
     expect(
@@ -334,7 +334,7 @@ describe("capabilitiesFor — engine capabilities (ACP)", () => {
 
   it("names the engine's default posture only when we cannot represent it", () => {
     // `read-only` is reachable from both `plan` and `deny`, so no single
-    // PacketADE posture can honestly be shown as the current one. The engine's
+    // PacketBench posture can honestly be shown as the current one. The engine's
     // own vocabulary is carried verbatim; guessing "ask" is what the Rust DTO
     // explicitly forbids.
     expect(

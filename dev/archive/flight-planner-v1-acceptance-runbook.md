@@ -33,7 +33,7 @@ All boxes must be ticked **before** opening the app.
     ~2 seconds.
 - [ ] The test workspace has **zero existing flights** in the Flights
       view, OR you are running against a fresh workspace
-      (`%USERPROFILE%\.packetade\workspaces\<fresh-id>\`). Existing flights
+      (`%USERPROFILE%\.packetbench\workspaces\<fresh-id>\`). Existing flights
       hide the empty-state CTA we need to verify.
 - [ ] The app is running, either:
   - Dev: `pnpm tauri dev` from `D:\projects\PacketADE`, **or**
@@ -41,7 +41,7 @@ All boxes must be ticked **before** opening the app.
 - [ ] Browser devtools console is open (right-click → Inspect, Console
       tab). You will watch for red errors throughout.
 - [ ] The sidecar log directory exists and is writable:
-      `%USERPROFILE%\.packetade\logs\`. Leave a `Get-Content -Wait` tail
+      `%USERPROFILE%\.packetbench\logs\`. Leave a `Get-Content -Wait` tail
       open on the newest `sidecar-*.log` in a side terminal — most
       troubleshooting starts here.
 - [ ] You have ~10 minutes of uninterrupted attention; the headline test
@@ -191,8 +191,8 @@ Validates the on-disk journal artifact.
     `wake_trigger` should all be represented after Test 1.
 - [ ] **5.3** Click **Export**. A toast or inline notice confirms the
       path was copied to clipboard. Expected path shape:
-      `~/.packetade/missions/F-<TAIL>_<flight_id>.md` (or
-      `%USERPROFILE%\.packetade\missions\F-<TAIL>_<flight_id>.md` on Windows),
+      `~/.packetbench/missions/F-<TAIL>_<flight_id>.md` (or
+      `%USERPROFILE%\.packetbench\missions\F-<TAIL>_<flight_id>.md` on Windows),
       where `<TAIL>` is the uppercased last-4-chars shortId derived in
       `core/flight_journal.rs::journal_path` (mirrors `FlightsView.tsx::shortId`).
       _Note: the `missions/` directory literal is an intentional on-disk
@@ -216,7 +216,7 @@ Common failure modes encountered during dogfooding.
 
 ### "Planner is starting…" never advances
 
-- **Sidecar didn't start.** Check `~/.packetade/logs/sidecar-*.log` for
+- **Sidecar didn't start.** Check `~/.packetbench/logs/sidecar-*.log` for
   the most recent entry. If you see _"node entrypoint not found"_ the
   resource-dir resolution failed — fall back to `pnpm tauri dev` and
   retry.
@@ -301,7 +301,7 @@ Sign-off requires **all** of the following:
 - [ ] **Test 3** (approval gate) renders `<PlannerApprovalGate>` and
       clicking an option visibly resumes the planner.
 - [ ] **Test 4** (journal export) produces a readable markdown file
-      on disk at `~/.packetade/missions/F-<TAIL>_<flight_id>.md`.
+      on disk at `~/.packetbench/missions/F-<TAIL>_<flight_id>.md`.
 - [ ] **Zero red errors** in the browser devtools console across all
       four tests.
 - [ ] **Zero Rust panics** in the sidecar/Tauri stderr (`backend log`
@@ -328,7 +328,7 @@ If sign-off fails:
    - Which test failed (§2–§5).
    - Which §6 troubleshooting bucket the symptom matched, or "new
      failure mode" if none.
-   - Log excerpts from `~/.packetade/logs/sidecar-*.log` and the
+   - Log excerpts from `~/.packetbench/logs/sidecar-*.log` and the
      Tauri stderr.
    - The reverted commit(s).
 

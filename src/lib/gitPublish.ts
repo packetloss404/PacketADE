@@ -17,7 +17,7 @@ import { gitPushBranch, githubCreatePr } from "@/lib/tauri";
 export interface PublishBranchAsPrInput {
   /** Absolute path to push from (the worktree checkout). */
   worktreePath: string;
-  /** The branch to push + open a PR for (`pkt/<id>` / `packetade/<id>`). */
+  /** The branch to push + open a PR for (`pkt/<id>` / `packetbench/<id>`). */
   branch: string;
   /** The PR base branch. */
   baseBranch: string;

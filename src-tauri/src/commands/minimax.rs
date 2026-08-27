@@ -4,7 +4,7 @@
 //! (global) and `https://api.minimaxi.com/v1` (mainland China). An account is
 //! only valid against one of them, so the endpoint has to be user-selectable.
 //! Resolution mirrors Ollama's: the saved endpoint wins, then
-//! `PACKETADE_MINIMAX_URL`, then the documented global default.
+//! `PACKETBENCH_MINIMAX_URL`, then the documented global default.
 
 pub(crate) fn resolve_base_url() -> String {
     crate::core::storage::resolve_minimax_base_url()

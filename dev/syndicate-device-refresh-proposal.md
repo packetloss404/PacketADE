@@ -2,11 +2,11 @@
 
 Status: **proposal / input to a cross-repo negotiation.** Nothing here is built.
 
-Owner of the method: **Syndicate** (`PACKETADE_COORDINATION.md` §3, item P4#2 —
+Owner of the method: **Syndicate** (`PACKETBENCH_COORDINATION.md` §3, item P4#2 —
 it signs grants, owns revocation epochs and the SQLite device row). Owner of the
-client call: **PacketADE**, afterwards.
+client call: **PacketBench**, afterwards.
 
-This document is PacketADE's input: what the client needs the method to look
+This document is PacketBench's input: what the client needs the method to look
 like, and why. Both sides agreed to settle the shape before either builds it.
 
 Citations to `src-tauri/`, `src/` are this repo, verified 2026-08-15. Citations
@@ -35,12 +35,12 @@ has passed. Three consequences the client has to live with:
   an established connection cannot outlive the grant either.
 - Relay admission is separately dead: `validate_material` rejects a stored grant
   whose `expiresAt` has passed (`src-tauri/src/commands/syndicate_relay.rs:331-339`),
-  so PacketADE stops before the socket even opens.
+  so PacketBench stops before the socket even opens.
 
-### What PacketADE already does
+### What PacketBench already does
 
 The typed-error work on `codex/syndicate-integration-toggle` closed the
-five-link "day-30 chain" from `PACKETADE_COORDINATION.md` §5. Current behaviour:
+five-link "day-30 chain" from `PACKETBENCH_COORDINATION.md` §5. Current behaviour:
 
 | Behaviour                                                                                        | Where                                                                            |
 | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
@@ -51,7 +51,7 @@ five-link "day-30 chain" from `PACKETADE_COORDINATION.md` §5. Current behaviour
 | Amber warning in the final 7 days                                                                | `src/lib/syndicateMachineStatus.ts:107-121`, `SyndicateMachinesCard.tsx:490-495` |
 | Relay-detected expiry classified locally as `GRANT_EXPIRED`, `retryable: false`                  | `syndicate_relay.rs:37`, `:46`, `:49-61`                                         |
 
-So PacketADE can **warn, classify, and stop retrying**. What it cannot do is
+So PacketBench can **warn, classify, and stop retrying**. What it cannot do is
 **renew**. The warning text is literally an instruction to re-pair
 (`SyndicateMachinesCard.tsx:493-494`: _"Grants cannot be renewed — pair this
 machine again before then to avoid an interruption."_).
@@ -116,7 +116,7 @@ already in the signed envelope and authenticated). `{}` matches
 `machine.snapshot` and `device.revoke_self`.
 
 **The single highest-value ask: make `relayGrant` byte-identical in shape to the
-one `machine.snapshot` already returns.** PacketADE's `capture_relay_grant`
+one `machine.snapshot` already returns.** PacketBench's `capture_relay_grant`
 (`syndicate.rs:921-1013`) already verifies a full certificate — protocol version
 and type, machine/device identity binding, self-certifying `routeId` against the
 pinned Host key, both Host public keys against the pairing invitation, both
@@ -191,7 +191,7 @@ converted from a bound into a reminder. The offline-device gap is real but is
 better closed by making the client refresh _early and often_ (§8) than by
 softening the one check that currently cannot be argued with.
 
-PacketADE will implement B correctly if Syndicate chooses it — but B should be
+PacketBench will implement B correctly if Syndicate chooses it — but B should be
 chosen deliberately, in the spec, with the window written down, not arrived at
 by relaxing a condition.
 
@@ -226,7 +226,7 @@ half:
    `validate_material` rejects a grant where `expires - issued > 31 days`
    (`syndicate_relay.rs:336`), and also where `issued > now + 1 minute`
    (`:333`). A refresh that issues, say, a 60-day certificate would be
-   **rejected by every already-shipped PacketADE build** — silently, as a local
+   **rejected by every already-shipped PacketBench build** — silently, as a local
    `GRANT_EXPIRED` (`:337-338`). Keep the 30-day term.
 
 2. **The relay AEAD keys do not change on refresh, so the counters must not
@@ -237,7 +237,7 @@ half:
    produces the same AES-256-GCM keys — and the nonce is fully derived from the
    counter (`CONTROLLER_PROTOCOL_V1.md:252-255`). If either side treated a new
    grant as a reason to reset `controller_relay_counters`, that is **nonce reuse
-   under a reused key**, which breaks GCM outright. PacketADE's counters are
+   under a reused key**, which breaks GCM outright. PacketBench's counters are
    persisted in the keyring credential across grants
    (`syndicate.rs:713-716`, `:719-733`, `:749-759`) and would not reset, but the
    Host half must not either. If Syndicate ever wants counters to restart, the
@@ -251,7 +251,7 @@ whose `expiresAt` is _earlier_ than the one already held
 captured over a newer one. That is not an escalation (an older grant is
 strictly weaker) and it is not reachable today because only `machine.snapshot`
 captures and the Host holds one current row — but once refresh exists it is
-worth PacketADE adding a monotonicity check on `issuedAt`. Flagged here as a
+worth PacketBench adding a monotonicity check on `issuedAt`. Flagged here as a
 client-side follow-up, not an ask.
 
 ---
@@ -269,7 +269,7 @@ still valid, since Option A requires it — grant and simply calls again.
 
 The reason to _avoid_ a receipt is concrete. A receipt found in `processing`
 after a crash returns `UNCERTAIN_DELIVERY` with `retryable: false`
-(`controller-auth.ts:465`), and PacketADE derives stable request ids
+(`controller-auth.ts:465`), and PacketBench derives stable request ids
 deterministically from operation plus identities
 (`syndicate.rs:672-681`) — a `stable_request_id("device-refresh", [machineId, deviceId])`
 would be **permanently poisoned by one crash**, making that device unrefreshable
@@ -307,7 +307,7 @@ distinct `GRANT_EXPIRED`** for the expiry case specifically. The check at
 `controller-auth.ts:536` runs _after_ signature verification, so distinguishing
 them leaks nothing to an unauthenticated caller — the oracle argument in the
 comment at `:525-530` applies to the row-miss collapse into `INVALID_SIGNATURE`,
-not to this line. PacketADE already reserves `GRANT_EXPIRED` as a local code and
+not to this line. PacketBench already reserves `GRANT_EXPIRED` as a local code and
 maps it to `expired` (`syndicate_relay.rs:46`, `syndicateErrors.ts:90`), so a
 Host-emitted `GRANT_EXPIRED` lands correctly with **zero client change** and
 lets the UI say "your 30-day grant ran out, re-pair" instead of a generic
@@ -324,7 +324,7 @@ An older Host does not merely reject an unknown method — it answers
 `{code: "INVALID_REQUEST", retryable: false}` with **`requestId: "invalid"`**
 (`apps/host/src/server.ts:1778-1779`, because `parseControllerRequest` rejects
 any method absent from `controllerMethodScope`, `controller-contract.ts:118`).
-PacketADE checks response correlation _before_ reading the error
+PacketBench checks response correlation _before_ reading the error
 (`syndicate.rs:1275-1277`), so the client sees the untyped local message
 _"Syndicate returned a response for a different protocol request"_ — **no code,
 no `retryable`**. Blind-probing for the method therefore produces a confusing,
@@ -332,11 +332,11 @@ unclassifiable failure.
 
 **Ask:** advertise support in `machine.snapshot`. A string array on the
 `controller` block, e.g. `controller.methods: ["device.refresh", ...]` or a
-narrower `controller.features`. PacketADE's snapshot parser builds a whitelisted
+narrower `controller.features`. PacketBench's snapshot parser builds a whitelisted
 object and ignores unknown fields (`src/types/syndicate.ts:244-281`), and the
 native `RpcResponse` is deliberately **not** `deny_unknown_fields`
 (`syndicate.rs:183-194`), so this is a purely additive change that shipped
-builds tolerate. Without it, PacketADE has to gate the call on a Host version
+builds tolerate. Without it, PacketBench has to gate the call on a Host version
 string it does not currently receive.
 
 ---
@@ -402,7 +402,7 @@ makes it acceptable is not a prompt, it is three properties that hold together:
    `grant_revoked` notice (`CONTROLLER_PROTOCOL_V1.md:273-276`).
 
 If Syndicate picks Option B, this changes: a refresh accepted _after_ expiry is
-a genuinely different act and should be user-confirmed on the PacketADE side and
+a genuinely different act and should be user-confirmed on the PacketBench side and
 recorded on the Host side.
 
 ---
@@ -416,7 +416,7 @@ protocol version bump — `device.refresh` is an additive row in the method tabl
 and every domain separator is unchanged.
 
 **Devices already past 30 days:** must re-pair. The chain in §1 applies, and
-PacketADE owns fixing it regardless of what Syndicate builds:
+PacketBench owns fixing it regardless of what Syndicate builds:
 
 - `revoke` should fall back to local forget when `device.revoke_self` fails with
   a dead-grant code, so a user is not stuck between a Host call that can never
@@ -431,7 +431,7 @@ PacketADE owns fixing it regardless of what Syndicate builds:
 (`src/types/syndicate.ts:294-299`), and `machine.snapshot` includes `relayGrant`
 only when the device row has one (`apps/host/src/server.ts:1004`). In practice
 `approveDevice` always mints one (`controller-auth.ts:414-427`) so the field is
-present for any approved device — but PacketADE's own comment at
+present for any approved device — but PacketBench's own comment at
 `src/types/syndicate.ts:33-36` assumes SSH-only pairings have none, and
 `syndicateGrantExpiry` returns `unknown` in that case
 (`syndicateMachineStatus.ts:113-115`), producing **no warning at all**. Either
@@ -452,13 +452,13 @@ expiry, and today the SSH-only path may silently have none.
 2. **Will the result carry `relayGrant` in exactly the `machine.snapshot`
    shape** — `{grant, grantSignatureBase64Url}`, same canonical JSON, same
    `SYNDICATE-RELAY-GRANT-V1` signature domain? This is the difference between
-   PacketADE reusing `capture_relay_grant` verbatim and writing a second
+   PacketBench reusing `capture_relay_grant` verbatim and writing a second
    certificate verifier.
 
 3. **Scope: "active grant" (like `device.revoke_self`), or a named scope?** If
    named, which — and what happens to a device approved without it?
 
-4. **Does the Host confirm the 30-day term stays?** PacketADE's shipped
+4. **Does the Host confirm the 30-day term stays?** PacketBench's shipped
    `validate_material` rejects any grant with `expires - issued > 31 days`
    (`syndicate_relay.rs:336`), so a longer term breaks existing builds.
 
@@ -466,23 +466,23 @@ expiry, and today the SSH-only path may silently have none.
    AEAD key does not depend on the grant (§4.2); resetting counters across a
    refresh is nonce reuse under a reused key.
 
-6. **Is refresh in `mutatingMethods`?** PacketADE's recommendation is no, with a
+6. **Is refresh in `mutatingMethods`?** PacketBench's recommendation is no, with a
    random `requestId` per attempt, because a `stable_request_id` plus one
    `UNCERTAIN_DELIVERY` would permanently poison a device's ability to refresh.
-   If Syndicate wants a receipt anyway, say so and PacketADE will use random ids
+   If Syndicate wants a receipt anyway, say so and PacketBench will use random ids
    with retry-on-`IDEMPOTENCY_CONFLICT` instead.
 
 7. **Does refresh ever return `revocationEpoch` different from the current
-   row's?** PacketADE will treat an increase as evidence of revocation; confirm
+   row's?** PacketBench will treat an increase as evidence of revocation; confirm
    that is right, or that it can never happen.
 
 8. **Behaviour when the grant has plenty of life left:** return the current
-   certificate unchanged (PacketADE's preference — one unconditional client
+   certificate unchanged (PacketBench's preference — one unconditional client
    path), or reject? If reject, what is the code, and can it be `retryable:
 true`?
 
 9. **Will `DEVICE_UNAUTHORIZED` be split so expiry gets its own code?**
-   PacketADE already maps `GRANT_EXPIRED` to `expired` with no client change
+   PacketBench already maps `GRANT_EXPIRED` to `expired` with no client change
    required. The check at `controller-auth.ts:536` is post-signature, so this
    leaks nothing.
 
@@ -493,7 +493,7 @@ true`?
 
 11. **Is there any Host configuration under which an approved device has no
     relay grant** — and therefore no `expiresAt` visible to the client at all
-    (§9)? If not, PacketADE will treat a missing grant as an error rather than
+    (§9)? If not, PacketBench will treat a missing grant as an error rather than
     as "SSH-only, no expiry known", and fix its own stale comment.
 
 12. **Should a post-expiry refresh (Option B only) be recorded on the device row

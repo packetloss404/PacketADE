@@ -209,7 +209,7 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
       {
         key: "mcp",
         label: "MCP",
-        description: "MCP clients, the PacketADE provider, trust, and diagnostics.",
+        description: "MCP clients, the PacketBench provider, trust, and diagnostics.",
         scopes: ["App", "Project", "New conversations"],
         keywords: ["model context protocol", "server", "provider", "tools", "trust", "catalog"],
       },
@@ -237,7 +237,7 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
       {
         key: "modules",
         label: "Modules",
-        description: "Enable and configure first-party PacketADE modules.",
+        description: "Enable and configure first-party PacketBench modules.",
         scopes: ["App"],
         keywords: ["quality", "dictation", "integration", "extension"],
       },

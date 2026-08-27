@@ -13,7 +13,7 @@ import path from "node:path";
 // The fixture server's own cold import of the MCP SDK can take a minute on a
 // Windows/DrvFs checkout, which has nothing to do with what is under test.
 // Give the probe room so a slow filesystem reads as slow, not as a failure.
-process.env.PACKETADE_MCP_PROBE_TIMEOUT_MS ??= "180000";
+process.env.PACKETBENCH_MCP_PROBE_TIMEOUT_MS ??= "180000";
 
 import { probeMcpServerCapabilities } from "../dist/mcp-capability.js";
 import { applyMcpTrustSnapshot, mcpToolDenial } from "../dist/mcp-trust.js";

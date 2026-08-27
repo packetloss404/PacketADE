@@ -85,7 +85,7 @@ fn resolve_base_url() -> String {
 pub fn resolve_num_ctx_cap() -> u32 {
     crate::core::storage::load_saved_ollama_num_ctx_cap()
         .or_else(|| {
-            std::env::var("PACKETADE_OLLAMA_NUM_CTX_CAP")
+            std::env::var("PACKETBENCH_OLLAMA_NUM_CTX_CAP")
                 .ok()
                 .and_then(|raw| raw.trim().parse::<u32>().ok())
         })
@@ -98,7 +98,7 @@ pub fn resolve_num_ctx_cap() -> u32 {
 pub fn resolve_keep_alive() -> String {
     crate::core::storage::load_saved_ollama_keep_alive()
         .or_else(|| {
-            std::env::var("PACKETADE_OLLAMA_KEEP_ALIVE")
+            std::env::var("PACKETBENCH_OLLAMA_KEEP_ALIVE")
                 .ok()
                 .and_then(|raw| normalize_keep_alive(&raw).ok())
         })

@@ -559,7 +559,7 @@ export function SyndicateTerminalPane({
       {!integrationEnabled && (
         <div className="border-accent-amber/20 bg-accent-amber/5 border-b px-2 py-1 text-[9px] text-accent-amber">
           {!integrationPreferenceEnabled
-            ? "Syndicate integration is disabled in Settings. This remote session is preserved and PacketADE will not reconnect or send input until you re-enable it."
+            ? "Syndicate integration is disabled in Settings. This remote session is preserved and PacketBench will not reconnect or send input until you re-enable it."
             : nativeSyncError
               ? `Syndicate native synchronization failed: ${nativeSyncError}. This remote session is preserved; retry synchronization in Settings.`
               : "Applying the saved Syndicate setting. This remote session is preserved and transport remains blocked until initialization finishes."}

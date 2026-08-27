@@ -4,7 +4,7 @@ import type { CodeQualityReport } from "@/lib/tauri";
  * Persistent history of recent Code Quality runs, keyed by the project path
  * so each workspace gets its own ring buffer.
  *
- * Stored under `packetade:quality:history` so it survives app restarts and
+ * Stored under `packetbench:quality:history` so it survives app restarts and
  * doesn't bloat the main Zustand bundle. A full Zustand store is overkill
  * for a tiny localStorage ring buffer.
  *
@@ -27,7 +27,7 @@ export interface CodeQualityHistoryEntry {
   report: CodeQualityReport;
 }
 
-const STORAGE_KEY = "packetade:quality:history";
+const STORAGE_KEY = "packetbench:quality:history";
 const MAX_ENTRIES_PER_PROJECT = 5;
 
 interface HistoryShape {

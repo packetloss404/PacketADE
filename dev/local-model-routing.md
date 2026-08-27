@@ -8,7 +8,7 @@ Last updated: 2026-07-31
 
 ## Decision record
 
-The prompt behind this doc was: *should PacketADE build a Cursor-style
+The prompt behind this doc was: *should PacketBench build a Cursor-style
 hosted-model stack (API gateway + our own inference + our own trained model),
 or invest in local models instead?*
 
@@ -18,16 +18,16 @@ Three separable layers were considered:
 | --- | --- | --- |
 | **A. API gateway** | Auth, routing, key custody, billing in front of someone else's inference | **OUT** — commodity; makes us a worse OpenRouter and puts us in the uptime/billing/abuse path for no differentiation |
 | **B. Own inference hosting** | vLLM/SGLang/llama.cpp on owned or rented GPUs | **OUT as a product.** Available for free as a *config* via layer A of this plan (a custom OpenAI-compatible base URL) |
-| **C. Own trained model** | RL/fine-tune against our own harness traces (Cursor's actual moat) | **OUT** — revisit only if a large corpus of PacketADE harness traces with outcome labels ever accumulates |
+| **C. Own trained model** | RL/fine-tune against our own harness traces (Cursor's actual moat) | **OUT** — revisit only if a large corpus of PacketBench harness traces with outcome labels ever accumulates |
 
 **Chosen direction:** neither "be Cursor" nor "run the main coding agent
-locally". Instead: **per-task-class routing.** PacketADE makes ~15 distinct
+locally". Instead: **per-task-class routing.** PacketBench makes ~15 distinct
 auxiliary LLM calls across the product (commit messages, issue triage, PR
 descriptions, code-quality explanations, memory ops, spec parsing, side chat).
 These are short-context, single-shot, structured-output tasks that a 7–14B
 local model handles fine. The agentic coding loop stays on frontier models.
 
-The differentiator is *"PacketADE spends real money only on the hard agentic
+The differentiator is *"PacketBench spends real money only on the hard agentic
 turns and runs the other twenty calls an hour on your own hardware"* — offline,
 zero marginal cost, no data egress. No competitor in `dev/competitors.md` does
 per-task-class routing.
@@ -166,7 +166,7 @@ What shipped:
 - **Overrides**: persisted in provider settings, edited in Settings → Tools →
   Provider Endpoints (`ProviderEndpointsCard`), commands
   `get_ollama_runtime_options` / `set_ollama_runtime_options`, env fallbacks
-  `PACKETADE_OLLAMA_NUM_CTX_CAP` / `PACKETADE_OLLAMA_KEEP_ALIVE`.
+  `PACKETBENCH_OLLAMA_NUM_CTX_CAP` / `PACKETBENCH_OLLAMA_KEEP_ALIVE`.
 - **Truncation is surfaced, not swallowed.** Ollama has no truncation field, so
   it is inferred from `prompt_eval_count >= num_ctx` (authoritative) or a
   content-length estimate over `num_ctx` (the backstop, since a warm KV cache

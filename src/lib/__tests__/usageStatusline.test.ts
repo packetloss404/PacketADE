@@ -1,7 +1,7 @@
 /**
  * usageStatusline — the composer's `ctx … · in … · out …` readout.
  *
- * The load-bearing assertion here is the COST GATE. PacketADE removed its cost
+ * The load-bearing assertion here is the COST GATE. PacketBench removed its cost
  * reporting surface on 2026-07-31 and kept cost purely as a guardrail input, so
  * the `$` segment must stay off unless the user explicitly turns it on, and must
  * never appear for a model whose pricing is unknown.

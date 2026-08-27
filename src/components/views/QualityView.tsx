@@ -43,7 +43,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "tests", label: "Tests" },
 ];
 
-const TAB_PREF_KEY = "packetade:quality:last-tab";
+const TAB_PREF_KEY = "packetbench:quality:last-tab";
 
 type FetchState =
   | { kind: "loading" }

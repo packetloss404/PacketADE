@@ -1,6 +1,6 @@
 //! Per-conversation checkpoints — named snapshots of message history.
 //!
-//! Storage: `<home>/.packetade/conversations/<session_id>/checkpoints/<ts>_<chk_id>.json`.
+//! Storage: `<home>/.packetbench/conversations/<session_id>/checkpoints/<ts>_<chk_id>.json`.
 //! The frontend owns when to call `save_checkpoint` (typically on the done event) and
 //! treats the stored JSON as opaque.
 

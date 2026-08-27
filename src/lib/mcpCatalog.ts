@@ -6,7 +6,7 @@ export const MCP_CATALOG: McpCatalogManifest[] = [
     id: "official-filesystem",
     name: "Filesystem",
     description:
-      "Official local filesystem server. PacketADE scopes it to the active project path in the review step.",
+      "Official local filesystem server. PacketBench scopes it to the active project path in the review step.",
     officialSource: "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
     platforms: ["windows", "macos", "linux"],
     transport: "stdio",
@@ -98,7 +98,7 @@ export function materializeCatalogCommand(
   );
   // Required secret *names* are review metadata. Never persist an empty
   // placeholder because it would override an existing process environment
-  // value (and it would misleadingly look like PacketADE owns the secret).
+  // value (and it would misleadingly look like PacketBench owns the secret).
   const env: Record<string, string> = {};
   if (
     manifest.command === "npx" &&

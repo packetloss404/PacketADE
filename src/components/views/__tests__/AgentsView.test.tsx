@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentCli } from "@/stores/agentTaskStore";
 
 const agentState = vi.hoisted(() => ({
-  selectedRepo: "D:\\projects\\PacketADE" as string | null,
+  selectedRepo: "D:\\projects\\PacketBench" as string | null,
   selectedConversationId: null as string | null,
   selectConversation: vi.fn(),
 }));
@@ -71,7 +71,7 @@ import { AgentsView } from "@/components/views/AgentsView";
 describe("AgentsView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    agentState.selectedRepo = "D:\\projects\\PacketADE";
+    agentState.selectedRepo = "D:\\projects\\PacketBench";
     agentState.selectedConversationId = null;
   });
 
@@ -91,7 +91,7 @@ describe("AgentsView", () => {
     const params = launchConversation.mock.calls[0][0] as Record<string, unknown>;
     expect(params).toMatchObject({
       rawText: "Build the feature",
-      selectedRepo: "D:\\projects\\PacketADE",
+      selectedRepo: "D:\\projects\\PacketBench",
     });
     expect(params).not.toHaveProperty("onLaunched");
     expect(params.onCreated).toEqual(expect.any(Function));

@@ -9,7 +9,7 @@ import { clearEngineCommandCache } from "@/components/agents/hooks/useEngineSlas
 
 const mocks = vi.hoisted(() => ({
   agentTaskState: {
-    selectedRepo: "D:\\projects\\PacketADE" as string | null,
+    selectedRepo: "D:\\projects\\PacketBench" as string | null,
     selectedConversationId: null as string | null,
     conversations: [] as unknown[],
     cancellingConversationIds: new Set<string>(),
@@ -180,7 +180,7 @@ function makeConversation(id: string): AgentConversation {
     id,
     title: "Chat test",
     agent: "api-openai",
-    projectPath: "D:\\projects\\PacketADE",
+    projectPath: "D:\\projects\\PacketBench",
     status: "idle",
     messages: [],
     sessionId: id,
@@ -229,7 +229,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   useAgentDraftStore.setState({ drafts: {} });
-  mocks.agentTaskState.selectedRepo = "D:\\projects\\PacketADE";
+  mocks.agentTaskState.selectedRepo = "D:\\projects\\PacketBench";
   mocks.agentTaskState.cancellingConversationIds = new Set<string>();
   // jsdom has no layout engine, and `InputPopover` scrolls its highlighted row
   // into view the moment the `/` or `@` menu has rows. Without this shim the
@@ -376,7 +376,7 @@ describe("Composer (chat variant) — per-conversation drafts + send (protected)
  */
 describe("Composer (chat variant) — ACP engine surfaces", () => {
   // Same literal `makeConversation` uses — escaped, so it is a real Windows path.
-  const PROJECT_PATH = "D:\\projects\\PacketADE";
+  const PROJECT_PATH = "D:\\projects\\PacketBench";
 
   function engineCaps(): AcpEngineCapabilities {
     return {
@@ -428,7 +428,7 @@ describe("Composer (chat variant) — ACP engine surfaces", () => {
     typeInto("/");
     // The argument hint rides on the row, next to the name it belongs to.
     expect(await screen.findByText("/cost [days]")).toBeInTheDocument();
-    // PacketADE's own builtins are still there — the engine ADDS to the menu.
+    // PacketBench's own builtins are still there — the engine ADDS to the menu.
     expect(screen.getByText("/permissions")).toBeInTheDocument();
   });
 

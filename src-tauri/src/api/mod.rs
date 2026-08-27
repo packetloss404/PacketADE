@@ -3143,7 +3143,7 @@ mod tests {
             "createdAt": 1,
             "updatedAt": 2,
             "status": "active",
-            "githubRepo": { "owner": "openai", "repo": "packetade" }
+            "githubRepo": { "owner": "openai", "repo": "packetbench" }
         }"#;
 
         let dto: WorkspaceDto = serde_json::from_str(json).expect("workspace dto should parse");
@@ -3169,12 +3169,12 @@ mod tests {
             .as_ref()
             .expect("github repo should persist");
         assert_eq!(github_repo.owner, "openai");
-        assert_eq!(github_repo.repo, "packetade");
+        assert_eq!(github_repo.repo, "packetbench");
 
         let back: WorkspaceDto = core.into();
         let value = serde_json::to_value(back).unwrap();
         assert_eq!(value["githubRepo"]["owner"], "openai");
-        assert_eq!(value["githubRepo"]["repo"], "packetade");
+        assert_eq!(value["githubRepo"]["repo"], "packetbench");
         assert_eq!(value["panes"][0]["accentColor"], "accent-green");
         assert_eq!(value["panes"][0]["pinnedCommands"][0], "pnpm test");
         assert_eq!(value["panes"][0]["taskId"], "task-1");

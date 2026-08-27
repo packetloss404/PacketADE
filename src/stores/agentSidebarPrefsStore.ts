@@ -10,7 +10,7 @@
  * Tile program (P4-S2): `projectLabels` moved here from `agentTaskStore` so the
  * FleetSidebar and the legacy AgentSidebar share ONE source of truth for
  * project-group renames (single-truth; both sidebars stay in sync). The
- * localStorage key is unchanged (`packetade:project-labels`, with the same
+ * localStorage key is unchanged (`packetbench:project-labels`, with the same
  * one-shot legacy migration), so existing user renames carry over untouched.
  *
  * This store is explicitly exempt from the P1 store-isolation import ban — it is
@@ -20,7 +20,7 @@ import { create } from "zustand";
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
 import { storageKey, LEGACY_STORAGE_PREFIX } from "@/lib/brand";
 
-const STORAGE_KEY = "packetade:agent-sidebar-prefs";
+const STORAGE_KEY = "packetbench:agent-sidebar-prefs";
 const PROJECT_LABELS_STORAGE_KEY = storageKey("project-labels");
 const LEGACY_PROJECT_LABELS_STORAGE_KEY = `${LEGACY_STORAGE_PREFIX}project-labels`;
 

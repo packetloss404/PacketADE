@@ -3,7 +3,7 @@
 // The BYOK OpenAI path. It used to live beside `openai-codex` (Codex CLI on
 // a ChatGPT subscription login); that provider was removed in 2026-07 and
 // this is now the only OpenAI-backed sidecar provider. It translates OpenAI
-// Agents SDK runs into PacketADE's existing sidecar protocol.
+// Agents SDK runs into PacketBench's existing sidecar protocol.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { promises as fsPromises } from "node:fs";
@@ -465,7 +465,7 @@ export class OpenAIAgentsProvider implements ProviderHandler {
 
   private buildAgent(): Agent {
     return new Agent({
-      name: "PacketADE OpenAI Agent",
+      name: "PacketBench OpenAI Agent",
       instructions: this.systemPrompt || undefined,
       model: this.model || undefined,
       tools: this.buildTools(),

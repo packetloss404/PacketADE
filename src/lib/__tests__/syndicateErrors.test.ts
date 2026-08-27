@@ -89,7 +89,7 @@ describe("syndicateErrors", () => {
         nativeRejection({ message: "revoked", code: "DEVICE_REVOKED", retryable: false }),
       ),
     ).toBe("revoked");
-    // PacketADE's own verdict on a relay grant it can see has expired.
+    // PacketBench's own verdict on a relay grant it can see has expired.
     expect(
       grantStatusFromSyndicateError(
         nativeRejection({
@@ -113,7 +113,7 @@ describe("syndicateErrors", () => {
     expect(
       grantStatusFromSyndicateError(
         // Prose alone proves nothing once codes exist.
-        new Error("This PacketADE device was revoked by Syndicate."),
+        new Error("This PacketBench device was revoked by Syndicate."),
       ),
     ).toBeUndefined();
     expect(grantStatusFromSyndicateError(undefined)).toBeUndefined();

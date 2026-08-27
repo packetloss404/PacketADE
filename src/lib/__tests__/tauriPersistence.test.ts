@@ -47,7 +47,7 @@ function makePersistedStateDto(overrides: Partial<PersistedStateDto> = {}): Pers
       milestoneGating: true,
       projectPath: "/repo",
       autoCommitTrailerEnabled: true,
-      autoCommitTrailerFormat: "Run-By: PacketADE flight F-{flightId} attempt A-{attemptId}",
+      autoCommitTrailerFormat: "Run-By: PacketBench flight F-{flightId} attempt A-{attemptId}",
     },
     ui: {},
     workspaces: [],
@@ -203,7 +203,7 @@ describe("Tauri persistence DTO mapping", () => {
 
   it("round-trips cooperative execution metadata and task-bound attempts", async () => {
     const integrationBranch = {
-      branch: "packetade/flight/flight-1",
+      branch: "packetbench/flight/flight-1",
       baseBranch: "main",
       baseSha: "base123",
       headSha: "head456",
@@ -379,7 +379,7 @@ describe("Tauri persistence DTO mapping", () => {
       createdAt: 1,
       updatedAt: 2,
       status: "active",
-      githubRepo: { owner: "openai", repo: "packetade" },
+      githubRepo: { owner: "openai", repo: "packetbench" },
     };
 
     await saveWorkspacesSlice([workspace]);
@@ -387,7 +387,7 @@ describe("Tauri persistence DTO mapping", () => {
     expect(mockInvoke).toHaveBeenCalledWith("save_workspaces_slice", {
       workspaces: [
         expect.objectContaining({
-          githubRepo: { owner: "openai", repo: "packetade" },
+          githubRepo: { owner: "openai", repo: "packetbench" },
           panes: [
             expect.objectContaining({
               pinnedCommands: ["pnpm test"],
@@ -428,14 +428,14 @@ describe("Tauri persistence DTO mapping", () => {
             createdAt: 1,
             updatedAt: 2,
             status: "active",
-            githubRepo: { owner: "openai", repo: "packetade" },
+            githubRepo: { owner: "openai", repo: "packetbench" },
           } as unknown as PersistedStateDto["workspaces"][number],
         ],
       }),
     );
 
     const state = await loadPersistedState();
-    expect(state.workspaces[0].githubRepo).toEqual({ owner: "openai", repo: "packetade" });
+    expect(state.workspaces[0].githubRepo).toEqual({ owner: "openai", repo: "packetbench" });
     expect(state.workspaces[0].panes[0]).toEqual(
       expect.objectContaining({
         pinnedCommands: ["pnpm test"],

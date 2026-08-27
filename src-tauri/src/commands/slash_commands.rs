@@ -1,6 +1,6 @@
 //! User-defined slash commands.
 //!
-//! Scans `<home>/.packetade/commands/*.md` and `<project>/.packetade/commands/*.md`,
+//! Scans `<home>/.packetbench/commands/*.md` and `<project>/.packetbench/commands/*.md`,
 //! parsing each file as optional YAML frontmatter + markdown body. Project overrides global.
 //!
 //! Legacy `.packetcode/commands/` directories are also scanned for backwards compat.

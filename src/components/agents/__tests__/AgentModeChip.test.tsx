@@ -164,7 +164,7 @@ describe("AgentModeChip", () => {
      *  - hide the unsupported rows (never grey them — nothing is actionable
      *    behind the disable; the ceiling lives in another program's config),
      *  - say so ONCE, faintly, inside the popover the user already opened,
-     *  - and when PacketADE's own override was dropped, label the chip with
+     *  - and when PacketBench's own override was dropped, label the chip with
      *    the PROVIDER's default instead of guessing a posture.
      */
     describe("restricted mode sets (ACP)", () => {
@@ -217,7 +217,7 @@ describe("AgentModeChip", () => {
 
       it("still names the restriction when only the deny/plan collision trims it", () => {
         // The whole ACP ladder is advertised, yet `deny` and `plan` both map
-        // to `read-only`, so PacketADE can honestly offer four of its five
+        // to `read-only`, so PacketBench can honestly offer four of its five
         // postures. Four is still fewer than five — the hint is truthful and
         // must not be suppressed just because the engine refused nothing.
         renderChip({
@@ -247,7 +247,7 @@ describe("AgentModeChip", () => {
           engineCapabilities: engine({ defaultPermissionMode: "read-only" }),
         });
         expect(screen.getByText("Read only")).toBeTruthy();
-        // Never "Default": that is a PacketADE posture meaning full tools.
+        // Never "Default": that is a PacketBench posture meaning full tools.
         expect(screen.queryByText("Default")).toBeNull();
       });
 
@@ -261,7 +261,7 @@ describe("AgentModeChip", () => {
         renderChip({ permissionMode: "auto", engineCapabilities: engine() });
         fireEvent.click(screen.getByLabelText("Permission options"));
         expect(screen.getAllByRole("menuitemradio")).toHaveLength(2);
-        // Nothing claims to be the current posture — PacketADE set none.
+        // Nothing claims to be the current posture — PacketBench set none.
         expect(
           screen
             .getAllByRole("menuitemradio")

@@ -241,7 +241,7 @@ All P4 gates green; parity checklist signed off or explicitly tracked to P5 entr
 
 ### Exit criteria
 
-All P5 gates green; grep-clean; one-release shim in place with a tracked follow-up to delete it; PacketADE is single-surface. Program complete at 7.75 ew total (P1 1.75 + P2 1.5 + P3 2.25 + P4 1.5 + P5 0.75).
+All P5 gates green; grep-clean; one-release shim in place with a tracked follow-up to delete it; PacketBench is single-surface. Program complete at 7.75 ew total (P1 1.75 + P2 1.5 + P3 2.25 + P4 1.5 + P5 0.75).
 
 ---
 

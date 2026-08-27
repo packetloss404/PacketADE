@@ -1,4 +1,4 @@
-//! ACP's MCP posture — PacketADE's MCP trust decision, expressed on the wire.
+//! ACP's MCP posture — PacketBench's MCP trust decision, expressed on the wire.
 //!
 //! # Why this module exists
 //!
@@ -24,9 +24,9 @@
 //! "no opinion" — there is no such value on the wire, and the historical bug
 //! was precisely that `[]` was being sent as if it were one.
 //!
-//! # How PacketADE's trust decision maps onto it
+//! # How PacketBench's trust decision maps onto it
 //!
-//! PacketADE's existing model has two inputs, both already parameters of
+//! PacketBench's existing model has two inputs, both already parameters of
 //! `start_api_agent_session` and both frozen at session start:
 //!
 //! * `enabled_mcp_server_ids` — the per-conversation server allowlist (F9).
@@ -34,17 +34,17 @@
 //!
 //! The mapping:
 //!
-//! | PacketADE trust state                                   | ACP posture              |
+//! | PacketBench trust state                                   | ACP posture              |
 //! |---------------------------------------------------------|--------------------------|
 //! | no snapshot supplied                                     | [`AcpMcpPosture::None`]  |
 //! | snapshot supplied, no server selected / granted          | [`AcpMcpPosture::None`]  |
-//! | snapshot grants N stdio servers PacketADE can resolve    | [`AcpMcpPosture::Explicit`] with exactly those N |
+//! | snapshot grants N stdio servers PacketBench can resolve    | [`AcpMcpPosture::Explicit`] with exactly those N |
 //! | user separately consented to the ENGINE's own fleet      | [`AcpMcpPosture::InheritEngineDefaults`] |
 //!
-//! **`Explicit` is preferred over `InheritEngineDefaults` wherever PacketADE
+//! **`Explicit` is preferred over `InheritEngineDefaults` wherever PacketBench
 //! has configs of its own.** Sending the exact list is the honest form of the
 //! same consent: the user was shown these commands and approved these
-//! commands, and PacketADE and packetcode cannot silently drift apart over
+//! commands, and PacketBench and packetcode cannot silently drift apart over
 //! whatever happens to be in the engine's `config.toml` this week.
 //! `InheritEngineDefaults` therefore is never *derived* from a trust snapshot;
 //! it is only ever an explicit, separate opt-in against the separate
@@ -56,7 +56,7 @@
 //! `agent-sidecar/src/mcp-trust.ts`): per-tool allowlists, `readOnlyHint`
 //! probes, workspace-root checks, and the credential / protected-publish
 //! denial floors. None of that is available over ACP, because the packetcode
-//! engine — not PacketADE — owns the MCP client and dispatches every tool
+//! engine — not PacketBench — owns the MCP client and dispatches every tool
 //! call. So only the SERVER-LEVEL half of a trust snapshot is enforceable
 //! here: *may this server run at all*. The per-tool half is served instead by
 //! the session's ACP permission mode (see `routing::to_acp_permission_mode`),
@@ -83,7 +83,7 @@ use std::path::Path;
 use crate::commands::mcp::McpServerEntry;
 use crate::core::mcp_bridge::McpTrustSnapshot;
 
-/// One stdio MCP server PacketADE will ask the engine to run, already reduced
+/// One stdio MCP server PacketBench will ask the engine to run, already reduced
 /// to the exact shape packetcode's `parseMCPServers` accepts.
 ///
 /// The engine's validation is unforgiving and its failures are FATAL to the
@@ -242,7 +242,7 @@ pub struct AcpMcpCandidate {
 #[serde(rename_all = "camelCase")]
 pub struct AcpMcpPlan {
     pub posture: AcpMcpPostureKind,
-    /// Every configured server PacketADE knows about, included or not.
+    /// Every configured server PacketBench knows about, included or not.
     pub servers: Vec<AcpMcpCandidate>,
     /// Names that will actually be sent, in wire order.
     pub selected: Vec<String>,
@@ -340,7 +340,7 @@ fn admit(
     Ok(())
 }
 
-/// Turns PacketADE's configured MCP servers plus a frozen trust decision into
+/// Turns PacketBench's configured MCP servers plus a frozen trust decision into
 /// the plan for one session. Pure over its inputs so every branch is testable
 /// without touching `~/.claude/settings.json`.
 ///
@@ -463,7 +463,7 @@ pub fn posture_from_plan(plan: &AcpMcpPlan, project_path: &str, entries: &[McpSe
     }
 }
 
-/// Reads PacketADE's own MCP configuration for `project_path` and applies the
+/// Reads PacketBench's own MCP configuration for `project_path` and applies the
 /// session's frozen trust decision to it.
 ///
 /// Never fails: a config that cannot be read yields an empty plan, which is
@@ -480,7 +480,7 @@ pub async fn plan_for_session(
     plan_from_entries(project_path, entries, selected, trust)
 }
 
-/// The posture for one session, from PacketADE's config plus the frozen trust
+/// The posture for one session, from PacketBench's config plus the frozen trust
 /// decision. This is the function the api-agent start path calls.
 pub async fn posture_for_session(
     project_path: &str,
@@ -701,7 +701,7 @@ mod tests {
     fn an_unresolvable_command_is_dropped_rather_than_sent_relative() {
         let entries = vec![entry(
             "ghost",
-            "packetade-definitely-not-a-real-binary",
+            "packetbench-definitely-not-a-real-binary",
             "global",
             json!({}),
         )];

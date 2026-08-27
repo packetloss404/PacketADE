@@ -322,7 +322,7 @@ pub async fn execute_tool_with_mcp_trust(
             }
         },
         "web_fetch" => {
-            // Host-agnostic: always runs from the PacketADE process.
+            // Host-agnostic: always runs from the PacketBench process.
             let _ = target;
             crate::core::tool_web::execute_web_fetch(&call.arguments).await
         }
@@ -340,7 +340,7 @@ pub async fn execute_tool_with_mcp_trust(
                 .await
         }
         "task_create" => {
-            // Host-agnostic: tasks live in the PacketADE process.
+            // Host-agnostic: tasks live in the PacketBench process.
             let _ = target;
             crate::core::tool_tasks::execute_task_create(&call.arguments)
         }
@@ -362,7 +362,7 @@ pub async fn execute_tool_with_mcp_trust(
             .await
         }
         name if name.starts_with("gh_") => {
-            // Host-agnostic: GitHub API calls go from the PacketADE process.
+            // Host-agnostic: GitHub API calls go from the PacketBench process.
             let _ = target;
             crate::core::tool_github::execute_github_tool(name, &call.arguments).await
         }
@@ -478,7 +478,7 @@ pub(crate) const EDIT_FILE_REMOTE_UNSUPPORTED: &str =
 /// accepts only some hunks: the exact file body to write, replacing the
 /// tool's own search/replace. It is deliberately not part of the tool schema
 /// and the gate strips any model-supplied value before execution.
-pub(crate) const APPROVED_CONTENT_ARG: &str = "__packetade_approved_content";
+pub(crate) const APPROVED_CONTENT_ARG: &str = "__packetbench_approved_content";
 
 /// Maximum characters of context echoed back in an `edit_file` result.
 const EDIT_SNIPPET_MAX_CHARS: usize = 800;
@@ -1012,7 +1012,7 @@ mod tests {
     use uuid::Uuid;
 
     fn temp_workspace(name: &str) -> (PathBuf, PathBuf) {
-        let base = std::env::temp_dir().join("packetade-tests").join(format!(
+        let base = std::env::temp_dir().join("packetbench-tests").join(format!(
             "{}-{}",
             name,
             Uuid::new_v4()

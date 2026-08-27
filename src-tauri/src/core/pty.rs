@@ -298,7 +298,7 @@ mod tests {
 
     #[test]
     fn registry_parser_rejects_unsignalable_or_incomplete_records() {
-        // `kill(-0, …)` would broadcast to PacketADE's own group; 1 is init.
+        // `kill(-0, …)` would broadcast to PacketBench's own group; 1 is init.
         assert!(parse_registry_line("0\tclaude").is_none());
         assert!(parse_registry_line("1\tclaude").is_none());
         assert!(parse_registry_line("4242\t").is_none());
@@ -315,7 +315,7 @@ mod tests {
 
         // A basename no live process can be running, so a stray entry left by a
         // crashed test run can never match a recycled pid on the next launch.
-        record_spawned_pid(999_001, "/opt/bin/packetade-test-not-a-real-process");
+        record_spawned_pid(999_001, "/opt/bin/packetbench-test-not-a-real-process");
 
         let contents = fs::read_to_string(&path).expect("registry written");
         let entry = contents
@@ -323,7 +323,7 @@ mod tests {
             .filter_map(parse_registry_line)
             .find(|(pid, _)| *pid == 999_001)
             .expect("recorded pid present in registry");
-        assert_eq!(entry.1, "packetade-test-not-a-real-process");
+        assert_eq!(entry.1, "packetbench-test-not-a-real-process");
 
         let _ = fs::write(&path, original);
     }

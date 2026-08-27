@@ -72,7 +72,7 @@ function makeFlight(overrides: Partial<Flight> = {}): Flight {
 }
 
 function storedIssues(): Issue[] {
-  const raw = localStorage.getItem("packetade:issues");
+  const raw = localStorage.getItem("packetbench:issues");
   return raw ? (JSON.parse(raw).issues as Issue[]) : [];
 }
 

@@ -64,7 +64,7 @@ reasoning: a reporting surface is not worth its maintenance cost.
 - **All token accounting plumbing** — `cache_read_input_tokens` /
   `cache_creation_input_tokens` parsing, the `turn_summary` path,
   `estimateTurnCostUsd` stamping `costUsd` on messages, and
-  `~/.packetade/usage.jsonl` — is untouched. Token counts are still displayed
+  `~/.packetbench/usage.jsonl` — is untouched. Token counts are still displayed
   per turn and per session (`N tok`); only the dollars are gone.
 
 **What this changes about this plan.**
@@ -79,7 +79,7 @@ reasoning: a reporting surface is not worth its maintenance cost.
    product feature any more.
 3. **The CE5-before-OAuth-removal constraint is DISSOLVED.** That constraint
    existed because removing subscription OAuth would freeze roughly half the
-   *dashboard's* history with no PacketADE-side replacement. With no dashboard,
+   *dashboard's* history with no PacketBench-side replacement. With no dashboard,
    there is no history to freeze and no user-visible gap. OAuth removal is no
    longer gated on ledger coverage. (SPIKE-2 still matters for a different
    reason: we would be comparing a possibly-cached sidecar path against an
@@ -155,7 +155,7 @@ baseline**, so nothing in this plan may claim a saving until Phase 0 lands.
    estimator branches on it, so Anthropic's disjoint buckets are no longer
    wrongly subtracted. The Rust call sites (item 2) and `modelContext.ts` are
    still unbranched — that is CE1's remaining scope.
-5. ~~**Half the provider rows write no PacketADE-owned usage record.**~~
+5. ~~**Half the provider rows write no PacketBench-owned usage record.**~~
    **FIXED for the sidecar (2026-08-16).** The sidecar `turn_summary` handler
    now appends a `usage.jsonl` row per turn delta (sources `api-claude-oauth` /
    `api-openai-agents`), priced through `billable_input_tokens` like the
@@ -377,7 +377,7 @@ and saves nothing; it makes the meter honest. Phase 1 is the actual win.
   *implementations* — matching order, date windows, cost formula — can't
   either. Rust 499 passed / 2 ignored; Vitest 1761 passed across 212 files.
 - **Not done here (deliberately):** stored historical figures were **not**
-  migrated. Every `cost_usd` already in `~/.packetade/usage.jsonl` and every
+  migrated. Every `cost_usd` already in `~/.packetbench/usage.jsonl` and every
   `costUsd` stamped on a persisted message was computed with the old rates —
   Anthropic rows are overstated ~3x, MiniMax M2 rows ~1.6x, Haiku 4.5 rows
   understated ~20%. Repricing them is a product decision (it visibly rewrites
@@ -393,8 +393,8 @@ carry it.
 - **Changes:** `src-tauri/src/core/reprice.rs` — a one-shot startup migration in
   the established `core::migration` mould (called from `lib::run` after
   `migrate_data_dir`, best-effort, warn-and-continue). It rewrites `cost_usd` in
-  `~/.packetade/usage.jsonl` and `messages[].costUsd` in
-  `~/.packetade/conversations/*.json`, recomputing each figure **from that
+  `~/.packetbench/usage.jsonl` and `messages[].costUsd` in
+  `~/.packetbench/conversations/*.json`, recomputing each figure **from that
   record's own stored token counts** through the shared table, priced at the
   record's **own date** via `pricing_for_at`/`calculate_cost_at`.
 - **Why automatic rather than a script:** the numbers feed a hard stop that
@@ -454,7 +454,7 @@ carry it.
   this becomes **temporary instrumentation whose only job is to prove CE6
   worked**, then go dormant. Explicitly NOT a product feature: no view, no
   route, no always-mounted chip.
-- **Changes:** a script (or dev-only command) that reads `~/.packetade/usage.jsonl`
+- **Changes:** a script (or dev-only command) that reads `~/.packetbench/usage.jsonl`
   — where `cache_read`/`cache_write` are *already* recorded and then discarded by
   the ingest loop — and prints input / cache_read / cache_write / output and
   **cache hit rate** = `cache_read / (input + cache_read + cache_write)`, broken
@@ -486,8 +486,8 @@ Consequences, stated so they are not rediscovered later:
   dashboard's history mid-transition. No dashboard, no constraint. See
   Sequencing.
 - **Guardrails are unaffected.** They read `read_usage_analytics`, which keeps
-  ingesting `~/.packetade/usage.jsonl` plus the vendor CLI files exactly as
-  today. Subscription providers were never in the PacketADE-owned ledger and
+  ingesting `~/.packetbench/usage.jsonl` plus the vendor CLI files exactly as
+  today. Subscription providers were never in the PacketBench-owned ledger and
   still are not; that gap is now permanent and accepted. **Update 2026-08-16:**
   after the OAuth removal turned the sidecar providers into metered API-key
   spend, "accepted" stopped holding for them — the sidecar `turn_summary`
@@ -559,12 +559,12 @@ Consequences, stated so they are not rediscovered later:
   **silently** below a model's minimum cacheable length, so "it compiled" proves
   nothing. Two instruments landed with it:
   1. `log_cache_usage` in `api_agent.rs` emits one `CE6-CACHE` line per LLM
-     round trip (`target: "packetade::cache"`) with `iteration`, `input_tokens`,
+     round trip (`target: "packetbench::cache"`) with `iteration`, `input_tokens`,
      `cache_read`, `cache_write` and the hit rate. Per *iteration*, not per
      turn, so a mid-turn invalidation shows up as the exact iteration where
      reads fall back to zero. **Acceptance: `cache_read` is 0 on iteration 0
      (the write) and non-zero from iteration 1 onward.**
-  2. `scripts/cache-hit-rate.mjs` reads `~/.packetade/usage.jsonl` — where
+  2. `scripts/cache-hit-rate.mjs` reads `~/.packetbench/usage.jsonl` — where
      `cache_read`/`cache_write` were already recorded and then discarded by the
      ingest loop — and prints input / cache_read / cache_write / output and
      hit rate **per model**. It reads the vendor-semantics flag out of
@@ -865,7 +865,7 @@ the output-side proof needs a before/after on a real editing session.
 
 The original item: `resolveForTask` had **zero production callers** (two Vitest
 mocks were the only references) and `ProviderRoutingCard` wrote to
-`packetade:routing` localStorage that nothing read — so delete it or mark it
+`packetbench:routing` localStorage that nothing read — so delete it or mark it
 "not yet wired", but do not leave it silently inert.
 
 **It was wired instead of retired.** WI-1 of
@@ -919,7 +919,7 @@ not building either. The reasons are structural, not economic:
 4. **`stream: true` is rejected by both vendors**, and the only in-process LLM
    abstraction we have is `LlmProvider::stream_chat` — there is no
    non-streaming completion path anywhere in the Rust core.
-5. **No durable job runner exists.** PacketADE is a desktop app the user closes.
+5. **No durable job runner exists.** PacketBench is a desktop app the user closes.
    `recover_flights_on_startup` deliberately does *not* resume work (one of its
    own tests is `recover_never_resumes_bounded_autonomy_after_restart`), and the
    legacy scheduler was intentionally removed. A batch integration must first
@@ -1151,7 +1151,7 @@ says they are worth it.
 must land before subscription OAuth is removed from the API-agent surface**.~~
 **DISSOLVED 2026-07-31 (§0).** That constraint existed solely because removing
 subscription OAuth would freeze roughly half the *dashboard's* history with no
-PacketADE-side replacement. The dashboard is gone and CE5 is cut, so there is no
+PacketBench-side replacement. The dashboard is gone and CE5 is cut, so there is no
 history to freeze and no user-visible blind window. **OAuth removal is no longer
 gated on any item in this plan.**
 
@@ -1159,9 +1159,9 @@ What is left of the original worry is smaller and worth naming, and it is now
 **shipped state rather than a forecast** (`d8fb78e` for the auxiliary features,
 `422ab94` for the provider rows): the vendor CLI files
 (`~/.claude/cost-tally.json`, `~/.codex/sessions`) stop accruing from
-PacketADE's API surface, so the **guardrails** see less spend from those paths —
+PacketBench's API surface, so the **guardrails** see less spend from those paths —
 but the migrated traffic lands on `api-claude` / `api-openai` / the Agent SDK
-row, which *do* write `~/.packetade/usage.jsonl`, so coverage moved rather than
+row, which *do* write `~/.packetbench/usage.jsonl`, so coverage moved rather than
 disappeared. Those files keep accruing from PTY CLI panes, which still use
 subscription logins deliberately. See
 [`oauth-removal-plan.md`](./oauth-removal-plan.md).

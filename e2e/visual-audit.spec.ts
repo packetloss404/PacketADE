@@ -78,7 +78,7 @@ for (const vp of VIEWPORTS) {
       test.setTimeout(300_000);
 
       await page.goto("/");
-      await expect(page.getByRole("heading", { name: "PacketADE" })).toBeVisible({
+      await expect(page.getByRole("heading", { name: "PacketBench" })).toBeVisible({
         timeout: 15_000,
       });
 
@@ -89,7 +89,7 @@ for (const vp of VIEWPORTS) {
 
       await auditStep(info, "workspace (empty/onboarding)", async () => {
         await railTo(page, "Workspace");
-        await expect(page.getByRole("heading", { name: "Welcome to PacketADE" })).toBeVisible({
+        await expect(page.getByRole("heading", { name: "Welcome to PacketBench" })).toBeVisible({
           timeout: 10_000,
         });
         await snap(page, dir, "02-workspace-empty");

@@ -306,7 +306,7 @@ export function advanceMirrorRecord(
 // user-pasted one) and parse can pick the authoritative last occurrence — the
 // one `embedBodyMarker` always appends at the end.
 const MARKER_RE_G =
-  /<!--\s*packetade:flight=([^;>\s]+)(?:;task=([^>\s]+))?\s*-->/g;
+  /<!--\s*packetbench:flight=([^;>\s]+)(?:;task=([^>\s]+))?\s*-->/g;
 
 /**
  * Build the hidden identity marker embedded in an issue body. Task is optional
@@ -318,8 +318,8 @@ const MARKER_RE_G =
  */
 export function buildBodyMarker(flightId: string, taskId?: string | null): string {
   return taskId
-    ? `<!-- packetade:flight=${flightId};task=${taskId} -->`
-    : `<!-- packetade:flight=${flightId} -->`;
+    ? `<!-- packetbench:flight=${flightId};task=${taskId} -->`
+    : `<!-- packetbench:flight=${flightId} -->`;
 }
 
 /**

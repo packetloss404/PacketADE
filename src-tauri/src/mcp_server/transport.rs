@@ -25,7 +25,7 @@ use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
 };
 
-use super::{McpAuditLog, PacketAdeMcp};
+use super::{McpAuditLog, PacketBenchMcp};
 
 /// Bind `127.0.0.1:<port>` (0 → OS-assigned), spawn the server on the ambient
 /// tokio runtime, and return the actually-bound port. The server shuts down
@@ -65,7 +65,7 @@ pub fn build_router(
     allow_writes: bool,
 ) -> Router {
     let service = StreamableHttpService::new(
-        move || Ok(PacketAdeMcp::new(audit.clone(), allow_writes)),
+        move || Ok(PacketBenchMcp::new(audit.clone(), allow_writes)),
         LocalSessionManager::default().into(),
         StreamableHttpServerConfig::default()
             .with_cancellation_token(service_ct)

@@ -7,7 +7,7 @@
 //! result at 32 KiB. Empty files are skipped.
 //!
 //! Mirrors Codex CLI 0.122+'s spec (developers.openai.com/codex/guides/agents-md)
-//! so a project's `AGENTS.md` works the same in Codex and PacketADE — and
+//! so a project's `AGENTS.md` works the same in Codex and PacketBench — and
 //! so a single repo can carry one file that both tools honor.
 
 use std::path::{Path, PathBuf};
@@ -119,7 +119,7 @@ fn directory_chain(cwd: &Path) -> Vec<PathBuf> {
     chain
 }
 
-/// Resolve the user's PacketADE/Claude home directory. `CLAUDE_HOME`
+/// Resolve the user's PacketBench/Claude home directory. `CLAUDE_HOME`
 /// env var wins (mirrors Codex's `CODEX_HOME` for CI parity); otherwise
 /// `~/.claude/`.
 fn home_dir() -> Option<PathBuf> {

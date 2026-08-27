@@ -7,7 +7,7 @@ use super::flight::*;
 ///   `{attemptId}`   — Attempt id (e.g. `A-X1Y2`).
 ///   `{flightTitle}` — Free-form flight title; sanitised for shell context.
 pub const DEFAULT_AUTO_COMMIT_TRAILER_FORMAT: &str =
-    "Run-By: PacketADE flight F-{flightId} attempt A-{attemptId}";
+    "Run-By: PacketBench flight F-{flightId} attempt A-{attemptId}";
 
 /// Persisted app settings (formerly the task orchestrator's settings). Consumed
 /// by the worktree auto-trailer hook and the settings UI; persisted via
@@ -109,7 +109,7 @@ pub fn recover_flights_on_startup(flights: &mut [Flight]) -> Vec<InterruptedAtte
                         .as_millis() as u64,
                 );
                 runtime.hard_stop_reason =
-                    Some("Paused after PacketADE restarted. Resume explicitly.".to_string());
+                    Some("Paused after PacketBench restarted. Resume explicitly.".to_string());
             }
         }
 

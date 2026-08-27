@@ -36,7 +36,7 @@ Forgejo shares Gitea's `/api/v1`, so "Gitea support" delivers Forgejo for free.
 | 2nd GitHub client | `core/tool_github.rs` | Independent client + token loader for API-agent tools (`gh_list_issues`/`_get_issue`/`_list_prs`). Also hardcodes `api.github.com`. Must become host-aware too. |
 | `gh` CLI shell-out | `core/tool_pull_request.rs` | The ONLY `gh` dependency — `create_pull_request` agent tool (local + SSH). Hardcodes `github.com/.../pull/`. Gitea has no `gh` (→ `tea`/API). |
 | Auth | `GitHubAuthState { token: RwLock<Option<String>> }` (github.rs:157) | In-memory only; keyring/file read-once-then-scrubbed at startup (:87). No restart persistence. |
-| Frontend store | `stores/githubStore.ts` | `githubHasToken`/`SetToken`/`ClearToken`; persists selected repo only (`packetade:github`) + settings (`packetade:github:settings`). |
+| Frontend store | `stores/githubStore.ts` | `githubHasToken`/`SetToken`/`ClearToken`; persists selected repo only (`packetbench:github`) + settings (`packetbench:github:settings`). |
 | View | `views/GitHubView.tsx` (1007 ln) + `views/github/*` | Tabs `issues \| prs \| activity \| inbox`; PR sub-tabs `overview \| checks`. |
 | DTOs | `types/github.ts` | Two families: **passthrough snake_case** (`GitHubRepo/Issue/Pr` — raw GitHub JSON parsed on the frontend → couples to GitHub wire shape) and **camelCase Rust DTOs** (checks/reviews/notifications — already normalized, frontend-stable). |
 | Provider-picker precedent | `lib/api-models.ts` `API_PROVIDERS` | The 8-row LLM catalog with per-provider capability flags — the pattern to mirror for a `GIT_HOSTS` catalog. |
@@ -99,7 +99,7 @@ Each iteration: claim the lowest-ID `queued` item whose deps are `closed`;
 revalidate hooks against current code (line refs drift); implement minimally;
 add a focused test (prefer pure helpers + Rust unit tests / mocked clients);
 gate (targeted vitest + `pnpm lint` + `pnpm build`; `cargo check` real-exit for
-Rust — into the redirected `packetade-build` target dir); flip to `closed` +
+Rust — into the redirected `packetbench-build` target dir); flip to `closed` +
 record; commit one item per commit on `feat/gitea-support`.
 
 ## Suggested slices

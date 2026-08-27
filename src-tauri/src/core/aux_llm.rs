@@ -325,7 +325,7 @@ fn no_provider_error(task: AuxTaskClass) -> String {
     format!(
         "{} needs an AI provider, but no API key is configured. Add one in \
          Settings → API Keys (Anthropic, OpenAI, MiniMax, or OpenRouter). \
-         PacketADE does not route these features through a Claude or ChatGPT \
+         PacketBench does not route these features through a Claude or ChatGPT \
          subscription login.",
         task.label()
     )
@@ -593,7 +593,7 @@ async fn drive(
     }
 }
 
-/// Append the turn to `~/.packetade/usage.jsonl`. Auxiliary spend was invisible
+/// Append the turn to `~/.packetbench/usage.jsonl`. Auxiliary spend was invisible
 /// while these features ran on the subscription sidecar (which writes no usage
 /// rows at all); metering them is a side benefit of the move.
 fn record_usage(task: AuxTaskClass, route: &AuxRoute, session_id: &str, turn: &AuxTurn) {

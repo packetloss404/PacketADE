@@ -1,4 +1,4 @@
-# PacketADE — LAUNCH-READY BUILD SPEC (completed historical record)
+# PacketBench — LAUNCH-READY BUILD SPEC (completed historical record)
 
 > **Completed 2026-07-19.** Deploy Option A had already landed in `f20801e` and
 > was merged through `5bbf0c5`; the later cleanup removed its unused brand
@@ -126,7 +126,7 @@ Leave untouched: `dev/archive/moat/deploy-pipeline-*.md`, `dictation/whisper.rs:
 
 **GATE:** `(cd src-tauri && cargo check --lib)` ; `(cd src-tauri && cargo test --lib)` ; `pnpm run build`. (No TS/schema/sidecar edits.)
 
-**Risk:** low. Documented residual gaps (do NOT expand scope): hard kills / force-quit skip `RunEvent::Exit` (fast-follow = persistent `~/.packetade/sidecar-active-pids` startup-reap registry, mirroring `reap_orphaned_pty_children` — **not this slice**); `detached:true` bash shells (`openai-agents.ts:932`) survive a group-kill on hard exit; unix shell-sidecar fallback kills single pid only.
+**Risk:** low. Documented residual gaps (do NOT expand scope): hard kills / force-quit skip `RunEvent::Exit` (fast-follow = persistent `~/.packetbench/sidecar-active-pids` startup-reap registry, mirroring `reap_orphaned_pty_children` — **not this slice**); `detached:true` bash shells (`openai-agents.ts:932`) survive a group-kill on hard exit; unix shell-sidecar fallback kills single pid only.
 
 **Decision:** none (startup-reap registry explicitly deferred as fast-follow).
 
@@ -136,11 +136,11 @@ Leave untouched: `dev/archive/moat/deploy-pipeline-*.md`, `dictation/whisper.rs:
 
 **Root cause:** OpenSSH-Unix reads the login password from `/dev/tty`, never stdin (only OpenSSH-for-Windows falls back to stdin). App pipes the password to `ssh` stdin → works on Windows, silent no-op on macOS/Linux. Two spawn choke points carry a password: `ssh_run` (`core/tool_runtime_ssh.rs:114`, stdin write gated `#[cfg(windows)]` :149-157) and `ssh_exec` (`commands/pty.rs:719`, unconditional stdin write :740-746; reached by `ssh_test_connection` and `ssh_check_remote_path` — the latter subsumes S6).
 
-**Approach:** `SSH_ASKPASS` + `SSH_ASKPASS_REQUIRE=force` (+ `DISPLAY=:0` if unset), helper = **our own exe** (mirrors the `__pty_spawn` self-reinvoke — **no new bundled binary**). Secret channel = a random-named **0600 file in a 0700 dir**; pass only the path via `PACKETADE_ASKPASS_FILE` env (path not secret; never argv, never env-borne secret). RAII guard unlinks on `ssh` return / Drop. Do NOT use `sshpass` (external GPL binary) or `setsid`/`pre_exec` (fork-safety memory forbids; no `setsid(1)` on macOS).
+**Approach:** `SSH_ASKPASS` + `SSH_ASKPASS_REQUIRE=force` (+ `DISPLAY=:0` if unset), helper = **our own exe** (mirrors the `__pty_spawn` self-reinvoke — **no new bundled binary**). Secret channel = a random-named **0600 file in a 0700 dir**; pass only the path via `PACKETBENCH_ASKPASS_FILE` env (path not secret; never argv, never env-borne secret). RAII guard unlinks on `ssh` return / Drop. Do NOT use `sshpass` (external GPL binary) or `setsid`/`pre_exec` (fork-safety memory forbids; no `setsid(1)` on macOS).
 
 **Fix:**
-1. **NEW `src-tauri/src/core/ssh_askpass.rs`:** `pub fn helper_main() -> Option<i32>` (reads `PACKETADE_ASKPASS_FILE`; if set, writes file contents to stdout, `Some(0)`; else `None`) with pure `fn read_secret(&Path)`; `#[cfg(unix)] struct AskpassGuard { path }` (Drop removes file); `#[cfg(unix)] fn arm(cmd, password) -> Result<AskpassGuard,String>` (ensure 0700 dir, `create_new().mode(0o600)` write password, set `SSH_ASKPASS=current_exe()`, `SSH_ASKPASS_REQUIRE=force`, `PACKETADE_ASKPASS_FILE=path`, `DISPLAY=:0` if unset); `#[cfg(windows)]` no-op stub.
-2. **`src-tauri/src/main.rs`** — after the `__pty_spawn` block, before `packetade_lib::run()`: `if let Some(code)=packetade_lib::core::ssh_askpass::helper_main() { std::process::exit(code); }`.
+1. **NEW `src-tauri/src/core/ssh_askpass.rs`:** `pub fn helper_main() -> Option<i32>` (reads `PACKETBENCH_ASKPASS_FILE`; if set, writes file contents to stdout, `Some(0)`; else `None`) with pure `fn read_secret(&Path)`; `#[cfg(unix)] struct AskpassGuard { path }` (Drop removes file); `#[cfg(unix)] fn arm(cmd, password) -> Result<AskpassGuard,String>` (ensure 0700 dir, `create_new().mode(0o600)` write password, set `SSH_ASKPASS=current_exe()`, `SSH_ASKPASS_REQUIRE=force`, `PACKETBENCH_ASKPASS_FILE=path`, `DISPLAY=:0` if unset); `#[cfg(windows)]` no-op stub.
+2. **`src-tauri/src/main.rs`** — after the `__pty_spawn` block, before `packetbench_lib::run()`: `if let Some(code)=packetbench_lib::core::ssh_askpass::helper_main() { std::process::exit(code); }`.
 3. **`ssh_run`** (`tool_runtime_ssh.rs:114-159`) — unix + password_auth: `arm(&mut cmd, pw)?`, hold guard var past `child.wait_with_output()`; keep windows stdin path unchanged.
 4. **`ssh_exec`** (`pty.rs:719-757`) — unix: if `password.is_some()` arm + hold guard; windows stdin unchanged. No caller signature changes.
    Leave `ssh_args`/`PreferredAuthentications`/`BatchMode` logic and the JS PTY `-t` interactive path alone. Do NOT arm askpass on sidecar spawn sites (`supervisor.rs:303,1294`) — they must keep rejecting password auth via `reject_remote_password_auth`.

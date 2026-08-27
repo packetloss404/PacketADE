@@ -1,7 +1,7 @@
 # Phase 0 results — executed 2026-08-25
 
 Plan of record: the 2026-08-16 Syndicate proof plan (bucket a — all checks
-safe from Windows). Executed on the Windows host, PacketADE branch
+safe from Windows). Executed on the Windows host, PacketBench branch
 `feat/acp-transport-and-agent-visuals` with unrelated uncommitted WIP present
 (read-only for this exercise).
 
@@ -13,7 +13,7 @@ safe from Windows). Executed on the Windows host, PacketADE branch
 | pnpm (PATH) | 9.15.4 — the Syndicate copy resolved and used **pnpm v10.33.0** per its `packageManager` field |
 | Python | 3.13.12 |
 | cargo / rustc | 1.94.1 |
-| Vitest (PacketADE) | 4.1.2 |
+| Vitest (PacketBench) | 4.1.2 |
 | Vitest (Syndicate copy) | 4.1.10 |
 | PowerShell used for probes | Windows PowerShell 5.1 (`powershell.exe`) |
 
@@ -27,7 +27,7 @@ All three copies are byte-identical, SHA-256:
 
 | Copy | Path |
 |---|---|
-| PacketADE | `D:\projects\PacketADE\src-tauri\tests\fixtures\controller-relay-crypto-v1.json` |
+| PacketBench | `D:\projects\PacketADE\src-tauri\tests\fixtures\controller-relay-crypto-v1.json` |
 | Syndicate | `D:\projects\syndicate\docs\fixtures\controller-relay-crypto-v1.json` |
 | PacketRelay | `D:\projects\packetrelay\testdata\controller_relay_crypto_v1.json` |
 
@@ -120,7 +120,7 @@ Test Files  3 passed (3)
 
 The original `D:\projects\syndicate` tree was not touched at any point.
 
-## A0 — PacketADE's own syndicate suites — PASS (Rust needed one retry, see below)
+## A0 — PacketBench's own syndicate suites — PASS (Rust needed one retry, see below)
 
 Run last (slowest; touches the main tree read-only).
 
@@ -144,10 +144,10 @@ Test Files  4 passed (4)
 First run **failed to build** — not a test failure and not the WIP:
 
 ```
-error[E0786]: found invalid metadata files for crate `packetade_lib`
-  note: failed to mmap file '...\packetade-build\debug\deps\libpacketade_lib.rlib':
+error[E0786]: found invalid metadata files for crate `packetbench_lib`
+  note: failed to mmap file '...\packetbench-build\debug\deps\libpacketbench_lib.rlib':
         The paging file is too small for this operation to complete. (os error 1455)
-error: could not compile `packetade` (test "acp_stream") due to 1 previous error
+error: could not compile `packetbench` (test "acp_stream") due to 1 previous error
 ```
 
 OS error 1455 = Windows pagefile/memory exhaustion during the parallel link
@@ -178,14 +178,14 @@ ts-rs "failed to parse serde attribute" warnings, unused import
 | A2 production probes | PARTIAL — readyz 200 + WSS 101 PASS; healthz 404 (deployed revision predates alias; see caveat) |
 | A3 packetrelay cargo test | PASS (61/61) |
 | A4 syndicate host tests (copy) | PASS with caveat — 133/145 pass, 2 skipped; the 10 failures are one file's Windows-only `rmSync` EPERM teardown; the 3 plan-named suites pass 16/16 in isolation |
-| A0 PacketADE vitest (4 files) | PASS (32/32) |
-| A0 PacketADE cargo test syndicate | PASS (19/19) — first build attempt hit OS error 1455 (pagefile), clean on `-j 2` retry |
+| A0 PacketBench vitest (4 files) | PASS (32/32) |
+| A0 PacketBench cargo test syndicate | PASS (19/19) — first build attempt hit OS error 1455 (pagefile), clean on `-j 2` retry |
 
 ## Caveats
 
 - Production `/healthz` returns 404 (see A2) — owner to confirm the deployed
   relay revision vs `src/main.rs:505` / `deploy.sh:83`.
-- The PacketADE working tree carried unrelated uncommitted WIP throughout;
+- The PacketBench working tree carried unrelated uncommitted WIP throughout;
   no existing file was modified. New files were created only under
   `dev\syndicate-proof\`.
 - Installer/plan drift recorded in `README.md` (plan said Syndicate v0.1.3;

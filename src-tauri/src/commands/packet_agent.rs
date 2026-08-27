@@ -1,6 +1,6 @@
 //! Narrow PacketAgent W9 client.
 //!
-//! PacketAgent remains a separate product and runtime. PacketADE stores only
+//! PacketAgent remains a separate product and runtime. PacketBench stores only
 //! its connection profile and durable deployment references; the bearer token
 //! stays in the OS credential store and is never returned to the webview.
 

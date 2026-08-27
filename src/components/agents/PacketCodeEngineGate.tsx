@@ -1,7 +1,7 @@
 /**
  * Engine gate for the PacketCode ACP route.
  *
- * PacketADE's third transport needs a separately-installed `packetcode`
+ * PacketBench's third transport needs a separately-installed `packetcode`
  * engine. Without this gate a missing engine surfaced only as a failed session
  * start, several clicks deep, with a backend error string for an explanation.
  *
@@ -229,7 +229,7 @@ export function PacketCodeEngineGate({ children }: PacketCodeEngineGateProps) {
         title="Could not check for the packetcode engine"
       >
         <p className="text-ui text-text-secondary">
-          PacketADE could not run its engine check. Nothing was installed or changed.
+          PacketBench could not run its engine check. Nothing was installed or changed.
         </p>
         <ProbeDetail detail={probeError} />
         <div className="mt-3">
@@ -256,8 +256,8 @@ export function PacketCodeEngineGate({ children }: PacketCodeEngineGateProps) {
   return (
     <GateShell icon={icon} title={title}>
       <p className="text-ui leading-relaxed text-text-secondary">
-        PacketCode is a separate coding engine that PacketADE drives over the Agent Client
-        Protocol. It ships as its own binary and is not bundled with PacketADE, so it has to be
+        PacketCode is a separate coding engine that PacketBench drives over the Agent Client
+        Protocol. It ships as its own binary and is not bundled with PacketBench, so it has to be
         installed once before this route can start a session. Every other agent provider keeps
         working without it.
       </p>
@@ -315,7 +315,7 @@ export function PacketCodeEngineGate({ children }: PacketCodeEngineGateProps) {
           <div className="mt-3 flex items-start gap-2 rounded border border-bg-border bg-bg-tertiary p-2">
             <Terminal size={12} className="mt-0.5 shrink-0 text-text-muted" />
             <p className="text-ui leading-relaxed text-text-secondary">
-              PacketADE cannot install the engine on this platform. Install it by hand, then
+              PacketBench cannot install the engine on this platform. Install it by hand, then
               re-check.
             </p>
           </div>

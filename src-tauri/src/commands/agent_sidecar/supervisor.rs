@@ -154,7 +154,7 @@ pub struct SidecarManager {
     /// Usage-ledger metadata for sessions this supervisor started: the
     /// provider and model recorded by `forward_start` (model refreshed by
     /// `forward_set_model`). The `turn_summary` handler reads it to append
-    /// `~/.packetade/usage.jsonl` rows for sidecar sessions — including
+    /// `~/.packetbench/usage.jsonl` rows for sidecar sessions — including
     /// standalone chats that own no flight role, which have no other place
     /// their model is recorded. Entries are dropped at the same
     /// session-death cleanup sites as `exec_token_snapshots`.
@@ -331,10 +331,10 @@ impl SidecarManager {
             }
             if advertised > 0 {
                 return Err(format!(
-                    "The agent sidecar speaks protocol v{advertised}, but PacketADE requires \
+                    "The agent sidecar speaks protocol v{advertised}, but PacketBench requires \
                      v{MINIMUM_PROTOCOL_VERSION} or newer to enforce per-session MCP trust rules. \
-                     Refusing to start this session. Reinstall PacketADE, or clear \
-                     PACKETADE_SIDECAR_PATH if you set it."
+                     Refusing to start this session. Reinstall PacketBench, or clear \
+                     PACKETBENCH_SIDECAR_PATH if you set it."
                 ));
             }
             let state_is_terminal = {
@@ -343,7 +343,7 @@ impl SidecarManager {
             };
             if state_is_terminal {
                 return Err(
-                    "The agent sidecar is not running, so PacketADE cannot verify it enforces \
+                    "The agent sidecar is not running, so PacketBench cannot verify it enforces \
                      per-session MCP trust rules. Refusing to start this session."
                         .to_string(),
                 );
@@ -351,7 +351,7 @@ impl SidecarManager {
             if std::time::Instant::now() >= deadline {
                 return Err(
                     "The agent sidecar did not complete its protocol handshake in time, so \
-                     PacketADE cannot verify it enforces per-session MCP trust rules. Refusing \
+                     PacketBench cannot verify it enforces per-session MCP trust rules. Refusing \
                      to start this session."
                         .to_string(),
                 );
@@ -373,7 +373,7 @@ impl SidecarManager {
     /// `sidecar-status:changed` with the new snapshot. All transitions go
     /// through here so we never forget to emit.
     ///
-    /// Persists `lifetime` to `~/.packetade/sidecar-stats.json` on every
+    /// Persists `lifetime` to `~/.packetbench/sidecar-stats.json` on every
     /// call. The write is cheap (the struct serializes to a few hundred
     /// bytes), atomic via `.tmp` + rename, and best-effort — failures are
     /// logged but do not block the emit.
@@ -460,10 +460,10 @@ impl SidecarManager {
 
     /// Spawn a dedicated Node sidecar through SSH for one remote API-agent
     /// session. The remote host must be Unix-like, have Node.js on PATH (or
-    /// `PACKETADE_REMOTE_NODE_PATH` set in this PacketADE process), and have
+    /// `PACKETBENCH_REMOTE_NODE_PATH` set in this PacketBench process), and have
     /// the built sidecar available at
-    /// `~/.packetade/agent-sidecar/dist/index.js` (or
-    /// `PACKETADE_REMOTE_SIDECAR_PATH` set in this PacketADE process).
+    /// `~/.packetbench/agent-sidecar/dist/index.js` (or
+    /// `PACKETBENCH_REMOTE_SIDECAR_PATH` set in this PacketBench process).
     pub(super) fn spawn_remote_sidecar_for_session<'a>(
         &'a self,
         session_id: &'a str,
@@ -753,14 +753,14 @@ impl SidecarManager {
     ///
     /// Dispatches to one of two spawn strategies:
     /// - Tokio `tokio::process::Command` when a system `node` / explicit
-    ///   `PACKETADE_NODE_PATH` should be used (dev default, or anywhere the
+    ///   `PACKETBENCH_NODE_PATH` should be used (dev default, or anywhere the
     ///   env override is set).
     /// - Tauri shell plugin's sidecar API (`app.shell().sidecar("node")`) in
     ///   release, so the bundled Node binary is used.
     async fn spawn_child(self: &Arc<Self>) -> Result<(), String> {
         if !self.sidecar_path.exists() {
             return Err(format!(
-                "sidecar entry not found at {} — reinstall the app or set PACKETADE_SIDECAR_PATH",
+                "sidecar entry not found at {} — reinstall the app or set PACKETBENCH_SIDECAR_PATH",
                 self.sidecar_path.display()
             ));
         }
@@ -775,7 +775,7 @@ impl SidecarManager {
             // Release/standalone: prefer the colocated bundled Node binary
             // with the Tokio path. The shell plugin's sidecar resolver works
             // in installed bundles, but can fail for direct
-            // `target/release/packetade.exe` launches even when build.rs has
+            // `target/release/packetbench.exe` launches even when build.rs has
             // copied Node beside the executable.
             self.spawn_via_tokio(Some(node_path)).await
         } else {
@@ -786,7 +786,7 @@ impl SidecarManager {
     }
 
     /// Spawn the sidecar via `tokio::process::Command`. Used in dev and when
-    /// `PACKETADE_NODE_PATH` is set.
+    /// `PACKETBENCH_NODE_PATH` is set.
     async fn spawn_via_tokio(
         self: &Arc<Self>,
         node_override: Option<PathBuf>,
@@ -1140,9 +1140,9 @@ impl SidecarManager {
                                 if !protocol_meets_floor(protocol_version) {
                                     let message = format!(
                                         "The sidecar on this SSH host speaks protocol {}, but \
-                                         PacketADE requires v{} or newer to enforce per-session \
+                                         PacketBench requires v{} or newer to enforce per-session \
                                          MCP trust rules. This session was stopped. Update \
-                                         PacketADE on the remote host.",
+                                         PacketBench on the remote host.",
                                         protocol_version
                                             .map(|p| format!("v{p}"))
                                             .unwrap_or_else(|| "an unknown version".to_string()),
@@ -1425,17 +1425,17 @@ async fn stderr_loop(stderr: ChildStderr) {
 
 /// F7 — are developer env overrides honored in this build?
 ///
-/// `PACKETADE_SIDECAR_PATH` and `PACKETADE_NODE_PATH` redirect the supervisor
+/// `PACKETBENCH_SIDECAR_PATH` and `PACKETBENCH_NODE_PATH` redirect the supervisor
 /// to an arbitrary Node binary and script, and that process is handed live API
 /// keys (`start_session.apiKey`) plus every session's MCP trust snapshot. In a
 /// debug build that is the normal development loop. In a release build it is a
 /// way to substitute the security-critical peer without touching the install,
 /// so it is honored only when the user has opted in explicitly via
-/// `PACKETADE_DEV_SIDECAR=1`.
+/// `PACKETBENCH_DEV_SIDECAR=1`.
 fn developer_overrides_allowed() -> bool {
     overrides_allowed(
         cfg!(debug_assertions),
-        std::env::var("PACKETADE_DEV_SIDECAR").ok().as_deref(),
+        std::env::var("PACKETBENCH_DEV_SIDECAR").ok().as_deref(),
     )
 }
 
@@ -1462,8 +1462,8 @@ fn warn_if_override_active_in_release(variable: &str, value: &str) {
 /// Resolve the path to the sidecar entrypoint.
 ///
 /// Three-branch resolution:
-/// 1. If `PACKETADE_SIDECAR_PATH` is set AND developer overrides are allowed
-///    (debug build, or `PACKETADE_DEV_SIDECAR=1`), use it verbatim.
+/// 1. If `PACKETBENCH_SIDECAR_PATH` is set AND developer overrides are allowed
+///    (debug build, or `PACKETBENCH_DEV_SIDECAR=1`), use it verbatim.
 /// 2. Otherwise in dev (`cfg!(debug_assertions)`) fall back to
 ///    `<project-root>/agent-sidecar/dist/index.js`. `CARGO_MANIFEST_DIR` in
 ///    dev is `src-tauri/`, so this resolves to the source tree.
@@ -1475,14 +1475,14 @@ fn warn_if_override_active_in_release(variable: &str, value: &str) {
 /// that lists the resolved path.
 fn resolve_sidecar_path(app_handle: &AppHandle) -> PathBuf {
     // 1. Explicit env override — highest priority, developer builds only.
-    if let Ok(override_path) = std::env::var("PACKETADE_SIDECAR_PATH") {
+    if let Ok(override_path) = std::env::var("PACKETBENCH_SIDECAR_PATH") {
         if developer_overrides_allowed() {
-            warn_if_override_active_in_release("PACKETADE_SIDECAR_PATH", &override_path);
+            warn_if_override_active_in_release("PACKETBENCH_SIDECAR_PATH", &override_path);
             return PathBuf::from(override_path);
         }
         warn!(
             path = %override_path,
-            "ignoring PACKETADE_SIDECAR_PATH in a release build — set PACKETADE_DEV_SIDECAR=1 to \
+            "ignoring PACKETBENCH_SIDECAR_PATH in a release build — set PACKETBENCH_DEV_SIDECAR=1 to \
              opt in; the bundled sidecar will be used instead"
         );
     }
@@ -1513,26 +1513,26 @@ fn resolve_sidecar_path(app_handle: &AppHandle) -> PathBuf {
     }
 }
 
-/// Resolve an explicit Node binary override via `PACKETADE_NODE_PATH`. When
+/// Resolve an explicit Node binary override via `PACKETBENCH_NODE_PATH`. When
 /// `None` is returned, callers use their default strategy: system `node` in
 /// dev, Tauri shell plugin sidecar in release.
 ///
 /// F7: honored only where [`developer_overrides_allowed`] says so — this
 /// selects the interpreter that will receive live API keys.
 fn resolved_node_override() -> Option<PathBuf> {
-    let raw = std::env::var("PACKETADE_NODE_PATH").ok()?;
+    let raw = std::env::var("PACKETBENCH_NODE_PATH").ok()?;
     if raw.is_empty() {
         return None;
     }
     if !developer_overrides_allowed() {
         warn!(
             path = %raw,
-            "ignoring PACKETADE_NODE_PATH in a release build — set PACKETADE_DEV_SIDECAR=1 to \
+            "ignoring PACKETBENCH_NODE_PATH in a release build — set PACKETBENCH_DEV_SIDECAR=1 to \
              opt in; the bundled Node runtime will be used instead"
         );
         return None;
     }
-    warn_if_override_active_in_release("PACKETADE_NODE_PATH", &raw);
+    warn_if_override_active_in_release("PACKETBENCH_NODE_PATH", &raw);
     Some(PathBuf::from(raw))
 }
 
@@ -1657,23 +1657,23 @@ fn validate_remote_sidecar_target(config: &SshConfig) -> Result<(), String> {
 }
 
 fn remote_node_assignment() -> String {
-    match std::env::var("PACKETADE_REMOTE_NODE_PATH")
+    match std::env::var("PACKETBENCH_REMOTE_NODE_PATH")
         .ok()
         .filter(|v| !v.trim().is_empty())
     {
         Some(path) => format!("NODE_BIN={};", sh_quote(path.trim())),
-        None => "NODE_BIN=${PACKETADE_REMOTE_NODE_PATH:-node};".to_string(),
+        None => "NODE_BIN=${PACKETBENCH_REMOTE_NODE_PATH:-node};".to_string(),
     }
 }
 
 fn remote_sidecar_assignment() -> String {
-    match std::env::var("PACKETADE_REMOTE_SIDECAR_PATH")
+    match std::env::var("PACKETBENCH_REMOTE_SIDECAR_PATH")
         .ok()
         .filter(|v| !v.trim().is_empty())
     {
         Some(path) => format!("SIDECAR_ENTRY={};", sh_quote(path.trim())),
         None => {
-            "SIDECAR_ENTRY=${PACKETADE_REMOTE_SIDECAR_PATH:-$HOME/.packetade/agent-sidecar/dist/index.js};"
+            "SIDECAR_ENTRY=${PACKETBENCH_REMOTE_SIDECAR_PATH:-$HOME/.packetbench/agent-sidecar/dist/index.js};"
                 .to_string()
         }
     }
@@ -1699,16 +1699,16 @@ fn remote_sidecar_preflight_script(config: &SshConfig, provider: &str) -> String
     format!(
         r#"{path_setup}
 OS_NAME=$(uname -s 2>/dev/null || echo unknown)
-case "$OS_NAME" in Linux*|Darwin*|FreeBSD*) ;; *) echo "PACKETADE_PREFLIGHT_ERROR unsupported remote OS: $OS_NAME. Sidecar-over-SSH currently requires a Unix-like host with POSIX sh." >&2; exit 91;; esac
+case "$OS_NAME" in Linux*|Darwin*|FreeBSD*) ;; *) echo "PACKETBENCH_PREFLIGHT_ERROR unsupported remote OS: $OS_NAME. Sidecar-over-SSH currently requires a Unix-like host with POSIX sh." >&2; exit 91;; esac
 {node_assignment}
 {sidecar_assignment}
 PROJECT_PATH={project_path}
-if ! command -v "$NODE_BIN" >/dev/null 2>&1 && [ ! -x "$NODE_BIN" ]; then echo "PACKETADE_PREFLIGHT_ERROR Node.js not found on remote host. Install Node.js or set PACKETADE_REMOTE_NODE_PATH." >&2; exit 92; fi
-if [ ! -f "$SIDECAR_ENTRY" ]; then echo "PACKETADE_PREFLIGHT_ERROR Remote sidecar entry not found at $SIDECAR_ENTRY. Copy agent-sidecar to ~/.packetade/agent-sidecar or set PACKETADE_REMOTE_SIDECAR_PATH." >&2; exit 93; fi
-if [ ! -d "$PROJECT_PATH" ]; then echo "PACKETADE_PREFLIGHT_ERROR Remote workspace path does not exist: $PROJECT_PATH" >&2; exit 94; fi
-case "$PROJECT_PATH" in /*) ;; *) echo "PACKETADE_PREFLIGHT_ERROR Remote workspace path must be Unix-style absolute: $PROJECT_PATH" >&2; exit 95;; esac
+if ! command -v "$NODE_BIN" >/dev/null 2>&1 && [ ! -x "$NODE_BIN" ]; then echo "PACKETBENCH_PREFLIGHT_ERROR Node.js not found on remote host. Install Node.js or set PACKETBENCH_REMOTE_NODE_PATH." >&2; exit 92; fi
+if [ ! -f "$SIDECAR_ENTRY" ]; then echo "PACKETBENCH_PREFLIGHT_ERROR Remote sidecar entry not found at $SIDECAR_ENTRY. Copy agent-sidecar to ~/.packetbench/agent-sidecar or set PACKETBENCH_REMOTE_SIDECAR_PATH." >&2; exit 93; fi
+if [ ! -d "$PROJECT_PATH" ]; then echo "PACKETBENCH_PREFLIGHT_ERROR Remote workspace path does not exist: $PROJECT_PATH" >&2; exit 94; fi
+case "$PROJECT_PATH" in /*) ;; *) echo "PACKETBENCH_PREFLIGHT_ERROR Remote workspace path must be Unix-style absolute: $PROJECT_PATH" >&2; exit 95;; esac
 {auth_preflight}
-echo PACKETADE_REMOTE_SIDECAR_READY
+echo PACKETBENCH_REMOTE_SIDECAR_READY
 "#,
         path_setup = REMOTE_PATH_SETUP,
         node_assignment = remote_node_assignment(),
@@ -1726,7 +1726,7 @@ fn remote_sidecar_launch_script(config: &SshConfig) -> String {
 {sidecar_assignment}
 PROJECT_PATH={project_path}
 cd "$PROJECT_PATH" || exit 94
-PACKETADE_REMOTE_SIDECAR=1 exec "$NODE_BIN" "$SIDECAR_ENTRY"
+PACKETBENCH_REMOTE_SIDECAR=1 exec "$NODE_BIN" "$SIDECAR_ENTRY"
 "#,
         path_setup = REMOTE_PATH_SETUP,
         node_assignment = remote_node_assignment(),
@@ -1768,13 +1768,13 @@ async fn remote_sidecar_preflight(config: &SshConfig, provider: &str) -> Result<
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     let combined = format!("{}{}", stdout, stderr);
-    if output.status.success() && stdout.contains("PACKETADE_REMOTE_SIDECAR_READY") {
+    if output.status.success() && stdout.contains("PACKETBENCH_REMOTE_SIDECAR_READY") {
         return Ok(());
     }
 
     let message = combined
         .lines()
-        .find_map(|line| line.strip_prefix("PACKETADE_PREFLIGHT_ERROR "))
+        .find_map(|line| line.strip_prefix("PACKETBENCH_PREFLIGHT_ERROR "))
         .map(str::to_string)
         .or_else(|| {
             combined
@@ -2023,7 +2023,7 @@ mod remote_tests {
     fn remote_preflight_script_checks_node_sidecar_and_project() {
         let script =
             remote_sidecar_preflight_script(&sample_cfg("/home/alice/project"), "openai-agents");
-        assert!(script.contains("PACKETADE_REMOTE_SIDECAR_READY"));
+        assert!(script.contains("PACKETBENCH_REMOTE_SIDECAR_READY"));
         assert!(script.contains("Node.js not found"));
         assert!(script.contains("Remote sidecar entry not found"));
         assert!(script.contains("PROJECT_PATH='/home/alice/project'"));
@@ -2066,7 +2066,7 @@ mod remote_tests {
     fn remote_launch_script_execs_node_sidecar_in_project() {
         let script = remote_sidecar_launch_script(&sample_cfg("/home/alice/project"));
         assert!(script.contains("cd \"$PROJECT_PATH\""));
-        assert!(script.contains("PACKETADE_REMOTE_SIDECAR=1 exec \"$NODE_BIN\" \"$SIDECAR_ENTRY\""));
+        assert!(script.contains("PACKETBENCH_REMOTE_SIDECAR=1 exec \"$NODE_BIN\" \"$SIDECAR_ENTRY\""));
     }
 
     #[tokio::test]

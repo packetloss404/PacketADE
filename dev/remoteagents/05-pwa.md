@@ -16,14 +16,14 @@ Native iOS via TestFlight should come after the PWA proves the product loop. The
 ## Target URL
 
 ```text
-https://remote.packetade.app
+https://remote.packetbench.app
 ```
 
 Relay/API:
 
 ```text
-wss://relay.packetade.app/ws/device
-https://relay.packetade.app/api
+wss://relay.packetbench.app/ws/device
+https://relay.packetbench.app/api
 ```
 
 ## Primary Navigation
@@ -53,7 +53,7 @@ Each host row:
 - host name
 - online/offline
 - last seen
-- PacketADE version
+- PacketBench version
 - active agent count
 - approval count
 - connection state

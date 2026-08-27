@@ -11,7 +11,7 @@ import type { AgentConversation, AgentMessage } from "@/types/agent-conversation
  *
  * ## The `$` segment is opt-in and defaults OFF
  *
- * PacketADE deliberately removed its cost REPORTING surface on 2026-07-31 (see
+ * PacketBench deliberately removed its cost REPORTING surface on 2026-07-31 (see
  * the notes at `conversationCost.ts` and the old `CostDashboardView`). Cost is
  * still measured and still drives the budget guardrails in `costGuardrails.ts`
  * — it is simply not displayed. Re-adding a dollar figure to the composer would

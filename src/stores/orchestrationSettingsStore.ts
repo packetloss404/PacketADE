@@ -9,7 +9,7 @@ import type { AutonomyPolicy } from "@/types/flight";
  * the same default in the absence of backend data.
  */
 export const DEFAULT_AUTO_COMMIT_TRAILER_FORMAT =
-  "Run-By: PacketADE flight F-{flightId} attempt A-{attemptId}";
+  "Run-By: PacketBench flight F-{flightId} attempt A-{attemptId}";
 
 interface OrchestrationSettingsState {
   /**

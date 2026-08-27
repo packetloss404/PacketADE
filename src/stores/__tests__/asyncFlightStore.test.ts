@@ -175,12 +175,12 @@ function attempt(overrides: Partial<Attempt> = {}): Attempt {
     target: {
       kind: "local",
       basePath: "D:\\Repo",
-      worktreePath: "D:\\Repo\\.git\\packetade-worktrees\\att-running",
+      worktreePath: "D:\\Repo\\.git\\packetbench-worktrees\\att-running",
     },
     agentConfigId: "api-claude",
     model: "claude-sonnet-4-6",
     provider: "claude",
-    branch: "packetade/att-running",
+    branch: "packetbench/att-running",
     baseBranch: "main",
     sessionId: "att-running",
     status: "running",
@@ -548,7 +548,7 @@ describe("asyncFlightStore terminal cleanup and publishing", () => {
   });
 
   it("publishes a completed local attempt before Rust removes its worktree", async () => {
-    mocks.selectedRepo = { owner: "packetloss404", repo: "PacketADE" };
+    mocks.selectedRepo = { owner: "packetloss404", repo: "PacketBench" };
     useFlightStore.setState({
       flights: [
         flight({
@@ -562,8 +562,8 @@ describe("asyncFlightStore terminal cleanup and publishing", () => {
     await useAsyncFlightStore.getState().setAttemptStatus("flight-1", "att-running", "completed");
 
     expect(mocks.gitPushBranch).toHaveBeenCalledWith(
-      "D:\\Repo\\.git\\packetade-worktrees\\att-running",
-      "packetade/att-running",
+      "D:\\Repo\\.git\\packetbench-worktrees\\att-running",
+      "packetbench/att-running",
       false,
     );
     expect(mocks.setAttemptDraftPr).toHaveBeenCalledWith("flight-1", "att-running", 42);
@@ -590,7 +590,7 @@ describe("asyncFlightStore terminal cleanup and publishing", () => {
         kind: "ssh",
         serverId: "server-1",
         basePath: "/srv/repo",
-        worktreePath: "/srv/repo/.packetade-worktrees/att-running",
+        worktreePath: "/srv/repo/.packetbench-worktrees/att-running",
       },
     });
     useFlightStore.setState({
@@ -786,7 +786,7 @@ describe("buildReassignSpec (E4)", () => {
     agentConfigId: "api-claude",
     model: "claude-sonnet-4-6",
     provider: "claude",
-    branch: "packetade/att-1",
+    branch: "packetbench/att-1",
     baseBranch: "main",
     sessionId: "s1",
     status: "failed",

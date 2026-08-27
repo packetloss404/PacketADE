@@ -30,17 +30,17 @@ Observed features:
 
 Project activation updates the active workspace directory and file tree.
 
-## What PacketADE Has Today
+## What PacketBench Has Today
 
-PacketADE already has several relevant pieces:
+PacketBench already has several relevant pieces:
 
 - `src/stores/projectHistoryStore.ts` for recent and scanned projects
 - `src/components/workspace/WorkspaceSidebar.tsx` for projects and workspaces UI
 - `src/types/workspace.ts` with `projectPath` on every workspace
 
-This means PacketADE is already closer to project-centric workspaces than Zen in one important way: the workspace type itself already owns a project path.
+This means PacketBench is already closer to project-centric workspaces than Zen in one important way: the workspace type itself already owns a project path.
 
-## Current PacketADE Constraint
+## Current PacketBench Constraint
 
 Even though `Workspace.projectPath` exists, project context still behaves globally in several places:
 
@@ -53,17 +53,17 @@ Even though `Workspace.projectPath` exists, project context still behaves global
 
 The desired direction is:
 
-- each PacketADE workspace should map to one project
+- each PacketBench workspace should map to one project
 - each workspace should own its own terminals
 - switching workspaces should switch project context automatically
 
-That direction is better than Zen's current model because it matches PacketADE's existing workspace domain instead of introducing a second parallel project system.
+That direction is better than Zen's current model because it matches PacketBench's existing workspace domain instead of introducing a second parallel project system.
 
 ## Practical Implication
 
-PacketADE should not stop at adding a nicer project list.
+PacketBench should not stop at adding a nicer project list.
 
-PacketADE should make workspaces the primary project container.
+PacketBench should make workspaces the primary project container.
 
 Projects then become:
 

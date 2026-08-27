@@ -61,7 +61,7 @@ envelope ceiling.
 | MVP runtime scope: API agents only, no remote PTY | **Locked** |
 | Transport: WS relay for control, Web Push wake-only | **Locked** |
 | Relay: extend `D:\projects\packetrelay` (Rust/Tokio + PostgreSQL); Cloudflare rejected | **Resolved 2026-08-02** — must not be reopened implicitly |
-| Code location: relay stays sibling repo; shared schemas + PWA under PacketADE `remoteagents/` | **Resolved 2026-08-02** |
+| Code location: relay stays sibling repo; shared schemas + PWA under PacketBench `remoteagents/` | **Resolved 2026-08-02** |
 | Payload-encryption launch gate | **Resolved 2026-08-16** — plaintext (TLS-only) for local/internal dev only; encrypted agent/approval/file payloads are a hard gate before any external private beta |
 | **Auth provider** | **OPEN — the sole blocking decision.** See §3 |
 | Backend conversation persistence shape | Open, non-blocking (recommendation written: minimal Rust DTO for MVP) |
@@ -128,13 +128,13 @@ Read this table before trusting any doc at pickup.
 
 Do not violate these at pickup without an explicit new owner decision:
 
-1. Desktop PacketADE owns execution, providers, models, secrets, workspaces,
+1. Desktop PacketBench owns execution, providers, models, secrets, workspaces,
    permissions. The cloud never calls a provider or runs a tool.
 2. **No generic remote Tauri invoke bridge.** A small audited command set
    only, wrapping the existing `api-agent:*` event vocabulary — never a
    second event vocabulary and never a general RPC surface.
 3. API agents only in MVP; raw PTY remote control is out.
-4. PWA first at `remote.packetade.app`; account sign-in primary (QR at most a
+4. PWA first at `remote.packetbench.app`; account sign-in primary (QR at most a
    later convenience).
 5. The relay is the Rust service at `D:\projects\packetrelay`; no Cloudflare
    implementation, and decision (c) is not reopened by creating one.
@@ -154,7 +154,7 @@ Do not violate these at pickup without an explicit new owner decision:
    `D:\projects\packetrelay` HEAD.** Diff the plan's assumed relay surface
    against what Syndicate has since built (`PRODUCT_ROUTE_PROTOCOL.md`, room
    auth, deployment topology on Cloud Run/Railway). Decide extend-vs-separate
-   for the PacketADE routes in light of the real code, and record the answer
+   for the PacketBench routes in light of the real code, and record the answer
    in `09-open-decisions.md`.
 4. **Refresh the research brief's platform facts** (30–60 min web sweep):
    iOS PWA push, passkey UX, WS limits, and the first-party competitor

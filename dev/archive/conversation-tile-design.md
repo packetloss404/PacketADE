@@ -1,7 +1,7 @@
 # Conversation-as-Tile Design Spec — Two-Team Consensus (2026-07-08)
 
 > **SUPERSEDED PRODUCT DIRECTION (2026-07-29).** This is retained as historical
-> design rationale only. PacketADE now keeps Agents as the first-class
+> design rationale only. PacketBench now keeps Agents as the first-class
 > same-window GUI-agent surface, makes Workspace CLI/PacketCode-first, creates
 > no new Workspace conversation panes or wrapper Workspaces, and preserves the
 > tile renderer only for old saved layouts. The canonical direction is
@@ -11,7 +11,7 @@ Produced by a 15-agent two-team design pass (Alpha: product-design lens; Bravo: 
 
 ## Executive summary
 
-PacketADE becomes a single-surface app: Workspaces is the one place you work, and the old Agents tab retires. The left sidebar becomes a fleet list of sessions — every agent you're running, API-driven or CLI, appears as one row, sorted so anything that needs your attention (a pending approval, a question) is pinned at the top with an amber count. A "session" is not a new database object; it is a read-only projection over the two engines that already exist (the API conversation store and the workspace/PTY store), unified into one five-word status vocabulary: needs-you, working, idle, done, failed. Nothing about the conversation engine changes — which is what keeps Flight Deck working and the Remote Agents roadmap item buildable on the exact same contract.
+PacketBench becomes a single-surface app: Workspaces is the one place you work, and the old Agents tab retires. The left sidebar becomes a fleet list of sessions — every agent you're running, API-driven or CLI, appears as one row, sorted so anything that needs your attention (a pending approval, a question) is pinned at the top with an amber count. A "session" is not a new database object; it is a read-only projection over the two engines that already exist (the API conversation store and the workspace/PTY store), unified into one five-word status vocabulary: needs-you, working, idle, done, failed. Nothing about the conversation engine changes — which is what keeps Flight Deck working and the Remote Agents roadmap item buildable on the exact same contract.
 
 Inside a workspace, an agent conversation becomes a tile you can place next to terminal tiles in the mosaic. The tile's face is the chat itself — the same transcript, approvals, review bar, and composer that exist today, mounted unmodified inside a thin wrapper. Its slim header carries a drag grip, the agent's color, a status pill, a safety-mode chip, a changes count, and a zoom button. When you open the full review surface, the tile auto-maximizes using the existing CSS zoom (nothing remounts, so terminal sessions in sibling tiles survive — the hard lesson from the PTY work is law here). Adding an agent is one picker with two sections, "Chat agents" and "Terminals"; picking a chat agent drops in a draft tile where you set model, safety mode, and worktree right in the composer, then type your task.
 
@@ -168,7 +168,7 @@ Regression gates:
 
 - **Alpha:** Hard numeric gate — 4 concurrent streams in a 2x2 mosaic hold <16ms frames — with CC-Desktop-style Summary density for unfocused tiles as the named fallback.
 - **Bravo:** All tiles render live (watch-many is the differentiator; rejects the focused-tile-only cap); originally no numeric budget, only 'non-streaming tiles do not re-render'; conceded and adopted the numeric gate, with non-focused streaming tiles coalescing to 4Hz batched flushes via the injectable ScheduleFrame scheduler as the fallback.
-- **Ruling:** Merge, taking each side's stronger half: Alpha's numeric gate (4 streams, 2x2, p95 <16ms on reference hardware — a threshold that can actually TRIGGER a fallback) plus Bravo's fallback mechanism (4Hz coalescing through the already-injectable ScheduleFrame — degrades update rate, not information, and preserves the watch-many posture that differentiates PacketADE from CC Desktop's focused-tile cap). Alpha's Summary-density mode is recorded as the second-level fallback only if 4Hz coalescing fails the re-run, not built speculatively. Both teams' shared substrate stands: the landed rAF streamCoalescer untouched, zustand referential isolation asserted by profiler gate, aria-live focused-tile-only.
+- **Ruling:** Merge, taking each side's stronger half: Alpha's numeric gate (4 streams, 2x2, p95 <16ms on reference hardware — a threshold that can actually TRIGGER a fallback) plus Bravo's fallback mechanism (4Hz coalescing through the already-injectable ScheduleFrame — degrades update rate, not information, and preserves the watch-many posture that differentiates PacketBench from CC Desktop's focused-tile cap). Alpha's Summary-density mode is recorded as the second-level fallback only if 4Hz coalescing fails the re-run, not built speculatively. Both teams' shared substrate stands: the landed rAF streamCoalescer untouched, zustand referential isolation asserted by profiler gate, aria-live focused-tile-only.
 
 ## Keep-list protection plan
 

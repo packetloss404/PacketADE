@@ -2,7 +2,7 @@
 //!
 //! Queries `GET {base}/api/tags` to list the models the user has pulled
 //! locally. The base URL mirrors the logic in `core::llm_ollama`: the saved
-//! provider endpoint wins, then `PACKETADE_OLLAMA_URL`, then the legacy
+//! provider endpoint wins, then `PACKETBENCH_OLLAMA_URL`, then the legacy
 //! `PACKETCODE_OLLAMA_URL`, then `http://localhost:11434`. Any trailing
 //! `/v1` is stripped — `/api/tags` lives at the base URL, not under the
 //! OpenAI-compatible `/v1/*` namespace.

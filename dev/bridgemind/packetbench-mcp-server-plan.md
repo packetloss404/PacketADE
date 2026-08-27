@@ -1,4 +1,4 @@
-# PacketADE MCP Server Plan
+# PacketBench MCP Server Plan
 
 Last updated: 2026-06-15
 
@@ -25,7 +25,7 @@ wired to a server*, not unstarted.
 | Item | Status | Notes |
 |------|--------|-------|
 | MCP config management | ✅ Done | mcp.rs reads/writes/deletes server configs |
-| PacketADE as MCP provider | ⚠️ Phase 1 done | Frontend types/store/settings UI (`mcpProviderStore.ts`) |
+| PacketBench as MCP provider | ⚠️ Phase 1 done | Frontend types/store/settings UI (`mcpProviderStore.ts`) |
 | MCP resources (flights, tasks, memory) | ⚠️ Frontend definitions done | Defined in `PROVIDER_TOOLS` store; transport deferred to mcp-provider-transport.md |
 | MCP tools (`get_active_flight`, etc.) | ⚠️ Frontend definitions done | Live names in `mcpProviderStore.ts`; transport deferred |
 | Phase 1: Local read-only server | ⚠️ Frontend live, transport deferred | Store shipped; server transport in mcp-provider-transport.md |
@@ -34,11 +34,11 @@ wired to a server*, not unstarted.
 
 ## Goal
 
-Evolve PacketADE from an MCP configuration manager into a real MCP provider that exposes PacketADE context and workflows to external AI clients.
+Evolve PacketBench from an MCP configuration manager into a real MCP provider that exposes PacketBench context and workflows to external AI clients.
 
 ## Current State
 
-PacketADE currently supports MCP in one narrow sense:
+PacketBench currently supports MCP in one narrow sense:
 
 - reading MCP server config from `~/.claude/settings.json`
 - reading project MCP config from `.mcp.json`
@@ -48,21 +48,21 @@ Relevant code:
 
 - `src-tauri/src/commands/mcp.rs`
 
-That is useful, but it does not make PacketADE itself part of the MCP network.
+That is useful, but it does not make PacketBench itself part of the MCP network.
 
 ## Product Outcome
 
 The target outcome is:
 
-- Claude Code, Codex, Cursor, or other MCP clients can ask PacketADE for project state
-- PacketADE becomes the source of truth for flights, issues, memory, and reviews
-- external agents can participate in PacketADE workflows instead of PacketADE only launching local sessions
+- Claude Code, Codex, Cursor, or other MCP clients can ask PacketBench for project state
+- PacketBench becomes the source of truth for flights, issues, memory, and reviews
+- external agents can participate in PacketBench workflows instead of PacketBench only launching local sessions
 
 ## Why This Matters
 
 This is the cleanest response to BridgeMind's `BridgeMCP` claim.
 
-PacketADE already has rich local state that external agents would benefit from:
+PacketBench already has rich local state that external agents would benefit from:
 
 - flights
 - milestones and tasks
@@ -77,7 +77,7 @@ The missing layer is protocol exposure.
 
 ## Resources
 
-Expose read-oriented PacketADE state first:
+Expose read-oriented PacketBench state first:
 
 - active project metadata
 - flights
@@ -97,7 +97,7 @@ Expose minimal workflow tools second:
 - append task handoff
 - request review
 - mark task blocked
-- read PacketADE memory context
+- read PacketBench memory context
 - list workspaces
 
 ## Optional later tools
@@ -111,17 +111,17 @@ Expose minimal workflow tools second:
 
 ## Phase 1: Local read-only server
 
-Deliver a local MCP server with read-only access to PacketADE state.
+Deliver a local MCP server with read-only access to PacketBench state.
 
 Objectives:
 
 - prove the shape of the API
 - keep risk low
-- make PacketADE state useful to external agents quickly
+- make PacketBench state useful to external agents quickly
 
 ## Phase 2: Safe workflow tools
 
-Add low-risk write operations that align with existing PacketADE UI flows.
+Add low-risk write operations that align with existing PacketBench UI flows.
 
 Examples:
 
@@ -141,7 +141,7 @@ Examples:
 
 ## Security Model
 
-PacketADE should not copy a cloud-first default here.
+PacketBench should not copy a cloud-first default here.
 
 Recommended defaults:
 
@@ -149,7 +149,7 @@ Recommended defaults:
 - project-scoped access
 - explicit enablement in settings
 - explicit per-tool permissions where writes are possible
-- clear audit trail in PacketADE activity/history UI
+- clear audit trail in PacketBench activity/history UI
 
 ## Architecture Notes
 
@@ -157,7 +157,7 @@ Likely implementation shape:
 
 - new backend module under `src-tauri/src/commands/` or adjacent MCP runtime module
 - tool handlers map to existing stores and persisted backend state
-- PacketADE stays the local source of truth
+- PacketBench stays the local source of truth
 - frontend settings UI controls enablement, visibility, and allowed scopes
 
 ## Good First Slice
@@ -172,17 +172,17 @@ defined in `PROVIDER_TOOLS` (`src/stores/mcpProviderStore.ts`):
 5. `list_workspaces`
 
 These names are exact as shipped in the live frontend store. That already makes
-PacketADE materially useful as an MCP provider once the transport
+PacketBench materially useful as an MCP provider once the transport
 ([`../archive/mcp-provider-transport.md`](../archive/mcp-provider-transport.md)) lands.
 
 ## Open Questions
 
-- should PacketADE expose one MCP server per project or one process with project-scoped resources?
+- should PacketBench expose one MCP server per project or one process with project-scoped resources?
 - should review packets be modeled as tools, resources, or both?
 - how much state should be writable before file ownership and task claiming exist?
 
 ## Success Criteria
 
-- an external MCP client can consume PacketADE planning context without scraping local files
-- PacketADE state becomes reusable across agent tools
-- PacketADE gains a credible answer to the "shared context layer" category without abandoning local-first principles
+- an external MCP client can consume PacketBench planning context without scraping local files
+- PacketBench state becomes reusable across agent tools
+- PacketBench gains a credible answer to the "shared context layer" category without abandoning local-first principles

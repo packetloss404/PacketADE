@@ -38,7 +38,7 @@ const mocks = vi.hoisted(() => {
       setActiveView: vi.fn(),
     },
     layoutState: {
-      projectPath: "D:\\projects\\PacketADE" as string,
+      projectPath: "D:\\projects\\PacketBench" as string,
     },
     workspaceState: {
       workspaces: [
@@ -47,7 +47,7 @@ const mocks = vi.hoisted(() => {
           name: "Active Workspace",
           agents: ["claude-code"],
           panes: [],
-          projectPath: "D:\\projects\\PacketADE",
+          projectPath: "D:\\projects\\PacketBench",
           createdAt: 1,
           updatedAt: 1,
           status: "active",
@@ -145,7 +145,7 @@ describe("InvestigationPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Restore the default project path / active workspace each test.
-    mocks.layoutState.projectPath = "D:\\projects\\PacketADE";
+    mocks.layoutState.projectPath = "D:\\projects\\PacketBench";
     mocks.workspaceState.activeWorkspaceId = "ws-1";
     mocks.workspaceState.workspaces = [
       {
@@ -153,7 +153,7 @@ describe("InvestigationPanel", () => {
         name: "Active Workspace",
         agents: ["claude-code"],
         panes: [],
-        projectPath: "D:\\projects\\PacketADE",
+        projectPath: "D:\\projects\\PacketBench",
         createdAt: 1,
         updatedAt: 1,
         status: "active",
@@ -182,7 +182,7 @@ describe("InvestigationPanel", () => {
     // signature: (name, agents, projectPath, sessionConfig)
     expect(call[0]).toContain("GH #42");
     expect(call[1]).toEqual(["claude-code"]);
-    expect(call[2]).toBe("D:\\projects\\PacketADE");
+    expect(call[2]).toBe("D:\\projects\\PacketBench");
     expect(call[3]).toMatchObject({ prompt: expect.stringContaining("#42") });
 
     expect(mocks.workspaceState.setActiveWorkspace).toHaveBeenCalledWith("ws-new");
@@ -210,7 +210,7 @@ describe("InvestigationPanel", () => {
     });
 
     expect(mocks.memoryState.captureManually).toHaveBeenCalledWith({
-      projectPath: "D:\\projects\\PacketADE",
+      projectPath: "D:\\projects\\PacketBench",
       source: "github-investigation",
       summary: "Investigation for #7: Tiny bug",
       body: "Investigation body content",

@@ -212,26 +212,26 @@ fn clean_trailer_value(value: &str) -> Option<String> {
     }
 }
 
-pub fn append_packetade_context_trailers(message: &str, context: &GitCommitContext) -> String {
+pub fn append_packetbench_context_trailers(message: &str, context: &GitCommitContext) -> String {
     let mut trailers: Vec<String> = Vec::new();
     if let Some(value) = context.flight_id.as_deref().and_then(clean_trailer_value) {
-        trailers.push(format!("PacketADE-Flight: {}", value));
+        trailers.push(format!("PacketBench-Flight: {}", value));
     }
     if let Some(value) = context.task_id.as_deref().and_then(clean_trailer_value) {
-        trailers.push(format!("PacketADE-Task: {}", value));
+        trailers.push(format!("PacketBench-Task: {}", value));
     }
     if let Some(value) = context.attempt_id.as_deref().and_then(clean_trailer_value) {
-        trailers.push(format!("PacketADE-Attempt: {}", value));
+        trailers.push(format!("PacketBench-Attempt: {}", value));
     }
     if let Some(value) = context
         .conversation_id
         .as_deref()
         .and_then(clean_trailer_value)
     {
-        trailers.push(format!("PacketADE-Conversation: {}", value));
+        trailers.push(format!("PacketBench-Conversation: {}", value));
     }
     if let Some(value) = context.session_id.as_deref().and_then(clean_trailer_value) {
-        trailers.push(format!("PacketADE-Session: {}", value));
+        trailers.push(format!("PacketBench-Session: {}", value));
     }
 
     if trailers.is_empty() {
@@ -278,7 +278,7 @@ pub fn commit_with_context(
 
     let final_message = context
         .as_ref()
-        .map(|ctx| append_packetade_context_trailers(trimmed_message, ctx))
+        .map(|ctx| append_packetbench_context_trailers(trimmed_message, ctx))
         .unwrap_or_else(|| trimmed_message.to_string());
     git_command_result(&["commit", "-m", &final_message], project_path)
 }
@@ -761,7 +761,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let dir = std::env::temp_dir().join(format!("packetade-githead-{}-{}", tag, nanos));
+        let dir = std::env::temp_dir().join(format!("packetbench-githead-{}-{}", tag, nanos));
         std::fs::create_dir_all(&dir).expect("create temp repo dir");
         let run = |args: &[&str]| {
             let ok = Command::new("git")
@@ -774,8 +774,8 @@ mod tests {
             assert!(ok, "git {:?} failed", args);
         };
         run(&["init", "-q"]);
-        run(&["config", "user.email", "test@packetade.test"]);
-        run(&["config", "user.name", "PacketADE Test"]);
+        run(&["config", "user.email", "test@packetbench.test"]);
+        run(&["config", "user.name", "PacketBench Test"]);
         std::fs::write(dir.join(rel), committed).expect("write file");
         run(&["add", rel]);
         run(&["commit", "-q", "-m", "init"]);
@@ -843,8 +843,8 @@ mod tests {
     }
 
     #[test]
-    fn append_packetade_context_trailers_adds_flight_task_metadata() {
-        let msg = append_packetade_context_trailers(
+    fn append_packetbench_context_trailers_adds_flight_task_metadata() {
+        let msg = append_packetbench_context_trailers(
             "feat: land work",
             &GitCommitContext {
                 flight_id: Some("flight-123".to_string()),
@@ -852,21 +852,21 @@ mod tests {
                 ..GitCommitContext::default()
             },
         );
-        assert!(msg.contains("PacketADE-Flight: flight-123"));
-        assert!(msg.contains("PacketADE-Task: task-456"));
+        assert!(msg.contains("PacketBench-Flight: flight-123"));
+        assert!(msg.contains("PacketBench-Task: task-456"));
         assert!(msg.starts_with("feat: land work\n\n"));
     }
 
     #[test]
-    fn append_packetade_context_trailers_sanitizes_control_chars() {
-        let msg = append_packetade_context_trailers(
+    fn append_packetbench_context_trailers_sanitizes_control_chars() {
+        let msg = append_packetbench_context_trailers(
             "fix: thing\n",
             &GitCommitContext {
                 conversation_id: Some("conv-1\nBAD".to_string()),
                 ..GitCommitContext::default()
             },
         );
-        assert!(msg.contains("PacketADE-Conversation: conv-1BAD"));
+        assert!(msg.contains("PacketBench-Conversation: conv-1BAD"));
         assert!(!msg.contains("\nBAD"));
     }
 
@@ -874,8 +874,8 @@ mod tests {
     #[test]
     fn parse_github_remote_ssh_form() {
         assert_eq!(
-            parse_github_remote("git@github.com:packetloss404/PacketADE.git"),
-            Some(("packetloss404".to_string(), "PacketADE".to_string()))
+            parse_github_remote("git@github.com:packetloss404/PacketBench.git"),
+            Some(("packetloss404".to_string(), "PacketBench".to_string()))
         );
     }
 
@@ -970,11 +970,11 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let root = std::env::temp_dir().join(format!("packetade-merge-{}-{}", tag, nanos));
+        let root = std::env::temp_dir().join(format!("packetbench-merge-{}-{}", tag, nanos));
         std::fs::create_dir_all(&root).expect("create temp repo dir");
         git_ok(&root, &["init", "-q"]);
-        git_ok(&root, &["config", "user.email", "test@packetade.test"]);
-        git_ok(&root, &["config", "user.name", "PacketADE Test"]);
+        git_ok(&root, &["config", "user.email", "test@packetbench.test"]);
+        git_ok(&root, &["config", "user.name", "PacketBench Test"]);
         // Keep fixture bytes deterministic on Windows hosts where the user's
         // global core.autocrlf setting would otherwise rewrite LF on checkout.
         git_ok(&root, &["config", "core.autocrlf", "false"]);

@@ -2,7 +2,7 @@
 //!
 //! Multi-account CLI support relocates a coding CLI's whole state root with
 //! `CLAUDE_CONFIG_DIR` / `CODEX_HOME`. That relocates the *settings* too, so a
-//! brand-new account dir starts with none of the configuration PacketADE
+//! brand-new account dir starts with none of the configuration PacketBench
 //! writes into the ambient dir — no statusline hook, no MCP servers. The
 //! symptom is a pane whose status bar is blank and whose MCP tools are gone,
 //! with nothing on screen to explain why.
@@ -127,7 +127,7 @@ mod tests {
 
     fn temp_root(tag: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "packetade-seed-{tag}-{}",
+            "packetbench-seed-{tag}-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_nanos())

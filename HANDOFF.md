@@ -1,4 +1,4 @@
-# PacketADE Handoff
+# PacketBench Handoff
 
 Last reconciled: 2026-08-15
 
@@ -21,12 +21,12 @@ in `CHANGELOG.md`, the State report, and Git rather than being duplicated here.
 
 Built 2026-08-15 02:51 from `a9d5d702` with the Windows MSVC toolchain,
 **unsigned**. Output is redirected to
-`C:\Users\ianwalmsley\packetade-build\release\bundle\`, not `src-tauri/target`.
+`C:\Users\ianwalmsley\packetbench-build\release\bundle\`, not `src-tauri/target`.
 
 | Artifact                                         | SHA-256                                                            |
 | ------------------------------------------------ | ------------------------------------------------------------------ |
-| `PacketADE_0.10.5_x64-setup.exe` (NSIS, 89.4 MB) | `8c0233fe31a5b39fef0c1e98082c392054610ab892e7053d0b7fb21985977303` |
-| `PacketADE_0.10.5_x64_en-US.msi` (139.5 MB)      | `fca82769b8b48115d35294b2b84ed4346370c92c2804628e8859f7fac2387b45` |
+| `PacketBench_0.10.5_x64-setup.exe` (NSIS, 89.4 MB) | `8c0233fe31a5b39fef0c1e98082c392054610ab892e7053d0b7fb21985977303` |
+| `PacketBench_0.10.5_x64_en-US.msi` (139.5 MB)      | `fca82769b8b48115d35294b2b84ed4346370c92c2804628e8859f7fac2387b45` |
 
 **This is a development build, not a release.** It carries the `0.10.5` version
 string that the artifacts recorded under `## [0.10.5]` in `CHANGELOG.md` already
@@ -47,13 +47,13 @@ cross-repo review found six blockers before merge; all six are fixed.
 The substantive one was the **day-30 grant-expiry chain**. Syndicate grants last
 30 days with no renewal path, so every paired device reaches it. The Host
 answers an expired grant with `DEVICE_UNAUTHORIZED` while leaving the device's
-status `active`, and PacketADE understood neither half: the terminal pane
+status `active`, and PacketBench understood neither half: the terminal pane
 matched fragments of the error _message_ and so retried a dead grant every five
 seconds forever, the machines card kept advertising "Full coding control", and
 nothing carried the grant's expiry so no warning was possible before the cliff.
 
 `CONTROLLER_PROTOCOL_V1` has always answered with a typed `error.retryable` and
-a stable `error.code`. PacketADE flattened both into a sentence and then tried
+a stable `error.code`. PacketBench flattened both into a sentence and then tried
 to read them back out of it. **That flattening was the actual defect**, and the
 fix is at that seam: `SyndicateCommandError` carries the typed fields from Rust
 to the frontend, retry branches on `retryable`, grant state branches on `code`.
@@ -89,7 +89,7 @@ re-pair; `TerminalHeader` called `onKill` without awaiting or catching it.
    ways to produce an expired grant without waiting 30 days, are in
    [`dev/syndicate-expiry-acceptance.md`](./dev/syndicate-expiry-acceptance.md).
    This is the sharpest untested path in the integration.
-3. **Chase Syndicate on `device.refresh`.** PacketADE's proposal is delivered
+3. **Chase Syndicate on `device.refresh`.** PacketBench's proposal is delivered
    (see below) and blocked on their answers. No client work starts until the
    method shape is settled.
 4. **Hand the device→relay spec to Syndicate** for integration into
@@ -97,9 +97,9 @@ re-pair; `TerminalHeader` called `onKill` without awaiting or catching it.
 
 ## Cross-repo state (Syndicate)
 
-PacketADE is the first client of Syndicate's controller protocol. The
+PacketBench is the first client of Syndicate's controller protocol. The
 integration is being kept and invested in, not removed. The working agreement is
-`docs/PACKETADE_COORDINATION.md` in the Syndicate repo; **neither session writes
+`docs/PACKETBENCH_COORDINATION.md` in the Syndicate repo; **neither session writes
 to the other's tree.**
 
 Three documents were written here this session, all verified against source with
@@ -115,7 +115,7 @@ Three documents were written here this session, all verified against source with
   — the acceptance matrix for the expiry fix.
 
 The `device.refresh` proposal was **delivered on 2026-08-15** to
-`packetloss404/syndicate` as branch `packetade/device-refresh-proposal` (commit
+`packetloss404/syndicate` as branch `packetbench/device-refresh-proposal` (commit
 `3844d3e`), branched from their `main`, adding one new file and modifying
 nothing. It awaits their merge and answers to the six questions in its §10.
 
@@ -155,7 +155,7 @@ nothing. It awaits their merge and answers to the six questions in its §10.
   `src-tauri/tests/fixtures/controller-pairing-invitation-v1.json` and
   `controller-relay-crypto-v1.json` are byte-identical to Syndicate's copies by
   design and loaded by both repos as conformance vectors. The pairing fixture
-  contains the literal `"displayName": "PacketADE controller"` and a
+  contains the literal `"displayName": "PacketBench controller"` and a
   `relayEndpoint`; **neither may be updated** — not by the PacketBench rename,
   not when the relay changes hostname. Their value is the byte-identity, not the
   accuracy of the strings inside. Exclude both before running rename tooling.
@@ -163,7 +163,7 @@ nothing. It awaits their merge and answers to the six questions in its §10.
 - **`pnpm rust:check` fails in WSL.** The GTK/webkit dev packages Tauri needs
   are not installed, and `pkg-config` is absent. Use the Windows toolchain
   instead, which is what actually builds this app:
-  `/mnt/c/Users/ianwalmsley/.cargo/bin/cargo.exe check --manifest-path 'D:\projects\packetade\src-tauri\Cargo.toml'`.
+  `/mnt/c/Users/ianwalmsley/.cargo/bin/cargo.exe check --manifest-path 'D:\projects\packetbench\src-tauri\Cargo.toml'`.
   Note `cargo` is not on PATH for non-interactive shells; export
   `PATH="$HOME/.cargo/bin:$PATH"` for the Linux one.
 - **`node_modules` here is a Linux install.** A Windows `pnpm tauri build`
@@ -173,7 +173,7 @@ nothing. It awaits their merge and answers to the six questions in its §10.
   Linux. `pnpm tauri build` also runs `scripts/prune-sidecar.js`, a destructive
   hoisted prod-only reinstall — re-run `pnpm sidecar:install` afterwards.
 - **Release output is redirected.** Installers land in
-  `C:\Users\ianwalmsley\packetade-build\release\bundle\`, not under
+  `C:\Users\ianwalmsley\packetbench-build\release\bundle\`, not under
   `src-tauri/target`.
 - **Vitest worker startup times out intermittently on DrvFs.** A full
   `vitest run` collapsed with `Failed to start threads worker` on most files;

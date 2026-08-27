@@ -8,7 +8,7 @@ export const SYNDICATE_INTEGRATION_DISABLED_MESSAGE =
 /**
  * Syndicate shipped enabled before this preference existed. Defaulting to
  * enabled preserves paired machines and existing Workspace behavior; the user
- * can now explicitly pause every PacketADE-owned transport and operation.
+ * can now explicitly pause every PacketBench-owned transport and operation.
  */
 function readSyndicateIntegrationEnabled(): boolean {
   if (typeof localStorage === "undefined") return true;

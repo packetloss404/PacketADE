@@ -45,7 +45,7 @@ export function pauseAutonomyForRestart(
     ...runtime,
     status: "paused",
     pausedAt: now,
-    hardStopReason: "Paused after PacketADE restarted. Resume explicitly.",
+    hardStopReason: "Paused after PacketBench restarted. Resume explicitly.",
   };
 }
 

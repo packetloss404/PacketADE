@@ -1,4 +1,4 @@
-# PacketADE — Fable 5 Deep Review (2026-08-05)
+# PacketBench — Fable 5 Deep Review (2026-08-05)
 
 **Audience:** AI agents and the owner. This is the machine-readable consolidated
 record of the 2026-08-05 whole-repo review. The human edition with screenshots
@@ -18,7 +18,7 @@ were applied in the same pass — see §7.
 
 ## 1. Executive summary
 
-**PacketADE is a genuinely strong, near-shipping product whose bottleneck is
+**PacketBench is a genuinely strong, near-shipping product whose bottleneck is
 exactly what its own ROADMAP says it is: proof and distribution, not features.**
 The engineering quality is high — 1,875/1,875 vitest, 606 Rust tests passing,
 textbook shell-quoting and path-sandboxing in the tool runtime, honest docs
@@ -143,7 +143,7 @@ All registered in `backlog.md` under "Fable 5 review findings (2026-08-05)".
 | F4  | **PTY kill leaves agent subtrees alive.** `clone_killer` sends SIGHUP to the direct child only (a `setsid` leader); on Windows only the `cmd.exe` wrapper dies. Entry removed immediately → untracked survivor + leaked reader thread.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `commands/pty.rs:718,880,644-651`; `vendor/portable-pty/src/lib.rs:291-322`                                                                    | Port the process-group SIGTERM→SIGKILL from `core/pty.rs:404-435`; `taskkill /T /F` on Windows.                                                    |
 | F5  | **The orphan reaper has always reaped zero.** It reads a pid registry written only by a `PtyManager` that is never constructed; and `RunEvent::Exit` cleans up only the sidecar.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `lib.rs:178,547-552`; `core/pty.rs:221,692`                                                                                                    | `record_spawned_pid` from the live manager (`commands/pty.rs:719`); add an Exit arm that group-kills PTY sessions.                                 |
 | F6  | **MCP read-only trust is fail-open.** A 19-word substring denylist (duplicated Rust + TS) passes `edit_file`, `apply_patch`, `commit`, `mkdir`, `chmod`, `exec`, `git_commit`, `append_to_file`, `put_object` as non-mutating in a session the user set read-only. The strict allowlist only engages when `capabilityCheckedAt` is set — the default snapshot never sets it.                                                                                                                                                                                                                                                                                                                                                                                              | `agent-sidecar/src/mcp-trust.ts:5-6,120,132`; `src-tauri/src/core/mcp_bridge.rs:46-54,134`                                                     | Allowlist-by-default (`readOnlyHint` / `allowedToolNames`); denylist becomes a floor; collapse to one authority.                                   |
-| F7  | **Protocol mismatch is warn-only, unsafe at v11.** v11 moved MCP authority into the start request; a pre-v11 sidecar silently ignores `mcpTrustSnapshot` and runs every MCP server unfiltered. `PACKETADE_SIDECAR_PATH` is honored in release builds, so a stale sidecar is reachable without a corrupt install.                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `commands/agent_sidecar/handler.rs:55-63`; `mod.rs:42-45`; `supervisor.rs:1292`                                                                | Security floor: refuse sessions below v11, keep warn-only above; surface the refusal in the status chip. Gate the env overrides behind a dev mode. |
+| F7  | **Protocol mismatch is warn-only, unsafe at v11.** v11 moved MCP authority into the start request; a pre-v11 sidecar silently ignores `mcpTrustSnapshot` and runs every MCP server unfiltered. `PACKETBENCH_SIDECAR_PATH` is honored in release builds, so a stale sidecar is reachable without a corrupt install.                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `commands/agent_sidecar/handler.rs:55-63`; `mod.rs:42-45`; `supervisor.rs:1292`                                                                | Security floor: refuse sessions below v11, keep warn-only above; surface the refusal in the status chip. Gate the env overrides behind a dev mode. |
 | F8  | **Release machinery reports green without running anything.** `release-readiness.mjs:307-313` passes gates if the npm script _name is defined_; `release-gate.mjs:191-195` accepts `TAURI_SIGNING_PRIVATE_KEY` (the updater minisign key) as an Authenticode credential; the gate is absent from `prebundle`, so `pnpm tauri build` runs zero integrity checks. The v0.10.3 release used the `--report-only` readiness variant and never ran Playwright.                                                                                                                                                                                                                                                                                                                  | `scripts/release-readiness.mjs:307-313,337-339`; `scripts/release-gate.mjs:162-167,191-195`; `package.json:43`                                 | Execute the gates; separate updater vs Authenticode checks; add `release:gate` to `prebundle`; add minimal hosted CI.                              |
 | F9  | **The bundled Node download is not authenticated.** `SHASUMS256.txt` is fetched over the same unconstrained redirect-following channel as the archive; the `.sha256` cache marker is self-validating and never re-checked, so one poisoning is permanent — and the binary ships inside the (eventually signed) installer.                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `scripts/fetch-node.js:58,121-124,278-318,528-541`                                                                                             | Pin the five archive digests beside `NODE_VERSION`; validate the cache against them each run; redirect hostname allowlist + depth cap.             |
 | F10 | **State-lock starvation can freeze the UI indefinitely.** Eleven sync save commands busy-spin `try_lock` + 1 ms sleep on the IPC thread; `try_lock` loses to any queued async waiter, and the sidecar spawns an awaiting rollup task per `turn_summary`. No timeout, no error. Lock poisoning is also permanent — every later save fails silently.                                                                                                                                                                                                                                                                                                                                                                                                                        | `core/storage.rs:417-424,428,446`; `commands/state.rs:49-107`; `handler.rs:560`                                                                | Async/fair saves (or `spawn_blocking`); poisoned-lock recovery via `into_inner()`.                                                                 |
@@ -275,8 +275,8 @@ All registered in `backlog.md` under "Fable 5 review findings (2026-08-05)".
   `accent-yellow` (×7, PR pending pills), `accent-orange`,
   `text-text-tertiary` emit no CSS, so those elements render colourless
   (`flight-colors.ts:26`; `PRChecksTab.tsx:239-296`).
-- **Brand-literal gap:** 43 hardcoded `"packetade:…"` storage-key literals and
-  7 `packetade://` URIs bypass `storageKey()`/`URI_SCHEME` (which has zero
+- **Brand-literal gap:** 43 hardcoded `"packetbench:…"` storage-key literals and
+  7 `packetbench://` URIs bypass `storageKey()`/`URI_SCHEME` (which has zero
   importers) — safe today because the legacy migration is a blanket prefix
   copy, but it recreates the rename-churn problem `brand.ts` exists to solve.
 - **Accessibility debt is systemic but concentrated:** the shared `Dropdown`
@@ -315,13 +315,13 @@ The 2026-08-03 reconciliation genuinely held (markdown set graded A−, zero
 broken relative links across the 76 files then present, re-verified at 73 after
 this pass's archive moves and additions; HANDOFF's test counts verified). The
 gaps were omission-shaped, and the biggest one was public: the GitHub Pages
-site (`docs/*.html`, live at packetloss404.github.io/PacketADE) still
+site (`docs/*.html`, live at packetloss404.github.io/PacketBench) still
 advertised eight providers, ChatGPT Plus login, and the removed Cost
 Dashboard.
 
 **Applied in this pass (2026-08-05/06):**
 
-1. `docs/index.html`, `docs/packetade-manual.html`, `docs/roadmap.html` —
+1. `docs/index.html`, `docs/packetbench-manual.html`, `docs/roadmap.html` —
    repaired against v0.10.3: 7 API-key provider rows, subscription/OAuth copy
    removed (PTY-CLI subscription note kept, accurately), Cost Dashboard copy
    deleted in favour of budget guardrails, version strips/ladder updated.
@@ -414,7 +414,7 @@ that looked identical to a deliberate choice.**
 
 - `release-readiness.mjs` reported `[PASS] pnpm test` because the script _name_
   existed — indistinguishable from having run it.
-- A typo'd `PACKETADE_RELEASE_TARGET` silently widened the search to every
+- A typo'd `PACKETBENCH_RELEASE_TARGET` silently widened the search to every
   platform's artifacts, so a stale `.dmg` could satisfy a Windows check —
   indistinguishable from a deliberate cross-platform search.
 - The bundle-root lookup fell through to `src-tauri/target` whenever
@@ -428,7 +428,7 @@ that answered "is this tool read-only?" with a guess, and a protocol mismatch
 that degraded to a warning when the thing that changed was a security boundary.
 
 The durable fix in each case was not a stricter check — it was **making the
-input visible**. `Target: windows (from PACKETADE_RELEASE_TARGET)` and
+input visible**. `Target: windows (from PACKETBENCH_RELEASE_TARGET)` and
 `Bundle root: /mnt/c/... (from src-tauri/.cargo/config.toml [build] target-dir)`
 are worth more than any individual assertion added this session, because they
 let the next false result diagnose itself.

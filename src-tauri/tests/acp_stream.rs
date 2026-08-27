@@ -3,7 +3,7 @@
 //! the real start/prompt/cancel/permission code paths with a test event sink
 //! instead of a Tauri AppHandle; no packetcode binary is required.
 
-use packetade_lib::acp::{
+use packetbench_lib::acp::{
     cancel_on, capabilities_of, close_session_on, list_commands_on, list_mcp_servers_on,
     load_session_on, new_session_on, permission_reply_on, prompt_on, rename_session_on,
     search_files_on, session_usage_on, start_engine, stop_engine, stop_on, AcpEvents,
@@ -77,7 +77,7 @@ fn marker_path(name: &str) -> std::path::PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("clock is sane")
         .as_nanos();
-    let path = std::env::temp_dir().join(format!("packetade-acp-{name}-{unique}.marker"));
+    let path = std::env::temp_dir().join(format!("packetbench-acp-{name}-{unique}.marker"));
     let _ = std::fs::remove_file(&path);
     path
 }
@@ -641,10 +641,10 @@ async fn consent_cannot_omit_mcp_servers_on_an_engine_that_never_promised_it() {
     stop_on(&state).await.unwrap();
 }
 
-/// The third leg of the contract, and the one PacketADE's trust model actually
+/// The third leg of the contract, and the one PacketBench's trust model actually
 /// produces: a populated `mcpServers` list naming exactly the servers the user
 /// trusted. The engine reports them back with `source: "client"` — proof the
-/// session runs PacketADE's fleet, not the engine's, which is the difference
+/// session runs PacketBench's fleet, not the engine's, which is the difference
 /// between a consent that was honoured and a consent that was approximated.
 #[tokio::test]
 async fn an_explicit_posture_names_exactly_the_trusted_servers() {
@@ -1132,7 +1132,7 @@ async fn close_session_on_engine_without_the_method_degrades() {
 }
 
 /// Resume: `session/load` replays the stored transcript before it resolves,
-/// and that replay contains turns PacketADE cannot render.
+/// and that replay contains turns PacketBench cannot render.
 ///
 /// This is the honesty problem the adopt path exists around, pinned at the
 /// wire level. Two facts hold together here:

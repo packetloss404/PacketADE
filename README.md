@@ -1,8 +1,8 @@
-# PacketADE
+# PacketBench
 
 **A local-first desktop ADE (Agent Development Environment) for orchestrating AI software work.**
 
-PacketADE is a Tauri v2 desktop app that brings AI coding agents, planning, issue tracking, memory, and workspace management into a single native environment. It is built for running real development workflows across multiple agent CLIs without leaving the app.
+PacketBench is a Tauri v2 desktop app that brings AI coding agents, planning, issue tracking, memory, and workspace management into a single native environment. It is built for running real development workflows across multiple agent CLIs without leaving the app.
 
 Current source release: **v0.10.3** (2026-08-02), tagged from pushed `main`
 commit `61e0669`; `main` has since advanced with documentation-only commits —
@@ -11,9 +11,9 @@ MSI artifacts were compiled from that exact revision; see
 [`HANDOFF.md`](./HANDOFF.md#latest-windows-build) for the exact artifacts and
 hashes.
 
-![PacketADE Workspace running Claude Code and PacketCode side by side](./docs/screenshots/workspace-claude-packetcode.png)
+![PacketBench Workspace running Claude Code and PacketCode side by side](./docs/screenshots/workspace-claude-packetcode.png)
 
-_An actual native PacketADE capture: PacketCode and Claude Code running their real TUIs side by side._
+_An actual native PacketBench capture: PacketCode and Claude Code running their real TUIs side by side._
 
 ## Documentation Map
 
@@ -61,24 +61,24 @@ decisions: auth provider and the E2EE launch gate.
 
 ### Agent command center
 
-![PacketADE Agents view with the conversation sidebar and new-agent composer](./docs/reports/visual-audit-2026-07-30/04-agents-empty-1920.png)
+![PacketBench Agents view with the conversation sidebar and new-agent composer](./docs/reports/visual-audit-2026-07-30/04-agents-empty-1920.png)
 
 | Flight planning and supervised launch                                                                                                                   | CLI clients and installation recovery                                                                                                               |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ![PacketADE Flight launch dialog with planning and execution-supervision controls](./docs/reports/visual-audit-2026-07-30/13-modal-new-flight-1280.png) | ![PacketADE Workspaces and Terminal settings showing detected CLI clients](./docs/reports/visual-audit-2026-07-30/11-settings-cli-clients-1920.png) |
+| ![PacketBench Flight launch dialog with planning and execution-supervision controls](./docs/reports/visual-audit-2026-07-30/13-modal-new-flight-1280.png) | ![PacketBench Workspaces and Terminal settings showing detected CLI clients](./docs/reports/visual-audit-2026-07-30/11-settings-cli-clients-1920.png) |
 
 ### Issue board
 
-![PacketADE issue board with Flight, label, epic, workspace, and assignee filters](./docs/reports/visual-audit-2026-07-30/05-issues-board-1920.png)
+![PacketBench issue board with Flight, label, epic, workspace, and assignee filters](./docs/reports/visual-audit-2026-07-30/05-issues-board-1920.png)
 
-These captures show the current rendered UI using PacketADE's deterministic
+These captures show the current rendered UI using PacketBench's deterministic
 web-mode fixture. The full viewport set, method, and environment limitations
 are documented in the
 [`2026-07-30 visual audit`](./docs/reports/visual-audit-2026-07-30/findings.md).
 
 ## Supported Agents
 
-PacketADE connects two complementary execution styles.
+PacketBench connects two complementary execution styles.
 
 **PTY-backed CLI sessions** — launched in a workspace pane and driven by the CLI's own UI:
 
@@ -105,7 +105,7 @@ endings:
 | OpenRouter              | `api-openrouter`    | API key in OS keyring                    |
 | Ollama (Local)          | `api-ollama`        | none — local daemon at `localhost:11434` |
 
-**Every API-agent row authenticates with an API key.** PacketADE does not offer
+**Every API-agent row authenticates with an API key.** PacketBench does not offer
 Claude.ai or ChatGPT subscription login for API agents — Anthropic's
 [legal and compliance policy](https://code.claude.com/docs/en/legal-and-compliance)
 states that it "does not permit third-party developers to offer Claude.ai login
@@ -143,7 +143,7 @@ explicit Git handoff opens the authoritative **WorktreeLifecycleBar** for the
 same conversation and worktree.
 
 Workspace conversation panes remain load-compatible for saved layouts. They
-reference the same durable conversation ID, but PacketADE no longer exposes any
+reference the same durable conversation ID, but PacketBench no longer exposes any
 action or API that creates a new one. Normal creation, project/Git/Flight
 handoffs, and deep links never materialize wrapper Workspaces.
 
@@ -248,7 +248,7 @@ The Claude Agent SDK and OpenAI Agents SDK providers run in a Node sidecar that 
 - **Deploy & keep running in PacketAgent** validates a frozen W9 WorkerPackage,
   activates a durable external worker, persists its event cursor, and exposes
   inspect/pause/resume/revoke/evidence controls. PacketAgent remains a separate
-  runtime and owns execution after PacketADE closes
+  runtime and owns execution after PacketBench closes
 - Planning is intentionally upfront and user-applied: it does not restore the former autonomous Flight Planner FSM, journal, wake loop, or task scheduler; legacy planner fields remain load-compatible
 - Kanban issue tracking with priorities, labels, acceptance criteria, and flight linkage
 
@@ -280,9 +280,9 @@ The Claude Agent SDK and OpenAI Agents SDK providers run in a Node sidecar that 
 - Unified “Ask your project” retrieval ranks eligible global and project-note
   excerpts together with source filters and a bounded context budget.
 - Project notes are normal project files and are version-control-capable by
-  default. PacketADE never edits `.gitignore`; teams decide whether to track
+  default. PacketBench never edits `.gitignore`; teams decide whether to track
   `.agents/memory`.
-- PacketADE's loopback MCP provider exposes bounded project-note
+- PacketBench's loopback MCP provider exposes bounded project-note
   search/read/create/update/archive operations. Mutations require the provider's
   explicit `allow writes` setting and the same project confinement/revision
   checks as the UI.
@@ -290,13 +290,13 @@ The Claude Agent SDK and OpenAI Agents SDK providers run in a Node sidecar that 
 ### Dictation — Voice-to-Text
 
 - Local Whisper transcription (no audio leaves the machine); verified model, stable audio device, microphone doctor, recording limit, language, and custom dictionary configurable from `Settings → Integrations & Data → Dictation`
-- Explicitly opt-in OS-level global shortcuts via `tauri-plugin-global-shortcut` so the hotkeys work even when PacketADE is not the focused application:
+- Explicitly opt-in OS-level global shortcuts via `tauri-plugin-global-shortcut` so the hotkeys work even when PacketBench is not the focused application:
   - `Ctrl+Alt+Space` (hold) — push-to-talk; records while held, transcribes on release (rebindable; `Cmd+Alt+Space` on macOS)
   - `Ctrl+Alt+R` — toggle recording on/off (rebindable; `Cmd+Alt+R` on macOS)
   - `Ctrl+Shift+D` — open the Dictation view
   - `Escape` — cancel an active recording
-- **Focus-aware insertion**: inserts into safe React inputs, textareas, contenteditable editors, and live PacketADE terminals (through the PTY API). Password, one-time-code, explicitly sensitive, stale, and disconnected targets are excluded.
-- **External delivery** copies to the native Windows clipboard when no PacketADE input is tracked, with an opt-in foreground-app paste mode. The transcript remains visible and on the clipboard if OS injection is blocked.
+- **Focus-aware insertion**: inserts into safe React inputs, textareas, contenteditable editors, and live PacketBench terminals (through the PTY API). Password, one-time-code, explicitly sensitive, stale, and disconnected targets are excluded.
+- **External delivery** copies to the native Windows clipboard when no PacketBench input is tracked, with an opt-in foreground-app paste mode. The transcript remains visible and on the clipboard if OS injection is blocked.
 - Live `REC` indicator in the status strip, 32-bar waveform, automatic history capture/search, and an analytics dashboard (WPM, sentiment trend, top words, daily streak, time saved estimate)
 
 ### Trust and Provenance
@@ -344,7 +344,7 @@ The Claude Agent SDK and OpenAI Agents SDK providers run in a Node sidecar that 
 - Bounded-autonomy Flights carry their own cost ceiling and halt when they reach it
 - A History view for browsing prior session activity
 
-> PacketADE deliberately ships **no cost reporting surface** — no dashboard, no
+> PacketBench deliberately ships **no cost reporting surface** — no dashboard, no
 > spend chip, no per-turn dollar figures. Cost is measured and used to enforce
 > budgets; it is not reported back to you. Token counts are still shown per turn
 > and per session.
@@ -356,11 +356,11 @@ The Claude Agent SDK and OpenAI Agents SDK providers run in a Node sidecar that 
   **Security & Diagnostics**—with focused sub-tabs and explicit App, Project,
   Workspace, new-session, new-conversation, or new-Flight scope badges.
 - A unified **Local-first MCP Hub** in `Settings → Integrations & Data → MCP` combines the existing
-  client/server editor and PacketADE provider with search, a review-before-add
+  client/server editor and PacketBench provider with search, a review-before-add
   official starter catalog, stdio capability diagnostics, per-workspace
   read/write/network/root/tool trust, bounded activity, and an explicit selected
   conversation reconnect.
-- MCP trust is frozen into each PacketADE-managed MCP session. Later settings
+- MCP trust is frozen into each PacketBench-managed MCP session. Later settings
   edits cannot silently broaden it; old sessions migrate to conservative
   read-only authority. Non-overridable floors block credentials,
   outside-workspace paths, and protected publish/merge/deploy tools. A local
@@ -369,7 +369,7 @@ The Claude Agent SDK and OpenAI Agents SDK providers run in a Node sidecar that 
   Agents SDK providers, plus the in-process providers, enforce the frozen
   snapshot. The retired Codex chat-provider trust proxy is not part of the
   current runtime.
-- PacketADE's loopback provider organizes scoped resources for Flights, Issues,
+- PacketBench's loopback provider organizes scoped resources for Flights, Issues,
   coordination, review, global/project Memory, workspaces, and PacketCode
   integration health. It remains loopback-only with bearer/origin controls;
   there is no hosted PacketMCP service.
@@ -417,14 +417,14 @@ Examples:
 ### Install
 
 ```bash
-git clone git@github.com:packetloss404/PacketADE.git
-cd PacketADE
+git clone git@github.com:packetloss404/PacketBench.git
+cd PacketBench
 pnpm install
 ```
 
 ### Agent Sidecar
 
-PacketADE ships with a Node.js sidecar that powers the Claude Agent SDK (API) and OpenAI Agents SDK (API) providers.
+PacketBench ships with a Node.js sidecar that powers the Claude Agent SDK (API) and OpenAI Agents SDK (API) providers.
 
 - `pnpm install` at the repo root also installs the sidecar's dependencies automatically via a `postinstall` hook (idempotent; adds a few seconds to the first install).
 - Before using a sidecar provider for the first time, compile the sidecar once:
@@ -439,9 +439,9 @@ PacketADE ships with a Node.js sidecar that powers the Claude Agent SDK (API) an
   pnpm build:all
   ```
 
-- To point the app at a custom sidecar entry point (e.g. when running from a different working copy), set `PACKETADE_SIDECAR_PATH` to the absolute path of the compiled entry file before launching PacketADE. `PACKETADE_NODE_PATH` similarly overrides the Node binary used to launch it.
+- To point the app at a custom sidecar entry point (e.g. when running from a different working copy), set `PACKETBENCH_SIDECAR_PATH` to the absolute path of the compiled entry file before launching PacketBench. `PACKETBENCH_NODE_PATH` similarly overrides the Node binary used to launch it.
 
-`pnpm build:all` still works for a full local build. For **production bundling**, `pnpm tauri build` now auto-runs the `prebundle` chain (`fetch-node` → `sidecar:install` → `sidecar:build` → `sidecar:prune`) via Tauri's `beforeBuildCommand`, so no manual sidecar or Node setup is needed. A pinned Node 24.15.0 runtime is fetched as a Tauri `externalBin`, and the sidecar ships with a pruned production `node_modules`. Reference sizes from the v0.10.3 Windows build: NSIS installer 84.68 MiB, MSI installer 132.19 MiB (both are produced because `bundle.targets` is `"all"`), standalone `packetade.exe` 43.81 MiB. The prune step removes the sidecar's devDependencies; run `pnpm sidecar:install` afterward to restore them for further sidecar development.
+`pnpm build:all` still works for a full local build. For **production bundling**, `pnpm tauri build` now auto-runs the `prebundle` chain (`fetch-node` → `sidecar:install` → `sidecar:build` → `sidecar:prune`) via Tauri's `beforeBuildCommand`, so no manual sidecar or Node setup is needed. A pinned Node 24.15.0 runtime is fetched as a Tauri `externalBin`, and the sidecar ships with a pruned production `node_modules`. Reference sizes from the v0.10.3 Windows build: NSIS installer 84.68 MiB, MSI installer 132.19 MiB (both are produced because `bundle.targets` is `"all"`), standalone `packetbench.exe` 43.81 MiB. The prune step removes the sidecar's devDependencies; run `pnpm sidecar:install` afterward to restore them for further sidecar development.
 
 #### Sidecar status
 
@@ -460,7 +460,7 @@ The sidecar work is complete across the original four v2 tiers and the v3–v11 
 - **v8 — remote-owned MCP over SSH:** a remote sidecar loads its own `~/.claude/settings.json` and project `.mcp.json`, runs both stdio and network MCP servers on the remote host, and reports a secrets-free `mcp_sources` summary to the conversation.
 - **v9 — targeted edit responses:** `edit_response` carries a required `toolUseId`; Anthropic and OpenAI Agents resolve only that pending edit, preserving unrelated approvals in the same session.
 - **v10 — explicit `cancelled` terminal marker:** the `done` event carries a `cancelled` flag so a user-cancelled turn is distinguished from a natural completion, giving the frontend exactly-once cancelled-terminal semantics across idle / active / post-completion cancels.
-- **v11 — frozen MCP trust authority:** PacketADE-managed MCP servers receive a
+- **v11 — frozen MCP trust authority:** PacketBench-managed MCP servers receive a
   per-session read/write/network/root/tool snapshot with conservative legacy
   migration and non-overridable denial floors. The API-key-backed Claude Agent
   SDK and OpenAI Agents SDK providers, plus the in-process providers, enforce it
@@ -472,12 +472,12 @@ The sidecar work is complete across the original four v2 tiers and the v3–v11 
   the same OpenAI API key as `api-openai`, preserving the existing Agents pane
   event contract alongside the stable Rust OpenAI API provider. The default
   `auto` mode requires approval before `bash` / `write_file`.
-- **Standalone exe sidecar fix:** the Tauri shell plugin on Windows resolves `app.shell().sidecar("node")` to `<exe_dir>/node-<target-triple>.exe`, and the call is gated by an explicit `shell:allow-execute` capability entry. `build.rs` now copies `binaries/node-<triple>.<ext>` into the cargo output directory at compile time, and `capabilities/default.json` grants the `node` sidecar entry — so running `target/<profile>/packetade.exe` directly (without installing the MSI/NSIS) no longer reports the sidecar as down.
+- **Standalone exe sidecar fix:** the Tauri shell plugin on Windows resolves `app.shell().sidecar("node")` to `<exe_dir>/node-<target-triple>.exe`, and the call is gated by an explicit `shell:allow-execute` capability entry. `build.rs` now copies `binaries/node-<triple>.<ext>` into the cargo output directory at compile time, and `capabilities/default.json` grants the `node` sidecar entry — so running `target/<profile>/packetbench.exe` directly (without installing the MSI/NSIS) no longer reports the sidecar as down.
 - See [`agent-sidecar/README.md`](./agent-sidecar/README.md) for sidecar internals and [`dev/updater-setup.md`](./dev/updater-setup.md) for signing / release channel configuration.
 
 ### Multi-platform builds
 
-PacketADE is developed on Windows but is designed to ship on macOS and Linux as well. For per-platform prerequisites, supported target triples, and cross-compilation notes, see [`dev/multi-platform-build.md`](./dev/multi-platform-build.md). Builds and releases are produced locally — there is no GitHub Actions CI in this repo.
+PacketBench is developed on Windows but is designed to ship on macOS and Linux as well. For per-platform prerequisites, supported target triples, and cross-compilation notes, see [`dev/multi-platform-build.md`](./dev/multi-platform-build.md). Builds and releases are produced locally — there is no GitHub Actions CI in this repo.
 
 ### Beta Distribution Status
 
@@ -503,7 +503,7 @@ pnpm tauri build
 
 Build artifacts are written under the active Cargo target directory in
 `release/` and `release/bundle/` (normally `src-tauri/target`; this repository's
-Windows release workstation redirects it to `packetade-build`).
+Windows release workstation redirects it to `packetbench-build`).
 
 ### Quality Checks
 
@@ -549,7 +549,7 @@ set PATH=C:\Users\ianwalmsley\.rustup\toolchains\stable-x86_64-pc-windows-msvc\b
 ## Project Layout
 
 ```text
-PacketADE/
+PacketBench/
   src/
     App.tsx                    # Root app shell and view routing
     components/
@@ -598,4 +598,4 @@ PacketADE/
 
 ## License
 
-PacketADE is licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+PacketBench is licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).

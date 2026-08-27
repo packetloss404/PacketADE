@@ -2,7 +2,7 @@
 
 Last updated: 2026-07-27
 Companion to [`bridgespace-competitive-brief.md`](./bridgespace-competitive-brief.md) and
-[`swarm-orchestration-plan.md`](./swarm-orchestration-plan.md) (PacketADE's own response, mostly
+[`swarm-orchestration-plan.md`](./swarm-orchestration-plan.md) (PacketBench's own response, mostly
 shipped). Indexed from [`../competitors.md`](../competitors.md).
 
 > **Sourcing update.** Official BridgeMind product, documentation, roadmap, and changelog pages were
@@ -86,7 +86,7 @@ collide, and shared dependencies get sequenced automatically."*
 
 *"BridgeSwarm works with Claude Code, OpenAI Codex, Gemini CLI, OpenCode, and Cursor — any
 terminal-based coding agent that can follow structured ownership and review."* Launch post adds
-*"Works with GPT 5.4."* It's **CLI-wrapper based** (same PTY model as PacketADE); agnosticism comes
+*"Works with GPT 5.4."* It's **CLI-wrapper based** (same PTY model as PacketBench); agnosticism comes
 from driving each CLI. Per-role different models are *implied* but **not confirmed**.
 
 ## Isolation — a real architectural distinction
@@ -97,12 +97,12 @@ diff, branch, commit, and worktree flows"*), but the swarm pages **never say one
 So its isolation is finer-grained (intra-branch, advisory) but a **weaker guarantee** than a real
 worktree/branch per agent.
 
-## Comparison to PacketADE Flights + worktree attempts
+## Comparison to PacketBench Flights + worktree attempts
 
-PacketADE today launches **one worktree-backed attempt per selected agent** — a **parallel-*attempts***
+PacketBench today launches **one worktree-backed attempt per selected agent** — a **parallel-*attempts***
 model: N *independent* agents, isolated, unaware of each other, user picks/merges a winner.
 
-| Dimension | PacketADE Flights (parallel attempts) | BridgeSwarm (coordinated swarm) |
+| Dimension | PacketBench Flights (parallel attempts) | BridgeSwarm (coordinated swarm) |
 |---|---|---|
 | Agent relationship | Independent, isolated, competitive/redundant | Interdependent team, cooperative |
 | Task decomposition | User/Flight defines attempts | **Coordinator auto-decomposes** onto a mission tree |
@@ -114,7 +114,7 @@ model: N *independent* agents, isolated, unaware of each other, user picks/merge
 | Human control | Launch + review per attempt | **Single command bar** over a live mission tree |
 | Output | Multiple competing solutions to choose from | One converged, reviewed result |
 
-**The gap is coordination, not parallelism.** PacketADE already has the harder-to-build isolation
+**The gap is coordination, not parallelism.** PacketBench already has the harder-to-build isolation
 substrate (per-attempt worktrees — arguably a *stronger* guarantee than BridgeSwarm's advisory
 ownership). What BridgeSwarm adds on top:
 1. an auto-decomposing **Coordinator**,
@@ -122,12 +122,12 @@ ownership). What BridgeSwarm adds on top:
 3. an **inter-agent message bus / shared mailbox** (cooperate vs compete), and
 4. a **single steering surface** over a live mission tree.
 
-## Mapping to PacketADE's existing plan
+## Mapping to PacketBench's existing plan
 
-Per [`swarm-orchestration-plan.md`](./swarm-orchestration-plan.md), PacketADE has **already shipped**
+Per [`swarm-orchestration-plan.md`](./swarm-orchestration-plan.md), PacketBench has **already shipped**
 most of the BridgeSwarm-equivalent primitives:
 
-| BridgeSwarm mechanic | PacketADE status |
+| BridgeSwarm mechanic | PacketBench status |
 |---|---|
 | Roles (coordinator/builder/reviewer/scout) | ✅ `TaskRole` + role badges (`flight-colors.ts` `TASK_ROLE_CONFIG`), Rust `core/flight.rs` |
 | Exclusive file ownership | ✅ `ownedPaths` on tasks + Rust `owned_paths`/`create_task.rs` |
@@ -139,7 +139,7 @@ most of the BridgeSwarm-equivalent primitives:
 | Single steering command bar over a mission tree | ❌ Not a unified live-swarm control surface |
 | Escalation / auto-reassignment | ⚠️ `blockedReason` exists; no auto-reassignment |
 
-**To reach parity**, PacketADE would evolve Flights from "N isolated attempts at one task" toward
+**To reach parity**, PacketBench would evolve Flights from "N isolated attempts at one task" toward
 "one mission decomposed across cooperating role-typed agents that message each other and gate their
 own merges" — while **keeping and marketing worktree isolation as a *harder* guarantee** than
 BridgeSwarm's advisory ownership. The remaining net-new work is the **auto-decomposing Coordinator**,
@@ -149,7 +149,7 @@ a **live inter-agent mailbox**, an **in-loop Reviewer gate**, and a **unified sw
 
 - BridgeSwarm's every mechanic is **vendor-asserted and unverified** — no third-party technical review exists.
 - Its parallelism **collapses toward serial** whenever shared/core files dominate (hence the 3–5 agent norm; "dozens" is headline-only).
-- Its isolation is **advisory file ownership**, weaker than PacketADE's per-attempt worktrees.
+- Its isolation is **advisory file ownership**, weaker than PacketBench's per-attempt worktrees.
 - Gate criteria, violation behavior, per-role models, and long-run drift recovery are all **undocumented**.
 
 ## Sources

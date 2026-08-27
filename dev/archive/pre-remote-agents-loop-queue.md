@@ -9,7 +9,7 @@ Release baseline: **v0.10.2**
 
 ## Purpose
 
-This is the single run order for PacketADE product decisions made during the
+This is the single run order for PacketBench product decisions made during the
 BridgeMind/BridgeSpace review. It replaces repeated “which loop next?”
 questions. After the user gives the one-time confirmation, execute the runnable
 slices in order, keep each canonical ledger current, and continue automatically
@@ -47,7 +47,7 @@ point is the confirmation gate below.
 | **3** | Trust and Provenance                 | Run TP1–TP8 in [`trust-provenance-loop.md`](./trust-provenance-loop.md).                                                                                                                                                               | Establishes the shared origin/authority/lineage contract before Memory and MCP build on it.                                                                         | TP1–TP7 source complete; TP8 packaged/SSH proof gated                                                                                               |
 | **4** | Project-local Memory Hub             | Run MH1–MH9 in [`project-local-memory-hub-loop.md`](./project-local-memory-hub-loop.md).                                                                                                                                               | Uses the trust contract for durable project notes, capture lineage, and scoped retrieval.                                                                           | MH1–MH7 source complete; MH8/MH9 packaged interoperability gated                                                                                    |
 | **5** | Local-first MCP Hub                  | Run MCPH1–MCPH8 in [`local-first-mcp-hub-loop.md`](./local-first-mcp-hub-loop.md).                                                                                                                                                     | Runs after Trust and Memory because MCPH5/MCPH6 consume their provenance and Memory Hub contracts. This preserves the decision that MCP Hub is not the first focus. | MCPH1–MCPH2/MCPH4–MCPH7 source complete; MCPH3/MCPH8 environment/external-runtime proof gated                                                       |
-| **6** | Convergence                          | Run the combined migration, local/SSH, provider-parity, permission/YOLO, review, Memory, MCP, packaging, and documentation matrix. Remove shipped work from the backlog and archive completed ledgers only after evidence is recorded. | Proves the additions behave as one PacketADE system instead of overlapping features.                                                                                | locally complete — full evidence in [`pre-remote-convergence-2026-07-28.md`](./pre-remote-convergence-2026-07-28.md); exact external gates isolated |
+| **6** | Convergence                          | Run the combined migration, local/SSH, provider-parity, permission/YOLO, review, Memory, MCP, packaging, and documentation matrix. Remove shipped work from the backlog and archive completed ledgers only after evidence is recorded. | Proves the additions behave as one PacketBench system instead of overlapping features.                                                                                | locally complete — full evidence in [`pre-remote-convergence-2026-07-28.md`](./pre-remote-convergence-2026-07-28.md); exact external gates isolated |
 
 ## Dictation follow-on slices
 
@@ -67,12 +67,12 @@ microphone or that unavailable platforms were tested.
 
 ## Cross-repository and external lanes
 
-- **PacketCode:** its source integration is complete. PacketADE may run its
+- **PacketCode:** its source integration is complete. PacketBench may run its
   compatibility smoke when a published PacketCode build exists, but remaining
   PacketCode implementation and signing work stays in
   `D:\projects\packetcode`; this queue does not mutate that sibling repository.
 - **PacketAgent:** active in its own repository and Codex project. W9 is now
-  published and the PacketADE Flight consumer source is implemented; live
+  published and the PacketBench Flight consumer source is implemented; live
   close/restart continuation, missing approval-response contract, and richer
   source/attention/artifact slices remain in the handoff ledger. This queue
   does not rebuild the always-on worker.

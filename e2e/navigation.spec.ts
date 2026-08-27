@@ -3,7 +3,7 @@ import { test, expect } from "./setup/fixtures";
 test.describe("Toolbar navigation", () => {
   test("can navigate to the Issues view via the toolbar", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "PacketADE" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "PacketBench" })).toBeVisible();
 
     await page.getByRole("button", { name: "Issues", exact: true }).click();
 
@@ -15,7 +15,7 @@ test.describe("Toolbar navigation", () => {
 
   test("can navigate to Flight Deck and Memory views", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "PacketADE" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "PacketBench" })).toBeVisible();
 
     await page.getByRole("button", { name: "Flight Deck", exact: true }).click();
     await expect(page.getByText("Flight Deck").first()).toBeVisible();

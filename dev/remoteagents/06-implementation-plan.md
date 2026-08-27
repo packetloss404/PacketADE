@@ -12,7 +12,7 @@ Deliverables:
 
 - Create `remoteagents/shared` with protocol schemas.
 - Create `remoteagents/pwa` skeleton.
-- Add a feature-isolated PacketADE protocol/control-plane skeleton to the
+- Add a feature-isolated PacketBench protocol/control-plane skeleton to the
   standalone Rust repo at `D:\projects\packetrelay`.
 - Add desktop feature flag: `remoteAgents.enabled`.
 - Add docs link from `dev/README.md`.
@@ -23,7 +23,7 @@ Checkpoint:
 
 - Shared protocol package builds.
 - `packet-relay` starts locally with its existing protocols intact and the
-  PacketADE routes feature-gated.
+  PacketBench routes feature-gated.
 - PWA dev server starts.
 - Desktop compiles with remote feature flag off.
 - Six-agent ownership map is posted.
@@ -73,7 +73,7 @@ Desktop:
 - provider auth statuses from `get_provider_auth_status`.
 - workspace/project snapshot.
 - profile snapshot.
-- remote status card in PacketADE Tools/Settings.
+- remote status card in PacketBench Tools/Settings.
 
 Rust relay:
 
@@ -94,7 +94,7 @@ Checkpoint:
 
 ## Sprint 3 - Backend Conversation Service
 
-Goal: conversations created from phone are first-class PacketADE conversations.
+Goal: conversations created from phone are first-class PacketBench conversations.
 
 Desktop:
 
@@ -213,7 +213,7 @@ Checkpoint:
 
 ## Acceptance Test
 
-A user with PacketADE desktop running on Windows signs into Packet Cloud,
+A user with PacketBench desktop running on Windows signs into Packet Cloud,
 enables Remote Agents, opens the PWA on iPhone, signs in, requests access,
 approves on desktop, starts an `api-openai-agents` or `api-claude-oauth`
 (historical id for the API-key-backed Claude Agent SDK row) conversation against

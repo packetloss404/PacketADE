@@ -1,4 +1,4 @@
-// Remote-workspace projectPath smoke for the PacketADE agent sidecar.
+// Remote-workspace projectPath smoke for the PacketBench agent sidecar.
 //
 // This does not open an SSH connection. It locks down the sidecar protocol
 // invariant needed by sidecar-over-SSH: an SSH-launched sidecar process may
@@ -16,7 +16,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const SESSION_ID = "remote-project-path-smoke";
-const REMOTE_PROJECT_PATH = "/srv/Packet ADE/remote-app";
+const REMOTE_PROJECT_PATH = "/srv/Packet Bench/remote-app";
 const INITIAL_MESSAGE = "remote project path smoke";
 const TIMEOUT_MS = 5000;
 
@@ -33,7 +33,7 @@ if (!existsSync(sidecarEntry)) {
 const child = spawn(process.execPath, [sidecarEntry], {
   stdio: ["pipe", "pipe", "pipe"],
   windowsHide: true,
-  env: { ...process.env, PACKETADE_REMOTE_SIDECAR: "1" },
+  env: { ...process.env, PACKETBENCH_REMOTE_SIDECAR: "1" },
 });
 
 const stderrChunks = [];

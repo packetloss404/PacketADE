@@ -1,10 +1,10 @@
 import { LEGACY_STORAGE_PREFIX, STORAGE_PREFIX } from "@/lib/brand";
 
-const GUARD_KEY = STORAGE_PREFIX + "migrated-from-packetcode";
+const GUARD_KEY = STORAGE_PREFIX + "migrated-from-packetade";
 
 /**
- * One-shot migration of localStorage keys from the old `packetcode:*`
- * namespace to the new `packetade:*` namespace.
+ * One-shot migration of localStorage keys from the old `packetade:*`
+ * namespace to the new `packetbench:*` namespace.
  *
  * Must run before any store hydrates from localStorage. Old keys are left
  * in place as a free rollback path; new writes go exclusively to the new
@@ -37,7 +37,7 @@ export function migrateLegacyStorage(): void {
 
     localStorage.setItem(GUARD_KEY, "1");
     if (migrated > 0) {
-      console.info(`[storage-migration] Copied ${migrated} packetcode:* keys to packetade:*`);
+      console.info(`[storage-migration] Copied ${migrated} packetade:* keys to packetbench:*`);
     }
   } catch (e) {
     console.warn("[storage-migration] migration failed", e);
@@ -54,7 +54,7 @@ const MISSION_TO_FLIGHT_GUARD = STORAGE_PREFIX + "migrated-mission-to-flight";
  * read alias).
  *
  * Must run AFTER {@link migrateLegacyStorage} (which copies `packetcode:issues`
- * into `packetade:issues`) and BEFORE any store hydrates. Guarded so repeat
+ * into `packetbench:issues`) and BEFORE any store hydrates. Guarded so repeat
  * launches are a no-op, and skipped entirely when the blob has no `missionId`.
  */
 export function migrateIssuesMissionToFlight(): void {

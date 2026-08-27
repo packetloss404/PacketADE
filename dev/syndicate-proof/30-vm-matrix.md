@@ -6,7 +6,7 @@ packaged-e2e rows. WSL2 is the iteration copy only; **Docker does not satisfy
 these rows** (no real boot, shared kernel, different cgroup layout), and QEMU
 arm64 runs are smoke only, never sign-off.
 
-> **Gate:** any packaged-PacketADE row needs a **version bump first** —
+> **Gate:** any packaged-PacketBench row needs a **version bump first** —
 > `package.json` / `src-tauri/tauri.conf.json` still read the already-shipped
 > `0.10.5` (`backlog.md:104`); an unbumped build is indistinguishable from the
 > released installer by version alone.
@@ -47,7 +47,7 @@ evidence per `evidence-template.md` (journal excerpts via
 1. From an installed state (after Row 1), `sudo reboot`.
 2. PASS = after boot, `systemctl status` (system or `--user` with linger, as
    installed) shows `syndicate.service` active without manual intervention;
-   journal shows a clean start; a paired PacketADE reconnects.
+   journal shows a clean start; a paired PacketBench reconnects.
 
 ### Row 7 — systemd hardening / cgroup behaviour
 
@@ -79,11 +79,11 @@ evidence per `evidence-template.md` (journal excerpts via
 Run Rows 10 then 11 back-to-back on one VM without reverting between them;
 capture one continuous journal covering install → upgrade → rollback.
 
-### Packaged e2e (PacketADE ST8) — **blocked on version bump**
+### Packaged e2e (PacketBench ST8) — **blocked on version bump**
 
-1. Bump PacketADE version, `pnpm tauri build`, install the packaged PacketADE
+1. Bump PacketBench version, `pnpm tauri build`, install the packaged PacketBench
    on the Windows host (not in the VM).
-2. Pair packaged PacketADE against the VM host (Method D), attach a session
+2. Pair packaged PacketBench against the VM host (Method D), attach a session
    through a **local** `packet-relay.exe` (never production).
 3. PASS = pairing, attach, terminal round-trip, and clean detach all work
    from the packaged build; card states render as in the dev build.

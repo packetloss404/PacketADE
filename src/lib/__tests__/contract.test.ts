@@ -140,7 +140,7 @@ describe("TS/Rust contract tests", () => {
         projectPath: "/project",
         autoCommitTrailerEnabled: true,
         autoCommitTrailerFormat:
-          "Run-By: PacketADE flight F-{flightId} attempt A-{attemptId}",
+          "Run-By: PacketBench flight F-{flightId} attempt A-{attemptId}",
       },
       ui: {
         selectedFlightId: "f1",

@@ -69,7 +69,7 @@ export function FlightAutonomyCard({ flight }: { flight: Flight }) {
 
       {!policy ? (
         <p className="mt-1.5 text-[10px] leading-relaxed text-text-muted">
-          PacketADE recommends actions; launches, retries, review acceptance, and integration stay
+          PacketBench recommends actions; launches, retries, review acceptance, and integration stay
           under your control.
         </p>
       ) : (

@@ -77,7 +77,7 @@ export function applyMcpWrite(intent: McpWriteIntent): void {
   const { op, flightId, event: payload } = intent;
   const mcpSource = toolResultProvenance({
     toolId: `mcp-write-${flightId}-${payload?.messageId ?? payload?.dedupeKey ?? op}`,
-    name: `mcp__packetade__${op}`,
+    name: `mcp__packetbench__${op}`,
     content: payload?.body ?? payload?.summary ?? payload?.note ?? undefined,
   });
   if (op === "post_coordination_message") {

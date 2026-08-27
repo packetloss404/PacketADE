@@ -5,7 +5,7 @@
  * (adds the contract descriptor route, packet-product attention operations,
  * and the credential-mint CLI — all additive; digest fixture unchanged).
  * PacketAgent owns the normative runtime contract; this file deliberately
- * contains only the subset PacketADE emits or projects.
+ * contains only the subset PacketBench emits or projects.
  */
 import { APP_NAME, APP_NAME_LOWER } from "@/lib/brand";
 
@@ -14,7 +14,7 @@ export const WORKER_PACKAGE_SCHEMA_VERSION = "packetagent.worker-package/v1";
 export const WORKER_PACKAGE_CANONICALIZATION = "packetagent.worker-package-canonical-json/v1";
 
 /** W9 artifact-by-reference shape. Artifacts are references, never payloads —
- * PacketAgent fetches content itself; PacketADE never inlines file bytes. */
+ * PacketAgent fetches content itself; PacketBench never inlines file bytes. */
 export interface PacketAgentWorkerArtifactReference {
   reference: string;
   name?: string;

@@ -74,7 +74,7 @@ describe("memory briefs", () => {
       .composeMemoryBrief({ projectPath: "D:/projects/example" }, { maxChars: 500 });
 
     expect(brief.text.length).toBeLessThanOrEqual(500);
-    expect(brief.text).toContain("PacketADE Memory Brief");
+    expect(brief.text).toContain("PacketBench Memory Brief");
     expect(brief.text).toContain("Prefer lucide icons");
     expect(brief.items.map((item) => item.id)).toContain("p-1");
     expect(brief.items.map((item) => item.id)).toContain("s-1");

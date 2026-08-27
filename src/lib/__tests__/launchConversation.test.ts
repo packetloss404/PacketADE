@@ -312,7 +312,7 @@ function sessionEvent(id: string, projectPath: string, summary: string): MemoryE
  * (profile resolution now live).
  */
 describe("launchConversation — real memory-injection seam", () => {
-  const MEMORY_MARKER = "PacketADE Memory Brief";
+  const MEMORY_MARKER = "PacketBench Memory Brief";
 
   // The system-prompt argument to startApiAgentSession is positional index 5:
   //   (id, provider, model, projectPath, initialMessage, systemPrompt, ...).

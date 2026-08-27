@@ -16,7 +16,7 @@ import type { PacketAgentWorkerPackage } from "@/types/packet-agent";
 const mockRequest = vi.mocked(packetAgentRequest);
 
 const PACKAGE = {
-  packageId: "packetade:f:worker",
+  packageId: "packetbench:f:worker",
   packageVersion: 1,
   integrity: { digest: `sha256:${"a".repeat(64)}` },
 } as unknown as PacketAgentWorkerPackage;
@@ -92,7 +92,7 @@ describe("packetAgentStore attention", () => {
     const [respond] = respondCalls[0];
     expect(respond.attentionId).toBe("att-1");
     expect(respond.payload).toEqual({ decision: "approve_once", expectedRevision: 4 });
-    expect(respond.idempotencyKey).toBe("packetade:att-1:approve_once:4");
+    expect(respond.idempotencyKey).toBe("packetbench:att-1:approve_once:4");
   });
 
   it("uses the identical idempotency key on a replayed decision", async () => {
@@ -112,7 +112,7 @@ describe("packetAgentStore attention", () => {
     const keys = mockRequest.mock.calls
       .filter(([req]) => req.operation === "respond_attention")
       .map(([req]) => req.idempotencyKey);
-    expect(keys).toEqual(["packetade:att-1:reject:4", "packetade:att-1:reject:4"]);
+    expect(keys).toEqual(["packetbench:att-1:reject:4", "packetbench:att-1:reject:4"]);
   });
 
   it("treats a stale revision as refetch-and-rethrow", async () => {

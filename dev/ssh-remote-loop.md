@@ -74,7 +74,7 @@ Each iteration: claim the lowest-ID `queued` item whose deps are `closed`;
 revalidate hooks
 against current code; implement minimally; add a focused test (prefer pure
 helpers + Rust unit tests); gate (targeted vitest + `pnpm lint` + `pnpm build`;
-`cargo check` real-exit into the `packetade-build` scratch/target, never the
+`cargo check` real-exit into the `packetbench-build` scratch/target, never the
 user's build dir); flip to `closed` + record; commit one item per commit on
 `feat/ssh-remote-hardening`. Always populate `SshConfig.host_fingerprint` from
 `ServerConfig.hostFingerprint` in any new call site.

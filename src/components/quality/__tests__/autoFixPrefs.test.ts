@@ -64,6 +64,6 @@ describe("autoFixPrefs", () => {
   });
 
   it("keeps the legacy key available for migration", () => {
-    expect(QUALITY_AUTOFIX_STORAGE_KEY).toBe("packetade:quality-autofix");
+    expect(QUALITY_AUTOFIX_STORAGE_KEY).toBe("packetbench:quality-autofix");
   });
 });

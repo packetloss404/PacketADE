@@ -1,4 +1,4 @@
-<title>PacketADE v0.10.4 — Acceptance Walkthrough</title>
+<title>PacketBench v0.10.4 — Acceptance Walkthrough</title>
 <style>
   :root {
     --ground: #f2f4f7;
@@ -463,7 +463,7 @@
 <main>
   <header>
     <div class="kicker">Preflight · Acceptance walkthrough</div>
-    <h1>PacketADE v0.10.4</h1>
+    <h1>PacketBench v0.10.4</h1>
     <div class="build">
       <span>commit <b>f4946c4c</b></span>
       <span>built <b>2026-08-06 16:01</b></span>
@@ -557,7 +557,7 @@
       [
         "I-1",
         "Install from the NSIS installer",
-        "Run PacketADE_0.10.4_x64-setup.exe. Click through the SmartScreen warning.",
+        "Run PacketBench_0.10.4_x64-setup.exe. Click through the SmartScreen warning.",
         "Installs without error. Note anything odd in the installer UI.",
       ],
       [
@@ -577,7 +577,7 @@
         "I-5",
         "Uninstall entry",
         "Check Add/Remove Programs shows a sane name and version.",
-        "Reads <b>PacketADE 0.10.4</b>.",
+        "Reads <b>PacketBench 0.10.4</b>.",
       ],
     ],
     s2: [
@@ -591,8 +591,8 @@
       [
         "F4/F5",
         "Quitting the app kills agent processes",
-        "With at least one live CLI pane, quit PacketADE entirely. Check Task Manager.",
-        "Nothing PacketADE spawned is still running. App exit had no PTY cleanup at all before.",
+        "With at least one live CLI pane, quit PacketBench entirely. Check Task Manager.",
+        "Nothing PacketBench spawned is still running. App exit had no PTY cleanup at all before.",
         1,
       ],
       [
@@ -842,7 +842,7 @@
     ],
   };
 
-  const KEY = "packetade:acceptance:v0.10.4";
+  const KEY = "packetbench:acceptance:v0.10.4";
   let state = {};
   try {
     state = JSON.parse(localStorage.getItem(KEY) || "{}");
@@ -986,7 +986,7 @@
 
   function exportMd() {
     const lines = [
-      "# PacketADE v0.10.4 acceptance walkthrough",
+      "# PacketBench v0.10.4 acceptance walkthrough",
       "",
       "Build: commit `f4946c4c`, NSIS `FA97DF7B…70C0`, unsigned.",
       "",
@@ -1046,7 +1046,7 @@
     const blob = new Blob([md], { type: "text/markdown" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "packetade-v0.10.4-walkthrough.md";
+    a.download = "packetbench-v0.10.4-walkthrough.md";
     a.click();
     URL.revokeObjectURL(a.href);
     if (navigator.clipboard) navigator.clipboard.writeText(md).catch(() => {});

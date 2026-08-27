@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Single-file PacketADE Remote Agents master plan synthesized from the roadmap, backlog, architecture, protocol, security, PWA, sprint, runbook, and testing docs."
+      content="Single-file PacketBench Remote Agents master plan synthesized from the roadmap, backlog, architecture, protocol, security, PWA, sprint, runbook, and testing docs."
     />
-    <title>PacketADE Remote Agents Master Plan</title>
+    <title>PacketBench Remote Agents Master Plan</title>
     <style>
       :root {
         color-scheme: dark;
@@ -792,11 +792,11 @@
     <section class="hero">
       <div class="hero-copy">
         <span class="kicker">Planning review - generated 2026-05-27</span>
-        <h1>PacketADE Remote Agents: one reviewable plan.</h1>
+        <h1>PacketBench Remote Agents: one reviewable plan.</h1>
         <p>
           This single-file HTML distills the roadmap, backlog, Remote Agents planning package,
           public docs, and implementation runbooks into one browser-friendly review document. The
-          north star is simple: a phone controls a trusted desktop PacketADE host while providers,
+          north star is simple: a phone controls a trusted desktop PacketBench host while providers,
           models, secrets, MCP config, files, and tools stay on that desktop.
         </p>
         <div class="hero-actions">
@@ -871,14 +871,14 @@
             <article class="card">
               <h3>Product promise</h3>
               <p>
-                All PacketADE agents, providers, models, profiles, workspaces, and approvals from a
+                All PacketBench agents, providers, models, profiles, workspaces, and approvals from a
                 phone while secrets and tools stay on desktop.
               </p>
             </article>
             <article class="card">
               <h3>Primary mental model</h3>
               <p>
-                "My desktop PacketADE is an online agent host. My phone signs into Packet Cloud and
+                "My desktop PacketBench is an online agent host. My phone signs into Packet Cloud and
                 controls that host."
               </p>
             </article>
@@ -1075,7 +1075,7 @@
                 <p>Outbound socket, host registration, device trust, command validation.</p>
               </div>
               <div class="flow-node accent-green">
-                <h3>PacketADE Runtime</h3>
+                <h3>PacketBench Runtime</h3>
                 <p>API agents, sidecar providers, keyring, OAuth, MCP, local/SSH tools.</p>
               </div>
             </div>
@@ -1375,7 +1375,7 @@ Production rule:
               <div class="sprint-num">Sprint 3</div>
               <div>
                 <h3>Backend conversation service</h3>
-                <p>Phone-created conversations become first-class PacketADE conversations.</p>
+                <p>Phone-created conversations become first-class PacketBench conversations.</p>
               </div>
               <div class="checkpoint">
                 Checkpoint: stream appears on desktop and PWA; cancel from PWA stops run.
@@ -1527,7 +1527,7 @@ Production rule:
           <details style="margin-top: 14px">
             <summary>Acceptance test in one paragraph</summary>
             <div>
-              A user with PacketADE desktop running on Windows signs into Packet Cloud, enables
+              A user with PacketBench desktop running on Windows signs into Packet Cloud, enables
               Remote Agents, opens the PWA on iPhone, signs in, requests access, approves on
               desktop, starts an <code>api-openai-codex</code> or
               <code>api-claude-oauth</code> conversation against <code>D:\projects\PacketADE</code>,
@@ -1555,7 +1555,7 @@ Production rule:
               <h3>Locked</h3>
               <ul>
                 <li>Cloud sign-in is primary; QR is not the primary pairing model.</li>
-                <li>Desktop PacketADE owns execution and secrets.</li>
+                <li>Desktop PacketBench owns execution and secrets.</li>
                 <li>PWA first; native iOS/TestFlight later.</li>
                 <li>API agents only in MVP.</li>
                 <li>WebSocket relay for foreground control; Web Push for notifications.</li>
@@ -1728,7 +1728,7 @@ Production rule:
                 <td>
                   <a href="../../docs/index.html">docs/index.html</a>,
                   <a href="../../docs/roadmap.html">docs/roadmap.html</a>,
-                  <a href="../../docs/packetade-manual.html">docs/packetade-manual.html</a>
+                  <a href="../../docs/packetbench-manual.html">docs/packetbench-manual.html</a>
                 </td>
                 <td>Public website/manual language now aligned with this plan.</td>
               </tr>
@@ -1739,7 +1739,7 @@ Production rule:
     </main>
 
     <footer class="footer">
-      PacketADE Remote Agents master plan. Single-file review page; canonical details live in
+      PacketBench Remote Agents master plan. Single-file review page; canonical details live in
       Markdown.
     </footer>
   </body>

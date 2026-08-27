@@ -15,8 +15,8 @@ const reportOnly = args.has("--report-only");
 // Executing the gates is the point of the section, but a status snapshot taken
 // during release setup should not take half an hour. --report-only implies it.
 const skipGates =
-  args.has("--skip-gates") || reportOnly || process.env.PACKETADE_RELEASE_SKIP_GATES === "1";
-const gateTimeoutMs = Number(process.env.PACKETADE_RELEASE_GATE_TIMEOUT_MS ?? 45 * 60 * 1000);
+  args.has("--skip-gates") || reportOnly || process.env.PACKETBENCH_RELEASE_SKIP_GATES === "1";
+const gateTimeoutMs = Number(process.env.PACKETBENCH_RELEASE_GATE_TIMEOUT_MS ?? 45 * 60 * 1000);
 
 /**
  * The quality gates, executed in order and gated on exit code.
@@ -250,11 +250,11 @@ const macosBundle = bundle.macOS ?? {};
 const windowsBundle = bundle.windows ?? {};
 const updaterConfig = tauriConfig.plugins?.updater ?? {};
 const knownTargets = Object.keys(artifactGlobsByTarget);
-const targetOverride = process.env.PACKETADE_RELEASE_TARGET?.trim();
+const targetOverride = process.env.PACKETBENCH_RELEASE_TARGET?.trim();
 const target = targetOverride || hostTarget();
 const targetIsKnown = knownTargets.includes(target);
 const targetSource = targetOverride
-  ? "PACKETADE_RELEASE_TARGET"
+  ? "PACKETBENCH_RELEASE_TARGET"
   : `host detection (${os.platform()}${isWsl() ? ", WSL" : ""})`;
 
 const metadata = [
@@ -351,7 +351,7 @@ const signing = [
 ];
 
 const manifestCandidates = [
-  process.env.PACKETADE_UPDATER_MANIFEST,
+  process.env.PACKETBENCH_UPDATER_MANIFEST,
   path.join(cargoTarget, "release", "bundle", "latest.json"),
   path.join(cargoTarget, "release", "bundle", "nsis", "latest.json"),
   path.join(cargoTarget, "release", "bundle", "dmg", "latest.json"),
@@ -414,7 +414,7 @@ const artifacts = allArtifacts.filter((file) => path.basename(file).includes(rel
 const wslHint =
   !targetOverride && isWsl() && target === "linux"
     ? ". Running under WSL, where Node reports linux — if the bundle was produced by the " +
-      "Windows-side build, set PACKETADE_RELEASE_TARGET=windows"
+      "Windows-side build, set PACKETBENCH_RELEASE_TARGET=windows"
     : "";
 
 const artifactSection = [
@@ -423,8 +423,8 @@ const artifactSection = [
         status: "FAIL",
         label: `Bundle artifacts for ${target}`,
         detail: targetOverride
-          ? `PACKETADE_RELEASE_TARGET="${target}" is not one of ${knownTargets.join(", ")} — refusing to search every platform's artifacts, which can pass on a bundle for the wrong OS`
-          : `could not map host platform ${os.platform()} to a bundle target; set PACKETADE_RELEASE_TARGET to one of ${knownTargets.join(", ")}`,
+          ? `PACKETBENCH_RELEASE_TARGET="${target}" is not one of ${knownTargets.join(", ")} — refusing to search every platform's artifacts, which can pass on a bundle for the wrong OS`
+          : `could not map host platform ${os.platform()} to a bundle target; set PACKETBENCH_RELEASE_TARGET to one of ${knownTargets.join(", ")}`,
       }
     : {
         status: artifacts.length > 0 ? "PASS" : "FAIL",
@@ -543,7 +543,7 @@ function runGate(scriptName, command) {
   return { status: "FAIL", label: command, detail: `${how} after ${seconds}s` };
 }
 
-console.log("PacketADE Release Readiness");
+console.log("PacketBench Release Readiness");
 console.log(`Target: ${target} (from ${targetSource})`);
 console.log(`Bundle root: ${cargoTarget} (from ${bundleRoot.source})`);
 console.log(`Mode: ${reportOnly ? "report-only" : "gate"}`);

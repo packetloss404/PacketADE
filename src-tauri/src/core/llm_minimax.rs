@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 /// Defaults to the documented **global** host `https://api.minimax.io/v1`.
 /// Mainland-China accounts are served from `https://api.minimaxi.com/v1`, so
 /// this is overridable exactly like Ollama's base URL: the saved provider
-/// endpoint wins, then `PACKETADE_MINIMAX_URL`, then the default.
+/// endpoint wins, then `PACKETBENCH_MINIMAX_URL`, then the default.
 ///
 /// (The previous hardcoded `https://api.minimaxi.chat/v1` is a legacy host that
 /// appears nowhere in MiniMax's current documentation.)

@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn claude_md_truncation_does_not_split_utf8_boundary() {
         let dir = std::env::temp_dir()
-            .join("packetade-tests")
+            .join("packetbench-tests")
             .join(format!("system-prompt-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(

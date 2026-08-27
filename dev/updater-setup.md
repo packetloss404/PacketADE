@@ -1,8 +1,8 @@
-# PacketADE Auto-Updater Setup
+# PacketBench Auto-Updater Setup
 
 ## Overview
 
-PacketADE **does not auto-update today**. There is no `tauri-plugin-updater`
+PacketBench **does not auto-update today**. There is no `tauri-plugin-updater`
 dependency in `src-tauri/Cargo.toml`, no `tauri_plugin_updater::init()` call
 in `src-tauri/src/lib.rs`, and no `"updater"` / `"plugins.updater"` block in
 `src-tauri/tauri.conf.json`. Users must install new versions manually by
@@ -21,8 +21,8 @@ deferred), so this guide is a runbook, not a code change.
 ## Prerequisites
 
 - **Tauri updater signing keypair**, generated via
-  `pnpm tauri signer generate -w ~/.tauri/packetade.key`. The private key
-  (`packetade.key`) stays offline; the public key (`packetade.key.pub`) is
+  `pnpm tauri signer generate -w ~/.tauri/packetbench.key`. The private key
+  (`packetbench.key`) stays offline; the public key (`packetbench.key.pub`) is
   committed to the app config.
 - **HTTPS-reachable location** to host signed manifests + installer
   downloads. GitHub Releases is fine and is the path of least resistance —
@@ -36,7 +36,7 @@ deferred), so this guide is a runbook, not a code change.
 ### 1. Generate the keypair
 
 ```bash
-pnpm tauri signer generate -w ~/.tauri/packetade.key
+pnpm tauri signer generate -w ~/.tauri/packetbench.key
 ```
 
 You will be prompted for a password. Store it in a password manager; the
@@ -51,7 +51,7 @@ Commit the **public** key to `src-tauri/tauri.conf.json`:
       "active": true,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFCQ0QuLi4=",
       "endpoints": [
-        "https://github.com/packetloss404/PacketADE/releases/latest/download/latest.json"
+        "https://github.com/packetloss404/PacketBench/releases/latest/download/latest.json"
       ]
     }
   }
@@ -91,7 +91,7 @@ single-manifest setup pointed at GitHub Releases:
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/packetloss404/PacketADE/releases/latest/download/latest.json"
+        "https://github.com/packetloss404/PacketBench/releases/latest/download/latest.json"
       ],
       "pubkey": "<public key from step 1>",
       "windows": {
@@ -115,8 +115,8 @@ The `latest.json` manifest is a small signed descriptor of the form:
   "pub_date": "2026-05-01T00:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "<sig from PacketADE_0.3.0_x64-setup.exe.sig>",
-      "url": "https://github.com/.../PacketADE_0.3.0_x64-setup.exe"
+      "signature": "<sig from PacketBench_0.3.0_x64-setup.exe.sig>",
+      "url": "https://github.com/.../PacketBench_0.3.0_x64-setup.exe"
     }
   }
 }
@@ -132,7 +132,7 @@ pnpm run release:readiness
 ```
 
 The readiness check validates the manifest shape when `latest.json` is present
-in a known bundle location or pointed to by `PACKETADE_UPDATER_MANIFEST`. It
+in a known bundle location or pointed to by `PACKETBENCH_UPDATER_MANIFEST`. It
 also reports whether updater signing env vars are present. It does not read or
 print the private key contents.
 
@@ -142,12 +142,12 @@ For the release build, point Tauri at the private key via environment
 variables:
 
 ```bash
-export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/packetade.key)"
+export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/packetbench.key)"
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="<password from step 1>"
 pnpm tauri build
 ```
 
-The bundler emits `PacketADE_<version>_x64-setup.exe` plus a matching
+The bundler emits `PacketBench_<version>_x64-setup.exe` plus a matching
 `.exe.sig` in `src-tauri/target/release/bundle/nsis/`. Upload **both**
 files to the GitHub Release alongside `latest.json`.
 
@@ -157,7 +157,7 @@ release build time.
 
 ### 6. Keep the private key offline
 
-- Never commit `packetade.key`.
+- Never commit `packetbench.key`.
 - Dev machines do not need it — only the release machine does.
 - On the release machine, provide the private key + password as environment
   variables (`TAURI_SIGNING_PRIVATE_KEY`,
@@ -192,7 +192,7 @@ user launches the updated build.
 ## What to watch for
 
 - **User data preservation.** NSIS's default uninstaller preserves user
-  data at `~/.packetade/` between upgrades. **Verify this explicitly**
+  data at `~/.packetbench/` between upgrades. **Verify this explicitly**
   before enabling the updater in production — losing GitHub auth state,
   memory store, or flight history across updates would be a regression.
   Test by installing version N, creating a flight, updating to N+1, and
@@ -247,7 +247,7 @@ requires:
 - A hosted `latest.json` manifest + release pipeline (ops work, deferred).
 - A UI surface for the update prompt (small frontend change, deferred).
 
-Until those land, PacketADE remains a manual-install app.
+Until those land, PacketBench remains a manual-install app.
 
 The release readiness script is implemented as a non-secret beta gate, but it
 does not enable automatic updates by itself.

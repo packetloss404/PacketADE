@@ -281,7 +281,7 @@ async fn run_ssh(
     // We embed the body via a single-quoted heredoc to avoid having to
     // escape user markdown. The body is written to the temp file, push
     // happens, gh runs, the temp file is removed unconditionally.
-    let eof = crate::core::shared::pick_heredoc_terminator(body, "PACKETADE_PR_EOF_");
+    let eof = crate::core::shared::pick_heredoc_terminator(body, "PACKETBENCH_PR_EOF_");
 
     let script = format!(
         "set -e\n\

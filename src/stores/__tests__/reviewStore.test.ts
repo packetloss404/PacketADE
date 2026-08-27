@@ -10,7 +10,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const VIEWED_STORAGE_KEY = "packetade:review-viewed-v1";
+const VIEWED_STORAGE_KEY = "packetbench:review-viewed-v1";
 
 async function freshStore() {
   vi.resetModules();

@@ -9,7 +9,9 @@ import { storageKey } from "@/lib/brand";
  * legacy-key migration + branded-only writes are preserved.
  */
 const PROJECT_LABELS_KEY = storageKey("project-labels");
-const LEGACY_PROJECT_LABELS_KEY = "packetcode:project-labels";
+// Immediately-prior product prefix (PacketADE); the store migrates it forward
+// to the current branded prefix on hydrate.
+const LEGACY_PROJECT_LABELS_KEY = "packetade:project-labels";
 
 describe("agentSidebarPrefsStore project label storage", () => {
   beforeEach(() => {
@@ -43,10 +45,10 @@ describe("agentSidebarPrefsStore project label storage", () => {
 
     useAgentSidebarPrefsStore
       .getState()
-      .setProjectLabel("D:/projects/packetade", "PacketADE");
+      .setProjectLabel("D:/projects/packetbench", "PacketBench");
 
     expect(JSON.parse(localStorage.getItem(PROJECT_LABELS_KEY)!)).toEqual({
-      "D:/projects/packetade": "PacketADE",
+      "D:/projects/packetbench": "PacketBench",
     });
     expect(localStorage.getItem(LEGACY_PROJECT_LABELS_KEY)).toBeNull();
   });
@@ -56,8 +58,8 @@ describe("agentSidebarPrefsStore project label storage", () => {
       "@/stores/agentSidebarPrefsStore"
     );
     const store = useAgentSidebarPrefsStore.getState();
-    store.setProjectLabel("D:/projects/packetade", "PacketADE");
-    store.setProjectLabel("D:/projects/packetade", "   ");
+    store.setProjectLabel("D:/projects/packetbench", "PacketBench");
+    store.setProjectLabel("D:/projects/packetbench", "   ");
     expect(useAgentSidebarPrefsStore.getState().projectLabels).toEqual({});
   });
 });

@@ -224,5 +224,5 @@ ${dependencySummaries || "- none"}
 Acceptance criteria:
 ${(milestone?.validationCriteria ?? []).map((criterion) => `- ${criterion}`).join("\n")}
 
-Stay within the owned paths unless a necessary cross-cutting change is explicitly explained. Run appropriate checks and commit all changes before finishing; PacketADE can integrate only a clean committed branch.`;
+Stay within the owned paths unless a necessary cross-cutting change is explicitly explained. Run appropriate checks and commit all changes before finishing; PacketBench can integrate only a clean committed branch.`;
 }

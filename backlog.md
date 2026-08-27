@@ -1,4 +1,4 @@
-# PacketADE Backlog
+# PacketBench Backlog
 
 Last reconciled: 2026-08-12
 
@@ -30,7 +30,7 @@ These are the only current product decisions blocking implementation.
    soft-delete/restore was declined. Confirmations remain the safety net until
    the toast is implemented (post-1.0-scope work; not yet scheduled).
 4. **P1 - v1.0.0 scope adoption.** DECIDED IN PART 2026-08-16: the owner
-   **rejected** adopting the v1.0.0 definition for now — PacketADE continues
+   **rejected** adopting the v1.0.0 definition for now — PacketBench continues
    the 0.10.x cadence with no 1.0 milestone. Still open within this item: the
    signing-identity question (the review holds that the Azure Trusted Signing
    + OV application should start immediately regardless of the 1.0 label; no
@@ -52,7 +52,7 @@ These are the only current product decisions blocking implementation.
 
 5. **OPEN 2026-08-26 - PacketCode ACP fold-in leftovers.** Three product
    calls remain after the ACP transport landed. (a) **Cost statusline.** The
-   `$` segment is implemented behind `packetade:agents:show-cost`, which
+   `$` segment is implemented behind `packetbench:agents:show-cost`, which
    defaults off and has no Settings toggle — so the feature is present, tested
    and unreachable. Either wire the toggle (Agents & Models -> Agent behavior)
    or delete `fmtCost`/`shouldShowCost`/`setCostDisplayEnabled`. Design review
@@ -65,7 +65,7 @@ These are the only current product decisions blocking implementation.
 
 Remote Agents relay architecture and code location are already decided: extend
 the standalone Rust service at `D:\projects\packetrelay`; keep shared schemas
-and the initial PWA under PacketADE's `remoteagents/` workspace. See
+and the initial PWA under PacketBench's `remoteagents/` workspace. See
 [`dev/remoteagents/09-open-decisions.md`](./dev/remoteagents/09-open-decisions.md).
 
 ## Release and real-environment proof
@@ -106,16 +106,25 @@ environment or packaged matrix has actually run.
 - **P1 - Flight supervision.** Run packaged local and disposable pinned-SSH
   matrices for Reviewer Gate, cooperative integration, Coordination Inbox, and
   bounded YOLO (RG8/CG9/CI9/AP9).
-- **P1 - PacketAgent W9 interoperability.** Configure a separately running
-  PacketAgent URL/token/workspace; prove deploy, close/relaunch/reconnect,
-  ordered-event continuation, evidence/artifact return, and the currently
-  published control surface. PacketAgent remains the durable-execution owner.
+- **P1 - PacketAgent W9 interoperability.** **Source complete both halves
+  (2026-08-26):** the PacketBench consumer (PH2–PH9 — contract probe, multi-
+  source package builders, Rust-side SSE stream with reconnect/dedupe/ack and
+  polling fallback, approval round-trip, typed evidence + provenance-stamped
+  landing, attention-queue integration) and the PacketAgent server surface
+  (contract route, attention list/respond ops, credential-mint CLI) are merged
+  and gated. **PH10 live e2e remains** — the only part needing a running
+  instance: mint a packet-product credential with the new
+  `packet-product-credential issue` CLI, point PacketBench Settings at
+  `http://127.0.0.1:8484`, then run the deploy → close/relaunch/reconnect →
+  approve → evidence runbook in
+  [`dev/bridgemind/packetagent-handoff-loop.md`](./dev/bridgemind/packetagent-handoff-loop.md).
+  PacketAgent remains the durable-execution owner.
 - **DONE 2026-08-26 - Re-pin `PACKET_AGENT_CONTRACT_COMMIT`.** The PacketAgent
   server half (contract route, attention operations, mint CLI) merged to
   PacketAgent main as `cf910c1`; the pin in `src/types/packet-agent.ts` now
   references it and the digest fixture passes unchanged.
 - **P1 - PacketCode release proof.** Publish signed stable/preview artifacts;
-  run clean-machine install/update/rollback, packaged PacketADE launch, and
+  run clean-machine install/update/rollback, packaged PacketBench launch, and
   PacketAgent W9 compatibility smoke. Source detection and `doctor --json`
   already pass.
 - **P1 - Bump the version before the next release build.** `package.json` and
@@ -125,19 +134,19 @@ environment or packaged matrix has actually run.
   ones (both sets are recorded in `CHANGELOG.md`). Nothing distinguishes them to
   a user or an updater, so the unreleased pair must not be distributed and the
   version must move before the next `pnpm tauri build`.
-- **P1 - Syndicate packaged acceptance gate.** The PacketADE flagship target,
+- **P1 - Syndicate packaged acceptance gate.** The PacketBench flagship target,
   typed/scoped pairing and revocation, Host-owned Workspaces, durable panes,
   managed pinned-SSH bootstrap, encrypted PacketRelay transport, and target
   isolation pass automated review. The public PacketRelay
   `wss://packet-relay-1038865114903.us-central1.run.app/v1/product-route` and
   signed immutable Syndicate `v0.1.3` x64/arm64 installer are live and
-  independently smoke-verified. Remaining: run packaged PacketADE against clean
+  independently smoke-verified. Remaining: run packaged PacketBench against clean
   Ubuntu plus network-loss, revocation, scope, replay, Node Host-restart,
   upgrade, and rollback matrices before treating “control from anywhere” as a
   broadly accepted release promise. See
   [`dev/syndicate-execution-target.md`](./dev/syndicate-execution-target.md).
   The expiry matrix is now the sharpest of these: grants last 30 days with no
-  renewal path, so every paired device reaches it. PacketADE handles the cliff
+  renewal path, so every paired device reaches it. PacketBench handles the cliff
   correctly as of the integration-toggle work, but the fix has never been
   exercised against a real expired grant. The 11-row matrix, and how to produce
   an expired grant without waiting 30 days, is
@@ -147,24 +156,24 @@ environment or packaged matrix has actually run.
   Forget is the only cleanup path in that state.
 - **P2 - Syndicate `device.refresh` client half.** Grants expire at 30 days and
   Syndicate has no renewal method yet; it is designing and building the host
-  half (its backlog item P4#2) and PacketADE implements the client call
+  half (its backlog item P4#2) and PacketBench implements the client call
   afterwards. Agree the method shape before either side builds. Until it lands,
-  the only remedy for an expired grant is re-pairing, which PacketADE now warns
-  about in the final week rather than discovering at the cliff. PacketADE's
+  the only remedy for an expired grant is re-pairing, which PacketBench now warns
+  about in the final week rather than discovering at the cliff. PacketBench's
   client-side proposal, including the security tradeoff of refreshing an
   already-expired grant, is
   [`dev/syndicate-device-refresh-proposal.md`](./dev/syndicate-device-refresh-proposal.md);
   delivered to Syndicate on 2026-08-15 as branch
-  `packetade/device-refresh-proposal` (commit `3844d3e`, one new file
-  `docs/PACKETADE_DEVICE_REFRESH_PROPOSAL.md`, branched from their `main`).
+  `packetbench/device-refresh-proposal` (commit `3844d3e`, one new file
+  `docs/PACKETBENCH_DEVICE_REFRESH_PROPOSAL.md`, branched from their `main`).
   Blocked on Syndicate merging it and answering the six questions in its §10;
-  PacketADE builds nothing until the shape is settled.
+  PacketBench builds nothing until the shape is settled.
 - **P2 - Contribute the device→relay protocol spec.** `CONTROLLER_PROTOCOL_V1`
   documents the controller→Host half only. The device→relay half — `device_hello`
   and its `SYNDICATE-RELAY-DEVICE-HELLO-V1` separator (signed over a five-field
   newline payload rather than canonical JSON, unlike every other signature in
   the protocol), the device keepalive, and `routeRevoked` — exists only as
-  PacketADE's implementation in `src-tauri/src/commands/syndicate_relay.rs`.
+  PacketBench's implementation in `src-tauri/src/commands/syndicate_relay.rs`.
   Syndicate owns the document and asked us to write that half, since we own the
   only implementation. Its stated goal is that an independent client be
   buildable from the spec alone, which today it is not. Drafted in
@@ -213,7 +222,7 @@ environment or packaged matrix has actually run.
   and the bounded slow-write/host-switch overlap.
 - **P2 - Project Memory interoperability.** Run real-editor watch storms,
   partial-write/rename/restart, and packaged empty/large/dirty/gitignored
-  project matrices. PacketADE must not edit `.gitignore`.
+  project matrices. PacketBench must not edit `.gitignore`.
 - **P2 - MCP Hub parity.** Run surviving sidecar/in-process providers against
   configured local and pinned-SSH MCP servers: crash/reload/version-skew,
   offline install/removal, trust downgrade/reconnect, remote-profile parity,
@@ -259,7 +268,7 @@ frontend files / 2305 tests). Deliberate leftovers:
   own audit, light and dark.
 - **P2 - Adopted engine sessions do not render their replay.** The
   `api-agent:*` contract has no user-turn event, so a replayed ACP transcript
-  would show every assistant turn with every prompt missing, and PacketADE has
+  would show every assistant turn with every prompt missing, and PacketBench has
   no local record to interleave. The replay is suppressed and the conversation
   opens with a notice; the engine still holds full history as model context.
   Real replay needs a user-turn event in the contract.
@@ -276,13 +285,13 @@ frontend files / 2305 tests). Deliberate leftovers:
   that is running or holding an unanswered permission request. Re-selecting an
   evicted session just resumes it via `session/load`. Roughly 40 lines; recorded
   here because the source repo is now archived.
-- **P3 - ACP contract fixtures live only in PacketADE.** The original product
+- **P3 - ACP contract fixtures live only in PacketBench.** The original product
   split put ACP extensions and contract fixtures upstream in `packetcode`, so
   the engine owns its own protocol contract. In practice `mock-engine.mjs` and
   the `acp_stream.rs` suite exist only here. That is defensible (they test the
   client, not the engine), but it means a packetcode-side protocol change has no
   fixture upstream to break. Decide whether to mirror them into `packetcode` or
-  to record that PacketADE is the contract's home.
+  to record that PacketBench is the contract's home.
 - **P3 - Launch composer shows the seeded model catalog for the ACP row.**
   Engine-advertised models reach the picker only once a conversation exists;
   fetching them pre-launch would require branching on provider id, which the
@@ -485,8 +494,8 @@ citations is in
   then write behavioural tests for the six money/remote modules
   (`LaunchAsyncFlightModal`, `reviewerGateRuntime`, `issueFlightMirrorStore`,
   `ServerFormModal`, attempt listeners, the PTY pattern parser).
-- **P3 - Brand-literal sweep.** Replace the 43 hardcoded `packetade:` storage
-  keys and 7 `packetade://` URIs with `storageKey()`/`URI_SCHEME`.
+- **P3 - Brand-literal sweep.** Replace the 43 hardcoded `packetbench:` storage
+  keys and 7 `packetbench://` URIs with `storageKey()`/`URI_SCHEME`.
 - **P1 - Rehearse the Phase-3 release gates before the release window.** A
   2026-08-06 dry run against the known-good v0.10.3 artifacts already reduces
   the strict gate to exactly the two scheduled blockers — Authenticode
@@ -501,7 +510,7 @@ citations is in
   independent traps, all confirmed on this machine, all of which would burn
   time during the release window: `hostTarget()` reads `os.platform()`, so WSL
   reports `linux` and the script demands Linux bundles for a Windows-only
-  release (fixed — `PACKETADE_RELEASE_TARGET` is now validated and its
+  release (fixed — `PACKETBENCH_RELEASE_TARGET` is now validated and its
   provenance is printed); `cargo` is not on the WSL path, so `rust:check`,
   `rust:test`, and `check:tauri-schema` fail with `cargo: not found`; and the
   bundle-root lookup used to fall through to `src-tauri/target` whenever
@@ -716,7 +725,7 @@ These are approved concepts, not current implementation commitments.
 
 Do not reopen these from historical plans:
 
-- PacketADE's first Syndicate execution-target source boundary is complete:
+- PacketBench's first Syndicate execution-target source boundary is complete:
   `kind: "syndicate"` persistence, OS-keychain device credentials, scoped
   pairing/revocation, machine capability health, Host repository/Workspace
   selection and creation, pane/session lifecycle, durable cursor replay,
@@ -739,7 +748,7 @@ Do not reopen these from historical plans:
   Project Memory, MCP Hub, trust/provenance, Dictation hardening, Monitor v1,
   PacketCode integration, and PacketAgent W9 consumer source are implemented;
   their remaining work is recorded above.
-- Claude Code panes self-bootstrap PacketADE's native status collector in
+- Claude Code panes self-bootstrap PacketBench's native status collector in
   v0.10.3; selectable Terminal shells are shipped at source/package level.
 
 ## Canonical plan map

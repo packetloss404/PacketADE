@@ -28,12 +28,12 @@ pending. Clearing repository/PR detail state across repo and host switches
 (finding 11) remains open. MS3's Git Hosts renaming and action-label corrections
 are enabled by the registry but still not done.
 
-Scope: PacketADE's main application shell, not the Settings information
+Scope: PacketBench's main application shell, not the Settings information
 architecture
 
 ## Executive verdict
 
-PacketADE's primary Left Rail routes are real and the core navigation is
+PacketBench's primary Left Rail routes are real and the core navigation is
 functional. The main weakness is not a collection of dead pages. It is that
 navigation metadata and right-side panel state are owned in several different
 places, so they drift, compete for width, or carry stale local/conversation
@@ -57,7 +57,7 @@ This audit is a source and test review. It did not change product behavior.
 
 | Shell area      | Recommended responsibility                                                                  |
 | --------------- | ------------------------------------------------------------------------------------------- |
-| Title bar       | PacketADE identity and native window controls                                               |
+| Title bar       | PacketBench identity and native window controls                                               |
 | Primary rail    | Workspaces, Agents, Flight Deck, Issues, Memory, Git Hosts; Settings anchored at the bottom |
 | Global toolbar  | Command palette, truthful global New menu, operational status, Agents, spend, project scope |
 | Surface sidebar | Workspace list, Agent conversations, or Flights—never mixed ownership                       |
@@ -91,7 +91,7 @@ is removed and Inspector is owned solely by the Agents view.
 
 Workspace may render its 480px Editor and 280px Git panel together. `App` can
 then add a 280–720px Agent inspector outside Workspace. Combined with the 240px
-Workspace sidebar and 44px primary rail, these widths exceed PacketADE's
+Workspace sidebar and 44px primary rail, these widths exceed PacketBench's
 supported 800px minimum window before the terminal canvas receives meaningful
 space.
 
@@ -512,7 +512,7 @@ implemented the same day.
    — **DECIDED 2026-07-30: RECONNECT.** The lightweight Editor becomes a
    first-class `RightDock` panel: wire `editorStore.openFile` production
    callers and protect dirty buffers. In-app quick editing IS part of
-   PacketADE's positioning. This folds into decision 2's `RightDock` scope and
+   PacketBench's positioning. This folds into decision 2's `RightDock` scope and
    lands inside the MS2 milestone.
    — **AMENDED 2026-07-30 (same day):** D5's scope explicitly includes a wired
    Markdown viewer — the reconnected `RightDock` Editor panel must open and

@@ -74,7 +74,7 @@ describe("MemoryView preview truth", () => {
     render(<MemoryView />);
 
     // The preview shows the same brief the launch pipeline composes.
-    expect(screen.getByText(/PacketADE Memory Brief/)).toBeInTheDocument();
+    expect(screen.getByText(/PacketBench Memory Brief/)).toBeInTheDocument();
     // Nonzero, budget-derived estimate — not the ~0 of an empty brief.
     expect(document.body.textContent).not.toContain("~0 tok");
     expect(document.body.textContent).toMatch(/~[1-9]\d* tok/);

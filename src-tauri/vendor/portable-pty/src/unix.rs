@@ -7,7 +7,7 @@ use libc::{self, winsize};
 use std::cell::RefCell;
 use std::io::{Read, Write};
 use std::os::unix::io::{AsRawFd, FromRawFd};
-// CommandExt (pre_exec) intentionally removed — PacketADE spawns via posix_spawn
+// CommandExt (pre_exec) intentionally removed — PacketBench spawns via posix_spawn
 // (no pre_exec) to stay fork-safe in a multi-threaded host. See spawn_command.
 use std::{io, mem, ptr};
 
@@ -117,7 +117,7 @@ impl Read for PtyFd {
 /// to provide the list of open fds.  Any errors in enumerating or closing
 /// the fds are silently ignored.
 pub fn close_random_fds() {
-    // PATCHED (PacketADE): upstream read `/dev/fd` via `std::fs::read_dir` and
+    // PATCHED (PacketBench): upstream read `/dev/fd` via `std::fs::read_dir` and
     // collected fds into a `Vec`. That runs inside the forked child *before*
     // exec, and `read_dir`/`Vec` call `malloc`. In a heavily-threaded host
     // (Tauri's embedded WebKit) a background thread can hold the allocator lock
@@ -184,7 +184,7 @@ impl PtyFd {
     }
 
     fn spawn_command(&self, builder: CommandBuilder) -> anyhow::Result<std::process::Child> {
-        // PATCHED (PacketADE): upstream forked and ran `setsid`/`TIOCSCTTY` in a
+        // PATCHED (PacketBench): upstream forked and ran `setsid`/`TIOCSCTTY` in a
         // `.pre_exec()` closure. `fork()` is unsafe in this host — Tauri's
         // embedded WebKit makes the process heavily multi-threaded, and the fork
         // child aborts before exec ("crashed on child side of fork pre-exec").

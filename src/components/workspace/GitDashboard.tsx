@@ -898,7 +898,7 @@ export function GitDashboard({
             <div className="text-meta text-text-muted">
               {stagedCount === 0
                 ? "Commits staged files only — stage files above"
-                : "Flight-linked commits receive PacketADE trailers when a task match is found."}
+                : "Flight-linked commits receive PacketBench trailers when a task match is found."}
             </div>
           )}
           <textarea

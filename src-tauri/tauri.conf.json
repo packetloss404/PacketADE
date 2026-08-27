@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegui/tauri2-schema/main/tauri.conf.json.schema",
-  "productName": "PacketADE",
-  "version": "0.10.5",
-  "identifier": "com.packetade.desktop",
+  "productName": "PacketBench",
+  "version": "0.11.0",
+  "identifier": "com.packetbench.desktop",
   "build": {
     "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "PacketADE",
+        "title": "PacketBench",
         "width": 1400,
         "height": 900,
         "decorations": true,

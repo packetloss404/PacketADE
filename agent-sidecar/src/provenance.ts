@@ -1,5 +1,5 @@
 /**
- * Sidecar mirror of PacketADE's provenance v1 contract. The host currently
+ * Sidecar mirror of PacketBench's provenance v1 contract. The host currently
  * stamps canonical api-agent events after transport normalization, so this
  * envelope type itself does not alter protocol v11's wire shape.
  */

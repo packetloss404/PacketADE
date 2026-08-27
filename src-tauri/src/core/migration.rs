@@ -1,4 +1,4 @@
-//! One-shot startup migrations for the PacketCode → PacketADE rename.
+//! One-shot startup migrations for the PacketCode → PacketBench rename.
 //!
 //! Runs once per launch early in `lib::run`. Best-effort — logs warnings on
 //! failure but never blocks app startup.
@@ -7,14 +7,14 @@ use crate::core::brand::{DATA_DIR_NAME, LEGACY_DATA_DIR_NAME};
 use std::path::Path;
 use tracing::{info, warn};
 
-/// Entries only ever created in the data dir by THIS app (the PacketADE IDE).
+/// Entries only ever created in the data dir by THIS app (the PacketBench IDE).
 /// Presence of any one of them is positive evidence that a `~/.packetcode` is
 /// our own pre-rename directory and is safe to migrate.
 ///
 /// Deliberately excludes `sessions/`, `backups/` and `commands/`: the sibling
 /// `packetcode` TUI creates directories with those exact names too, so they
 /// prove nothing about ownership.
-const PACKETADE_MARKERS: &[&str] = &[
+const PACKETBENCH_MARKERS: &[&str] = &[
     crate::core::storage::STATE_FILENAME,
     "conversations",
     "missions",
@@ -65,7 +65,7 @@ pub(crate) enum LegacyDirShape {
 /// Classify a legacy `~/.packetcode` directory by the files it contains.
 ///
 /// The TUI veto wins over our own markers. On a machine where an earlier run
-/// of this migration already folded TUI files into `~/.packetade`, a directory
+/// of this migration already folded TUI files into `~/.packetbench`, a directory
 /// can legitimately look like both; refusing to migrate is the safe answer in
 /// that ambiguity, because the only cost is a skipped migration whereas the
 /// only cost of the other choice is a destroyed TUI home.
@@ -74,19 +74,21 @@ pub(crate) fn classify_legacy_dir(dir: &Path) -> LegacyDirShape {
     if contains_any(PACKETCODE_TUI_MARKERS) {
         return LegacyDirShape::Foreign;
     }
-    if contains_any(PACKETADE_MARKERS) {
+    if contains_any(PACKETBENCH_MARKERS) {
         return LegacyDirShape::Ours;
     }
     LegacyDirShape::Unknown
 }
 
-/// Migrate the user data directory from `~/.packetcode/` → `~/.packetade/`.
+/// Migrate the user data directory from the legacy home (`~/.packetade`, the
+/// immediately-prior product name) → `~/.packetbench/`.
 ///
 /// - If the new dir already exists, do nothing (user already migrated or fresh install).
 /// - If only the old dir exists, and it is recognizably OURS, rename it in
-///   place (atomic on the same volume). The sibling `packetcode` TUI now owns
-///   `~/.packetcode` on fresh machines, so a dir that is the TUI's — or that
-///   carries no evidence of being ours — is left strictly alone.
+///   place (atomic on the same volume). The `Foreign` veto below is retained
+///   defensively from the earlier PacketCode → PacketADE migration; the sibling
+///   `packetcode` TUI only ever claimed `~/.packetcode`, never `~/.packetade`,
+///   so in practice a legacy `~/.packetade` here is always ours.
 /// - If neither exists, do nothing — the new dir will be created on first use.
 /// - A same-volume rename is tried first; on failure (e.g. a cross-volume home
 ///   where Windows returns ERROR_NOT_SAME_DEVICE) we fall back to a recursive
@@ -218,7 +220,7 @@ mod tests {
     #[test]
     fn migrate_mission_to_flight_rewrites_legacy_key_on_disk() {
         let tmp = std::env::temp_dir().join(format!(
-            "packetade-mission-mig-{}-{:?}",
+            "packetbench-mission-mig-{}-{:?}",
             std::process::id(),
             std::thread::current().id()
         ));
@@ -268,7 +270,7 @@ mod tests {
     #[test]
     fn migrate_mission_to_flight_is_noop_without_legacy_key() {
         let tmp = std::env::temp_dir().join(format!(
-            "packetade-mission-mig-noop-{}-{:?}",
+            "packetbench-mission-mig-noop-{}-{:?}",
             std::process::id(),
             std::thread::current().id()
         ));
@@ -297,7 +299,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let dir = std::env::temp_dir().join(format!("packetade-datadir-mig-{tag}-{nanos}"));
+        let dir = std::env::temp_dir().join(format!("packetbench-datadir-mig-{tag}-{nanos}"));
         std::fs::create_dir_all(&dir).expect("create temp home");
         dir
     }
@@ -316,8 +318,8 @@ mod tests {
         dir
     }
 
-    /// Lay out a `~/.packetcode` shaped like a pre-rename PacketADE data dir.
-    fn make_legacy_packetade_home(home: &std::path::Path) -> std::path::PathBuf {
+    /// Lay out a `~/.packetcode` shaped like a pre-rename PacketBench data dir.
+    fn make_legacy_packetbench_home(home: &std::path::Path) -> std::path::PathBuf {
         let dir = home.join(LEGACY_DATA_DIR_NAME);
         std::fs::create_dir_all(dir.join("conversations")).unwrap();
         std::fs::create_dir_all(dir.join("missions")).unwrap();
@@ -333,7 +335,7 @@ mod tests {
     #[test]
     fn migrate_data_dir_leaves_packetcode_tui_home_alone() {
         // The regression this guards: on a fresh machine the TUI is installed
-        // first, so `~/.packetcode` exists and `~/.packetade` does not — the
+        // first, so `~/.packetcode` exists and `~/.packetbench` does not — the
         // exact shape the old code read as "legacy dir, rename it".
         let home = unique_temp_home("tui");
         let legacy = make_tui_home(&home);
@@ -354,16 +356,16 @@ mod tests {
         );
         assert!(
             !home.join(DATA_DIR_NAME).exists(),
-            "no PacketADE dir should be conjured out of the TUI's home"
+            "no PacketBench dir should be conjured out of the TUI's home"
         );
 
         std::fs::remove_dir_all(&home).ok();
     }
 
     #[test]
-    fn migrate_data_dir_migrates_legacy_packetade_home() {
+    fn migrate_data_dir_migrates_legacy_packetbench_home() {
         let home = unique_temp_home("ours");
-        let legacy = make_legacy_packetade_home(&home);
+        let legacy = make_legacy_packetbench_home(&home);
 
         migrate_data_dir_in(&home);
 
@@ -385,7 +387,7 @@ mod tests {
     #[test]
     fn migrate_data_dir_is_noop_when_both_dirs_exist() {
         let home = unique_temp_home("both");
-        let legacy = make_legacy_packetade_home(&home);
+        let legacy = make_legacy_packetbench_home(&home);
         let new_dir = home.join(DATA_DIR_NAME);
         std::fs::create_dir_all(&new_dir).unwrap();
         std::fs::write(
@@ -431,7 +433,7 @@ mod tests {
         // A dir carrying both shapes (e.g. a machine where an earlier run of
         // this migration already folded TUI files in) must read as Foreign.
         let home = unique_temp_home("mixed");
-        let legacy = make_legacy_packetade_home(&home);
+        let legacy = make_legacy_packetbench_home(&home);
         std::fs::write(legacy.join("config.toml"), "model = \"opus\"\n").unwrap();
 
         assert_eq!(classify_legacy_dir(&legacy), LegacyDirShape::Foreign);

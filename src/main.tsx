@@ -8,12 +8,12 @@ import "./index.css";
 
 // Global error handlers — catch unhandled errors and promise rejections
 window.addEventListener("unhandledrejection", (event) => {
-  console.error("[PacketADE] Unhandled promise rejection:", event.reason);
+  console.error("[PacketBench] Unhandled promise rejection:", event.reason);
 });
 
 window.addEventListener("error", (event) => {
   console.error(
-    "[PacketADE] Unhandled error:",
+    "[PacketBench] Unhandled error:",
     event.message,
     "at",
     event.filename,

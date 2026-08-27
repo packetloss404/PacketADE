@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>PacketADE Mobile — PWA Mock</title>
+<title>PacketBench Mobile — PWA Mock</title>
 <style>
   :root {
     /* Base canvas */
     --canvas: #07090d;
     --canvas-2: #11151c;
 
-    /* PWA palette (Claude-inspired, PacketADE Graphite blend) */
+    /* PWA palette (Claude-inspired, PacketBench Graphite blend) */
     --bg-0: #0d1117;
     --bg-1: #161b22;
     --bg-2: #1c2128;
@@ -458,7 +458,7 @@
 <body>
 
 <div class="page-head">
-  <h1>PacketADE Mobile — PWA visual mock</h1>
+  <h1>PacketBench Mobile — PWA visual mock</h1>
   <p>Four key screens at the look-and-feel we'd target. SF Pro / system fonts, dark theme with Anthropic-warm copper accent, generous spacing, rounded cards, iOS-style bottom sheets. Estimated ~85–90% native fidelity, ~80% interactive fidelity in a real PWA build (Vaul for sheets, Framer Motion for spring physics).</p>
   <div class="meta">Mock only — no interaction, no real WebSocket. iPhone 15 Pro frame (393×852 logical, shown at ~300px wide).</div>
 </div>
@@ -476,7 +476,7 @@
         </div>
         <div class="app-header">
           <div>
-            <h2>PacketADE</h2>
+            <h2>PacketBench</h2>
             <div class="subtitle">3 active · 1 needs you</div>
           </div>
           <div class="icon-btn">+</div>
@@ -712,7 +712,7 @@
           </div>
           <div class="pair-title">Scan the QR code</div>
           <div class="pair-desc">
-            Open PacketADE on your desktop, go to
+            Open PacketBench on your desktop, go to
             <strong style="color: var(--text-1);">Settings → Mobile</strong>,
             and scan this code.
           </div>
@@ -733,7 +733,7 @@
   <h3>Design choices</h3>
   <ul>
     <li><strong>Type</strong> — SF Pro Display via <code>-apple-system</code> stack. Identical to native on iOS.</li>
-    <li><strong>Color</strong> — dark base (<code>#0d1117</code>) with Anthropic-warm copper accent (<code>#d97757</code>) and warm off-white text (<code>#ece6dd</code>). Borrows Claude's palette while staying compatible with PacketADE's existing Graphite tokens.</li>
+    <li><strong>Color</strong> — dark base (<code>#0d1117</code>) with Anthropic-warm copper accent (<code>#d97757</code>) and warm off-white text (<code>#ece6dd</code>). Borrows Claude's palette while staying compatible with PacketBench's existing Graphite tokens.</li>
     <li><strong>Bubbles</strong> — user on right with soft accent tint; assistant on left with elevated dark card. 14 px border radius, 12–13 px padding, generous line height for legibility on mobile.</li>
     <li><strong>Tool cards</strong> — left-accent border, monospace, dimmed text. Inline between turns. Tappable in the real build to expand the result.</li>
     <li><strong>Bottom sheet</strong> — backdrop dim + blur, top-rounded card sliding up. In the real build, Vaul gives this native iOS rubber-band physics.</li>

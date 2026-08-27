@@ -1,4 +1,4 @@
-// Shared wire protocol between the PacketADE Rust supervisor and this sidecar.
+// Shared wire protocol between the PacketBench Rust supervisor and this sidecar.
 // The supervisor reads/writes newline-delimited JSON; every line is one of
 // these envelopes. Do not change field names / types without updating the
 // Rust side in lockstep.
@@ -10,7 +10,7 @@
 // v2 (Tier 3 slice B): added `set_permission_mode`, `set_model`, and `retry`
 // request types.
 //
-// v3 (PacketADE Tier 3 slice A): adds first-class `attachments` on
+// v3 (PacketBench Tier 3 slice A): adds first-class `attachments` on
 // start/send, `mergedContent` on edit_response (per-hunk acceptance),
 // `batchId`/`batchSize` on permission_request, and three new events:
 // `plan_block` (structured TodoWrite mirror), `tool_output_extended`
@@ -120,7 +120,7 @@ export type StartSessionRequest = {
   systemPrompt: string;
   allowedTools: string[];
   mcpServers: Record<string, unknown>;
-  /** v11: immutable authority captured by PacketADE at session start. An
+  /** v11: immutable authority captured by PacketBench at session start. An
    * omitted field is migrated by the sidecar to conservative read-only
    * defaults; an explicit empty array grants no MCP servers. */
   mcpTrustSnapshot?: McpTrustSnapshot[];
@@ -140,7 +140,7 @@ export type StartSessionRequest = {
   permissionMode?: PermissionMode;
   approveWrites?: boolean;
   /** Optional absolute command path for CLI-backed providers. Introduced for
-   * the retired `openai-codex` provider so PacketADE could honor a
+   * the retired `openai-codex` provider so PacketBench could honor a
    * user-pinned Codex binary instead of relying on PATH resolution. No
    * surviving provider is CLI-backed, so nothing sends it today; kept on the
    * wire because removing a field is a protocol break and the next

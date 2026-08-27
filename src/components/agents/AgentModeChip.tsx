@@ -90,7 +90,7 @@ const MODE_META: Record<
  * a drop-in move when the files merge.)
  */
 export const RESTRICTED_MODES_HINT =
-  "This provider accepts fewer postures than PacketADE offers — only the ones it will honor are listed.";
+  "This provider accepts fewer postures than PacketBench offers — only the ones it will honor are listed.";
 
 /** Label for the chip when no posture can honestly be named. */
 export const PROVIDER_DEFAULT_LABEL = "Provider default";
@@ -115,7 +115,7 @@ function isRestrictedModeSet(
  * Render a backend's own mode name as a chip label: `"accept-edits"` →
  * `"Accept edits"`. Separators become spaces and only the first letter is
  * capitalised, so the engine's vocabulary stays recognisable without being
- * dressed up as one of PacketADE's five postures.
+ * dressed up as one of PacketBench's five postures.
  */
 function formatProviderModeLabel(raw: string): string {
   const words = raw.trim().replace(/[-_]+/g, " ").replace(/\s+/g, " ");
@@ -177,12 +177,12 @@ export function AgentModeChip({
   // label, and it has three cases:
   //
   //  (a) the derived posture IS offered — label it, exactly as before.
-  //  (b) it is NOT — PacketADE's override was dropped by the backend and the
+  //  (b) it is NOT — PacketBench's override was dropped by the backend and the
   //      session is running on the PROVIDER's own default. Name that, using
   //      the provider's word when it gave one.
   //  (c) neither is knowable — "Provider default", neutral tone, no icon that
   //      implies an escalation level. `src-tauri/src/acp/mod.rs` is explicit
-  //      that the UI must not guess a mode here, and "Default" is a PacketADE
+  //      that the UI must not guess a mode here, and "Default" is a PacketBench
   //      posture with a specific meaning (full tools, no prompts), so falling
   //      back to it would be exactly that guess.
   //
@@ -255,7 +255,7 @@ export function AgentModeChip({
               {PROVIDER_DEFAULT_LABEL}
               {providerDefault ? `: ${formatProviderModeLabel(providerDefault)}` : ""}
               <br />
-              PacketADE did not set a posture — the provider chose this one.
+              PacketBench did not set a posture — the provider chose this one.
               {approveWrites && (
                 <>
                   <br />

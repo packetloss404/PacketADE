@@ -25,7 +25,7 @@ import { startCostGuardrailMonitor } from "@/stores/analyticsStore";
 import { sampleWorkspaceAgentsDisplayTopology } from "@/stores/workspaceAgentsDogfoodStore";
 import { hydrateConversations } from "@/stores/agentConversationPersistence";
 
-const PROJECT_PATH_KEY = "packetade:project-path";
+const PROJECT_PATH_KEY = "packetbench:project-path";
 
 /** App-lifetime listener for Rust's `flight:cost-updated` event, emitted
  *  after every executor cost accumulation (sidecar `turn_summary` handler and
@@ -156,7 +156,7 @@ export async function initializeApp(): Promise<void> {
     // One-time cleanup of the retired agentMosaicStore localStorage key.
     // Safe to keep indefinitely — removeItem is a no-op when the key is absent.
     try {
-      localStorage.removeItem("packetade:agent-mosaic-v1");
+      localStorage.removeItem("packetbench:agent-mosaic-v1");
     } catch {
       // localStorage unavailable — fine.
     }

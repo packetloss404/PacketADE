@@ -45,7 +45,7 @@ const mocks = vi.hoisted(() => {
       openSettings: vi.fn(),
     },
     layoutState: {
-      projectPath: "D:\\projects\\PacketADE",
+      projectPath: "D:\\projects\\PacketBench",
     },
     workspaceState: {
       workspaces: [remoteWorkspace],
@@ -272,7 +272,7 @@ describe("workspace launch installed-agent checks", () => {
 
     const nameInput = screen.getByPlaceholderText("My Workspace") as HTMLInputElement;
     // Seeded from the project folder, so a bare launch needs no typing.
-    expect(nameInput.value).toBe("PacketADE");
+    expect(nameInput.value).toBe("PacketBench");
 
     fireEvent.click(screen.getByRole("button", { name: /cli pair/i }));
     expect(nameInput.value).toBe("CLI Pair");
