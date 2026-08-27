@@ -87,7 +87,7 @@ re-pair; `TerminalHeader` called `onKill` without awaiting or catching it.
 2. **Run the expiry acceptance matrix.** The fix above is source- and
    unit-verified and has never met a real expired grant. Eleven rows, and four
    ways to produce an expired grant without waiting 30 days, are in
-   [`dev/syndicate-expiry-acceptance.md`](./dev/syndicate-expiry-acceptance.md).
+   [`dev/archive/syndicate/syndicate-expiry-acceptance.md`](./dev/archive/syndicate/syndicate-expiry-acceptance.md).
    This is the sharpest untested path in the integration.
 3. **Chase Syndicate on `device.refresh`.** PacketBench's proposal is delivered
    (see below) and blocked on their answers. No client work starts until the
@@ -105,13 +105,13 @@ to the other's tree.**
 Three documents were written here this session, all verified against source with
 `file:line` citations rather than against existing documentation:
 
-- [`dev/controller-protocol-device-relay-half.md`](./dev/controller-protocol-device-relay-half.md)
+- [`dev/archive/syndicate/controller-protocol-device-relay-half.md`](./dev/archive/syndicate/controller-protocol-device-relay-half.md)
   — the device→relay half of the protocol, which exists nowhere else because we
   own the only implementation. Cross-checked against the relay's own
   `product_route.rs`, not just our side.
-- [`dev/syndicate-device-refresh-proposal.md`](./dev/syndicate-device-refresh-proposal.md)
+- [`dev/archive/syndicate/syndicate-device-refresh-proposal.md`](./dev/archive/syndicate/syndicate-device-refresh-proposal.md)
   — client input on the grant-renewal method Syndicate owns.
-- [`dev/syndicate-expiry-acceptance.md`](./dev/syndicate-expiry-acceptance.md)
+- [`dev/archive/syndicate/syndicate-expiry-acceptance.md`](./dev/archive/syndicate/syndicate-expiry-acceptance.md)
   — the acceptance matrix for the expiry fix.
 
 The `device.refresh` proposal was **delivered on 2026-08-15** to

@@ -1,6 +1,6 @@
 # PacketBench Development Plans
 
-Last reconciled: 2026-08-12
+Last reconciled: 2026-08-27
 
 This directory contains active implementation plans, proof runbooks, research,
 and historical evidence. It is not a second backlog.
@@ -47,6 +47,14 @@ The former Tile program is archived under
 work, but its final Agents-tab-retirement direction was explicitly superseded
 by the current Workspace/Agents contract. Do not resume it.
 
+The Syndicate execution-target program is archived under
+[`archive/syndicate/`](./archive/syndicate/). Syndicate separated from the
+Packet\* product family on 2026-08-27 and the integration was removed from the
+product in `68ce85ee`; those documents are historical records only. The
+`method-b-request.md` inside that folder must not be sent. `syndicate_relay.rs`
+at `d87fb125` remains the reference device-half implementation of the controller
+relay protocol for the future Remote Agents work.
+
 ## Active implementation and proof plans
 
 | Track                       | Canonical document                                                                                 | Current boundary                                                                                                                                                                                                                                                    |
@@ -71,11 +79,6 @@ by the current Workspace/Agents contract. Do not resume it.
 | Cost controls/efficiency    | [`cost-efficiency-loop.md`](./cost-efficiency-loop.md)                                             | Reporting surface removed; caching/edit improvements partly complete; live measurement and bounded edit debt remain                                                                                                                                                 |
 | Packet Control              | [`packet-control-loop.md`](./packet-control-loop.md)                                               | Proposed, not started; shared evidence contract must precede implementation                                                                                                                                                                                         |
 | Computer Use                | [`computer-use-plan.md`](./computer-use-plan.md)                                                   | **PAUSED 2026-08-16** by owner decision; design and decisions complete (browser tier first, Rust in-process, approval-gated, Windows-only v1); §7-PAUSE of the plan is the pickup runbook                                                                           |
-| Syndicate target            | [`syndicate-execution-target.md`](./syndicate-execution-target.md)                                 | **PUBLIC INFRA LIVE** - PacketBench flagship target, pairing/scopes/revoke, Host Workspaces, durable panes/replay, pinned-SSH bootstrap, encrypted PacketRelay, and isolation pass; signed v0.1.3 installer and WSS route are live; packaged real-host matrix remains |
-| Syndicate device→relay spec | [`controller-protocol-device-relay-half.md`](./controller-protocol-device-relay-half.md)           | PacketBench's contribution to Syndicate's `CONTROLLER_PROTOCOL_V1`, which documents the controller→Host leg only. We own the only device-half implementation. Syndicate integrates the final document                                                                 |
-| Syndicate `device.refresh`  | [`syndicate-device-refresh-proposal.md`](./syndicate-device-refresh-proposal.md)                   | Client-side method-shape proposal. Syndicate owns the design and the Host half; the shape is settled jointly before either side builds                                                                                                                              |
-| Syndicate expiry proof      | [`syndicate-expiry-acceptance.md`](./syndicate-expiry-acceptance.md)                               | 11-row acceptance matrix for the day-30 grant-expiry path. The fix is source- and unit-verified; never yet run against a real expired grant                                                                                                                         |
-| Syndicate proof kit         | [`syndicate-proof/README.md`](./syndicate-proof/README.md)                                         | **Executable proof harness (2026-08-26):** bucketed every ST1/ST6/ST8 + 11 expiry rows into run-now / cheap-local (WSL/Hyper-V) / environment-gated; Phase 0 executed & green (fixture parity, read-only relay probes, packetrelay + host contract suites, PacketBench baselines). Ships the Method A sqlite helper, WSL/VM runbooks, and the Method B request draft for Syndicate. Rows 5/5b/6b need Method B; arm64/macOS/Linux-controller rows need hardware |
 | PacketBBS                   | [`features-packetbbs-terminal.md`](./features-packetbbs-terminal.md)                               | Proposed later, bounded non-secret connection preset                                                                                                                                                                                                                |
 | 2026-08-01 P1 pass          | [`high-priority-real-work-loop-2026-08-01.md`](./high-priority-real-work-loop-2026-08-01.md)       | Evidence record for the runtime-authority correctness pass (`fd8c226`); source and review complete                                                                                                                                                                  |
 | GitHub pane v9 residue      | [`github-pane-v9-loop.md`](./github-pane-v9-loop.md)                                               | Scoped GitHub-pane deferrals; remaining work is tracked in `../backlog.md`                                                                                                                                                                                          |

@@ -29,7 +29,7 @@ What the pause explicitly does **not** cover:
   handled by pickup step 3.
 - **The Syndicate program is unaffected.** Syndicate and Remote Agents share
   the relay binary but are separate programs with separate docs
-  (`dev/syndicate-execution-target.md`). Do not read this pause as pausing
+  (`dev/archive/syndicate/syndicate-execution-target.md`). Do not read this pause as pausing
   Syndicate.
 
 ## 2. Exact state at pause (2026-08-16)

@@ -139,16 +139,16 @@ environment or packaged matrix has actually run.
   integration was removed from PacketBench (see `CHANGELOG.md` [Unreleased];
   pre-removal code is at `d87fb125`). The clean-Ubuntu, expiry, revocation, and
   rollback matrices in
-  [`dev/syndicate-execution-target.md`](./dev/syndicate-execution-target.md) and
-  [`dev/syndicate-expiry-acceptance.md`](./dev/syndicate-expiry-acceptance.md)
+  [`dev/archive/syndicate/syndicate-execution-target.md`](./dev/archive/syndicate/syndicate-execution-target.md) and
+  [`dev/archive/syndicate/syndicate-expiry-acceptance.md`](./dev/archive/syndicate/syndicate-expiry-acceptance.md)
   are Syndicate's to run against its own client now; the docs stay as records.
 - **CLOSED 2026-08-27 - Syndicate `device.refresh` client half.** Moot with the
   integration's removal: PacketBench no longer holds grants to refresh. The
-  proposal ([`dev/syndicate-device-refresh-proposal.md`](./dev/syndicate-device-refresh-proposal.md),
+  proposal ([`dev/archive/syndicate/syndicate-device-refresh-proposal.md`](./dev/archive/syndicate/syndicate-device-refresh-proposal.md),
   delivered to Syndicate 2026-08-15 as `packetbench/device-refresh-proposal`)
   is Syndicate's to adopt or drop.
 - **CLOSED 2026-08-27 - Contribute the device→relay protocol spec.** The draft
-  ([`dev/controller-protocol-device-relay-half.md`](./dev/controller-protocol-device-relay-half.md))
+  ([`dev/archive/syndicate/controller-protocol-device-relay-half.md`](./dev/archive/syndicate/controller-protocol-device-relay-half.md))
   was handed to Syndicate before the split and stays in `dev/` as the record;
   the reference implementation it documents lives at
   `src-tauri/src/commands/syndicate_relay.rs` @ `d87fb125` (removed from the
@@ -722,7 +722,7 @@ Do not reopen these from historical plans:
 - Current audit summary: [`docs/reports/state-of-the-ade-2026-07-30.md`](./docs/reports/state-of-the-ade-2026-07-30.md), Section 0
 - Current release record: [`dev/release-v0.10.3.md`](./dev/release-v0.10.3.md)
 - Remote Agents: [`dev/remoteagents/README.md`](./dev/remoteagents/README.md)
-- Syndicate execution target (removed 2026-08-27; historical): [`dev/syndicate-execution-target.md`](./dev/syndicate-execution-target.md)
+- Syndicate execution target (removed 2026-08-27; historical): [`dev/archive/syndicate/syndicate-execution-target.md`](./dev/archive/syndicate/syndicate-execution-target.md)
 - Main shell: [`dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md`](./dev/main-shell-navigation-and-right-panel-audit-2026-07-29.md)
 - Workspace/Agents: [`dev/workspace-agents-restructuring-goal.md`](./dev/workspace-agents-restructuring-goal.md)
 - Settings: [`dev/workspace-agent-settings-decision-2026-07-29.md`](./dev/workspace-agent-settings-decision-2026-07-29.md)
