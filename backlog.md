@@ -29,26 +29,53 @@ These are the only current product decisions blocking implementation.
    toast** that delays destructive commits for a short window; durable
    soft-delete/restore was declined. Confirmations remain the safety net until
    the toast is implemented (post-1.0-scope work; not yet scheduled).
-4. **P1 - v1.0.0 scope adoption.** DECIDED IN PART 2026-08-16: the owner
-   **rejected** adopting the v1.0.0 definition for now — PacketBench continues
-   the 0.10.x cadence with no 1.0 milestone. Still open within this item: the
-   signing-identity question (the review holds that the Azure Trusted Signing
-   + OV application should start immediately regardless of the 1.0 label; no
-   owner call has been recorded either way). Original context: the 2026-08-05
-   Fable 5 review recommends a
-   Windows-only, signed, installer-proven v1.0.0 with the updater client
+4. **DEFERRED ON COST 2026-08-27 - Code-signing identity.** Not neglect and
+   not blocked: an explicit owner decision to spend nothing on signing for now.
+
+   **Trigger to revisit:** the first time a build goes to anyone who is not the
+   owner. Until then unsigned local builds are fine (SmartScreen's
+   *More info -> Run anyway* is one click per build).
+
+   **Cheapest path when triggered** (the day-0 "apply for everything
+   immediately" advice in the Fable 5 review was scoped to a 2-week v1.0.0
+   deadline that was rejected on 2026-08-16, so its urgency no longer applies):
+   - **Azure Trusted Signing, ~$10/month, billed monthly** - no annual
+     commitment, 1-7 business-day validation, no hardware token. This alone
+     unblocks Windows.
+   - **Skip the OV certificate** unless Azure validation stalls; it is a
+     few hundred a year and is only a hedge.
+   - **Defer Apple's $99/year** until macOS is actually in scope. macOS is a
+     v1.1 target ([`dev/macos-release-plan.md`](./dev/macos-release-plan.md)),
+     and enrollment is its long pole - start it when v1.1 starts, not before.
+
+   **Groundwork already done (2026-08-27), so the credential drops straight in:**
+   `.gitignore` now covers `*.key`/`*.pem`/`*.p12`/`*.pfx`/`*.cer`/`*.crt`/
+   `AuthKey_*.p8`/`.tauri/` ahead of any key existing, and
+   `scripts/release-gate.mjs` already reads the credential env vars
+   (`WINDOWS_SIGNTOOL_CERT_SHA1`, `WINDOWS_SIGNING_CERT_PATH`,
+   `TAURI_SIGNING_PRIVATE_KEY`, `APPLE_SIGNING_IDENTITY`, ...).
+
+   **Deliberately NOT done:** the Tauri updater keypair was not generated. The
+   updater plugin is not installed and no `updater` block exists in
+   `tauri.conf.json`, so nothing would consume the key today - and an
+   un-backed-up updater private key is a liability, not an asset: lose it and
+   every install signed with it can never be updated again. Generate it as the
+   first step of wiring the updater, not before, and back it up twice
+   immediately (`dev/updater-setup.md`).
+
+   **What stays blocked meanwhile:** distribution trust and hosted gates
+   (strict-mode `release:readiness` fails without credentials), the updater,
+   SmartScreen reputation (which only starts accruing after the first signed
+   release), the macOS v1.1 DMG, and the PacketCode signed release channel.
+
+   Original v1.0.0 context, retained: the 2026-08-05 Fable 5 review recommended
+   a Windows-only, signed, installer-proven v1.0.0 with the updater client
    shipped but the first served update deferred to 1.1, and an explicit "1.0 is
    NOT" list (macOS/Linux, Remote Agents, Global Undo, hosted CI, the
-   environment-gated proof matrices). Adopt, amend, or reject that definition;
-   the signing-identity application (Azure Trusted Signing plus an OV
-   fallback) is the critical path and should start immediately either way. See
+   environment-gated proof matrices). The owner **rejected** that definition on
+   2026-08-16; PacketBench continues the 0.x cadence (now 0.11.0) with no 1.0
+   milestone. See
    [`docs/reports/fable5-review-2026-08-05.md`](./docs/reports/fable5-review-2026-08-05.md).
-   The "1.0 is NOT macOS" line is scheduled rather than abandoned: macOS builds
-   and runs on real hardware today, and
-   [`dev/macos-release-plan.md`](./dev/macos-release-plan.md) targets a signed,
-   notarized arm64 DMG for v1.1. Its only day-0 dependency is Apple Developer
-   Program enrollment, which must start alongside the Windows signing
-   application.
 
 5. **OPEN 2026-08-26 - PacketCode ACP fold-in leftovers.** Three product
    calls remain after the ACP transport landed. (a) **Cost statusline.** The

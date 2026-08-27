@@ -47,3 +47,15 @@ src-tauri/binaries/node-*
 
 # Local design handoff bundle (Claude Design exports)
 .design-handoff/
+
+# Signing and updater secrets. Added 2026-08-27 ahead of any credential
+# existing, so a key can never be committed by accident. Covers the Tauri
+# updater private key, Windows Authenticode certs, and Apple certs/API keys.
+*.key
+*.pem
+*.p12
+*.pfx
+*.cer
+*.crt
+AuthKey_*.p8
+.tauri/
