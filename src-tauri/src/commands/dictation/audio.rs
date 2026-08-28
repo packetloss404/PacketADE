@@ -1258,7 +1258,10 @@ mod tests {
     }
 
     fn rms(samples: &[f32]) -> f64 {
-        (samples.iter().map(|s| f64::from(*s) * f64::from(*s)).sum::<f64>()
+        (samples
+            .iter()
+            .map(|s| f64::from(*s) * f64::from(*s))
+            .sum::<f64>()
             / samples.len() as f64)
             .sqrt()
     }
@@ -1300,7 +1303,9 @@ mod tests {
         // folded this straight onto DC at full scale.
         let reference = point_sampled_reference(&input, 48_000, 16_000);
         assert!(
-            reference[1..].iter().all(|sample| (*sample - 1.0).abs() < 1e-6),
+            reference[1..]
+                .iter()
+                .all(|sample| (*sample - 1.0).abs() < 1e-6),
             "reference must show the defect this test guards against"
         );
     }
@@ -1315,8 +1320,7 @@ mod tests {
             let frequency = 9_000.0 + f64::from(step) * 250.0;
             let tone = tone_48k(frequency, 4_800);
             let filtered = attenuation_db(&tone, &resample_linear(&tone, 48_000, 16_000));
-            let reference =
-                attenuation_db(&tone, &point_sampled_reference(&tone, 48_000, 16_000));
+            let reference = attenuation_db(&tone, &point_sampled_reference(&tone, 48_000, 16_000));
 
             assert!(
                 filtered <= -4.0,

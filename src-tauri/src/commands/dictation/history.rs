@@ -1,3 +1,4 @@
+use super::sentiment;
 use crate::commands::shared::home_dir;
 use crate::core::brand::DATA_DIR_NAME;
 use rusqlite::{params, Connection};
@@ -41,8 +42,15 @@ pub fn get_db() -> Result<Connection, String> {
     conn.busy_timeout(std::time::Duration::from_secs(5))
         .map_err(|e| format!("Failed to configure dictation DB: {e}"))?;
 
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS entries (
+    init_schema(&conn)?;
+
+    Ok(conn)
+}
+
+/// The `entries` schema. Split out from [`get_db`] so tests can stand the same
+/// table up on an in-memory connection instead of writing to the user's real
+/// `~/.packetbench/dictation.db`.
+const SCHEMA_SQL: &str = "CREATE TABLE IF NOT EXISTS entries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             text TEXT NOT NULL,
             mode TEXT NOT NULL DEFAULT 'transcribe',
@@ -53,14 +61,19 @@ pub fn get_db() -> Result<Connection, String> {
             sentiment REAL
         );
         CREATE INDEX IF NOT EXISTS idx_timestamp ON entries(timestamp);
-        CREATE INDEX IF NOT EXISTS idx_mode ON entries(mode);",
-    )
-    .map_err(|e| format!("Failed to create dictation schema: {e}"))?;
+        CREATE INDEX IF NOT EXISTS idx_mode ON entries(mode);";
 
-    Ok(conn)
+fn init_schema(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch(SCHEMA_SQL)
+        .map_err(|e| format!("Failed to create dictation schema: {e}"))
 }
 
 /// Insert a new dictation entry. Called internally after transcription completes.
+///
+/// `sentiment` is derived here rather than passed in: it is a pure function of
+/// `text`, and every caller (`audio.rs` after a transcription, the
+/// `insert_dictation_entry` command) wants the same score. Deriving it at the
+/// single write point is what stops the column going NULL again.
 pub fn insert_entry(
     text: &str,
     mode: &str,
@@ -69,12 +82,45 @@ pub fn insert_entry(
     wpm: Option<i64>,
 ) -> Result<(), String> {
     let conn = get_db()?;
-    let timestamp = chrono_now();
+    insert_entry_with_conn(
+        &conn,
+        text,
+        mode,
+        &chrono_now(),
+        duration_seconds,
+        word_count,
+        wpm,
+    )
+}
+
+/// The actual write. Takes the connection and timestamp so tests can drive it
+/// deterministically against an in-memory database.
+fn insert_entry_with_conn(
+    conn: &Connection,
+    text: &str,
+    mode: &str,
+    timestamp: &str,
+    duration_seconds: Option<f64>,
+    word_count: Option<i64>,
+    wpm: Option<i64>,
+) -> Result<(), String> {
+    // VADER compound score in [-1.0, 1.0]; `analytics.rs` averages this and
+    // `DictationView.tsx` renders it as the "Avg Sentiment" card. Before this
+    // was wired up the column was NULL on every row ever written.
+    let sentiment = sentiment::score(text);
 
     conn.execute(
-        "INSERT INTO entries (text, mode, timestamp, word_count, duration_seconds, wpm)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![text, mode, timestamp, word_count, duration_seconds, wpm],
+        "INSERT INTO entries (text, mode, timestamp, word_count, duration_seconds, wpm, sentiment)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            text,
+            mode,
+            timestamp,
+            word_count,
+            duration_seconds,
+            wpm,
+            sentiment
+        ],
     )
     .map_err(|e| format!("Failed to insert dictation entry: {e}"))?;
 
@@ -265,6 +311,180 @@ mod tests {
         assert_eq!(escape_like_pattern("a_b"), r"a\_b");
         assert_eq!(escape_like_pattern(r"c:\tmp"), r"c:\\tmp");
         assert_eq!(escape_like_pattern("plain text"), "plain text");
+    }
+
+    /// An in-memory stand-in for the real DB, built from the same `SCHEMA_SQL`
+    /// `get_db` uses.
+    fn memory_db() -> Connection {
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        init_schema(&conn).expect("schema");
+        conn
+    }
+
+    fn stored_sentiment(conn: &Connection) -> Option<f64> {
+        conn.query_row("SELECT sentiment FROM entries LIMIT 1", [], |row| {
+            row.get(0)
+        })
+        .expect("select sentiment")
+    }
+
+    /// The regression this port exists for: the INSERT used to omit `sentiment`
+    /// entirely, so every row was NULL and `average_sentiment` was computed
+    /// over nothing.
+    #[test]
+    fn insert_entry_persists_a_non_null_sentiment() {
+        let conn = memory_db();
+        let text = "This is absolutely wonderful and I love it!";
+        insert_entry_with_conn(
+            &conn,
+            text,
+            "transcribe",
+            "2026-08-28T10:00:00Z",
+            None,
+            None,
+            None,
+        )
+        .expect("insert");
+
+        let stored = stored_sentiment(&conn).expect("sentiment must not be NULL");
+        assert!(
+            (stored - sentiment::score(text)).abs() < 1e-9,
+            "stored {stored} should equal the scorer's output"
+        );
+        assert!(stored > 0.3, "positive text should store a positive score");
+        assert!((-1.0..=1.0).contains(&stored));
+    }
+
+    /// Negative text must round-trip with its sign intact — a column typed REAL
+    /// but bound from the wrong slot would silently store a word count here.
+    #[test]
+    fn insert_entry_persists_negative_sentiment() {
+        let conn = memory_db();
+        insert_entry_with_conn(
+            &conn,
+            "This is horrible and I hate it.",
+            "transcribe",
+            "2026-08-28T10:00:00Z",
+            Some(4.0),
+            Some(7),
+            Some(105),
+        )
+        .expect("insert");
+        let stored = stored_sentiment(&conn).expect("sentiment must not be NULL");
+        assert!(stored < -0.3, "expected clearly negative, got {stored}");
+    }
+
+    /// Neutral input still writes 0.0, not NULL — an unscored row and a
+    /// genuinely neutral row must be distinguishable in the aggregate.
+    #[test]
+    fn neutral_text_writes_zero_rather_than_null() {
+        let conn = memory_db();
+        insert_entry_with_conn(
+            &conn,
+            "open the file and run the build",
+            "transcribe",
+            "2026-08-28T10:00:00Z",
+            None,
+            None,
+            None,
+        )
+        .expect("insert");
+        assert_eq!(stored_sentiment(&conn), Some(0.0));
+    }
+
+    /// All eight columns must survive the round trip in the right slots — the
+    /// INSERT column list and the `params!` order are easy to desynchronise now
+    /// that there are seven bindings.
+    #[test]
+    fn insert_entry_round_trips_every_column() {
+        let conn = memory_db();
+        insert_entry_with_conn(
+            &conn,
+            "hello there",
+            "cleanup",
+            "2026-08-28T10:00:00Z",
+            Some(12.5),
+            Some(2),
+            Some(96),
+        )
+        .expect("insert");
+
+        let row: (String, String, String, i64, f64, i64, f64) = conn
+            .query_row(
+                "SELECT text, mode, timestamp, word_count, duration_seconds, wpm, sentiment
+                 FROM entries LIMIT 1",
+                [],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                    ))
+                },
+            )
+            .expect("select row");
+        assert_eq!(row.0, "hello there");
+        assert_eq!(row.1, "cleanup");
+        assert_eq!(row.2, "2026-08-28T10:00:00Z");
+        assert_eq!(row.3, 2);
+        assert!((row.4 - 12.5).abs() < 1e-9);
+        assert_eq!(row.5, 96);
+        assert!((-1.0..=1.0).contains(&row.6));
+    }
+
+    /// Pre-existing rows keep `sentiment = NULL` (we do not rescore history),
+    /// and `analytics.rs` counts only non-NULL rows. Proven here in SQL: the
+    /// average over a partially-populated column must be the average of the
+    /// *scored* rows, not diluted toward zero by the NULL ones.
+    #[test]
+    fn null_sentiment_rows_do_not_skew_the_average() {
+        let conn = memory_db();
+        conn.execute_batch(
+            "INSERT INTO entries (text, mode, timestamp, sentiment)
+                VALUES ('legacy a', 'transcribe', '2026-01-01T00:00:00Z', NULL);
+             INSERT INTO entries (text, mode, timestamp, sentiment)
+                VALUES ('legacy b', 'transcribe', '2026-01-02T00:00:00Z', NULL);",
+        )
+        .expect("seed legacy rows");
+        insert_entry_with_conn(
+            &conn,
+            "wonderful",
+            "transcribe",
+            "2026-08-28T10:00:00Z",
+            None,
+            None,
+            None,
+        )
+        .expect("insert");
+
+        // Mirror analytics.rs: `if let Some(s) = row.sentiment` accumulates both
+        // the sum and the count, so NULLs contribute to neither.
+        let mut stmt = conn.prepare("SELECT sentiment FROM entries").unwrap();
+        let values: Vec<Option<f64>> = stmt
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(values.len(), 3);
+
+        let mut sum = 0.0;
+        let mut count = 0u32;
+        for v in values {
+            if let Some(s) = v {
+                sum += s;
+                count += 1;
+            }
+        }
+        assert_eq!(count, 1, "only the newly written row is scored");
+        let average = sum / count as f64;
+        assert!(
+            average > 0.3,
+            "average must reflect the scored row alone, got {average}"
+        );
     }
 
     #[test]

@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { Mic, MicOff, Loader2, Check, BarChart3, Flame, Clock, Hash, BookOpen, TrendingUp, Search, ChevronDown, ChevronRight, Zap, SmilePlus, Timer, AlertTriangle, X } from "lucide-react";
+import { Mic, MicOff, Loader2, Check, BarChart3, Clock, Search, ChevronDown, ChevronRight, AlertTriangle, X } from "lucide-react";
 import { useDictationStore } from "@/stores/dictationStore";
+import { AnalyticsPanel } from "./dictation/AnalyticsPanel";
 import {
   DEFAULT_PUSH_TO_TALK_SHORTCUT,
   DEFAULT_TOGGLE_SHORTCUT,
-  type DictationAnalytics,
   type DictationEntry,
 } from "@/types/dictation";
 
@@ -312,7 +312,7 @@ export function DictationView() {
         >
           {activeTab === "analytics" ? (
             analytics ? (
-              <AnalyticsPanel analytics={analytics} history={history} />
+              <AnalyticsPanel analytics={analytics} />
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-text-muted">
                 <BarChart3 size={24} className="mb-2 opacity-30" />
@@ -338,217 +338,6 @@ function MiniStat({ label, value }: { label: string; value: string }) {
     <div className="bg-bg-primary border border-bg-border rounded px-2 py-1.5 text-center">
       <div className="text-[9px] text-text-muted uppercase">{label}</div>
       <div className="text-xs font-semibold text-text-primary">{value}</div>
-    </div>
-  );
-}
-
-/* ── Analytics Panel ── */
-
-function AnalyticsPanel({ analytics, history }: { analytics: DictationAnalytics; history: DictationEntry[] }) {
-  return (
-    <div className="space-y-4 max-w-[700px]">
-      {/* Stat cards */}
-      <div className="grid grid-cols-3 gap-3">
-        <StatCard icon={Hash} label="Total Words" value={analytics.totalWords.toLocaleString()} color="text-accent-green" />
-        <StatCard icon={TrendingUp} label="Avg WPM" value={String(Math.round(analytics.averageWpm))} color="text-accent-blue" />
-        <StatCard icon={Zap} label="Fastest WPM" value={String(analytics.fastestWpm)} color="text-accent-amber" />
-        <StatCard icon={SmilePlus} label="Avg Sentiment" value={sentimentLabel(analytics.averageSentiment)} color={sentimentColor(analytics.averageSentiment)} />
-        <StatCard icon={Timer} label="Total Time" value={formatDuration(analytics.totalDurationMinutes)} color="text-accent-blue" />
-        <StatCard icon={BookOpen} label="Entries" value={String(analytics.totalEntries)} color="text-accent-purple" />
-        <StatCard icon={Flame} label="Daily Streak" value={`${analytics.dailyStreak} days`} color="text-accent-amber" />
-        <StatCard icon={Clock} label="Time Saved" value={`${Math.round(analytics.timeSavedMinutes)} min`} color="text-accent-green" />
-        <StatCard icon={BarChart3} label="Vocab Diversity" value={`${Math.round(analytics.vocabularyDiversity * 100)}%`} color="text-text-secondary" />
-      </div>
-
-      {/* Sentiment over time (from history entries) */}
-      {history.filter((e) => e.sentiment != null).length > 1 && (
-        <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
-          <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Sentiment Over Time</span>
-          <div className="relative h-16 mt-3">
-            {/* Neutral line */}
-            <div className="absolute left-0 right-0 top-1/2 border-t border-bg-border border-dashed" />
-            <div className="flex items-center gap-[2px] h-full">
-              {history
-                .filter((e) => e.sentiment != null)
-                .slice(-50)
-                .map((entry, i) => {
-                  // Sentiment ranges from -1 (negative) to +1 (positive), 0 = neutral
-                  const s = entry.sentiment ?? 0;
-                  const isPositive = s >= 0;
-                  const magnitude = Math.abs(s) * 50; // 50% of height max
-                  return (
-                    <div
-                      key={entry.id ?? i}
-                      className="flex-1 min-w-[3px] max-w-[12px] relative h-full flex items-center"
-                    >
-                      <div
-                        className={`w-full rounded-sm transition-colors ${
-                          isPositive
-                            ? "bg-accent-green/50 hover:bg-accent-green/80"
-                            : "bg-accent-red/50 hover:bg-accent-red/80"
-                        }`}
-                        style={{
-                          height: `${Math.max(2, magnitude)}%`,
-                          position: "absolute",
-                          ...(isPositive
-                            ? { bottom: "50%", left: 0, right: 0 }
-                            : { top: "50%", left: 0, right: 0 }),
-                        }}
-                        title={`${s > 0 ? "+" : ""}${s.toFixed(2)} — ${formatTimestamp(entry.timestamp)}`}
-                      />
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
-          <div className="flex justify-between mt-1">
-            <span className="text-[8px] text-text-muted">Oldest</span>
-            <span className="text-[8px] text-accent-green">Positive</span>
-            <span className="text-[8px] text-accent-red">Negative</span>
-            <span className="text-[8px] text-text-muted">Recent</span>
-          </div>
-        </div>
-      )}
-
-      {/* WPM over time chart (from history entries) */}
-      {history.length > 1 && (
-        <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
-          <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">WPM Over Time</span>
-          <div className="flex items-end gap-[2px] h-16 mt-3">
-            {history
-              .filter((e) => e.wpm != null && e.wpm > 0)
-              .slice(-50)
-              .map((entry, i) => {
-                const maxWpm = Math.max(...history.filter((e) => e.wpm != null).map((e) => e.wpm!), 1);
-                const pct = ((entry.wpm ?? 0) / maxWpm) * 100;
-                return (
-                  <div
-                    key={entry.id ?? i}
-                    className="flex-1 min-w-[3px] max-w-[12px] bg-accent-blue/40 hover:bg-accent-blue/70 rounded-t transition-colors"
-                    style={{ height: `${Math.max(4, pct)}%` }}
-                    title={`${entry.wpm} WPM — ${formatTimestamp(entry.timestamp)}`}
-                  />
-                );
-              })}
-          </div>
-          <div className="flex justify-between mt-1">
-            <span className="text-[8px] text-text-muted">Oldest</span>
-            <span className="text-[8px] text-text-muted">Most recent</span>
-          </div>
-        </div>
-      )}
-
-      {/* Hourly activity */}
-      {analytics.hourlyActivity.some((v) => v > 0) && (
-        <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
-          <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Activity by Hour</span>
-          <div className="flex items-end gap-[2px] h-12 mt-3">
-            {analytics.hourlyActivity.map((count, hour) => {
-              const max = Math.max(...analytics.hourlyActivity, 1);
-              const height = (count / max) * 100;
-              return (
-                <div
-                  key={hour}
-                  className="flex-1 bg-accent-green/40 hover:bg-accent-green/70 rounded-t transition-colors"
-                  style={{ height: `${Math.max(2, height)}%` }}
-                  title={`${hour}:00 — ${count} entries`}
-                />
-              );
-            })}
-          </div>
-          <div className="flex justify-between mt-1">
-            <span className="text-[8px] text-text-muted">12am</span>
-            <span className="text-[8px] text-text-muted">6am</span>
-            <span className="text-[8px] text-text-muted">12pm</span>
-            <span className="text-[8px] text-text-muted">6pm</span>
-            <span className="text-[8px] text-text-muted">12am</span>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-4">
-        {/* Top words */}
-        {analytics.topWords.length > 0 && (
-          <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
-            <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Top Words</span>
-            <div className="mt-2 space-y-1.5">
-              {analytics.topWords.slice(0, 10).map(([word, count]) => {
-                const max = analytics.topWords[0]?.[1] ?? 1;
-                const pct = (count / max) * 100;
-                return (
-                  <div key={word} className="flex items-center gap-2">
-                    <span className="text-[10px] text-text-secondary w-20 truncate font-mono">{word}</span>
-                    <div className="flex-1 h-2 bg-bg-border rounded-full overflow-hidden">
-                      <div className="h-full bg-accent-purple/50 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className="text-[9px] text-text-muted w-8 text-right">{count}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Mode breakdown + word count by entry */}
-        <div className="space-y-4">
-          {Object.keys(analytics.modeBreakdown).length > 0 && (
-            <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
-              <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Mode Breakdown</span>
-              <div className="mt-2 space-y-1.5">
-                {Object.entries(analytics.modeBreakdown)
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([mode, count]) => {
-                    const total = Object.values(analytics.modeBreakdown).reduce((a, b) => a + b, 0);
-                    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-                    return (
-                      <div key={mode} className="flex items-center justify-between">
-                        <span className="text-[11px] text-text-secondary capitalize">{mode}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-text-muted">{count}</span>
-                          <span className="text-[9px] text-text-muted w-8 text-right">{pct}%</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-          )}
-
-          {/* Words per entry distribution */}
-          {history.length > 0 && (
-            <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
-              <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Words per Entry</span>
-              <div className="mt-2 space-y-1">
-                {(() => {
-                  const buckets = [
-                    { label: "1-10", min: 1, max: 10, count: 0 },
-                    { label: "11-25", min: 11, max: 25, count: 0 },
-                    { label: "26-50", min: 26, max: 50, count: 0 },
-                    { label: "51-100", min: 51, max: 100, count: 0 },
-                    { label: "100+", min: 101, max: Infinity, count: 0 },
-                  ];
-                  for (const e of history) {
-                    const wc = e.wordCount ?? 0;
-                    for (const b of buckets) {
-                      if (wc >= b.min && wc <= b.max) { b.count++; break; }
-                    }
-                  }
-                  const maxCount = Math.max(...buckets.map((b) => b.count), 1);
-                  return buckets.map((b) => (
-                    <div key={b.label} className="flex items-center gap-2">
-                      <span className="text-[10px] text-text-muted w-12">{b.label}</span>
-                      <div className="flex-1 h-2 bg-bg-border rounded-full overflow-hidden">
-                        <div className="h-full bg-accent-amber/50 rounded-full" style={{ width: `${(b.count / maxCount) * 100}%` }} />
-                      </div>
-                      <span className="text-[9px] text-text-muted w-6 text-right">{b.count}</span>
-                    </div>
-                  ));
-                })()}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   );
 }
@@ -668,28 +457,6 @@ function HistoryPanel({
 
 /* ── Shared ── */
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  color,
-}: {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  label: string;
-  value: string;
-  color: string;
-}) {
-  return (
-    <div className="bg-bg-secondary border border-bg-border rounded-lg px-3 py-2.5">
-      <div className="flex items-center gap-1.5 mb-1">
-        <Icon size={10} className={color} />
-        <span className="text-[9px] text-text-muted uppercase tracking-wider">{label}</span>
-      </div>
-      <span className={`text-sm font-semibold ${color}`}>{value}</span>
-    </div>
-  );
-}
-
 /** Render an accelerator string the way the OS labels it. Mirrors the
  *  formatting in `KeyboardShortcutsCard`. */
 function formatAccelerator(accelerator: string): string {
@@ -721,14 +488,6 @@ function idleHint(
   return `Click, ${toggle} to toggle, or hold ${pushToTalk}`;
 }
 
-function sentimentLabel(s: number): string {
-  if (s >= 0.3) return "Positive";
-  if (s >= 0.1) return "Slightly +";
-  if (s <= -0.3) return "Negative";
-  if (s <= -0.1) return "Slightly -";
-  return "Neutral";
-}
-
 function sentimentColor(s: number): string {
   if (s >= 0.3) return "text-accent-green";
   if (s >= 0.1) return "text-accent-green";
@@ -743,14 +502,6 @@ function sentimentEmoji(s: number): string {
   if (s <= -0.3) return "-";
   if (s <= -0.1) return "-";
   return "~";
-}
-
-function formatDuration(minutes: number): string {
-  if (minutes < 1) return `${Math.round(minutes * 60)}s`;
-  if (minutes < 60) return `${Math.round(minutes)}m`;
-  const h = Math.floor(minutes / 60);
-  const m = Math.round(minutes % 60);
-  return `${h}h ${m}m`;
 }
 
 function formatTimestamp(ts: string): string {

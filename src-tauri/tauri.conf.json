@@ -43,7 +43,9 @@
     "resources": {
       "../agent-sidecar/dist": "agent-sidecar/dist",
       "../agent-sidecar/package.json": "agent-sidecar/package.json",
-      "../agent-sidecar/node_modules": "agent-sidecar/node_modules"
+      "../agent-sidecar/node_modules": "agent-sidecar/node_modules",
+      "../LICENSE": "LICENSE",
+      "../NOTICE": "NOTICE"
     },
     "macOS": {
       "minimumSystemVersion": "10.15"
