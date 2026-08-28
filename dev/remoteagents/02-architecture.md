@@ -75,6 +75,65 @@ Extend the Rust service with HTTP and WebSocket entrypoints:
 TLS terminates at the hosting proxy, matching the relay's existing deployment
 model. Public deployments expose only HTTPS/WSS.
 
+### Deployment target: Railway
+
+**Resolved 2026-08-27** (see `09-open-decisions.md` § Relay Deployment Target).
+The relay deploys to Railway, replacing the Google Cloud Run deployment it ran
+while it served Syndicate. `railway.json` in the relay repo already builds the
+root `Dockerfile`; `cloudbuild.yaml` and `deploy.sh` are the retired Cloud Run
+path. This does not reopen the 2026-08-02 decision to use the Rust relay and
+reject Cloudflare — Railway answers only *where that relay runs*.
+
+What carries over unchanged:
+
+- TLS terminates at Railway's edge proxy and the container serves plain
+  HTTP/WS on `$PORT`, which the relay already honours (`PORT` overrides the
+  CLI port). Public exposure stays HTTPS/WSS only.
+- Everything in this document about protocol, PostgreSQL as the system of
+  record, the 64 KiB inline envelope ceiling, replay/cursors, and the
+  wake-only Web Push channel is deployment-independent.
+- `/healthz`, `/readyz`, and `/metrics` can be used directly. The relay's
+  public `/health` and `/ready` aliases exist only because Cloud Run reserves
+  some paths ending in `z`; keep them for compatibility with the existing
+  smoke checks, but the workaround is no longer load-bearing.
+
+What must be configured, not assumed:
+
+- **No sleeping.** The relay service must not run with app-sleeping/serverless
+  idling enabled. A sleeping relay drops the desktop host socket, which
+  defeats presence and wake-on-push. Cloud Run's zero-warm-instance default
+  and its cold-start cost trade-off (`MIN_INSTANCES=1`) do not carry over —
+  the relay is an always-on process here.
+- **Single instance.** Live routing is process-local (see below). Run one
+  replica and do not enable horizontal scaling before a coordination layer
+  exists.
+
+Open verifications (Sprint 0 — record answers here and in
+`09-open-decisions.md`; do not design against a guess):
+
+1. **Edge WebSocket connection lifetime.** Cloud Run bounded every WebSocket
+   by its request timeout (3,600 s max), so periodic forced reconnects were
+   guaranteed and the relay's docs treat reconnect as normal even when
+   healthy. Railway's maximum connection lifetime and idle-timeout behavior
+   for WebSockets is **not established here** — verify before Sprint 1 sizes
+   heartbeat and resume intervals. Resume/replay remains mandatory either way
+   (mobile networks force reconnects regardless), so this changes tuning, not
+   architecture.
+2. **Deploy-time instance overlap.** Railway keeps a previous deployment
+   serving until the replacement is healthy, so two relay processes can be
+   live briefly across a deploy — the same best-effort singleton caveat that
+   Cloud Run's max-instances=1 had. Confirm the exact overlap semantics and
+   decide whether per-`{hostId, conversationId}` sequence assignment needs a
+   database-backed guard rather than a process-local counter.
+3. **Managed PostgreSQL durability.** Railway's managed PostgreSQL is the
+   intended provisioning path (same project, private networking,
+   `DATABASE_URL`). Whether its backup/point-in-time-recovery guarantees are
+   sufficient for the audit log and replay store before an external private
+   beta is unanswered — check before the Sprint 5 security baseline.
+4. **Region selection.** The Cloud Run deployment ran in `us-central1`. The
+   Railway region has not been chosen; pick it against expected client
+   locations and co-locate the database with the relay.
+
 ### In-process host router
 
 Use one Rust host-room actor/state entry per desktop host id. It owns live socket
@@ -95,7 +154,9 @@ Responsibilities:
 
 The v1 deployment remains deliberately single-instance because live routing is
 process-local. A later scaling milestone may add a broker/coordination layer, but
-the protocol must not depend on one hosting provider.
+the protocol must not depend on one hosting provider. "Single instance" is
+best-effort on any platform that overlaps deployments — see open verification 2
+under Deployment target.
 
 ### PostgreSQL
 
@@ -117,7 +178,9 @@ Relational metadata:
 
 PostgreSQL is the deployed system of record. Local development may use an
 isolated disposable database, but production behavior must be tested against
-PostgreSQL rather than a different persistence model.
+PostgreSQL rather than a different persistence model. The deployed instance is
+Railway's managed PostgreSQL, co-located with the relay service; its durability
+guarantees are an open pre-beta verification (see Deployment target).
 
 ### S3-compatible object storage
 

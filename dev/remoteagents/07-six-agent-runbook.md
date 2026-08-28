@@ -202,7 +202,9 @@ Day 5:
 
 1. Assign owners and branches.
 2. Pick the auth provider for v1 or explicitly choose dev auth for Sprint 1.
-3. Agree on relay deployment namespace, database, and domain placeholders.
+3. Agree on the Railway service/project naming, the managed PostgreSQL
+   instance, and domain placeholders (deployment target resolved 2026-08-27;
+   see `02-architecture.md` § Deployment target).
 4. Freeze Sprint 1 protocol field names.
 5. Create the integration branch, recommended `codex/remote-agents-integration`.
 6. Create the `remoteProtocolVersion = 1` fixture package.

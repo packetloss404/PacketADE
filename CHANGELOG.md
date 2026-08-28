@@ -13,8 +13,8 @@ Windows artifacts, built 2026-08-15 02:51 from `a9d5d702`, **unsigned**:
 
 | Artifact                                         | SHA-256                                                            |
 | ------------------------------------------------ | ------------------------------------------------------------------ |
-| `PacketBench_0.10.5_x64-setup.exe` (NSIS, 89.4 MB) | `8c0233fe31a5b39fef0c1e98082c392054610ab892e7053d0b7fb21985977303` |
-| `PacketBench_0.10.5_x64_en-US.msi` (139.5 MB)      | `fca82769b8b48115d35294b2b84ed4346370c92c2804628e8859f7fac2387b45` |
+| `PacketADE_0.10.5_x64-setup.exe` (NSIS, 89.4 MB) | `8c0233fe31a5b39fef0c1e98082c392054610ab892e7053d0b7fb21985977303` |
+| `PacketADE_0.10.5_x64_en-US.msi` (139.5 MB)      | `fca82769b8b48115d35294b2b84ed4346370c92c2804628e8859f7fac2387b45` |
 
 > **These are not the released 0.10.5.** The version was never bumped, so these
 > installers carry the same `0.10.5` string as the artifacts recorded under
@@ -22,8 +22,17 @@ Windows artifacts, built 2026-08-15 02:51 from `a9d5d702`, **unsigned**:
 > are a development build of unreleased work. **Bump the version before any
 > release build of this branch**, and do not distribute these — an installer
 > that claims a released version but is not it cannot be told apart by a user
-> or an updater. They live in `C:\Users\ianwalmsley\packetbench-build\release\`,
-> not in the repo.
+> or an updater. **They are gone from disk** as of 2026-08-27: build output is
+> redirected to `C:/Users/ianwalmsley/packetade-build`, which now contains only
+> `debug/` — there is no `release/bundle/`. The hashes are retained here purely
+> as provenance for a build that no longer exists anywhere.
+
+> **Filenames intentionally read `PacketADE`.** These artifacts were built
+> before the 2026-08-26 rename, so `PacketADE_0.10.5_*` is what the bundler
+> actually produced and what the recorded SHA-256 values hash. The rename
+> sweep (`5404fb85`) retro-renamed them to `PacketBench_*`, which made the
+> provenance unverifiable — a hash table whose filename never existed proves
+> nothing. Restored 2026-08-27. Do not let a future brand sweep touch these.
 
 ### Removed — the Syndicate execution-target integration
 
@@ -163,8 +172,15 @@ Windows artifacts, built 2026-08-07 19:32, **unsigned**:
 
 | Artifact                                         | SHA-256                                                            |
 | ------------------------------------------------ | ------------------------------------------------------------------ |
-| `PacketBench_0.10.5_x64-setup.exe` (NSIS, 89.0 MB) | `501efd6923de88e1b9bf58112f5e6a39d54d4ba8b4761c8009a4bdb617b38ab5` |
-| `PacketBench_0.10.5_x64_en-US.msi` (138.8 MB)      | `b2cc1d99caa8faef0436ede87cb78b16bcecdadd4b74c9957302f2e5e8893626` |
+| `PacketADE_0.10.5_x64-setup.exe` (NSIS, 89.0 MB) | `501efd6923de88e1b9bf58112f5e6a39d54d4ba8b4761c8009a4bdb617b38ab5` |
+| `PacketADE_0.10.5_x64_en-US.msi` (138.8 MB)      | `b2cc1d99caa8faef0436ede87cb78b16bcecdadd4b74c9957302f2e5e8893626` |
+
+> **Filenames intentionally read `PacketADE`.** These artifacts were built
+> before the 2026-08-26 rename, so `PacketADE_0.10.5_*` is what the bundler
+> actually produced and what the recorded SHA-256 values hash. The rename
+> sweep (`5404fb85`) retro-renamed them to `PacketBench_*`, which made the
+> provenance unverifiable — a hash table whose filename never existed proves
+> nothing. Restored 2026-08-27. Do not let a future brand sweep touch these.
 
 Workspace quality-of-life work, plus four defects the accompanying pane-system
 review turned up. Two of those defects corrupted live agent sessions on

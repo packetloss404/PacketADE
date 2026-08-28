@@ -1,20 +1,37 @@
 # PacketBench Roadmap
 
-Last reconciled: 2026-08-12
+Last reconciled: 2026-08-27
 
 PacketBench is a local-first Agent Development Environment and remains the
 flagship control surface. The desktop owns local providers, models, secrets,
-Workspaces, MCP configuration, permissions, Memory, and execution. Phone and
-cloud surfaces supervise their configured authority; they do not replace it.
-(Syndicate separated from the Packet\* product family on 2026-08-27; its
-execution-target integration was removed — see `CHANGELOG.md` [Unreleased].)
+Workspaces, MCP configuration, permissions, Memory, and execution.
+
+There is no shipped remote supervision surface today. Syndicate separated from
+the Packet\* product family on 2026-08-27 and its execution-target integration
+was removed (`CHANGELOG.md` [Unreleased]), which leaves generic SSH — remote
+Workspaces, PTY panes, and agent file/bash tools over a pinned connection — as
+the only way to reach another machine. Remote Agents, unpaused 2026-08-27, is
+the program that builds a supervision surface. The rule it has to satisfy is
+therefore forward-looking rather than descriptive: phone and cloud surfaces
+will supervise the authority the desktop already holds; they will not replace
+it.
 
 The detailed task ledger is [`backlog.md`](./backlog.md). This file contains
 only product direction and ordering.
 
 ## Current baseline
 
-- v0.10.3 is tagged and packaged for Windows from release source `61e0669`.
+- Source is at **0.11.0** (`package.json`, `src-tauri/tauri.conf.json`,
+  `src-tauri/Cargo.toml`). `v0.10.3` — packaged for Windows from release source
+  `61e0669` — is still the newest annotated tag, while `CHANGELOG.md` records
+  0.10.4 and 0.10.5 as released and 0.11.0 as unreleased.
+- **No packaged build of the renamed product has ever been produced.** The
+  2026-08-26 rename moved the Tauri bundle identifier from
+  `com.packetade.desktop` to `com.packetbench.desktop` along with the product
+  name, and every one-shot data-dir, keyring, and localStorage migration (the
+  `LEGACY_*` constants in `src-tauri/src/core/brand.rs` and `src/lib/brand.ts`)
+  has only ever run from a source build. An installed, upgraded 0.11.0
+  `PacketBench` package is the sharpest untested path in the tree.
 - Workspace/Agents restructuring is complete: Workspaces are
   CLI/PacketCode-first; Agents owns first-class same-window GUI conversations;
   new Workspace conversation attachments are retired; saved panes remain
@@ -28,24 +45,33 @@ only product direction and ordering.
 - Selectable local Terminal shells and the self-bootstrapping Claude Code native
   status bar ship in v0.10.3.
 - The 30 low-rated Reliability findings are closed.
-- The first-class Syndicate execution target (scoped device pairing/revocation,
-  Host-owned Workspaces, durable remote CLI panes, managed pinned-SSH
-  bootstrap, encrypted PacketRelay transport) was implemented, reviewed, and
-  then removed on 2026-08-27 when Syndicate separated from the Packet\*
-  family. The pre-removal implementation is at `d87fb125`; the controller
-  protocol and relay continue in Syndicate's own repos.
+- Closed record, not current capability: the first-class Syndicate execution
+  target (scoped device pairing/revocation, Host-owned Workspaces, durable
+  remote CLI panes, managed pinned-SSH bootstrap, encrypted PacketRelay
+  transport) was implemented, reviewed, and then removed on 2026-08-27 when
+  Syndicate separated from the Packet\* family. PacketBench ships none of it
+  today; what survives is two tolerant deserializers
+  (`src-tauri/src/core/workspace.rs:88`, `src/types/workspace.ts:108`) that
+  degrade a persisted `syndicate` execution target to `None` instead of failing
+  the state file. The pre-removal implementation is at `d87fb125`; the
+  controller protocol continues in Syndicate's own repos.
+- PacketRelay — the standalone Rust relay at `D:\projects\packetrelay` — now
+  belongs to PacketBench (owner decision, 2026-08-27). It is no longer shared
+  with or owned by Syndicate, and its deployment target is **Railway**,
+  replacing the Cloud Run deployment it ran while it served Syndicate.
 
 The remaining bottleneck is packaged, real-host acceptance proof, not another
-broad source feature wave.
+broad source feature wave — and the first package to prove is a renamed 0.11.0
+one.
 
 ## Now
 
 | Track                       | Priority | Current state                                                                                                    | Next action                                                                                                                                           |
 | --------------------------- | -------: | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Packaged Windows acceptance |       P1 | v0.10.3 app/NSIS/MSI compiled; interactive matrix open                                                           | Dogfood real Terminal panes, Claude statusline, close/lifecycle, Monitor, accessibility, and denial behavior                                          |
-| Distribution trust          |       P1 | 0 failures / 6 readiness warnings; artifacts unsigned                                                            | Add hosted CI; acquire Windows Authenticode and Apple Developer ID credentials in parallel on day 0; wire notarization and updater                    |
-| macOS release               |       P1 | Builds, bundles a DMG, and runs from source on real hardware; never signed, notarized, or interactively accepted | Enroll in the Apple Developer Program now; run the unsigned acceptance matrix in the 1.0 buffer; ship arm64 DMG in v1.1 (`dev/macos-release-plan.md`) |
-| Remote Agents decisions     |   PAUSED | Program paused by owner 2026-08-16; E2EE gate ratified; auth parked as first pickup action                       | On pickup, run the runbook in `dev/remoteagents/10-pause-record.md` (auth decision first)                                                             |
+| Packaged Windows acceptance |       P1 | Newest packaged artifacts are pre-rename `PacketADE` 0.10.5 development builds; nothing at 0.11.0 has been bundled | Bundle and install a 0.11.0 `PacketBench` package; prove the new bundle identifier and the data-dir/keyring/localStorage migrations against a machine carrying pre-rename state; then dogfood real Terminal panes, Claude statusline, close/lifecycle, Monitor, accessibility, and denial behavior |
+| Distribution trust          |       P1 | **DEFERRED ON COST 2026-08-27** — owner decision to spend nothing on signing for now; v0.10.3 reported 0 failures / 6 readiness warnings and all artifacts remain unsigned | Keep shipping unsigned local builds. On the stated trigger — the first build handed to anyone who is not the owner — take the cheapest path (Azure Trusted Signing, ~$10/month), then wire hosted CI, notarization, and the updater. Terms in `backlog.md` |
+| macOS release               |       P1 | Builds, bundles a DMG, and runs from source on real hardware; never signed, notarized, or interactively accepted | Run the unsigned acceptance matrix; start Apple Developer Program enrollment when v1.1 starts rather than now (deferred alongside signing on 2026-08-27); ship arm64 DMG in v1.1 (`dev/macos-release-plan.md`) |
+| Remote Agents decisions     |       P1 | **UNPAUSED 2026-08-27** (paused 2026-08-16). The E2EE gate stays ratified — encrypted agent, approval, and file payloads are a hard requirement before any external beta. The auth-provider decision reverts from parked to open and blocking | Resolve auth provider (genuinely undecided; options and owner in `dev/remoteagents/09-open-decisions.md`), then run Sprint 0 against PacketRelay — now PacketBench-owned and deploying to Railway |
 | Global Undo                 |       P1 | Confirmations and cleanup are implemented; no recovery path                                                      | Decided 2026-08-16: time-boxed delayed-delete toast (soft-delete declined); implementation not yet scheduled                                          |
 | Flight supervision proof    |       P1 | Reviewer/graph/inbox/YOLO source complete                                                                        | Run packaged local and disposable pinned-SSH matrices                                                                                                 |
 | PacketAgent handoff proof   |       P1 | W9 consumer source and fixtures pass                                                                             | Run separately hosted close/relaunch/reconnect and evidence-return matrix                                                                             |
@@ -64,16 +90,17 @@ After the immediately available proof gates:
 2. Close bounded Settings and main-shell MS4 work.
 3. Finish Ollama capability-aware selection, auxiliary-task routing, retired
    conversation provider switching, and edit/diff honesty.
-4. (Closed 2026-08-27) ~~Run the Syndicate acceptance matrix~~ — moot; the
-   integration was removed when Syndicate separated from the Packet\* family.
-5. (Paused 2026-08-16) Remote Agents: on pickup, resolve auth per
-   `dev/remoteagents/10-pause-record.md` (E2EE already ratified), then execute
-   Sprint 0 against the standalone Rust relay at `D:\projects\packetrelay`.
-6. Land a private PWA/relay alpha with desktop-owned execution, narrow audited
+4. Remote Agents: resolve the open auth-provider decision
+   ([`dev/remoteagents/09-open-decisions.md`](./dev/remoteagents/09-open-decisions.md);
+   the E2EE gate is already ratified), then execute Sprint 0 against
+   PacketRelay at `D:\projects\packetrelay` — PacketBench-owned since
+   2026-08-27 and deploying to Railway.
+5. Land a private PWA/relay alpha with desktop-owned execution, narrow audited
    commands, device trust, reconnect/replay, approvals, and attention push.
-7. Acquire distribution credentials and publish signed, updateable builds:
-   Windows Authenticode for v1.0.0, then the signed and notarized macOS arm64
-   DMG for v1.1 per [`dev/macos-release-plan.md`](./dev/macos-release-plan.md).
+6. When the signing deferral's trigger fires, acquire distribution credentials
+   and publish signed, updateable builds: Windows Authenticode first, then the
+   signed and notarized macOS arm64 DMG for v1.1 per
+   [`dev/macos-release-plan.md`](./dev/macos-release-plan.md).
 
 ## Later
 
@@ -94,7 +121,8 @@ After the immediately available proof gates:
 ## Remote Agents v1 boundary
 
 The first Remote Agents release is a PWA supervision surface through Packet
-Cloud and the standalone Rust relay:
+Cloud and PacketRelay, the standalone Rust relay at `D:\projects\packetrelay`
+— PacketBench-owned since 2026-08-27 and deploying to Railway:
 
 - Packet account sign-in and desktop device trust
 - configured hosts, Workspaces, providers, models, profiles, and conversations
@@ -106,6 +134,9 @@ Provider secrets, MCP servers, files, shells, tools, and execution stay on the
 desktop. No generic remote Tauri bridge, raw PTY control, or cloud-side provider
 execution belongs in v1.
 
+How the account sign-in above is provisioned — hosted IdP, self-hosted IdP, or
+built into the relay — is an open owner decision, not settled here.
+
 ## Architectural debt worth retaining
 
 - Mid-session MCP hot-swap is unsupported; trust/config changes apply on next
@@ -114,19 +145,20 @@ execution belongs in v1.
   consolidation only when a product change gives it a clear owner.
 - `flightStore` owns persisted Flight CRUD; `asyncFlightStore` owns runtime
   attempts. Do not collapse them casually.
-- Persisted Mission/Planner/retired-provider aliases remain read-only
-  compatibility until their documented release-age gates are met.
+- Persisted Mission/Planner/retired-provider aliases, and the tolerant
+  `syndicate` execution-target deserializers, remain read-only compatibility
+  until their documented release-age gates are met.
 
 ## Release path
 
-1. Prove the existing v0.10.3 Windows package interactively.
+1. Build and interactively prove a packaged 0.11.0 `PacketBench` Windows
+   package, including upgrade from a pre-rename install.
 2. Close available real-host, microphone, provider, MCP, and cross-product
    evidence gates.
 3. Resolve and implement Undo plus bounded Settings/MS4 work.
-4. (Closed 2026-08-27) ~~Syndicate packaged acceptance matrix~~ — moot; the
-   integration was removed with Syndicate's separation from the family.
-5. (Paused 2026-08-16) Remote Agents: decide auth on pickup, then build the
-   PWA/relay alpha. See `dev/remoteagents/10-pause-record.md`.
-6. Add hosted CI, signing, notarization, and updater infrastructure.
-7. Expand E2E coverage across session creation, API-agent launch, Remote Agents
+4. Remote Agents: decide auth, then build the PWA/relay alpha on PacketRelay
+   (Railway). See `dev/remoteagents/README.md`.
+5. Add hosted CI, signing, notarization, and updater infrastructure once the
+   signing deferral's trigger fires.
+6. Expand E2E coverage across session creation, API-agent launch, Remote Agents
    approvals, and Flight attempt lifecycle.

@@ -4,6 +4,12 @@
 
 The work is sized for a six-agent implementation team. Sprints are written as checkpoints rather than calendar promises. If the team starts tomorrow, Sprint 0 and Sprint 1 can run in parallel after a kickoff.
 
+This sizing predates 2026-08-27, when the relay became PacketBench-owned with
+Remote Agents as its only consumer. The relay work below (control plane,
+PostgreSQL state, replay, audit, Web Push) is now wholly funded by this
+program rather than shared with another; re-cut the sprint plan if that
+changes the capacity available. See `10-pause-record.md` §1.3.
+
 ## Sprint 0 - Foundations And Decisions
 
 Goal: lock protocol, repo layout, feature flag, and team contracts.
@@ -16,14 +22,23 @@ Deliverables:
   standalone Rust repo at `D:\projects\packetrelay`.
 - Add desktop feature flag: `remoteAgents.enabled`.
 - Add docs link from `dev/README.md`.
-- Decide auth provider build-vs-buy for v1.
-- Decide encryption launch gate: plaintext internal only, encrypted private beta.
+- Decide auth provider build-vs-buy for v1. **Still open and blocking as of
+  2026-08-27** — this is the gate on the rest of Sprint 0.
+- Decide encryption launch gate: plaintext internal only, encrypted private
+  beta. **Resolved 2026-08-16**; carry it forward rather than re-deciding.
+- Provision the relay's Railway service and its managed PostgreSQL instance,
+  and answer the four deployment verifications in `02-architecture.md`
+  § Deployment target (edge WebSocket lifetime, deploy-time instance overlap,
+  managed-PostgreSQL durability, region). Record the answers in
+  `09-open-decisions.md`.
 
 Checkpoint:
 
 - Shared protocol package builds.
 - `packet-relay` starts locally with its existing protocols intact and the
   PacketBench routes feature-gated.
+- `packet-relay` deploys to Railway from `railway.json` and passes an
+  HTTPS health check plus a real WSS upgrade.
 - PWA dev server starts.
 - Desktop compiles with remote feature flag off.
 - Six-agent ownership map is posted.
@@ -201,7 +216,7 @@ Deliverables:
 - mobile browser matrix complete
 - failure-mode runbook
 - release checklist
-- staged deploy
+- staged deploy to Railway
 - beta allowlist
 
 Checkpoint:

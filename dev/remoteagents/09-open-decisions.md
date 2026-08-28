@@ -1,5 +1,8 @@
 # 09 - Open Decisions
 
+Program status: **ACTIVE — resumed by owner decision 2026-08-27** (paused
+2026-08-16 to 2026-08-27). See [`10-pause-record.md`](./10-pause-record.md).
+
 ## Locked Decisions
 
 ### Primary UX
@@ -36,9 +39,47 @@ The relay remains an independently built/deployed sibling repository at
 PacketBench's `remoteagents/` workspace so desktop and mobile can evolve in
 lockstep. Contract fixtures gate changes across both repositories.
 
+### Relay Ownership — RESOLVED 2026-08-27
+
+PacketRelay is PacketBench's infrastructure. It is no longer shared with, or
+driven by, Syndicate, which was separated from the Packet\* product family on
+2026-08-27 (its PacketBench execution-target integration was removed in commit
+`68ce85ee`). **Remote Agents is the relay's only consumer**, and therefore
+carries 100% of its build and run cost — previously shared against Syndicate's
+value. The sprint sizing in `06-implementation-plan.md` predates that
+reweighting.
+
+The disposition of the relay's existing `/v1/product-route` surface and its
+live Syndicate deployment (retire, keep as a compatibility contract, or hand
+over) is an open question **for the relay repository**, not a Remote Agents
+decision. Do not break or delete that route on this program's authority.
+
+### Relay Deployment Target — RESOLVED 2026-08-27
+
+**Railway.** This replaces the Google Cloud Run deployment the relay ran while
+it served Syndicate. `railway.json` already exists in the relay repo and builds
+the root `Dockerfile`; `cloudbuild.yaml` and `deploy.sh` are the retired Cloud
+Run path.
+
+This does **not** reopen the 2026-08-02 relay-architecture decision — the relay
+is still the Rust service and Cloudflare is still rejected. Railway answers
+*where the chosen relay runs*, which that decision never fixed.
+
+Deployment-behavior questions that Railway raises are recorded as open
+verifications in `02-architecture.md` § Deployment target (edge WebSocket
+connection lifetime, deploy-time instance overlap, managed-PostgreSQL
+durability, region selection). They are Sprint-0 checks, not design work, but
+Sprint 1's sequence-assignment and reconnect design depends on the first two.
+
 ## Open Decisions
 
-### Auth Provider
+### Auth Provider — OPEN, BLOCKING
+
+This is the sole blocking owner decision. It was blocking when the program was
+paused on 2026-08-16, was demoted to "first action of the pickup runbook"
+while paused, and **reverted to a live blocking decision when the program
+resumed on 2026-08-27**. Nothing about it was answered or rejected during the
+pause; the menu below is unchanged.
 
 Options (reframed 2026-08-16 — "buy" splits into two sub-flavors):
 
@@ -57,7 +98,12 @@ Recommendation:
 - internal prototype can use explicitly dev-only auth
 - private beta should use a product-grade passkey/magic-link provider or a carefully scoped in-house implementation
 
-Decision owner: Security/Auth agent. Still OPEN as of 2026-08-16.
+If the hosted-SaaS option is taken, re-survey the vendor field before naming
+one: the recommendation is over two months old and pricing and passkey support
+move fast.
+
+Decision owner: Security/Auth agent. Still OPEN as of 2026-08-27, and blocking
+Sprint 0.
 
 ### Payload Encryption Timing — RESOLVED 2026-08-16
 
@@ -106,7 +152,34 @@ Decision owner: project owner after PWA beta.
 Dated record of the Sprint-0 kickoff decisions. Auth remains the sole blocking
 decision; payload-encryption timing was resolved 2026-08-16. Relay/code
 location was resolved by the owner on 2026-08-02; no Cloudflare relay scaffold
-should be created.
+should be created. Relay ownership and deployment target were resolved
+2026-08-27, the same day the program resumed.
+
+### 2026-08-27 — Program resumed; relay ownership and deployment target
+
+**Program status** — Resumed. The Remote Agents program was unpaused by the
+owner after a pause running 2026-08-16 to 2026-08-27. Implementation remains
+zero; Sprint 0 is the next step.
+
+**Relay ownership** — Resolved.
+
+- PacketRelay is PacketBench's infrastructure, not shared with Syndicate.
+- Remote Agents is its only consumer and carries 100% of its build and run
+  cost.
+- Syndicate was separated from the Packet\* family on 2026-08-27 and its
+  PacketBench execution-target integration was removed (commit `68ce85ee`).
+
+**Relay deployment target** — Resolved.
+
+- Railway, replacing Cloud Run. Does not reopen decision (c) or the
+  Cloudflare rejection.
+- Follow-on verifications are recorded as open in `02-architecture.md`
+  § Deployment target.
+
+**Auth provider** — Reverts to BLOCKING (it was demoted to a pickup-runbook
+step while the program was paused). Still unanswered.
+
+- Decision owner: project owner, with the Security/Auth agent.
 
 ### 2026-08-02 — Rust Packet Relay selected
 
@@ -142,9 +215,10 @@ should be created.
 - PWA/shared schemas: PacketBench `remoteagents/` workspace initially.
 - Decision owner: implementation lead.
 
-Note: decision (a) remains BLOCKING; (b) was resolved 2026-08-16. Decision (c)
-is closed and must not be reopened implicitly by creating a provider-specific
-relay scaffold.
+Note: decision (a) remains BLOCKING (re-confirmed 2026-08-27 on resumption);
+(b) was resolved 2026-08-16. Decision (c) is closed and must not be reopened
+implicitly by creating a provider-specific relay scaffold — naming Railway as
+the deployment target on 2026-08-27 does not reopen it.
 
 ## Deferred Decisions
 

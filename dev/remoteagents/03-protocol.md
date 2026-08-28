@@ -22,6 +22,13 @@ The shared protocol schemas are authoritative across PacketBench Desktop, the
 PWA, and the Rust relay. The relay validates routing metadata and ciphertext
 shape but never imports PacketBench's Tauri command surface.
 
+The relay is PacketBench-owned as of 2026-08-27 and Remote Agents is its only
+consumer, but that is not licence to break its inherited surfaces. The
+implemented `/v1/product-route` boundary and the bridge/broadcast/room
+compatibility modes stay intact until their disposition is settled in the
+relay repository (see `10-pause-record.md` §1.3); the PacketBench routes are
+added alongside them.
+
 ## Envelope
 
 Relay-visible fields are for routing, sequencing, abuse controls, and audit metadata. They must not contain prompts, transcript text, tool arguments, edit content, API keys, OAuth material, or raw local environment values.
@@ -301,6 +308,16 @@ Handshake requirements:
 - Role must match path.
 - First encrypted `hello` includes host/device signature.
 - Close on auth expiry, revocation, protocol mismatch, or replay detection.
+
+Connection lifetime is a deployment property, not a protocol guarantee. The
+relay's earlier Cloud Run deployment bounded every WebSocket by the platform
+request timeout, making periodic reconnects routine even on a healthy relay;
+on Railway (the deployment target as of 2026-08-27) the equivalent edge limit
+is unverified — see `02-architecture.md` § Deployment target, open
+verification 1. Either way, both sides must treat disconnection as normal and
+resume from a cursor: mobile networks and backgrounded PWAs force reconnects
+independently of any platform limit. Do not tune heartbeat or resume windows
+against an assumed edge timeout until that verification is answered.
 
 ## Provider Snapshot
 

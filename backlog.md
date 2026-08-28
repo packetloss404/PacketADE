@@ -1,6 +1,6 @@
 # PacketBench Backlog
 
-Last reconciled: 2026-08-12
+Last reconciled: 2026-08-27
 
 This is the single task register for work that has not shipped or has not yet
 earned its required real/package proof. Completed implementation history belongs
@@ -14,11 +14,14 @@ Priority: **P1** = release blocker, real bug, or major user-facing gap;
 
 These are the only current product decisions blocking implementation.
 
-1. **PARKED 2026-08-16 - Remote Agents authentication.** The program was
-   deliberately paused by the owner, so this decision no longer blocks current
-   work — it is the first action of the pickup runbook instead. The clarified
-   menu (hosted SaaS IdP / self-hosted IdP / in-house passkey-magic-link /
-   dev-only) and full pause state live in
+1. **OPEN (P1) 2026-08-27 - Remote Agents authentication.** **No longer
+   parked.** The owner unpaused the Remote Agents program on 2026-08-27, so
+   this reverts from "the first action of the pickup runbook" to a live
+   blocking decision: implementation cannot proceed past the relay seam until
+   it is answered. The menu is unchanged and still entirely open — hosted SaaS
+   IdP / self-hosted IdP / in-house passkey-magic-link / dev-only. It is the
+   owner's call; nothing here picks one. The clarified menu and the (now
+   superseded) pause state live in
    [`dev/remoteagents/10-pause-record.md`](./dev/remoteagents/10-pause-record.md).
 2. **RESOLVED 2026-08-16 - Remote Agents payload encryption timing.** The
    recommendation was ratified: plaintext (TLS-only) is acceptable only for
@@ -90,6 +93,32 @@ These are the only current product decisions blocking implementation.
    parity. (c) **Archive packetcode-gui** — decide whether that means a README
    notice or archiving the GitHub repo.
 
+   Re-verified 2026-08-27: (a) still true — `SHOW_COST_STORAGE_KEY` /
+   `setCostDisplayEnabled` / `shouldShowCost` exist in
+   `src/lib/usageStatusline.ts` and are consumed at
+   `src/components/agents/composer/Composer.tsx:799`, but the only non-test
+   caller of `setCostDisplayEnabled` is the test file, so no Settings control
+   reaches it. (b) still true — `src/agents/packetcode.ts` exists and is still
+   imported by `src/stores/agentStore.ts:7`. (c) **unverified from this repo**:
+   packetcode-gui is a separate GitHub repository, so its archive state cannot
+   be confirmed from the PacketBench tree. Treat as open until checked on
+   GitHub.
+
+6. **RESOLVED 2026-08-27 - PacketRelay ownership and deployment.**
+   PacketRelay (`D:\projects\packetrelay`) **belongs to PacketBench**. It is
+   not Syndicate's and it is not shared: the Syndicate separation on
+   2026-08-27 left the relay on this side of the split. Its deployment target
+   is **Railway**, replacing the Cloud Run target it carried under Syndicate.
+
+   **Consequence, stated plainly:** Remote Agents now bears **100%** of the
+   relay's build and run cost. That cost was previously shared with Syndicate,
+   so this is a real reweighting of the program's economics — and it has **not
+   been scored**. Nobody has costed a Railway-hosted relay against the
+   single-tenant volume Remote Agents alone will generate. Price it before the
+   program commits to a hosting shape, and note that it now compounds with
+   decision 1: an IdP choice with a hosting bill of its own lands on the same
+   budget.
+
 Remote Agents relay architecture and code location are already decided: extend
 the standalone Rust service at `D:\projects\packetrelay`; keep shared schemas
 and the initial PWA under PacketBench's `remoteagents/` workspace. See
@@ -101,9 +130,12 @@ The source behind these slices is implemented. Keep them open until the named
 environment or packaged matrix has actually run.
 
 - **P1 - Distribution trust and hosted gates.** Add hosted CI; acquire Windows
-  Authenticode and Apple Developer ID credentials **in parallel on day 0**; wire
-  Tauri updater signing/configuration and hosted `latest.json`. Current Windows
-  artifacts are unsigned. See
+  Authenticode and Apple Developer ID credentials; wire Tauri updater
+  signing/configuration and hosted `latest.json`. Current Windows artifacts are
+  unsigned. The credential half is **gated on Owner decision 4** (deferred on
+  cost 2026-08-27) — the "in parallel on day 0" urgency this item used to carry
+  came from the rejected 2-week v1.0.0 deadline and no longer applies; the
+  cheapest path and the trigger to revisit are recorded there. See
   [`dev/beta-distribution-trust-runbook.md`](./dev/beta-distribution-trust-runbook.md)
   and [`dev/updater-setup.md`](./dev/updater-setup.md). macOS signing,
   notarization, and entitlements are owned end to end by
@@ -154,13 +186,14 @@ environment or packaged matrix has actually run.
   run clean-machine install/update/rollback, packaged PacketBench launch, and
   PacketAgent W9 compatibility smoke. Source detection and `doctor --json`
   already pass.
-- **P1 - Bump the version before the next release build.** `package.json` and
-  `src-tauri/tauri.conf.json` still read `0.10.5`, which has already shipped.
-  The 2026-08-15 development build of the Syndicate expiry work therefore
-  produced installers labelled `0.10.5` that hash differently from the released
-  ones (both sets are recorded in `CHANGELOG.md`). Nothing distinguishes them to
-  a user or an updater, so the unreleased pair must not be distributed and the
-  version must move before the next `pnpm tauri build`.
+- **DONE 2026-08-27 - Bump the version before the next release build.**
+  `package.json` and `src-tauri/tauri.conf.json` both read `0.11.0`, so the
+  next build can no longer collide with a shipped version string. The
+  distribution caveat survives as a fact, not a task: the 2026-08-15
+  development build produced installers labelled `0.10.5` that hash differently
+  from the released `0.10.5` (both sets recorded in `CHANGELOG.md`). Nothing
+  distinguishes them to a user or an updater, so that unreleased pair must
+  never be distributed. They live outside the repo.
 - **CLOSED 2026-08-27 - Syndicate packaged acceptance gate.** Moot: Syndicate
   was separated from the Packet\* product family and the whole execution-target
   integration was removed from PacketBench (see `CHANGELOG.md` [Unreleased];
@@ -184,14 +217,18 @@ environment or packaged matrix has actually run.
 - **CLOSED 2026-08-27 - Syndicate SSH forward pins the remote port to 4317.**
   Moot: `commands/syndicate.rs` and the forward it built were removed with the
   integration.
-- **CLOSED 2026-08-27 - PacketRelay opens one WebSocket per RPC.** Moot:
-  `syndicate_relay.rs` was removed with the integration; connection reuse is a
-  Syndicate/PacketRelay concern now.
-- **CLOSED 2026-08-27 - Relay keepalive is coupled by an exact string.** Moot
-  for PacketBench: the emitting side (`syndicate_relay.rs`) was removed with
-  the integration. The byte-exact ping/pong coupling and its missing fixture
-  remain real on the Syndicate/PacketRelay side (Syndicate tracks it as its
-  P4#11).
+- **CLOSED 2026-08-27 - PacketRelay opens one WebSocket per RPC.** Closed as
+  written: the client that did this (`syndicate_relay.rs`) was removed with the
+  integration, so no PacketBench code opens those sockets today. **But note
+  Owner decision 6** — PacketRelay itself is now PacketBench's, so connection
+  reuse becomes a Remote Agents concern the moment that program builds a new
+  device half. It is not Syndicate's to fix on our behalf.
+- **CLOSED 2026-08-27 - Relay keepalive is coupled by an exact string.** Closed
+  as written: the emitting side (`syndicate_relay.rs`) was removed with the
+  integration. **But note Owner decision 6** — the byte-exact ping/pong
+  coupling and its missing fixture live in PacketRelay, which PacketBench now
+  owns, so this returns as a real Remote Agents item rather than staying
+  Syndicate's (they tracked it as their P4#11).
 - **P1 - Dictation hardware/platform matrix.** Run default/USB/Bluetooth,
   44.1/48 kHz, fast-PTT, cancel, disconnect, repeated phrase, first-model-load,
   history, in-app, clipboard, and opt-in external-paste tests on Windows with an
@@ -247,17 +284,21 @@ These are real code changes, not substitutes for the proof matrices above.
 
 The ACP transport, its engine surface, and the Claude Code x Codex restyle of
 the Agents pane are implemented and green (731 Rust + 31 ACP integration, 267
-frontend files / 2305 tests). Deliberate leftovers:
+frontend files / 2305 tests). Deliberate leftovers.
 
-- **P1 - Dead `/opacity` modifiers on Graphite tokens.** `tailwind.config.ts`
-  declares colors as bare `var(--color-*)`, which Tailwind v3 cannot compute
-  alpha from, so every opacity modifier silently emits NO CSS — 1113 usages
-  across 156 files, app-wide and mostly predating this work. Affected elements
-  fall back to preflight defaults (a `border-accent-amber/60` card renders with
-  a light-gray border on the dark theme). Verified fix is the
-  `color-mix(in srgb, var(...) calc(<alpha-value> * 100%), transparent)` form.
-  Not applied here: it switches on 1113 never-seen styles at once and needs its
-  own audit, light and dark.
+Re-verified 2026-08-27: the eviction mechanism is still wired-but-undriven
+(`acp/mod.rs:1364` `close_session_on`, called only from `acp/routing.rs:472`;
+no `MAX_IDLE_RESIDENT` or `isEngaged` anywhere), and `deny`/`plan` still both
+collapse to ACP `read-only` (`acp/routing.rs:70`, tests at `:535,:539`). The
+`/opacity` P1 has since landed and is marked below.
+
+- **LANDED 2026-08-27 - Dead `/opacity` modifiers on Graphite tokens.**
+  `tailwind.config.ts:9+` now declares every Graphite token in the
+  `color-mix(in srgb, var(--color-*) calc(<alpha-value> * 100%), transparent)`
+  form, so opacity modifiers compute. The audit this item asked for — 1113
+  never-seen styles switching on at once, light and dark — is **not** recorded
+  as having been run; if a visual pass is wanted, open it as its own item
+  rather than reopening this one.
 - **P2 - Adopted engine sessions do not render their replay.** The
   `api-agent:*` contract has no user-turn event, so a replayed ACP transcript
   would show every assistant turn with every prompt missing, and PacketBench has
@@ -301,7 +342,9 @@ frontend files / 2305 tests). Deliberate leftovers:
 
 Deliberate leftovers from the LM / PacketAgent-handoff implementation wave
 (branches `feat/lm-and-packetagent-handoff` in this repo and
-`feat/packet-product-handoff-surface` in PacketAgent):
+`feat/packet-product-handoff-surface` in PacketAgent). Re-verified 2026-08-27:
+`run_claude` still has live callers in `commands/memory.rs`,
+`commands/github.rs`, and `commands/spec.rs`, so 3C-3 below is unchanged:
 
 - **P2 - LM 3C-3 codebase-dependent aux migrations.** `scan_codebase_memory`,
   `github_investigate_issue`, and `ask_agent_chat_stream` remain on the Claude
@@ -330,6 +373,13 @@ products. Four findings were fixed in v0.10.5 (preset leaf duplication, the
 add/remove remount that restarted running agents, the zoom Escape hijack, and
 layout persistence). These are the remainder, still open.
 
+Spot-checked 2026-08-27 and still true: no `.focus()` call follows pane focus
+in `useXterm.ts` / `WorkspacePane.tsx` / `PaneContainer.tsx`; `useXterm`'s
+`ResizeObserver` (`:137`) still has no debounce or rAF batching; no
+`TileChrome` component exists; and `react-mosaic-component` is still pinned at
+`7.0.0-beta0` (`package.json:74`). One claim needed correcting — see the dead
+pane API item.
+
 - **P2 - No DOM focus follows pane focus.** `activePaneId` drives a border
   class only; nothing calls `xterm.focus()` or focuses the composer. Clicking a
   pane's header or padding marks it active while keystrokes still go to
@@ -352,10 +402,16 @@ layout persistence). These are the remainder, still open.
   Three status vocabularies coexist (terminal pill, conversation pill, and
   `sessionStatus`'s `Attention`, which calls itself the single truth but is not
   what either tile renders). Extract one `TileChrome`.
-- **P3 - Dead pane API in `layoutStore`.** `panes` / `addPane` / `removePane` /
-  `setPaneSession` / `getActivePane` have no non-test callers; `layoutStore` is
-  live only for `projectPath` and `activePaneId`. Two stores expose a `panes`
-  array and one is a decoy.
+- **P3 - Dead pane API in `layoutStore`.** **Corrected 2026-08-27 — the
+  original claim was too broad.** `panes`, `addPane`, and `removePane` are
+  genuinely dead: no non-test caller references them, and every `addPane` hit
+  in `src/` resolves to `workspaceStore.addPane`. But `setPaneSession` has five
+  live callers in `src/hooks/useTerminalSession.ts` (`:263`, `:298`, `:446`,
+  `:467`, `:488` — `:263` arrived with the orphaned-spawn fix), and
+  `getActivePane` is called from `src/stores/promptStore.ts:120`. So
+  `layoutStore` is live for `projectPath`, `activePaneId`, `setPaneSession`,
+  and `getActivePane`. The decoy `panes` array is still real and still worth
+  deleting; the rest of the API is not dead.
 - **P3 - More than ~8 panes is unusable.** Tiles now all render (the preset fix),
   but shrink past readability. react-mosaic 7 has a first-class tabs node —
   `addToTree`/`removeFromTree` would need to learn about `MosaicTabsNode`, which
@@ -399,105 +455,119 @@ Verified findings from the six-team deep review; full evidence with file:line
 citations is in
 [`docs/reports/fable5-review-2026-08-05.md`](./docs/reports/fable5-review-2026-08-05.md).
 
-- **P1 - Reviewer Gate verdict persistence.** `merge_attempts_for_frontend_save`
-  drops `review_gate` and no Rust writer exists, so an enabled Reviewer Gate
-  blocks acceptance permanently and dead-ends bounded-YOLO auto-graph. Add a
-  backend-owned `set_attempt_review_gate` command under the state lock plus a
-  Rust merge test. Feature-flag the gate and auto-graph off until fixed.
-- **P1 - Reconcile attempts on startup.** `recover_flights_on_startup` never
-  touches `flight.attempts`; non-terminal attempts survive restart forever,
-  leaking worktrees/`pkt/*` branches and permanently blocking future launches
-  via the path-collision guard. Demote to `Failed` and sweep worktrees.
-- **P1 - PTY kill and reaper.** `kill_pty` signals only the direct child (a
-  `setsid` leader), so agent subtrees survive pane close; the startup orphan
-  reaper reads a pid registry nothing writes; there is no app-exit PTY cleanup.
-  Port the process-group kill from `core/pty.rs`, wire `record_spawned_pid`,
-  and add a `RunEvent::Exit` arm.
-- **P1 - State-lock fairness.** Sync save commands busy-spin `try_lock` on the
-  IPC thread and can starve indefinitely against queued async writers (UI
-  freeze, no timeout). Make the saves async/fair; recover poisoned locks
-  instead of permanently failing every subsequent save.
-- **P1 - MCP read-only enforcement is fail-open.** Both the Rust and sidecar
-  copies gate writes with a substring denylist that misses `edit_file`,
-  `commit`, `exec`, and similar; the strict allowlist never engages because
-  `capabilityCheckedAt` is never set by default. Move to allowlist-by-default.
-- **P1 - Sidecar protocol security floor.** Version mismatch is warn-only; a
-  pre-v11 sidecar silently ignores `mcpTrustSnapshot` and runs MCP unfiltered.
-  Refuse sessions below v11 and surface the refusal in the status chip.
-- **P1 - Authenticated Node download.** `fetch-node.js` verifies against a
-  SHASUMS file fetched over the same channel and trusts a self-written cache
-  marker forever. Pin the five archive digests in-repo and re-validate the
-  cache against them.
-- **P1 - Release machinery truthfulness.** `release-readiness.mjs` passes
-  quality gates if the script _name exists_; `release:gate:strict` accepts the
-  updater minisign key as an Authenticode credential; the gate never runs
-  automatically. Fix both scripts and add `release:gate` to `prebundle`.
-- **P2 - Sub-agent permission holes.** The sub-agent loop dispatches tool calls
-  without checking them against its allowlist, and `spawn_subagent` is not in
-  `RISKY_TOOLS`, routing around DenyAll; `grep` follows symlinks out of the
-  workspace while the other file tools reject them. Also decide whether
-  permission mode `Auto` should remain the shipped default for local `bash`.
-- **P2 - Accept/Reject safety and landing.** Attempt Accept/Reject are
-  unconfirmed single clicks that reach `git worktree remove --force`; there is
-  no post-accept Land/Open-PR action outside cooperative flights. Add
-  confirmation with the existing dirty-worktree probe and a Land action.
-- **P2 - Flight cost integrity.** Cost deltas are applied twice when a hydrate
-  interleaves, and the `max()` merge makes the inflation permanent. Emit
-  authoritative totals; make the listener set rather than add. Also: `pkt/*`
-  branches are never deleted after attempts; plan-apply replaces milestones
-  without confirmation and orphans running task ids; the launch modal hides
-  partial-launch success.
-- **P2 - Sidecar resilience.** Three fast failures permanently brick sidecar
-  providers with no restart command; a hung-but-alive sidecar streams nothing
-  forever with no watchdog; `done`/`error` persistence runs inline on the
-  single reader loop and stalls all conversations. OpenAI provider never emits
-  `rate_limited` and checks MCP path denial with empty arguments.
-- **P2 - Dependency and config hygiene.** Add `default-features = false` to
-  reqwest (drops a redundant OpenSSL stack); delete unused `fuzzy-matcher`;
-  remove the dead `specs-gen.vercel.app` CSP origin; add `--frozen-lockfile`
-  to sidecar installs; add `*.key` to `.gitignore` before generating updater
-  keys.
-- **P2 - SSH trust anchors.** Validate the `ssh_pin_host` line (reject
-  wildcards/`@cert-authority`), quote `UserKnownHostsFile`, and require a
-  pinned fingerprint before sending an API key to a remote sidecar.
-- **P1 - Terminal-pane orphaned spawn.** Unmounting a pane during the awaited
-  `createPtySession` never kills the PTY (the session id ref is still null in
-  cleanup) and writes the dead pane's session into `layoutStore`. Add the
-  mounted-guard + best-effort `killPty` (`useTerminalSession.ts:236-251`).
-- **P1 - Shared Modal focus/semantics/Escape stack.** The one shared `Modal`
-  has no focus trap/restore and no dialog ARIA, and nested modals close the
-  wrong dialog on Escape; view-switch chords also fire while modals are open,
-  destroying half-typed forms. Fix once in the wrapper with a modal stack —
-  upgrades all 20 modals.
-- **P2 - Listener-lifecycle sweep.** Apply the cancelled-flag pattern to the
-  eight files that assign `unlisten` after `await listen(...)`; fix the
-  five-file `mountedRef` dev-only bug that wedges the PR/quality-AI panels;
-  add unmount cleanup + `cancelQualityFix` to `AutoFixButton`.
-- **P2 - workspaceStore persistence.** Add the `persistenceTail` ordering and
-  a local-only hydrate merge (a workspace created during the bootstrap window
-  is currently dropped); catch the fire-and-forget `writePty` so a message to
-  a dead PTY is not silently lost.
+**This section is a review snapshot, not a task list that maintains itself.**
+It was reconciled against source on 2026-08-27 and eleven findings were closed;
+they are listed under *Landed since the review* at the end of this section so
+nobody re-opens them. What follows is only what is still open — each entry
+below was re-read in source on that date unless it says otherwise.
+
+- **P2 - Sub-agent permission holes.** All three halves still open.
+  `run_agent_loop` builds a read-only tool subset
+  (`core/tool_subagent.rs:82-88`) but then dispatches straight into
+  `tool_runtime::execute_tool(&call, …)` with no check that the returned call
+  is in that subset (`core/tool_subagent.rs:~228`), so the allowlist is
+  advisory. `spawn_subagent` is still absent from `RISKY_TOOLS`
+  (`commands/api_agent.rs:2005` — `["bash", "write_file", "edit_file"]`),
+  routing around DenyAll. And `execute_grep`'s `walk_dir` recurses on
+  `path.is_dir()` with no `symlink_metadata` check
+  (`core/tool_runtime.rs:939-941`), so `grep` still follows symlinks out of
+  the workspace while `read_file`/`write_file`/`edit_file` canonicalize and
+  reject them. Also still undecided: whether permission mode `Auto` should
+  remain the shipped default for local `bash`.
+- **P2 - Flight cost integrity.** Narrowed but still open. The permanent-
+  inflation half is gone — `flightStore.hydrateFromBackend` no longer does a
+  `max()` merge, it takes the backend value for any id the backend knows
+  (`stores/flightStore.ts:353-366`). The double-apply half survives:
+  `applyBackendCostDelta` still **adds** (`totalCost: (f.totalCost ?? 0) +
+  costUsd`, `stores/flightStore.ts:371-383`), so a delta that interleaves with
+  a hydrate is counted twice until the next hydrate corrects it. Emit
+  authoritative totals and make the listener set rather than add. The three
+  companion items are **unverified** this pass: `pkt/*` branch cleanup after
+  attempts, plan-apply replacing milestones without confirmation, and the
+  launch modal hiding partial-launch success.
+- **P2 - Sidecar resilience.** Still open, all of it. `MAX_RESTARTS_IN_WINDOW`
+  = 3 still bricks the provider (`commands/agent_sidecar/supervisor.rs:709`)
+  and the only exported command is `get_sidecar_status`
+  (`commands/agent_sidecar/mod.rs:209`) — there is no restart command. No
+  watchdog or stall timeout exists anywhere under
+  `commands/agent_sidecar/`. `agent-sidecar/src/providers/openai-agents.ts`
+  still contains no `rate_limited` emission. The inline `done`/`error`
+  persistence on the single reader loop is **unverified** this pass.
+- **P2 - Dependency and config hygiene.** Two of five still open, one
+  unchanged, two landed. Still open: `reqwest` carries no
+  `default-features = false` (`src-tauri/Cargo.toml:36`), and
+  `sidecar:install` still has no `--frozen-lockfile`
+  (`package.json:24`). Unchanged: `fuzzy-matcher = "0.3"` is still declared
+  (`src-tauri/Cargo.toml:47`) with zero `fuzzy_matcher` references anywhere in
+  `src-tauri/src` — still dead, still deletable. Landed: the
+  `specs-gen.vercel.app` CSP origin is gone from `tauri.conf.json`, and
+  `.gitignore:54-56` now covers `*.key`/`*.pem`/`*.p12` (recorded under Owner
+  decision 4).
+- **P2 - SSH trust anchors.** Still open. `ssh_pin_host`
+  (`commands/pty.rs:1268`) validates only that the line is non-empty and
+  de-dupes it — no wildcard and no `@cert-authority` rejection. No pinned
+  fingerprint is required before a remote sidecar start
+  (`commands/agent_sidecar/supervisor.rs` references `host_fingerprint` only
+  inside a test), which is the same hole the remote-API-key item below
+  describes; close them together. The `UserKnownHostsFile` sub-item is
+  **downgraded, not closed**: both call sites push it as its own argv element
+  after `-o` (`core/execution.rs:117`, `commands/pty.rs:1389`), so no shell
+  quoting applies on the paths verified here.
+- **P2 - Listener-lifecycle sweep.** Two of three still open. The
+  cancelled-flag pattern **has** been applied — no file now assigns `unlisten`
+  after a bare `await listen(...)` without a liveness guard (the one remaining
+  such assignment, `PacketCodeEngineGate.tsx:158`, checks `aliveRef.current`).
+  Still open: the five-file `mountedRef` dev-only bug — `QualityAIExplanation`,
+  `QualityAISummary`, `QualityAIRunSummaryPanel`, `PRDescriptionButton`, and
+  `PRReviewPanel` all still declare `useRef(true)` and set it `false` in
+  cleanup without ever restoring it on mount, so React 18 StrictMode's
+  double-mount wedges the panel. Also still open: `AutoFixButton` now has
+  unmount cleanup (`components/quality/AutoFixButton.tsx:130-131`) but never
+  calls `cancelQualityFix`, which exists at `src/lib/tauri.ts:454`.
+- **P2 - workspaceStore persistence.** One of three landed. The ordering tail
+  exists as `backendSaveTail` (`stores/workspaceStore.ts:419`). Still open:
+  `hydrateFromBackend` does a wholesale `set({ workspaces: normalized })`
+  (`stores/workspaceStore.ts:922-931`) with no local-only merge, so a
+  workspace created during the bootstrap window is still dropped. Also still
+  open: uncaught fire-and-forget `writePty` calls remain — e.g.
+  `components/workspace/WorkspacePane.tsx:96` and `:113` — so a message to a
+  dead PTY is silently lost there.
 - **P2 - Undefined theme tokens.** `accent-cyan`, `accent-yellow`,
   `accent-orange`, and `text-text-tertiary` are used but not defined — 12
   usages render colourless today (PR pending pills, "Up Next" status dot).
-- **P2 - Coverage measurement and runtime split.** Add vitest coverage tooling
-  with per-directory floors; move the ~2,483 LOC of event-listener runtimes
-  out of `stores/` into `src/runtime/`; rename `src/agents/` → `src/lib/pty/`;
-  then write behavioural tests for the six money/remote modules
+  Re-verified 2026-08-27: none of the four appear in `tailwind.config.ts`,
+  whose `accent` group is green/amber/blue/red/purple/soft/line and whose
+  `text` group stops at `faint`. Note this is now the **only** colour item
+  left in the theme layer — the `/opacity` fix above landed, so these four
+  tokens no longer hide behind it.
+- **P2 - Coverage measurement and runtime split.** Nothing here has started.
+  Re-verified 2026-08-27: no coverage configuration exists in
+  `vitest.config.ts` or `package.json`, `src/runtime/` does not exist, and
+  `src/agents/` is still `src/agents/`. Add vitest coverage tooling with
+  per-directory floors; move the ~2,483 LOC of event-listener runtimes out of
+  `stores/` into `src/runtime/`; rename `src/agents/` → `src/lib/pty/`; then
+  write behavioural tests for the six money/remote modules
   (`LaunchAsyncFlightModal`, `reviewerGateRuntime`, `issueFlightMirrorStore`,
   `ServerFormModal`, attempt listeners, the PTY pattern parser).
-- **P3 - Brand-literal sweep.** Replace the 43 hardcoded `packetbench:` storage
-  keys and 7 `packetbench://` URIs with `storageKey()`/`URI_SCHEME`.
+- **P3 - Brand-literal sweep.** Replace the hardcoded `packetbench:` storage
+  keys and `packetbench://` URIs with `storageKey()`/`URI_SCHEME` (both exist,
+  `src/lib/brand.ts:22,28`). Re-counted 2026-08-27 and unchanged: **43**
+  literal `"packetbench:` occurrences outside `brand.ts` and test files, and
+  9 `packetbench://` occurrences.
 - **P1 - Rehearse the Phase-3 release gates before the release window.** A
   2026-08-06 dry run against the known-good v0.10.3 artifacts already reduces
   the strict gate to exactly the two scheduled blockers — Authenticode
   credentials and updater configuration — plus a dirty tree, with no
   environmental noise. What that run could not cover is the nine quality gates
   themselves, which were skipped. Run one full `release:readiness` from a
-  **Windows shell** (where Cargo is on PATH) on a quiet machine before
-  2026-08-17, so the reserved fix buffer is not spent distinguishing real
-  failures from tooling artifacts. Note also that `release:gate` has passed
-  standalone but has never yet run inside a real `pnpm tauri build`.
+  **Windows shell** (where Cargo is on PATH) on a quiet machine, so a release
+  window is not spent distinguishing real failures from tooling artifacts.
+  **The 2026-08-17 deadline this item used to carry is void** — it belonged to
+  the v1.0.0 definition the owner rejected on 2026-08-16; the rehearsal is
+  still wanted, it just has no date. Note also that `release:gate` has passed
+  standalone but has never yet run inside a real `pnpm tauri build` — it is
+  now wired into `prebundle` (`package.json:44`), so the next real build is
+  that first run.
 - **P1 - Release gates report false failures when run from WSL.** Three
   independent traps, all confirmed on this machine, all of which would burn
   time during the release window: `hostTarget()` reads `os.platform()`, so WSL
@@ -519,8 +589,12 @@ citations is in
   version floor can reject it. The session is killed on its `ready`, but
   closing this properly needs a handshake-before-start redesign of the remote
   path. Pair it with requiring a pinned `host_fingerprint` before any remote
-  sidecar start.
-- **P2 - Sidecar cold start takes 18-29 s on this checkout.** Module-load
+  sidecar start — re-verified 2026-08-27 that no such requirement exists
+  (`commands/agent_sidecar/supervisor.rs` mentions `host_fingerprint` only in
+  a test fixture), so this and the SSH-trust-anchors item above share a fix.
+- **P2 - Sidecar cold start takes 18-29 s on this checkout.** **Unverified on
+  2026-08-27** — closing or confirming it needs a timed run, not a read.
+  Module-load
   measurement attributes ~25.5 s of it to `providers/openai-agents.js` alone
   (pre-existing, unrelated to the MCP trust work). Four spawn-based smokes
   (`protocol`, `registry`, `remote-project`, `remote-mcp-fromfs`) time out
@@ -531,8 +605,10 @@ citations is in
   reports "Landed `pkt/…` as `abc1234`" in component state only, so the fact
   disappears on remount. Persisting it needs a new field on the Rust `Attempt`
   struct. Re-clicking Land is already safe — the merge returns `nothingToLand`
-  and the tile says so rather than claiming a second landing.
-- **P2 - Several test timeouts are too tight for this filesystem.** A full
+  and the tile says so rather than claiming a second landing. Re-verified
+  2026-08-27: `core/flight.rs` still has no `landed` field.
+- **P2 - Several test timeouts are too tight for this filesystem.**
+  **Unverified on 2026-08-27** — this needs a suite run, not a read. A full
   suite run on 2026-08-06 returned 1,631 passed / 10 failed, and **every one of
   the ten was a timeout or a platform assumption, not a regression** — but that
   makes a clean run impossible here, so a real failure would be easy to miss.
@@ -583,7 +659,56 @@ citations is in
   Rust-side check); unify the flight status-dot colour maps; rename
   `IssueFlightMirrorCard`; backfill the 19 missing release tags; document
   sidecar protocol v11 in the Rust module docs; align the two error-taxonomy
-  serializations (`rate_limit` vs `ratelimit`).
+  serializations (`rate_limit` vs `ratelimit`). Re-verified 2026-08-27:
+  `commands/checkpoints.rs`, `src/components/issues/IssueDetailView.tsx`, and
+  `src/components/views/SpecImportModal.tsx` all still exist, so at least the
+  named deletions are outstanding. The tag backfill, the colour-map
+  unification, and the wrapper count are **unverified** this pass.
+
+#### Landed since the review
+
+Closed against source on 2026-08-27. Recorded so the fixes are not re-opened
+from the original report, which still lists them as findings.
+
+- **Reviewer Gate verdict persistence** — backend-owned
+  `set_attempt_review_gate` writes under the state lock,
+  `commands/flight_attempts.rs:1207`, with merge tests at `:1770` and `:1786`.
+- **Reconcile attempts on startup** — `recover_flights_on_startup` demotes
+  non-terminal attempts to `Failed` and returns them for worktree sweep,
+  `core/orchestrator.rs:96`.
+- **PTY kill and reaper** — `record_spawned_pid` is defined at
+  `core/pty.rs:136` and now actually called at `commands/pty.rs:855`; the
+  app-exit `RunEvent::Exit` arm reaps PTY trees at `lib.rs:601`.
+- **State-lock fairness** — the `try_lock` spin is gone; sync writers take the
+  fair FIFO `blocking_lock` and both mutexes recover from poisoning instead of
+  failing forever, `core/storage.rs:452-487`.
+- **MCP read-only enforcement is fail-open** — inverted to allowlist-by-default
+  on both copies, with the verb list demoted to a floor beneath it:
+  `core/mcp_bridge.rs:196-253` and `agent-sidecar/src/mcp-trust.ts:9-22,253`.
+- **Sidecar protocol security floor** — `MINIMUM_PROTOCOL_VERSION = 11`
+  (`commands/agent_sidecar/mod.rs:122`) is enforced by `protocol_meets_floor`
+  at `commands/agent_sidecar/handler.rs:79`, which refuses the session and
+  explains why.
+- **Authenticated Node download** — `scripts/fetch-node.js` pins the archive
+  digests in-repo, re-validates the `.sha256` cache marker against the pin on
+  every run, and treats the live `SHASUMS256.txt` as advisory cross-check only
+  (`scripts/fetch-node.js:23-32,281-335,405`).
+- **Release machinery truthfulness** — `release-readiness.mjs` executes each
+  gate and reads its exit code (`runGate`, `:497-511`); `release-gate.mjs`
+  separates the updater minisign key from Authenticode and says so in the
+  failure text (`:251-333`); `release:gate` runs from `prebundle`
+  (`package.json:44`).
+- **Terminal-pane orphaned spawn** — `mountedRef` guard plus best-effort
+  `killPty` before any ref or store is touched,
+  `src/hooks/useTerminalSession.ts:251-258`.
+- **Shared Modal focus/semantics/Escape stack** — `src/components/ui/Modal.tsx`
+  imports `isTopModal`/`registerModal`/`unregisterModal` from `@/lib/modalStack`
+  (`:4`) and implements focus move-in/restore (`~:103-124`) and a Tab trap that
+  yields to the top-most dialog (`~:126-141`).
+- **Accept/Reject safety and landing** — both decisions now route through a
+  confirm backed by a live dirty-worktree probe
+  (`src/components/flights/AttemptTile.tsx:81-82,136,154,498-500`), and the
+  post-accept **Land** action exists (`:405`).
 
 ### Settings and Workspace
 
@@ -592,7 +717,10 @@ citations is in
   settings; validate provider-aware profile model/tool choices.
 - **P2 - Resolve Task Role Defaults.** Either consume the setting in the real
   launch/runtime path or remove the control. AI Provider Routing is already
-  consumed and must remain.
+  consumed and must remain. Re-verified 2026-08-27: the control is still
+  advertised (`src/lib/settingsNavigation.ts:161-166`, key `routing`) and
+  there is still no `taskRoleDefaults`/`roleDefaults` reader anywhere in `src/`
+  or `src-tauri/src` — so it remains a setting that changes nothing.
 - **P2 - CLI-first preferences and diagnostics.** Consolidate CLI/provider/SSH
   doctor output. Consider terminal appearance/behavior, Workspace restore and
   template defaults, default CLI/model, worktree cleanup, external editor, and
@@ -616,18 +744,34 @@ citations is in
   preference is appropriate; preserve confirmation whenever live work would be
   destroyed unless the owner explicitly accepts the tradeoff.
 - **P3 - Dead/unreferenced code decisions.** Delete or justify
-  `IssueDetailView.tsx`, `useServerConnection`, and `ConnectionProgress`.
+  `IssueDetailView.tsx`, `useServerConnection`, and `ConnectionProgress`. All
+  three still exist as of 2026-08-27 (`src/components/issues/IssueDetailView.tsx`,
+  `src/hooks/useServerConnection.ts`, `src/components/servers/ConnectionProgress.tsx`).
+  Overlaps the Fable 5 *Dead code and hygiene* P3 — resolve them together.
 - **P3 - Format enforcement.** Normalize the known Rust formatting drift and
-  decide whether `cargo fmt --check` joins the local/release gates.
+  decide whether `cargo fmt --check` joins the local/release gates. Re-verified
+  2026-08-27: no `cargo fmt` / `fmt:check` script exists in `package.json`, so
+  no gate runs it today.
 - **P3 - Historical Gemini wording.** Remove stray descriptive mentions while
   retaining intentional persisted-data read aliases until their removal gate.
+  Re-verified 2026-08-27: the stray descriptive mentions are
+  `src/agents/packetcode.ts:10` and the comment at `src/lib/api-models.ts:253`.
+  The retired-id aliases (`stores/agentStore.ts:20`,
+  `stores/workspaceStore.ts:334,378`) and the real OpenRouter
+  `google/gemini-2.5-pro` row are intentional — leave them.
 
 ### Models, agents, and editing
 
-- **P2 - Ollama capability-aware picker.** Probe `/api/show`, cache by endpoint
-  and digest, and hide or clearly gate models that cannot execute tools.
-- **P2 - Custom OpenAI-compatible provider.** Add one user-configured base-URL
-  row for vLLM, LM Studio, LiteLLM, and compatible hosted/self-hosted endpoints.
+- **LANDED 2026-08-26 - Ollama capability-aware picker.** `/api/show` is
+  probed and memoised (`commands/ollama.rs:62,201`; `core/llm_ollama.rs:62,76`)
+  and `ModelSelector` disables tool-less models while leaving
+  unknown-capability ones selectable (`ModelSelector.tsx:78,230`). The residual
+  staleness of the memo is tracked as its own P3 under *Three-track build-out
+  residue*; do not re-open this item for it.
+- **LANDED 2026-08-26 - Custom OpenAI-compatible provider.** Shipped as the
+  `api-custom` row (`src/lib/api-models.ts:189`) backed by
+  `src-tauri/src/core/llm_custom_compat.rs`, and documented in `CLAUDE.md`'s
+  nine-row provider table.
 - **P2 - Finish auxiliary-task routing.** Move remaining Memory, Insights,
   Spec, and GitHub auxiliary calls onto `core/aux_llm.rs`; add task-class
   provider/model settings without reviving the removed Cost Dashboard.
@@ -652,9 +796,11 @@ citations is in
 - **P3 - Diff viewer controls.** Side-by-side toggle, word wrap, and
   whitespace-ignore in the agent diff view. (Folded from
   `docs/deferred-work.md`.)
-- **P3 - `agentTaskStore` module split.** The store is ~1,780 lines and has
-  grown since the last measurement; split along session-lifecycle/event-intake
-  seams. (Folded from `docs/deferred-work.md`, count corrected.)
+- **P3 - `agentTaskStore` module split.** The store is **2,261 lines** as of
+  2026-08-27 — it has grown ~27% since the last recorded count of ~1,780 and
+  keeps growing between reconciliations. Split along
+  session-lifecycle/event-intake seams. (Folded from `docs/deferred-work.md`,
+  count re-measured.)
 
 ### Flight, Git host, and runtime debt
 
@@ -722,8 +868,10 @@ Do not reopen these from historical plans:
   Packet\* family — `kind: "syndicate"` persistence, OS-keychain device
   credentials, scoped pairing/revocation, pane/session lifecycle, managed
   pinned SSH bootstrap, and encrypted PacketRelay frames all lived at
-  `d87fb125`. Do not rebuild it here; the controller protocol and relay
-  continue in Syndicate's own repos.
+  `d87fb125`. Do not rebuild it here; the controller protocol continues in
+  Syndicate's own repos. **PacketRelay does not** — per Owner decision 6 it
+  stayed with PacketBench (`D:\projects\packetrelay`, deploying to Railway).
+  The boundary that closed is the Syndicate *execution target*, not the relay.
 
 - Workspace/Agents restructuring and WA0-WA4 are complete: Workspaces are
   CLI/PacketCode-first; Agents is a first-class same-window GUI-agent surface;

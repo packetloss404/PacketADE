@@ -25,7 +25,7 @@ operate UIs. Two tiers, shipped in this order:
 | --- | --- |
 | V1 scope | Both tiers, **browser (CDP) first**; desktop second on the same scaffolding |
 | Backend | **In-process Rust** (`LlmProvider` path). Native `computer_20251124` passthrough for Anthropic providers at the desktop tier; plain JSON-schema tools for other providers. Not the sidecar. |
-| Safety model v1 | **Approval-gated + kill switch**: blocking approval tier per action, Syndicate-pattern opt-in, frozen per-session grant, abort on physical mouse movement. Per-app grants/action tiers deferred to a later phase. |
+| Safety model v1 | **Approval-gated + kill switch**: blocking approval tier per action, fail-closed integration-gate opt-in (pattern in §4.3), frozen per-session grant, abort on physical mouse movement. Per-app grants/action tiers deferred to a later phase. |
 | Platforms v1 | **Windows only.** macOS and Linux follow after the shape is proven. |
 
 Do not re-litigate these without a new owner decision.
@@ -112,10 +112,14 @@ can reach neither the model nor the user:
   prefix arms (`:355/:364/:369`) are the precedent for a `computer_*` family.
 - Computer-use tools are **host-agnostic in the code sense but local-only in
   the product sense**: they must run in the PacketBench process (the pattern of
-  `web_fetch`/`gh_*`: `let _ = target;`) and must **refuse outright when the
-  session's execution target is SSH or Syndicate** — "the screen" is
-  unambiguously the local machine. Frontend gate: `isRemoteConversation`
-  (`src/lib/remoteConversation.ts`); the `edit_file`-on-SSH fail-closed arm
+  `web_fetch`/`gh_*`: `let _ = target;`) and must **refuse outright whenever
+  the session's execution target is anything other than local** — "the screen"
+  is unambiguously the local machine. `ExecutionTargetRef` has exactly two
+  variants today, `Local` and `Ssh` (`src-tauri/src/core/workspace.rs`), so in
+  practice that means refusing on SSH; write the check as "not local" rather
+  than "is SSH" so any future remote target inherits the refusal. Frontend
+  gate: `isRemoteConversation` (`src/lib/remoteConversation.ts`, keyed on the
+  conversation's `sshTarget`); the `edit_file`-on-SSH fail-closed arm
   (`tool_runtime.rs:298`) is the backend precedent.
 - Native Anthropic tool blocks: `ToolDefinition` (`core/llm_types.rs:91-97`)
   has no `type` passthrough; the desktop tier adds an optional `tool_type`
@@ -135,17 +139,44 @@ can reach neither the model nor the user:
 - **Session authority rides a frozen snapshot, not `allowedTools`.** Model it
   on `McpTrustSnapshot` (`src/types/mcp.ts:37`, frozen at session start so
   later Settings edits cannot broaden a running session).
-- **Opt-in follows the Syndicate pattern** (commits `121aee26` → `f1972732` →
-  `53f98f83`): dedicated preference module (`src/lib/syndicateIntegration.ts`
-  shape), fail-closed `AtomicBool` + `require_integration_enabled()` in Rust,
-  bootstrap `syncNative()` mirror in `App.tsx`, consumers check
-  `enabled && nativeReady`, confirm dialogs in both directions (the enable
-  dialog doubles as the Usage-Policy consent surface), typed
-  `INTEGRATION_DISABLED` error code so "off" is distinguishable from
-  "broken", and settings-search keywords in `settingsNavigation.ts`.
+- **Opt-in follows the fail-closed integration-gate pattern.** The pattern is
+  spelled out here because it no longer exists in the tree: it was built for
+  the Syndicate integration, which was deleted on 2026-08-27 (commit
+  `68ce85ee`, after the Packet\* product separation). Nothing in `src/` or
+  `src-tauri/` implements it today, so build it fresh to this shape rather
+  than looking for a file to copy:
+  - a **dedicated preference module** in `src/lib/` owning one
+    `storageKey(...)` localStorage entry, a cached runtime value, load/persist
+    helpers, an `assert…Enabled()` throw, and one exported disabled-message
+    constant that both the store and consumers compare against;
+  - a **fail-closed `static AtomicBool`** in the Rust command module,
+    initialized `false`, plus a `require_integration_enabled()` helper called
+    at the top of every gated command — so a direct or racing `invoke` cannot
+    open authority before Settings has been mirrored;
+  - a **bootstrap native mirror**: a store action (the Syndicate original
+    called it `syncNative()`) invoked from `App.tsx`'s first-mount effect,
+    pushing the persisted preference into the native gate and setting a
+    `nativeReady` flag; it must serialize concurrent toggles by revision so a
+    late response cannot re-enable a preference the user has since turned off;
+  - **consumers check `enabled && nativeReady`**, never `enabled` alone;
+  - **confirm dialogs in both directions** — the enable dialog doubles as the
+    Anthropic Usage-Policy consent surface (§3), the disable dialog states
+    what stops working;
+  - a **typed `INTEGRATION_DISABLED` error code** so "off" is distinguishable
+    from "broken" in the UI;
+  - **settings-search keywords** in `src/lib/settingsNavigation.ts`.
+
+  The archived reference implementation, if the prose above is ambiguous, is
+  readable at commit `d87fb125`: `src/lib/syndicateIntegration.ts`,
+  `src-tauri/src/commands/syndicate.rs` (`require_integration_enabled`,
+  `SYNDICATE_INTEGRATION_ENABLED`), `src/stores/syndicateStore.ts`
+  (`syncNative`), and `src/App.tsx`'s bootstrap effect. Read it as history —
+  do not restore any of it.
 - Settings surface: a new card in `src/components/views/tools/` + a
-  `SettingsSection` key, next to `SyndicateMachinesCard`. The Modules registry
-  is **not** the right home (modules are view-shaped; this is tool authority).
+  `SettingsSection` key, alongside the trust/authority cards
+  (`TrustProvenanceCard`, `McpServersCard`) rather than the integration cards.
+  The Modules registry is **not** the right home (modules are view-shaped;
+  this is tool authority).
 - **Flights are excluded in v1**: attempts are unattended (nobody to answer a
   blocking prompt) and a local attempt would fight the user for the mouse.
   `AutonomyPolicy` is the future home for a policy-level grant (Phase 3+).
@@ -188,10 +219,10 @@ can reach neither the model nor the user:
 2. `computer_*` tool family in `tool_runtime.rs`: navigate, screenshot, click,
    type, scroll, read-page (a11y-tree text extraction first, pixels as
    fallback — cheaper and more reliable than pure pixel clicking).
-3. Full governance from day one: Syndicate-pattern toggle + native gate +
-   typed errors + settings card; frozen session grant snapshot; `RISKY_TOOLS`;
-   plan-mode exclusion; SSH/Syndicate/remote refusal; flights excluded;
-   kill-switch scaffolding.
+3. Full governance from day one: the §4.3 integration-gate toggle + native
+   gate + typed errors + settings card; frozen session grant snapshot;
+   `RISKY_TOOLS`; plan-mode exclusion; non-local (SSH/remote) refusal;
+   flights excluded; kill-switch scaffolding.
 4. Approval prompt computer-use branch (screenshot + highlighted target).
 
 ### Phase 2 — desktop tier, Windows
@@ -222,7 +253,8 @@ can reach neither the model nor the user:
 
 ## 6. Explicitly out of scope
 
-- Computer use over SSH/Syndicate targets (refused, typed error).
+- Computer use over SSH or any other non-local execution target (refused,
+  typed error).
 - Flight attempts driving the local desktop.
 - Wayland input in v1.
 - Any auto-allow default: the family never auto-allows without an explicit
@@ -238,7 +270,8 @@ can reach neither the model nor the user:
 The owner paused this plan on 2026-08-16, hours after ratifying its design
 decisions, as part of a portfolio-wide sequencing pass (the same session
 paused Remote Agents — see `remoteagents/10-pause-record.md` for the sibling
-record). Scope of the pause:
+record; **Remote Agents resumed on 2026-08-27, this plan did not**). Scope of
+the pause:
 
 - **No Phase 0.** The image-plumbing prerequisite is not scheduled, and no
   `computer_*` tool family, CDP module, settings toggle, or dependency change
@@ -287,12 +320,13 @@ not doubt — the research validated both the demand and the design.
 
 1. The §2 decision table (browser-first, Rust in-process, approval-gated,
    Windows v1) — owner-ratified 2026-08-16.
-2. Local-only: SSH/Syndicate/remote conversations refuse computer use with a
-   typed error; flights excluded until a policy-level grant design exists.
+2. Local-only: SSH and any other non-local conversation refuses computer use
+   with a typed error; flights excluded until a policy-level grant design
+   exists.
 3. The family joins `RISKY_TOOLS`, never `PLAN_MODE_ALLOWED`, and never
    auto-allows without an explicit per-session grant in v1.
-4. Consent before enablement (usage-policy requirement) via the
-   Syndicate-pattern opt-in confirm dialog.
+4. Consent before enablement (usage-policy requirement) via the §4.3
+   integration-gate opt-in confirm dialog.
 5. Session authority rides a frozen snapshot (McpTrustSnapshot pattern), not
    the mutable `allowedTools` list.
 6. Screenshots are untrusted evidence: provenance-enveloped, tainting, bytes

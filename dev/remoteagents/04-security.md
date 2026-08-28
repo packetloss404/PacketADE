@@ -165,6 +165,14 @@ Revocation must be immediate:
 
 TLS protects network transit, but the relay would still see prompts, code, diffs, tool arguments, and approvals unless payloads are encrypted above TLS.
 
+This is a property of the deployment as well as the process: TLS terminates at
+the hosting proxy (Railway, as of 2026-08-27 — see `02-architecture.md`
+§ Deployment target), so the hosting provider's edge and any platform log or
+traffic-inspection surface sits inside the TLS boundary alongside the relay
+binary. Payload encryption is what protects content from both. This is
+unchanged by PacketBench now owning the relay: owning the code is not the same
+as the content being unreadable in the deployment.
+
 Recommendation:
 
 - Internal dev can start with plaintext payloads for speed.

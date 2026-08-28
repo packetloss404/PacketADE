@@ -21,10 +21,10 @@ work. Completed work belongs in `CHANGELOG.md`.
 
 | Document                                                                     | Status                                                                                                                                                                                    |
 | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`release-v0.10.3.md`](./release-v0.10.3.md)                                 | **CURRENT RELEASE RECORD** - tagged source, final gates, Windows artifacts, hashes, and known unsigned status                                                                             |
+| [`release-v0.10.3.md`](./release-v0.10.3.md)                                 | **CURRENT RELEASE RECORD** - tagged source, final gates, Windows artifacts, hashes, and known unsigned status. `v0.10.3` is still the newest annotated tag, but it is **pre-rename**: source is now 0.11.0 and no `PacketBench`-branded package has been built yet |
 | [`proof-audit-2026-08-01.md`](./proof-audit-2026-08-01.md)                   | **DATED SNAPSHOT** - exact August 1 source/package proof; superseded for current counts and package identity by v0.10.3, but still authoritative for why each external gate remained open |
 | [`local-quality-gates.md`](./local-quality-gates.md)                         | Current local gate commands and release-check composition                                                                                                                                 |
-| [`beta-distribution-trust-runbook.md`](./beta-distribution-trust-runbook.md) | Signing/updater/release-candidate runbook                                                                                                                                                 |
+| [`beta-distribution-trust-runbook.md`](./beta-distribution-trust-runbook.md) | Signing/updater/release-candidate runbook. Signing itself is **deferred on cost** (owner decision 2026-08-27, terms in `../backlog.md`); this runbook is what to execute when the deferral's trigger fires, not open work |
 | [`multi-platform-build.md`](./multi-platform-build.md)                       | Windows/macOS/Linux prerequisites and build flow                                                                                                                                          |
 | [`macos-release-plan.md`](./macos-release-plan.md)                           | **ACTIVE PLAN** - owns macOS code signing, notarization, entitlements, the arm64 bundle decision, and the macOS acceptance matrix; macOS targets v1.1                                     |
 | [`updater-setup.md`](./updater-setup.md)                                     | Tauri updater runbook; updater is not enabled                                                                                                                                             |
@@ -51,15 +51,21 @@ The Syndicate execution-target program is archived under
 [`archive/syndicate/`](./archive/syndicate/). Syndicate separated from the
 Packet\* product family on 2026-08-27 and the integration was removed from the
 product in `68ce85ee`; those documents are historical records only. The
-`method-b-request.md` inside that folder must not be sent. `syndicate_relay.rs`
-at `d87fb125` remains the reference device-half implementation of the controller
-relay protocol for the future Remote Agents work.
+`method-b-request.md` inside that folder — at
+[`archive/syndicate/syndicate-proof/method-b-request.md`](./archive/syndicate/syndicate-proof/method-b-request.md)
+— must not be sent. `syndicate_relay.rs` no longer exists in the tree; the copy
+at `d87fb125` lives only in git history and remains the reference device-half
+implementation of the controller relay protocol for the Remote Agents work.
+Those documents also predate the 2026-08-27 decision that PacketRelay
+(`D:\projects\packetrelay`) belongs to PacketBench and deploys to Railway;
+where they describe the relay as Syndicate infrastructure on Cloud Run, read
+that as history.
 
 ## Active implementation and proof plans
 
 | Track                       | Canonical document                                                                                 | Current boundary                                                                                                                                                                                                                                                    |
 | --------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Remote Agents               | [`remoteagents/README.md`](./remoteagents/README.md)                                               | **PAUSED 2026-08-16** by owner decision; E2EE gate ratified, auth parked as the first pickup action; [`remoteagents/10-pause-record.md`](./remoteagents/10-pause-record.md) is the pickup entry point                                                               |
+| Remote Agents               | [`remoteagents/README.md`](./remoteagents/README.md)                                               | **UNPAUSED 2026-08-27** by owner decision (paused 2026-08-16). E2EE gate stays ratified — encrypted agent, approval, and file payloads before any external beta. The auth-provider decision reverts from parked to **open and blocking** ([`remoteagents/09-open-decisions.md`](./remoteagents/09-open-decisions.md)); [`remoteagents/10-pause-record.md`](./remoteagents/10-pause-record.md) is now a historical pause record. Sprint 0 runs against PacketRelay, which is PacketBench-owned as of 2026-08-27 and deploys to Railway (not the Cloud Run deployment it had while it served Syndicate) |
 | Remote provider parity      | [`sidecar-over-ssh-verification.md`](./sidecar-over-ssh-verification.md)                           | Surviving Claude Agent SDK/OpenAI Agents SDK pinned-SSH matrix remains                                                                                                                                                                                              |
 | SSH/workspaces              | [`ssh-remote-loop.md`](./ssh-remote-loop.md)                                                       | S1-S8 shipped; Windows-OpenSSH and larger streamed transfers remain later/environment-gated                                                                                                                                                                         |
 | Flight Reviewer             | [`bridgemind/reviewer-gate-loop.md`](./bridgemind/reviewer-gate-loop.md)                           | Source/automated proof complete; RG8 packaged local/SSH/manual gate remains                                                                                                                                                                                         |
@@ -78,13 +84,28 @@ relay protocol for the future Remote Agents work.
 | API-agent auth cleanup      | [`oauth-removal-plan.md`](./oauth-removal-plan.md)                                                 | Credential migration complete; explicit retired-conversation provider switch remains                                                                                                                                                                                |
 | Cost controls/efficiency    | [`cost-efficiency-loop.md`](./cost-efficiency-loop.md)                                             | Reporting surface removed; caching/edit improvements partly complete; live measurement and bounded edit debt remain                                                                                                                                                 |
 | Packet Control              | [`packet-control-loop.md`](./packet-control-loop.md)                                               | Proposed, not started; shared evidence contract must precede implementation                                                                                                                                                                                         |
-| Computer Use                | [`computer-use-plan.md`](./computer-use-plan.md)                                                   | **PAUSED 2026-08-16** by owner decision; design and decisions complete (browser tier first, Rust in-process, approval-gated, Windows-only v1); §7-PAUSE of the plan is the pickup runbook                                                                           |
+| Computer Use                | [`computer-use-plan.md`](./computer-use-plan.md)                                                   | **STILL PAUSED 2026-08-16** by owner decision; design and decisions complete (browser tier first, Rust in-process, approval-gated, Windows-only v1); §7-PAUSE of the plan is the pickup runbook. The 2026-08-27 unpause covered Remote Agents only — the two pauses were same-day siblings but are no longer linked                                                       |
 | PacketBBS                   | [`features-packetbbs-terminal.md`](./features-packetbbs-terminal.md)                               | Proposed later, bounded non-secret connection preset                                                                                                                                                                                                                |
 | 2026-08-01 P1 pass          | [`high-priority-real-work-loop-2026-08-01.md`](./high-priority-real-work-loop-2026-08-01.md)       | Evidence record for the runtime-authority correctness pass (`fd8c226`); source and review complete                                                                                                                                                                  |
 | GitHub pane v9 residue      | [`github-pane-v9-loop.md`](./github-pane-v9-loop.md)                                               | Scoped GitHub-pane deferrals; remaining work is tracked in `../backlog.md`                                                                                                                                                                                          |
 
 The packaged Flight-supervision matrices (RG8/CG9/CI9/AP9) share one evidence
 file: [`bridgemind/flight-supervision-proof-2026-07-28.md`](./bridgemind/flight-supervision-proof-2026-07-28.md).
+
+Where a row above disagrees with the status line inside its own plan document,
+the row wins — it is reconciled against source, the plan headers are not.
+Verified on 2026-08-27: the Local model routing row (`local-model-routing.md`
+still opens "IN PROGRESS ... barring picker gating", but `supports_tools`
+gating, `llm_custom_compat`, and `scripts/aux-spend-split.mjs` are all in the
+tree) and the PacketAgent handoff row (`packetagent-handoff-loop.md` still
+lists PH9 as `queued`, but `src/lib/packetAgentAttention.ts` and
+`packetAgentProjection.ts` exist). Every "packaged proof remains" claim spot-
+checked also held: Monitor v1 is source-complete behind
+`src-tauri/src/commands/monitor_windows.rs`, TP8 is genuinely environment-
+gated, and the local-opt-in banner's gate `src-tauri/tests/ollama_e2e.rs` is
+still `#[ignore]`d pending a live daemon.
+
+All document links in this file resolve as of 2026-08-27.
 
 ## Research and reference
 

@@ -1,10 +1,12 @@
 # PacketBench Remote Agents
 
-Status: **PAUSED by owner decision 2026-08-16** — read
-[`10-pause-record.md`](./10-pause-record.md) first; it is the pickup entry
-point (exact state at pause, staleness map, invariants, ordered resume
-runbook). The planning package below remains the design of record.
-Last updated: 2026-08-16
+Status: **ACTIVE — resumed by owner decision 2026-08-27** (paused 2026-08-16
+to 2026-08-27) — read [`10-pause-record.md`](./10-pause-record.md) first; it
+is the entry point (state of record, staleness map, invariants, ordered
+resume runbook). Implementation is still zero: Sprint 0 is the next step and
+the **auth-provider decision is blocking again**. The planning package below
+remains the design of record.
+Last updated: 2026-08-27
 
 This directory is the canonical implementation brief for **PacketBench Remote Agents**: a cloud-relayed, PWA-first way to use PacketBench Agents from a phone while the desktop app keeps ownership of providers, models, secrets, workspaces, MCP config, permissions, and execution.
 
@@ -21,6 +23,8 @@ All your PacketBench agents, providers, models, profiles, workspaces, and approv
 - **Transport: WebSocket relay.** Foreground real-time channel is bidirectional WebSocket. Web Push is for notifications only.
 - **MVP scope: API agents only.** Remote raw PTY and full desktop command control are explicitly out of v1.
 - **Relay implementation: the standalone Rust service at `D:\projects\packetrelay`.** PacketBench extends that service with its versioned host/device protocol, HTTPS control plane, durable replay, auth, audit, and Web Push; it does not create a Cloudflare relay implementation.
+- **Relay ownership: PacketBench's, as of 2026-08-27.** The relay is no longer shared with Syndicate; Remote Agents is its only consumer, and therefore carries its full build and run cost.
+- **Relay deployment: Railway.** This replaces the Cloud Run deployment the relay ran while it served Syndicate. It does not reopen the 2026-08-02 relay-architecture decision.
 
 ## Why This Shape
 
@@ -49,6 +53,7 @@ The remote feature should project that desktop capability to mobile without dupl
 - [07-six-agent-runbook.md](./07-six-agent-runbook.md) - tomorrow's six-agent execution split
 - [08-testing.md](./08-testing.md) - unit, integration, security, load, PWA, manual iOS/Android checks
 - [09-open-decisions.md](./09-open-decisions.md) - unresolved choices and decision log
+- [10-pause-record.md](./10-pause-record.md) - pause/resumption record, state of record, staleness map, resume runbook
 - [research-brief.md](./research-brief.md) - research synthesis and source index
 
 ## Critical Implementation Principle
