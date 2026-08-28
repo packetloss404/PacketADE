@@ -62,16 +62,24 @@ room compatibility modes that exist only to serve it. Remote Agents adds its
 own `/ws/host` and `/ws/device` routes; it does not need to be built alongside
 an inherited surface.
 
-**Execution is a relay-repo change**, not a PacketBench one, so it is recorded
-here and made there. Do it before or during Sprint 0 and before the Railway
-migration — carrying a dead route into a new deployment target means porting
-config, health checks, and protocol docs for something already decided to be
-removed. `PRODUCT_ROUTE_PROTOCOL.md` and the Cloud Run artifacts
-(`cloudbuild.yaml`, `deploy.sh`) go with it.
+**DONE 2026-08-28** — executed in the relay repo as `b2bcff5` on
+`packetrelay@main`. Removed: `src/product_route.rs`, `src/product_crypto.rs`,
+`PRODUCT_ROUTE_PROTOCOL.md`, the shared crypto fixture, the
+`RequestRoute::Product` classification and its reserved connection pool, the
+`--product-connection-reserve` flag, and the five crates only that code used
+(`aes-gcm`, `ed25519-dalek`, `hkdf`, `x25519-dalek`, `zeroize_derive`). Relay
+tests 61 → 53, strict Clippy and `cargo fmt --check` clean.
 
-Verify rather than assume before deleting: confirm no live client is connected
-and check the relay's own access logs, since the "live deployment" claim in
-these documents survived unchallenged for some time.
+**Scope correction made during execution.** These documents said the cut also
+covered "the bridge/broadcast/room compatibility modes that exist only to serve
+it." That was wrong. Bridge, broadcast, and room are a *separate inherited
+lineage* (`jarvis-room-hello-v1`, with external clients of its own), not part
+of the product route. They were left untouched. Do not treat them as
+condemned by this decision.
+
+The Google Cloud Run deployment path went with it — `cloudbuild.yaml`,
+`deploy.sh`, `scripts/smoke-cloud-run.py`, and the README's live-deployment
+section.
 
 ### Relay Deployment Target — RESOLVED 2026-08-27
 

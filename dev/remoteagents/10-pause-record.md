@@ -116,7 +116,7 @@ envelope ceiling.
 | Payload-encryption launch gate | **Resolved 2026-08-16** — plaintext (TLS-only) for local/internal dev only; encrypted agent/approval/file payloads are a hard gate before any external private beta. Unchanged by the resumption. |
 | **Auth provider** | **Resolved 2026-08-28** — build passkey/magic-link auth into the relay (Rust on PostgreSQL), fully owned. The owner accepted the ownership burden explicitly. No blocking owner decision remains. See §2 and `09-open-decisions.md` § Auth Provider. |
 | Railway deployment questions (edge WS connection lifetime, deploy-time instance overlap, managed-PostgreSQL durability, region) | **Open, Sprint-0 verification** — see `02-architecture.md` § Deployment target |
-| Relay `/v1/product-route` disposition after the Syndicate separation | **Resolved 2026-08-28** — cut it. The route is not serving live traffic (owner, correcting the earlier record). Removal is a relay-repo change, ahead of the Railway migration. |
+| Relay `/v1/product-route` disposition after the Syndicate separation | **Resolved and DONE 2026-08-28** — cut, executed in the relay repo as `b2bcff5`. Bridge/broadcast/room were explicitly *not* cut; they are a separate inherited lineage. |
 | Backend conversation persistence shape | Open, non-blocking (recommendation written: minimal Rust DTO for MVP) |
 | Native iOS strategy | Deferred until after PWA beta |
 | Team/org model, cloud runner, billing, WebRTC/LAN, remote PTY, file browser depth, transcript retention | Deferred |

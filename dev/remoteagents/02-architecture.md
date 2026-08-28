@@ -80,9 +80,26 @@ model. Public deployments expose only HTTPS/WSS.
 **Resolved 2026-08-27** (see `09-open-decisions.md` § Relay Deployment Target).
 The relay deploys to Railway, replacing the Google Cloud Run deployment it ran
 while it served Syndicate. `railway.json` in the relay repo already builds the
-root `Dockerfile`; `cloudbuild.yaml` and `deploy.sh` are the retired Cloud Run
-path. This does not reopen the 2026-08-02 decision to use the Rust relay and
-reject Cloudflare — Railway answers only *where that relay runs*.
+root `Dockerfile`; the Cloud Run path (`cloudbuild.yaml`, `deploy.sh`) was
+deleted on 2026-08-28. This does not reopen the 2026-08-02 decision to use the
+Rust relay and reject Cloudflare — Railway answers only *where that relay runs*.
+
+**DEPLOYED 2026-08-28.** The relay is live on Railway in workspace
+`FIFTY ELEVEN AI`, project `packet-relay`, environment `production`, built from
+`packetrelay@b2bcff5` (the commit that removed `/v1/product-route`):
+
+    https://packet-relay-production.up.railway.app
+
+Verified on deploy: `/health` → `200 ok`, `/ready` → `200 ready`. A plain GET to
+`/v1/product-route` returns 502, which is the correct new behaviour — the path
+is no longer reserved, so it classifies as an ordinary legacy WebSocket target
+and a non-upgrade request fails. Nothing PacketBench-specific is served yet;
+Remote Agents has zero implementation and this is the deployment substrate for
+Sprint 0.
+
+The Google Cloud Run service that previously ran this relay
+(`fiery-plate-504923-s1` / `us-central1`) is a separate teardown outside both
+repositories.
 
 What carries over unchanged:
 
