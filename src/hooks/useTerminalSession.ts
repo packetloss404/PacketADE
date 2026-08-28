@@ -67,6 +67,11 @@ let sessionCounter = 0;
 // dedupes across separate hook/component instances of the same pane.
 const panesStarting = new Set<string>();
 
+// Sessions shorter than this are noise (a mistyped command, an instant crash)
+// and are not worth a memory event. Was 30s, which combined with the
+// natural-exit-only gate meant almost nothing was ever captured.
+const MIN_MEMORY_CAPTURE_MS = 10_000;
+
 export function useTerminalSession({
   paneId,
   autoStart = true,
@@ -93,6 +98,10 @@ export function useTerminalSession({
   // and the resolved spawn leaves a live `claude`/`codex` process behind with
   // no owner — plus writes the dead pane's session back into `layoutStore`.
   const mountedRef = useRef(true);
+  // Mirrored so the unmount cleanup can attribute a memory capture without
+  // taking `cliCommand` as a dependency (which would re-arm the cleanup).
+  const cliCommandRef = useRef(cliCommand);
+  cliCommandRef.current = cliCommand;
 
   // Store callbacks in refs so they never destabilize memoised effects.
   const onSessionCreatedRef = useLatestRef(onSessionCreated);
@@ -308,11 +317,21 @@ export function useTerminalSession({
 
         useActivityStore.getState().clearActivity(tabId);
 
-        // Auto-learn from completed sessions.
-        if (tab && projectPath && tab.durationMs > 30_000 && !wasRequested) {
+        // Auto-learn from completed sessions. A user-requested exit (Kill,
+        // Restart, closing the pane) is still a session that happened, so it
+        // is recorded too — just stamped `killed` rather than `done`. Gating
+        // on `!wasRequested` meant every ordinary way of ending a session
+        // skipped capture, which is why the Memory pane stayed empty.
+        if (tab && projectPath && tab.durationMs > MIN_MEMORY_CAPTURE_MS) {
           void useMemoryStore
             .getState()
-            .learnFromSession(sessionId, cliCommand, projectPath, tab.durationMs);
+            .learnFromSession(
+              sessionId,
+              cliCommand,
+              projectPath,
+              tab.durationMs,
+              wasRequested ? "killed" : "done",
+            );
         }
       };
 
@@ -440,6 +459,16 @@ export function useTerminalSession({
       const sid = sessionIdRef.current;
       if (sid) {
         exitRequestedRef.current = true;
+        // Capture before the tab is removed below — unmount tears the exit
+        // listeners down, so `finishSession` never runs on this path and the
+        // session would otherwise be lost to memory entirely.
+        const tid = tabIdRef.current;
+        const tab = tid ? useTabStore.getState().getTab(tid) : null;
+        if (tab?.projectPath && tab.durationMs > MIN_MEMORY_CAPTURE_MS) {
+          void useMemoryStore
+            .getState()
+            .learnFromSession(sid, cliCommandRef.current, tab.projectPath, tab.durationMs, "killed");
+        }
         // Unmount cleanup — swallow errors; PTY may already be dead.
         killPty(sid).catch(() => {});
       }

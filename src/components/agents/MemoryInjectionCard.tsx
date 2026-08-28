@@ -30,7 +30,8 @@ export function MemoryInjectionCard({ brief }: MemoryInjectionCardProps) {
         </span>
         <span className="text-meta tabular-nums text-text-muted">
           {stats.patterns} pattern{stats.patterns === 1 ? "" : "s"} ·{" "}
-          {stats.lessons} lesson{stats.lessons === 1 ? "" : "s"} · ~
+          {stats.lessons} lesson{stats.lessons === 1 ? "" : "s"} ·{" "}
+          {stats.notes} note{stats.notes === 1 ? "" : "s"} · ~
           {stats.approxTokens} tok
         </span>
         <span className="flex-1" />

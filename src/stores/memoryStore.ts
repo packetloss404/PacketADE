@@ -23,13 +23,15 @@ import type {
 } from "@/types/memory";
 import type { loadPersistedState } from "@/lib/tauri";
 import type { ProvenanceEnvelope } from "@/types/provenance";
+import type { ProjectMemoryNote } from "@/types/project-memory";
+import { useProjectMemoryStore } from "@/stores/projectMemoryStore";
 
 function normalizePath(path: string): string {
   return path.replace(/\\/g, "/").toLowerCase();
 }
 
 /** v0.8-H: kind discriminator for the structured context preview. */
-export type ContextItemKind = "pattern" | "lesson" | "session";
+export type ContextItemKind = "pattern" | "lesson" | "session" | "project_note";
 
 /** v0.8-H: a single row in the AgentInputArea context chevron. */
 export interface ContextItem {
@@ -70,19 +72,25 @@ export function memoryBriefStats(brief: MemoryBrief): {
   patterns: number;
   lessons: number;
   summaries: number;
+  notes: number;
   approxTokens: number;
 } {
   let patterns = 0;
   let lessons = 0;
   let summaries = 0;
+  let notes = 0;
   for (const item of brief.items) {
     if (item.kind === "pattern") patterns += 1;
     else if (item.kind === "lesson") lessons += 1;
     else if (item.kind === "session") summaries += 1;
+    else if (item.kind === "project_note") notes += 1;
   }
   const approxTokens = Math.max(0, Math.round(brief.text.length / 4));
-  return { patterns, lessons, summaries, approxTokens };
+  return { patterns, lessons, summaries, notes, approxTokens };
 }
+
+/** Cap on durable project notes injected into a brief. */
+const MAX_CONTEXT_PROJECT_NOTES = 5;
 
 const DEFAULT_MEMORY_BRIEF_MAX_CHARS = 1800;
 const MAX_MEMORY_BRIEF_MAX_CHARS = 4000;
@@ -123,11 +131,19 @@ interface MemoryStore {
   }) => MemoryEvent;
 
   // Auto-learning: summarize a session transcript and store the result
+  /**
+   * Record a finished PTY session, then (best-effort) enrich it with an LLM
+   * summary. The event is written and persisted BEFORE the summarization call
+   * so the Timeline is populated even when no aux provider is configured, the
+   * model returns junk, or the call hangs — memory is a record of what
+   * happened, not a record of what an LLM managed to describe.
+   */
   learnFromSession: (
     sessionId: string,
     agentId: string,
     projectPath: string,
     durationMs: number,
+    status?: SessionCompletedPayload["status"],
   ) => Promise<void>;
 
   // Manual pattern refresh
@@ -592,6 +608,31 @@ export function applyConfidenceRerate(
 // rather than dragging a provenance map through the backend state schema.
 const injectedPatternsByFlight = new Map<string, string[]>();
 
+// Sessions with an enrichment pass in flight, keyed by sessionId. A single
+// global `isLearning` boolean used to serve this purpose, which meant two
+// panes closing together recorded only one session, and one hung provider
+// call wedged capture for the rest of the app's lifetime.
+const learningSessions = new Set<string>();
+
+/** Ceiling on the aux-LLM summarize call so a hung provider can't wedge capture. */
+const SUMMARIZE_TIMEOUT_MS = 60_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 /**
  * v0.8-H: structured context items used by both `getContextForSession`
  * (rendered preview) and `composeMemoryBrief` (prompt injection). Kept as
@@ -608,6 +649,9 @@ export function computeContextItems(
   patterns: LearnedPattern[],
   input: string | ({ sessionId?: string } & MemoryBriefScope),
   query?: string,
+  /** Durable `.agents/memory` notes for this project. These are hand-authored
+   *  and long-lived, so unlike sessions they carry no recency window. */
+  notes: ProjectMemoryNote[] = [],
 ): ContextItem[] {
   const hasQuery = Boolean(query && query.trim());
   const scope = normalizeScopeInput(input);
@@ -774,7 +818,52 @@ export function computeContextItems(
     });
   }
 
+  // 4. Durable project notes from `.agents/memory`. No recency window and no
+  // confidence gate - a note exists because a human or an agent deliberately
+  // wrote it down.
+  const liveNotes = notes.filter((n) => !n.metadata.archived);
+  if (liveNotes.length > 0) {
+    const noteRel = hasQuery
+      ? relevanceScores(
+          query as string,
+          liveNotes.map((n) => `${n.metadata.title} ${n.body} ${n.metadata.tags.join(" ")}`),
+        )
+      : null;
+    liveNotes
+      .map((n, i) => ({ n, rel: noteRel ? noteRel[i] : 0 }))
+      .sort((a, b) => {
+        if (noteRel && a.rel !== b.rel) return b.rel - a.rel;
+        return (b.n.metadata.updatedAt ?? 0) - (a.n.metadata.updatedAt ?? 0);
+      })
+      .slice(0, MAX_CONTEXT_PROJECT_NOTES)
+      .forEach(({ n, rel }) => {
+        out.push({
+          id: `note:${n.metadata.id}`,
+          kind: "project_note",
+          title: `${n.metadata.title}: ${normalizeBriefText(n.body, 200)}`,
+          timestamp: n.metadata.updatedAt ?? 0,
+          reason:
+            noteRel && rel > 0
+              ? "Relevant project note (.agents/memory)"
+              : "Project note (.agents/memory)",
+        });
+      });
+  }
+
   return out;
+}
+
+/**
+ * Notes the project-memory store currently holds, but only when they belong to
+ * the project being briefed. The store tracks one project at a time, so a stale
+ * snapshot from a previously-open project must never leak into another
+ * project's prompt.
+ */
+function projectNotesFor(projectPath: string): ProjectMemoryNote[] {
+  const store = useProjectMemoryStore.getState();
+  if (!store.projectPath) return [];
+  if (normalizePath(store.projectPath) !== normalizePath(projectPath)) return [];
+  return store.snapshot.notes;
 }
 
 export const useMemoryStore = create<MemoryStore>((set, get) => ({
@@ -808,7 +897,24 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     }));
     const events = capEvents(rawEvents);
     const patterns = capPatterns(rawPatterns);
-    set({ events, patterns });
+
+    // Rebuild the auto-extraction counter from persisted data. It used to
+    // reset to 0 on every launch, so reaching `patternRefreshThreshold`
+    // required N qualifying sessions inside a single app run - which in
+    // practice never happened. `lastPatternRefreshAt` is not itself persisted,
+    // so the newest pattern's extraction time stands in for it.
+    const lastPatternRefreshAt = patterns.reduce<number | null>(
+      (latest, p) => (latest === null || p.extractedAt > latest ? p.extractedAt : latest),
+      null,
+    );
+    const summariesSinceLastRefresh = events.filter(
+      (e) =>
+        e.type === "session_completed" &&
+        e.payload.summary !== null &&
+        (lastPatternRefreshAt === null || e.timestamp > lastPatternRefreshAt),
+    ).length;
+
+    set({ events, patterns, lastPatternRefreshAt, summariesSinceLastRefresh });
     if (events.length !== rawEvents.length || patterns.length !== rawPatterns.length) {
       void persistState(events, patterns);
     }
@@ -885,15 +991,46 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     return event;
   },
 
-  learnFromSession: async (sessionId, agentId, projectPath, durationMs) => {
+  learnFromSession: async (sessionId, agentId, projectPath, durationMs, status = "done") => {
     const settings = getMemorySettings();
-    if (!settings.captureSessions || !settings.summarizeSessions) return;
-    if (get().isLearning) return; // don't stack concurrent learning calls
+    if (!settings.captureSessions) return;
+    // Per-session guard: two panes closing together must both be recorded, and
+    // a wedged enrichment call must not silently drop every later session.
+    if (learningSessions.has(sessionId)) return;
+    // Idempotent per session: the natural-exit path and the unmount path can
+    // both fire for one session under a close/exit race, and a session must
+    // appear in the timeline exactly once.
+    if (
+      get().events.some(
+        (e) => e.type === "session_completed" && e.payload.sessionId === sessionId,
+      )
+    ) {
+      return;
+    }
+    learningSessions.add(sessionId);
 
+    // --- Phase 1: record the bare event. No network, no LLM, no failure mode.
+    const event = createEvent("session_completed", projectPath, {
+      sessionId,
+      agentId,
+      durationMs,
+      status,
+      summary: null,
+      filesModified: [],
+      keyDecisions: [],
+    });
+    set({ events: capEvents([...get().events, event]) });
+    void persistState(get().events, get().patterns);
+
+    if (!settings.summarizeSessions) {
+      learningSessions.delete(sessionId);
+      return;
+    }
+
+    // --- Phase 2: best-effort enrichment. Any failure leaves the phase-1
+    // event in place and surfaces the reason in the Memory header.
     set({ isLearning: true, learningStatus: "Reading session transcript..." });
-
     try {
-      // 1. Read the PTY transcript
       const transcript = await readPtyTranscript(sessionId);
       if (!transcript?.data?.trim()) {
         set({ isLearning: false, learningStatus: null });
@@ -904,9 +1041,12 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
       const trimmedTranscript =
         transcript.data.length > 4000 ? transcript.data.slice(-4000) : transcript.data;
 
-      // 2. Summarize the session
       set({ learningStatus: "Summarizing session..." });
-      const summaryResult = await summarizeSession(projectPath, trimmedTranscript);
+      const summaryResult = await withTimeout(
+        summarizeSession(projectPath, trimmedTranscript),
+        SUMMARIZE_TIMEOUT_MS,
+        "Summarization timed out",
+      );
       const parsed = parseJsonFromResponse(summaryResult) as {
         summary: string;
         keyDecisions: string[];
@@ -918,21 +1058,24 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
         return;
       }
 
-      // 3. Store the summarized event
-      const event = createEvent("session_completed", projectPath, {
-        sessionId,
-        agentId,
-        durationMs,
-        status: "done",
-        summary: parsed.summary,
-        filesModified: parsed.filesModified ?? [],
-        keyDecisions: parsed.keyDecisions ?? [],
-      });
-      const events = capEvents([...get().events, event]);
+      // Patch the phase-1 event in place rather than appending a second one.
+      const events = get().events.map((e) =>
+        e.id === event.id && e.type === "session_completed"
+          ? {
+              ...e,
+              payload: {
+                ...e.payload,
+                summary: parsed.summary,
+                filesModified: parsed.filesModified ?? [],
+                keyDecisions: parsed.keyDecisions ?? [],
+              },
+            }
+          : e,
+      );
       const count = get().summariesSinceLastRefresh + 1;
-      set({ events, summariesSinceLastRefresh: count });
+      set({ events, summariesSinceLastRefresh: count, learningStatus: null });
 
-      // 4. Auto-extract patterns if threshold met
+      // Auto-extract patterns if threshold met
       if (settings.extractPatterns && count >= settings.patternRefreshThreshold) {
         set({ learningStatus: "Extracting patterns..." });
         await get().refreshPatterns(projectPath);
@@ -941,29 +1084,57 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
       set({ isLearning: false, learningStatus: null });
       void persistState(get().events, get().patterns);
     } catch (e) {
-      console.warn("Memory learning failed:", e);
-      set({ isLearning: false, learningStatus: null });
+      // The session itself is already recorded; only the summary is missing.
+      // Say so instead of failing silently into an empty-looking pane.
+      const reason = e instanceof Error ? e.message : String(e);
+      console.warn("Memory summarization failed:", e);
+      set({
+        isLearning: false,
+        learningStatus: `Session recorded, but summarizing failed: ${reason}`,
+      });
+    } finally {
+      learningSessions.delete(sessionId);
     }
   },
 
   refreshPatterns: async (projectPath) => {
     const { events } = get();
     const normalizedPath = normalizePath(projectPath);
+    const inProject = events.filter(
+      (e) => normalizePath(e.projectPath) === normalizedPath,
+    );
 
-    // Collect session summaries for this project
-    const summaries = events
-      .filter(
-        (e): e is Extract<MemoryEvent, { type: "session_completed" }> =>
-          e.type === "session_completed" &&
-          normalizePath(e.projectPath) === normalizedPath &&
-          e.payload.summary !== null,
-      )
-      .slice(-10) // last 10 summarized sessions
-      .map((e) => e.payload.summary)
+    // Corpus for extraction. This used to be session summaries ONLY, so a user
+    // whose memory consisted of manual notes and flight retrospectives could
+    // never extract a single pattern. Everything the user deliberately kept is
+    // fair source material.
+    const summaries = inProject
+      .flatMap((e) => {
+        if (e.type === "session_completed") {
+          return e.payload.summary ? [e.payload.summary] : [];
+        }
+        if (e.type === "manual_note") {
+          return [`${e.payload.summary}\n${e.payload.body}`];
+        }
+        if (e.type === "flight_completed") {
+          return [
+            [e.payload.summary, ...e.payload.lessonsLearned].filter(Boolean).join("\n"),
+          ];
+        }
+        return [];
+      })
+      .slice(-10)
       .join("\n---\n");
 
-    if (!summaries.trim()) return;
+    if (!summaries.trim()) {
+      set({
+        learningStatus:
+          "Nothing to learn from yet for this project - finish a session or save a note first.",
+      });
+      return;
+    }
 
+    set({ isLearning: true, learningStatus: "Extracting patterns..." });
     try {
       const result = await extractPatterns(projectPath, summaries);
       const parsed = parseJsonFromResponse(result) as {
@@ -972,7 +1143,10 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
         confidence: number;
       }[];
 
-      if (!Array.isArray(parsed)) return;
+      if (!Array.isArray(parsed)) {
+        set({ isLearning: false, learningStatus: "The model returned an unusable pattern list." });
+        return;
+      }
 
       const newPatterns: LearnedPattern[] = parsed
         .filter((p) => p.pattern && p.confidence >= 0.5)
@@ -1017,10 +1191,19 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
         patterns,
         lastPatternRefreshAt: Date.now(),
         summariesSinceLastRefresh: 0,
+        isLearning: false,
+        learningStatus:
+          newPatterns.length === 0
+            ? "No patterns met the confidence threshold this time."
+            : null,
       });
       void persistState(get().events, patterns);
     } catch (e) {
+      // Surface it. A silent console.warn here is why Refresh reads as a dead
+      // button when no aux LLM provider is configured.
+      const reason = e instanceof Error ? e.message : String(e);
       console.warn("Pattern extraction failed:", e);
+      set({ isLearning: false, learningStatus: `Pattern extraction failed: ${reason}` });
     }
   },
 
@@ -1120,6 +1303,8 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
       get().events,
       get().patterns,
       typeof input === "string" ? { projectPath } : input,
+      undefined,
+      projectNotesFor(projectPath),
     );
     if (items.length === 0) return "";
 
@@ -1152,7 +1337,13 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
   composeMemoryBrief: (input, options) => {
     const scope = normalizeScopeInput(input);
     const charBudget = clampBriefChars(options?.maxChars);
-    const items = computeContextItems(get().events, get().patterns, scope, options?.query);
+    const items = computeContextItems(
+      get().events,
+      get().patterns,
+      scope,
+      options?.query,
+      projectNotesFor(scope.projectPath),
+    );
     const scopeKey = memoryScopeKey(scope);
     if (items.length === 0) {
       return { text: "", items: [], charBudget, truncated: false, scopeKey };
@@ -1181,6 +1372,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
       ["pattern", "Learned patterns"],
       ["lesson", "Flight lessons"],
       ["session", "Recent session context"],
+      ["project_note", "Project notes"],
     ];
 
     for (const [kind, label] of groups) {

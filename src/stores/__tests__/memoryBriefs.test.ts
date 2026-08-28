@@ -158,4 +158,88 @@ describe("memory briefs", () => {
     expect(brief.text).not.toContain("plain remote path note");
     expect(brief.text).not.toContain("local-only convention");
   });
+
+  it("injects durable project notes into the brief", async () => {
+    // Regression guard for the gap that made Memory feel useless: project
+    // notes in `.agents/memory` were loaded, rendered in their own tab, and
+    // then never reached a single agent prompt.
+    const { useMemoryStore } = await loadStores();
+    const { useProjectMemoryStore } = await import("../projectMemoryStore");
+
+    useProjectMemoryStore.setState({
+      projectPath: "D:/projects/example",
+      snapshot: {
+        schemaVersion: 1,
+        directory: ".agents/memory",
+        notes: [
+          {
+            metadata: {
+              schemaVersion: 1,
+              id: "note-1",
+              title: "SSH host pinning",
+              tags: ["ssh"],
+              createdAt: 1,
+              updatedAt: 2,
+              archived: false,
+              provenanceIds: [],
+            },
+            body: "Always populate SshConfig.host_fingerprint from ServerConfig.",
+            path: ".agents/memory/note-1.md",
+          },
+        ],
+        warnings: [],
+        revision: "r1",
+      },
+    } as never);
+
+    useMemoryStore.setState({ events: [], patterns: [] });
+
+    const brief = useMemoryStore
+      .getState()
+      .composeMemoryBrief({ projectPath: "D:/projects/example", kind: "local" });
+
+    expect(brief.text).toContain("Project notes");
+    expect(brief.text).toContain("SSH host pinning");
+    expect(brief.items.some((i) => i.kind === "project_note")).toBe(true);
+  });
+
+  it("does not leak another project's notes into the brief", async () => {
+    const { useMemoryStore } = await loadStores();
+    const { useProjectMemoryStore } = await import("../projectMemoryStore");
+
+    useProjectMemoryStore.setState({
+      projectPath: "D:/projects/other",
+      snapshot: {
+        schemaVersion: 1,
+        directory: ".agents/memory",
+        notes: [
+          {
+            metadata: {
+              schemaVersion: 1,
+              id: "note-x",
+              title: "Secret from another project",
+              tags: [],
+              createdAt: 1,
+              updatedAt: 2,
+              archived: false,
+              provenanceIds: [],
+            },
+            body: "Should never appear.",
+            path: ".agents/memory/note-x.md",
+          },
+        ],
+        warnings: [],
+        revision: "r1",
+      },
+    } as never);
+
+    useMemoryStore.setState({ events: [], patterns: [] });
+
+    const brief = useMemoryStore
+      .getState()
+      .composeMemoryBrief({ projectPath: "D:/projects/example", kind: "local" });
+
+    expect(brief.text).not.toContain("Secret from another project");
+  });
+
 });

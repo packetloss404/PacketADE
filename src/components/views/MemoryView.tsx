@@ -16,6 +16,7 @@ import {
   MessageSquare,
   Lightbulb,
   FileText,
+  Plus,
 } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
 import {
@@ -147,6 +148,17 @@ export function MemoryView() {
   const projectMemoryNotes = useProjectMemoryStore(
     (state) => state.snapshot.notes,
   );
+  const loadProjectMemory = useProjectMemoryStore((state) => state.load);
+  const captureManually = useMemoryStore((s) => s.captureManually);
+
+  // Hydrate project notes whenever the Memory view is open for a project.
+  // Previously the only loader was the Project-notes tab's own mount effect, so
+  // the tab badge read 0 and the Ask tab's "Project Markdown" source returned
+  // nothing until the user happened to click into that one tab.
+  useEffect(() => {
+    if (!projectPath) return;
+    void loadProjectMemory(projectPath);
+  }, [projectPath, loadProjectMemory]);
 
   // v0.8-H — deep-link filter (e.g. from FlightsView's "N patterns
   // extracted" chip). Snapshot it on mount so subsequent re-renders
@@ -156,7 +168,12 @@ export function MemoryView() {
   const clearMemoryViewFilter = useAppStore((s) => s.clearMemoryViewFilter);
   const [flightFilter, setFlightFilter] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<Tab>("patterns");
+  // Patterns require a configured aux LLM; the timeline never does. Landing on
+  // an empty Patterns tab was the first thing a user saw, which is a large part
+  // of why the pane read as broken.
+  const [activeTab, setActiveTab] = useState<Tab>(() =>
+    useMemoryStore.getState().patterns.length > 0 ? "patterns" : "timeline",
+  );
   const [filter, setFilter] = useState<FilterType>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [dateRange, setDateRange] = useState<MemoryDateRange>("all");
@@ -182,10 +199,20 @@ export function MemoryView() {
     };
   }, [flightFilter]);
 
-  const summarizedCount = useMemo(
-    () => events.filter((e) => e.type === "session_completed" && e.payload.summary !== null).length,
-    [events],
-  );
+  // Scoped to the active project, because `refreshPatterns` filters by project.
+  // A global count enabled the button for projects with nothing to extract.
+  const refreshableCount = useMemo(() => {
+    if (!projectPath) return 0;
+    const norm = (p: string) => p.split("\\").join("/").toLowerCase();
+    const target = norm(projectPath);
+    return events.filter(
+      (e) =>
+        norm(e.projectPath) === target &&
+        (e.type === "manual_note" ||
+          e.type === "flight_completed" ||
+          (e.type === "session_completed" && e.payload.summary !== null)),
+    ).length;
+  }, [events, projectPath]);
 
   const eventCounts = useMemo(() => {
     const counts: Record<FilterType, number> = {
@@ -307,6 +334,24 @@ export function MemoryView() {
     });
   }
 
+  /** Manual capture straight from the Memory pane. The pane previously had no
+   *  way at all to put something into memory - every capture affordance lived
+   *  on some other surface. */
+  function handleAddNote() {
+    if (!projectPath) return;
+    const summary = window.prompt("What should PacketBench remember?");
+    if (!summary?.trim()) return;
+    const body = window.prompt("Any detail to go with it? (optional)") ?? "";
+    captureManually({
+      projectPath,
+      source: "manual",
+      summary: summary.trim(),
+      body: body.trim() || summary.trim(),
+      tags: ["manual"],
+    });
+    setActiveTab("timeline");
+  }
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-bg-primary">
       {/* Header band */}
@@ -314,12 +359,23 @@ export function MemoryView() {
         <Brain size={13} className="text-accent-green" />
         <span className="text-xs font-semibold text-text-primary">Memory</span>
 
-        {isLearning && (
+        {isLearning ? (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-line bg-accent-soft px-2 py-0.5 text-[10px] font-medium text-accent-green">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-green" />
             {learningStatus ?? "Learning..."}
           </span>
-        )}
+        ) : learningStatus ? (
+          // Not learning but a status remains: the last attempt failed or found
+          // nothing. Say so. This used to be swallowed into a console.warn,
+          // which is what made Refresh feel like a dead button.
+          <span
+            title={learningStatus}
+            className="inline-flex max-w-[420px] items-center gap-1.5 truncate rounded-full border border-bg-border bg-bg-elevated px-2 py-0.5 text-[10px] font-medium text-text-muted"
+          >
+            <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-accent-amber" />
+            <span className="truncate">{learningStatus}</span>
+          </span>
+        ) : null}
 
         <div className="flex-1" />
 
@@ -335,10 +391,26 @@ export function MemoryView() {
         </span>
 
         <button
-          onClick={handleRefreshPatterns}
-          disabled={isLearning || !projectPath || summarizedCount === 0}
+          onClick={handleAddNote}
+          disabled={!projectPath}
           className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10.5px] text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary disabled:opacity-40 disabled:hover:bg-transparent"
-          title="Refresh learned patterns"
+          title={projectPath ? "Save a note to memory" : "Open a project to add a memory"}
+        >
+          <Plus size={10} />
+          New memory
+        </button>
+
+        <button
+          onClick={handleRefreshPatterns}
+          disabled={isLearning || !projectPath || refreshableCount === 0}
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10.5px] text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary disabled:opacity-40 disabled:hover:bg-transparent"
+          title={
+            !projectPath
+              ? "Open a project to extract patterns"
+              : refreshableCount === 0
+                ? "Nothing to extract from yet in this project"
+                : `Extract patterns from ${refreshableCount} memories in this project`
+          }
         >
           <RefreshCw size={10} className={isLearning ? "animate-spin" : ""} />
           Refresh
@@ -425,8 +497,8 @@ export function MemoryView() {
             <>Never refreshed</>
           )}
           <span className="mx-1.5 text-line-strong">·</span>
-          <span className="tabular-nums text-text-muted">{summarizedCount}</span> summarized session
-          {summarizedCount === 1 ? "" : "s"}
+          <span className="tabular-nums text-text-muted">{refreshableCount}</span> memor
+          {refreshableCount === 1 ? "y" : "ies"} in this project
           {summariesSinceLastRefresh > 0 && (
             <>
               <span className="mx-1.5 text-line-strong">·</span>
@@ -458,6 +530,7 @@ export function MemoryView() {
         <PatternsTab
           groupedPatterns={groupedPatterns}
           patternCount={patterns.length}
+          patternSourceCount={refreshableCount}
           digest={digest}
           isLearning={isLearning}
           learningStatus={learningStatus}
@@ -497,6 +570,7 @@ export function MemoryView() {
           projectFilter={projectFilter}
           onProjectChange={setProjectFilter}
           projects={projects}
+          onAddNote={projectPath ? handleAddNote : undefined}
         />
       )}
 
@@ -596,6 +670,8 @@ function MemTab({ active, onClick, icon, label, badge, accent }: MemTabProps) {
 interface PatternsTabProps {
   groupedPatterns: Partial<Record<PatternCategory, LearnedPattern[]>>;
   patternCount: number;
+  /** Memories in this project that Refresh could distill patterns from. */
+  patternSourceCount: number;
   digest: MemoryDigest;
   isLearning: boolean;
   learningStatus: string | null;
@@ -688,6 +764,7 @@ function MemoryDigestCard({ digest }: { digest: MemoryDigest }) {
 function PatternsTab({
   groupedPatterns,
   patternCount,
+  patternSourceCount,
   digest,
   isLearning,
   learningStatus,
@@ -705,7 +782,11 @@ function PatternsTab({
           <EmptyState
             icon={<Sparkles size={20} className="text-text-faint" />}
             title="No patterns yet"
-            body="Open a session to start learning. Patterns are auto-extracted from session summaries."
+            body={
+              patternSourceCount === 0
+                ? "Patterns are distilled from what memory has already recorded. Record a session or save a note first, then come back and hit Refresh."
+                : `Refresh will distill patterns from the ${patternSourceCount} memor${patternSourceCount === 1 ? "y" : "ies"} in this project. This needs an aux LLM provider configured in Settings > API Keys.`
+            }
           />
         ) : (
           CATEGORY_ORDER.filter((c) => groupedPatterns[c]?.length).map((cat) => {
@@ -967,6 +1048,7 @@ interface TimelineTabProps {
   projectFilter: string | null;
   onProjectChange: (p: string | null) => void;
   projects: string[];
+  onAddNote?: () => void;
 }
 
 function TimelineTab({
@@ -984,6 +1066,7 @@ function TimelineTab({
   projectFilter,
   onProjectChange,
   projects,
+  onAddNote,
 }: TimelineTabProps) {
   return (
     <>
@@ -1070,9 +1153,20 @@ function TimelineTab({
             body={
               totalEvents === 0
                 ? captureEnabled
-                  ? "Memory captures session, task, and flight completions automatically."
-                  : "Memory capture is disabled in Settings."
+                  ? "Terminal sessions longer than 10 seconds and finished flights are recorded here automatically. You can also save anything yourself with New memory."
+                  : "Memory capture is disabled in Settings > Memory, so nothing is being recorded. You can still save notes yourself with New memory."
                 : "Try a different filter or clear your search."
+            }
+            action={
+              totalEvents === 0 && onAddNote ? (
+                <button
+                  onClick={onAddNote}
+                  className="inline-flex items-center gap-1 rounded border border-bg-border px-2 py-1 text-[10px] text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary"
+                >
+                  <Plus size={10} />
+                  Add your first memory
+                </button>
+              ) : null
             }
           />
         ) : (
@@ -1096,6 +1190,7 @@ const ASK_ICON: Record<ContextItem["kind"], React.ReactNode> = {
   pattern: <Sparkles size={11} className="text-accent-green" />,
   lesson: <Lightbulb size={11} className="text-accent-amber" />,
   session: <FileText size={11} className="text-text-muted" />,
+  project_note: <FileText size={11} className="text-accent-blue" />,
 };
 
 function AskTab({
@@ -1230,14 +1325,18 @@ interface EmptyStateProps {
   icon: React.ReactNode;
   title: string;
   body: string;
+  /** Optional next step. An empty state without one just tells the user they
+   *  have nothing; with one it tells them how to get something. */
+  action?: React.ReactNode;
 }
 
-function EmptyState({ icon, title, body }: EmptyStateProps) {
+function EmptyState({ icon, title, body, action }: EmptyStateProps) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 py-12 text-center">
       <div className="opacity-60">{icon}</div>
       <p className="text-[11px] text-text-secondary">{title}</p>
-      <p className="max-w-[260px] text-[10px] leading-relaxed text-text-faint">{body}</p>
+      <p className="max-w-[280px] text-[10px] leading-relaxed text-text-faint">{body}</p>
+      {action ? <div className="mt-1.5">{action}</div> : null}
     </div>
   );
 }

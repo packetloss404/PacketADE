@@ -26,6 +26,8 @@ interface ProjectMemoryStore {
   snapshot: ProjectMemorySnapshot;
   loading: boolean;
   error: string | null;
+  /** Live-refresh watcher failed; notes still loaded, refresh is manual. */
+  watchError: string | null;
   changedExternally: boolean;
   ownWriteUntil: number;
   load: (projectPath: string, external?: boolean) => Promise<void>;
@@ -52,6 +54,7 @@ export const useProjectMemoryStore = create<ProjectMemoryStore>((set, get) => ({
   snapshot: EMPTY_SNAPSHOT,
   loading: false,
   error: null,
+  watchError: null,
   changedExternally: false,
   ownWriteUntil: 0,
 
@@ -62,13 +65,23 @@ export const useProjectMemoryStore = create<ProjectMemoryStore>((set, get) => ({
       projectPath,
       loading: true,
       error: null,
+      watchError: null,
       changedExternally: effectiveExternal || get().changedExternally,
     });
     try {
-      await watchProjectMemory(projectPath);
+      // List FIRST. The watcher only buys live refresh, and it can legitimately
+      // fail (network drive, exhausted inotify handles, permission-denied
+      // mkdir). Awaiting it ahead of the list meant any such failure blanked a
+      // perfectly readable set of notes.
       const snapshot = await listProjectMemory(projectPath);
       if (get().projectPath !== projectPath) return;
       set({ snapshot, loading: false });
+
+      void watchProjectMemory(projectPath).catch((error) => {
+        if (get().projectPath !== projectPath) return;
+        // Degrade to manual refresh rather than hiding the notes.
+        set({ watchError: errorMessage(error) });
+      });
     } catch (error) {
       if (get().projectPath !== projectPath) return;
       set({ loading: false, error: errorMessage(error) });

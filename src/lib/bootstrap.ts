@@ -15,6 +15,7 @@ import { useFlightStore } from "@/stores/flightStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useOrchestrationSettingsStore } from "@/stores/orchestrationSettingsStore";
 import { useMemoryStore } from "@/stores/memoryStore";
+import { useProjectMemoryStore } from "@/stores/projectMemoryStore";
 import { useServerStore } from "@/stores/serverStore";
 import { useCliAccountStore } from "@/stores/cliAccountStore";
 import { useIssueStore } from "@/stores/issueStore";
@@ -156,6 +157,13 @@ export async function initializeApp(): Promise<void> {
     const projectPath = await resolveValidProjectPath([backendPath, localPath, cwd]);
     if (projectPath) {
       useLayoutStore.getState().setProjectPath(projectPath);
+      // Load `.agents/memory` notes at startup. The only loader used to be the
+      // Memory pane's Project-notes tab, so notes never reached an agent's
+      // memory brief unless the user happened to open that tab first.
+      void useProjectMemoryStore
+        .getState()
+        .load(projectPath)
+        .catch((e) => console.warn("[bootstrap] project memory load failed:", e));
     }
 
     // One-time cleanup of the retired agentMosaicStore localStorage key.

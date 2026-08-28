@@ -294,7 +294,7 @@ describe("memoryStore settings integration", () => {
     );
   });
 
-  it("does not read transcripts when session summarization is disabled", async () => {
+  it("records the session but skips the LLM when summarization is disabled", async () => {
     const { useMemorySettingsStore, useMemoryStore } = await loadStores();
     useMemorySettingsStore.getState().setSummarizeSessions(false);
 
@@ -302,8 +302,62 @@ describe("memoryStore settings integration", () => {
       .getState()
       .learnFromSession("session-1", "codex", "D:/projects/example", 100);
 
+    // `summarizeSessions` gates the aux-LLM enrichment only. The session still
+    // happened, so it is still recorded - just without a summary.
+    expect(mocks.readPtyTranscript).not.toHaveBeenCalled();
+    const events = useMemoryStore.getState().events;
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("session_completed");
+    expect(events[0].payload).toMatchObject({
+      sessionId: "session-1",
+      agentId: "codex",
+      summary: null,
+    });
+  });
+
+  it("does not record anything when session capture itself is disabled", async () => {
+    const { useMemorySettingsStore, useMemoryStore } = await loadStores();
+    useMemorySettingsStore.getState().setCaptureSessions(false);
+
+    await useMemoryStore
+      .getState()
+      .learnFromSession("session-1", "codex", "D:/projects/example", 100);
+
     expect(mocks.readPtyTranscript).not.toHaveBeenCalled();
     expect(useMemoryStore.getState().events).toEqual([]);
+  });
+
+  it("records a session only once even if capture fires twice", async () => {
+    const { useMemoryStore } = await loadStores();
+    mocks.readPtyTranscript.mockResolvedValue({ data: "transcript" });
+    mocks.summarizeSession.mockRejectedValue(new Error("nope"));
+
+    // The natural-exit path and the unmount path can both fire for one session.
+    await useMemoryStore
+      .getState()
+      .learnFromSession("session-dup", "claude", "D:/projects/example", 60_000);
+    await useMemoryStore
+      .getState()
+      .learnFromSession("session-dup", "claude", "D:/projects/example", 60_000);
+
+    expect(useMemoryStore.getState().events).toHaveLength(1);
+  });
+
+  it("records the session even when the summarizer rejects", async () => {
+    const { useMemoryStore } = await loadStores();
+    mocks.readPtyTranscript.mockResolvedValue({ data: "some transcript output" });
+    mocks.summarizeSession.mockRejectedValue(new Error("no API key is configured"));
+
+    await useMemoryStore
+      .getState()
+      .learnFromSession("session-2", "claude", "D:/projects/example", 60_000);
+
+    // The whole point of the record-first ordering: an unconfigured aux
+    // provider must not swallow the session.
+    const events = useMemoryStore.getState().events;
+    expect(events).toHaveLength(1);
+    expect(events[0].payload).toMatchObject({ sessionId: "session-2", summary: null });
+    expect(useMemoryStore.getState().learningStatus).toContain("no API key is configured");
   });
 
   // === v0.8-H: pin / project-scope / context-items ===

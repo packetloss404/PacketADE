@@ -240,6 +240,62 @@ fn render_note(metadata: &ProjectMemoryMetadata, body: &str) -> Result<String, S
     Ok(format!("---\n{}---\n{}\n", yaml, body.trim_end()))
 }
 
+/// Build a note from a Markdown file that carries no PacketBench frontmatter.
+///
+/// Identity comes from the file path (stable across edits), the title from the
+/// first ATX heading or the file stem, and the timestamps from the filesystem.
+/// Such a note is read-only in practice: an edit through the app rewrites it
+/// with proper frontmatter, which is the intended upgrade path.
+fn note_from_plain_markdown(
+    normalized: &str,
+    relative: &str,
+    fs_metadata: &fs::Metadata,
+    raw: &[u8],
+) -> ProjectMemoryNote {
+    let stem = relative
+        .rsplit('/')
+        .next()
+        .unwrap_or(relative)
+        .trim_end_matches(".md")
+        .to_string();
+
+    let title = normalized
+        .lines()
+        .find_map(|line| line.strip_prefix("# ").map(|t| t.trim().to_string()))
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| stem.clone());
+
+    let millis = |time: std::io::Result<std::time::SystemTime>| -> u64 {
+        time.ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0)
+    };
+    let created_at = millis(fs_metadata.created());
+    let updated_at = millis(fs_metadata.modified());
+
+    ProjectMemoryNote {
+        metadata: ProjectMemoryMetadata {
+            schema_version: PROJECT_MEMORY_SCHEMA_VERSION,
+            // Path-derived so the id is stable without writing to the file.
+            id: format!("md:{relative}"),
+            title,
+            created_at,
+            updated_at: if updated_at == 0 { created_at } else { updated_at },
+            archived: false,
+            tags: vec!["unmanaged".to_string()],
+            provenance_ids: Vec::new(),
+        },
+        body: normalized.trim_end().to_string(),
+        revision: revision(raw),
+        relative_path: relative.to_string(),
+        outbound_ids: Vec::new(),
+        backlink_ids: Vec::new(),
+        broken_links: Vec::new(),
+        orphaned: false,
+    }
+}
+
 fn parse_note(path: &Path, root: &Path) -> Result<ProjectMemoryNote, ProjectMemoryWarning> {
     let relative = path
         .strip_prefix(root)
@@ -283,13 +339,13 @@ fn parse_note(path: &Path, root: &Path) -> Result<ProjectMemoryNote, ProjectMemo
         message: "Note is not valid UTF-8".to_string(),
     })?;
     let normalized = text.replace("\r\n", "\n");
-    let rest = normalized
-        .strip_prefix("---\n")
-        .ok_or_else(|| ProjectMemoryWarning {
-            relative_path: relative.clone(),
-            code: "malformed_frontmatter".to_string(),
-            message: "Missing YAML frontmatter".to_string(),
-        })?;
+    // A plain Markdown file with no frontmatter is a legitimate note. Users and
+    // agents naturally drop `.md` files into `.agents/memory`; rejecting those as
+    // `malformed_frontmatter` meant the pane raised a warning instead of showing
+    // the content the user had just written. Derive metadata from the file.
+    let Some(rest) = normalized.strip_prefix("---\n") else {
+        return Ok(note_from_plain_markdown(&normalized, &relative, &metadata, &raw));
+    };
     let (yaml, body) = rest
         .split_once("\n---\n")
         .ok_or_else(|| ProjectMemoryWarning {
@@ -784,6 +840,45 @@ mod tests {
     }
 
     #[test]
+    fn plain_markdown_without_frontmatter_is_listed_as_a_note() {
+        let project = TempDir::new().unwrap();
+        let root = project.path().join(PROJECT_MEMORY_DIR);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("architecture.md"),
+            "# House rules\n\nNever hardcode the brand string.\n",
+        )
+        .unwrap();
+
+        let snapshot = list_project_memory_inner(project.path().to_str().unwrap()).unwrap();
+
+        // Hand-authored Markdown used to land in `warnings` as
+        // `malformed_frontmatter` and never appear as a note.
+        assert!(
+            snapshot.warnings.is_empty(),
+            "unexpected warnings: {:?}",
+            snapshot.warnings
+        );
+        assert_eq!(snapshot.notes.len(), 1);
+        let note = &snapshot.notes[0];
+        assert_eq!(note.metadata.title, "House rules");
+        assert_eq!(note.metadata.id, "md:architecture.md");
+        assert!(note.body.contains("Never hardcode the brand string."));
+    }
+
+    #[test]
+    fn plain_markdown_falls_back_to_the_filename_for_a_title() {
+        let project = TempDir::new().unwrap();
+        let root = project.path().join(PROJECT_MEMORY_DIR);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("no-heading.md"), "just a body, no heading\n").unwrap();
+
+        let snapshot = list_project_memory_inner(project.path().to_str().unwrap()).unwrap();
+        assert_eq!(snapshot.notes.len(), 1);
+        assert_eq!(snapshot.notes[0].metadata.title, "no-heading");
+    }
+
+    #[test]
     fn create_list_update_and_conflict_are_file_authoritative() {
         let project = TempDir::new().unwrap();
         let note = create(&project, "Architecture", "Uses [[Testing]].");
@@ -872,10 +967,13 @@ mod tests {
 
     #[test]
     fn malformed_files_are_visible_warnings() {
+        // Frontmatter that is *started* and then broken is a real authoring
+        // error and must stay visible. (A file with no frontmatter at all is a
+        // valid plain-Markdown note - see the plain_markdown_* tests.)
         let project = TempDir::new().unwrap();
         let root = project.path().join(PROJECT_MEMORY_DIR);
         fs::create_dir_all(&root).unwrap();
-        fs::write(root.join("broken.md"), "not frontmatter").unwrap();
+        fs::write(root.join("broken.md"), "---\ntitle: [unterminated\n").unwrap();
         let snapshot = list_project_memory_inner(project.path().to_str().unwrap()).unwrap();
         assert!(snapshot.notes.is_empty());
         assert_eq!(snapshot.warnings[0].code, "malformed_frontmatter");
