@@ -747,6 +747,43 @@ from the original report, which still lists them as findings.
 
 ### Main shell and daily-driver polish
 
+- **P1 - A crashed CLI is indistinguishable from a clean exit (2026-08-28).**
+  Every production `pty:exit` listener discards the event payload, so a PTY
+  session whose child died on startup renders exactly like one the user closed
+  normally: the pane simply ends, with no error, no exit code, and nothing to
+  act on.
+
+  The backend already does the work. `commands/pty.rs` reads the child's status,
+  logs `exit_code` and `terminated`, and emits a typed `PtyExitPayload`
+  (`pty.rs:434-457`, `:935-955`). The frontend has a normalizer for it —
+  `parsePtyExitPayload` in `src/lib/tauri.ts:227`, exported with a docstring
+  explaining that `0` is success and non-zero is a failed agent. **It has no
+  production callers.** Its only references are in
+  `src/hooks/__tests__/useTerminalSession.test.tsx`. The three real listeners
+  all throw the payload away: `useTerminalSession.ts:328`
+  (`listen<unknown>(..., () => finishSession())`) and `useTransientPty.ts:150`
+  and `:276` (`listen<string>`, payload ignored). The typed contract is
+  built, tested, and unreachable — the same shape as the unreachable cost
+  statusline in Owner decision 5.
+
+  **Found via a real failure.** `codex` panes appeared to "not load" in
+  Workspaces. The cause was outside PacketBench — the vendored
+  `@openai/codex` 0.147.0 binary access-violates on startup
+  (`0xC0000005`, reproducible by running `codex.exe --version` directly). But
+  PacketBench gave the user nothing to go on: on Windows a `.cmd`-wrapped CLI
+  is spawned as `cmd.exe /c codex.cmd` (`pty.rs:768-780`), so `cmd.exe` starts
+  successfully and the PTY session is created; the real CLI then dies
+  milliseconds later and the pane closes silently. Any crashing or
+  missing-dependency CLI produces the same blank outcome.
+
+  Fix: consume `parsePtyExitPayload` in all three listeners and surface a
+  non-zero exit distinctly from a clean one — at minimum the exit code in the
+  pane, ideally recognising Windows NTSTATUS values (`0xC0000005` access
+  violation, `0xC0000135` missing DLL) which are the common "the CLI is broken,
+  not your config" cases. Respect `terminated`: an orchestrator-killed session
+  is not a crash and must not be reported as one.
+
+
 - **P2 - MS4 accessibility/responsiveness.** Align Git Hosts, Workspaces,
   Dictation, and handoff labels; remove duplicate ellipsis chrome; add
   navigation/tab/menu ARIA; and prove responsive overflow from 800 px through
