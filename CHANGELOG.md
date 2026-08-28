@@ -9,6 +9,28 @@ task list.
 
 ## [Unreleased]
 
+Windows artifacts, built 2026-08-28 01:05 from `5f1375ca`, **unsigned** — the
+first packaged build of the renamed product:
+
+| Artifact                                            | SHA-256                                                            |
+| --------------------------------------------------- | ------------------------------------------------------------------ |
+| `PacketBench_0.11.0_x64-setup.exe` (NSIS, 85.1 MiB)  | `dd65f12b80ceb8bb225be159e1211e211e1006fb5c87362f75b6d1079d55b500` |
+| `PacketBench_0.11.0_x64_en-US.msi` (132.8 MiB)       | `19731f62cdb31c40bdb228117ceeadb7b4ea0c6a82ec10b99e99cc8c237b5cb7` |
+
+> **Built, not accepted.** These compiled and bundled cleanly, but the
+> interactive acceptance matrix has not run. The rename moved the Tauri bundle
+> identifier and every one-shot data-dir, keyring, and localStorage migrator
+> (`LEGACY_*` in both brand modules) has still only ever executed from a source
+> build. Installing this over a machine carrying pre-rename `packetade` state is
+> the untested path that matters. They live in
+> `C:/Users/ianwalmsley/packetbench-build/release/bundle/`, not in the repo.
+
+Gates at this tree: `cargo check` clean, 713 Rust lib tests + 31 `acp_stream`
+passing, `tsc --noEmit` 0 errors, `pnpm lint` 0 errors, `vitest run` 2248/2248
+across 259 files, `check:tauri-schema` clean.
+
+### Superseded — the 2026-08-15 development build
+
 Windows artifacts, built 2026-08-15 02:51 from `a9d5d702`, **unsigned**:
 
 | Artifact                                         | SHA-256                                                            |
