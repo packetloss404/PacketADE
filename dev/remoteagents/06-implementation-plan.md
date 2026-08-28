@@ -22,8 +22,13 @@ Deliverables:
   standalone Rust repo at `D:\projects\packetrelay`.
 - Add desktop feature flag: `remoteAgents.enabled`.
 - Add docs link from `dev/README.md`.
-- Decide auth provider build-vs-buy for v1. **Still open and blocking as of
-  2026-08-27** — this is the gate on the rest of Sprint 0.
+- ~~Decide auth provider build-vs-buy for v1.~~ **Resolved 2026-08-28: build.**
+  Passkey/magic-link in the Rust relay on PostgreSQL. Sprint 0 is no longer
+  gated on an owner decision, but it now carries the owned surface —
+  WebAuthn ceremonies, session lifecycle, magic-link delivery, recovery and
+  device loss, rate limiting and enumeration resistance — plus a security
+  review before external beta. Size it accordingly; see
+  `09-open-decisions.md` § Auth Provider.
 - Decide encryption launch gate: plaintext internal only, encrypted private
   beta. **Resolved 2026-08-16**; carry it forward rather than re-deciding.
 - Provision the relay's Railway service and its managed PostgreSQL instance,

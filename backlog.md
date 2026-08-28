@@ -14,15 +14,29 @@ Priority: **P1** = release blocker, real bug, or major user-facing gap;
 
 These are the only current product decisions blocking implementation.
 
-1. **OPEN (P1) 2026-08-27 - Remote Agents authentication.** **No longer
-   parked.** The owner unpaused the Remote Agents program on 2026-08-27, so
-   this reverts from "the first action of the pickup runbook" to a live
-   blocking decision: implementation cannot proceed past the relay seam until
-   it is answered. The menu is unchanged and still entirely open — hosted SaaS
-   IdP / self-hosted IdP / in-house passkey-magic-link / dev-only. It is the
-   owner's call; nothing here picks one. The clarified menu and the (now
-   superseded) pause state live in
-   [`dev/remoteagents/10-pause-record.md`](./dev/remoteagents/10-pause-record.md).
+1. **RESOLVED 2026-08-28 - Remote Agents authentication.** **Build it
+   ourselves:** passkey/magic-link auth in the Rust relay backed by
+   PostgreSQL, chosen from the four-option menu (hosted SaaS IdP /
+   self-hosted IdP / in-house / dev-only). The owner explicitly accepted the
+   ownership burden. This was the last blocking owner decision on the
+   program — Sprint 0 is unblocked.
+
+   **The owned surface this creates**, which is now real work rather than a
+   vendor's problem: WebAuthn registration and assertion ceremonies with
+   attestation handling and credential storage; session issuance, lifetime,
+   refresh, and revocation across desktop and PWA; magic-link delivery,
+   expiry, and single-use guarantees; account recovery and the device-loss
+   path; rate limiting and enumeration resistance; and **a security review
+   before external beta**, which gates the beta alongside the E2EE
+   requirement in decision 2. Size Sprint 0 accordingly.
+
+   In-house auth does not soften the E2EE gate: TLS terminates at Railway's
+   edge, so owning the auth code is not the same as content being unreadable
+   in the deployment. Hosted SaaS and self-hosted OSS IdP stay as fallbacks
+   if this lands more expensive than expected — most likely at recovery or at
+   the security review — and the vendor field should be re-surveyed rather
+   than reusing the 2026-06 comparison. Full record in
+   [`dev/remoteagents/09-open-decisions.md`](./dev/remoteagents/09-open-decisions.md).
 2. **RESOLVED 2026-08-16 - Remote Agents payload encryption timing.** The
    recommendation was ratified: plaintext (TLS-only) is acceptable only for
    local/internal development; encrypted agent, approval, and file payloads

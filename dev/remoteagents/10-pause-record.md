@@ -112,19 +112,25 @@ envelope ceiling.
 | **Relay ownership** | **Resolved 2026-08-27** — PacketRelay is PacketBench's infrastructure; Remote Agents is its only consumer. Not shared with Syndicate. |
 | **Relay deployment target** | **Resolved 2026-08-27** — Railway (replaces Cloud Run). Does not reopen the 2026-08-02 architecture decision. |
 | Payload-encryption launch gate | **Resolved 2026-08-16** — plaintext (TLS-only) for local/internal dev only; encrypted agent/approval/file payloads are a hard gate before any external private beta. Unchanged by the resumption. |
-| **Auth provider** | **OPEN — blocking again.** While paused it was demoted to "first action of the pickup runbook." With the program live it reverts to a live blocking owner decision. See §2 menu below and `09-open-decisions.md`. |
+| **Auth provider** | **Resolved 2026-08-28** — build passkey/magic-link auth into the relay (Rust on PostgreSQL), fully owned. The owner accepted the ownership burden explicitly. No blocking owner decision remains. See §2 and `09-open-decisions.md` § Auth Provider. |
 | Railway deployment questions (edge WS connection lifetime, deploy-time instance overlap, managed-PostgreSQL durability, region) | **Open, Sprint-0 verification** — see `02-architecture.md` § Deployment target |
 | Relay `/v1/product-route` disposition after the Syndicate separation | Open — a relay-repo question, not a Remote Agents decision (§1.3) |
 | Backend conversation persistence shape | Open, non-blocking (recommendation written: minimal Rust DTO for MVP) |
 | Native iOS strategy | Deferred until after PWA beta |
 | Team/org model, cloud runner, billing, WebRTC/LAN, remote PTY, file browser depth, transcript retention | Deferred |
 
-### The open auth decision
+### The auth decision — RESOLVED 2026-08-28
 
-Still open, and blocking again as of 2026-08-27. Nothing about it was
-answered during the pause and nothing about it was rejected. "Buy" was
-clarified into two sub-flavors during the 2026-08-16 blocker review; the full
-menu (recorded in `09-open-decisions.md` § Auth Provider) is unchanged:
+**Option 3 was chosen: build it into the relay.** Passkey/magic-link in Rust
+on PostgreSQL, fully owned, with the owner explicitly accepting the ownership
+burden that implies. This was the last blocking owner decision; Sprint 0 is
+unblocked.
+
+It stayed open through the whole pause — nothing about it was answered or
+rejected between 2026-08-16 and 2026-08-27 — and was resolved the day after
+the program resumed. "Buy" had been clarified into two sub-flavors during the
+2026-08-16 blocker review. The full menu is retained below as the record of
+what was weighed:
 
 1. **Hosted SaaS IdP** (Clerk / Auth0 / Stytch class) — vendor runs sign-in,
    passkeys, magic links, recovery; the relay only validates tokens. Least
@@ -135,13 +141,15 @@ menu (recorded in `09-open-decisions.md` § Auth Provider) is unchanged:
    patch, and secure next to the relay.
 3. **Build into the relay** — passkey/magic-link in Rust on PostgreSQL; fully
    owned including the WebAuthn ceremony, session design, recovery flows, and
-   the security review those imply.
+   the security review those imply. **← CHOSEN 2026-08-28.**
 4. **Dev-only identity** — permitted for internal smoke tests regardless of
    the above; never for any external user.
 
-If the hosted-SaaS recommendation is taken, re-survey the vendor field before
-naming one: the recommendation is now over two months old and pricing and
-passkey support move fast.
+Options 1 and 2 remain the fallbacks if in-house auth lands more expensive
+than expected — most likely at account recovery or at the pre-beta security
+review. If either is ever taken, re-survey the vendor field rather than
+reusing the 2026-06 comparison: pricing and passkey support move fast. Option
+4 is unaffected and still appropriate as the internal-prototype scaffold.
 
 ### Corrections applied at pause time
 
@@ -208,9 +216,10 @@ Do not violate these without an explicit new owner decision:
 ## 6. Resume runbook (ordered)
 
 0. **Read** this doc, then `09-open-decisions.md`, then `README.md`.
-1. **Decide auth** (§2 menu). This is the only blocking decision. If the
-   hosted-SaaS recommendation is taken, re-survey the vendor field before
-   naming one — pricing and passkey support move fast.
+1. ~~**Decide auth**~~ — **done 2026-08-28**: build passkey/magic-link into
+   the relay. No blocking owner decision remains. Carry the owned surface
+   listed in `09-open-decisions.md` § Auth Provider into Sprint 0 sizing; the
+   pre-beta security review is a gate alongside E2EE, not a nice-to-have.
 2. **Confirm the E2EE gate still stands** (one-line ratification check; it
    was owner-ratified 2026-08-16 and is unchanged by the resumption).
 3. **Re-baseline `02-architecture.md` / `03-protocol.md` against
@@ -254,8 +263,8 @@ Do not violate these without an explicit new owner decision:
 - Relay repo: `D:\projects\packetrelay` (crate `packet-relay`; Rust 1.83,
   Dockerfile, `railway.json` — the live deployment path — plus the retired
   Cloud Run artifacts `cloudbuild.yaml` and `deploy.sh`, and a CI workflow).
-- Task register: `backlog.md` § Owner decisions (the auth entry is blocking
-  again) and the Remote Agents rows in `ROADMAP.md`.
+- Task register: `backlog.md` § Owner decisions (the auth entry is resolved
+  2026-08-28) and the Remote Agents rows in `ROADMAP.md`.
 - Strategy context: the "Ten Empty Lanes" artifact (2026-08-16, Lane 10 and
   §5 Sequencing) and the "Forty Plans, One Gate" plan-review artifact
   (2026-08-16) — both in the owner's artifact gallery.

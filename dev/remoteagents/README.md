@@ -3,9 +3,10 @@
 Status: **ACTIVE — resumed by owner decision 2026-08-27** (paused 2026-08-16
 to 2026-08-27) — read [`10-pause-record.md`](./10-pause-record.md) first; it
 is the entry point (state of record, staleness map, invariants, ordered
-resume runbook). Implementation is still zero: Sprint 0 is the next step and
-the **auth-provider decision is blocking again**. The planning package below
-remains the design of record.
+resume runbook). Implementation is still zero: Sprint 0 is the next step, and
+**no blocking owner decision remains** — auth was resolved on 2026-08-28 in
+favour of building passkey/magic-link into the relay. The planning package
+below remains the design of record.
 Last updated: 2026-08-27
 
 This directory is the canonical implementation brief for **PacketBench Remote Agents**: a cloud-relayed, PWA-first way to use PacketBench Agents from a phone while the desktop app keeps ownership of providers, models, secrets, workspaces, MCP config, permissions, and execution.

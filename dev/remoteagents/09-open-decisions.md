@@ -73,37 +73,58 @@ Sprint 1's sequence-assignment and reconnect design depends on the first two.
 
 ## Open Decisions
 
-### Auth Provider — OPEN, BLOCKING
+### Auth Provider — RESOLVED 2026-08-28
 
-This is the sole blocking owner decision. It was blocking when the program was
-paused on 2026-08-16, was demoted to "first action of the pickup runbook"
-while paused, and **reverted to a live blocking decision when the program
-resumed on 2026-08-27**. Nothing about it was answered or rejected during the
-pause; the menu below is unchanged.
+**Decision (owner, 2026-08-28): build it ourselves.** Passkey/magic-link auth
+in the Rust relay backed by PostgreSQL — the third option on the menu below.
+The owner explicitly accepted the ownership burden that comes with it.
 
-Options (reframed 2026-08-16 — "buy" splits into two sub-flavors):
+This unblocks Sprint 0. It was the sole blocking decision: blocking when the
+program was paused on 2026-08-16, demoted to "first action of the pickup
+runbook" while paused, reverted to blocking when the program resumed on
+2026-08-27, and answered on 2026-08-28.
+
+**What this commits us to owning**, recorded here so it is not rediscovered
+mid-sprint: the WebAuthn registration and assertion ceremonies including
+attestation handling and credential storage; session design — issuance,
+lifetime, refresh, and revocation across desktop and PWA; the magic-link
+channel and its email delivery, expiry, and single-use guarantees; account
+recovery and the device-loss path, which is where hand-rolled auth usually
+fails; rate limiting and enumeration resistance on every entry point; and a
+security review of all of it before external beta. None of these are optional,
+and the last one gates the beta alongside the E2EE requirement.
+
+**Interaction with the E2EE gate** (RESOLVED 2026-08-16, below, unchanged):
+in-house auth does not soften it. TLS terminates at Railway's proxy, so the
+hosting provider's edge sits inside the TLS boundary — owning the auth code,
+like owning the relay code, is not the same as content being unreadable in the
+deployment. Encrypted agent, approval, and file payloads remain a hard gate.
+
+**Not chosen, and why the record matters if this is ever revisited:** the
+hosted-SaaS option (Clerk/Auth0/Stytch class) and the self-hosted OSS IdP
+option (Keycloak/Zitadel/Ory class) both trade per-user cost or an extra
+deployed service for a much smaller owned surface. If in-house auth proves
+more expensive than expected — most likely at recovery or at the security
+review — those remain live alternatives, and the vendor field should be
+re-surveyed at that point rather than reusing the two-month-old comparison.
+
+A compile/runtime-gated dev identity provider for internal smoke tests is
+still appropriate for the internal prototype phase and is not superseded by
+this decision; it is the scaffold, not the product.
+
+The original menu, retained as the record:
 
 - hosted SaaS identity provider (Clerk/Auth0/Stytch class): vendor runs
   sign-in, passkeys, magic links, and recovery; the Rust relay only validates
   tokens. Least owned surface; per-active-user pricing after free tiers.
 - self-hosted open-source IdP (Keycloak/Zitadel/Ory class): standard OIDC, no
   vendor or per-user fees, but one more service to deploy, patch, and secure.
-- build passkey/magic-link auth in the Rust relay backed by PostgreSQL —
+- **build passkey/magic-link auth in the Rust relay backed by PostgreSQL —
   fully owned, including the WebAuthn ceremony, session design, recovery, and
-  the security review.
+  the security review. ← CHOSEN 2026-08-28.**
 - compile/runtime-gated dev identity provider for internal smoke tests only
 
-Recommendation:
-
-- internal prototype can use explicitly dev-only auth
-- private beta should use a product-grade passkey/magic-link provider or a carefully scoped in-house implementation
-
-If the hosted-SaaS option is taken, re-survey the vendor field before naming
-one: the recommendation is over two months old and pricing and passkey support
-move fast.
-
-Decision owner: Security/Auth agent. Still OPEN as of 2026-08-27, and blocking
-Sprint 0.
+Decision owner: Security/Auth agent, resolved by the owner 2026-08-28.
 
 ### Payload Encryption Timing — RESOLVED 2026-08-16
 
@@ -149,11 +170,26 @@ Decision owner: project owner after PWA beta.
 
 ## Decision Log
 
-Dated record of the Sprint-0 kickoff decisions. Auth remains the sole blocking
+Dated record of the Sprint-0 kickoff decisions. Auth was the sole blocking
 decision; payload-encryption timing was resolved 2026-08-16. Relay/code
 location was resolved by the owner on 2026-08-02; no Cloudflare relay scaffold
 should be created. Relay ownership and deployment target were resolved
 2026-08-27, the same day the program resumed.
+
+### 2026-08-28 — Auth provider resolved; Sprint 0 unblocked
+
+**Auth provider** — Resolved. Build passkey/magic-link auth in the Rust relay
+backed by PostgreSQL. Fully owned: WebAuthn ceremonies, session design,
+magic-link delivery, account recovery and device loss, rate limiting and
+enumeration resistance, and a security review before external beta. The owner
+explicitly accepted that burden. Hosted SaaS and self-hosted OSS IdP remain the
+fallbacks if the cost lands worse than expected; re-survey vendors rather than
+reusing the 2026-06 comparison. See § Auth Provider.
+
+**Consequence** — No blocking owner decision remains. Sprint 0 can start.
+
+**Unchanged** — The E2EE launch gate (resolved 2026-08-16) is not softened by
+owning the auth code; TLS still terminates at Railway's edge.
 
 ### 2026-08-27 — Program resumed; relay ownership and deployment target
 
@@ -176,8 +212,10 @@ zero; Sprint 0 is the next step.
 - Follow-on verifications are recorded as open in `02-architecture.md`
   § Deployment target.
 
-**Auth provider** — Reverts to BLOCKING (it was demoted to a pickup-runbook
-step while the program was paused). Still unanswered.
+**Auth provider** — Reverted to BLOCKING on this date (it had been demoted to a
+pickup-runbook step while the program was paused). **Superseded 2026-08-28** —
+resolved in favour of in-house passkey/magic-link auth in the relay; see the
+entry above.
 
 - Decision owner: project owner, with the Security/Auth agent.
 
@@ -196,9 +234,9 @@ step while the program was paused). Still unanswered.
 
 ### 2026-06-15 — Sprint-0 kickoff decisions
 
-**(a) Auth provider build-vs-buy for v1** — Open.
+**(a) Auth provider build-vs-buy for v1** — **Resolved 2026-08-28: build.**
 
-- See "Auth Provider" under Open Decisions for options and recommendation.
+- See "Auth Provider" above for the decision, the owned surface it commits us to, and the retained menu.
 - Resolution / date: _pending_.
 - Decision owner: Security/Auth agent.
 

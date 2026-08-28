@@ -71,7 +71,7 @@ one.
 | Packaged Windows acceptance |       P1 | Newest packaged artifacts are pre-rename `PacketADE` 0.10.5 development builds; nothing at 0.11.0 has been bundled | Bundle and install a 0.11.0 `PacketBench` package; prove the new bundle identifier and the data-dir/keyring/localStorage migrations against a machine carrying pre-rename state; then dogfood real Terminal panes, Claude statusline, close/lifecycle, Monitor, accessibility, and denial behavior |
 | Distribution trust          |       P1 | **DEFERRED ON COST 2026-08-27** — owner decision to spend nothing on signing for now; v0.10.3 reported 0 failures / 6 readiness warnings and all artifacts remain unsigned | Keep shipping unsigned local builds. On the stated trigger — the first build handed to anyone who is not the owner — take the cheapest path (Azure Trusted Signing, ~$10/month), then wire hosted CI, notarization, and the updater. Terms in `backlog.md` |
 | macOS release               |       P1 | Builds, bundles a DMG, and runs from source on real hardware; never signed, notarized, or interactively accepted | Run the unsigned acceptance matrix; start Apple Developer Program enrollment when v1.1 starts rather than now (deferred alongside signing on 2026-08-27); ship arm64 DMG in v1.1 (`dev/macos-release-plan.md`) |
-| Remote Agents decisions     |       P1 | **UNPAUSED 2026-08-27** (paused 2026-08-16). The E2EE gate stays ratified — encrypted agent, approval, and file payloads are a hard requirement before any external beta. The auth-provider decision reverts from parked to open and blocking | Resolve auth provider (genuinely undecided; options and owner in `dev/remoteagents/09-open-decisions.md`), then run Sprint 0 against PacketRelay — now PacketBench-owned and deploying to Railway |
+| Remote Agents decisions     |       P1 | **UNPAUSED 2026-08-27** (paused 2026-08-16). The E2EE gate stays ratified — encrypted agent, approval, and file payloads are a hard requirement before any external beta. Auth resolved 2026-08-28: build passkey/magic-link into the relay (Rust on PostgreSQL), owner accepting the owned surface. **No blocking owner decision remains** | Run Sprint 0 against PacketRelay — PacketBench-owned, deploying to Railway. Size in the owned auth surface (WebAuthn, sessions, recovery, rate limiting) and treat the pre-beta security review as a gate alongside E2EE |
 | Global Undo                 |       P1 | Confirmations and cleanup are implemented; no recovery path                                                      | Decided 2026-08-16: time-boxed delayed-delete toast (soft-delete declined); implementation not yet scheduled                                          |
 | Flight supervision proof    |       P1 | Reviewer/graph/inbox/YOLO source complete                                                                        | Run packaged local and disposable pinned-SSH matrices                                                                                                 |
 | PacketAgent handoff proof   |       P1 | W9 consumer source and fixtures pass                                                                             | Run separately hosted close/relaunch/reconnect and evidence-return matrix                                                                             |
@@ -90,9 +90,10 @@ After the immediately available proof gates:
 2. Close bounded Settings and main-shell MS4 work.
 3. Finish Ollama capability-aware selection, auxiliary-task routing, retired
    conversation provider switching, and edit/diff honesty.
-4. Remote Agents: resolve the open auth-provider decision
-   ([`dev/remoteagents/09-open-decisions.md`](./dev/remoteagents/09-open-decisions.md);
-   the E2EE gate is already ratified), then execute Sprint 0 against
+4. Remote Agents: auth resolved 2026-08-28 (build passkey/magic-link into the
+   relay) and the E2EE gate ratified, so no owner decision blocks the program
+   ([`dev/remoteagents/09-open-decisions.md`](./dev/remoteagents/09-open-decisions.md)).
+   Execute Sprint 0 against
    PacketRelay at `D:\projects\packetrelay` — PacketBench-owned since
    2026-08-27 and deploying to Railway.
 5. Land a private PWA/relay alpha with desktop-owned execution, narrow audited
