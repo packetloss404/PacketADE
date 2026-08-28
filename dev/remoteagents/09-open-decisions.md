@@ -49,10 +49,29 @@ carries 100% of its build and run cost — previously shared against Syndicate's
 value. The sprint sizing in `06-implementation-plan.md` predates that
 reweighting.
 
-The disposition of the relay's existing `/v1/product-route` surface and its
-live Syndicate deployment (retire, keep as a compatibility contract, or hand
-over) is an open question **for the relay repository**, not a Remote Agents
-decision. Do not break or delete that route on this program's authority.
+### Relay `/v1/product-route` disposition — RESOLVED 2026-08-28
+
+**Cut it.** The owner confirmed on 2026-08-28 that `/v1/product-route` is
+**not serving live traffic** — correcting the earlier record, which described
+it as a live Syndicate deployment and on that basis ruled the route untouchable
+by this program. With no consumer, there is nothing to preserve a compatibility
+contract for and nobody to hand it to.
+
+Scope of the cut: the `/v1/product-route` boundary and the bridge/broadcast/
+room compatibility modes that exist only to serve it. Remote Agents adds its
+own `/ws/host` and `/ws/device` routes; it does not need to be built alongside
+an inherited surface.
+
+**Execution is a relay-repo change**, not a PacketBench one, so it is recorded
+here and made there. Do it before or during Sprint 0 and before the Railway
+migration — carrying a dead route into a new deployment target means porting
+config, health checks, and protocol docs for something already decided to be
+removed. `PRODUCT_ROUTE_PROTOCOL.md` and the Cloud Run artifacts
+(`cloudbuild.yaml`, `deploy.sh`) go with it.
+
+Verify rather than assume before deleting: confirm no live client is connected
+and check the relay's own access logs, since the "live deployment" claim in
+these documents survived unchallenged for some time.
 
 ### Relay Deployment Target — RESOLVED 2026-08-27
 
@@ -176,7 +195,14 @@ location was resolved by the owner on 2026-08-02; no Cloudflare relay scaffold
 should be created. Relay ownership and deployment target were resolved
 2026-08-27, the same day the program resumed.
 
-### 2026-08-28 — Auth provider resolved; Sprint 0 unblocked
+### 2026-08-28 — Auth provider resolved; product-route cut; Sprint 0 unblocked
+
+**Relay `/v1/product-route`** — Resolved. Cut it. The owner confirmed the route
+is not serving live traffic, correcting the earlier "live Syndicate deployment"
+record that had made it untouchable on this program's authority. Executed in
+the relay repo, before the Railway migration. See § Relay `/v1/product-route`
+disposition.
+
 
 **Auth provider** — Resolved. Build passkey/magic-link auth in the Rust relay
 backed by PostgreSQL. Fully owned: WebAuthn ceremonies, session design,

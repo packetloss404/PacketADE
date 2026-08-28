@@ -23,11 +23,13 @@ PWA, and the Rust relay. The relay validates routing metadata and ciphertext
 shape but never imports PacketBench's Tauri command surface.
 
 The relay is PacketBench-owned as of 2026-08-27 and Remote Agents is its only
-consumer, but that is not licence to break its inherited surfaces. The
-implemented `/v1/product-route` boundary and the bridge/broadcast/room
-compatibility modes stay intact until their disposition is settled in the
-relay repository (see `10-pause-record.md` §1.3); the PacketBench routes are
-added alongside them.
+consumer. Its inherited `/v1/product-route` boundary and the bridge/broadcast/
+room compatibility modes that serve it are **being removed** — resolved
+2026-08-28 once the owner confirmed the route carries no live traffic (see
+`09-open-decisions.md` § Relay `/v1/product-route` disposition). The
+PacketBench routes therefore replace that surface rather than being added
+alongside it, and `/ws/host` + `/ws/device` do not need to preserve
+compatibility with it.
 
 ## Envelope
 

@@ -72,11 +72,13 @@ and it has not been scored anywhere — the sprint plan in
 someone else's. This is stated as a consequence, not as an argument for or
 against the program.
 
-One question the separation opens is **not** ours to answer unilaterally:
-whether the relay's implemented `/v1/product-route` surface and its live
-Syndicate deployment are retired, kept as a compatibility contract, or handed
-over. Treat that as open in the relay repo (see §6, step 3) and do not delete
-or break the route on this program's authority.
+The separation also raised the disposition of the relay's `/v1/product-route`
+surface. That was recorded here as an open relay-repo question on the
+understanding that the route backed a live Syndicate deployment. **That
+understanding was wrong.** The owner confirmed on 2026-08-28 that the route is
+not serving live traffic, and the decision is to **cut it** — see
+`09-open-decisions.md` § Relay `/v1/product-route` disposition. The removal
+happens in the relay repo, ahead of the Railway migration.
 
 ## 2. State of record
 
@@ -114,7 +116,7 @@ envelope ceiling.
 | Payload-encryption launch gate | **Resolved 2026-08-16** — plaintext (TLS-only) for local/internal dev only; encrypted agent/approval/file payloads are a hard gate before any external private beta. Unchanged by the resumption. |
 | **Auth provider** | **Resolved 2026-08-28** — build passkey/magic-link auth into the relay (Rust on PostgreSQL), fully owned. The owner accepted the ownership burden explicitly. No blocking owner decision remains. See §2 and `09-open-decisions.md` § Auth Provider. |
 | Railway deployment questions (edge WS connection lifetime, deploy-time instance overlap, managed-PostgreSQL durability, region) | **Open, Sprint-0 verification** — see `02-architecture.md` § Deployment target |
-| Relay `/v1/product-route` disposition after the Syndicate separation | Open — a relay-repo question, not a Remote Agents decision (§1.3) |
+| Relay `/v1/product-route` disposition after the Syndicate separation | **Resolved 2026-08-28** — cut it. The route is not serving live traffic (owner, correcting the earlier record). Removal is a relay-repo change, ahead of the Railway migration. |
 | Backend conversation persistence shape | Open, non-blocking (recommendation written: minimal Rust DTO for MVP) |
 | Native iOS strategy | Deferred until after PWA beta |
 | Team/org model, cloud runner, billing, WebRTC/LAN, remote PTY, file browser depth, transcript retention | Deferred |
@@ -222,16 +224,24 @@ Do not violate these without an explicit new owner decision:
    pre-beta security review is a gate alongside E2EE, not a nice-to-have.
 2. **Confirm the E2EE gate still stands** (one-line ratification check; it
    was owner-ratified 2026-08-16 and is unchanged by the resumption).
-3. **Re-baseline `02-architecture.md` / `03-protocol.md` against
-   `D:\projects\packetrelay` HEAD, once.** This step is no longer about
-   tracking Syndicate drift — that premise is dead (§1.3). What remains:
-   diff the plan's assumed relay surface against the code that actually
-   exists (`PRODUCT_ROUTE_PROTOCOL.md`, the bridge/broadcast/room
-   compatibility modes, the `/v1/product-route` boundary), decide
-   extend-vs-separate for the PacketBench routes in light of it, and record
-   the answer in `09-open-decisions.md`. While there, record the
-   `/v1/product-route` disposition question (§1.3) in the relay repo's own
-   backlog rather than resolving it here.
+3. **Cut `/v1/product-route` in the relay repo, then re-baseline
+   `02-architecture.md` / `03-protocol.md` against `D:\projects\packetrelay`
+   HEAD, once.** This step is no longer about tracking Syndicate drift — that
+   premise is dead (§1.3). Two things remain, in order:
+
+   a. **Remove the inherited surface.** Resolved 2026-08-28: the route carries
+      no live traffic, so `/v1/product-route`, the bridge/broadcast/room
+      compatibility modes serving it, `PRODUCT_ROUTE_PROTOCOL.md`, and the
+      retired Cloud Run artifacts (`cloudbuild.yaml`, `deploy.sh`) come out.
+      Verify no client is connected and check the relay's access logs first —
+      the "live deployment" claim went unchallenged in these docs for a while,
+      so confirm the correction rather than inheriting a second assumption.
+      Do this before the Railway migration so a dead route is not ported into
+      a new deployment target.
+   b. **Then diff** the plan's assumed relay surface against what is actually
+      left, and record the answer in `09-open-decisions.md`. With the
+      inherited surface gone, extend-vs-separate largely collapses: the
+      PacketBench routes replace it rather than sitting alongside it.
 4. **Stand up the Railway deployment path** and answer the open deployment
    questions in `02-architecture.md` § Deployment target (edge WebSocket
    connection lifetime, deploy-time instance overlap, managed-PostgreSQL
