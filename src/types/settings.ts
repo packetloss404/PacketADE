@@ -1,5 +1,6 @@
 export type SettingsSection =
   | "general"
+  | "time"
   | "workspace"
   | "cli-clients"
   | "cli-accounts"

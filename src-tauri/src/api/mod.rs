@@ -190,6 +190,12 @@ pub struct PersistedUiStateDto {
     pub selected_view: Option<String>,
     #[ts(optional)]
     pub theme: Option<ThemeDto>,
+    /// IANA zone name, or an empty string to clear back to the host system
+    /// zone. Kept as a free string rather than an enum: the tz database has
+    /// ~600 zones and gains new ones, so an enum would need regenerating
+    /// whenever IANA publishes a release.
+    #[ts(optional)]
+    pub time_zone: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -1443,6 +1449,7 @@ impl From<core_storage::PersistedUiState> for PersistedUiStateDto {
                 "light" => Some(ThemeDto::Light),
                 _ => None,
             }),
+            time_zone: value.time_zone,
         }
     }
 }
@@ -1456,6 +1463,7 @@ impl From<PersistedUiStateDto> for core_storage::PersistedUiState {
                 ThemeDto::Dark => "dark".to_string(),
                 ThemeDto::Light => "light".to_string(),
             }),
+            time_zone: value.time_zone,
         }
     }
 }
@@ -3035,6 +3043,7 @@ mod tests {
                 selected_flight_id: None,
                 selected_view: None,
                 theme: Some(ThemeDto::Dark),
+                time_zone: None,
             },
             workspaces: Vec::new(),
             memory_events: Vec::new(),

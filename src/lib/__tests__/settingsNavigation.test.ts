@@ -13,6 +13,7 @@ describe("Settings navigation", () => {
       SETTINGS_GROUPS.flatMap((group) => group.sections.map((section) => section.key)),
     ).toEqual([
       "general",
+      "time",
       "workspace",
       "cli-clients",
       "cli-accounts",

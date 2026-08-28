@@ -87,6 +87,7 @@ export default function App() {
   const activeView = useAppStore((s) => s.activeView);
   const setActiveView = useAppStore((s) => s.setActiveView);
   const theme = useAppStore((s) => s.theme);
+  const timeZone = useAppStore((s) => s.timeZone);
   // Poll status line data for all agents
   useStatusLinePoller();
   // Ctrl+K palette, Escape, and the Ctrl+Shift view chords — with the UX-08
@@ -179,12 +180,12 @@ export default function App() {
     useProjectHistoryStore.getState().recordOpen(projectPath);
   }, [projectPath]);
 
-  // Persist UI state (active view, theme) to backend on change
+  // Persist UI state (active view, theme, time zone) to backend on change
   useEffect(() => {
     // Skip initial render before bootstrap completes
     if (!useAppStore.getState().initialized) return;
     persistUiState();
-  }, [activeView, theme]);
+  }, [activeView, theme, timeZone]);
 
   // Guard: if active view is a disabled module, redirect to tools
   useEffect(() => {

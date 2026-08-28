@@ -79,7 +79,14 @@ cli: string, configDir: string, email: string | null,
  */
 createdAt: number, lastUsedAt: number | null, };
 
-export type PersistedUiStateDto = { selectedFlightId?: string, selectedView?: string, theme?: ThemeDto, };
+export type PersistedUiStateDto = { selectedFlightId?: string, selectedView?: string, theme?: ThemeDto,
+/**
+ * IANA zone name, or an empty string to clear back to the host system
+ * zone. Kept as a free string rather than an enum: the tz database has
+ * ~600 zones and gains new ones, so an enum would need regenerating
+ * whenever IANA publishes a release.
+ */
+timeZone?: string, };
 
 export type OrchestratorSettingsDto = { maxParallelSessions: number, milestoneGating: boolean, projectPath: string, autoCommitTrailerEnabled: boolean, autoCommitTrailerFormat: string, autonomyDefaultMode?: AutonomyDefaultModeDto, autonomyDefaultPolicy?: AutonomyPolicyDto, };
 

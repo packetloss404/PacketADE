@@ -114,6 +114,10 @@ interface AppStore {
   commandPaletteOpen: boolean;
   settingsTarget: SettingsTarget | null;
   theme: "dark" | "light";
+  /** IANA zone name (e.g. `America/New_York`), or `null` to follow the host
+   *  system zone. Stored as a zone name rather than a fixed offset — an
+   *  offset is wrong for half the year wherever DST applies. */
+  timeZone: string | null;
   /** v0.8-H: optional filter applied the next time MemoryView mounts.
    * Consumed by `MemoryView` on mount and cleared after read. */
   memoryViewFilter: MemoryViewFilter | null;
@@ -135,6 +139,8 @@ interface AppStore {
   openSettings: (target?: SettingsTarget) => void;
   clearSettingsTarget: () => void;
   setTheme: (theme: "dark" | "light") => void;
+  /** Pass `null` to follow the host system zone. */
+  setTimeZone: (timeZone: string | null) => void;
   /** Drop any conversation scope so the Git panel shows the plain workspace
    *  view (no lifecycle bar). */
   clearGitPanelScope: () => void;
@@ -158,6 +164,7 @@ export const useAppStore = create<AppStore>((set) => ({
   commandPaletteOpen: false,
   settingsTarget: null,
   theme: "dark",
+  timeZone: null,
   memoryViewFilter: null,
   gitPanelConversationId: null,
   gitPanelWorkspaceId: null,
@@ -170,6 +177,7 @@ export const useAppStore = create<AppStore>((set) => ({
   openSettings: (target) => set({ activeView: "tools", settingsTarget: target ?? null }),
   clearSettingsTarget: () => set({ settingsTarget: null }),
   setTheme: (theme) => set({ theme }),
+  setTimeZone: (timeZone) => set({ timeZone }),
   clearGitPanelScope: () =>
     set({
       gitPanelConversationId: null,

@@ -133,6 +133,11 @@ export async function initializeApp(): Promise<void> {
     // Apply theme before doing anything else, so the first paint of the
     // post-bootstrap UI is correctly themed. The view is restored further
     // down — see `startupView`.
+    // An empty string is how the backend represents "follow the host zone";
+    // both it and a missing key must leave the store's `null` default alone.
+    if (typeof state.ui.timeZone === "string" && state.ui.timeZone !== "") {
+      useAppStore.getState().setTimeZone(state.ui.timeZone);
+    }
     if (state.ui.theme === "dark" || state.ui.theme === "light") {
       useAppStore.getState().setTheme(state.ui.theme);
     }
@@ -248,10 +253,11 @@ let uiPersistTimer: ReturnType<typeof setTimeout> | null = null;
 export function persistUiState() {
   if (uiPersistTimer) clearTimeout(uiPersistTimer);
   uiPersistTimer = setTimeout(() => {
-    const { activeView, theme } = useAppStore.getState();
+    const { activeView, theme, timeZone } = useAppStore.getState();
     saveUiSlice({
       selectedView: activeView,
       theme,
+      timeZone,
     }).catch(logSwallowed("bootstrap.saveUi"));
   }, 1000);
 }

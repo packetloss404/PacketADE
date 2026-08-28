@@ -34,6 +34,7 @@ import { ProviderRoutingCard } from "./tools/ProviderRoutingCard";
 import { ModulesCard } from "./tools/ModulesCard";
 import { NotificationSettingsCard } from "./tools/NotificationSettingsCard";
 import { ThemeSettingsCard } from "./tools/ThemeSettingsCard";
+import { TimeSettingsCard } from "./tools/TimeSettingsCard";
 import { CrashViewerCard } from "./tools/CrashViewerCard";
 import { McpHubCard } from "./tools/McpHubCard";
 import { BudgetGuardrailsCard } from "./tools/BudgetGuardrailsCard";
@@ -244,6 +245,12 @@ export function ToolsView() {
               <ThemeSettingsCard />
               <NotificationSettingsCard />
               <KeyboardShortcutsCard />
+            </div>
+          )}
+
+          {activeSection === "time" && (
+            <div className="max-w-3xl">
+              <TimeSettingsCard />
             </div>
           )}
 

@@ -1436,6 +1436,8 @@ type PersistedUi = {
   selectedFlightId?: string | null;
   selectedView?: string | null;
   theme?: "dark" | "light" | null;
+  /** IANA zone name. `null`/`""`/absent all mean "follow the host zone". */
+  timeZone?: string | null;
 };
 
 export type PersistedState = {
@@ -2243,6 +2245,10 @@ export async function saveUiSlice(ui: PersistedState["ui"]): Promise<void> {
   if (selectedFlightId !== undefined) payload.selectedFlightId = selectedFlightId;
   if (selectedView !== undefined) payload.selectedView = selectedView;
   if (ui.theme !== undefined && ui.theme !== null) payload.theme = ui.theme;
+  // `null` is a meaningful value here (follow the system zone), and the Rust
+  // side maps an empty string back to `None`, so send "" rather than dropping
+  // the key — otherwise clearing an explicit zone could never be persisted.
+  if (ui.timeZone !== undefined) payload.timeZone = ui.timeZone ?? "";
   return invoke("save_ui_slice", { ui: payload });
 }
 

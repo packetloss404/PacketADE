@@ -153,6 +153,11 @@ pub struct PersistedUiState {
     pub selected_flight_id: Option<String>,
     pub selected_view: Option<String>,
     pub theme: Option<String>,
+    /// IANA zone name (e.g. `America/New_York`). `None` means follow the host
+    /// system zone, which is also the default for an install that predates this
+    /// field. Stored as the zone *name*, never a fixed offset: an offset is
+    /// wrong for half the year wherever DST applies.
+    pub time_zone: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
@@ -700,6 +705,9 @@ pub async fn save_ui(ui: PersistedUiState) -> Result<(), String> {
         }
         if let Some(value) = ui.theme {
             state.ui.theme = if value.is_empty() { None } else { Some(value) };
+        }
+        if let Some(value) = ui.time_zone {
+            state.ui.time_zone = if value.is_empty() { None } else { Some(value) };
         }
     })
     .await
