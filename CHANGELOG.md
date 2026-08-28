@@ -7,7 +7,147 @@ For current direction, use [`ROADMAP.md`](./ROADMAP.md). For planning briefs and
 runbooks, use [`dev/README.md`](./dev/README.md). This file is history, not a
 task list.
 
-## [Unreleased]
+## [0.12.0] - 2026-08-28
+
+**Not packaged.** No installer exists at this version; the artifacts recorded
+under 0.11.0 below are still the newest bundles. Everything here was verified
+from source only, so the packaged paths — the `LEGACY_*` data-dir, keyring, and
+localStorage migrators most of all — remain untested at this version.
+
+Gates at this tree: `cargo check` clean, 798 Rust lib tests (2 ignored) + 31
+`acp_stream` passing, `tsc --noEmit` 0 errors, `pnpm lint` 0 errors, `vitest run`
+2372/2372 across 264 files, `check:tauri-schema` clean.
+
+### Fixed — the Memory pane never showed anything
+
+`memory_events` and `memory_patterns` were empty in persisted state on an
+install with five configured agents and six recorded PTY transcripts, while all
+38 memory tests passed. Green tests over dead wiring. Four independent faults,
+each sufficient on its own:
+
+- **`learnFromSession` built its event after the aux-LLM call.** The
+  `session_completed` event was only constructed once a summary came back, so an
+  unconfigured aux provider — or one malformed response — produced nothing at
+  all, not even an unsummarized record, and the failure went to `console.warn`.
+  The event is now written and persisted **before** summarization and enriched
+  afterwards; failures surface in the pane instead of being swallowed.
+- **Capture was gated on `!wasRequested`.** Kill, Restart, and closing a pane all
+  skipped it, leaving only "the CLI exited by itself while still mounted, past
+  30 seconds". Every way a session ends is now recorded, stamped `killed` where
+  that applies, and the unmount path captures explicitly because it tears down
+  the exit listeners before `finishSession` can run. Threshold lowered to 10s.
+- **Patterns were a closed loop.** `refreshPatterns` bailed silently without
+  summarized sessions, and its only button was disabled by a count of those same
+  sessions. It now reports what it did, and draws on manual notes and flight
+  lessons rather than session summaries alone.
+- **`summariesSinceLastRefresh` reset to 0 every launch**, so the auto-extract
+  threshold was unreachable in practice. It is rebuilt on hydrate.
+
+The in-flight guard is now per-session rather than one global `isLearning`, so
+two panes closing together are both recorded and a hung provider cannot wedge
+capture for the process lifetime; the summarize call is bounded by a timeout and
+capture is idempotent per session id.
+
+### Fixed — project notes never reached an agent
+
+Notes in `.agents/memory` were rendered in their own tab and injected nowhere:
+the injection path had no notion they existed. They now flow into
+`computeContextItems` as a `project_note` kind and appear in the brief under
+"Project notes", scoped so one project's notes cannot leak into another's
+prompt.
+
+The store was also only ever loaded by that tab's own mount effect, so the tab
+badge read 0 and Ask found nothing until the user happened to click into it.
+Notes now load at startup and on Memory-view mount. `load()` lists before
+watching, so a watcher failure — network drive, exhausted handles,
+permission-denied mkdir — degrades live refresh instead of blanking a perfectly
+readable set of notes.
+
+Plain Markdown without frontmatter is now a valid note, taking its title from
+the first heading and its timestamps from the filesystem. Hand-written `.md`
+files dropped into `.agents/memory` previously surfaced as a
+`malformed_frontmatter` warning instead of content. Genuinely broken frontmatter
+still warns.
+
+### Fixed — Ask searched the injection budget instead of the corpus
+
+The Ask tab ranked `computeContextItems` output — a prompt-**budget** selector.
+Its rules are correct for deciding what fits in a prompt and wrong for a search
+box: patterns under 0.6 confidence dropped, every source capped, flight lessons
+windowed to 7 days and session summaries to 48 hours. Anything older than two
+days was invisible. `manual_note` had no branch at all, so notes saved from the
+pane's own button were unsearchable, and flight retrospectives were mined only
+for `lessonsLearned`. The scorer had no substring, prefix, or stem matching, so
+"SSH auth" scored zero against a note saying "authentication".
+
+Search and injection are now separate paths over the same data. New
+`lib/memorySearch.ts` builds the full in-scope corpus with no caps, no recency
+windows, and no character budget; `corpusRelevanceScores` matches by exact
+token, stem, prefix, or raw substring and falls back to whole-phrase matching
+for a degenerate query. Relevance is the only eligibility gate — kind, recency,
+and trust priors reorder hits but can never manufacture or suppress one. Ask
+reports what it searched, so an empty answer is legible rather than a lie.
+
+Injection is deliberately untouched: `relevanceScores` and `computeContextItems`
+keep their gates, caps, and windows, and `computeContextItems` no longer has any
+caller outside the store. A test pins the separation with four items Ask finds
+and the brief correctly refuses. `lib/projectMemoryRetrieval.ts` was superseded
+and removed.
+
+### Fixed — remote workspaces were scoped to a stale local project
+
+`layoutStore.projectPath` is a local-only mirror whose sync deliberately
+early-returns for a remote workspace, preserving the last local path so git
+pollers, the file watcher, MCP, and deploy are never handed a remote one.
+`useGitInfo` checks `isLocalWorkspace` before trusting it; MemoryView never did.
+On a remote workspace the pane therefore scoped patterns, the brief, Ask, and
+project notes to a **different project**, and manual captures stamped that other
+project's path.
+
+Scope is now derived from the active workspace (`lib/memoryScope.ts`,
+`useMemoryScope`) and never falls back to the mirror when remote. The pane
+always shows what it is scoped to, local-filesystem commands can no longer
+receive a remote path, and a remote workspace gets an explicit banner and
+dedicated empty states.
+
+Remote memory is empty **by construction**: `computeContextItems` reads the
+`ssh:`/`workspace:` scope keys but nothing anywhere writes them. This release
+makes that honest and visible rather than hiding it behind another project's
+data. Capturing memory for remote workspaces is a feature with its own migration
+story and is deliberately not attempted here.
+
+### Fixed — path spellings silently split a project's memory
+
+`normalizePath` folded separators and case but not duplicate or trailing
+separators, so `D:/p/app/` and `D:/p/app` were different scopes under the
+default `exact` matching, and memory recorded under one was invisible to the
+other. It now folds both. This only ever merges spellings of a single directory
+and cannot leak one project into another; the `projectPathMatching` default is
+unchanged.
+
+### Added — the Memory pane can be used, not just read
+
+- A **New memory** button. The pane previously had no way to put anything into
+  memory; every capture affordance lived on some other surface.
+- Empty states now state the actual precondition and carry an action, rather
+  than reporting emptiness and stopping. The Timeline's old copy claimed capture
+  was automatic for a class of events nothing had emitted since July 2026.
+- The default tab follows the data instead of always landing on Patterns, which
+  is gated on an aux LLM being configured.
+- A scope indicator, so what the pane is scoped to is never a guess.
+
+### Added — dictation analytics
+
+Ported the analytics suite from vibe2text: sentiment scoring over a bundled
+VADER lexicon, vocabulary and rhythm panels, trend charts, and the supporting
+history schema.
+
+### Added — Date & Time settings
+
+A Date & Time section in Settings with time-zone selection, persisted through
+app state and applied before first paint.
+
+## [0.11.0] - 2026-08-28
 
 Windows artifacts, built 2026-08-28 01:05 from `5f1375ca`, **unsigned** — the
 first packaged build of the renamed product:
