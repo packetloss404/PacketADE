@@ -1,6 +1,8 @@
 # Dictation Analytics — Charting Approach
 
-Status: **DECIDED**. Primitives landed; panel composition is the next agent's work.
+Status: **DONE**. Primitives and panel composition both landed in
+`9c894723`; `DictationView`'s Analytics tab renders the whole inventory and
+the hand-rolled strips it replaced are gone.
 Decided: 2026-08-28. Branch: `feat/dictation-analytics`.
 
 ---
@@ -378,9 +380,26 @@ Run 2026-08-28 on `feat/dictation-analytics`:
 | `npx eslint src/components/views/dictation --max-warnings=0` | **clean** |
 | `npx vitest run src/components/views/dictation/charts` | **22 passed / 22** |
 
+Re-run 2026-08-28 after panel composition landed, over the whole dictation
+frontend rather than the primitives alone:
+
+| Gate | Result |
+| --- | --- |
+| `npx tsc --noEmit` | **0 errors** |
+| `npx eslint src/components/views/dictation src/components/views/DictationView.tsx --max-warnings=0` | **clean** |
+| `npx vitest run src/components/views/dictation` | **54 passed / 54** (3 files) |
+
 ---
 
-## 7. For the panel-building agent
+## 7. For the panel-building agent — landed
+
+The panel was built to this section; it now reads as the rules the panel
+keeps rather than work outstanding. Composition lives in
+`src/components/views/dictation/`: `AnalyticsPanel.tsx` (headline tiles,
+streaks, goals, records) delegating to `AnalyticsTrends.tsx`,
+`AnalyticsRhythm.tsx`, and `AnalyticsVocabulary.tsx`, over the pure
+derivations in `analytics-derive.ts`. Point 6 is discharged — every strip it
+names, mode breakdown included, was deleted from `DictationView.tsx`.
 
 1. **Compose, do not extend.** Every panel should be a `TimeSeriesChart`,
    `HeatmapGrid`, or `BarSeries` call plus data shaping. If a panel seems to
