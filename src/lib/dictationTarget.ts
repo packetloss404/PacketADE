@@ -14,6 +14,34 @@ const SECURE_AUTOCOMPLETE_TOKENS = new Set([
   "one-time-code",
 ]);
 
+/**
+ * Captures whose transcript an in-app surface already consumes itself — the
+ * composer mic button via `useVoiceInput`. `useDictationTarget` must not also
+ * auto-paste those: the composer is a controlled textarea, so the native
+ * insertion fires `onChange` on top of the surface's own append and the
+ * utterance lands twice.
+ *
+ * Ids are monotonic, so equality is enough and stale entries can never collide;
+ * the set is bounded because only the newest capture can still be in flight.
+ */
+const claimedCaptures = new Set<number>();
+const MAX_TRACKED_CLAIMS = 8;
+
+export function claimDictationCapture(captureId: number) {
+  claimedCaptures.add(captureId);
+  while (claimedCaptures.size > MAX_TRACKED_CLAIMS) {
+    claimedCaptures.delete(Math.min(...claimedCaptures));
+  }
+}
+
+export function releaseDictationCapture(captureId: number) {
+  claimedCaptures.delete(captureId);
+}
+
+export function isDictationCaptureClaimed(captureId: number): boolean {
+  return claimedCaptures.has(captureId);
+}
+
 export function isSecureDictationTarget(element: Element): boolean {
   if (
     element.closest('[data-dictation="off"]') ||
@@ -73,8 +101,18 @@ export function isDictationTargetUsable(target: DictationTarget): boolean {
 
 export function insertDictationText(target: DictationDomTarget, text: string) {
   if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
-    const start = target.selectionStart ?? target.value.length;
-    const end = target.selectionEnd ?? target.value.length;
+    // `selectionStart` THROWS (InvalidStateError) on input types that do not
+    // expose a selection — `email` and `url` are both accepted dictation
+    // targets. The uncaught throw propagated out of the store subscriber and
+    // tore down delivery for every later transcript, so fall back to appending.
+    let start = target.value.length;
+    let end = target.value.length;
+    try {
+      start = target.selectionStart ?? start;
+      end = target.selectionEnd ?? end;
+    } catch {
+      // Selection-less input type — append at the end.
+    }
     const next = target.value.slice(0, start) + text + target.value.slice(end);
     const prototype =
       target instanceof HTMLTextAreaElement

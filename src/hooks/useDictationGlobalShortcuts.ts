@@ -22,8 +22,23 @@ let generation = 0;
 const ownedShortcuts = new Set<string>();
 
 function enqueue(task: () => Promise<void>) {
-  registrationQueue = registrationQueue.then(task, task);
+  // The trailing `.catch` keeps a task that throws outside its own try/catch
+  // from leaving the shared queue in a permanently rejected state (and from
+  // surfacing as an unhandled rejection).
+  registrationQueue = registrationQueue
+    .then(task, task)
+    .catch((error) =>
+      console.warn("[dictation] global shortcut queue task failed:", error),
+    );
 }
+
+/**
+ * OS hotkeys auto-repeat while held — Win32 `RegisterHotKey` delivers repeated
+ * `WM_HOTKEY` with no intervening release. Push-to-talk absorbs that through
+ * the store's re-entrancy guard, but an unguarded toggle would start a capture
+ * and stop it again on the next repeat, transcribing a fraction of a second.
+ */
+const TOGGLE_REPEAT_GUARD_MS = 400;
 
 async function unregisterOwned() {
   for (const shortcut of [...ownedShortcuts]) {
@@ -68,8 +83,12 @@ export function useDictationGlobalShortcuts() {
       }
     };
 
+    let lastToggleAt = 0;
     const toggleHandler: Handler = (event) => {
       if (event.state !== "Pressed") return;
+      const now = Date.now();
+      if (now - lastToggleAt < TOGGLE_REPEAT_GUARD_MS) return;
+      lastToggleAt = now;
       const state = useDictationStore.getState();
       if (state.isStarting || state.isRecording) void state.stopRecording();
       else if (!state.isTranscribing) void state.startRecording();

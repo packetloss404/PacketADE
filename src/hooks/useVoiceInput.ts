@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { listAudioDevices, listWhisperModels } from "@/lib/tauri";
 import { useDictationStore } from "@/stores/dictationStore";
+import { claimDictationCapture, releaseDictationCapture } from "@/lib/dictationTarget";
 
 type VoiceMode = "web" | "native";
 
@@ -59,9 +60,16 @@ export function useVoiceInput(explicitMode?: VoiceMode): UseVoiceInputReturn {
   );
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
-  const [detectedMode, setDetectedMode] = useState<VoiceMode>(webSpeechSupported ? "web" : "web");
+  const [detectedMode, setDetectedMode] = useState<VoiceMode>("web");
   const [nativeReady, setNativeReady] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  /**
+   * `captureId` of the native capture this hook started, or null. Several
+   * surfaces mount this hook and a global push-to-talk can also drive the
+   * store, so ownership has to be explicit: without it, one composer would
+   * claim (and later stop, or cancel on unmount) another surface's recording.
+   */
+  const ownedCaptureRef = useRef<number | null>(null);
 
   // Re-check native readiness after model installs as well as on mount.
   useEffect(() => {
@@ -81,12 +89,34 @@ export function useVoiceInput(explicitMode?: VoiceMode): UseVoiceInputReturn {
   // Native mode requires both a verified model and an active capture device.
   const isSupported = mode === "native" ? nativeReady : webSpeechSupported;
 
-  // Mirror the latest mode/listening into refs so the unmount cleanup can stop
-  // the right backend without re-subscribing on every state change.
+  // Mirror the latest mode into a ref so the unmount cleanup can stop the right
+  // backend without re-subscribing on every state change.
   const modeRef = useRef(mode);
-  const isListeningRef = useRef(isListening);
   modeRef.current = mode;
-  isListeningRef.current = isListening;
+
+  // Relay the native transcript out of the store. `stopRecording()`'s return
+  // value is not enough: a push-to-talk release that lands while the microphone
+  // is still opening is queued by the store and returns "" immediately, which
+  // used to blank the composer instead of inserting the eventual text.
+  useEffect(() => {
+    return useDictationStore.subscribe((state) => {
+      const owned = ownedCaptureRef.current;
+      if (owned === null) return;
+      if (state.lastResultCaptureId === owned) {
+        ownedCaptureRef.current = null;
+        setIsListening(false);
+        if (state.lastResult) setTranscript(state.lastResult);
+        return;
+      }
+      // The capture was cancelled, superseded, or torn down by a device error
+      // (the store retires the generation in all three cases). Release the mic
+      // indicator instead of leaving a composer that listens forever.
+      if (state.captureId !== owned || state.status === "error") {
+        ownedCaptureRef.current = null;
+        setIsListening(false);
+      }
+    });
+  }, []);
 
   // F38: stop any in-flight recording/recognition when the hook unmounts so a
   // dangling Web Speech listener or native Whisper capture can't outlive the
@@ -105,21 +135,41 @@ export function useVoiceInput(explicitMode?: VoiceMode): UseVoiceInputReturn {
         }
         recognitionRef.current = null;
       }
-      if (modeRef.current === "native" && isListeningRef.current) {
-        // Discard an abandoned composer recording instead of transcribing it.
-        void useDictationStore.getState().cancelRecording();
+      const owned = ownedCaptureRef.current;
+      ownedCaptureRef.current = null;
+      if (owned !== null) {
+        // This surface is gone and can no longer insert the text; hand the
+        // capture back so `useDictationTarget` can deliver or fall back.
+        releaseDictationCapture(owned);
+      }
+      if (modeRef.current !== "native" || owned === null) return;
+      const state = useDictationStore.getState();
+      // Discard an abandoned composer recording instead of transcribing it —
+      // but only this hook's own capture, and only while the microphone is
+      // still open. A transcription already running belongs to whoever
+      // receives it next (useDictationTarget), not to an unmounting composer.
+      if (state.captureId === owned && (state.isStarting || state.isRecording)) {
+        void state.cancelRecording();
       }
     };
   }, []);
 
   const startListening = useCallback(() => {
     if (mode === "native") {
+      const before = useDictationStore.getState().captureId;
+      void useDictationStore.getState().startRecording();
+      // `startRecording` bumps `captureId` synchronously, before its first
+      // await. An unchanged id means its re-entrancy guard rejected us because
+      // a capture is already in flight — showing a live mic here would promise
+      // a transcript this surface will never receive.
+      const after = useDictationStore.getState().captureId;
+      if (after === before) return;
+      ownedCaptureRef.current = after;
+      // This surface delivers the transcript itself (see `useVoiceTranscript`),
+      // so `useDictationTarget` must not auto-paste the same text on top of it.
+      claimDictationCapture(after);
       setIsListening(true);
       setTranscript("");
-      void useDictationStore
-        .getState()
-        .startRecording()
-        .then(() => setIsListening(useDictationStore.getState().isRecording));
       return;
     }
 
@@ -158,12 +208,12 @@ export function useVoiceInput(explicitMode?: VoiceMode): UseVoiceInputReturn {
   const stopListening = useCallback(() => {
     if (mode === "native") {
       setIsListening(false);
+      // The transcript arrives through the store subscription above; the
+      // resolved value is deliberately ignored so a queued (fast press/release)
+      // stop cannot overwrite it with an empty string.
       void useDictationStore
         .getState()
         .stopRecording()
-        .then((result) => {
-          setTranscript(result);
-        })
         .catch((error) => console.warn("[useVoiceInput.stopListening] failed:", error));
       return;
     }

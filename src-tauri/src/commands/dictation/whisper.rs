@@ -1,5 +1,6 @@
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
 use tracing::{info, warn};
@@ -12,6 +13,14 @@ pub struct TranscriptionOutcome {
     pub detected_language: Option<String>,
     pub model_load_ms: u64,
     pub inference_ms: u64,
+    /// True when this run was superseded (a newer capture started) or
+    /// explicitly cancelled. `text` is always empty in that case so a stale
+    /// result can never be delivered into whatever the user is typing into now.
+    ///
+    /// Unread until `stop_recording` distinguishes "cancelled" from "silence"
+    /// in the status it emits; the empty `text` already makes both safe.
+    #[allow(dead_code)]
+    pub cancelled: bool,
 }
 
 /// Shared state holding a lazily-loaded Whisper model context.
@@ -20,6 +29,12 @@ pub struct TranscriptionOutcome {
 pub struct WhisperState {
     /// The loaded model context, or None if no model has been loaded yet.
     inner: Arc<Mutex<Option<LoadedModel>>>,
+    /// Monotonic run token. Every `transcribe_audio` call claims the newest
+    /// value; `cancel()` and any newer call invalidate the runs before it.
+    /// whisper.cpp polls this through an abort callback, so an abandoned
+    /// transcription stops burning CPU instead of finishing and returning a
+    /// stale transcript minutes later.
+    run_epoch: Arc<AtomicU64>,
 }
 
 struct LoadedModel {
@@ -36,8 +51,67 @@ impl WhisperState {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(None)),
+            run_epoch: Arc::new(AtomicU64::new(0)),
         }
     }
+
+    /// Abandon any transcription that is currently running.
+    ///
+    /// Call this from `cancel_recording` so a capture the user cancelled mid
+    /// transcription cannot land in a field they have since moved on from.
+    ///
+    /// Wired 2026-08-28: `audio::cancel_recording` takes `State<WhisperState>`
+    /// and calls this before tearing the capture down. Bumping the epoch when
+    /// nothing is in flight is harmless — `begin_run` claims a strictly newer
+    /// token, so a cancel can never reach forward into a future capture.
+    pub fn cancel(&self) {
+        self.run_epoch.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// Claim the newest run token, invalidating every earlier in-flight run.
+    fn begin_run(&self) -> u64 {
+        self.run_epoch.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    fn is_superseded(&self, run: u64) -> bool {
+        self.run_epoch.load(Ordering::SeqCst) != run
+    }
+}
+
+/// Lock the model cache, recovering from poisoning.
+///
+/// Failure mode this guards: a panic anywhere under this lock (whisper-rs
+/// panics on a NUL byte in a prompt or language string, for example) used to
+/// poison the mutex permanently, so every later dictation failed with
+/// "Lock poisoned" until the app was restarted. On recovery we drop the cached
+/// context so the next call re-loads a known-good one.
+fn lock_model(inner: &Mutex<Option<LoadedModel>>) -> MutexGuard<'_, Option<LoadedModel>> {
+    match inner.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            warn!("Whisper model lock was poisoned by an earlier panic; discarding cached context");
+            let mut guard = poisoned.into_inner();
+            *guard = None;
+            guard
+        }
+    }
+}
+
+/// Shortest capture worth running inference on, in 16 kHz mono samples.
+///
+/// whisper.cpp itself bails out below 100 ms (`delta_min` in `whisper_full`)
+/// and returns zero segments, so anything under this produces no text anyway.
+/// Checking here means an accidental push-to-talk tap does not pay a
+/// multi-second first-model-load before producing nothing.
+const MIN_TRANSCRIBABLE_SAMPLES: usize = 1_600;
+
+/// Strip characters whisper-rs cannot put in a C string.
+///
+/// Failure mode: `FullParams::set_language` calls `CString::new(..).expect(..)`,
+/// so a NUL byte in a hand-edited or corrupted `dictation.json` panicked the
+/// blocking transcription thread instead of returning an error.
+fn sanitize_language(language: &str) -> String {
+    language.trim().replace('\0', "")
 }
 
 impl Default for WhisperState {
@@ -136,45 +210,84 @@ pub fn transcribe_audio(
         return Err("No audio data to transcribe".into());
     }
 
+    // Sub-100 ms taps: return nothing rather than loading a multi-gigabyte model
+    // to produce nothing. See MIN_TRANSCRIBABLE_SAMPLES.
+    if audio.len() < MIN_TRANSCRIBABLE_SAMPLES {
+        warn!(
+            samples = audio.len(),
+            "Capture is shorter than 100 ms; skipping transcription"
+        );
+        return Ok(TranscriptionOutcome {
+            text: String::new(),
+            detected_language: None,
+            model_load_ms: 0,
+            inference_ms: 0,
+            cancelled: false,
+        });
+    }
+
+    // Claim this run before taking the model lock. A second capture that starts
+    // while this one is still loading/inferring supersedes it immediately rather
+    // than queueing behind the lock and delivering two transcripts.
+    let run = whisper_state.begin_run();
+    let cancelled_outcome = || TranscriptionOutcome {
+        text: String::new(),
+        detected_language: None,
+        model_load_ms: 0,
+        inference_ms: 0,
+        cancelled: true,
+    };
+
     let model_path_str = model_path.to_string();
     let inner = whisper_state.inner.clone();
 
-    // Ensure the model is loaded (lazy-load or reload if path changed)
+    // Sanitize before `params` is created: the borrow must outlive FullParams.
+    let language = sanitize_language(language);
+
+    // Ensure the model is loaded (lazy-load or reload if path changed).
+    // A single lock scope spans load + inference: releasing it in between let a
+    // concurrent call swap the cached context, so inference could silently run
+    // on a different model than `model_path`.
+    let mut guard = lock_model(&inner);
     let mut model_load_ms = 0;
-    {
-        let mut guard = inner.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
 
-        let needs_load = match guard.as_ref() {
-            None => true,
-            Some(loaded) => loaded.model_path != model_path_str,
-        };
+    let needs_load = match guard.as_ref() {
+        None => true,
+        Some(loaded) => loaded.model_path != model_path_str,
+    };
 
-        if needs_load {
-            let load_started = Instant::now();
-            let path = Path::new(&model_path_str);
-            if !path.exists() {
-                return Err(format!(
-                    "Model file not found: {}. Download it first via the Models panel.",
-                    model_path_str
-                ));
-            }
-
-            info!("Loading Whisper model from {}", model_path_str);
-            let params = WhisperContextParameters::default();
-            let ctx = WhisperContext::new_with_params(path, params)
-                .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
-
-            *guard = Some(LoadedModel {
-                ctx,
-                model_path: model_path_str.clone(),
-            });
-            model_load_ms = elapsed_millis(load_started);
-            info!("Whisper model loaded successfully");
+    if needs_load {
+        if whisper_state.is_superseded(run) {
+            return Ok(cancelled_outcome());
         }
+        let load_started = Instant::now();
+        let path = Path::new(&model_path_str);
+        if !path.exists() {
+            return Err(format!(
+                "Model file not found: {}. Download it first via the Models panel.",
+                model_path_str
+            ));
+        }
+
+        info!("Loading Whisper model from {}", model_path_str);
+        let params = WhisperContextParameters::default();
+        let ctx = WhisperContext::new_with_params(path, params)
+            .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
+
+        *guard = Some(LoadedModel {
+            ctx,
+            model_path: model_path_str.clone(),
+        });
+        model_load_ms = elapsed_millis(load_started);
+        info!("Whisper model loaded successfully");
+    }
+
+    // A cancel that arrived while the model was loading must not start inference.
+    if whisper_state.is_superseded(run) {
+        return Ok(cancelled_outcome());
     }
 
     // Run inference (this is CPU-intensive, so the caller should use spawn_blocking)
-    let guard = inner.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
     let loaded = guard
         .as_ref()
         .ok_or_else(|| "Model not loaded (unexpected)".to_string())?;
@@ -188,15 +301,19 @@ pub fn transcribe_audio(
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 5 });
 
     // Detect language unless the user selected a specific Whisper language code.
-    let language = language.trim();
     params.set_language(
         if language.is_empty() || language.eq_ignore_ascii_case("auto") {
             None
         } else {
-            Some(language)
+            Some(language.as_str())
         },
     );
     params.set_translate(false);
+
+    // Let whisper.cpp abandon a superseded/cancelled run mid-encode instead of
+    // spending minutes on a long capture nobody is waiting for any more.
+    let abort_epoch = Arc::clone(&whisper_state.run_epoch);
+    params.set_abort_callback_safe(move || abort_epoch.load(Ordering::SeqCst) != run);
 
     // Suppress console output
     params.set_print_special(false);
@@ -222,9 +339,14 @@ pub fn transcribe_audio(
 
     // Run the transcription
     let inference_started = Instant::now();
-    state
-        .full(params, &audio)
-        .map_err(|e| format!("Transcription failed: {e}"))?;
+    let full_result = state.full(params, &audio);
+    // An aborted run surfaces as a whisper.cpp encode/decode failure. Report it
+    // as a cancellation, not as a scary "Transcription failed: -6" toast.
+    if whisper_state.is_superseded(run) {
+        info!("Transcription was cancelled or superseded; discarding partial result");
+        return Ok(cancelled_outcome());
+    }
+    full_result.map_err(|e| format!("Transcription failed: {e}"))?;
     let inference_ms = elapsed_millis(inference_started);
     let detected_language = get_lang_str(state.full_lang_id_from_state()).map(ToString::to_string);
 
@@ -258,6 +380,7 @@ pub fn transcribe_audio(
             detected_language,
             model_load_ms,
             inference_ms,
+            cancelled: false,
         });
     }
 
@@ -276,6 +399,7 @@ pub fn transcribe_audio(
         detected_language,
         model_load_ms,
         inference_ms,
+        cancelled: false,
     })
 }
 
@@ -336,11 +460,42 @@ fn filter_artifacts(text: &str) -> String {
 /// Detect if the transcription is numeric garbage (a common Whisper hallucination
 /// on silence or very low audio). Returns true if the text is mostly numbers,
 /// scientific notation, dashes, and dots with very few actual words.
+///
+/// Two false-positive guards, because this is a *programming* dictation tool and
+/// the previous 10-byte threshold silently discarded legitimate short numeric
+/// utterances: dictating "192.168.1.1", "127.0.0.1:8080" or "0.10.3-beta.2"
+/// produced no text and no explanation.
+///
+/// * A single word-like token (two or more consecutive letters) means real
+///   speech. Whisper's silence garbage is pure numerals and scientific
+///   notation, so one real word is enough to keep the transcript -- "port 8080
+///   3000 5432 1234 9999" was otherwise discarded as numeric noise.
+/// * The length floor counts characters, not bytes, so a non-ASCII transcript is
+///   judged on the same basis as an ASCII one.
 fn is_numeric_hallucination(text: &str) -> bool {
-    if text.len() < 10 {
+    /// Silence garbage runs long ("-1.0e-5 -2.3e-6 ..."); real numeric dictation
+    /// is usually one short token.
+    const MIN_CHARS: usize = 24;
+
+    let total = text.chars().count();
+    if total < MIN_CHARS {
         return false;
     }
-    let total = text.len() as f64;
+
+    let word_like = text
+        .split_whitespace()
+        .filter(|token| {
+            token
+                .chars()
+                .collect::<Vec<_>>()
+                .windows(2)
+                .any(|pair| pair[0].is_alphabetic() && pair[1].is_alphabetic())
+        })
+        .count();
+    if word_like >= 1 {
+        return false;
+    }
+
     let numeric_chars = text
         .chars()
         .filter(|c| {
@@ -349,7 +504,7 @@ fn is_numeric_hallucination(text: &str) -> bool {
         .count() as f64;
 
     // If more than 60% of the text is numeric/scientific notation chars, it's garbage
-    (numeric_chars / total) > 0.6
+    (numeric_chars / total as f64) > 0.6
 }
 
 #[cfg(test)]
@@ -378,6 +533,100 @@ mod tests {
     fn test_filter_artifacts_empty() {
         let input = "[BLANK_AUDIO]";
         assert_eq!(filter_artifacts(input), "");
+    }
+
+    #[test]
+    fn numeric_hallucination_keeps_short_technical_dictation() {
+        // Regression: these were discarded as "numeric garbage" and the user saw
+        // an empty transcript with no explanation.
+        assert!(!is_numeric_hallucination("192.168.1.1"));
+        assert!(!is_numeric_hallucination("127.0.0.1:8080"));
+        assert!(!is_numeric_hallucination("0.10.3-beta.2"));
+        assert!(!is_numeric_hallucination("2026-08-27T14:05:09Z"));
+    }
+
+    #[test]
+    fn numeric_hallucination_still_discards_silence_garbage() {
+        assert!(is_numeric_hallucination(
+            "-1.0e-5 -2.3e-6 -3.4e-7 -4.5e-8 -5.6e-9 -6.7e-10"
+        ));
+    }
+
+    #[test]
+    fn numeric_hallucination_keeps_text_with_real_words() {
+        assert!(!is_numeric_hallucination(
+            "port 8080 3000 5432 1234 9999 4321 8443 7777"
+        ));
+    }
+
+    #[test]
+    fn numeric_hallucination_length_floor_counts_characters_not_bytes() {
+        // 12 multi-byte chars = 36 bytes: over the old byte floor, under the
+        // character floor, so it must not be judged at all.
+        assert!(!is_numeric_hallucination(&"。".repeat(12)));
+    }
+
+    #[test]
+    fn sanitize_language_strips_nul_bytes_that_would_panic_whisper_rs() {
+        assert_eq!(sanitize_language("  en\0 "), "en");
+        assert_eq!(sanitize_language("auto"), "auto");
+        assert_eq!(sanitize_language("\0"), "");
+    }
+
+    #[test]
+    fn short_captures_return_empty_without_touching_the_model() {
+        let state = WhisperState::new();
+        // Deliberately unreadable path: reaching the loader would error.
+        let outcome = transcribe_audio(
+            &state,
+            vec![0.01_f32; MIN_TRANSCRIBABLE_SAMPLES - 1],
+            "/nonexistent/ggml-does-not-exist.bin",
+            "auto",
+            &[],
+        )
+        .expect("a sub-100ms tap must not be an error");
+        assert!(outcome.text.is_empty());
+        assert!(!outcome.cancelled);
+        assert_eq!(outcome.model_load_ms, 0);
+    }
+
+    #[test]
+    fn empty_audio_is_still_reported_as_a_capture_failure() {
+        let state = WhisperState::new();
+        assert!(transcribe_audio(&state, Vec::new(), "/nonexistent.bin", "auto", &[]).is_err());
+    }
+
+    #[test]
+    fn cancel_supersedes_the_active_run() {
+        let state = WhisperState::new();
+        let run = state.begin_run();
+        assert!(!state.is_superseded(run));
+        state.cancel();
+        assert!(state.is_superseded(run));
+    }
+
+    #[test]
+    fn a_newer_run_supersedes_an_older_one() {
+        let state = WhisperState::new();
+        let first = state.begin_run();
+        let second = state.begin_run();
+        assert!(state.is_superseded(first));
+        assert!(!state.is_superseded(second));
+    }
+
+    #[test]
+    fn poisoned_model_lock_recovers_instead_of_bricking_dictation() {
+        let state = WhisperState::new();
+        let inner = state.inner.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = inner.lock().unwrap();
+            panic!("simulated whisper panic while holding the model lock");
+        })
+        .join();
+        assert!(state.inner.is_poisoned());
+        // Previously every later call returned "Lock poisoned" until restart.
+        let guard = lock_model(&state.inner);
+        assert!(guard.is_none());
     }
 
     #[test]

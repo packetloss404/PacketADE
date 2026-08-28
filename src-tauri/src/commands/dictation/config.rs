@@ -59,6 +59,17 @@ fn normalize_config(mut config: DictationConfig) -> DictationConfig {
     if config.language.trim().is_empty() {
         config.language = "auto".to_string();
     }
+    // A blank or padded identity is not a device. `select_input_device` rejects
+    // both — the blank one silently, the padded one via a failed `DeviceId`
+    // parse that falls back to the default microphone on every single capture.
+    // Either way the settings UI keeps showing a microphone that capture never
+    // actually uses, so normalise it at the boundary instead.
+    config.device_id = config
+        .device_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string);
     config
 }
 
@@ -168,5 +179,23 @@ mod tests {
         let mut config = DictationConfig::default();
         config.max_duration_seconds = 99_999;
         assert_eq!(normalize_config(config).max_duration_seconds, 1_800);
+    }
+
+    #[test]
+    fn blank_and_padded_device_identities_are_normalized() {
+        let mut config = DictationConfig::default();
+        config.device_id = Some(String::new());
+        assert_eq!(normalize_config(config).device_id, None);
+
+        let mut config = DictationConfig::default();
+        config.device_id = Some("   ".to_string());
+        assert_eq!(normalize_config(config).device_id, None);
+
+        let mut config = DictationConfig::default();
+        config.device_id = Some("  wasapi:Headset (PLT Focus)  ".to_string());
+        assert_eq!(
+            normalize_config(config).device_id.as_deref(),
+            Some("wasapi:Headset (PLT Focus)")
+        );
     }
 }

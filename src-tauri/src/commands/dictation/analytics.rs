@@ -99,22 +99,25 @@ pub fn get_dictation_analytics() -> Result<String, String> {
     let mut days_with_entries: HashSet<String> = HashSet::new();
 
     for row in &rows {
-        // Word count
+        // Word count.
+        //
+        // `insert_dictation_entry` is a Tauri command that accepts arbitrary
+        // i64s, and older rows may hold anything. `x as u32` on a negative i64
+        // wraps to ~4 billion, which used to blow out `longestEntryWords`,
+        // `fastestWpm` and the `totalWords` sum. Clamp at the boundary instead.
         let wc = row
             .word_count
-            .unwrap_or_else(|| row.text.split_whitespace().count() as i64);
-        total_words += wc as u64;
-        if wc as u32 > longest_entry_words {
-            longest_entry_words = wc as u32;
-        }
+            .unwrap_or_else(|| row.text.split_whitespace().count() as i64)
+            .max(0) as u64;
+        total_words += wc;
+        longest_entry_words = longest_entry_words.max(u32::try_from(wc).unwrap_or(u32::MAX));
 
         // WPM
         if let Some(w) = row.wpm {
-            total_wpm_sum += w as u64;
+            let w = w.max(0) as u64;
+            total_wpm_sum += w;
             wpm_count += 1;
-            if w as u32 > fastest_wpm {
-                fastest_wpm = w as u32;
-            }
+            fastest_wpm = fastest_wpm.max(u32::try_from(w).unwrap_or(u32::MAX));
         }
 
         // Duration
@@ -132,8 +135,20 @@ pub fn get_dictation_analytics() -> Result<String, String> {
         *mode_breakdown.entry(row.mode.clone()).or_insert(0) += 1;
 
         // Hourly activity — parse hour from timestamp (format: ...THH:MM:SS...)
+        //
+        // Both of these used to index with `[..]`, which PANICS on a short or
+        // non-UTF-8-boundary timestamp. A single malformed row (an older schema,
+        // a hand-edited or partially corrupted dictation.db) took the whole
+        // analytics command down instead of being skipped. `get` returns None.
+        //
+        // Bucketing is UTC, matching `history::format_iso8601_utc`; see the
+        // known-issue note there.
         if let Some(t_pos) = row.timestamp.find('T') {
-            if let Ok(hour) = row.timestamp[t_pos + 1..t_pos + 3].parse::<usize>() {
+            if let Some(hour) = row
+                .timestamp
+                .get(t_pos + 1..t_pos + 3)
+                .and_then(|value| value.parse::<usize>().ok())
+            {
                 if hour < 24 {
                     hourly_activity[hour] += 1;
                 }
@@ -141,8 +156,8 @@ pub fn get_dictation_analytics() -> Result<String, String> {
         }
 
         // Day for streak calculation (YYYY-MM-DD)
-        if row.timestamp.len() >= 10 {
-            days_with_entries.insert(row.timestamp[..10].to_string());
+        if let Some(day) = row.timestamp.get(..10) {
+            days_with_entries.insert(day.to_string());
         }
 
         // Word frequency + unique words
@@ -197,7 +212,7 @@ pub fn get_dictation_analytics() -> Result<String, String> {
 
     let analytics = DictationAnalytics {
         total_entries,
-        total_words: total_words as u32,
+        total_words: u32::try_from(total_words).unwrap_or(u32::MAX),
         average_wpm,
         fastest_wpm,
         average_sentiment,
@@ -287,5 +302,75 @@ fn are_consecutive_days(a: &str, b: &str) -> bool {
         next_day(ay, am, ad) == b_date
     } else {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Mirrors the parsing `get_dictation_analytics` does per row so the
+    /// panic-safety of the slicing can be exercised without a database.
+    fn parse_hour_and_day(timestamp: &str) -> (Option<usize>, Option<&str>) {
+        let hour = timestamp.find('T').and_then(|t_pos| {
+            timestamp
+                .get(t_pos + 1..t_pos + 3)
+                .and_then(|value| value.parse::<usize>().ok())
+                .filter(|hour| *hour < 24)
+        });
+        (hour, timestamp.get(..10))
+    }
+
+    #[test]
+    fn well_formed_timestamps_parse() {
+        let (hour, day) = parse_hour_and_day("2026-08-27T14:05:09Z");
+        assert_eq!(hour, Some(14));
+        assert_eq!(day, Some("2026-08-27"));
+    }
+
+    #[test]
+    fn malformed_timestamps_are_skipped_instead_of_panicking() {
+        // Each of these panicked with the previous `[a..b]` slicing.
+        for stamp in [
+            "2026-08-27T",
+            "2026-08-27T1",
+            "T",
+            "",
+            "短",
+            "2026-08-27T9x:00Z",
+        ] {
+            let (hour, _day) = parse_hour_and_day(stamp);
+            assert!(hour.is_none(), "unexpectedly parsed an hour from {stamp:?}");
+        }
+        assert_eq!(parse_hour_and_day("短い").1, None);
+        assert_eq!(parse_hour_and_day("2026-08-27T25:00:00Z").0, None);
+    }
+
+    #[test]
+    fn consecutive_day_detection_handles_month_and_year_rollover() {
+        assert!(are_consecutive_days("2026-01-31", "2026-02-01"));
+        assert!(are_consecutive_days("2026-12-31", "2027-01-01"));
+        assert!(are_consecutive_days("2024-02-28", "2024-02-29"));
+        assert!(!are_consecutive_days("2025-02-28", "2025-02-29"));
+        assert!(!are_consecutive_days("2026-01-01", "2026-01-03"));
+        assert!(!are_consecutive_days("garbage", "2026-01-02"));
+    }
+
+    #[test]
+    fn streak_counts_only_the_run_of_consecutive_days() {
+        let days: HashSet<String> = ["2026-08-20", "2026-08-25", "2026-08-26", "2026-08-27"]
+            .iter()
+            .map(|d| d.to_string())
+            .collect();
+        assert_eq!(compute_daily_streak(&days), 3);
+        assert_eq!(compute_daily_streak(&HashSet::new()), 0);
+    }
+
+    #[test]
+    fn negative_counters_cannot_wrap_into_huge_totals() {
+        // The wrapping form this replaced: `(-1i64) as u32 == 4_294_967_295`.
+        let wc = (-1i64).max(0) as u64;
+        assert_eq!(wc, 0);
+        assert_eq!(u32::try_from(u64::MAX).unwrap_or(u32::MAX), u32::MAX);
     }
 }

@@ -1,7 +1,18 @@
 import { useEffect, useState } from "react";
-import { Mic, MicOff, Loader2, Check, BarChart3, Flame, Clock, Hash, BookOpen, TrendingUp, Search, ChevronDown, ChevronRight, Zap, SmilePlus, Timer } from "lucide-react";
+import { Mic, MicOff, Loader2, Check, BarChart3, Flame, Clock, Hash, BookOpen, TrendingUp, Search, ChevronDown, ChevronRight, Zap, SmilePlus, Timer, AlertTriangle, X } from "lucide-react";
 import { useDictationStore } from "@/stores/dictationStore";
-import type { DictationAnalytics, DictationEntry } from "@/types/dictation";
+import {
+  DEFAULT_PUSH_TO_TALK_SHORTCUT,
+  DEFAULT_TOGGLE_SHORTCUT,
+  type DictationAnalytics,
+  type DictationEntry,
+} from "@/types/dictation";
+
+/** How long a phase may run before the UI stops pretending it is healthy.
+ *  A Bluetooth headset that walks out of range can leave `start_recording`
+ *  blocked inside CPAL indefinitely, so a bare spinner is a dead end. */
+const START_STALL_MS = 8_000;
+const TRANSCRIBE_STALL_MS = 90_000;
 
 export function DictationView() {
   const isStarting = useDictationStore((s) => s.isStarting);
@@ -9,14 +20,16 @@ export function DictationView() {
   const isTranscribing = useDictationStore((s) => s.isTranscribing);
   const lastResult = useDictationStore((s) => s.lastResult);
   const lastTelemetry = useDictationStore((s) => s.lastTelemetry);
-  const status = useDictationStore((s) => s.status);
   const error = useDictationStore((s) => s.error);
   const deliveryNotice = useDictationStore((s) => s.deliveryNotice);
   const waveform = useDictationStore((s) => s.waveform);
   const analytics = useDictationStore((s) => s.analytics);
   const history = useDictationStore((s) => s.history);
+  const settings = useDictationStore((s) => s.settings);
+  const shortcutStatus = useDictationStore((s) => s.shortcutStatus);
   const startRecording = useDictationStore((s) => s.startRecording);
   const stopRecording = useDictationStore((s) => s.stopRecording);
+  const cancelRecording = useDictationStore((s) => s.cancelRecording);
   const loadAnalytics = useDictationStore((s) => s.loadAnalytics);
   const loadHistory = useDictationStore((s) => s.loadHistory);
   const loadSettings = useDictationStore((s) => s.loadSettings);
@@ -26,6 +39,7 @@ export function DictationView() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"analytics" | "history">("analytics");
+  const [stalledPhase, setStalledPhase] = useState<"starting" | "transcribing" | null>(null);
 
   useEffect(() => {
     loadAnalytics();
@@ -33,6 +47,21 @@ export function DictationView() {
     loadSettings();
     loadModels();
   }, [loadAnalytics, loadHistory, loadModels, loadSettings]);
+
+  // Stall watchdog: turn an indefinite spinner into a stated, actionable state.
+  useEffect(() => {
+    if (!isStarting && !isTranscribing) {
+      setStalledPhase(null);
+      return;
+    }
+    setStalledPhase(null);
+    const phase: "starting" | "transcribing" = isStarting ? "starting" : "transcribing";
+    const timer = window.setTimeout(
+      () => setStalledPhase(phase),
+      phase === "starting" ? START_STALL_MS : TRANSCRIBE_STALL_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [isStarting, isTranscribing]);
 
   async function handleToggleRecording() {
     if (isRecording) {
@@ -42,6 +71,14 @@ export function DictationView() {
       await startRecording();
     }
   }
+
+  const recordLabel = isRecording
+    ? "Stop recording and transcribe"
+    : isStarting
+      ? "Opening the microphone"
+      : isTranscribing
+        ? "Transcribing"
+        : "Start recording";
 
   function handleSearch() {
     if (searchQuery.trim()) {
@@ -59,17 +96,22 @@ export function DictationView() {
       <div className="w-[340px] flex-shrink-0 flex flex-col items-center border-r border-bg-border bg-bg-secondary px-6 py-8">
         <div className="w-full max-w-[280px] space-y-6">
           <div className="flex items-center gap-2">
-            <Mic size={16} className="text-accent-green" />
+            <Mic size={16} className="text-accent-green" aria-hidden="true" />
             <h1 className="text-sm font-semibold text-text-primary">Dictation</h1>
           </div>
 
           {/* Record button */}
           <div className="flex flex-col items-center gap-4">
             <button
+              type="button"
               onClick={handleToggleRecording}
               disabled={isStarting || isTranscribing}
+              aria-label={recordLabel}
+              aria-pressed={isRecording}
+              aria-busy={isStarting || isTranscribing}
               className={[
                 "w-20 h-20 rounded-full flex items-center justify-center transition-all",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-green",
                 isRecording
                   ? "bg-accent-red/20 border-2 border-accent-red text-accent-red animate-pulse shadow-lg shadow-accent-red/20"
                   : isStarting || isTranscribing
@@ -78,27 +120,60 @@ export function DictationView() {
               ].join(" ")}
             >
               {isStarting || isTranscribing ? (
-                <Loader2 size={28} className="animate-spin" />
+                <Loader2 size={28} className="animate-spin" aria-hidden="true" />
               ) : isRecording ? (
-                <MicOff size={28} />
+                <MicOff size={28} aria-hidden="true" />
               ) : (
-                <Mic size={28} />
+                <Mic size={28} aria-hidden="true" />
               )}
             </button>
-            <span className="text-[11px] text-text-muted">
+            <span className="text-[11px] text-text-muted text-center" role="status" aria-live="polite">
               {isRecording
-                ? "Recording... click to stop"
+                ? "Recording — click to stop, Escape to discard"
                 : isStarting
-                ? "Opening microphone..."
+                ? "Opening microphone…"
                 : isTranscribing
-                ? "Transcribing..."
-                : "Click or Ctrl+Shift+V"}
+                ? "Transcribing…"
+                : idleHint(shortcutStatus.state, settings?.toggleShortcut, settings?.pushToTalkShortcut)}
             </span>
+
+            {/* Escape hatch. The record button is disabled while starting and
+                transcribing, so without this a wedged capture leaves no route
+                back to idle. `cancelRecording` resets both phases. */}
+            {(isStarting || isRecording || isTranscribing) && (
+              <button
+                type="button"
+                onClick={() => void cancelRecording()}
+                aria-label={
+                  isTranscribing ? "Cancel transcription and discard the audio" : "Cancel recording"
+                }
+                className="px-3 py-1 text-[11px] text-text-secondary border border-bg-border rounded-lg transition-colors hover:bg-bg-hover hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-green"
+              >
+                Cancel
+              </button>
+            )}
           </div>
+
+          {stalledPhase && (
+            <div
+              className="px-4 py-3 bg-accent-amber/5 border border-accent-amber/20 rounded-lg"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="flex items-start gap-1.5">
+                <AlertTriangle size={12} className="text-accent-amber shrink-0 mt-[1px]" aria-hidden="true" />
+                <p className="text-[11px] text-accent-amber break-words">
+                  {stalledPhase === "starting"
+                    ? "The microphone still has not opened. A Bluetooth headset that has gone out of range, or a device held by another application, hangs here. Cancel is queued until the device answers; the open gives up on its own shortly. Re-run the microphone test in Tools → Dictation afterwards."
+                    : "Transcription is still running. Large Whisper models on long recordings can take this long — press Cancel to discard the audio and return to idle."}
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Waveform */}
           {isRecording && (
-            <div className="flex items-end justify-center gap-[2px] h-12">
+            <div className="flex items-end justify-center gap-[2px] h-12" aria-hidden="true">
               {bars.map((level, i) => (
                 <div
                   key={i}
@@ -109,8 +184,10 @@ export function DictationView() {
             </div>
           )}
 
-          {/* Result */}
-          {lastResult && status === "done" && (
+          {/* Result. Gated on capture state rather than the transient `status`
+              string: a stray backend status event must not erase a transcript
+              the user has not read yet. */}
+          {lastResult && !isRecording && !isStarting && (
             <div className="px-4 py-3 bg-bg-primary border border-bg-border rounded-lg">
               <div className="flex items-center gap-1.5 mb-2">
                 <Check size={10} className="text-accent-green" />
@@ -138,14 +215,33 @@ export function DictationView() {
           )}
 
           {error && (
-            <div className="px-4 py-3 bg-accent-red/5 border border-accent-red/20 rounded-lg">
-              <p className="text-[11px] text-accent-red">{error}</p>
+            <div
+              className="px-4 py-3 bg-accent-red/5 border border-accent-red/20 rounded-lg"
+              role="alert"
+            >
+              <div className="flex items-start gap-2">
+                <p className="flex-1 text-[11px] text-accent-red break-words whitespace-pre-wrap">
+                  {error}
+                </p>
+                <button
+                  type="button"
+                  onClick={clearResult}
+                  aria-label="Dismiss dictation error"
+                  className="shrink-0 text-accent-red/70 transition-colors hover:text-accent-red focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-red"
+                >
+                  <X size={12} aria-hidden="true" />
+                </button>
+              </div>
             </div>
           )}
 
           {deliveryNotice && (
-            <div className="px-4 py-3 bg-accent-blue/5 border border-accent-blue/20 rounded-lg">
-              <p className="text-[11px] text-accent-blue">{deliveryNotice}</p>
+            <div
+              className="px-4 py-3 bg-accent-blue/5 border border-accent-blue/20 rounded-lg"
+              role="status"
+              aria-live="polite"
+            >
+              <p className="text-[11px] text-accent-blue break-words">{deliveryNotice}</p>
             </div>
           )}
 
@@ -164,27 +260,41 @@ export function DictationView() {
       {/* Right: Analytics + History */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Tabs */}
-        <div className="flex items-center gap-1 px-4 py-2 border-b border-bg-border bg-bg-secondary">
+        <div
+          className="flex items-center gap-1 px-4 py-2 border-b border-bg-border bg-bg-secondary"
+          role="tablist"
+          aria-label="Dictation panels"
+        >
           <button
+            type="button"
+            role="tab"
+            id="dictation-tab-analytics"
+            aria-selected={activeTab === "analytics"}
+            aria-controls="dictation-tabpanel"
             onClick={() => setActiveTab("analytics")}
-            className={`px-3 py-1 text-[11px] rounded transition-colors ${
+            className={`px-3 py-1 text-[11px] rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-green ${
               activeTab === "analytics"
                 ? "bg-bg-elevated text-accent-green font-medium"
                 : "text-text-secondary hover:text-text-primary"
             }`}
           >
-            <BarChart3 size={10} className="inline mr-1" />
+            <BarChart3 size={10} className="inline mr-1" aria-hidden="true" />
             Analytics
           </button>
           <button
+            type="button"
+            role="tab"
+            id="dictation-tab-history"
+            aria-selected={activeTab === "history"}
+            aria-controls="dictation-tabpanel"
             onClick={() => setActiveTab("history")}
-            className={`px-3 py-1 text-[11px] rounded transition-colors ${
+            className={`px-3 py-1 text-[11px] rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-green ${
               activeTab === "history"
                 ? "bg-bg-elevated text-accent-green font-medium"
                 : "text-text-secondary hover:text-text-primary"
             }`}
           >
-            <Clock size={10} className="inline mr-1" />
+            <Clock size={10} className="inline mr-1" aria-hidden="true" />
             History
             {history.length > 0 && (
               <span className="ml-1 text-[9px] text-text-muted">({history.length})</span>
@@ -192,7 +302,14 @@ export function DictationView() {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4">
+        <div
+          className="flex-1 overflow-y-auto p-4"
+          role="tabpanel"
+          id="dictation-tabpanel"
+          aria-labelledby={
+            activeTab === "analytics" ? "dictation-tab-analytics" : "dictation-tab-history"
+          }
+        >
           {activeTab === "analytics" ? (
             analytics ? (
               <AnalyticsPanel analytics={analytics} history={history} />
@@ -236,7 +353,7 @@ function AnalyticsPanel({ analytics, history }: { analytics: DictationAnalytics;
         <StatCard icon={TrendingUp} label="Avg WPM" value={String(Math.round(analytics.averageWpm))} color="text-accent-blue" />
         <StatCard icon={Zap} label="Fastest WPM" value={String(analytics.fastestWpm)} color="text-accent-amber" />
         <StatCard icon={SmilePlus} label="Avg Sentiment" value={sentimentLabel(analytics.averageSentiment)} color={sentimentColor(analytics.averageSentiment)} />
-        <StatCard icon={Timer} label="Total Time" value={formatDuration(analytics.totalDurationMinutes)} color="text-accent-cyan" />
+        <StatCard icon={Timer} label="Total Time" value={formatDuration(analytics.totalDurationMinutes)} color="text-accent-blue" />
         <StatCard icon={BookOpen} label="Entries" value={String(analytics.totalEntries)} color="text-accent-purple" />
         <StatCard icon={Flame} label="Daily Streak" value={`${analytics.dailyStreak} days`} color="text-accent-amber" />
         <StatCard icon={Clock} label="Time Saved" value={`${Math.round(analytics.timeSavedMinutes)} min`} color="text-accent-green" />
@@ -456,19 +573,25 @@ function HistoryPanel({
       {/* Search bar */}
       <div className="flex items-center gap-2">
         <div className="flex-1 relative">
-          <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
+          <Search
+            size={12}
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted"
+            aria-hidden="true"
+          />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && onSearch()}
             placeholder="Search transcriptions..."
+            aria-label="Search transcription history"
             className="w-full pl-8 pr-3 py-1.5 bg-bg-secondary border border-bg-border rounded-lg text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
           />
         </div>
         <button
+          type="button"
           onClick={onSearch}
-          className="px-3 py-1.5 text-[11px] text-accent-green hover:bg-accent-green/10 border border-bg-border rounded-lg transition-colors"
+          className="px-3 py-1.5 text-[11px] text-accent-green hover:bg-accent-green/10 border border-bg-border rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-green"
         >
           Search
         </button>
@@ -486,13 +609,15 @@ function HistoryPanel({
                 className="bg-bg-secondary border border-bg-border rounded-lg overflow-hidden"
               >
                 <button
+                  type="button"
+                  aria-expanded={isExpanded}
                   onClick={() => setExpandedId(isExpanded ? null : entry.id)}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-bg-hover transition-colors"
+                  className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-bg-hover transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-green"
                 >
                   {isExpanded ? (
-                    <ChevronDown size={10} className="text-text-muted shrink-0" />
+                    <ChevronDown size={10} className="text-text-muted shrink-0" aria-hidden="true" />
                   ) : (
-                    <ChevronRight size={10} className="text-text-muted shrink-0" />
+                    <ChevronRight size={10} className="text-text-muted shrink-0" aria-hidden="true" />
                   )}
                   <span className="text-[11px] text-text-primary truncate flex-1">
                     {entry.text.slice(0, 80)}{entry.text.length > 80 ? "..." : ""}
@@ -563,6 +688,37 @@ function StatCard({
       <span className={`text-sm font-semibold ${color}`}>{value}</span>
     </div>
   );
+}
+
+/** Render an accelerator string the way the OS labels it. Mirrors the
+ *  formatting in `KeyboardShortcutsCard`. */
+function formatAccelerator(accelerator: string): string {
+  const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
+  return accelerator
+    .split("+")
+    .map((part) => {
+      if (part === "CommandOrControl") return isMac ? "Cmd" : "Ctrl";
+      if (part === "Control") return "Ctrl";
+      return part;
+    })
+    .join("+");
+}
+
+/** Only advertise a keyboard route to recording when one is actually
+ *  registered. Global dictation shortcuts are opt-in and off by default
+ *  (DV13); claiming a chord that is not bound sends the user hunting for a
+ *  key that does nothing. */
+function idleHint(
+  shortcutState: "disabled" | "registering" | "ready" | "error",
+  toggleShortcut: string | undefined,
+  pushToTalkShortcut: string | undefined,
+): string {
+  if (shortcutState !== "ready") {
+    return "Click to record. Global shortcuts are off — enable them in Tools → Keyboard Shortcuts.";
+  }
+  const toggle = formatAccelerator(toggleShortcut ?? DEFAULT_TOGGLE_SHORTCUT);
+  const pushToTalk = formatAccelerator(pushToTalkShortcut ?? DEFAULT_PUSH_TO_TALK_SHORTCUT);
+  return `Click, ${toggle} to toggle, or hold ${pushToTalk}`;
 }
 
 function sentimentLabel(s: number): string {

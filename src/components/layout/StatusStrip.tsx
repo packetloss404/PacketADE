@@ -135,7 +135,11 @@ export function StatusStrip() {
       {isRecording && (
         <span
           className="flex items-center gap-1.5 text-[10.5px] text-accent-red"
-          title="Dictation recording — release Ctrl+Shift+V or press Escape to stop"
+          // Ctrl+Shift+V was the in-window push-to-talk chord until dictation
+          // moved to OS-level global shortcuts (default off, DV13). No handler
+          // binds it now, and Escape is only handled inside DictationView, so
+          // this strip — which is app-wide — can promise neither.
+          title="Dictation is recording. Open the Dictation view to stop or discard it."
         >
           <Mic size={10} className="animate-pulse" />
           <span className="font-mono">REC</span>

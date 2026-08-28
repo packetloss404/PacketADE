@@ -34,6 +34,13 @@ pub fn get_db() -> Result<Connection, String> {
     let path = db_path()?;
     let conn = Connection::open(&path).map_err(|e| format!("Failed to open dictation DB: {e}"))?;
 
+    // Analytics scans every row while `stop_recording` inserts the transcript it
+    // just produced. Without a busy timeout the loser of that race got
+    // `database is locked` immediately, and `stop_recording` only warns — so a
+    // finished transcription silently vanished from history.
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| format!("Failed to configure dictation DB: {e}"))?;
+
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS entries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,9 +88,14 @@ fn chrono_now() -> String {
     let dur = now
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
-    let secs = dur.as_secs();
+    format_iso8601_utc(dur.as_secs())
+}
 
-    // Format as YYYY-MM-DDTHH:MM:SSZ
+/// Format seconds since the Unix epoch as `YYYY-MM-DDTHH:MM:SSZ`.
+///
+/// Note for `analytics.rs`: these are UTC instants, so `hourlyActivity` and the
+/// daily streak are bucketed in UTC, not in the user's local day.
+fn format_iso8601_utc(secs: u64) -> String {
     let days = secs / 86400;
     let time_of_day = secs % 86400;
     let hours = time_of_day / 3600;
@@ -146,13 +158,22 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<DictationEntry> {
     })
 }
 
+/// Upper bound on a single history page. An unbounded `limit` from the frontend
+/// would otherwise pull every transcript ever recorded into memory and across
+/// the IPC bridge in one call.
+const MAX_HISTORY_PAGE: u32 = 500;
+
 #[tauri::command]
 pub fn get_dictation_history(limit: u32, offset: u32) -> Result<String, String> {
+    let limit = limit.clamp(1, MAX_HISTORY_PAGE);
     let conn = get_db()?;
+    // `id DESC` breaks ties: timestamps only have second resolution, so two
+    // entries recorded in the same second could otherwise appear on two
+    // consecutive pages or on neither.
     let mut stmt = conn
         .prepare(
             "SELECT id, text, mode, timestamp, word_count, duration_seconds, wpm, sentiment
-             FROM entries ORDER BY timestamp DESC LIMIT ?1 OFFSET ?2",
+             FROM entries ORDER BY timestamp DESC, id DESC LIMIT ?1 OFFSET ?2",
         )
         .map_err(|e| format!("SQL prepare error: {e}"))?;
 
@@ -165,15 +186,31 @@ pub fn get_dictation_history(limit: u32, offset: u32) -> Result<String, String> 
     serde_json::to_string(&entries).map_err(|e| format!("JSON serialization error: {e}"))
 }
 
+/// Escape the characters SQLite's LIKE treats as wildcards.
+///
+/// Failure mode: searching for `%` or `_` matched every entry, and a search for
+/// a literal `100%` matched far more than it should.
+fn escape_like_pattern(query: &str) -> String {
+    let mut escaped = String::with_capacity(query.len());
+    for ch in query.chars() {
+        if matches!(ch, '\\' | '%' | '_') {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped
+}
+
 #[tauri::command]
 pub fn search_dictation_history(query: String) -> Result<String, String> {
     let conn = get_db()?;
-    let pattern = format!("%{query}%");
+    let pattern = format!("%{}%", escape_like_pattern(&query));
 
     let mut stmt = conn
         .prepare(
             "SELECT id, text, mode, timestamp, word_count, duration_seconds, wpm, sentiment
-             FROM entries WHERE text LIKE ?1 ORDER BY timestamp DESC LIMIT 200",
+             FROM entries WHERE text LIKE ?1 ESCAPE '\\'
+             ORDER BY timestamp DESC, id DESC LIMIT 200",
         )
         .map_err(|e| format!("SQL prepare error: {e}"))?;
 
@@ -195,4 +232,44 @@ pub fn insert_dictation_entry(
     wpm: Option<i64>,
 ) -> Result<(), String> {
     insert_entry(&text, &mode, duration_seconds, word_count, wpm)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iso8601_matches_known_epoch_instants() {
+        assert_eq!(format_iso8601_utc(0), "1970-01-01T00:00:00Z");
+        assert_eq!(format_iso8601_utc(1), "1970-01-01T00:00:01Z");
+        // 2000-02-29: the leap-year branch of a century year.
+        assert_eq!(format_iso8601_utc(951_782_400), "2000-02-29T00:00:00Z");
+        // 2100 is not a leap year; 2100-03-01 must not come out as 02-29.
+        assert_eq!(format_iso8601_utc(4_107_542_400), "2100-03-01T00:00:00Z");
+        assert_eq!(format_iso8601_utc(1_756_252_800), "2025-08-27T00:00:00Z");
+        assert_eq!(format_iso8601_utc(1_735_689_599), "2024-12-31T23:59:59Z");
+    }
+
+    #[test]
+    fn iso8601_output_is_sortable_and_parseable_by_analytics() {
+        // analytics.rs slices [..10] for the day and [11..13] for the hour.
+        let stamp = format_iso8601_utc(1_735_689_599);
+        assert_eq!(stamp.len(), 20);
+        assert_eq!(&stamp[..10], "2024-12-31");
+        assert_eq!(stamp[11..13].parse::<u32>().unwrap(), 23);
+    }
+
+    #[test]
+    fn like_wildcards_in_a_search_query_are_escaped() {
+        assert_eq!(escape_like_pattern("100%"), r"100\%");
+        assert_eq!(escape_like_pattern("a_b"), r"a\_b");
+        assert_eq!(escape_like_pattern(r"c:\tmp"), r"c:\\tmp");
+        assert_eq!(escape_like_pattern("plain text"), "plain text");
+    }
+
+    #[test]
+    fn history_page_size_is_bounded() {
+        assert_eq!(u32::MAX.clamp(1, MAX_HISTORY_PAGE), MAX_HISTORY_PAGE);
+        assert_eq!(0u32.clamp(1, MAX_HISTORY_PAGE), 1);
+    }
 }
