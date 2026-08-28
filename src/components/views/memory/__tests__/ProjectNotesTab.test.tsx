@@ -67,10 +67,24 @@ describe("ProjectNotesTab", () => {
     );
   });
 
-  it("does not offer project memory without a local project", () => {
+  it("does not offer project memory without a project", () => {
     render(<ProjectNotesTab projectPath={null} globalEvents={[]} />);
+    // "local" was dropped from this copy: it read as the remote-workspace
+    // explanation, which now has its own state below.
     expect(
-      screen.getByText("Open a local project to use project memory."),
+      screen.getByText("Open a project to use project memory."),
     ).toBeInTheDocument();
+  });
+
+  it("explains that notes are local-only on a remote workspace", () => {
+    render(
+      <ProjectNotesTab
+        projectPath={null}
+        globalEvents={[]}
+        remote={{ serverName: "build-box", remotePath: "/srv/app" }}
+      />,
+    );
+    expect(screen.getByText("Project notes are local-only")).toBeInTheDocument();
+    expect(screen.getByText("build-box")).toBeInTheDocument();
   });
 });

@@ -242,4 +242,70 @@ describe("memory briefs", () => {
     expect(brief.text).not.toContain("Secret from another project");
   });
 
+
+  it("widens Ask without widening injection", async () => {
+    // The separation gate. Ask searches the whole corpus; the brief keeps its
+    // confidence gate, per-source caps and recency windows. If Ask's rules ever
+    // leak into `composeMemoryBrief`, this fails loudly.
+    const { useMemoryStore } = await loadStores();
+    const { askMemory } = await import("@/lib/memorySearch");
+    const project = "D:/projects/example";
+    const DAY = 86_400_000;
+
+    const lowConfidencePattern = {
+      id: "pat-low",
+      pattern: "Zebra handling is delegated to the sidecar",
+      category: "convention",
+      confidence: 0.3,
+      extractedAt: Date.now(),
+      projectPath: project,
+      pinned: false,
+    };
+    const oldLesson: MemoryEvent = {
+      id: "f-old",
+      type: "flight_completed",
+      timestamp: Date.now() - 10 * DAY,
+      projectPath: project,
+      payload: {
+        flightId: "fl-1",
+        flightTitle: "Zebra flight",
+        summary: "s",
+        whatWorked: [],
+        whatFailed: [],
+        lessonsLearned: ["Zebra migrations must run before boot"],
+        suggestedImprovements: [],
+        tags: [],
+      },
+    } as unknown as MemoryEvent;
+    const oldSession = sessionEvent("s-old", project, "Zebra rollout completed");
+    oldSession.timestamp = Date.now() - 3 * DAY;
+    const savedNote: MemoryEvent = {
+      id: "m-1",
+      type: "manual_note",
+      timestamp: Date.now(),
+      projectPath: project,
+      payload: { source: "manual", summary: "Zebra runbook", body: "b", tags: [] },
+    } as unknown as MemoryEvent;
+
+    const events = [oldLesson, oldSession, savedNote];
+    const patterns = [lowConfidencePattern] as never;
+    useMemoryStore.setState({ events, patterns });
+
+    const brief = useMemoryStore
+      .getState()
+      .composeMemoryBrief({ projectPath: project, kind: "local" });
+    expect(brief.text).not.toContain("Zebra");
+
+    const found = askMemory("zebra", events, patterns, [], {
+      kind: "local",
+      projectPath: project,
+    });
+    // Every source the brief refused: the low-confidence pattern, the 10-day-old
+    // flight (both its lesson and the retrospective itself), the 3-day-old
+    // session summary, and the saved note.
+    expect(new Set(found.results.map((r) => r.kind))).toEqual(
+      new Set(["pattern", "lesson", "flight", "session", "manual_note"]),
+    );
+  });
+
 });

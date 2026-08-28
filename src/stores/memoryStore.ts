@@ -12,6 +12,7 @@ import {
   unknownProvenance,
 } from "@/lib/provenance";
 import { getMemorySettings } from "@/stores/memorySettingsStore";
+import type { MemoryProjectPathMatching } from "@/stores/memorySettingsStore";
 import type {
   MemoryEvent,
   MemoryEventType,
@@ -27,7 +28,16 @@ import type { ProjectMemoryNote } from "@/types/project-memory";
 import { useProjectMemoryStore } from "@/stores/projectMemoryStore";
 
 function normalizePath(path: string): string {
-  return path.replace(/\\/g, "/").toLowerCase();
+  return (
+    path
+      .replace(/\\/g, "/")
+      .replace(/\/{2,}/g, "/")
+      // Strip trailing separators, but keep a bare "/". These are
+      // spellings of the SAME directory, and treating them as different
+      // scopes silently dropped memory under `exact` matching.
+      .replace(/(.)\/+$/, "$1")
+      .toLowerCase()
+  );
 }
 
 /** v0.8-H: kind discriminator for the structured context preview. */
@@ -380,6 +390,120 @@ export function relevanceScores(query: string, candidates: string[]): number[] {
   });
 }
 
+/** A query term's match against one candidate, best-rule-wins. */
+export interface CorpusRelevance {
+  /** 0..1 - fraction of the query's achievable IDF weight this candidate covers. */
+  score: number;
+  /** Query terms that hit, for "matched: auth, ssh" in the UI. */
+  matched: string[];
+}
+
+/** Like `relevanceTokens` but keeps 2-char tokens ("db", "ci", "pr"). */
+function corpusTokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= 2 && !RELEVANCE_STOPWORDS.has(t));
+}
+
+/** Crude English suffix strip, applied only when >=4 characters remain. */
+function stem(token: string): string {
+  const rules: Array<[string, string]> = [
+    ["ies", "y"],
+    ["ing", ""],
+    ["ed", ""],
+    ["es", ""],
+    ["s", ""],
+  ];
+  for (const [suffix, replacement] of rules) {
+    if (token.endsWith(suffix) && token.length - suffix.length + replacement.length >= 4) {
+      return token.slice(0, token.length - suffix.length) + replacement;
+    }
+  }
+  return token;
+}
+
+/** Best-rule-wins weight for one query term against one candidate. */
+function termWeight(term: string, candTokens: Set<string>, candRaw: string): number {
+  if (candTokens.has(term)) return 1;
+  const qStem = stem(term);
+  for (const c of candTokens) {
+    if (stem(c) === qStem) return 1;
+  }
+  for (const c of candTokens) {
+    const shorter = term.length <= c.length ? term : c;
+    const longer = term.length <= c.length ? c : term;
+    if (shorter.length >= 4 && longer.startsWith(shorter)) return 0.75;
+  }
+  if (candRaw.includes(term)) return 0.5;
+  return 0;
+}
+
+/**
+ * Ask-only sibling of `relevanceScores`. Same IDF shape, but a query term can
+ * match by stem, prefix, or raw substring - not just exact token identity - so
+ * "auth" finds "authentication".
+ *
+ * Deliberately separate from `relevanceScores`, which stays the injection
+ * scorer: widening what Ask can find must never widen what gets injected into
+ * an agent's prompt. Nothing on the injection path calls this.
+ */
+export function corpusRelevanceScores(query: string, candidates: string[]): CorpusRelevance[] {
+  const empty = candidates.map(() => ({ score: 0, matched: [] as string[] }));
+  const trimmed = query.trim().toLowerCase();
+  if (!trimmed || candidates.length === 0) return empty;
+
+  const rawCandidates = candidates.map((c) => c.toLowerCase());
+  const qTokens = [...new Set(corpusTokens(trimmed))];
+
+  // Degenerate query (all stopwords, or a single 1-char token): fall back to a
+  // whole-phrase substring rather than returning zeros the way the injection
+  // scorer does. Same "never lose a substring hit" contract as
+  // `searchMemoryEvents`.
+  if (qTokens.length === 0) {
+    return rawCandidates.map((raw) =>
+      raw.includes(trimmed) ? { score: 1, matched: [trimmed] } : { score: 0, matched: [] },
+    );
+  }
+
+  const candTokenSets = candidates.map((c) => new Set(corpusTokens(c)));
+  const n = candidates.length;
+
+  // Weight per (term, candidate), then IDF over the terms that discriminate.
+  const weights = qTokens.map((term) =>
+    candTokenSets.map((set, i) => termWeight(term, set, rawCandidates[i])),
+  );
+  const idf = new Map<string, number>();
+  qTokens.forEach((term, ti) => {
+    const df = weights[ti].reduce((count, w) => count + (w > 0 ? 1 : 0), 0);
+    if (df > 0) idf.set(term, Math.log(1 + n / df));
+  });
+  const scored = qTokens.filter((t) => idf.has(t));
+  const totalIdf = scored.reduce((sum, t) => sum + (idf.get(t) as number), 0);
+  if (totalIdf <= 0) return empty;
+
+  return candidates.map((_, ci) => {
+    let acc = 0;
+    const matched: string[] = [];
+    qTokens.forEach((term, ti) => {
+      if (!idf.has(term)) return;
+      const w = weights[ti][ci];
+      if (w > 0) {
+        acc += (idf.get(term) as number) * w;
+        matched.push(term);
+      }
+    });
+    const coverage = acc / totalIdf;
+    // Phrase bonus with reserved headroom: a candidate containing the whole
+    // query verbatim outranks one with the same terms scattered. Adding the
+    // bonus on top of coverage would be invisible whenever coverage already
+    // saturates at 1, which is the common case for short queries.
+    const phrase = coverage > 0 && rawCandidates[ci].includes(trimmed);
+    const score = coverage * 0.8 + (phrase ? 0.2 : 0);
+    return { score: Math.max(0, Math.min(1, score)), matched };
+  });
+}
+
 /**
  * M1: rank/filter memory events for the Timeline search box using the IDF
  * scorer (`relevanceScores`) instead of a naive substring match. Keeps any
@@ -644,6 +768,60 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
  * ranked by relevance-to-the-task blended with confidence, instead of purely by
  * confidence. Without a query, behaviour is unchanged.
  */
+/** Decides whether a recorded item's `projectPath` belongs to a given scope. */
+export type ProjectScopeMatcher = (recorded: string | undefined | null) => boolean;
+
+/**
+ * Extracted verbatim from `computeContextItems` so the Ask search path can
+ * scope results with exactly the same rules the injection path uses, without
+ * importing the injection path's caps and time windows.
+ *
+ * `matching` controls strictness:
+ *   exact  - normalized path equality (historical behaviour)
+ *   parent - either side is a prefix of the other, so sub-workspaces inherit
+ *            memory from a parent project
+ *   global - every project-scoped item matches
+ *
+ * Items with no `projectPath` (legacy / global) always match, except under an
+ * SSH scope, which only ever matches memory explicitly keyed to that
+ * workspace/server.
+ */
+export function createProjectScopeMatcher(
+  input: string | MemoryBriefScope,
+  options: { matching: MemoryProjectPathMatching },
+): ProjectScopeMatcher {
+  const scope = normalizeScopeInput(input);
+  const normalizedCurrent = normalizePath(scope.projectPath);
+  const explicitScopeKeys = new Set<string>();
+  if (scope.workspaceId) {
+    explicitScopeKeys.add(normalizePath(workspaceMemoryProjectKey(scope.workspaceId)));
+  }
+  if (scope.kind === "ssh" && scope.serverId) {
+    explicitScopeKeys.add(
+      normalizePath(remoteMemoryProjectKey(scope.serverId, scope.remotePath || scope.projectPath)),
+    );
+  }
+
+  return (recorded: string | undefined | null): boolean => {
+    if (scope.kind === "ssh") {
+      if (!recorded) return false;
+      return explicitScopeKeys.has(normalizePath(recorded));
+    }
+
+    if (!recorded) return true; // legacy/global item - always relevant
+    if (explicitScopeKeys.has(normalizePath(recorded))) return true;
+    if (options.matching === "global") return true;
+    const recordedN = normalizePath(recorded);
+    if (recordedN === normalizedCurrent) return true;
+    if (options.matching === "parent") {
+      const a = recordedN.endsWith("/") ? recordedN : recordedN + "/";
+      const b = normalizedCurrent.endsWith("/") ? normalizedCurrent : normalizedCurrent + "/";
+      return a.startsWith(b) || b.startsWith(a);
+    }
+    return false;
+  };
+}
+
 export function computeContextItems(
   events: MemoryEvent[],
   patterns: LearnedPattern[],
@@ -657,44 +835,11 @@ export function computeContextItems(
   const scope = normalizeScopeInput(input);
   if (!scope.projectPath) return [];
 
-  const normalizedCurrent = normalizePath(scope.projectPath);
-  const explicitScopeKeys = new Set<string>();
-  if (scope.workspaceId) {
-    explicitScopeKeys.add(normalizePath(workspaceMemoryProjectKey(scope.workspaceId)));
-  }
-  if (scope.kind === "ssh" && scope.serverId) {
-    explicitScopeKeys.add(
-      normalizePath(remoteMemoryProjectKey(scope.serverId, scope.remotePath || scope.projectPath)),
-    );
-  }
   const settings = getMemorySettings();
+  const projectPathsMatch = createProjectScopeMatcher(scope, {
+    matching: settings.projectPathMatching,
+  });
   const out: ContextItem[] = [];
-
-  // v0.8: `projectPathMatching` setting controls strictness.
-  //   exact  — historical behaviour: normalized path equality
-  //   parent — match when either side is a prefix of the other, so
-  //            sub-workspaces inherit memory from a parent project
-  //   global — every project-scoped item is considered a match
-  //
-  // Items with no `projectPath` (legacy / global) always match.
-  const projectPathsMatch = (recorded: string | undefined | null): boolean => {
-    if (scope.kind === "ssh") {
-      if (!recorded) return false;
-      return explicitScopeKeys.has(normalizePath(recorded));
-    }
-
-    if (!recorded) return true; // legacy/global item — always relevant
-    if (explicitScopeKeys.has(normalizePath(recorded))) return true;
-    if (settings.projectPathMatching === "global") return true;
-    const recordedN = normalizePath(recorded);
-    if (recordedN === normalizedCurrent) return true;
-    if (settings.projectPathMatching === "parent") {
-      const a = recordedN.endsWith("/") ? recordedN : recordedN + "/";
-      const b = normalizedCurrent.endsWith("/") ? normalizedCurrent : normalizedCurrent + "/";
-      return a.startsWith(b) || b.startsWith(a);
-    }
-    return false;
-  };
 
   // 1. Learned patterns. Pinned patterns sort first and are exempt
   //    from the confidence cutoff (the user pinned them, so we trust

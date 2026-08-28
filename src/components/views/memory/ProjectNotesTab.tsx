@@ -28,9 +28,14 @@ import type {
 export function ProjectNotesTab({
   projectPath,
   globalEvents,
+  remote,
 }: {
   projectPath: string | null;
   globalEvents: MemoryEvent[];
+  /** Set when the active workspace is remote. `.agents/memory` is read from
+   *  this machine's filesystem, so remote notes are not reachable - say so
+   *  rather than showing the previous local project's notes. */
+  remote?: { serverName: string; remotePath: string };
 }) {
   const snapshot = useProjectMemoryStore((state) => state.snapshot);
   const loading = useProjectMemoryStore((state) => state.loading);
@@ -189,10 +194,24 @@ export function ProjectNotesTab({
     if (saved) setSelectedId(saved.metadata.id);
   }
 
+  if (remote) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
+        <p className="text-[11px] text-text-secondary">Project notes are local-only</p>
+        <p className="max-w-[380px] text-[10px] leading-relaxed text-text-faint">
+          <span className="font-mono text-text-muted">.agents/memory</span> is read from this
+          machine&apos;s filesystem. This workspace runs on{" "}
+          <span className="text-text-muted">{remote.serverName}</span>, so its notes are not
+          reachable from here. Open the project locally to read or edit them.
+        </p>
+      </div>
+    );
+  }
+
   if (!projectPath) {
     return (
       <div className="flex flex-1 items-center justify-center text-xs text-text-muted">
-        Open a local project to use project memory.
+        Open a project to use project memory.
       </div>
     );
   }

@@ -17,8 +17,11 @@ import {
   Lightbulb,
   FileText,
   Plus,
+  Folder,
+  Server,
 } from "lucide-react";
-import { useLayoutStore } from "@/stores/layoutStore";
+import { useMemoryScope } from "@/hooks/useMemoryScope";
+import { scopeBasename } from "@/lib/memoryScope";
 import {
   useMemoryStore,
   memoryBriefStats,
@@ -26,9 +29,7 @@ import {
   filterMemoryEventsByScope,
   serializeMemoryExport,
   serializeMemoryMarkdown,
-  computeContextItems,
   type MemoryDateRange,
-  type ContextItem,
 } from "@/stores/memoryStore";
 import { computeMemoryDigest, type MemoryDigest } from "@/lib/memoryDigest";
 import { useMemorySettingsStore } from "@/stores/memorySettingsStore";
@@ -38,9 +39,12 @@ import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { ProjectNotesTab } from "./memory/ProjectNotesTab";
 import { useProjectMemoryStore } from "@/stores/projectMemoryStore";
 import {
-  unifiedMemoryResults,
+  askMemory,
+  memorySearchCountPhrase,
+  MEMORY_SEARCH_KIND_LABEL,
+  type MemorySearchKind,
   type MemorySourceFilter,
-} from "@/lib/projectMemoryRetrieval";
+} from "@/lib/memorySearch";
 import { TIMELINE_FILTERS, type FilterType } from "./memory/timelineFilters";
 import type { MemoryEvent, MemoryEventType, PatternCategory, LearnedPattern } from "@/types/memory";
 import { relativeTime } from "@/lib/time";
@@ -127,7 +131,16 @@ function formatTokenCount(n: number): string {
 }
 
 export function MemoryView() {
-  const projectPath = useLayoutStore((s) => s.projectPath);
+  // Derived from the ACTIVE WORKSPACE, not the local-only
+  // `layoutStore.projectPath` mirror. On a remote workspace that mirror still
+  // holds the last local project, which used to silently scope this whole pane
+  // - and its writes - to a different project.
+  const scope = useMemoryScope();
+  // Only for things that touch THIS machine's filesystem. Null on remote, so a
+  // local-FS Tauri command can never be handed a remote path.
+  const projectPath = scope.kind === "local" ? scope.projectPath : null;
+  const briefScope = scope.kind === "none" ? null : scope.briefScope;
+  const isRemoteScope = scope.kind === "ssh";
   const events = useMemoryStore((s) => s.events);
   const patterns = useMemoryStore((s) => s.patterns);
   const lastPatternRefreshAt = useMemoryStore((s) => s.lastPatternRefreshAt);
@@ -267,9 +280,9 @@ export function MemoryView() {
   // patterns/events are read inside composeMemoryBrief via the store's
   // get(); keep them in deps so the preview rebuilds when memory changes.
   const memoryBrief = useMemo(
-    () => (projectPath ? composeMemoryBrief({ kind: "local", projectPath }) : null),
+    () => (briefScope ? composeMemoryBrief(briefScope) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projectPath, composeMemoryBrief, patterns, events],
+    [briefScope, composeMemoryBrief, patterns, events],
   );
 
   const injectedPreview = memoryBrief?.text ?? "";
@@ -359,6 +372,30 @@ export function MemoryView() {
         <Brain size={13} className="text-accent-green" />
         <span className="text-xs font-semibold text-text-primary">Memory</span>
 
+        <span
+          title={
+            scope.kind === "ssh"
+              ? `Remote workspace on ${scope.serverName} — memory scoped to ${scope.remotePath}`
+              : scope.kind === "local"
+                ? `Memory scoped to ${scope.projectPath}`
+                : "Open a workspace to scope memory"
+          }
+          className={`inline-flex max-w-[200px] items-center gap-1 truncate rounded-full border px-2 py-0.5 text-[10px] ${
+            scope.kind === "ssh"
+              ? "border-accent-amber/40 bg-bg-elevated text-accent-amber"
+              : "border-bg-border bg-bg-elevated text-text-muted"
+          }`}
+        >
+          {scope.kind === "ssh" ? <Server size={9} /> : <Folder size={9} />}
+          <span className="truncate">
+            {scope.kind === "ssh"
+              ? `${scope.serverName} · ${scopeBasename(scope.remotePath)}`
+              : scope.kind === "local"
+                ? scopeBasename(scope.projectPath)
+                : "No project"}
+          </span>
+        </span>
+
         {isLearning ? (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-line bg-accent-soft px-2 py-0.5 text-[10px] font-medium text-accent-green">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-green" />
@@ -394,7 +431,13 @@ export function MemoryView() {
           onClick={handleAddNote}
           disabled={!projectPath}
           className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10.5px] text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary disabled:opacity-40 disabled:hover:bg-transparent"
-          title={projectPath ? "Save a note to memory" : "Open a project to add a memory"}
+          title={
+            projectPath
+              ? "Save a note to memory"
+              : isRemoteScope
+                ? "Memory capture is not available for remote workspaces yet"
+                : "Open a project to add a memory"
+          }
         >
           <Plus size={10} />
           New memory
@@ -405,8 +448,10 @@ export function MemoryView() {
           disabled={isLearning || !projectPath || refreshableCount === 0}
           className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10.5px] text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary disabled:opacity-40 disabled:hover:bg-transparent"
           title={
-            !projectPath
-              ? "Open a project to extract patterns"
+            isRemoteScope
+              ? "Pattern extraction needs local project memory — not available for remote workspaces yet"
+              : !projectPath
+                ? "Open a project to extract patterns"
               : refreshableCount === 0
                 ? "Nothing to extract from yet in this project"
                 : `Extract patterns from ${refreshableCount} memories in this project`
@@ -508,6 +553,18 @@ export function MemoryView() {
         </span>
       </div>
 
+      {isRemoteScope && scope.kind === "ssh" && (
+        <div className="border-accent-amber/40 flex flex-shrink-0 items-start gap-1.5 border-b bg-bg-elevated px-3.5 py-1.5 text-[10.5px] text-accent-amber">
+          <Server size={10} className="mt-0.5 shrink-0" />
+          <span>
+            <span className="font-semibold">Remote workspace on {scope.serverName}.</span>{" "}
+            PacketBench records memory only for local projects, so nothing below is scoped to{" "}
+            <span className="font-mono">{scope.remotePath}</span> — and nothing from your local
+            projects is shown here.
+          </span>
+        </div>
+      )}
+
       {flightFilter && (
         <div className="flex flex-shrink-0 items-center gap-1.5 border-b border-accent-line bg-accent-soft px-3.5 py-1.5 text-[10.5px] text-accent-green">
           <Sparkles size={10} />
@@ -575,7 +632,15 @@ export function MemoryView() {
       )}
 
       {activeTab === "project" && (
-        <ProjectNotesTab projectPath={projectPath} globalEvents={events} />
+        <ProjectNotesTab
+          projectPath={projectPath}
+          globalEvents={events}
+          remote={
+            scope.kind === "ssh"
+              ? { serverName: scope.serverName, remotePath: scope.remotePath }
+              : undefined
+          }
+        />
       )}
 
       {activeTab === "ask" && (
@@ -584,6 +649,8 @@ export function MemoryView() {
           patterns={patterns}
           projectPath={projectPath}
           projectNotes={projectMemoryNotes}
+          onAddNote={projectPath ? handleAddNote : undefined}
+          isRemote={isRemoteScope}
         />
       )}
 
@@ -1186,45 +1253,49 @@ function TimelineTab({
 // M8: "Ask your project" — a keyword-ranked answer over the memory corpus.
 // No LLM: reuses computeContextItems (the same query-aware ranker the launch
 // pipeline uses) so results match what would actually be injected.
-const ASK_ICON: Record<ContextItem["kind"], React.ReactNode> = {
+const ASK_ICON: Record<MemorySearchKind, React.ReactNode> = {
   pattern: <Sparkles size={11} className="text-accent-green" />,
   lesson: <Lightbulb size={11} className="text-accent-amber" />,
+  flight: <Lightbulb size={11} className="text-accent-amber" />,
   session: <FileText size={11} className="text-text-muted" />,
+  manual_note: <Edit3 size={11} className="text-text-secondary" />,
+  task: <FileText size={11} className="text-text-faint" />,
   project_note: <FileText size={11} className="text-accent-blue" />,
 };
-
 function AskTab({
   events,
   patterns,
   projectPath,
   projectNotes,
+  onAddNote,
+  isRemote,
 }: {
   events: MemoryEvent[];
   patterns: LearnedPattern[];
   projectPath: string | null;
   projectNotes: ReturnType<typeof useProjectMemoryStore.getState>["snapshot"]["notes"];
+  onAddNote?: () => void;
+  isRemote?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
   const [source, setSource] = useState<MemorySourceFilter>("all");
+  const [includeAllProjects, setIncludeAllProjects] = useState(false);
 
-  const results = useMemo(() => {
+  const outcome = useMemo(() => {
     const q = submitted.trim();
-    if (!q || !projectPath) return [];
-    return unifiedMemoryResults(
-      q,
-      computeContextItems(
-        events,
-        patterns,
-        { kind: "local", projectPath },
-        q,
-      ),
-      projectNotes,
-      { source },
-    );
-  }, [events, patterns, projectNotes, projectPath, source, submitted]);
+    if (!q || !projectPath) return null;
+    // Searches the whole corpus, not the prompt-injection budget: no
+    // confidence gate, no per-source cap, no 48h/7d recency windows.
+    return askMemory(q, events, patterns, projectNotes, { kind: "local", projectPath }, {
+      source,
+      includeAllProjects,
+    });
+  }, [events, patterns, projectNotes, projectPath, source, submitted, includeAllProjects]);
 
   const submit = () => setSubmitted(query);
+  const results = outcome?.results ?? [];
+  const searched = outcome ? memorySearchCountPhrase(outcome.counts) : "nothing";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -1265,10 +1336,23 @@ function AskTab({
             onClick={() => setSource(value)}
           />
         ))}
+        <span className="mx-1 text-line-strong">·</span>
+        <ScopeChip
+          active={includeAllProjects}
+          label="All projects"
+          title="Search memory recorded in other projects too"
+          onClick={() => setIncludeAllProjects((v) => !v)}
+        />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3.5 py-3">
-        {!projectPath ? (
+        {isRemote ? (
+          <EmptyState
+            icon={<Server size={20} className="text-text-faint" />}
+            title="Nothing to ask yet"
+            body="Memory is not recorded for remote workspaces, so there is nothing here to search. Ask from a local workspace instead."
+          />
+        ) : !projectPath ? (
           <EmptyState
             icon={<MessageSquare size={20} className="text-text-faint" />}
             title="No project open"
@@ -1278,38 +1362,71 @@ function AskTab({
           <EmptyState
             icon={<MessageSquare size={20} className="text-text-faint" />}
             title="Ask your project"
-            body="Type a question to search learned patterns and flight lessons, ranked by relevance. No AI call — this is your own memory."
+            body="Searches every learned pattern, recorded event and project note — the whole corpus, not just what gets injected into prompts. Keyword ranked, no AI call."
           />
         ) : results.length === 0 ? (
-          <EmptyState
-            icon={<Search size={20} className="text-text-faint" />}
-            title="Nothing relevant found"
-            body="No patterns or recent lessons matched that question for this project."
-          />
+          outcome && outcome.counts.entries === 0 ? (
+            <EmptyState
+              icon={<Search size={20} className="text-text-faint" />}
+              title="Nothing to search yet"
+              body="This project has no learned patterns, recorded events or project notes yet. Finish a terminal session, or add something with New memory."
+              action={
+                onAddNote ? (
+                  <button
+                    onClick={onAddNote}
+                    className="inline-flex items-center gap-1 rounded border border-bg-border px-2 py-1 text-[10px] text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary"
+                  >
+                    <Plus size={10} />
+                    Add your first memory
+                  </button>
+                ) : null
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={<Search size={20} className="text-text-faint" />}
+              title="No memory matched that"
+              body={`Searched ${searched} in this project and found nothing containing those words. Try fewer or more distinctive words.`}
+              action={
+                !includeAllProjects ? (
+                  <button
+                    onClick={() => setIncludeAllProjects(true)}
+                    className="inline-flex items-center gap-1 rounded border border-bg-border px-2 py-1 text-[10px] text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary"
+                  >
+                    Search all projects
+                  </button>
+                ) : null
+              }
+            />
+          )
         ) : (
           <div className="flex flex-col gap-1.5">
             <div className="mb-1 text-[10px] text-text-faint">
-              {results.length} result{results.length === 1 ? "" : "s"} for{" "}
+              {outcome?.truncated
+                ? `Top ${results.length} of ${outcome.totalMatches} matches for `
+                : `${results.length} result${results.length === 1 ? "" : "s"} for `}
               <span className="font-mono text-text-muted">“{submitted.trim()}”</span>
+              {" · searched "}
+              {searched}
             </div>
             {results.map((item) => (
               <div
                 key={item.id}
                 className="flex items-start gap-2 rounded border border-bg-border bg-bg-primary px-2.5 py-2"
               >
-                <span className="mt-px shrink-0">
-                  {item.kind === "project_note" ? (
-                    <FileText size={11} className="text-accent-blue" />
-                  ) : (
-                    ASK_ICON[item.kind]
-                  )}
-                </span>
+                <span className="mt-px shrink-0">{ASK_ICON[item.kind]}</span>
                 <div className="min-w-0 flex-1">
                   <div className="text-[11px] leading-snug text-text-primary">{item.title}</div>
+                  {item.detail ? (
+                    <div className="mt-0.5 truncate text-[10px] text-text-muted">{item.detail}</div>
+                  ) : null}
                   <div className="mt-0.5 text-[9.5px] text-text-faint">
-                    {item.source} · {item.reason}
+                    {MEMORY_SEARCH_KIND_LABEL[item.kind]} · {relativeTime(item.timestamp)}
+                    {item.matchedTerms.length > 0 && ` · matched ${item.matchedTerms.join(", ")}`}
                     {item.provenanceIds.length > 0 &&
-                      ` · ${item.provenanceIds.length} source ref`}
+                      ` · ${item.provenanceIds.length} source ref${
+                        item.provenanceIds.length === 1 ? "" : "s"
+                      }`}
                   </div>
                 </div>
               </div>
