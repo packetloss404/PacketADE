@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type { DictationAnalytics } from "@/types/dictation";
+import { useAppStore } from "@/stores/appStore";
 import { AnalyticsPanel } from "./AnalyticsPanel";
 
 /**
@@ -196,5 +197,29 @@ describe("AnalyticsPanel — composition", () => {
     const frame = screen.getByRole("group", { name: /Words per day/i });
     expect(frame.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
     expect(frame.querySelector("details summary")).not.toBeNull();
+  });
+});
+
+describe("AnalyticsPanel — UTC bucketing disclosure", () => {
+  afterEach(() => {
+    useAppStore.setState({ timeZone: null });
+  });
+
+  it("says the buckets are UTC when the configured zone is not", () => {
+    useAppStore.setState({ timeZone: "America/New_York" });
+    render(<AnalyticsPanel analytics={fixture()} />);
+
+    const note = screen.getByRole("note");
+    expect(note).toHaveTextContent(/counted in\s+UTC/i);
+    expect(note).toHaveTextContent("America/New_York");
+  });
+
+  // At a zero offset the UTC buckets and the locally-rendered History
+  // timestamps agree, so the note would be noise on every reload.
+  it("stays silent at UTC+00:00, where there is nothing to disagree about", () => {
+    useAppStore.setState({ timeZone: "UTC" });
+    render(<AnalyticsPanel analytics={fixture()} />);
+
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
 });

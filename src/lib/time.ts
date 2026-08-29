@@ -99,6 +99,48 @@ export function timeZoneOffsetLabel(zone: string, at: Date = new Date()): string
   }
 }
 
+/**
+ * `zone`'s UTC offset in whole minutes at `at`, or `0` when the runtime will
+ * not say.
+ *
+ * Exists so a surface can ask "does this zone actually differ from UTC?"
+ * numerically rather than by string-matching {@link timeZoneOffsetLabel}. The
+ * dictation Analytics tab uses it to decide whether its UTC-bucketing
+ * disclosure is worth showing at all — under a zero offset the buckets and the
+ * displayed timestamps agree and the note is just noise.
+ */
+export function timeZoneOffsetMinutes(zone: string, at: Date = new Date()): number {
+  try {
+    // Format the instant as if it were in `zone`, re-read it as UTC, and diff.
+    // `longOffset` parsing would be simpler but does not survive the runtimes
+    // that render a bare "GMT" for zero.
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone,
+      hour12: false,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).formatToParts(at);
+    const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+    const asUtc = Date.UTC(
+      get("year"),
+      get("month") - 1,
+      get("day"),
+      // Intl renders midnight as hour 24 in some locales/runtimes.
+      get("hour") % 24,
+      get("minute"),
+      get("second"),
+    );
+    if (!Number.isFinite(asUtc)) return 0;
+    return Math.round((asUtc - at.getTime()) / 60_000);
+  } catch {
+    return 0;
+  }
+}
+
 function fmt(ts: number | string | Date, options: Intl.DateTimeFormatOptions): string {
   const date = ts instanceof Date ? ts : new Date(ts);
   if (Number.isNaN(date.getTime())) return "";

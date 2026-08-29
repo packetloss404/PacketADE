@@ -30,7 +30,7 @@ vi.mock("@/lib/notifications", () => ({
 
 vi.mock("@/stores/memoryStore", () => ({
   useMemoryStore: {
-    getState: vi.fn(() => ({ getContextForSession: vi.fn(() => "") })),
+    getState: vi.fn(() => ({})),
   },
 }));
 

@@ -6,10 +6,12 @@
  * are no secrets on this screen, and deleting a row deletes the record, never
  * the directory or the login inside it.
  *
- * The "Log in" button here is a deliberate placeholder: it calls the
- * `onRequestLogin` prop and does nothing else. The interactive `claude login`
- * / `codex login` PTY that fills the directory is wired separately; this card
- * only owns the record.
+ * The "Log in" button performs no side effect of its own: it calls the
+ * `onRequestLogin` prop and nothing else. `ToolsView` supplies that prop and
+ * opens `AccountLoginModal`, which runs the interactive `claude login` /
+ * `codex login` PTY against the row's config dir — so the button IS wired in
+ * the app. The prop stays optional so the card renders standalone (in tests,
+ * or any surface that has no login flow) with the button disabled.
  */
 import { useEffect, useMemo, useState } from "react";
 import { FolderOpen, KeyRound, LogIn, Pencil, Plus, Trash2, UserCog } from "lucide-react";
@@ -35,10 +37,11 @@ export interface CliAccountsCardProps {
   /**
    * SEAM for the interactive login flow. Called with the account whose
    * "Log in" button was pressed; this card performs no side effect of its
-   * own. Wire it to a transient PTY running `claude login` / `codex login`
-   * with `CLI_ACCOUNT_ENV_VAR[account.cli]` set to `account.configDir`.
+   * own. `ToolsView` wires it to `AccountLoginModal`, which runs a transient
+   * PTY for `claude login` / `codex login` with
+   * `CLI_ACCOUNT_ENV_VAR[account.cli]` set to `account.configDir`.
    * Left undefined the button still renders, disabled, so the row layout
-   * does not shift once the flow is wired.
+   * does not shift on surfaces that have no login flow.
    */
   onRequestLogin?: (account: CliAccount) => void;
 }

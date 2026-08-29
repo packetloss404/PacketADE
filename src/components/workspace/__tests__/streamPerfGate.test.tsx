@@ -40,7 +40,6 @@ vi.mock("@/lib/agentsMd", () => ({ loadAgentsMd: vi.fn().mockResolvedValue(null)
 vi.mock("@/stores/memoryStore", () => ({
   useMemoryStore: {
     getState: vi.fn(() => ({
-      getContextForSession: vi.fn(() => ""),
       composeMemoryBrief: vi.fn(() => ({ text: "" })),
     })),
   },

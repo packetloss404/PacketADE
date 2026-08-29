@@ -3,9 +3,11 @@
 // Two-stage UX:
 //
 //   Stage 1: Paste. User pastes a spec / PRD / design doc into a big
-//   textarea and hits "Extract tickets". We invoke the new
-//   `issues_extract_from_spec` Tauri command which mounts a one-shot
-//   `claude-oauth` sidecar session and returns parsed
+//   textarea and hits "Extract tickets". We invoke the
+//   `issues_extract_from_spec` Tauri command, which runs a one-shot
+//   auxiliary LLM turn through `core::aux_llm` routing (the provider and
+//   model come from the "Spec import" aux-routing row, NOT from a
+//   `claude-oauth` sidecar session) and returns parsed
 //   `ExtractedIssueDraft[]`.
 //
 //   Stage 2: Review. Each draft renders as a row with title + body
@@ -17,9 +19,9 @@
 //   siblings.
 //
 // Failure modes are handled inline:
-//   - Failed AI call (sidecar error, timeout, transport): we surface the
-//     error message + a Retry button. The textarea content is preserved
-//     so the user can edit + retry without re-pasting.
+//   - Failed AI call (no configured provider, timeout, transport): we
+//     surface the error message + a Retry button. The textarea content is
+//     preserved so the user can edit + retry without re-pasting.
 //   - Failed JSON parse (model hallucinated prose): the backend returns
 //     a preview of the raw response in the error message, which we show
 //     verbatim above the Retry button.

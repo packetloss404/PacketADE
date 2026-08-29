@@ -13,7 +13,8 @@ import {
 import { useDictationStore } from "@/stores/dictationStore";
 import { useAppStore } from "@/stores/appStore";
 import { listAudioDevices, testAudioDevice } from "@/lib/tauri";
-import type { AudioDevice, AudioDeviceTestResult } from "@/types/dictation";
+import { isWindows } from "@/lib/platform";
+import { MAX_WORD_GOAL, type AudioDevice, type AudioDeviceTestResult } from "@/types/dictation";
 
 /** Mirrors `normalize_config` in `src-tauri/src/commands/dictation/config.rs`,
  *  which clamps `max_duration_seconds` to this range. Keep in sync. */
@@ -171,6 +172,22 @@ export function DictationSettingsCard() {
     updateSettings({ ...settings, autoPaste: !settings.autoPaste });
   };
 
+  /** Commit a word goal. Blank and non-numeric input is ignored rather than
+   *  written as 0 — 0 is the "no goal" value and must be typed deliberately,
+   *  not produced by clearing the field mid-edit. */
+  const handleWordGoalChange = (
+    key: "dailyWordGoal" | "weeklyWordGoal",
+    raw: string,
+  ) => {
+    if (!settings) return;
+    const value = Number(raw);
+    if (raw.trim() === "" || !Number.isFinite(value) || value < 0) return;
+    updateSettings({
+      ...settings,
+      [key]: Math.min(MAX_WORD_GOAL, Math.floor(value)),
+    });
+  };
+
   const handleAddWord = () => {
     const word = newWord.trim();
     if (!word || !settings) return;
@@ -201,6 +218,12 @@ export function DictationSettingsCard() {
   const savedDeviceMissing =
     selectedDeviceValue !== "" &&
     !deviceOptions.some((option) => option.value === selectedDeviceValue);
+  // `deliver_dictation_text` only has a native implementation on Windows; on
+  // macOS/Linux it returns a typed error and `useDictationTarget` falls back to
+  // the webview clipboard. Clipboard delivery therefore still works, but the
+  // synthetic Ctrl+V into another application cannot, so the toggle for it is
+  // disabled rather than left as a switch that silently never fires.
+  const nativePasteSupported = isWindows();
   const captureSeconds = settings?.maxDurationSeconds ?? 300;
   const captureOptions = CAPTURE_PRESETS.includes(captureSeconds)
     ? CAPTURE_PRESETS
@@ -460,11 +483,17 @@ export function DictationSettingsCard() {
       <div className="mb-4 flex items-center justify-between">
         <div>
           <div className="text-[11px] text-text-secondary" id="dictation-system-paste-label">
-            Paste into other Windows apps
+            Paste into other apps
           </div>
           <div className="text-[9px] text-text-muted">
-            Opt-in; otherwise dictation is copied to the clipboard.
-            {!settings?.autoPaste && " Requires auto-paste."}
+            {nativePasteSupported ? (
+              <>
+                Opt-in; otherwise dictation is copied to the clipboard.
+                {!settings?.autoPaste && " Requires auto-paste."}
+              </>
+            ) : (
+              "Windows only. On this system the transcript is copied to the clipboard instead — everything else about dictation works."
+            )}
           </div>
         </div>
         <button
@@ -476,19 +505,70 @@ export function DictationSettingsCard() {
               systemWidePaste: !settings.systemWidePaste,
             })
           }
-          disabled={!settings?.autoPaste}
-          aria-pressed={(settings?.systemWidePaste && settings.autoPaste) ?? false}
+          disabled={!nativePasteSupported || !settings?.autoPaste}
+          title={
+            nativePasteSupported
+              ? undefined
+              : "Native paste into another application is implemented for Windows only."
+          }
+          aria-pressed={
+            (nativePasteSupported && settings?.systemWidePaste && settings.autoPaste) ?? false
+          }
           aria-labelledby="dictation-system-paste-label"
           className={`relative h-4 w-8 shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-green ${
-            settings?.systemWidePaste && settings.autoPaste ? "bg-accent-green" : "bg-bg-border"
+            nativePasteSupported && settings?.systemWidePaste && settings.autoPaste
+              ? "bg-accent-green"
+              : "bg-bg-border"
           } disabled:opacity-40`}
         >
           <span
             className={`absolute top-0.5 h-3 w-3 rounded-full bg-text-primary transition-transform ${
-              settings?.systemWidePaste && settings.autoPaste ? "translate-x-4" : "translate-x-0.5"
+              nativePasteSupported && settings?.systemWidePaste && settings.autoPaste
+                ? "translate-x-4"
+                : "translate-x-0.5"
             }`}
           />
         </button>
+      </div>
+
+      {/* Word goals. Previously hardcoded in the backend at 500 / 2500 with no
+          control anywhere — a target the user cannot move is not a goal. */}
+      <div className="mb-4">
+        <div className="mb-1.5 text-[10px] uppercase tracking-wider text-text-muted">
+          Word goals
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="flex flex-1 items-center justify-between gap-2">
+            <span className="text-[11px] text-text-secondary">Daily</span>
+            <input
+              type="number"
+              min={0}
+              max={MAX_WORD_GOAL}
+              step={50}
+              value={settings?.dailyWordGoal ?? 0}
+              onChange={(event) => handleWordGoalChange("dailyWordGoal", event.target.value)}
+              aria-label="Daily word goal"
+              className="w-24 rounded border border-bg-border bg-bg-primary px-2 py-1 text-[11px] text-text-primary focus:border-accent-green focus:outline-none"
+            />
+          </label>
+          <label className="flex flex-1 items-center justify-between gap-2">
+            <span className="text-[11px] text-text-secondary">Weekly</span>
+            <input
+              type="number"
+              min={0}
+              max={MAX_WORD_GOAL}
+              step={100}
+              value={settings?.weeklyWordGoal ?? 0}
+              onChange={(event) => handleWordGoalChange("weeklyWordGoal", event.target.value)}
+              aria-label="Weekly word goal"
+              className="w-24 rounded border border-bg-border bg-bg-primary px-2 py-1 text-[11px] text-text-primary focus:border-accent-green focus:outline-none"
+            />
+          </label>
+        </div>
+        <p className="mt-1 text-[9px] text-text-muted">
+          Charted in Dictation → Analytics → Consistency. Set either to 0 to drop
+          that goal from the tab.
+        </p>
       </div>
 
       {/* Custom dictionary */}

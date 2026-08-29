@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Mic, MicOff, Loader2, Check, BarChart3, Clock, Search, ChevronDown, ChevronRight, AlertTriangle, X } from "lucide-react";
+import { Mic, MicOff, Loader2, Check, BarChart3, Clock, Search, ChevronDown, ChevronRight, AlertTriangle, Trash2, X } from "lucide-react";
 import { useDictationStore } from "@/stores/dictationStore";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { AnalyticsPanel } from "./dictation/AnalyticsPanel";
 import {
   DEFAULT_PUSH_TO_TALK_SHORTCUT,
@@ -35,6 +36,8 @@ export function DictationView() {
   const loadSettings = useDictationStore((s) => s.loadSettings);
   const loadModels = useDictationStore((s) => s.loadModels);
   const searchHistory = useDictationStore((s) => s.searchHistory);
+  const deleteEntry = useDictationStore((s) => s.deleteEntry);
+  const clearHistory = useDictationStore((s) => s.clearHistory);
   const clearResult = useDictationStore((s) => s.clearResult);
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -325,6 +328,8 @@ export function DictationView() {
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
               onSearch={handleSearch}
+              onDeleteEntry={deleteEntry}
+              onClearHistory={clearHistory}
             />
           )}
         </div>
@@ -349,13 +354,21 @@ function HistoryPanel({
   searchQuery,
   onSearchChange,
   onSearch,
+  onDeleteEntry,
+  onClearHistory,
 }: {
   history: DictationEntry[];
   searchQuery: string;
   onSearchChange: (q: string) => void;
   onSearch: () => void;
+  onDeleteEntry: (id: number) => Promise<boolean>;
+  onClearHistory: () => Promise<number | null>;
 }) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  // Removal is confirmed through the shared `ConfirmDeleteModal` — the repo
+  // fences `window.confirm` out of `src/` (scripts/confirm-idiom.test.mjs).
+  const [pendingDelete, setPendingDelete] = useState<DictationEntry | null>(null);
+  const [confirmingClear, setConfirmingClear] = useState(false);
 
   return (
     <div className="space-y-3 max-w-[700px]">
@@ -384,6 +397,14 @@ function HistoryPanel({
         >
           Search
         </button>
+        <button
+          type="button"
+          onClick={() => setConfirmingClear(true)}
+          disabled={history.length === 0}
+          className="px-3 py-1.5 text-[11px] text-accent-red hover:bg-accent-red/10 border border-bg-border rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-red disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          Clear all
+        </button>
       </div>
 
       {history.length === 0 ? (
@@ -397,35 +418,48 @@ function HistoryPanel({
                 key={entry.id}
                 className="bg-bg-secondary border border-bg-border rounded-lg overflow-hidden"
               >
-                <button
-                  type="button"
-                  aria-expanded={isExpanded}
-                  onClick={() => setExpandedId(isExpanded ? null : entry.id)}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-bg-hover transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-green"
-                >
-                  {isExpanded ? (
-                    <ChevronDown size={10} className="text-text-muted shrink-0" aria-hidden="true" />
-                  ) : (
-                    <ChevronRight size={10} className="text-text-muted shrink-0" aria-hidden="true" />
-                  )}
-                  <span className="text-[11px] text-text-primary truncate flex-1">
-                    {entry.text.slice(0, 80)}{entry.text.length > 80 ? "..." : ""}
-                  </span>
-                  <div className="flex items-center gap-3 shrink-0">
-                    {entry.sentiment != null && (
-                      <span className={`text-[9px] ${sentimentColor(entry.sentiment)}`}>
-                        {sentimentEmoji(entry.sentiment)}
-                      </span>
+                {/* The expand control and the delete control are siblings, not
+                    nested: a button inside a button is invalid HTML and the
+                    inner click would also toggle the row. */}
+                <div className="flex items-stretch">
+                  <button
+                    type="button"
+                    aria-expanded={isExpanded}
+                    onClick={() => setExpandedId(isExpanded ? null : entry.id)}
+                    className="min-w-0 flex-1 flex items-center gap-3 px-3 py-2 text-left hover:bg-bg-hover transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-green"
+                  >
+                    {isExpanded ? (
+                      <ChevronDown size={10} className="text-text-muted shrink-0" aria-hidden="true" />
+                    ) : (
+                      <ChevronRight size={10} className="text-text-muted shrink-0" aria-hidden="true" />
                     )}
-                    {entry.wpm != null && (
-                      <span className="text-[9px] text-accent-blue">{entry.wpm} WPM</span>
-                    )}
-                    {entry.wordCount != null && (
-                      <span className="text-[9px] text-text-muted">{entry.wordCount} words</span>
-                    )}
-                    <span className="text-[9px] text-text-muted">{formatTimestamp(entry.timestamp)}</span>
-                  </div>
-                </button>
+                    <span className="text-[11px] text-text-primary truncate flex-1">
+                      {entry.text.slice(0, 80)}{entry.text.length > 80 ? "..." : ""}
+                    </span>
+                    <div className="flex items-center gap-3 shrink-0">
+                      {entry.sentiment != null && (
+                        <span className={`text-[9px] ${sentimentColor(entry.sentiment)}`}>
+                          {sentimentEmoji(entry.sentiment)}
+                        </span>
+                      )}
+                      {entry.wpm != null && (
+                        <span className="text-[9px] text-accent-blue">{entry.wpm} WPM</span>
+                      )}
+                      {entry.wordCount != null && (
+                        <span className="text-[9px] text-text-muted">{entry.wordCount} words</span>
+                      )}
+                      <span className="text-[9px] text-text-muted">{formatTimestamp(entry.timestamp)}</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPendingDelete(entry)}
+                    aria-label={`Delete transcription: ${entry.text.slice(0, 40)}`}
+                    className="shrink-0 px-3 text-text-muted transition-colors hover:bg-accent-red/10 hover:text-accent-red focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-red"
+                  >
+                    <Trash2 size={11} aria-hidden="true" />
+                  </button>
+                </div>
                 {isExpanded && (
                   <div className="px-3 pb-3 pt-1 border-t border-bg-border">
                     <p className="text-[11px] text-text-primary leading-relaxed whitespace-pre-wrap mb-2">
@@ -451,11 +485,48 @@ function HistoryPanel({
           })}
         </div>
       )}
+
+      {pendingDelete && (
+        <ConfirmDeleteModal
+          title="Delete this transcription?"
+          entityName={excerpt(pendingDelete.text)}
+          description="is removed from the dictation history and from every analytics figure derived from it."
+          confirmLabel="Delete"
+          onConfirm={() => {
+            const id = pendingDelete.id;
+            setPendingDelete(null);
+            void onDeleteEntry(id);
+          }}
+          onClose={() => setPendingDelete(null)}
+        />
+      )}
+
+      {confirmingClear && (
+        <ConfirmDeleteModal
+          title="Clear all transcriptions?"
+          description={`Deletes every transcription in the dictation history, along with the streaks, totals and word lists computed from them. ${history.length.toLocaleString()} ${history.length === 1 ? "is" : "are"} currently listed.`}
+          warnings={["A search narrows the list, not the delete — the whole history goes."]}
+          warningTitle="This clears everything, not just what is shown"
+          confirmLabel="Clear all"
+          onConfirm={() => {
+            setConfirmingClear(false);
+            void onClearHistory();
+          }}
+          onClose={() => setConfirmingClear(false)}
+        />
+      )}
     </div>
   );
 }
 
 /* ── Shared ── */
+
+/** Name the transcript in the confirm dialog without pasting a paragraph into
+ *  it. The user has to be able to see WHICH row they are about to lose. */
+function excerpt(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > 60 ? `${flat.slice(0, 60)}…` : flat;
+}
 
 /** Render an accelerator string the way the OS labels it. Mirrors the
  *  formatting in `KeyboardShortcutsCard`. */

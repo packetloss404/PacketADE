@@ -200,10 +200,6 @@ interface MemoryStore {
    *  recorded (e.g. injection disabled, or the flight settled after a restart). */
   adjustConfidenceForFlight: (flightId: string, success: boolean) => void;
 
-  /** Context injection (live, not snapshot). Accepts either a project-path
-   * string (legacy single-arg form) or an options object so callers can
-   * pass a sessionId without breaking back-compat. */
-  getContextForSession: (input: string | { sessionId?: string; projectPath: string }) => string;
   /** Compact prompt-injection form used when launching executor/API-agent
    * sessions. It is intentionally smaller and stricter than the context
    * preview: remote SSH scopes only match memory explicitly keyed to that
@@ -967,11 +963,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 }
 
 /**
- * v0.8-H: structured context items used by both `getContextForSession`
- * (rendered preview) and `composeMemoryBrief` (prompt injection). Kept as
- * an internal module helper — the only external callers are the two store
- * methods above and the store's own unit tests; no UI surface consumes it
- * directly (MemoryView reads `getContextForSession`).
+ * v0.8-H: structured context items behind `composeMemoryBrief` (prompt
+ * injection) and `memoryBriefStats`. Kept as an internal module helper — the
+ * only external callers are the store methods above and the store's own unit
+ * tests; no UI surface consumes it directly. (It also backed the rendered
+ * `getContextForSession` preview until that method was removed as dead;
+ * MemoryView now renders the same budgeted brief the launch pipeline injects.)
  *
  * When `query` (the task/objective text) is provided, patterns and lessons are
  * ranked by relevance-to-the-task blended with confidence, instead of purely by
@@ -1713,45 +1710,6 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     set({ events, patterns });
     void persistState(events, patterns);
     return { addedEvents: merged.addedEvents, addedPatterns: merged.addedPatterns };
-  },
-
-  getContextForSession: (input) => {
-    const projectPath = typeof input === "string" ? input : input.projectPath;
-    if (!projectPath) return "";
-
-    const items = computeContextItems(
-      get().events,
-      get().patterns,
-      typeof input === "string" ? { projectPath } : input,
-      undefined,
-      projectNotesFor(typeof input === "string" ? { projectPath } : input),
-    );
-    if (items.length === 0) return "";
-
-    const lines: string[] = [];
-
-    const patternItems = items.filter((i) => i.kind === "pattern");
-    if (patternItems.length > 0) {
-      lines.push("## Learned Patterns");
-      for (const it of patternItems) lines.push(`- ${it.title}`);
-      lines.push("");
-    }
-
-    const lessonItems = items.filter((i) => i.kind === "lesson");
-    if (lessonItems.length > 0) {
-      lines.push("## Lessons from Previous Flights");
-      for (const it of lessonItems) lines.push(`- ${it.title}`);
-      lines.push("");
-    }
-
-    const sessionItems = items.filter((i) => i.kind === "session");
-    if (sessionItems.length > 0) {
-      lines.push("## Recent Session Context");
-      for (const it of sessionItems) lines.push(`- ${it.title}`);
-      lines.push("");
-    }
-
-    return lines.join("\n");
   },
 
   composeMemoryBrief: (input, options) => {

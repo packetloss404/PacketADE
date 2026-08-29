@@ -8,7 +8,7 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() =
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/agentsMd", () => ({ loadAgentsMd: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/stores/memoryStore", () => ({
-  useMemoryStore: { getState: vi.fn(() => ({ getContextForSession: vi.fn(() => "") })) },
+  useMemoryStore: { getState: vi.fn(() => ({})) },
 }));
 vi.mock("@/stores/layoutStore", () => ({
   useLayoutStore: { getState: vi.fn(() => ({ setProjectPath: vi.fn() })) },

@@ -167,6 +167,8 @@ const baseSettings: DictationSettings = {
   systemWidePaste: false,
   globalShortcutsEnabled: false,
   maxDurationSeconds: 300,
+  dailyWordGoal: 500,
+  weeklyWordGoal: 2_500,
 };
 
 function focus(element: Element) {

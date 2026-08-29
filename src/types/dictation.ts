@@ -175,7 +175,17 @@ export interface DictationSettings {
   globalShortcutsEnabled: boolean;
   /** Hard upper bound for retained PCM, clamped by the backend to 10–1800s. */
   maxDurationSeconds: number;
+  /** Words-per-day target charted in Analytics → Consistency. `0` = no goal,
+   *  which drops the bar rather than charting against an always-met target. */
+  dailyWordGoal: number;
+  /** Words-per-week target. Same `0` = no goal contract. */
+  weeklyWordGoal: number;
 }
+
+/** Ceiling the backend clamps either goal to (`MAX_WORD_GOAL` in
+ *  `src-tauri/src/commands/dictation/config.rs`). Mirrored here so the number
+ *  inputs cannot offer a value the backend will silently rewrite. */
+export const MAX_WORD_GOAL = 1_000_000;
 
 /** Default accelerator strings — kept in one place so the store, the
  *  capture UI, and the global-shortcut hook agree. Format follows

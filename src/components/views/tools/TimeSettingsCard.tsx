@@ -79,6 +79,7 @@ export function TimeSettingsCard() {
         totals — are still grouped by <span className="font-mono">UTC</span> days
         in the backend and do not yet follow this setting. Away from UTC they can
         disagree with the timestamps shown elsewhere for entries near midnight.
+        The Analytics tab says so inline rather than leaving it to this card.
       </p>
     </div>
   );

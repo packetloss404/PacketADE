@@ -34,6 +34,13 @@ pub struct DictationConfig {
     /// Hard capture ceiling. This bounds retained PCM even if a release event
     /// is missed or the frontend is temporarily unavailable.
     pub max_duration_seconds: u32,
+    /// Words-per-day target charted in Dictation → Analytics → Consistency.
+    /// `0` turns the goal off and the panel drops its bar entirely, which is
+    /// the only honest rendering of "no goal" — a bar against a target of
+    /// zero is always complete.
+    pub daily_word_goal: u32,
+    /// Words-per-week target, same contract as [`Self::daily_word_goal`].
+    pub weekly_word_goal: u32,
 }
 
 impl Default for DictationConfig {
@@ -50,12 +57,27 @@ impl Default for DictationConfig {
             toggle_shortcut: None,
             global_shortcuts_enabled: false,
             max_duration_seconds: 300,
+            daily_word_goal: DEFAULT_DAILY_WORD_GOAL,
+            weekly_word_goal: DEFAULT_WEEKLY_WORD_GOAL,
         }
     }
 }
 
+/// Shipped word-goal defaults, carried over from the values that used to be
+/// hardcoded in `analytics.rs`. They are the *starting* values only — the
+/// stored config is the authority once the user has touched the control.
+pub(crate) const DEFAULT_DAILY_WORD_GOAL: u32 = 500;
+pub(crate) const DEFAULT_WEEKLY_WORD_GOAL: u32 = 2_500;
+
+/// Upper bound on either goal. Not a real limit on ambition — it stops a
+/// fat-fingered or hand-edited `dictation.json` from producing a progress bar
+/// whose scale makes every real day render as an empty sliver.
+const MAX_WORD_GOAL: u32 = 1_000_000;
+
 fn normalize_config(mut config: DictationConfig) -> DictationConfig {
     config.max_duration_seconds = config.max_duration_seconds.clamp(10, 1_800);
+    config.daily_word_goal = config.daily_word_goal.min(MAX_WORD_GOAL);
+    config.weekly_word_goal = config.weekly_word_goal.min(MAX_WORD_GOAL);
     if config.language.trim().is_empty() {
         config.language = "auto".to_string();
     }
@@ -168,6 +190,30 @@ mod tests {
         assert_eq!(config.max_duration_seconds, 300);
         assert_eq!(config.device_id, None);
         assert_eq!(config.custom_dictionary, vec!["PacketBench"]);
+        // A config written before the goals were configurable must inherit the
+        // shipped values, not 0 — 0 means "goal off" and would silently drop
+        // both charts for every existing user.
+        assert_eq!(config.daily_word_goal, DEFAULT_DAILY_WORD_GOAL);
+        assert_eq!(config.weekly_word_goal, DEFAULT_WEEKLY_WORD_GOAL);
+    }
+
+    #[test]
+    fn word_goals_round_trip_and_zero_survives_normalization() {
+        let mut config = DictationConfig::default();
+        config.daily_word_goal = 0;
+        config.weekly_word_goal = 0;
+        let config = normalize_config(config);
+        // 0 is a meaningful value ("no goal"), so it must NOT be clamped up to
+        // the default the way an out-of-range capture limit is.
+        assert_eq!(config.daily_word_goal, 0);
+        assert_eq!(config.weekly_word_goal, 0);
+
+        let mut config = DictationConfig::default();
+        config.daily_word_goal = u32::MAX;
+        config.weekly_word_goal = u32::MAX;
+        let config = normalize_config(config);
+        assert_eq!(config.daily_word_goal, MAX_WORD_GOAL);
+        assert_eq!(config.weekly_word_goal, MAX_WORD_GOAL);
     }
 
     #[test]
