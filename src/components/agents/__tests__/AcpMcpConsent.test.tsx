@@ -98,6 +98,7 @@ function candidate(over: Partial<AcpMcpPlannedServer> = {}): AcpMcpPlannedServer
     args: [],
     included: false,
     reason: "noTrustDecision",
+    unenforced: [],
     ...over,
   };
 }
@@ -332,6 +333,61 @@ describe("AcpMcpConsent", () => {
 
     fireEvent.click(toggle);
     expect(useAgentTaskStore.getState().acpInheritEngineMcp).toBe(true);
+  });
+
+it("names the trust settings packetcode will not apply to a running server", async () => {
+    // FAULT: the MCP Hub's per-tool allowlist, read-only posture, workspace
+    // roots and denial floors are all enforced at tool-call time on the
+    // sidecar and NONE of them cross the ACP boundary — the engine owns the
+    // MCP client. Presenting both as the same guarantee is the dishonesty.
+    // It is not fixable on this transport, so it must be said out loud.
+    acpMcpPlanMock.mockResolvedValue(
+      plan({
+        posture: "explicit",
+        selected: ["github"],
+        servers: [
+          candidate({
+            included: true,
+            reason: "trusted",
+            unenforced: ["toolAllowlist", "readOnly", "workspaceRoots", "denialFloors"],
+          }),
+        ],
+      }),
+    );
+    renderConsent();
+    open();
+
+    expect(await screen.findByText(/Not enforced here/i)).toBeInTheDocument();
+    // Specific, not a vague caveat — each lapsed setting is named.
+    expect(screen.getByText(/per-tool allowlist/i)).toBeInTheDocument();
+    expect(screen.getByText(/may call tools that write/i)).toBeInTheDocument();
+    expect(screen.getByText(/workspace-root limit/i)).toBeInTheDocument();
+    expect(screen.getByText(/denial floors/i)).toBeInTheDocument();
+    // ...and it says the settings are not worthless, just not applied HERE.
+    expect(screen.getByText(/still hold on the other agent transports/i)).toBeInTheDocument();
+  });
+
+  it("says nothing about unenforced trust for a server that will not run", async () => {
+    // A server nothing starts exercises no authority, so the notice must not
+    // appear on it — otherwise it becomes wallpaper and stops being read.
+    acpMcpPlanMock.mockResolvedValue(
+      plan({ servers: [candidate({ included: false, reason: "notSelected" })] }),
+    );
+    renderConsent();
+    open();
+
+    await waitFor(() => expect(acpMcpPlanMock).toHaveBeenCalled());
+    expect(screen.queryByText(/Not enforced here/i)).not.toBeInTheDocument();
+  });
+
+  it("states the transport-level limit even before a server is allowed", async () => {
+    renderConsent();
+    open();
+
+    await waitFor(() => expect(acpMcpPlanMock).toHaveBeenCalled());
+    expect(
+      screen.getByText(/ONLY MCP limit packetcode can enforce/i),
+    ).toBeInTheDocument();
   });
 
   it("does not show a plan for a project nobody chose", () => {

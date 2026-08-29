@@ -2988,10 +2988,46 @@ export interface McpServerStatus {
   url: string | null;
   /** Whether the append-only write tool is enabled on the running server. */
   allowWrites: boolean;
+  /**
+   * The tool names the running server ACTUALLY serves, after its per-tool
+   * allowlist was applied. Reported by the backend rather than derived here so
+   * the card cannot claim a restriction the router is not enforcing. Empty
+   * when stopped.
+   */
+  servedTools: string[];
 }
 
-export async function mcpServerStart(port: number, allowWrites: boolean): Promise<McpServerStatus> {
-  return invoke<McpServerStatus>("mcp_server_start", { port, allowWrites });
+/** One tool the provider server can expose, as the Rust router defines it. */
+export interface McpProviderToolInfo {
+  name: string;
+  description: string;
+}
+
+/**
+ * The canonical provider tool catalogue, read from the Rust router.
+ *
+ * The frontend used to keep its own hardcoded copy, which had silently drifted
+ * from the router. Since `allowedTools` is now enforced, a stale catalogue
+ * would switch off tools the user was never shown — so the backend is the
+ * single source of truth for what exists.
+ */
+export async function mcpServerAvailableTools(): Promise<McpProviderToolInfo[]> {
+  return invoke<McpProviderToolInfo[]>("mcp_server_available_tools");
+}
+
+/**
+ * Start the provider server.
+ *
+ * `allowedTools` is the per-tool allowlist and is enforced by the Rust router
+ * at both `tools/list` and `tools/call`. Pass `null` to serve every tool.
+ * An empty array is a real answer — serve nothing — not an absent one.
+ */
+export async function mcpServerStart(
+  port: number,
+  allowWrites: boolean,
+  allowedTools: string[] | null,
+): Promise<McpServerStatus> {
+  return invoke<McpServerStatus>("mcp_server_start", { port, allowWrites, allowedTools });
 }
 
 export async function mcpServerStop(): Promise<McpServerStatus> {
@@ -4059,6 +4095,21 @@ export type AcpMcpReason =
   | "unsupportedTransport"
   | "commandNotResolvable";
 
+/**
+ * A trust-profile restriction that does NOT survive the ACP boundary.
+ *
+ * The packetcode engine owns the MCP client and dispatches every tool call, so
+ * PacketBench's only lever on this transport is which server configs go on the
+ * wire at `session/new`. Everything the sidecar enforces per tool call —
+ * allowlists, the read-only posture, workspace roots, the denial floors —
+ * lapses here. These tags name which of them a given server was carrying.
+ */
+export type AcpMcpUnenforced =
+  | "toolAllowlist"
+  | "readOnly"
+  | "workspaceRoots"
+  | "denialFloors";
+
 export interface AcpMcpPlannedServer {
   name: string;
   scope: string;
@@ -4067,6 +4118,8 @@ export interface AcpMcpPlannedServer {
   args: string[];
   included: boolean;
   reason: AcpMcpReason;
+  /** Restrictions ACP cannot apply to this server. Empty unless `included`. */
+  unenforced: AcpMcpUnenforced[];
 }
 
 export interface AcpMcpPlan {

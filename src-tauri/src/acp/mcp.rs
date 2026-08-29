@@ -67,6 +67,14 @@
 //! can afford an optimistic default because it still filters every call; ACP
 //! cannot filter anything, so "we were not told" has to mean "start nothing".
 //!
+//! Because the gap cannot be closed on this transport, it is DISCLOSED instead:
+//! [`AcpMcpCandidate::unenforced`] names, per included server, exactly which of
+//! that server's frozen restrictions will not be applied, and the consent pane
+//! renders them before anything starts. The alternative — rendering the MCP
+//! Hub's per-tool controls identically on both transports — presents a weaker
+//! guarantee as if it were the same one, which is the failure mode this whole
+//! module is written against.
+//!
 //! # Never start a subprocess on a guess
 //!
 //! Every server in an [`AcpMcpPosture::Explicit`] list becomes a local child
@@ -210,6 +218,45 @@ mod reason {
     pub const UNRESOLVABLE_COMMAND: &str = "commandNotResolvable";
 }
 
+/// Trust-profile restrictions that do not survive the ACP boundary.
+///
+/// Stable machine-readable tags for the same reason as `reason::*`: the UI
+/// owns the phrasing, and this list can grow if the engine ever gains a
+/// per-tool veto.
+mod unenforced {
+    /// The profile names specific tools; ACP gets the whole server.
+    pub const TOOL_ALLOWLIST: &str = "toolAllowlist";
+    /// The profile withholds writes; ACP cannot stop a mutating tool call.
+    pub const READ_ONLY: &str = "readOnly";
+    /// The profile confines path arguments to roots; ACP never sees arguments.
+    pub const WORKSPACE_ROOTS: &str = "workspaceRoots";
+    /// The credential / protected-publish / mutation floors do not apply.
+    pub const DENIAL_FLOORS: &str = "denialFloors";
+}
+
+/// Which of this server's frozen restrictions ACP will not apply.
+///
+/// Every one of these is enforced on the sidecar path (`mcpToolDenial` in
+/// `agent-sidecar/src/mcp-trust.ts`) and none of them is enforceable here, so
+/// the honest thing is to enumerate them rather than let the Hub's controls
+/// imply parity.
+fn unenforced_for(snapshot: &McpTrustSnapshot) -> Vec<String> {
+    let mut lapsed = Vec::new();
+    if !snapshot.allowed_tool_names.is_empty() {
+        lapsed.push(unenforced::TOOL_ALLOWLIST.to_string());
+    }
+    if !snapshot.allow_writes {
+        lapsed.push(unenforced::READ_ONLY.to_string());
+    }
+    if !snapshot.allowed_roots.is_empty() {
+        lapsed.push(unenforced::WORKSPACE_ROOTS.to_string());
+    }
+    if !snapshot.denial_floors.is_empty() {
+        lapsed.push(unenforced::DENIAL_FLOORS.to_string());
+    }
+    lapsed
+}
+
 /// One configured MCP server, as the disclosure surface presents it: what it
 /// is, whether this session will run it, and — when it will not — why.
 ///
@@ -234,6 +281,18 @@ pub struct AcpMcpCandidate {
     pub included: bool,
     /// One of the `reason::*` tags.
     pub reason: String,
+    /// Restrictions this server's frozen trust profile carries that ACP
+    /// CANNOT apply — one `unenforced::*` tag each. Empty unless `included`.
+    ///
+    /// FAULT this exists to stop: the MCP Hub lets a user narrow a server to a
+    /// couple of read-only tools, inside a workspace root, under the credential
+    /// and protected-publish denial floors. The sidecar honours all of that at
+    /// tool-call time. ACP cannot honour ANY of it — the packetcode engine owns
+    /// the MCP client and dispatches every tool call, so PacketBench's only
+    /// lever is which server configs go on the wire at `session/new`. Presenting
+    /// both transports as carrying the same guarantee is the dishonesty; naming
+    /// exactly what lapses, per server, is the fix that is available here.
+    pub unenforced: Vec<String>,
 }
 
 /// The whole MCP decision for one prospective session, in the form a UI can
@@ -375,6 +434,8 @@ pub fn plan_from_entries(
                 args: entry.config.args.clone(),
                 included: false,
                 reason: why.to_string(),
+                // Nothing runs, so nothing lapses.
+                unenforced: Vec::new(),
             }),
             Ok(()) => match resolve_command(&configured_command, project_path) {
                 None => servers.push(AcpMcpCandidate {
@@ -385,6 +446,7 @@ pub fn plan_from_entries(
                     args: entry.config.args.clone(),
                     included: false,
                     reason: reason::UNRESOLVABLE_COMMAND.to_string(),
+                    unenforced: Vec::new(),
                 }),
                 Some(command) => {
                     wire.push(AcpMcpServer {
@@ -409,6 +471,13 @@ pub fn plan_from_entries(
                         args: entry.config.args.clone(),
                         included: true,
                         reason: reason::TRUSTED.to_string(),
+                        // `admit` already proved a matching snapshot exists.
+                        unenforced: trust
+                            .and_then(|all| {
+                                all.iter().find(|s| s.server_name == entry.name)
+                            })
+                            .map(unenforced_for)
+                            .unwrap_or_default(),
                     });
                 }
             },
@@ -551,6 +620,76 @@ mod tests {
             .find(|c| c.name == name)
             .map(|c| c.reason.as_str())
             .unwrap_or("<missing>")
+    }
+
+/// The ACP transport enforces only the SERVER-LEVEL half of a trust
+    /// snapshot: the engine owns the MCP client and dispatches every tool call,
+    /// so PacketBench's per-tool allowlist, workspace roots and denial floors
+    /// simply do not cross the boundary. That is not fixable here — but it MUST
+    /// be visible, so an included server names exactly what lapses.
+    #[test]
+    fn an_included_server_discloses_every_restriction_acp_cannot_apply() {
+        let entry = entry("disclose", &real_executable(), "project", json!({}));
+        let mut snapshot = snapshot("disclose", true);
+        snapshot.allowed_tool_names = vec!["read_file".into(), "list_dir".into()];
+        snapshot.allow_writes = false;
+        snapshot.allowed_roots = vec!["D:\\work".into()];
+        snapshot.denial_floors = vec!["credentials".into(), "protected_publish".into()];
+
+        let plan = plan_from_entries(
+            ".",
+            vec![entry],
+            Some(&["disclose".to_string()]),
+            Some(&[snapshot]),
+        );
+        let candidate = &plan.servers[0];
+        assert!(candidate.included);
+        assert_eq!(
+            candidate.unenforced,
+            vec![
+                "toolAllowlist".to_string(),
+                "readOnly".to_string(),
+                "workspaceRoots".to_string(),
+                "denialFloors".to_string(),
+            ],
+            "every restriction the sidecar would apply must be named as lapsing"
+        );
+    }
+
+    /// A profile that restricts nothing has nothing to disclose — the notice
+    /// has to be a real signal, not decoration on every row.
+    #[test]
+    fn a_wide_open_profile_discloses_nothing() {
+        let entry = entry("wide", &real_executable(), "project", json!({}));
+        let mut snapshot = snapshot("wide", true);
+        snapshot.allowed_tool_names = Vec::new();
+        snapshot.allow_writes = true;
+        snapshot.allowed_roots = Vec::new();
+        snapshot.denial_floors = Vec::new();
+
+        let plan =
+            plan_from_entries(".", vec![entry], Some(&["wide".to_string()]), Some(&[snapshot]));
+        assert!(plan.servers[0].included);
+        assert!(plan.servers[0].unenforced.is_empty());
+    }
+
+    /// A server that never starts cannot have anything lapse, so an excluded
+    /// row must not carry a scary notice about authority nothing will exercise.
+    #[test]
+    fn an_excluded_server_discloses_nothing() {
+        let entry = entry("excluded", &real_executable(), "project", json!({}));
+        let mut snapshot = snapshot("excluded", true);
+        snapshot.allow_reads = false;
+        snapshot.allowed_tool_names = vec!["read_file".into()];
+
+        let plan = plan_from_entries(
+            ".",
+            vec![entry],
+            Some(&["excluded".to_string()]),
+            Some(&[snapshot]),
+        );
+        assert!(!plan.servers[0].included);
+        assert!(plan.servers[0].unenforced.is_empty());
     }
 
     #[test]

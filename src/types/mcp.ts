@@ -7,9 +7,19 @@ export interface McpServerConfig {
 export type McpTransport = "stdio" | "http" | "sse";
 export type McpExecutionOwner = "local" | "ssh" | "packetbench-provider";
 
+/**
+ * A doctor verdict.
+ *
+ * `notProbed` is distinct from `degraded` on purpose: `degraded` means "we
+ * checked and it is unhealthy", and applying it to a server nothing was sent
+ * to made every healthy remote server look broken — which trains users to
+ * ignore the indicator. `notProbed` says the health is UNKNOWN.
+ */
+export type McpDiagnosticState = "connected" | "degraded" | "failed" | "notProbed";
+
 export interface McpCapabilitySnapshot {
   schemaVersion: 1;
-  state: "unknown" | "connected" | "degraded" | "failed";
+  state: "unknown" | McpDiagnosticState;
   transport: McpTransport;
   latencyMs?: number;
   tools: Array<{ name: string; description: string }>;
@@ -58,7 +68,7 @@ export interface McpCatalogManifest {
 }
 
 export interface McpServerDiagnostic {
-  state: "connected" | "degraded" | "failed";
+  state: McpDiagnosticState;
   transport: McpTransport;
   latencyMs?: number;
   tools: Array<{ name: string; description: string }>;

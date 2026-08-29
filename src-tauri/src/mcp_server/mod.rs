@@ -14,7 +14,7 @@
 mod reads;
 mod transport;
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex as StdMutex};
 
 use serde::Serialize;
@@ -54,6 +54,9 @@ struct RunningServer {
     port: u16,
     token: String,
     allow_writes: bool,
+    /// The per-tool allowlist frozen at start. `None` = no allowlist was
+    /// supplied, so every tool is served (the pre-enforcement behaviour).
+    allowed_tools: Option<Arc<HashSet<String>>>,
     audit: Arc<McpAuditLog>,
 }
 
@@ -65,6 +68,10 @@ impl RunningServer {
             token: Some(self.token.clone()),
             url: Some(format!("http://127.0.0.1:{}/mcp", self.port)),
             allow_writes: self.allow_writes,
+            // Report what is ACTUALLY being served, not what was asked for, so
+            // the settings card cannot claim a restriction the router isn't
+            // applying. Sorted for a stable render.
+            served_tools: served_tool_names(self.allowed_tools.as_deref()),
         }
     }
 }
@@ -80,6 +87,9 @@ pub struct McpServerStatus {
     pub url: Option<String>,
     /// Whether the append-only write tool (`append_handoff`) is enabled.
     pub allow_writes: bool,
+    /// The tool names this run actually serves, after the per-tool allowlist
+    /// was applied. Empty when stopped.
+    pub served_tools: Vec<String>,
 }
 
 impl McpServerStatus {
@@ -90,6 +100,7 @@ impl McpServerStatus {
             token: None,
             url: None,
             allow_writes: false,
+            served_tools: Vec::new(),
         }
     }
 }
@@ -205,17 +216,27 @@ fn now_millis() -> u64 {
 /// Start the MCP server on `127.0.0.1:<port>` (pass `0` to let the OS choose a
 /// free port). Idempotent: if already running, returns the current status
 /// unchanged. Returns the bound port + freshly-minted bearer token.
+///
+/// `allowed_tools` is the per-tool allowlist, frozen for the life of the run
+/// (like `port` and `allow_writes`, the card requires a stop to change it).
+/// `None` means no allowlist was supplied and every tool is served. An empty
+/// list is a REAL answer — "serve no tools" — not an absent one, which is why
+/// this is `Option<Vec<_>>` and not a bare `Vec<_>`.
 #[tauri::command]
 pub async fn mcp_server_start(
     app: tauri::AppHandle,
     state: tauri::State<'_, McpServerState>,
     port: u16,
     allow_writes: bool,
+    allowed_tools: Option<Vec<String>>,
 ) -> Result<McpServerStatus, String> {
     let mut guard = state.inner.lock().await;
     if let Some(running) = guard.as_ref() {
         return Ok(running.status());
     }
+
+    let allowed_tools: Option<Arc<HashSet<String>>> = allowed_tools
+        .map(|names| Arc::new(names.into_iter().collect::<HashSet<String>>()));
 
     let token = generate_token();
     let cancel = CancellationToken::new();
@@ -226,6 +247,7 @@ pub async fn mcp_server_start(
         cancel.clone(),
         audit.clone(),
         allow_writes,
+        allowed_tools.clone(),
     )
     .await
     .map_err(|e| format!("Failed to start MCP server: {e}"))?;
@@ -235,6 +257,7 @@ pub async fn mcp_server_start(
         port: bound_port,
         token,
         allow_writes,
+        allowed_tools,
         audit,
     };
     let status = running.status();
@@ -276,6 +299,52 @@ pub async fn mcp_server_recent_activity(
 ) -> Result<Vec<AuditEntry>, String> {
     let guard = state.inner.lock().await;
     Ok(guard.as_ref().map(|r| r.audit.recent()).unwrap_or_default())
+}
+
+/// Every tool this build's MCP server can serve, as the router actually
+/// defines them.
+///
+/// FAULT this exists to prevent: the settings card used to keep its own
+/// hardcoded copy of the tool list, which had already drifted from the router
+/// (it was missing `ping` and the three coordination-inbox tools). An
+/// allowlist checked against a stale catalogue would silently switch off tools
+/// the user never saw, so the catalogue is read from the router itself and the
+/// UI cannot disagree with what is enforced.
+#[tauri::command]
+pub async fn mcp_server_available_tools() -> Result<Vec<McpToolInfo>, String> {
+    Ok(PacketBenchMcp::tool_router()
+        .list_all()
+        .into_iter()
+        .map(|tool| McpToolInfo {
+            name: tool.name.to_string(),
+            description: tool
+                .description
+                .as_ref()
+                .map(|d| d.to_string())
+                .unwrap_or_default(),
+        })
+        .collect())
+}
+
+/// One row of the tool catalogue the settings card renders toggles for.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpToolInfo {
+    pub name: String,
+    pub description: String,
+}
+
+/// The tool names a run with this allowlist actually serves, sorted.
+/// `None` (no allowlist) means the full router.
+fn served_tool_names(allowed: Option<&HashSet<String>>) -> Vec<String> {
+    let mut names: Vec<String> = PacketBenchMcp::tool_router()
+        .list_all()
+        .into_iter()
+        .map(|tool| tool.name.to_string())
+        .filter(|name| allowed.is_none_or(|set| set.contains(name)))
+        .collect();
+    names.sort();
+    names
 }
 
 // === MCP handler ===
@@ -427,9 +496,44 @@ pub struct PacketBenchMcp {
 
 #[tool_router]
 impl PacketBenchMcp {
-    pub fn new(audit: Arc<McpAuditLog>, allow_writes: bool) -> Self {
+    /// Build a per-session handler.
+    ///
+    /// FAULT this fixes: `allowedTools` was persisted settings that reached
+    /// nothing. Every provider tool was served to any authenticated client and
+    /// the only real gate was `allow_writes`, so a user who had narrowed the
+    /// tool list was reading a restriction the server did not apply.
+    ///
+    /// Enforcement is `ToolRouter::disable_route`, which is the fail-closed
+    /// primitive for exactly this: a disabled route is hidden from
+    /// `tools/list` AND rejected by `tools/call` ("tool not found"). Doing it
+    /// on the router rather than inside each tool body means a tool added
+    /// later is covered by construction — there is no per-tool check anyone
+    /// can forget to write.
+    ///
+    /// `None` = no allowlist supplied, serve everything (the behaviour before
+    /// enforcement existed). `Some(empty)` is an answer, not an absence: it
+    /// serves nothing.
+    pub fn new(
+        audit: Arc<McpAuditLog>,
+        allow_writes: bool,
+        allowed_tools: Option<&HashSet<String>>,
+    ) -> Self {
+        let mut tool_router = Self::tool_router();
+        if let Some(allowed) = allowed_tools {
+            // Collect first: `list_all` borrows the router we are about to
+            // mutate.
+            let denied: Vec<String> = tool_router
+                .list_all()
+                .into_iter()
+                .map(|tool| tool.name.to_string())
+                .filter(|name| !allowed.contains(name))
+                .collect();
+            for name in denied {
+                tool_router.disable_route(name);
+            }
+        }
         Self {
-            tool_router: Self::tool_router(),
+            tool_router,
             audit,
             allow_writes,
         }
@@ -878,5 +982,127 @@ impl ServerHandler for PacketBenchMcp {
                 Some(serde_json::json!({ "uri": request.uri })),
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod allowlist_tests {
+    use super::*;
+
+    fn allow(names: &[&str]) -> HashSet<String> {
+        names.iter().map(|n| n.to_string()).collect()
+    }
+
+    fn handler(allowed: Option<&HashSet<String>>) -> PacketBenchMcp {
+        PacketBenchMcp::new(Arc::new(McpAuditLog::detached()), false, allowed)
+    }
+
+    fn visible(handler: &PacketBenchMcp) -> Vec<String> {
+        handler
+            .tool_router
+            .list_all()
+            .into_iter()
+            .map(|t| t.name.to_string())
+            .collect()
+    }
+
+    /// The catalogue the settings card renders MUST be the router's own list.
+    /// The old hardcoded frontend copy had already drifted — it never listed
+    /// `ping` or the coordination-inbox tools — and an allowlist checked
+    /// against a stale catalogue silently switches off working tools.
+    #[test]
+    fn the_catalogue_is_the_router_itself() {
+        let names = served_tool_names(None);
+        for expected in [
+            "ping",
+            "get_active_flight",
+            "append_handoff",
+            "read_coordination_inbox",
+            "post_coordination_message",
+            "acknowledge_coordination_message",
+        ] {
+            assert!(
+                names.iter().any(|n| n == expected),
+                "{expected} missing from the catalogue: {names:?}"
+            );
+        }
+        // Sorted, so the card renders in a stable order.
+        let mut sorted = names.clone();
+        sorted.sort();
+        assert_eq!(names, sorted);
+    }
+
+    /// No allowlist = the pre-enforcement behaviour, unchanged.
+    #[test]
+    fn absent_allowlist_serves_every_tool() {
+        let all = visible(&handler(None));
+        assert_eq!(all.len(), served_tool_names(None).len());
+        assert!(all.iter().any(|n| n == "get_active_flight"));
+    }
+
+    /// DENIAL PATH: a tool outside the allowlist is hidden from `tools/list`.
+    /// A client that cannot see it cannot be tempted to call it.
+    #[test]
+    fn tools_outside_the_allowlist_are_not_advertised() {
+        let allowed = allow(&["get_active_flight", "list_workspaces"]);
+        let names = visible(&handler(Some(&allowed)));
+        assert_eq!(names.len(), 2, "only the allowed tools survive: {names:?}");
+        assert!(names.iter().any(|n| n == "get_active_flight"));
+        assert!(names.iter().any(|n| n == "list_workspaces"));
+        assert!(
+            !names.iter().any(|n| n == "read_task_details"),
+            "a denied tool must not be advertised: {names:?}"
+        );
+    }
+
+    /// DENIAL PATH, the load-bearing half: hiding a tool from `tools/list` is
+    /// cosmetic if the call still lands. `disable_route` is what makes both
+    /// true at once — `ToolRouter::call` checks the disabled set before it
+    /// looks the route up — so assert the name really landed in that set.
+    /// The over-the-wire proof that the call is refused lives in
+    /// `transport::tests::the_allowlist_is_enforced_over_the_wire`.
+    #[test]
+    fn a_denied_tool_is_disabled_not_merely_hidden() {
+        let allowed = allow(&["get_active_flight"]);
+        let h = handler(Some(&allowed));
+        assert!(
+            h.tool_router.is_disabled("ping"),
+            "a denied tool must be disabled, which is what `call` rejects on"
+        );
+        assert!(
+            !h.tool_router.has_route("ping"),
+            "a denied tool must not be routable"
+        );
+        assert!(
+            h.tool_router.has_route("get_active_flight"),
+            "the gate is a filter, not a blanket failure"
+        );
+    }
+
+    /// An empty allowlist is an ANSWER ("serve nothing"), not a missing one.
+    /// Treating it as absent would fail open on the strictest setting there is.
+    #[test]
+    fn an_empty_allowlist_serves_nothing() {
+        let allowed = allow(&[]);
+        assert!(visible(&handler(Some(&allowed))).is_empty());
+        assert!(served_tool_names(Some(&allowed)).is_empty());
+    }
+
+    /// A name nobody serves cannot conjure a tool into existence.
+    #[test]
+    fn unknown_names_in_the_allowlist_grant_nothing() {
+        let allowed = allow(&["get_active_flight", "definitely_not_a_tool"]);
+        assert_eq!(visible(&handler(Some(&allowed))), vec!["get_active_flight"]);
+    }
+
+    /// The status the card reads back must describe what is actually served,
+    /// so the UI cannot report a restriction the router is not applying.
+    #[test]
+    fn served_tools_reports_the_effective_list() {
+        let allowed = allow(&["ping", "list_workspaces"]);
+        assert_eq!(
+            served_tool_names(Some(&allowed)),
+            vec!["list_workspaces".to_string(), "ping".to_string()]
+        );
     }
 }

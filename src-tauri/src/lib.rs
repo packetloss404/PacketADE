@@ -594,6 +594,7 @@ pub fn run() {
             mcp_server::mcp_server_stop,
             mcp_server::mcp_server_status,
             mcp_server::mcp_server_recent_activity,
+            mcp_server::mcp_server_available_tools,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
