@@ -46,6 +46,7 @@ import {
   type AcpMcpPlannedServer,
   type AcpMcpReason,
   type AcpMcpServerStatus,
+  type AcpMcpUnenforced,
 } from "@/lib/tauri";
 import { logSwallowed } from "@/lib/logSwallowed";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
@@ -80,6 +81,25 @@ const REASON_COPY: Record<AcpMcpReason, string> = {
   trustDeniesServer: "Its trust profile withholds reads.",
   unsupportedTransport: "packetcode's ACP surface runs stdio servers only.",
   commandNotResolvable: "Its command could not be resolved to an executable.",
+};
+
+/**
+ * How each lapsed restriction reads to a person.
+ *
+ * FAULT this exists to stop: the MCP Hub offers per-tool allowlists, a
+ * read-only posture, workspace roots and non-overridable denial floors, and
+ * says trust is "frozen into each PacketBench-managed MCP session". On the
+ * sidecar that is true at tool-call time. On ACP none of it applies — the
+ * engine owns the MCP client — so the same controls were presenting a
+ * materially weaker guarantee as if it were the same one. It is not fixable on
+ * this transport without a per-tool veto the engine does not offer, so the
+ * honest remedy is to name exactly what lapses, per server, before it runs.
+ */
+const UNENFORCED_COPY: Record<AcpMcpUnenforced, string> = {
+  toolAllowlist: "your per-tool allowlist — it may call any tool this server offers",
+  readOnly: "the read-only setting — it may call tools that write",
+  workspaceRoots: "the workspace-root limit — tool arguments are not checked",
+  denialFloors: "the credential and protected-publish denial floors",
 };
 
 /**
@@ -299,7 +319,10 @@ export function AcpMcpConsent({ projectPath, caps }: AcpMcpConsentProps) {
           <p className="px-2 pb-1.5 text-meta leading-snug text-text-muted">
             Each allowed server is a program the packetcode engine starts on this machine.
             Nothing starts unless it is allowed here — and an answer given here applies to
-            every agent transport, not just packetcode.
+            every agent transport, not just packetcode. Allowing a server is the ONLY MCP
+            limit packetcode can enforce, though: it owns the MCP client and dispatches
+            every tool call, so the finer trust settings do not reach it. Each allowed
+            server below says which of its own settings lapse.
           </p>
 
           {!projectPath && (
@@ -388,6 +411,16 @@ export function AcpMcpConsent({ projectPath, caps }: AcpMcpConsentProps) {
                     <p className="mt-0.5 text-meta leading-snug text-text-secondary">
                       {REASON_COPY[candidate.reason]}
                     </p>
+                    {candidate.unenforced.length > 0 && (
+                      <p className="mt-1 rounded border border-accent-amber/30 bg-accent-amber/5 px-1.5 py-1 text-meta leading-snug text-text-secondary">
+                        <span className="font-medium text-accent-amber">
+                          Not enforced here:
+                        </span>{" "}
+                        packetcode runs this server itself, so PacketBench cannot apply{" "}
+                        {candidate.unenforced.map((tag) => UNENFORCED_COPY[tag]).join("; ")}.
+                        Those settings still hold on the other agent transports.
+                      </p>
+                    )}
                     {(candidate.included || fixable) && (
                       <div className="mt-1 flex items-center gap-1">
                         {!candidate.included && fixable && (

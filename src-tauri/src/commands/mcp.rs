@@ -247,15 +247,43 @@ pub async fn diagnose_mcp_server(
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64;
-    if transport != "stdio" {
+    // FAULT this fixes: every non-stdio server used to be reported as
+    // `degraded` without a single byte being sent to it. `degraded` reads as
+    // "we checked and it is unhealthy", so a perfectly healthy remote server
+    // was shown as a problem — which teaches users that the indicator means
+    // nothing and to ignore a real `degraded` when it appears.
+    //
+    // The doctor is a LOCAL stdio prober (`McpClient` is `Child` + stdin +
+    // stdout by construction) and there is no HTTP MCP client in this build to
+    // probe with. So report the truth — not probed — instead of inventing a
+    // verdict. `notProbed` is a distinct state precisely so it cannot be
+    // confused with a measured failure.
+    if transport == "http" || transport == "sse" {
         return Ok(McpServerDiagnostic {
-            state: "degraded".to_string(),
+            state: "notProbed".to_string(),
             transport,
+            // No latency: nothing was timed, and a number here would imply
+            // something was.
             latency_ms: None,
             tools: Vec::new(),
-            message:
-                "This build preserves remote MCP config but the local doctor probes stdio only."
-                    .to_string(),
+            message: "Not probed — the local doctor speaks stdio only, so this server's health is unknown rather than bad."
+                .to_string(),
+            compatibility_version: "2024-11-05".to_string(),
+            checked_at,
+        });
+    }
+    // An unrecognised `type` is a malformed config, not a remote server. It
+    // used to be swept into the same "remote, not probed" answer, which sent
+    // the user looking for a network problem instead of a typo.
+    if transport != "stdio" {
+        return Ok(McpServerDiagnostic {
+            state: "failed".to_string(),
+            transport: transport.clone(),
+            latency_ms: None,
+            tools: Vec::new(),
+            message: format!(
+                "Unknown transport type {transport:?}. Expected \"stdio\", \"http\", or \"sse\"."
+            ),
             compatibility_version: "2024-11-05".to_string(),
             checked_at,
         });
@@ -542,5 +570,98 @@ mod tests {
         assert_eq!(saved["mcpServers"]["untouched"]["command"], "keep-command");
 
         let _ = fs::remove_dir_all(project_dir);
+    }
+
+    /// Write a project-scope `.mcp.json` holding one server entry named
+    /// `probe-me`, and return the project dir.
+    fn project_with_server(test_name: &str, entry: serde_json::Value) -> std::path::PathBuf {
+        let dir = temp_project_dir(test_name);
+        let config = serde_json::json!({ "mcpServers": { "probe-me": entry } });
+        fs::write(
+            dir.join(".mcp.json"),
+            serde_json::to_string_pretty(&config).expect("config serializes"),
+        )
+        .expect("config written");
+        dir
+    }
+
+    /// Run the doctor against a project-scope server.
+    async fn diagnose(dir: &std::path::Path) -> McpServerDiagnostic {
+        diagnose_mcp_server(
+            dir.to_string_lossy().into_owned(),
+            "probe-me".to_string(),
+            "project".to_string(),
+        )
+        .await
+        .expect("diagnostic returns")
+    }
+
+    /// DENIAL OF A FALSE VERDICT: an `http` server must not be reported as
+    /// `degraded`. Nothing was sent to it, so its health is unknown — and
+    /// `degraded` reads as "measured and unhealthy", which trains users to
+    /// ignore the indicator entirely.
+    #[tokio::test]
+    async fn http_servers_report_not_probed_rather_than_a_false_degraded() {
+        let dir = project_with_server("http-not-probed", serde_json::json!({
+            "type": "http",
+            "url": "https://example.com/mcp",
+        }));
+        let result = diagnose(&dir).await;
+        assert_eq!(result.state, "notProbed");
+        assert_eq!(result.transport, "http");
+        assert_ne!(result.state, "degraded", "must not claim a measured failure");
+        // No latency: a number would imply something was actually timed.
+        assert!(result.latency_ms.is_none());
+        assert!(
+            result.message.contains("Not probed"),
+            "message must say what happened: {}",
+            result.message
+        );
+    }
+
+    /// Same for the deprecated `sse` transport.
+    #[tokio::test]
+    async fn sse_servers_report_not_probed_too() {
+        let dir = project_with_server("sse-not-probed", serde_json::json!({
+            "type": "sse",
+            "url": "https://example.com/sse",
+        }));
+        let result = diagnose(&dir).await;
+        assert_eq!(result.state, "notProbed");
+        assert_eq!(result.transport, "sse");
+    }
+
+    /// A typo'd `type` is a malformed config, not a remote server. It used to
+    /// be swept into the same "remote" answer, which sent the user hunting a
+    /// network problem instead of a spelling mistake.
+    #[tokio::test]
+    async fn an_unknown_transport_is_a_config_failure_not_a_remote_server() {
+        let dir = project_with_server("unknown-transport", serde_json::json!({
+            "type": "stdioo",
+            "command": "echo",
+        }));
+        let result = diagnose(&dir).await;
+        assert_eq!(result.state, "failed");
+        assert!(
+            result.message.contains("Unknown transport"),
+            "message must name the real problem: {}",
+            result.message
+        );
+    }
+
+    /// The stdio path is untouched: a server that cannot be spawned is still a
+    /// real, measured `failed`.
+    #[tokio::test]
+    async fn stdio_servers_are_still_actually_probed() {
+        let dir = project_with_server("stdio-still-probed", serde_json::json!({
+            "command": "definitely-not-an-executable-packetbench-test",
+        }));
+        let result = diagnose(&dir).await;
+        assert_eq!(result.transport, "stdio");
+        assert_eq!(
+            result.state, "failed",
+            "an unspawnable stdio server is a measured failure"
+        );
+        assert_ne!(result.state, "notProbed", "stdio IS probed");
     }
 }

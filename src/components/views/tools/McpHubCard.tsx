@@ -301,16 +301,32 @@ export function McpHubCard() {
                           <span className="rounded bg-bg-elevated px-1 py-0.5 text-[9px] text-text-muted">
                             {server.scope}
                           </span>
+                          {/* `notProbed` reads as "not probed" and never as a
+                              measured verdict: the doctor speaks stdio only,
+                              so an http/sse server's health is UNKNOWN. It
+                              used to be reported as `degraded`, which made
+                              every healthy remote server look broken and
+                              taught users to ignore the chip entirely.
+                              `degraded` now gets its own amber so a real
+                              measured problem is visually distinct from both
+                              "fine" and "not checked". The message rides on
+                              the title so the explanation outlives the
+                              transient notice banner. */}
                           <span
+                            title={diagnostic?.message}
                             className={`text-[9px] ${
                               diagnostic?.state === "connected"
                                 ? "text-accent-green"
                                 : diagnostic?.state === "failed"
                                   ? "text-accent-red"
-                                  : "text-text-muted"
+                                  : diagnostic?.state === "degraded"
+                                    ? "text-accent-amber"
+                                    : "text-text-muted"
                             }`}
                           >
-                            {diagnostic?.state ?? "not diagnosed"}
+                            {diagnostic?.state === "notProbed"
+                              ? "not probed"
+                              : (diagnostic?.state ?? "not diagnosed")}
                             {diagnostic?.latencyMs !== undefined
                               ? ` · ${diagnostic.latencyMs} ms`
                               : ""}
@@ -411,6 +427,22 @@ export function McpHubCard() {
                       <TriangleAlert size={9} className="mt-0.5 shrink-0" />
                       Credential, outside-workspace, and protected publish operations remain
                       blocked. Start or reconnect a session to apply changes.
+                    </div>
+                    {/* The controls above are enforced per tool call by the
+                        Rust in-process runtime and by the Node sidecar. They
+                        are NOT enforced on the packetcode (ACP) transport: that
+                        engine owns the MCP client and dispatches every tool call
+                        itself, so PacketBench's only lever there is whether the
+                        server runs at all. Saying so here — next to the controls
+                        that imply otherwise — is the point. */}
+                    <div className="mt-1 flex items-start gap-1 text-[9px] text-accent-amber">
+                      <TriangleAlert size={9} className="mt-0.5 shrink-0" />
+                      <span>
+                        <span className="font-medium">packetcode (ACP) sessions apply only</span>{" "}
+                        the allow/deny decision for the whole server — the per-tool, root and
+                        denial-floor settings above do not reach it. Its MCP pane lists what
+                        lapses before a session starts.
+                      </span>
                     </div>
                   </div>
                 );

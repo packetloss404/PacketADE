@@ -109,14 +109,17 @@ calls `tools/list`, and shuts it down, reporting one of:
 | --- | --- |
 | `connected` | Handshake and `tools/list` succeeded. Latency and the tool list are shown. |
 | `degraded` | The process started but the handshake or listing failed; the error text is shown. |
-| `failed` | The process could not be spawned at all. |
+| `failed` | The process could not be spawned at all, or the entry's `type` is not a transport PacketBench recognises. |
+| `notProbed` | Nothing was checked. Shown as **not probed**; the server's health is unknown, not bad. |
 
 The compatibility version reported is `2024-11-05`.
 
-> **Warning:** The doctor probes **stdio only**. An `http` or `sse` server
-> reports `degraded` with "This build preserves remote MCP config but the local
-> doctor probes stdio only" — that is a limitation of the diagnostic, not a
-> statement about the server.
+> **Note:** The doctor probes **stdio only** — it spawns the process and speaks
+> JSON-RPC over its pipes, and this build has no HTTP MCP client to probe with.
+> An `http` or `sse` server therefore reports `notProbed`, **not** `degraded`.
+> The distinction matters: `degraded` means "checked, and unhealthy", so using
+> it for a server nothing was sent to made every healthy remote server look
+> broken. `notProbed` says the health is unknown.
 
 Diagnosing also seeds the default trust profile: tools whose names do not look
 mutating are pre-granted, everything else is not.

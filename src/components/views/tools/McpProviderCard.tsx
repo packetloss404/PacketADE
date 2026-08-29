@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { RadioTower, RefreshCw, Copy, Activity } from "lucide-react";
+import { RadioTower, RefreshCw, Copy, Activity, Check } from "lucide-react";
 import { useMcpProviderStore } from "@/stores/mcpProviderStore";
 import type { McpActivityEntry } from "@/lib/tauri";
 
@@ -14,6 +14,9 @@ export function McpProviderCard() {
   const setEnabled = useMcpProviderStore((s) => s.setEnabled);
   const setPort = useMcpProviderStore((s) => s.setPort);
   const setAllowWrites = useMcpProviderStore((s) => s.setAllowWrites);
+  const tools = useMcpProviderStore((s) => s.tools);
+  const toggleTool = useMcpProviderStore((s) => s.toggleTool);
+  const syncAvailableTools = useMcpProviderStore((s) => s.syncAvailableTools);
   const syncServerStatus = useMcpProviderStore((s) => s.syncServerStatus);
   const refreshActivity = useMcpProviderStore((s) => s.refreshActivity);
   const pushActivity = useMcpProviderStore((s) => s.pushActivity);
@@ -23,8 +26,15 @@ export function McpProviderCard() {
 
   useEffect(() => {
     refreshResources();
+    void syncAvailableTools();
     void syncServerStatus();
-  }, [refreshResources, syncServerStatus]);
+  }, [refreshResources, syncAvailableTools, syncServerStatus]);
+
+  // `null` = no per-tool decision yet, which serves everything. Render that as
+  // "all checked" so the checkbox state matches what the server actually does.
+  const allowed = config.allowedTools;
+  const isAllowed = (name: string) => allowed === null || allowed.includes(name);
+  const allowedCount = tools.filter((t) => isAllowed(t.name)).length;
 
   // Live audit feed: fetch the backlog once running, then stream new accesses.
   useEffect(() => {
@@ -170,6 +180,72 @@ export function McpProviderCard() {
             }`}
           />
         </button>
+      </div>
+
+      {/* Per-tool allowlist.
+
+          FAULT this fixes: these toggles used to exist, were persisted, and
+          reached nothing — `mcp_server_start` only ever received the port and
+          the allow-writes flag, so every provider tool was served to any
+          authenticated client. They were then removed from the card, which
+          left the settings persisted and still reading as a restriction.
+
+          They are back because the Rust router now enforces them at BOTH
+          `tools/list` and `tools/call` (`ToolRouter::disable_route`). The
+          catalogue is read from the router itself, never hardcoded here, so
+          the list shown can't drift from the list enforced. */}
+      <div className="mb-4 rounded-lg border border-bg-border bg-bg-primary px-3 py-2">
+        <div className="mb-1 flex items-center justify-between">
+          <span className="text-[11px] text-text-secondary">Available Tools</span>
+          <span className="text-[10px] text-text-muted">
+            {tools.length === 0 ? "reading…" : `${allowedCount} of ${tools.length}`}
+          </span>
+        </div>
+        <p className="mb-2 text-[10px] leading-snug text-text-muted">
+          {running
+            ? "Frozen for this run — stop the server to change which tools it serves."
+            : "Unchecked tools are neither listed to nor callable by connected clients."}
+        </p>
+        {tools.length === 0 ? (
+          <div className="text-[10px] text-text-muted">
+            Could not read the tool list from the backend, so none is claimed here.
+          </div>
+        ) : (
+          <div className="max-h-44 space-y-0.5 overflow-y-auto">
+            {tools.map((tool) => {
+              const on = isAllowed(tool.name);
+              return (
+                <button
+                  key={tool.name}
+                  onClick={() => toggleTool(tool.name)}
+                  disabled={running}
+                  title={running ? "Stop the server to change this" : tool.description}
+                  className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[10px] transition-colors ${
+                    running ? "cursor-not-allowed opacity-50" : "hover:bg-bg-elevated"
+                  }`}
+                >
+                  <span
+                    className={`flex h-3 w-3 shrink-0 items-center justify-center rounded-sm border ${
+                      on
+                        ? "border-accent-green bg-accent-green"
+                        : "border-bg-border bg-bg-secondary"
+                    }`}
+                  >
+                    {on && <Check size={8} className="text-bg-primary" />}
+                  </span>
+                  <code className="shrink-0 text-text-primary">{tool.name}</code>
+                  <span className="truncate text-text-muted">{tool.description}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {running && serverStatus && (
+          <div className="mt-1.5 border-t border-bg-border pt-1.5 text-[10px] text-text-muted">
+            Serving {serverStatus.servedTools.length} tool
+            {serverStatus.servedTools.length === 1 ? "" : "s"}.
+          </div>
+        )}
       </div>
 
       {/* Live activity — tool calls / resource reads from external clients */}

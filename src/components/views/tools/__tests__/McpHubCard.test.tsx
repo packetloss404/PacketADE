@@ -5,6 +5,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useMcpStore } from "@/stores/mcpStore";
 import { useMcpTrustStore } from "@/stores/mcpTrustStore";
 import { useProvenanceAuditStore } from "@/stores/provenanceAuditStore";
+import { diagnoseMcpServer } from "@/lib/tauri";
 
 vi.mock("../McpServersCard", () => ({
   McpServersCard: () => <div>Configured servers editor</div>,
@@ -88,5 +89,62 @@ describe("McpHubCard", () => {
       screen.getByText(/Credential, outside-workspace, and protected publish/i),
     ).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Write" })).not.toBeChecked();
+  });
+
+  it("admits that packetcode sessions apply only the server-level decision", () => {
+    // FAULT: these controls are enforced per tool call on the in-process and
+    // sidecar transports and not at all on ACP, where the engine owns the MCP
+    // client. Rendering them identically presented a weaker guarantee as the
+    // same one.
+    render(<McpHubCard />);
+    expect(
+      screen.getByText(/packetcode \(ACP\) sessions apply only/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/per-tool, root and denial-floor settings above do not reach it/i),
+    ).toBeInTheDocument();
+  });
+
+  it("reports an unprobed remote server as 'not probed', never as degraded", async () => {
+    // FAULT: an http/sse server used to be reported `degraded` without a byte
+    // being sent to it. `degraded` reads as "measured and unhealthy", so every
+    // healthy remote server looked broken — which trains users to ignore the
+    // indicator, including when it means something.
+    vi.mocked(diagnoseMcpServer).mockResolvedValue({
+      state: "notProbed",
+      transport: "http",
+      tools: [],
+      message: "Not probed — the local doctor speaks stdio only.",
+      compatibilityVersion: "2024-11-05",
+      checkedAt: 1,
+    });
+
+    render(<McpHubCard />);
+    fireEvent.click(screen.getByRole("button", { name: /Diagnose/ }));
+
+    expect(await screen.findByText("not probed")).toBeInTheDocument();
+    expect(screen.queryByText("degraded")).not.toBeInTheDocument();
+    // No latency suffix: nothing was timed, and a number would imply it was.
+    expect(screen.queryByText(/ms/)).not.toBeInTheDocument();
+  });
+
+  it("still shows a real measured failure as failed", async () => {
+    // The honest states must stay distinguishable from the new one, otherwise
+    // the fix would just move the ambiguity.
+    vi.mocked(diagnoseMcpServer).mockResolvedValue({
+      state: "failed",
+      transport: "stdio",
+      latencyMs: 12,
+      tools: [],
+      message: "No such file or directory",
+      compatibilityVersion: "2024-11-05",
+      checkedAt: 1,
+    });
+
+    render(<McpHubCard />);
+    fireEvent.click(screen.getByRole("button", { name: /Diagnose/ }));
+
+    expect(await screen.findByText(/^failed/)).toBeInTheDocument();
+    expect(screen.queryByText("not probed")).not.toBeInTheDocument();
   });
 });

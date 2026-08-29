@@ -122,3 +122,62 @@ describe("ProjectPicker remote support display", () => {
     expect(setSelectedRepo).toHaveBeenCalledWith(makeSshUri("server-1", "/srv/other app"));
   });
 });
+
+describe("ProjectPicker host-key disclosure", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /**
+   * FAULT: an unpinned SSH host silently falls back to TOFU
+   * (`StrictHostKeyChecking=accept-new`) on the interactive path. The only
+   * signals were a `console.warn` and a Rust `tracing::warn!` — neither
+   * reaches the person choosing to connect.
+   */
+  it("says the host key is unverified at the point of connect", () => {
+    mocks.servers = [server({ hostFingerprint: undefined })];
+    render(
+      <ProjectPicker
+        selectedRepo={makeSshUri("server-1", "/srv/app")}
+        setSelectedRepo={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Host key not verified/i)).toBeInTheDocument();
+    // Names the host that is about to be trusted on sight, not a generic note.
+    expect(screen.getByText(/example\.com presents on first connect/i)).toBeInTheDocument();
+    // ...and offers the fix rather than just the complaint.
+    fireEvent.click(screen.getByRole("button", { name: "Open Servers" }));
+    expect(mocks.setActiveView).toHaveBeenCalledWith("tools");
+  });
+
+  it("stays quiet when the host key IS pinned", () => {
+    // The warning has to be a real signal, so it must not fire on the
+    // pinned path — otherwise it becomes wallpaper.
+    mocks.servers = [server({ hostFingerprint: "SHA256:pinned" })];
+    render(
+      <ProjectPicker
+        selectedRepo={makeSshUri("server-1", "/srv/app")}
+        setSelectedRepo={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText(/Host key not verified/i)).not.toBeInTheDocument();
+  });
+
+  it("flags an unpinned server in the picker before it is chosen", () => {
+    mocks.servers = [server({ hostFingerprint: undefined })];
+    render(<ProjectPicker selectedRepo={null} setSelectedRepo={vi.fn()} />);
+
+    openProjectDropdown();
+    expect(screen.getByText("unverified host key")).toBeInTheDocument();
+  });
+
+  it("does not flag a pinned server in the picker", () => {
+    mocks.servers = [server({ hostFingerprint: "SHA256:pinned" })];
+    render(<ProjectPicker selectedRepo={null} setSelectedRepo={vi.fn()} />);
+
+    openProjectDropdown();
+    expect(screen.queryByText("unverified host key")).not.toBeInTheDocument();
+  });
+});

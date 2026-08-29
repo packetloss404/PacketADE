@@ -9,6 +9,7 @@
 //!   4. Bearer token — the actual access control; other local processes can't
 //!      call us without the token shown in the UI.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use axum::{
@@ -36,10 +37,18 @@ pub async fn serve(
     cancel: CancellationToken,
     audit: Arc<McpAuditLog>,
     allow_writes: bool,
+    allowed_tools: Option<Arc<HashSet<String>>>,
 ) -> std::io::Result<u16> {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
     let bound_port = listener.local_addr()?.port();
-    let router = build_router(token, bound_port, cancel.child_token(), audit, allow_writes);
+    let router = build_router(
+        token,
+        bound_port,
+        cancel.child_token(),
+        audit,
+        allow_writes,
+        allowed_tools,
+    );
 
     let shutdown = cancel.child_token();
     tauri::async_runtime::spawn(async move {
@@ -63,9 +72,18 @@ pub fn build_router(
     service_ct: CancellationToken,
     audit: Arc<McpAuditLog>,
     allow_writes: bool,
+    allowed_tools: Option<Arc<HashSet<String>>>,
 ) -> Router {
     let service = StreamableHttpService::new(
-        move || Ok(PacketBenchMcp::new(audit.clone(), allow_writes)),
+        // The factory runs per MCP session, so the allowlist is applied to
+        // every session this run serves — not just the first.
+        move || {
+            Ok(PacketBenchMcp::new(
+                audit.clone(),
+                allow_writes,
+                allowed_tools.as_deref(),
+            ))
+        },
         LocalSessionManager::default().into(),
         StreamableHttpServerConfig::default()
             .with_cancellation_token(service_ct)
@@ -206,7 +224,7 @@ mod tests {
         let token = "test-token-abc".to_string();
         let cancel = CancellationToken::new();
         let audit = Arc::new(super::McpAuditLog::detached());
-        let port = serve(0, token.clone(), cancel.clone(), audit, false)
+        let port = serve(0, token.clone(), cancel.clone(), audit, false, None)
             .await
             .expect("server binds");
         let base = format!("http://127.0.0.1:{port}/mcp");
@@ -249,6 +267,169 @@ mod tests {
             authed.status().is_success(),
             "initialize should succeed, got {}",
             authed.status()
+        );
+
+        cancel.cancel();
+    }
+
+    /// Pull the JSON-RPC payload out of a Streamable HTTP response body, which
+    /// `rmcp` may return either as bare JSON or as a single SSE `data:` frame
+    /// depending on the negotiated content type.
+    fn parse_rpc(body: &str) -> serde_json::Value {
+        // SSE streams interleave empty `data:` keepalives with the real frame,
+        // so take the first one that actually parses rather than the first one
+        // that merely has the prefix.
+        for line in body.lines() {
+            let Some(rest) = line.strip_prefix("data:") else {
+                continue;
+            };
+            let rest = rest.trim();
+            if rest.is_empty() {
+                continue;
+            }
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(rest) {
+                return value;
+            }
+        }
+        serde_json::from_str(body).unwrap_or_else(|e| panic!("body is not JSON-RPC ({e}): {body:?}"))
+    }
+
+    /// End-to-end proof of the per-tool allowlist, over the real transport.
+    ///
+    /// FAULT this covers: `allowedTools` was persisted settings that reached
+    /// nothing — every provider tool was served to any authenticated client.
+    /// Both halves are asserted here because either one alone is worthless: a
+    /// tool hidden from `tools/list` but still callable is not restricted, and
+    /// a tool that errors on call but is advertised invites the attempt.
+    #[tokio::test]
+    async fn the_allowlist_is_enforced_over_the_wire() {
+        let token = "allowlist-token".to_string();
+        let cancel = CancellationToken::new();
+        let audit = Arc::new(super::McpAuditLog::detached());
+        // `get_active_flight` is allowed; `ping` and everything else is not.
+        let allowed: HashSet<String> = ["get_active_flight".to_string()].into_iter().collect();
+        let port = serve(
+            0,
+            token.clone(),
+            cancel.clone(),
+            audit,
+            false,
+            Some(Arc::new(allowed)),
+        )
+        .await
+        .expect("server binds");
+        let base = format!("http://127.0.0.1:{port}/mcp");
+        let client = reqwest::Client::new();
+
+        let post = |body: serde_json::Value, session: Option<String>| {
+            let mut req = client
+                .post(&base)
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream");
+            if let Some(id) = session {
+                req = req.header("mcp-session-id", id);
+            }
+            req.json(&body).send()
+        };
+
+        // 1. initialize — the session id comes back as a response header.
+        let init = post(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "clientInfo": { "name": "test", "version": "0" }
+                }
+            }),
+            None,
+        )
+        .await
+        .expect("initialize sent");
+        assert!(init.status().is_success(), "initialize: {}", init.status());
+        let session = init
+            .headers()
+            .get("mcp-session-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string)
+            .expect("server issues a session id");
+        let _ = init.text().await;
+
+        // 2. notifications/initialized completes the handshake.
+        let _ = post(
+            serde_json::json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
+            Some(session.clone()),
+        )
+        .await
+        .expect("initialized sent");
+
+        // 3. tools/list must not advertise a denied tool.
+        let listed = post(
+            serde_json::json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }),
+            Some(session.clone()),
+        )
+        .await
+        .expect("tools/list sent")
+        .text()
+        .await
+        .expect("body read");
+        let listed = parse_rpc(&listed);
+        let names: Vec<String> = listed["result"]["tools"]
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .map(|t| t["name"].as_str().unwrap_or_default().to_string())
+            .collect();
+        assert_eq!(
+            names,
+            vec!["get_active_flight".to_string()],
+            "only the allowed tool may be advertised"
+        );
+
+        // 4. ...and calling the denied tool by name is refused anyway.
+        let called = post(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": { "name": "ping", "arguments": {} }
+            }),
+            Some(session.clone()),
+        )
+        .await
+        .expect("tools/call sent")
+        .text()
+        .await
+        .expect("body read");
+        let called = parse_rpc(&called);
+        assert!(
+            called.get("error").is_some(),
+            "a denied tool must not execute, got: {called}"
+        );
+
+        // 5. The allowed tool still works, so this is a filter and not an
+        //    outage dressed up as security.
+        let ok = post(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": { "name": "get_active_flight", "arguments": {} }
+            }),
+            Some(session),
+        )
+        .await
+        .expect("tools/call sent")
+        .text()
+        .await
+        .expect("body read");
+        let ok = parse_rpc(&ok);
+        assert!(
+            ok.get("error").is_none(),
+            "the allowed tool must still run, got: {ok}"
         );
 
         cancel.cancel();

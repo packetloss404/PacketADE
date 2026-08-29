@@ -1,10 +1,5 @@
 import { create } from "zustand";
-import type {
-  McpResource,
-  McpTool,
-  McpProviderConfig,
-  McpProviderScope,
-} from "@/types/mcp-provider";
+import type { McpResource, McpTool, McpProviderConfig } from "@/types/mcp-provider";
 import { useFlightStore } from "@/stores/flightStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { isLocalWorkspace } from "@/types/workspace";
@@ -14,6 +9,7 @@ import {
   mcpServerStop,
   mcpServerStatus,
   mcpServerRecentActivity,
+  mcpServerAvailableTools,
   type McpServerStatus,
   type McpActivityEntry,
 } from "@/lib/tauri";
@@ -36,159 +32,85 @@ export function mergeActivity(
   return [...bySeq.values()].sort((a, b) => a.seq - b.seq).slice(-ACTIVITY_CAP);
 }
 
-// --- Static tool definitions ---
+// --- Tool catalogue ---
 
-const PROVIDER_TOOLS: McpTool[] = [
-  {
-    name: "get_active_flight",
-    description: "Returns details of the currently active flight",
-    inputSchema: { type: "object", properties: {}, required: [] },
-  },
-  {
-    name: "list_runnable_tasks",
-    description: "Lists tasks that can be launched (pending or queued)",
-    inputSchema: { type: "object", properties: {}, required: [] },
-  },
-  {
-    name: "read_task_details",
-    description: "Reads a specific task by flight and task ID",
-    inputSchema: {
-      type: "object",
-      properties: {
-        flightId: { type: "string" },
-        taskId: { type: "string" },
-      },
-      required: ["flightId", "taskId"],
-    },
-  },
-  {
-    name: "append_handoff",
-    description:
-      "Post an append-only handoff note to a flight's coordination timeline (human-visible; changes no state)",
-    inputSchema: {
-      type: "object",
-      properties: {
-        flightId: { type: "string" },
-        summary: { type: "string" },
-        agentId: { type: "string" },
-      },
-      required: ["flightId", "summary"],
-    },
-  },
-  {
-    name: "escalate",
-    description:
-      "Flag a flight for human attention (an escalation on its coordination timeline; changes no state)",
-    inputSchema: {
-      type: "object",
-      properties: {
-        flightId: { type: "string" },
-        summary: { type: "string" },
-        agentId: { type: "string" },
-      },
-      required: ["flightId", "summary"],
-    },
-  },
-  {
-    name: "read_memory_context",
-    description: "Reads learned memory patterns for the current project",
-    inputSchema: { type: "object", properties: {}, required: [] },
-  },
-  {
-    name: "search_project_memory",
-    description: "Searches project-local Markdown memory for a local workspace",
-    inputSchema: {
-      type: "object",
-      properties: {
-        workspaceId: { type: "string" },
-        query: { type: "string" },
-      },
-      required: ["workspaceId", "query"],
-    },
-  },
-  {
-    name: "read_project_memory",
-    description: "Reads one project-local Markdown memory note",
-    inputSchema: {
-      type: "object",
-      properties: {
-        workspaceId: { type: "string" },
-        noteId: { type: "string" },
-      },
-      required: ["workspaceId", "noteId"],
-    },
-  },
-  {
-    name: "create_project_memory",
-    description:
-      "Creates a confined project-local Markdown memory note (requires writes)",
-    inputSchema: {
-      type: "object",
-      properties: {
-        workspaceId: { type: "string" },
-        title: { type: "string" },
-        body: { type: "string" },
-        tags: { type: "array", items: { type: "string" } },
-        provenanceIds: { type: "array", items: { type: "string" } },
-      },
-      required: ["workspaceId", "title", "body"],
-    },
-  },
-  {
-    name: "update_project_memory",
-    description:
-      "Updates a project-local note with an expected revision (requires writes)",
-    inputSchema: {
-      type: "object",
-      properties: {
-        workspaceId: { type: "string" },
-        noteId: { type: "string" },
-        expectedRevision: { type: "string" },
-        title: { type: "string" },
-        body: { type: "string" },
-        tags: { type: "array", items: { type: "string" } },
-        provenanceIds: { type: "array", items: { type: "string" } },
-      },
-      required: [
-        "workspaceId",
-        "noteId",
-        "expectedRevision",
-        "title",
-        "body",
-      ],
-    },
-  },
-  {
-    name: "archive_project_memory",
-    description:
-      "Archives a project-local note with an expected revision (requires writes)",
-    inputSchema: {
-      type: "object",
-      properties: {
-        workspaceId: { type: "string" },
-        noteId: { type: "string" },
-        expectedRevision: { type: "string" },
-      },
-      required: ["workspaceId", "noteId", "expectedRevision"],
-    },
-  },
-  {
-    name: "list_workspaces",
-    description: "Lists active workspaces",
-    inputSchema: { type: "object", properties: {}, required: [] },
-  },
-];
+/**
+ * FAULT this replaces: the tool catalogue used to be a hardcoded list right
+ * here, and it had drifted from the Rust router — it never listed `ping` or
+ * the three coordination-inbox tools. That was harmless while `allowedTools`
+ * was dead config. Now that the router enforces the allowlist, a stale
+ * catalogue would silently switch off tools the user had been using, so the
+ * real list is fetched from the backend (`syncAvailableTools`).
+ *
+ * This fallback is deliberately EMPTY rather than a best guess: an incomplete
+ * guess is exactly the failure mode being fixed, and an empty catalogue
+ * renders as "reading…" instead of as a confidently wrong answer.
+ */
+const FALLBACK_TOOLS: McpTool[] = [];
+
+/**
+ * Resolve the allowlist to the concrete list of names to send to the backend.
+ *
+ * `null` = the user has made no per-tool decision, so serve everything, which
+ * is the pre-enforcement behaviour. The backend reads `null` the same way.
+ */
+export function effectiveAllowedTools(config: McpProviderConfig): string[] | null {
+  return config.allowedTools;
+}
+
+/**
+ * Reconcile a persisted allowlist against the catalogue the backend actually
+ * serves. Names the router does not define are dropped: they can never be
+ * granted, and keeping them would make the card show a toggle for a tool that
+ * does not exist.
+ */
+export function reconcileAllowedTools(
+  allowed: string[] | null,
+  catalogue: McpTool[],
+): string[] | null {
+  if (allowed === null) return null;
+  const known = new Set(catalogue.map((t) => t.name));
+  return allowed.filter((name) => known.has(name));
+}
 
 // --- Persistence ---
 
 const STORAGE_KEY = "packetbench:mcp-provider";
 
-function loadConfig(): McpProviderConfig {
+/**
+ * Bumped when `allowedTools` became a real, enforced restriction. A persisted
+ * config without this marker predates enforcement, so its `allowedTools` is a
+ * stale catalogue snapshot rather than a user decision — see the migration in
+ * `loadPersistedProviderConfig`.
+ */
+const PROVIDER_CONFIG_VERSION = 2;
+
+export function loadPersistedProviderConfig(): McpProviderConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     // Merge over defaults so configs persisted before a field existed (e.g.
     // `allowWrites`) don't come back `undefined`.
-    if (raw) return { ...defaultConfig(), ...(JSON.parse(raw) as Partial<McpProviderConfig>) };
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<McpProviderConfig> & {
+        scope?: unknown;
+        schemaVersion?: unknown;
+      };
+      // `scope` was removed rather than enforced — discard whatever was
+      // persisted so it cannot be read back as if it still meant something.
+      delete parsed.scope;
+      const wasEnforced = parsed.schemaVersion === PROVIDER_CONFIG_VERSION;
+      delete parsed.schemaVersion;
+      const merged = { ...defaultConfig(), ...parsed };
+      // A pre-enforcement `allowedTools` is a STALE CATALOGUE SNAPSHOT, not a
+      // decision: it was written from a hardcoded list that had already
+      // drifted from the router, and it never restricted anything. Honouring
+      // it now would newly switch off tools (`ping`, the inbox tools) that
+      // have been working all along. Anything written before enforcement
+      // existed is therefore treated as undecided — observed behaviour is
+      // preserved exactly, and every toggle from here on is real.
+      if (!wasEnforced || !Array.isArray(merged.allowedTools)) merged.allowedTools = null;
+      return merged;
+    }
   } catch {
     // ignore corrupt data
   }
@@ -199,14 +121,18 @@ function defaultConfig(): McpProviderConfig {
   return {
     enabled: false,
     port: 3100,
-    allowedTools: PROVIDER_TOOLS.map((t) => t.name),
-    scope: "project",
+    allowedTools: null,
     allowWrites: false,
   };
 }
 
 function saveConfig(config: McpProviderConfig) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+  // Stamp the version so a later load can tell a real decision from a
+  // pre-enforcement leftover.
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({ ...config, schemaVersion: PROVIDER_CONFIG_VERSION }),
+  );
 }
 
 // --- Store ---
@@ -214,6 +140,7 @@ function saveConfig(config: McpProviderConfig) {
 interface McpProviderStore {
   config: McpProviderConfig;
   resources: McpResource[];
+  /** The catalogue the Rust router actually defines. Empty until fetched. */
   tools: McpTool[];
   /** Live backend server status (null until first queried). */
   serverStatus: McpServerStatus | null;
@@ -226,10 +153,11 @@ interface McpProviderStore {
 
   setEnabled: (enabled: boolean) => Promise<void>;
   setPort: (port: number) => void;
-  setScope: (scope: McpProviderScope) => void;
   setAllowWrites: (allowWrites: boolean) => void;
   toggleTool: (name: string) => void;
 
+  /** Read the canonical tool catalogue from the backend and reconcile. */
+  syncAvailableTools: () => Promise<void>;
   /** Reconcile `config.enabled` with the actual backend server state. */
   syncServerStatus: () => Promise<void>;
   /** Fetch the current audit ring from the backend. */
@@ -240,9 +168,9 @@ interface McpProviderStore {
 }
 
 export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
-  config: loadConfig(),
+  config: loadPersistedProviderConfig(),
   resources: [],
-  tools: PROVIDER_TOOLS,
+  tools: FALLBACK_TOOLS,
   serverStatus: null,
   serverError: null,
   serverBusy: false,
@@ -261,6 +189,33 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
     set((s) => ({ activity: mergeActivity(s.activity, [entry]) }));
   },
 
+  syncAvailableTools: async () => {
+    try {
+      const fetched = await mcpServerAvailableTools();
+      const tools: McpTool[] = fetched.map((t) => ({
+        name: t.name,
+        description: t.description,
+        // The provider card only needs name + description; the router owns the
+        // real schemas and the UI never renders them.
+        inputSchema: {},
+      }));
+      set((s) => {
+        const allowedTools = reconcileAllowedTools(s.config.allowedTools, tools);
+        if (allowedTools === s.config.allowedTools) return { tools };
+        const config = { ...s.config, allowedTools };
+        try {
+          saveConfig(config);
+        } catch {
+          // localStorage unavailable; in-memory reconcile still applies
+        }
+        return { tools, config };
+      });
+    } catch {
+      // Best-effort: leave the previous catalogue in place. Notably we do NOT
+      // substitute a guess — a wrong catalogue is what this replaced.
+    }
+  },
+
   setEnabled: async (enabled) => {
     // Serialize toggles: ignore a click while a start/stop is still resolving,
     // so start/stop can't interleave and desync config vs. the real backend.
@@ -273,7 +228,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
       saveConfig(config);
       set({ config });
       const status = enabled
-        ? await mcpServerStart(config.port, config.allowWrites)
+        ? await mcpServerStart(config.port, config.allowWrites, effectiveAllowedTools(config))
         : await mcpServerStop();
       // The backend ring is per-run; a stop empties it, so mirror that here.
       set(enabled ? { serverStatus: status } : { serverStatus: status, activity: [] });
@@ -315,12 +270,6 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
     set({ config });
   },
 
-  setScope: (scope) => {
-    const config = { ...get().config, scope };
-    saveConfig(config);
-    set({ config });
-  },
-
   setAllowWrites: (allowWrites) => {
     const config = { ...get().config, allowWrites };
     saveConfig(config);
@@ -328,11 +277,15 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
   },
 
   toggleTool: (name) => {
-    const current = get().config.allowedTools;
+    const state = get();
+    // `null` means "no decision — everything is served". The first toggle has
+    // to materialize that into a concrete list before it can subtract from it,
+    // otherwise turning one tool off would read as turning only that tool ON.
+    const current = state.config.allowedTools ?? state.tools.map((t) => t.name);
     const allowedTools = current.includes(name)
       ? current.filter((t) => t !== name)
       : [...current, name];
-    const config = { ...get().config, allowedTools };
+    const config = { ...state.config, allowedTools };
     saveConfig(config);
     set({ config });
   },

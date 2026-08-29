@@ -194,14 +194,20 @@ calls <code>tools/list</code>, and shuts it down, reporting one of:</p>
 </tr>
 <tr>
 <td><code>failed</code></td>
-<td>The process could not be spawned at all.</td>
+<td>The process could not be spawned at all, or the entry&#39;s <code>type</code> is not a transport PacketBench recognises.</td>
+</tr>
+<tr>
+<td><code>notProbed</code></td>
+<td>Nothing was checked. Shown as <strong>not probed</strong>; the server&#39;s health is unknown, not bad.</td>
 </tr>
 </tbody></table>
 <p>The compatibility version reported is <code>2024-11-05</code>.</p>
-<div class="callout warning"><div class="callout-title">Warning</div><p>The doctor probes <strong>stdio only</strong>. An <code>http</code> or <code>sse</code> server
-reports <code>degraded</code> with &quot;This build preserves remote MCP config but the local
-doctor probes stdio only&quot; — that is a limitation of the diagnostic, not a
-statement about the server.</p>
+<div class="callout note"><div class="callout-title">Note</div><p>The doctor probes <strong>stdio only</strong> — it spawns the process and speaks
+JSON-RPC over its pipes, and this build has no HTTP MCP client to probe with.
+An <code>http</code> or <code>sse</code> server therefore reports <code>notProbed</code>, <strong>not</strong> <code>degraded</code>.
+The distinction matters: <code>degraded</code> means &quot;checked, and unhealthy&quot;, so using
+it for a server nothing was sent to made every healthy remote server look
+broken. <code>notProbed</code> says the health is unknown.</p>
 </div>
 <p>Diagnosing also seeds the default trust profile: tools whose names do not look
 mutating are pre-granted, everything else is not.</p>

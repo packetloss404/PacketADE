@@ -5,6 +5,7 @@ import {
   FolderOpen,
   Server,
   Check,
+  ShieldAlert,
 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
@@ -104,6 +105,24 @@ export function ProjectPicker({
     [selectedSshUri, setSelectedRepo],
   );
 
+  /**
+   * True when the selected SSH server has no pinned host key.
+   *
+   * FAULT this surfaces: an unpinned host falls back to TOFU
+   * (`StrictHostKeyChecking=accept-new`) on this path — see `lib/ssh.ts` and
+   * `core::execution::SshConfig::ssh_args` — and the ONLY signals were a
+   * `console.warn` and a Rust `tracing::warn!`. Neither is visible to the
+   * person deciding to connect. Workspace creation and Async Flight launches
+   * already gate on this; the composer did not, so the weaker guarantee was
+   * invisible exactly where the connection is actually made.
+   *
+   * This is a disclosure, not a block: the TOFU fallback is deliberate
+   * backward compatibility for servers saved before pinning existed, and
+   * hard-failing them here would break working setups. What must not happen is
+   * it being SILENT.
+   */
+  const unpinned = Boolean(selectedServer && !selectedServer.hostFingerprint);
+
   const handleOpenServersView = useCallback(() => {
     // Phase 2: servers are managed in the Tools / Servers view alongside
     // workspace PTY targets.
@@ -121,14 +140,16 @@ export function ProjectPicker({
             }`}
             title={
               selectedRepo && isSshUri(selectedRepo)
-                ? "Remote SSH project"
+                ? unpinned
+                  ? "Remote SSH project — host key not verified"
+                  : "Remote SSH project"
                 : undefined
             }
           >
             {selectedRepo && isSshUri(selectedRepo) ? (
               <Server
                 size={12}
-                className="text-accent-green"
+                className={unpinned ? "text-accent-amber" : "text-accent-green"}
               />
             ) : (
               <Monitor size={12} className="text-text-muted" />
@@ -161,9 +182,22 @@ export function ProjectPicker({
             >
               <span className="block">
                 <RecentRow
-                  icon={<Server size={12} className="text-accent-green" />}
+                  icon={
+                    <Server
+                      size={12}
+                      className={
+                        item.server.hostFingerprint
+                          ? "text-accent-green"
+                          : "text-accent-amber"
+                      }
+                    />
+                  }
                   label={item.server.name}
                   selected={selectedSshUri?.serverId === item.server.id}
+                  // Flagged BEFORE the pick, not only after: the same
+                  // unpinned-host fact the Workspace and Flight launch gates
+                  // already surface.
+                  note={item.server.hostFingerprint ? undefined : "unverified host key"}
                 />
               </span>
             </DropdownItem>
@@ -189,6 +223,31 @@ export function ProjectPicker({
           </span>
         </DropdownItem>
       </Dropdown>
+
+
+      {/* The point of connect. An unpinned host is about to be trusted on
+          first sight (TOFU), which is a materially weaker guarantee than the
+          pinned path — so say so here, where the decision is made, rather than
+          only in a console the user never opens. */}
+      {selectedSshUri && selectedServer && unpinned && (
+        <div className="mt-2 flex items-start gap-1.5 rounded border border-accent-amber/30 bg-accent-amber/5 px-2 py-1.5 text-meta">
+          <ShieldAlert size={11} className="mt-px shrink-0 text-accent-amber" />
+          <div className="min-w-0 flex-1">
+            <span className="font-medium text-accent-amber">Host key not verified.</span>{" "}
+            <span className="text-text-secondary">
+              This session will trust whatever key {selectedServer.host} presents on first
+              connect. Verify it on the Servers page to pin the key.
+            </span>
+            <button
+              type="button"
+              onClick={handleOpenServersView}
+              className="ml-1 underline hover:text-accent-amber"
+            >
+              Open Servers
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Inline remote-path editor for SSH selections. Servers are reusable
           across projects, so the path is per-conversation, not stored on
@@ -219,16 +278,19 @@ function RecentRow({
   icon,
   label,
   selected,
+  note,
 }: {
   icon: React.ReactNode;
   label: string;
   selected: boolean;
+  note?: string;
 }) {
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="flex items-center gap-1.5 min-w-0">
         {icon}
         <span className="truncate">{label}</span>
+        {note && <span className="shrink-0 text-meta text-accent-amber">{note}</span>}
       </span>
       {selected && <Check size={12} className="text-accent-green shrink-0" />}
     </div>
