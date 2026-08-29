@@ -911,9 +911,30 @@ from the original report, which still lists them as findings.
 - **P3 - Gitea parity extensions.** Consider agent-tool/create-PR support,
   richer Actions/checks, inline review-comment authoring, and multi-commit AI
   compare only after the packaged dual-host authority matrix closes.
-- **P3 - Semantic Memory retrieval.** Evaluate local embeddings only if
-  measured IDF retrieval misses justify it; no vector database is currently
-  warranted.
+- **DONE 2026-08-28 - P3 Semantic Memory retrieval, evaluated and declined.**
+  The gate was "only if measured IDF retrieval misses justify it", and the
+  measurement is now done — it was only meaningful once Ask stopped searching
+  the prompt-injection budget. Recall is a step function on surface anchoring:
+  100% when a query shares a token, stem, prefix, or substring with the
+  document, **0% otherwise**, so a headline 92% recall reflected query
+  authorship rather than retrieval quality. Shipped the two deterministic wins
+  (camelCase splitting, a small domain acronym table). Declined embeddings — no
+  measured need, and the corpus at `maxEvents=200` is ~34k tokens, so sending it
+  to an already-configured provider dominates a bundled model on every axis
+  except offline use. Declined a curated synonym map outright: against a
+  held-out set whose vocabulary it did not contain it recovered **0%** while
+  inflating result sets 2.75x. No vector database is warranted, and at this
+  corpus size no index is either.
+- **P3 - Instrument Ask to measure the real miss rate.** The one number that
+  decides whether retrieval ever needs more than lexical matching is the share
+  of *real* queries that are surface-anchor-free, and it cannot be obtained from
+  synthetic data. Log zero-result and single-result Ask queries locally (no
+  content leaves the machine). Suggested trigger to revisit: >20% of real
+  queries returning nothing while the answer was in the corpus — and reach for
+  an LLM-over-corpus fallback before embeddings. Keep the invariant that makes
+  this measurable: eligibility in `searchMemoryCorpus` is `relevance > 0`, with
+  kind/recency/trust priors that only reorder, so a miss is always attributable
+  to the scorer.
 - **P3 - Historical cost compatibility.** Preserve retired-provider and old
   flight-cost data losslessly. Correct old rollups only with a schema that can
   represent input/output/cache/model attribution without guessing.
