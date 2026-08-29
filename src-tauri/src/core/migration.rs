@@ -56,6 +56,11 @@ pub(crate) enum LegacyDirShape {
     Ours,
     /// The sibling `packetcode` TUI's home — hands off.
     Foreign,
+    /// Carries BOTH our markers and the TUI's. Real on machines where the
+    /// earlier PacketCode → PacketADE rename folded TUI files into what became
+    /// our data dir. Our own data must still be rescued, but the directory as a
+    /// whole must not be moved, so this is copy-only.
+    Mixed,
     /// Missing, empty, or carrying only names both products use. Treated as
     /// not-ours: there is nothing of ours to lose, and guessing wrong here
     /// destroys someone else's data.
@@ -64,20 +69,26 @@ pub(crate) enum LegacyDirShape {
 
 /// Classify a legacy `~/.packetcode` directory by the files it contains.
 ///
-/// The TUI veto wins over our own markers. On a machine where an earlier run
-/// of this migration already folded TUI files into `~/.packetbench`, a directory
-/// can legitimately look like both; refusing to migrate is the safe answer in
-/// that ambiguity, because the only cost is a skipped migration whereas the
-/// only cost of the other choice is a destroyed TUI home.
+/// A directory carrying both shapes is `Mixed`, not `Foreign`. The veto exists
+/// to stop us DESTROYING a TUI home, and a blanket veto over-served that: it
+/// also abandoned our own state living in the same directory. Observed in the
+/// field — a `~/.packetade` holding `config.toml` and `cost-tally.json` folded
+/// in by the earlier PacketCode → PacketADE rename, alongside a live
+/// `state.v1.json` with the user's real issues and workspaces. Classifying that
+/// `Foreign` silently stranded every one of them.
+///
+/// `Mixed` resolves the ambiguity by copying our own files out rather than
+/// moving the directory, so nothing of the TUI's is moved, renamed or deleted.
 pub(crate) fn classify_legacy_dir(dir: &Path) -> LegacyDirShape {
     let contains_any = |names: &[&str]| names.iter().any(|name| dir.join(name).exists());
-    if contains_any(PACKETCODE_TUI_MARKERS) {
-        return LegacyDirShape::Foreign;
+    let theirs = contains_any(PACKETCODE_TUI_MARKERS);
+    let ours = contains_any(PACKETBENCH_MARKERS);
+    match (ours, theirs) {
+        (true, true) => LegacyDirShape::Mixed,
+        (true, false) => LegacyDirShape::Ours,
+        (false, true) => LegacyDirShape::Foreign,
+        (false, false) => LegacyDirShape::Unknown,
     }
-    if contains_any(PACKETBENCH_MARKERS) {
-        return LegacyDirShape::Ours;
-    }
-    LegacyDirShape::Unknown
 }
 
 /// Migrate the user data directory from the legacy home (`~/.packetade`, the
@@ -119,6 +130,12 @@ fn migrate_data_dir_in(home: &Path) {
 
     match classify_legacy_dir(&old_dir) {
         LegacyDirShape::Ours => {}
+        LegacyDirShape::Mixed => {
+            // Our data and the TUI's share this directory. Copy ours out and
+            // leave everything else exactly where it is.
+            rescue_our_files(&old_dir, &new_dir);
+            return;
+        }
         LegacyDirShape::Foreign => {
             warn!(
                 "Skipping data-dir migration: {:?} belongs to the packetcode TUI, not to a pre-rename {}. Leaving it untouched.",
@@ -165,6 +182,52 @@ fn migrate_data_dir_in(home: &Path) {
             );
         }
     }
+}
+
+/// Copy only the entries we know are ours out of a [`LegacyDirShape::Mixed`]
+/// directory, leaving the legacy directory — and anything in it we do not
+/// recognise — untouched.
+///
+/// Best-effort per entry: one unreadable file must not cost the user the rest
+/// of their state. Nothing is deleted or renamed on either side.
+fn rescue_our_files(old_dir: &Path, new_dir: &Path) {
+    if let Err(e) = std::fs::create_dir_all(new_dir) {
+        warn!("Cannot create {:?} to rescue legacy data: {}", new_dir, e);
+        return;
+    }
+
+    let mut copied = 0usize;
+    let mut failed = 0usize;
+    for marker in PACKETBENCH_MARKERS {
+        let src = old_dir.join(marker);
+        if !src.exists() {
+            continue;
+        }
+        let dst = new_dir.join(marker);
+        if dst.exists() {
+            // Never overwrite state the new dir already has: that is the
+            // user's current data, and merging two live states is not
+            // something this migration can decide.
+            continue;
+        }
+        let result = if src.is_dir() {
+            copy_dir_all(&src, &dst)
+        } else {
+            std::fs::copy(&src, &dst).map(|_| ())
+        };
+        match result {
+            Ok(()) => copied += 1,
+            Err(e) => {
+                failed += 1;
+                warn!("Could not rescue {:?} from the legacy data dir: {}", src, e);
+            }
+        }
+    }
+
+    info!(
+        "Legacy dir {:?} holds both our data and the packetcode TUI's. Copied {} of our entries into {:?} ({} failed); the legacy dir was left untouched.",
+        old_dir, copied, new_dir, failed
+    );
 }
 
 /// One-shot: canonicalize legacy `missionId` keys in persisted flight-approval
@@ -429,18 +492,87 @@ mod tests {
     }
 
     #[test]
-    fn classify_legacy_dir_lets_the_tui_veto_win() {
-        // A dir carrying both shapes (e.g. a machine where an earlier run of
-        // this migration already folded TUI files in) must read as Foreign.
+    fn classify_legacy_dir_reports_a_shared_dir_as_mixed() {
+        // A dir carrying both shapes is Mixed, not Foreign. This was observed in
+        // the field: the PacketCode -> PacketADE rename folded `config.toml` and
+        // `cost-tally.json` in beside a live `state.v1.json`, and reading the
+        // whole directory as Foreign stranded the user's real issues and
+        // workspaces.
         let home = unique_temp_home("mixed");
         let legacy = make_legacy_packetbench_home(&home);
         std::fs::write(legacy.join("config.toml"), "model = \"opus\"\n").unwrap();
+        std::fs::write(legacy.join("cost-tally.json"), "{\"sessions\":[]}").unwrap();
 
-        assert_eq!(classify_legacy_dir(&legacy), LegacyDirShape::Foreign);
+        assert_eq!(classify_legacy_dir(&legacy), LegacyDirShape::Mixed);
         assert_eq!(
             classify_legacy_dir(&home.join("does-not-exist")),
             LegacyDirShape::Unknown
         );
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn a_dir_with_only_tui_markers_is_still_foreign() {
+        let home = unique_temp_home("foreign-only");
+        let legacy = home.join(LEGACY_DATA_DIR_NAME);
+        std::fs::create_dir_all(legacy.join("jobs")).unwrap();
+        std::fs::write(legacy.join("config.toml"), "model = \"opus\"\n").unwrap();
+
+        assert_eq!(classify_legacy_dir(&legacy), LegacyDirShape::Foreign);
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn a_mixed_dir_is_rescued_by_copy_and_never_moved() {
+        let home = unique_temp_home("mixed-migrate");
+        let legacy = make_legacy_packetbench_home(&home);
+        std::fs::write(legacy.join("config.toml"), "model = \"opus\"\n").unwrap();
+
+        migrate_data_dir_in(&home);
+
+        let new_dir = home.join(DATA_DIR_NAME);
+        // Our data was rescued...
+        assert_eq!(
+            std::fs::read_to_string(new_dir.join(crate::core::storage::STATE_FILENAME)).unwrap(),
+            "{\"version\":7}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(new_dir.join("conversations/c1.json")).unwrap(),
+            "{\"id\":\"c1\"}"
+        );
+        // ...the TUI's file was not taken along...
+        assert!(!new_dir.join("config.toml").exists());
+        // ...and nothing on the legacy side was moved or deleted.
+        assert!(legacy.join(crate::core::storage::STATE_FILENAME).exists());
+        assert!(legacy.join("config.toml").exists());
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn rescue_never_overwrites_state_the_new_dir_already_has() {
+        let home = unique_temp_home("mixed-nooverwrite");
+        let legacy = make_legacy_packetbench_home(&home);
+        std::fs::write(legacy.join("config.toml"), "model = \"opus\"\n").unwrap();
+        let new_dir = home.join(DATA_DIR_NAME);
+        std::fs::create_dir_all(&new_dir).unwrap();
+        std::fs::write(
+            new_dir.join(crate::core::storage::STATE_FILENAME),
+            "{\"version\":50}",
+        )
+        .unwrap();
+
+        rescue_our_files(&legacy, &new_dir);
+
+        // Merging two live states is not this migration's call to make.
+        assert_eq!(
+            std::fs::read_to_string(new_dir.join(crate::core::storage::STATE_FILENAME)).unwrap(),
+            "{\"version\":50}"
+        );
+        // Entries the new dir lacks are still rescued.
+        assert!(new_dir.join("conversations/c1.json").exists());
 
         std::fs::remove_dir_all(&home).ok();
     }
