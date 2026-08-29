@@ -1,0 +1,54 @@
+# PacketBench documentation site.
+#
+# Railway injects PORT; the default keeps `docker run -p 8080:8080` working
+# locally without setting anything.
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:{$PORT:8080} {
+	root * /srv
+
+	encode zstd gzip
+
+	# Serve `/guide/memory` as well as `/guide/memory.html`, so links stay
+	# tidy and an old bookmark with the extension still resolves.
+	try_files {path} {path}.html {path}/index.html
+
+	file_server {
+		index index.html
+		precompressed
+	}
+
+	# The generator rewrites every page on each deploy, so pages must revalidate
+	# or a reader keeps yesterday's docs. Revalidation is the DEFAULT and assets
+	# are the exception, rather than the other way round: header matchers see the
+	# original request path, not the `try_files` rewrite, so matching pages by
+	# `*.html` would silently miss `/guide/` and `/guide/memory`.
+	@assets path *.css *.js *.png *.svg *.woff2 *.json
+	@page not path *.css *.js *.png *.svg *.woff2 *.json
+	header @page Cache-Control "no-cache, must-revalidate"
+	header @assets Cache-Control "public, max-age=3600"
+
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Static docs: no inline scripts, no third-party origins, nothing to
+		# fetch but our own assets and the search index.
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'"
+		-Server
+	}
+
+	handle_errors {
+		respond "{err.status_code} {err.status_text}" {err.status_code}
+	}
+
+	log {
+		output stdout
+		format console
+		level WARN
+	}
+}

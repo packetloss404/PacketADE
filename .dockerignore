@@ -1,0 +1,10 @@
+# The docs image needs only scripts/build-docs.mjs and docs/. Everything else is
+# noise that would slow the build context transfer and invalidate layer caches.
+*
+
+!scripts/build-docs.mjs
+!docs/
+
+# ...but not these, even inside docs/.
+docs/**/node_modules
+docs/**/*.log
