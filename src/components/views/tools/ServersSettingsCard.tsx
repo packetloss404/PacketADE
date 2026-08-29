@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Server, Plus, Pencil, Trash2 } from "lucide-react";
+import { Server, Plus, Pencil, ShieldAlert, ShieldCheck, Trash2 } from "lucide-react";
 import { useServerStore } from "@/stores/serverStore";
 import { ServerFormModal } from "@/components/servers/ServerFormModal";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
@@ -38,6 +38,11 @@ export function ServersSettingsCard() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+  // Legacy records saved before host-key pinning existed. `ServerFormModal`
+  // will not let a new one through unpinned, so this only ever counts records
+  // that predate the gate — see the banner below for why it matters.
+  const unpinnedCount = servers.filter((server) => !server.hostFingerprint).length;
 
   async function applyPasswordAction(submission: ServerFormSubmission) {
     if (submission.passwordAction.kind === "set") {
@@ -150,6 +155,30 @@ export function ServersSettingsCard() {
         </button>
       </div>
 
+      {/* Host-key pinning banner.
+          FAULT this closes: `ServerFormModal` gates every NEW host on pinning,
+          but entries saved before pinning existed carry no `hostFingerprint`,
+          and `buildSshArgs` (src/lib/ssh.ts) quietly drops those to
+          `StrictHostKeyChecking=accept-new` — TOFU. The composer already
+          discloses this at connect time and tells the user to "verify it on
+          the Servers page to pin the key"... and this page, the page it names,
+          showed nothing at all to distinguish a pinned host from an unpinned
+          one. The Host key column below is the other half of that sentence. */}
+      {unpinnedCount > 0 && (
+        <div className="mb-3 flex items-start gap-1.5 rounded border border-accent-amber/30 bg-accent-amber/5 px-2.5 py-1.5">
+          <ShieldAlert size={11} className="mt-px shrink-0 text-accent-amber" />
+          <p className="text-[10px] leading-snug text-text-secondary">
+            <span className="font-medium text-accent-amber">
+              {unpinnedCount} host{unpinnedCount === 1 ? "" : "s"} without a pinned key.
+            </span>{" "}
+            Connections to {unpinnedCount === 1 ? "it" : "them"} trust whatever key the
+            machine presents on first contact, so a first connect cannot detect an
+            impostor. Open the host and use &quot;Verify host key&quot; to pin its
+            fingerprint; existing setups keep working either way.
+          </p>
+        </div>
+      )}
+
       {servers.length === 0 ? (
         <p className="py-6 text-center text-[10px] text-text-muted">
           No servers configured. Add one to connect workspaces to remote machines.
@@ -163,6 +192,7 @@ export function ServersSettingsCard() {
                 <th className="px-3 py-2 font-medium">Host</th>
                 <th className="px-3 py-2 font-medium">User</th>
                 <th className="px-3 py-2 font-medium">Auth</th>
+                <th className="px-3 py-2 font-medium">Host key</th>
                 <th className="w-16 px-3 py-2 font-medium"></th>
               </tr>
             </thead>
@@ -194,6 +224,33 @@ export function ServersSettingsCard() {
                           ? "Key File"
                           : "Password"}
                     </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    {server.hostFingerprint ? (
+                      <span
+                        title={server.hostFingerprint}
+                        className="bg-accent-green/15 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-accent-green"
+                      >
+                        <ShieldCheck size={9} />
+                        Pinned
+                      </span>
+                    ) : (
+                      // Clickable: the fix for an unpinned host lives behind
+                      // the edit form's "Verify host key" block, so the badge
+                      // that reports the problem is also the way to reach it.
+                      <button
+                        onClick={() => {
+                          setEditingServer(server);
+                          setShowForm(true);
+                        }}
+                        aria-label={`Pin host key for ${server.name}`}
+                        title="This host is trusted on first sight (TOFU). Click to fetch and pin its key."
+                        className="bg-accent-amber/15 hover:bg-accent-amber/25 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-accent-amber transition-colors"
+                      >
+                        <ShieldAlert size={9} />
+                        Not pinned
+                      </button>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-end gap-1">

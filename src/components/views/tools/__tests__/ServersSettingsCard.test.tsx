@@ -256,6 +256,59 @@ describe("ServersSettingsCard delete confirm", () => {
   });
 });
 
+/**
+ * Host-key pinning visibility.
+ *
+ * FAULT: `buildSshArgs` drops an unpinned host to
+ * `StrictHostKeyChecking=accept-new` (TOFU). The launch composer discloses
+ * that at connect time and tells the user to verify the key "on the Servers
+ * page" — but this card, the page it names, rendered a pinned and an unpinned
+ * host identically. The weaker guarantee was invisible on the only surface
+ * that can fix it.
+ */
+describe("ServersSettingsCard host-key pinning", () => {
+  const PINNED: ServerConfig = {
+    ...PROD,
+    id: "srv-pinned",
+    name: "pinned-box",
+    hostFingerprint: "SHA256:abc123",
+  };
+
+  it("marks an unpinned host distinctly from a pinned one", () => {
+    seedServers([PROD, PINNED]);
+    render(<ServersSettingsCard />);
+
+    expect(screen.getByText("Pinned")).toBeInTheDocument();
+    expect(screen.getByText("Not pinned")).toBeInTheDocument();
+  });
+
+  it("says why an unpinned host matters, not just that it is unpinned", () => {
+    seedServers([PROD]);
+    render(<ServersSettingsCard />);
+
+    expect(screen.getByText(/1 host without a pinned key/)).toBeInTheDocument();
+    expect(screen.getByText(/cannot detect an impostor/)).toBeInTheDocument();
+  });
+
+  it("stays quiet when every host is pinned", () => {
+    seedServers([PINNED]);
+    render(<ServersSettingsCard />);
+
+    expect(screen.queryByText(/without a pinned key/)).not.toBeInTheDocument();
+  });
+
+  it("makes pinning reachable from the badge that reports it", () => {
+    seedServers([PROD]);
+    render(<ServersSettingsCard />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Pin host key for prod-box" }));
+
+    // Lands in the edit form, where the "Verify host key" block lives.
+    expect(screen.getByRole("heading", { name: "Edit Server" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Fetch host key/i })).toBeInTheDocument();
+  });
+});
+
 describe("ServersSettingsCard password credentials", () => {
   it("writes a password only to the OS keyring and never to ServerConfig", async () => {
     seedServers([

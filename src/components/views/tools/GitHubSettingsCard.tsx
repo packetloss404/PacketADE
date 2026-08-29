@@ -19,6 +19,8 @@ import {
   type GitHubMergeStrategy,
 } from "@/stores/githubStore";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
+import { HostIcon } from "@/components/HostIcon";
+import { hostLabel } from "@/lib/git-hosts";
 import { GitHostSetupWizard } from "@/components/gitHost/GitHostSetupWizard";
 import {
   githubDeviceFlowStart,
@@ -73,15 +75,30 @@ export function GitHubSettingsCard() {
   const [tokenInput, setTokenInput] = useState("");
   const [showToken, setShowToken] = useState(false);
 
-  // G2: Gitea/Forgejo self-hosted connections.
+  // Every git-host connection other than the built-in GitHub singleton.
+  //
+  // FAULT this fixes: this list was filtered to `c.kind === "gitea"` and the
+  // section was titled "Self-hosted (Gitea / Forgejo)". Once GitLab became a
+  // first-class kind — addable through the very wizard this card opens — a
+  // saved GitLab connection was filtered out of the only surface that lists
+  // connections. It could not be seen, and since Remove is the per-row trash
+  // button, it could not be removed either: a token sitting in the OS keyring
+  // with no reachable control. The filter is now "not the built-in GitHub
+  // connection", which is the actual rule, so the next kind appears here the
+  // day it becomes addable rather than the day someone remembers this line.
   const connections = useGitHubStore((s) => s.connections);
+  const activeConnectionId = useGitHubStore((s) => s.activeConnectionId);
   const loadConnections = useGitHubStore((s) => s.loadConnections);
+  const setActiveConnection = useGitHubStore((s) => s.setActiveConnection);
   const removeGitHostConnection = useGitHubStore((s) => s.removeGitHostConnection);
-  const giteaConnections = connections.filter((c) => c.kind === "gitea");
+  const additionalConnections = connections.filter((c) => c.kind !== "github");
 
   // The inline "paste a URL + a token and hope" form was replaced by the
   // guided wizard, which validates the credential before anything is written.
-  const [wizardHostId, setWizardHostId] = useState<string | null>(null);
+  // An undefined `descriptorId` opens the wizard on its own host picker —
+  // the only route to GitLab (and to the explained GitHub Enterprise
+  // dead-end) from this card, now that more than one self-hosted kind exists.
+  const [wizard, setWizard] = useState<{ descriptorId?: string } | null>(null);
   const [pendingHostRemoval, setPendingHostRemoval] = useState<{
     id: string;
     label: string;
@@ -224,7 +241,7 @@ export function GitHubSettingsCard() {
           <div className="flex items-center gap-1.5 flex-shrink-0">
             <button
               type="button"
-              onClick={() => setWizardHostId("github")}
+              onClick={() => setWizard({ descriptorId: "github" })}
               className="inline-flex items-center gap-1 px-2 py-1 text-[10px] text-accent-green hover:bg-accent-green/10 rounded transition-colors"
             >
               <Wand2 size={10} />
@@ -422,16 +439,16 @@ export function GitHubSettingsCard() {
         </div>
       </div>
 
-      {/* G2: self-hosted Gitea / Forgejo connections */}
+      {/* GitLab, Gitea/Forgejo, and whatever else the wizard can add. */}
       <div className="mt-4 pt-4 border-t border-bg-border">
         <div className="flex items-center justify-between mb-2">
           <h4 className="text-[11px] font-semibold text-text-primary flex items-center gap-2">
             <Server size={12} className="text-text-muted" />
-            Self-hosted (Gitea / Forgejo)
+            Other git hosts
           </h4>
           <button
             type="button"
-            onClick={() => setWizardHostId("gitea")}
+            onClick={() => setWizard({})}
             className="inline-flex items-center gap-1 text-[11px] text-accent-green hover:text-accent-green/80"
           >
             <Plus size={11} />
@@ -439,52 +456,103 @@ export function GitHubSettingsCard() {
           </button>
         </div>
 
-        {giteaConnections.length === 0 && (
+        {additionalConnections.length === 0 && (
           <p className="text-[10px] text-text-muted leading-snug">
-            Connect an on-prem Gitea or Forgejo instance. Each workspace uses the
-            host its <code className="text-text-secondary">origin</code> remote
-            belongs to.
+            Connect GitLab (gitlab.com or self-hosted) or an on-prem Gitea /
+            Forgejo instance. Each workspace uses the host its{" "}
+            <code className="text-text-secondary">origin</code> remote belongs
+            to. &quot;Add host&quot; asks which host you are connecting before it
+            asks for anything else.
           </p>
         )}
 
-        {giteaConnections.length > 0 && (
+        {additionalConnections.length > 0 && (
           <div className="flex flex-col gap-1.5 mb-2">
-            {giteaConnections.map((c) => (
-              <div
-                key={c.id}
-                className="flex items-center justify-between gap-2 rounded border border-bg-border bg-bg-primary px-2.5 py-1.5"
-              >
-                <div className="min-w-0">
-                  <div className="text-[11px] text-text-primary truncate">{c.label}</div>
-                  <div className="text-[10px] text-text-muted truncate font-mono">
-                    {c.baseUrl}
-                    {!c.hasToken && (
-                      <span className="text-accent-amber ml-1.5">· no token</span>
+            {additionalConnections.map((c) => {
+              const isActive = c.id === activeConnectionId;
+              return (
+                <div
+                  key={c.id}
+                  className="flex items-center justify-between gap-2 rounded border border-bg-border bg-bg-primary px-2.5 py-1.5"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    {/* Per-kind mark. A GitLab row must not wear the GitHub
+                        octocat, which is exactly what the old shared ternary
+                        in HostIcon did to it. */}
+                    <HostIcon kind={c.kind} size={12} className="shrink-0 text-text-muted" />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] text-text-primary truncate">{c.label}</span>
+                        <span className="shrink-0 rounded bg-bg-elevated px-1 py-0.5 text-[9px] text-text-muted">
+                          {hostLabel(c.kind)}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-text-muted truncate font-mono">
+                        {c.baseUrl}
+                        {!c.hasToken && (
+                          <span className="text-accent-amber ml-1.5">· no token</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {isActive ? (
+                      <span
+                        className="rounded bg-accent-green/15 px-1.5 py-0.5 text-[9px] text-accent-green"
+                        title="The Git pane is currently targeting this host"
+                      >
+                        Active
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setActiveConnection(c.id)}
+                        title={`Point the Git pane at ${c.label}`}
+                        aria-label={`Use ${c.label}`}
+                        className="rounded px-1.5 py-0.5 text-[9px] text-text-muted hover:bg-bg-hover hover:text-text-secondary"
+                      >
+                        Use
+                      </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPendingHostRemoval({ id: c.id, label: c.label, baseUrl: c.baseUrl })
+                      }
+                      title={`Remove ${c.label}`}
+                      aria-label={`Remove ${c.label}`}
+                      className="text-text-muted hover:text-accent-red p-1 rounded"
+                    >
+                      <Trash2 size={12} />
+                    </button>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPendingHostRemoval({ id: c.id, label: c.label, baseUrl: c.baseUrl })
-                  }
-                  title={`Remove ${c.label}`}
-                  aria-label={`Remove ${c.label}`}
-                  className="text-text-muted hover:text-accent-red p-1 rounded"
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
+        {additionalConnections.length > 0 && (
+          <p className="text-[10px] text-text-muted leading-snug">
+            Opening a workspace re-resolves the host from that repository&apos;s{" "}
+            <code className="text-text-secondary">origin</code> remote, so
+            &quot;Use&quot; is an override that holds until you switch workspace.
+            To change a host&apos;s token, remove it and add it again — the wizard
+            verifies the new credential before anything reaches the keyring.
+          </p>
+        )}
       </div>
 
-      {wizardHostId && (
+      {wizard && (
         <GitHostSetupWizard
-          initialDescriptorId={wizardHostId}
-          onClose={() => setWizardHostId(null)}
+          initialDescriptorId={wizard.descriptorId}
+          // Re-read on close: the wizard writes through its descriptor's own
+          // `save`, not through this card's store action, so without this the
+          // list stayed stale until the next mount.
+          onClose={() => {
+            setWizard(null);
+            void loadConnections();
+          }}
         />
       )}
 

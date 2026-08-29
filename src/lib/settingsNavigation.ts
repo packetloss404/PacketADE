@@ -200,9 +200,21 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
       {
         key: "github",
         label: "Git Hosts",
-        description: "GitHub and self-hosted Gitea or Forgejo connections.",
+        // GitLab is a first-class host kind, so it belongs in both the blurb
+        // and the keywords: Settings search is keyword-matched, and a user
+        // typing "gitlab" was getting no result for a section that connects it.
+        description: "GitHub, GitLab, and self-hosted Gitea or Forgejo connections.",
         scopes: ["App", "Workspace"],
-        keywords: ["github", "gitea", "forgejo", "git", "pull request", "token"],
+        keywords: [
+          "github",
+          "gitlab",
+          "gitea",
+          "forgejo",
+          "git",
+          "pull request",
+          "merge request",
+          "token",
+        ],
       },
       {
         key: "mcp",

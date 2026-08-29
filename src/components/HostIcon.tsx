@@ -1,8 +1,16 @@
-// G13: git-host branding. Renders the GitHub mark (lucide) or a Gitea/Forgejo
-// mark, so the pane's icon + label follow whichever host the active workspace
-// resolves to. `hostLabel` gives the matching display name.
+// G13: git-host branding. Renders the mark for whichever host the active
+// workspace resolves to, so the pane's icon + label agree. `hostLabel` gives
+// the matching display name.
+//
+// This is an exhaustive per-kind map, not a "gitea or else GitHub" ternary.
+// It used to be the latter, which meant a GitLab connection — a first-class
+// host kind since the GitLab work landed — rendered under the GitHub mark
+// everywhere the icon appears: the settings list, the Git pane's host
+// switcher, and the setup wizard's own confirmation screen. A branding
+// fallback that silently names the wrong vendor is worse than no icon, and a
+// map makes the next kind a compile error here rather than a quiet mislabel.
 
-import { Github } from "lucide-react";
+import { GitBranch, Github, Gitlab } from "lucide-react";
 import type { GitHostKind } from "@/lib/tauri";
 
 /** Simplified Gitea/Forgejo mark (a mug with a leaf) in the current color. */
@@ -43,9 +51,16 @@ export function HostIcon({
   size?: number;
   className?: string;
 }) {
-  return kind === "gitea" ? (
-    <GiteaIcon size={size} className={className} />
-  ) : (
-    <Github size={size} className={className} />
-  );
+  switch (kind) {
+    case "gitea":
+      return <GiteaIcon size={size} className={className} />;
+    case "gitlab":
+      return <Gitlab size={size} className={className} />;
+    case "github":
+      return <Github size={size} className={className} />;
+    default:
+      // A kind added to `GitHostKind` but not here. Fall back to a neutral
+      // mark rather than claiming a vendor this connection is not.
+      return <GitBranch size={size} className={className} />;
+  }
 }

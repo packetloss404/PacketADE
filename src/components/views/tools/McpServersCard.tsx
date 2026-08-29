@@ -5,7 +5,7 @@ import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { McpServerModal } from "../McpServerModal";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
-import type { McpServerEntry } from "@/types/mcp";
+import { mcpServerTransport, type McpServerEntry } from "@/types/mcp";
 
 export function McpServersCard() {
   const { servers, loading, error, fetchServers, addServer, updateServer, removeServer } =
@@ -74,7 +74,19 @@ export function McpServersCard() {
     scope: "global" | "project"
   ) {
     if (editEntry) {
-      await updateServer(name, command, args, env, scope);
+      // Hand over where the row currently lives so a scope change MOVES the
+      // server. The modal's Scope buttons are live while editing and read as
+      // "this server's scope"; without the old scope the write only upserted
+      // into the other file and left the original behind, so switching Global
+      // to Project silently produced two servers of the same name.
+      await updateServer(
+        name,
+        command,
+        args,
+        env,
+        scope,
+        editEntry.scope as "global" | "project",
+      );
     } else {
       await addServer(name, command, args, env, scope);
     }
@@ -230,6 +242,17 @@ function ServerGroup({
       <div className="space-y-1">
         {servers.map((entry) => {
           const key = `${entry.scope}:${entry.name}`;
+          // `McpServerModal` edits exactly one shape: command + args + env.
+          // An http/sse server has no `command` — it has `type` and `url` —
+          // so the form opened blank on the Command field and refused to save
+          // until the user invented one, at which point `upsert_mcp_server`
+          // grafted a `command` onto an object that still carried `type`/`url`.
+          // The server the user was trying to edit came out neither one thing
+          // nor the other. Non-stdio entries are labelled and their Edit button
+          // is disabled with the reason, rather than offering a form that
+          // cannot describe them.
+          const transport = mcpServerTransport(entry);
+          const editable = transport === "stdio";
           return (
             <div
               key={key}
@@ -238,6 +261,14 @@ function ServerGroup({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-medium text-text-primary">{entry.name}</span>
+                  {!editable && (
+                    <span
+                      className="text-[9px] px-1 py-0.5 bg-bg-elevated text-text-muted rounded"
+                      title="Remote transport — configured by url, not by a command"
+                    >
+                      {transport}
+                    </span>
+                  )}
                   {entry.disabled && (
                     <span className="text-[9px] px-1 py-0.5 bg-bg-elevated text-text-muted rounded">
                       disabled
@@ -245,8 +276,16 @@ function ServerGroup({
                   )}
                 </div>
                 <div className="text-[10px] text-text-muted mt-0.5 truncate">
-                  {entry.config.command}
-                  {entry.config.args?.length ? ` ${entry.config.args.join(" ")}` : ""}
+                  {editable ? (
+                    <>
+                      {entry.config.command}
+                      {entry.config.args?.length ? ` ${entry.config.args.join(" ")}` : ""}
+                    </>
+                  ) : (
+                    // The command line is empty for these; show the endpoint
+                    // that actually defines them instead of a blank row.
+                    String(entry.rawConfig?.url ?? `${transport} server`)
+                  )}
                 </div>
                 {!entry.disabled && (
                   <Checkbox
@@ -260,8 +299,13 @@ function ServerGroup({
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
                   onClick={() => onEdit(entry)}
-                  className="p-1 text-text-muted hover:text-accent-blue transition-colors"
-                  title="Edit"
+                  disabled={!editable}
+                  className="p-1 text-text-muted hover:text-accent-blue transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-text-muted"
+                  title={
+                    editable
+                      ? "Edit"
+                      : `This is a ${transport} server, defined by a url rather than a command. Edit it in the ${entry.scope === "global" ? "global settings" : ".mcp.json"} file; this form can only describe command-based servers.`
+                  }
                 >
                   <Pencil size={11} />
                 </button>

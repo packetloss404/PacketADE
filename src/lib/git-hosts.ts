@@ -170,10 +170,12 @@ export function normalizeInstanceBaseUrl(kind: GitHostKind, input: string): Norm
   return { value: stripped };
 }
 
-/**
- * Gitea-specific alias of {@link normalizeInstanceBaseUrl}, kept so existing
- * call sites (`GitHubSettingsCard`) keep compiling unchanged.
- */
-export function normalizeGiteaBaseUrl(input: string): NormalizeResult {
-  return normalizeInstanceBaseUrl("gitea", input);
-}
+// `normalizeGiteaBaseUrl` used to live here as a Gitea-fixed alias of
+// `normalizeInstanceBaseUrl`, documented as "kept so existing call sites
+// (`GitHubSettingsCard`) keep compiling unchanged". That card stopped calling
+// it when the guided wizard replaced its inline add-form — the wizard uses its
+// descriptor's own `normalizeInstanceUrl` — leaving an exported helper whose
+// only remaining callers were the tests written for it, under a comment that
+// named a call site that no longer existed. Removed rather than re-documented:
+// a kind-fixed wrapper is the shape that produced the GitLab gaps elsewhere in
+// this file. Call `normalizeInstanceBaseUrl(kind, input)` instead.

@@ -189,8 +189,11 @@ interface GitHubStore {
     label: string,
     token: string,
   ) => Promise<void>;
-  /** Gitea-specific alias of `addGitHostConnection`, kept for existing callers. */
-  addGiteaHost: (baseUrl: string, label: string, token: string) => Promise<void>;
+  // `addGiteaHost` used to sit here as a Gitea-fixed alias "kept for existing
+  // callers". There were none left once the guided wizard took over adding
+  // hosts — it writes through its descriptor's own `save` — so it was an
+  // unreachable path that wrote a token into the OS keyring, and a kind-fixed
+  // one at that. Use `addGitHostConnection(kind, ...)`.
   /** G2: remove a non-GitHub connection. */
   removeGitHostConnection: (id: string) => Promise<void>;
   /** G3: manually set the active connection (host override). */
@@ -633,10 +636,6 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   addGitHostConnection: async (kind, baseUrl, label, token) => {
     await gitHostAddConnection(kind, baseUrl, label, token);
     await get().loadConnections();
-  },
-
-  addGiteaHost: async (baseUrl, label, token) => {
-    await get().addGitHostConnection("gitea", baseUrl, label, token);
   },
 
   removeGitHostConnection: async (id) => {
