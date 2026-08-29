@@ -152,10 +152,11 @@ export function AgentModeChip({
   const rootRef = useRef<HTMLDivElement>(null);
   const mode = deriveMode(conversation);
 
-  // P1-S4 (Codex honesty): providers whose adapter can't honor approval
-  // round-trips (Codex `exec`) expose ONLY the honorable sandbox postures,
-  // relabeled in sandbox vocabulary. Approval-capable providers keep the
-  // full five-mode set with its native labels.
+  // P1-S4: providers whose adapter can't honor approval round-trips expose
+  // ONLY the honorable sandbox postures, relabeled in sandbox vocabulary.
+  // Approval-capable providers keep the full five-mode set with its native
+  // labels. No live catalog row is approval-incapable today — see the DECISION
+  // note on `SANDBOX_MODE_ORDER` for why the branch is kept anyway.
   //
   // Both facts now come from the ONE capability descriptor rather than from a
   // provider-identity lookup here (see lib/agentCapabilities.ts).

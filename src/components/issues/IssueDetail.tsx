@@ -25,6 +25,7 @@ import { IssueDependencyList } from "./IssueDependencyList";
 import { IssueCommentList } from "./IssueCommentList";
 import { IssueCommentComposer } from "./IssueCommentComposer";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
+import { useToast } from "@/components/ui/Toast";
 
 interface IssueDetailProps {
   issueId: string;
@@ -116,6 +117,7 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
   const removeIssueFromFlight = useFlightStore((s) => s.removeIssueFromFlight);
 
   const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const toast = useToast();
 
   const [showDepGraph, setShowDepGraph] = useState(false);
   const [newCriterionText, setNewCriterionText] = useState("");
@@ -234,7 +236,10 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
     // Use the canonical orchestrator action so the Issue picks up the
     // worktree-with-hook (auto-Done loop) and the linkage stamps land in
     // one place. The card's CTA goes through the same path.
-    await useIssueStore.getState().sendIssueToWorkspace(issue.id);
+    const result = await useIssueStore.getState().sendIssueToWorkspace(issue.id);
+    // A degraded handoff still opens a workspace, so the only signal the user
+    // would otherwise get is the auto-Done that never arrives days later.
+    if (result?.warning) toast.error(result.warning);
     onClose();
   }
 

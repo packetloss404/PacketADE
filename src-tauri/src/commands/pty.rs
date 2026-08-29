@@ -71,6 +71,51 @@ fn command_program_name(command: &str) -> String {
     stem.to_ascii_lowercase()
 }
 
+/// Read the app pin for `command` under `home` — a `<DATA_DIR>/<command>-bin`
+/// file whose contents are the absolute path of the binary to launch instead
+/// of whatever PATH resolution would find.
+///
+/// FAULT this exists to fix: the pin used to be read inside the `cfg(not(windows))`
+/// resolver only, so on Windows — the primary platform — the documented escape
+/// hatch did nothing at all and gave no hint that it had been ignored. The read
+/// is platform-neutral now and both resolvers consult it first.
+///
+/// Takes `home` explicitly so the behaviour is testable without touching the
+/// developer's real home directory.
+fn pinned_cli_binary_in(home: &std::path::Path, command: &str) -> Option<String> {
+    // A command may already arrive as a path (a manual override); the pin is
+    // keyed on the bare program name, so strip any directory/extension first.
+    let key = command_program_name(command);
+    let pin = home
+        .join(crate::core::brand::DATA_DIR_NAME)
+        .join(format!("{key}-bin"));
+    let contents = std::fs::read_to_string(&pin).ok()?;
+    let path = contents.trim();
+    if path.is_empty() {
+        warn!(command, pin = %pin.display(), "App pin file is empty; ignoring");
+        return None;
+    }
+    if !std::path::Path::new(path).exists() {
+        // Loud on purpose: a pin that points at a moved/deleted binary is a
+        // configuration the user believes is in force. Falling through to PATH
+        // without a word is how the pin became invisible in the first place.
+        warn!(
+            command,
+            pin = %pin.display(),
+            pinned = path,
+            "App-pinned CLI binary does not exist; falling back to PATH resolution"
+        );
+        return None;
+    }
+    info!(command, pinned = path, "Using app-pinned CLI binary");
+    Some(path.to_string())
+}
+
+/// `pinned_cli_binary_in` against the real home directory.
+fn pinned_cli_binary(command: &str) -> Option<String> {
+    pinned_cli_binary_in(&dirs::home_dir()?, command)
+}
+
 /// Resolve a CLI agent command to an absolute executable path.
 ///
 /// 1. An app pin (`~/.packetbench/<command>-bin` containing an absolute path) wins
@@ -85,15 +130,8 @@ fn command_program_name(command: &str) -> String {
 /// 3. If it can't be resolved, return the name unchanged and let it fail loudly.
 #[cfg(not(windows))]
 fn resolve_pinned_cli_binary(command: &str) -> String {
-    if let Some(home) = dirs::home_dir() {
-        let pin = home.join(".packetbench").join(format!("{command}-bin"));
-        if let Ok(contents) = std::fs::read_to_string(&pin) {
-            let path = contents.trim();
-            if !path.is_empty() && std::path::Path::new(path).exists() {
-                info!(command, pinned = path, "Using app-pinned CLI binary");
-                return path.to_string();
-            }
-        }
+    if let Some(pinned) = pinned_cli_binary(command) {
+        return pinned;
     }
 
     // Already an explicit path — use as-is.
@@ -181,6 +219,14 @@ fn select_windows_command_candidate(command: &str, lines: &[&str]) -> Option<Str
 #[cfg(windows)]
 fn resolve_windows_command(command: &str) -> String {
     use super::shared::hide_window;
+
+    // Same first step as the POSIX resolver: the app pin outranks PATH. It is
+    // read here rather than only in `resolve_pinned_cli_binary` because that
+    // function is `cfg(not(windows))` — which is what made the documented
+    // override a silent no-op on the platform most users are on.
+    if let Some(pinned) = pinned_cli_binary(command) {
+        return pinned;
+    }
 
     // A manually-pinned binary arrives as an explicit path (absolute, or
     // containing a separator). `where` doesn't resolve full paths, so use it
@@ -1509,6 +1555,71 @@ mod tests {
             .flat_map(u16::to_le_bytes)
             .collect();
         assert_eq!(decode_console_output(&encoded), "Ubuntu\r\nDebian\r\n");
+    }
+
+    /// The `<DATA_DIR>/<command>-bin` pin is documented as the escape hatch for
+    /// forcing a specific CLI binary. It was read only by the POSIX resolver,
+    /// so on Windows it silently did nothing. These cover the platform-neutral
+    /// read that both resolvers now share.
+    #[test]
+    fn app_pin_resolves_to_the_pinned_binary_on_every_platform() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let data_dir = home.path().join(crate::core::brand::DATA_DIR_NAME);
+        std::fs::create_dir_all(&data_dir).expect("data dir");
+
+        // The pinned target must exist on disk for the pin to be honoured.
+        let target = home.path().join("pinned-claude");
+        std::fs::write(&target, b"#!/bin/sh\n").expect("target");
+        std::fs::write(
+            data_dir.join("claude-bin"),
+            format!("{}\n", target.display()),
+        )
+        .expect("pin");
+
+        assert_eq!(
+            pinned_cli_binary_in(home.path(), "claude").as_deref(),
+            Some(target.to_string_lossy().as_ref()),
+        );
+    }
+
+    #[test]
+    fn app_pin_is_keyed_on_the_program_name_not_the_whole_command() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let data_dir = home.path().join(crate::core::brand::DATA_DIR_NAME);
+        std::fs::create_dir_all(&data_dir).expect("data dir");
+        let target = home.path().join("pinned-codex");
+        std::fs::write(&target, b"#!/bin/sh\n").expect("target");
+        std::fs::write(data_dir.join("codex-bin"), target.to_string_lossy().as_ref())
+            .expect("pin");
+
+        // A command that already arrived as a path still finds its pin.
+        assert_eq!(
+            pinned_cli_binary_in(home.path(), r"D:\tools\codex.exe").as_deref(),
+            Some(target.to_string_lossy().as_ref()),
+        );
+    }
+
+    #[test]
+    fn app_pin_is_ignored_when_absent_empty_or_dangling() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let data_dir = home.path().join(crate::core::brand::DATA_DIR_NAME);
+        std::fs::create_dir_all(&data_dir).expect("data dir");
+
+        // No pin file at all.
+        assert_eq!(pinned_cli_binary_in(home.path(), "claude"), None);
+
+        // Present but blank.
+        std::fs::write(data_dir.join("claude-bin"), "   \n").expect("pin");
+        assert_eq!(pinned_cli_binary_in(home.path(), "claude"), None);
+
+        // Present but pointing at a binary that isn't there — must fall through
+        // to PATH resolution rather than handing back a path that can't spawn.
+        std::fs::write(
+            data_dir.join("claude-bin"),
+            home.path().join("gone").to_string_lossy().as_ref(),
+        )
+        .expect("pin");
+        assert_eq!(pinned_cli_binary_in(home.path(), "claude"), None);
     }
 
     #[test]

@@ -32,6 +32,7 @@ vi.mock("@/stores/agentConversationPersistence", () => ({
 }));
 
 import { useAgentTabHoists } from "@/hooks/useAgentTabHoists";
+import { COMPOSER_HELP_TEXT } from "@/components/agents/composer/utils";
 
 function fireKey(init: KeyboardEventInit, target?: HTMLElement) {
   const e = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
@@ -80,6 +81,29 @@ describe("useAgentTabHoists", () => {
     fireKey({ ctrlKey: true, key: "n" }, input);
     expect(createInstantWorkspace).not.toHaveBeenCalled();
     input.remove();
+  });
+
+  /**
+   * FAULT: `COMPOSER_HELP_TEXT` advertised "Ctrl+N for new agent" in the hint
+   * printed directly beneath the launch composer's textarea — where the guard
+   * above eats the chord, and where firing it would be a no-op anyway (the
+   * launch composer already IS `selectConversation(null)`). This pins the two
+   * facts together so the hint cannot drift back in while the guard stands.
+   */
+  it("does not advertise Ctrl+N in the composer hint, where the guard eats it", () => {
+    renderHook(() => useAgentTabHoists());
+    const textarea = document.createElement("textarea");
+    document.body.appendChild(textarea);
+    fireKey({ ctrlKey: true, key: "n" }, textarea);
+    expect(createInstantWorkspace).not.toHaveBeenCalled();
+    expect(selectConversation).not.toHaveBeenCalled();
+    textarea.remove();
+
+    expect(COMPOSER_HELP_TEXT).not.toMatch(/ctrl\+n/i);
+    // The hints that ARE live from inside the composer must survive.
+    expect(COMPOSER_HELP_TEXT).toContain("Enter to send");
+    expect(COMPOSER_HELP_TEXT).toContain("Shift+Enter");
+    expect(COMPOSER_HELP_TEXT).toContain("@ to mention a file");
   });
 
   it("Ctrl+Shift+N does NOT start a new session (shift excluded)", () => {

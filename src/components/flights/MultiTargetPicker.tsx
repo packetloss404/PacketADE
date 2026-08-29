@@ -1,8 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { Folder, Server, X, Check, AlertTriangle } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useServerStore } from "@/stores/serverStore";
 import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
+import { detectBaseBranch } from "@/components/flights/detectBaseBranch";
 import type { AgentCli } from "@/stores/agentTaskStore";
 import type { ServerConfig } from "@/types/server";
 import type { Workspace } from "@/types/workspace";
@@ -38,6 +39,16 @@ interface MultiTargetPickerProps {
   defaultAgent?: AgentCli;
 }
 
+/**
+ * FAULT: every target used to be seeded with a hard-coded "main" regardless of
+ * the repository's real trunk, so a repo on `master`/`develop`/`trunk` branched
+ * its attempt worktrees off a branch that may not even exist — and the row's
+ * branch box looked authoritative while saying something untrue.
+ *
+ * This stays as the LAST resort only: the row is seeded with it so the picker
+ * paints instantly, then `detectBaseBranch` replaces it with the target's
+ * actual checked-out branch when the probe lands.
+ */
 const DEFAULT_BRANCH = "main";
 
 export function MultiTargetPicker({
@@ -49,6 +60,31 @@ export function MultiTargetPicker({
   const sshServers = useServerStore((s) => s.servers);
 
   const isPicked = (key: string) => picked.some((p) => p.key === key);
+
+  // The picker is controlled, so a detection that lands after the click must
+  // patch whatever the parent holds NOW — not the array captured at add time.
+  const pickedRef = useRef(picked);
+  pickedRef.current = picked;
+
+  /**
+   * Replace a freshly added row's placeholder branch with the repository's
+   * real one. Deliberately fire-and-forget: the row must appear on the click,
+   * and an SSH probe can take seconds. The guard below is what makes that
+   * safe — a row the user has already retyped or removed is left alone, so a
+   * slow probe can never overwrite a deliberate choice.
+   */
+  function seedRealBaseBranch(target: PickedTarget) {
+    void detectBaseBranch(target).then((branch) => {
+      if (!branch || branch === DEFAULT_BRANCH) return;
+      const current = pickedRef.current.find((p) => p.key === target.key);
+      if (!current || current.baseBranch !== DEFAULT_BRANCH) return;
+      onChange(
+        pickedRef.current.map((p) =>
+          p.key === target.key ? ({ ...p, baseBranch: branch } as PickedTarget) : p,
+        ),
+      );
+    });
+  }
 
   const localOptions = useMemo(
     () =>
@@ -69,19 +105,18 @@ export function MultiTargetPicker({
       onChange(picked.filter((p) => p.key !== key));
       return;
     }
-    onChange([
-      ...picked,
-      {
-        kind: "local",
-        key,
-        workspaceId: workspace.id,
-        label: workspace.name,
-        basePath: workspace.projectPath,
-        baseBranch: DEFAULT_BRANCH,
-        agent: defaultAgent,
-        model: getDefaultModel(defaultAgent),
-      },
-    ]);
+    const target: PickedTarget = {
+      kind: "local",
+      key,
+      workspaceId: workspace.id,
+      label: workspace.name,
+      basePath: workspace.projectPath,
+      baseBranch: DEFAULT_BRANCH,
+      agent: defaultAgent,
+      model: getDefaultModel(defaultAgent),
+    };
+    onChange([...picked, target]);
+    seedRealBaseBranch(target);
   }
 
   function toggleSsh(server: ServerConfig) {
@@ -95,22 +130,21 @@ export function MultiTargetPicker({
       onChange(picked.filter((p) => p.key !== key));
       return;
     }
-    onChange([
-      ...picked,
-      {
-        kind: "ssh",
-        key,
-        server,
-        label: server.name,
-        // Phase 2: ServerConfig.remotePath is optional (it's a default,
-        // not a per-attempt path). Fall back to "" so the row's path
-        // input shows up empty and the user can fill it in.
-        basePath: server.remotePath ?? "",
-        baseBranch: DEFAULT_BRANCH,
-        agent: defaultAgent,
-        model: getDefaultModel(defaultAgent),
-      },
-    ]);
+    const target: PickedTarget = {
+      kind: "ssh",
+      key,
+      server,
+      label: server.name,
+      // Phase 2: ServerConfig.remotePath is optional (it's a default,
+      // not a per-attempt path). Fall back to "" so the row's path
+      // input shows up empty and the user can fill it in.
+      basePath: server.remotePath ?? "",
+      baseBranch: DEFAULT_BRANCH,
+      agent: defaultAgent,
+      model: getDefaultModel(defaultAgent),
+    };
+    onChange([...picked, target]);
+    seedRealBaseBranch(target);
   }
 
   function updatePicked(key: string, patch: Partial<PickedTarget>) {

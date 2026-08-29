@@ -22,6 +22,7 @@ import {
   type WorkspaceAgentSlot,
 } from "@/types/workspace";
 import { delegateWorkspaceToAgents } from "@/lib/agentHandoffs";
+import { bypassCaveat, bypassStatusLabel } from "@/lib/bypassFlags";
 import { useWorkspaceAgentsDogfoodStore } from "@/stores/workspaceAgentsDogfoodStore";
 
 const agentLabel: Record<WorkspaceAgentSlot, string> = {
@@ -98,6 +99,14 @@ export function WorkspaceView({ surfaceActive = true }: WorkspaceViewProps) {
     initialized && !onboardingDone && activeNonArchived.length === 0 && !projectPath;
 
   const bypassOn = activeWorkspace?.bypassPermissions ?? false;
+
+  // FAULT: the header read a flat "Bypass perms: on" even when the workspace
+  // held CLIs that have no bypass flag (OpenCode, PacketCode), so the control
+  // claimed an effect the spawn path never applied. Derive the caveat from the
+  // same table `WorkspacePane` reads when it builds the launch args.
+  const bypassAgentIds = activeWorkspace?.panes.map((p) => p.agentId) ?? [];
+  const bypassGap = bypassCaveat(bypassAgentIds);
+  const bypassLabel = bypassStatusLabel(bypassOn, bypassAgentIds);
 
   // Count agents per type for the active workspace. Tile program (P1-S1): the
   // header badges are keyed on `kind` — conversation panes carry the inert
@@ -268,10 +277,14 @@ export function WorkspaceView({ surfaceActive = true }: WorkspaceViewProps) {
                     ? "border-accent-line bg-accent-soft text-accent-amber"
                     : "border-bg-border bg-bg-secondary text-text-muted hover:text-text-secondary"
                 } disabled:opacity-50`}
-                title="Bypass permission prompts for this workspace"
+                title={
+                  bypassOn && bypassGap
+                    ? `Bypass permission prompts for this workspace. ${bypassGap}`
+                    : "Bypass permission prompts for this workspace"
+                }
               >
                 <Zap size={10} />
-                <span>Bypass perms: {bypassOn ? "on" : "off"}</span>
+                <span>Bypass perms: {bypassLabel}</span>
               </button>
             </div>
           </div>
