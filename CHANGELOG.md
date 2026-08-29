@@ -9,6 +9,85 @@ task list.
 
 ## [Unreleased]
 
+### Fixed — Project Memory lost or corrupted notes under ordinary editor saves
+
+The watcher's debounce was leading-edge — it fired 180 ms after the *first*
+event of a burst, which is to say reliably **mid-save**, exactly when a
+half-written file is on disk. What it then read was mishandled three ways: a
+truncate-then-write editor's zero-length file passed the frontmatter test and
+became a titled, selectable **empty ghost note** that displaced the real one; a
+UTF-8 BOM (Notepad, VS Code `utf8bom`, PowerShell redirects) defeated the same
+test, silently degrading a fully managed note to an unmanaged one so its id
+vanished and update-by-id stopped resolving; and editor lock files (`.#note.md`)
+listed as junk notes. The debounce is now trailing, with a ceiling so a
+continuous storm cannot starve refresh, and events on the window boundary are no
+longer dropped.
+
+`write_atomic` copied to a backup, **removed the original**, then persisted. A
+reader in that window saw the note as deleted, and a crash inside it left the
+only copy in a `.packetbench-backup` that nothing ever read back — the note
+looked permanently gone. It now renames over the target atomically, keeping the
+backup dance only as a fallback, and an orphaned backup surfaces as a warning
+with recovery guidance instead of sitting there silently.
+
+Arming the watcher called `memory_root(project_path, true)`, so merely opening a
+project **created `.agents/memory`** in it. Watching is now read-only and falls
+back to the nearest existing ancestor. The watcher map was also keyed by watched
+directory and never pruned, leaking one OS watch handle per project opened and
+orphaning the ancestor watcher once the directory appeared; it is now keyed by
+project root, replaced in place, and capped.
+
+Search recomputed document frequency by re-scanning every document inside its
+per-note/per-term loop — O(notes²·tokens·terms), which hangs the command thread
+at the 2,000-note ceiling — and `raw_links` compiled two regexes per note, 4,000
+compilations per listing on the hot path of every watcher reload. Both are now
+computed once.
+
+Seven store-level races went with them: two overlapping listings of the same
+project could land out of order and lose the newer one; every watcher event
+started its own full listing; `loading` blanked the list on every background
+refresh; an unrelated event wiped the save-conflict banner the user still had to
+act on; and `ownWriteUntil` was armed only before a write, so a slow write
+outlived its window and the echo of the user's own save was reported as an
+external edit.
+
+PacketBench still never writes `.gitignore`, now pinned by three tests including
+a byte-comparison across create/update/archive/list/search.
+
+### Added — Ask finds camelCase identifiers and domain acronyms
+
+Closes the miss classes the semantic-retrieval evaluation measured. camelCase
+splitting was asymmetric: a prose query reached a camelCase document through the
+raw-substring rule, but `SshConfig` collapsed to one token that no rule could
+relate to "the ssh config record". Users type symbols into the search box while
+agents write prose into summaries. A small acronym table covers PTY/ACP/MCP/IDF,
+which the tokenizer makes atomic and the prefix rule's four-character floor
+makes unmatchable except literally.
+
+A curated **synonym** map was evaluated and rejected: against a held-out query
+set whose vocabulary it did not contain it recovered 0% while inflating result
+sets 2.75x. Embeddings were declined too — see `backlog.md` for the measurement.
+
+### Changed — `scan_codebase_memory` no longer shells out to the Claude CLI
+
+It now routes through the aux-LLM seam over a bounded, root-confined project
+manifest assembled in Rust (`core::aux_context`), so it gets provider routing,
+token accounting, and a legible failure when no provider is configured instead
+of silently doing nothing without `claude` on PATH. The backlog's "bounded
+read-only tool loop" was **not** built for this half: listing key files with
+one-line summaries is a deterministic walk, so the model never needs to choose
+what to read, and one aux turn over a pre-assembled manifest is cheaper and
+auditable in a way a loop is not.
+
+Symlinks and Windows junctions are skipped rather than resolved, making escape
+structurally impossible; every file is re-canonicalized immediately before
+opening, closing the walk-to-read window; secret-shaped names are refused with
+guards so `tokenizer.rs` survives; binaries are listed but never excerpted.
+Routing resolves before the filesystem is touched, so with no provider
+configured the disk is never read. `run_claude` remains for `github.rs` and
+`insights.rs`. The command still has no caller — whether to wire it up or delete
+it is filed as a decision rather than left to drift.
+
 ### Added — memory capture for remote (SSH) workspaces
 
 0.12.0 recorded that remote memory was empty **by construction**:
@@ -86,9 +165,13 @@ Windows artifacts, built 2026-08-28 21:13 from `544e4cc6`, **unsigned**:
 > spanned a source edit, so it could not be tied to a commit. Only the hashes
 > above are real.
 
-Gates at this tree: `cargo check` clean, 803 Rust lib tests (2 ignored) + 31
-`acp_stream` passing, `tsc --noEmit` 0 errors, `pnpm lint` 0 errors, `vitest run`
-2372/2372 across 264 files, `check:tauri-schema` clean.
+Gates at `544e4cc6`, the tree these bundles were built from: `cargo check`
+clean, 801 Rust lib tests (2 ignored) + 31 `acp_stream` passing, `tsc --noEmit`
+0 errors, `pnpm lint` 0 errors, `vitest run` 2372/2372 across 264 files,
+`check:tauri-schema` clean.
+
+> Everything under **[Unreleased]** above landed after `544e4cc6` and is
+> therefore **not in these artifacts**. Accepting that work needs a rebuild.
 
 ### Fixed — the rename stranded a shared legacy data dir
 

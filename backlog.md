@@ -160,22 +160,17 @@ environment or packaged matrix has actually run.
   modes, so it needs an owner decision: build the reader, accept the loss and say
   so in release notes, or ship a one-time importer. The data-dir and keyring
   migrations are unaffected. Recorded under 0.12.0 in `CHANGELOG.md`.
-- **P2 - Memory capture for remote workspaces.** `computeContextItems`
-  (`src/stores/memoryStore.ts`) reads the `ssh:<serverId>:<path>` and
-  `workspace:<id>` scope keys, but nothing in production writes them: every
-  writer stamps a plain path (`useTerminalSession.ts`, `asyncFlightStore.ts`,
-  `lib/memoryCapture.ts`, `captureManually`). A correctly-scoped remote
-  workspace therefore shows no memory, permanently, by construction. Since
-  2026-08-28 the Memory pane states this honestly rather than showing another
-  project's data, so this is a missing feature and no longer a silent lie.
-  Doing it means re-keying the writers **and** teaching every display, filter,
-  and export surface to render a scope key as something a human recognises —
-  Timeline project chips, the pattern project badge, `filterMemoryEventsByScope`,
-  `serializeMemoryExport` / `serializeMemoryMarkdown` / `importMemory` — plus a
-  migration story for memory already recorded under plain remote paths. Fold in
-  the related pre-existing bug: manual captures from a remote agent transcript
-  (`lib/memoryCapture.ts`) already write a plain remote path that no `ssh` brief
-  scope will ever match, so they are write-only-dead today.
+- **DONE 2026-08-28 - Memory capture for remote workspaces.** Records are
+  stamped through a single write choke point, with the scope resolved from the
+  workspace the work ran in rather than the active one. Scope keys render as
+  `build-box · app` in the timeline chips, pattern badges, and Markdown export.
+  Isolation got stricter: under `projectPathMatching: "global"` a synthetic key
+  previously matched everything, so a local brief would have pulled in every
+  remote workspace's memory. Migration is opt-in and reversible — a plain
+  `/srv/app` is indistinguishable from a local project at that path, so nothing
+  is rewritten automatically. **Not done:** remote `.agents/memory` notes, which
+  need an SSH note transport, and `InvestigationPanel` still stamps a plain path
+  because GitHub always works against a checked-out local repo.
 - **P2 - Packaged acceptance sections 2-5 at 0.12.0.** Section 0 (build) and
   section 1 (migration) of
   [`dev/acceptance-0.12.0.md`](./dev/acceptance-0.12.0.md) have run; section 1
@@ -308,9 +303,22 @@ environment or packaged matrix has actually run.
   GitHub and Gitea repositories to prove create/adopt/update/pull/conflict,
   hidden-window pause, restart, revoked-auth recovery, repository transitions,
   and the bounded slow-write/host-switch overlap.
-- **P2 - Project Memory interoperability.** Run real-editor watch storms,
-  partial-write/rename/restart, and packaged empty/large/dirty/gitignored
-  project matrices. PacketBench must not edit `.gitignore`.
+- **P2 - Project Memory interoperability — hardened 2026-08-28, real-editor
+  proof still open.** The simulated matrix ran and found eight faults, all fixed:
+  a leading-edge debounce that fired mid-save, zero-byte and BOM-prefixed files
+  producing ghost or silently-unmanaged notes, editor lock files listing as
+  notes, `write_atomic` leaving a window with no file on disk and an unread
+  backup, arming the watcher creating `.agents/memory` in every project opened,
+  a leaked OS watch handle per project, O(notes^2) search, and per-note regex
+  compilation on the reload hot path — plus seven store races. `.gitignore` is
+  now pinned untouched by three tests including a byte comparison.
+  **Still open:** no real editor was driven — VS Code, vim, and Emacs against a
+  live `.agents/memory` remain untested, as do the `notify` callback wiring, the
+  `write_atomic` fallback branch, watcher eviction at the cap, and the packaged
+  matrix. Known and deliberately unfixed: `find_note` lists the whole directory
+  per mutation (an id index would break resolving an externally-renamed note by
+  its frontmatter id), and a 2,000-note snapshot can serialize ~512 MB to the
+  frontend, which needs a paginated list command.
 - **P2 - MCP Hub parity.** Run surviving sidecar/in-process providers against
   configured local and pinned-SSH MCP servers: crash/reload/version-skew,
   offline install/removal, trust downgrade/reconnect, remote-profile parity,
