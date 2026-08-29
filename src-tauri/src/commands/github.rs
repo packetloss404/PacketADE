@@ -6,7 +6,7 @@ use crate::core::git_host::{
     self, host_label_from_url, sanitize_host_error, GitHost, GitHostKind, HostCapability,
     ListState, RepoRef,
 };
-use reqwest::header::{ACCEPT, AUTHORIZATION, LINK, USER_AGENT};
+use reqwest::header::{ACCEPT, LINK, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::{AppHandle, Emitter, State};
@@ -393,16 +393,12 @@ async fn repo_session(
     Ok((client, host, r))
 }
 
-/// G10: the kind of the currently-active host.
-async fn active_host_kind(auth: &GitHubAuthState) -> GitHostKind {
-    let id = auth.active_connection_id.read().await.clone();
-    auth.connection(&id)
-        .await
-        .map(|c| c.kind)
-        .unwrap_or(GitHostKind::GitHub)
-}
-
 /// The active connection resolved to a `GitHost` (without building a client).
+///
+/// This replaces the old `active_host_kind`, which returned a bare kind that
+/// every call site then compared against `GitHostKind::Gitea` by hand — the
+/// deny-list shape that failed open. Returning the whole host means callers ask
+/// it what it supports instead of enumerating what it isn't.
 async fn active_host(auth: &GitHubAuthState) -> GitHost {
     let id = auth.active_connection_id.read().await.clone();
     auth.connection(&id)
@@ -1692,23 +1688,20 @@ async fn fetch_compare_patch(
     base: &str,
     head: &str,
 ) -> Result<String, String> {
-    let token = auth
-        .tokens
-        .read()
-        .await
-        .get(GITHUB_CONNECTION_ID)
-        .cloned()
-        .ok_or_else(|| "GitHub token not set".to_string())?;
+    // Sibling defect to `github_client_from_state`: this used to read the
+    // token of the connection named "github" out of the map itself and build a
+    // bare client around it, so it had its own private answer to "which
+    // credential for which host". Routing through the one accessor means the
+    // GitHub-kind assertion cannot be skipped here. Only the media type is
+    // per-request, so it goes on the request rather than the client.
+    let client = github_client_from_state(auth).await?;
     let url = format!(
         "https://api.github.com/repos/{}/{}/compare/{}...{}",
         owner, repo, base, head
     );
-    let client = reqwest::Client::new();
     let resp = client
         .get(&url)
-        .header(AUTHORIZATION, format!("Bearer {}", token))
         .header(ACCEPT, "application/vnd.github.v3.diff")
-        .header(USER_AGENT, BRAND_USER_AGENT)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -1959,19 +1952,13 @@ pub async fn github_ai_pr_review(
         .unwrap_or("")
         .to_string();
 
-    let token = auth
-        .tokens
-        .read()
-        .await
-        .get(GITHUB_CONNECTION_ID)
-        .cloned()
-        .ok_or_else(|| "GitHub token not set".to_string())?;
-    let raw_client = reqwest::Client::new();
-    let diff_resp = raw_client
+    // Same request, different media type — reuse the already-resolved client
+    // rather than reading the token out of the map again and hand-rolling a
+    // second one. (That second copy was a private answer to "which credential
+    // for which host", the exact drift this pass exists to remove.)
+    let diff_resp = client
         .get(&pr_url)
-        .header(AUTHORIZATION, format!("Bearer {}", token))
         .header(ACCEPT, "application/vnd.github.v3.diff")
-        .header(USER_AGENT, BRAND_USER_AGENT)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
