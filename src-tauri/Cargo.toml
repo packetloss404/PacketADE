@@ -1,6 +1,6 @@
 [package]
 name = "packetbench"
-version = "0.12.0"
+version = "0.12.1"
 description = "PacketBench — Agent Development Environment (IDE + multi-agent orchestration)"
 authors = ["PacketBench"]
 edition = "2021"
