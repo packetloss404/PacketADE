@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Invariants & tripwires — PacketBench Docs</title>
+<meta name="description" content="Rules that look safe to break and are not, with the tests that pin them." />
+<link rel="icon" href="../icon-192.png" />
+<link rel="stylesheet" href="assets/docs.css" />
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Toggle navigation" aria-expanded="false">☰</button>
+  <a class="brand" href="index.html"><img src="../icon-192.png" alt="" width="24" height="24" /><span>PacketBench</span><span class="brand-sub">Docs</span></a>
+  <div class="search-wrap">
+    <input id="search" type="search" placeholder="Search documentation…" autocomplete="off" aria-label="Search documentation" />
+    <div id="search-results" role="listbox" hidden></div>
+  </div>
+  <nav class="topbar-links">
+    <a href="../index.html">Site</a>
+    <a href="https://github.com/packetloss404/PacketADE" target="_blank" rel="noopener">GitHub</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle theme">◐</button>
+  </nav>
+</header>
+<div class="layout">
+  <aside class="sidebar" aria-label="Documentation navigation"><div class="nav-group"><div class="nav-group-title">Getting started</div><ul><li><a href="index.html">Introduction</a></li>
+<li><a href="install.html">Install & first run</a></li>
+<li><a href="concepts.html">Core concepts</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">Using PacketBench</div><ul><li><a href="workspaces.html">Workspaces & terminals</a></li>
+<li><a href="agents.html">Agents & conversations</a></li>
+<li><a href="flights.html">Flight Deck</a></li>
+<li><a href="issues.html">Issues & git hosts</a></li>
+<li><a href="memory.html">Memory</a></li>
+<li><a href="dictation.html">Dictation & analytics</a></li>
+<li><a href="mcp.html">MCP hub</a></li>
+<li><a href="remote.html">SSH remote workspaces</a></li>
+<li><a href="settings.html">Settings reference</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">Developing PacketBench</div><ul><li><a href="dev-architecture.html">Architecture</a></li>
+<li><a href="dev-build.html">Build & release</a></li>
+<li><a href="dev-agent-contract.html">Agent event contract</a></li>
+<li><a href="dev-memory.html">Memory internals</a></li>
+<li><a href="dev-testing.html">Testing & gates</a></li>
+<li><a href="dev-contributing.html">Contributing</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">For agents</div><ul><li><a href="agent-guide.html">Agent orientation</a></li>
+<li><a href="agent-invariants.html" class="active">Invariants & tripwires</a></li></ul></div></aside>
+  <main id="main" class="content">
+    <article class="prose"><h1 id="invariants-amp-tripwires">Invariants &amp; tripwires<a class="anchor" href="#invariants-amp-tripwires" aria-label="Link to this section">#</a></h1>
+<p>Rules in this codebase that look like tidy-up opportunities and are not. Each
+entry states the rule, why breaking it looks reasonable, what actually goes
+wrong, and the test that fails when you try. If you are about to &quot;simplify&quot; one
+of these, read its entry first.</p>
+<div class="callout important"><div class="callout-title">Important</div><p>Several of these are pinned by <em>filesystem fences</em> that walk
+the whole source tree, not by tests near the code they protect. A change in
+<code>src/components/</code> can fail a test in <code>scripts/</code>. That is deliberate.</p>
+</div>
+<h2 id="memory-search-and-injection-are-separate-scorers">Memory: search and injection are separate scorers<a class="anchor" href="#memory-search-and-injection-are-separate-scorers" aria-label="Link to this section">#</a></h2>
+<p><strong>Rule.</strong> <code>corpusRelevanceScores</code> powers <strong>search</strong> (the Ask box). It matches by
+exact token, stem, prefix, raw substring, camelCase split and a small acronym
+table. <code>relevanceScores</code> decides what memory is <strong>injected into an agent&#39;s
+system prompt</strong>. It matches exact tokens only, drops two-character tokens, and
+has none of the widening rules. Nothing on the injection path may call the
+search scorer.</p>
+<p>Both live in <code>src/stores/memoryStore.ts</code>.</p>
+<p><strong>Why breaking it looks safe.</strong> They are near-identical IDF scorers sitting
+twenty lines apart, one of them strictly more capable. Collapsing them into one
+function with a flag — or just calling the better one everywhere — is the
+obvious refactor and removes real duplication.</p>
+<p><strong>What actually goes wrong.</strong> Search failing to find something costs the user a
+second query. Injection matching too loosely silently pushes unrelated project
+context into an agent&#39;s prompt: it burns tokens, dilutes the actually-relevant
+patterns, and can carry material from a scope the user did not intend to share
+with that agent. The scorers are asymmetric because the <em>cost of a false
+positive</em> is asymmetric.</p>
+<p>The injection path additionally has a confidence gate, per-source caps and
+recency windows that search does not. &quot;Widen the scorer&quot; therefore also means
+&quot;bypass three other filters&quot;.</p>
+<p><strong>Pinned by.</strong></p>
+<ul>
+<li><code>src/stores/__tests__/corpusRelevance.test.ts</code> —
+<em>&quot;leaves the injection scorer narrow — the two must never be conflated&quot;</em>
+asserts <code>relevanceScores(&quot;auth&quot;, [&quot;authentication uses JWT&quot;])[0]</code> is exactly
+<code>0</code>, and <em>&quot;still leaves the injection scorer untouched by any of this&quot;</em>
+pins the same for camelCase splitting and acronym expansion.</li>
+<li><code>src/stores/__tests__/memoryBriefs.test.ts</code> — <em>&quot;widens Ask without widening
+injection&quot;</em> builds a corpus that Ask finds and <code>composeMemoryBrief</code> must not
+include, then asserts the brief text contains none of it.</li>
+</ul>
+<div class="callout note"><div class="callout-title">Note</div><p>A curated synonym map was evaluated for search and <strong>rejected</strong>:
+against a held-out query set it recovered 0% of misses while inflating result
+sets 2.75x. The <code>CORPUS_ACRONYMS</code> table is expansions (facts about words), not
+synonyms (guesses about intent). Keep it short; do not let it grow into a
+synonym map. Embeddings were declined too — the measurement is in
+<code>backlog.md</code>.</p>
+</div>
+<h2 id="memory-capture-never-depends-on-an-llm">Memory capture never depends on an LLM<a class="anchor" href="#memory-capture-never-depends-on-an-llm" aria-label="Link to this section">#</a></h2>
+<p><strong>Rule.</strong> <code>learnFromSession</code> records the <code>session_completed</code> event <strong>first</strong>,
+with <code>summary: null</code>, and persists it. Only then does phase 2 read the
+transcript and ask a model for a summary, patching the same event in place.
+Every failure in phase 2 leaves the phase-1 event intact and surfaces the
+reason in the Memory header.</p>
+<p><strong>Why breaking it looks safe.</strong> Writing an event with a null summary and then
+mutating it is awkward. Building the complete record once — summarise, then
+append — is cleaner code and produces the same result on the happy path.</p>
+<p><strong>What actually goes wrong.</strong> Summarisation is a network call to a provider the
+user may not have configured. Making the record depend on it means a machine
+with no API key silently records nothing at all: the Memory timeline stays
+empty, and the user has no way to tell whether nothing happened or everything
+was dropped. It also means one wedged call can starve every later session.</p>
+<p>Three guards ride along with the ordering: a per-session in-flight set (so two
+panes closing together are both recorded, and a hung enrichment does not block
+later sessions), an idempotence check against existing events (the natural-exit
+path and the unmount path can both fire for one session), and scope resolved
+exactly once at the top so the stamped key and the aux-LLM argument cannot
+disagree.</p>
+<p><strong>Pinned by.</strong> <code>src/stores/__tests__/memoryStoreSettings.test.ts</code>:</p>
+<ul>
+<li><em>&quot;records the session even when the summarizer rejects&quot;</em> — mocks
+<code>summarizeSession</code> to reject with &quot;no API key is configured&quot; and asserts the
+event exists with <code>summary: null</code>.</li>
+<li><em>&quot;records the session but skips the LLM when summarization is disabled&quot;</em> —
+asserts <code>readPtyTranscript</code> is never called and the event is still there.</li>
+<li><em>&quot;records a session only once even if capture fires twice&quot;</em>.</li>
+</ul>
+<h2 id="scope-keys-have-exactly-one-write-choke-point">Scope keys have exactly one write choke point<a class="anchor" href="#scope-keys-have-exactly-one-write-choke-point" aria-label="Link to this section">#</a></h2>
+<p><strong>Rule.</strong> Every memory record&#39;s <code>projectPath</code> field is stamped by
+<code>memoryWriteKey</code> in <code>src/stores/memoryStore.ts</code>, and by nothing else.</p>
+<table>
+<thead>
+<tr>
+<th>Scope</th>
+<th>Key written</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>local</td>
+<td>the plain filesystem path, unchanged</td>
+</tr>
+<tr>
+<td>ssh</td>
+<td><code>ssh:&lt;serverId&gt;:&lt;normalized remote path&gt;</code></td>
+</tr>
+<tr>
+<td>workspace</td>
+<td><strong>never written</strong> — read-side alias only</td>
+</tr>
+</tbody></table>
+<p><code>memoryAuxScopeArg</code> is defined as <code>memoryWriteKey</code> by design, so the stamped
+scope and the scope attributed to the aux-LLM call cannot drift apart.</p>
+<p><strong>Why breaking it looks safe.</strong> There are only four capture sites. Formatting
+the key inline at each one is two lines and saves an import.</p>
+<p><strong>What actually goes wrong.</strong> That is precisely how remote memory used to be
+empty <em>by construction</em>: all four sites stamped a plain path, so nothing ever
+matched an <code>ssh:</code> scope on read. The bug is invisible — capture succeeds,
+retrieval silently returns nothing — and it reappears the moment a fifth site
+is added by hand.</p>
+<p>The <code>workspace:&lt;id&gt;</code> half matters too. It is matched by
+<code>createProjectScopeMatcher</code> but deliberately never stamped: writing it today
+would sever every local record from its project path, breaking parent matching
+and every path-shaped display, in exchange for an affordance nobody has asked
+for yet.</p>
+<p><strong>Pinned by.</strong> <code>src/stores/__tests__/memoryRemoteScope.test.ts</code> — <em>&quot;keys a
+remote scope by server + path and leaves a local scope as its path&quot;</em>, <em>&quot;never
+stamps a workspace key for a local scope&quot;</em>, <em>&quot;prefers remotePath over the
+mirrored projectPath&quot;</em>, <em>&quot;stamps a session and a flight retrospective with the
+same key&quot;</em>, and <em>&quot;hands the aux-LLM command the scope label, not a stale local
+path&quot;</em>. Retrieval symmetry is pinned separately: same path on a different
+server, and a different path on the same server, must both miss.</p>
+<h2 id="nothing-writes-gitignore-and-watching-never-creates-agentsmemory">Nothing writes <code>.gitignore</code>, and watching never creates <code>.agents/memory</code><a class="anchor" href="#nothing-writes-gitignore-and-watching-never-creates-agentsmemory" aria-label="Link to this section">#</a></h2>
+<p><strong>Rule.</strong> No PacketBench operation writes, creates or modifies a project&#39;s
+<code>.gitignore</code>. Separately, arming the project-memory watcher must not create the
+<code>.agents/memory</code> directory — only an actual note write may create it.</p>
+<p><strong>Why breaking it looks safe.</strong> Both look like courtesies. The app writes
+<code>.agents/memory</code> into the user&#39;s repository; adding an ignore entry (or at
+least making sure the directory exists so the watcher has something to watch)
+seems considerate, and <code>memory_root(path, true)</code> was right there.</p>
+<p><strong>What actually goes wrong.</strong></p>
+<p><code>.gitignore</code> is the user&#39;s file and often a reviewed, shared one. Silently
+appending to it puts an unexplained diff in someone&#39;s next commit, and the
+decision of whether project memory is committed belongs to the project, not to
+the tool. It is a one-line change that a tool has no standing to make.</p>
+<p>The watcher half is a real regression that shipped: because arming the watcher
+called <code>memory_root(project_path, true)</code>, merely <strong>opening</strong> a project created
+a new untracked directory in it — visible in <code>git status</code>, in every repository
+PacketBench touched, including ones that had never opted into project memory.
+<code>watch_target</code> is now read-only and falls back to the nearest existing
+ancestor.</p>
+<p><strong>Pinned by.</strong> <code>src-tauri/src/commands/project_memory.rs</code>:</p>
+<ul>
+<li><code>no_project_memory_operation_ever_touches_gitignore</code> — runs create, update,
+archive, list and search against a project with a <code>.gitignore</code> present, then
+byte-compares the file.</li>
+<li><code>project_memory_never_creates_a_gitignore</code> — the absent-file half.</li>
+<li><code>a_gitignored_agents_directory_still_reads_and_writes_normally</code> — <code>.agents/</code>
+being ignored changes nothing, and we still do not &quot;fix&quot; the ignore file.</li>
+<li><code>resolving_a_watch_target_never_creates_the_memory_directory</code>.</li>
+</ul>
+<h2 id="issuestoreassigntoflight-is-the-authoritative-write"><code>issueStore.assignToFlight</code> is the authoritative write<a class="anchor" href="#issuestoreassigntoflight-is-the-authoritative-write" aria-label="Link to this section">#</a></h2>
+<p><strong>Rule.</strong> The Flight↔Issue link is owned by <code>issue.flightId</code>.
+<code>flight.issueIds</code> is a derived array. On every hydrate,
+<code>flightStore.reconcileIssueIdsFromIssues</code> rebuilds each flight&#39;s <code>issueIds</code>
+from <code>issueStore</code>. Call both at UI sites — <code>addIssueToFlight</code> is the optimistic
+paint — but never rely on <code>addIssueToFlight</code> alone.</p>
+<p><strong>Why breaking it looks safe.</strong> You are on the Flight screen, you have the
+flight in hand, and <code>addIssueToFlight(flightId, issueId)</code> reads exactly like
+the right call. The UI updates immediately and looks correct.</p>
+<p><strong>What actually goes wrong.</strong> A one-sided <code>assignToFlight</code> self-heals — the
+next reconcile rebuilds the flight&#39;s array from the issue record. A one-sided
+<code>addIssueToFlight</code> <strong>silently vanishes</strong> on the next hydrate, because the
+reconcile sees no issue naming that flight and writes an empty array over your
+addition. The failure surfaces after a restart, far from the code that caused
+it.</p>
+<p>Deletion mirrors this from the other side: <code>flightStore.deleteFlight</code> walks
+<code>flight.issueIds</code> and calls <code>assignToFlight(id, null)</code> before dropping the
+flight, and <code>unlinkDeletedIssueFromFlights</code> does the same when an issue is
+deleted, so no flight is left holding a dangling id.</p>
+<p><strong>Pinned by.</strong> <code>src/stores/__tests__/flightStore.test.ts</code> — <em>&quot;reconciles flight
+issueIds from issue flight assignments&quot;</em> creates a flight carrying
+<code>issueIds: [&quot;stale_issue&quot;]</code> with no matching issue record and asserts the
+reconcile wipes it to <code>[]</code>. <em>&quot;reconciles issue links after backend hydration&quot;</em>
+asserts the reverse: an issue naming a flight repopulates that flight&#39;s array
+even when the persisted flight arrived with an empty one.
+<code>flightDeleteCleanup.test.ts</code> pins the unlink-on-delete direction.</p>
+<h2 id="the-repository-fences-in-scripts">The repository fences in <code>scripts/</code><a class="anchor" href="#the-repository-fences-in-scripts" aria-label="Link to this section">#</a></h2>
+<p>Three <code>*.test.mjs</code> files walk the entire source tree looking for banned idioms.
+They run under <code>pnpm test</code> alongside ordinary unit tests, so a violation
+anywhere in <code>src/</code> fails the suite regardless of what you were working on.</p>
+<p>They exist because each banned shape <em>reads as correct</em> and survives review.
+A unit test would only catch the one call site it covers; a fence catches the
+next one too.</p>
+<div class="callout note"><div class="callout-title">Note</div><p>Each fence caches file contents at module scope. They used to
+re-read the tree per assertion, taking 9–25 s alone and blowing vitest&#39;s 5 s
+default under a full parallel run — failing with timeouts rather than
+assertion failures, on a different set of tests each time. Do not reintroduce
+per-assertion tree walks. Each fence declares a 30 s timeout.</p>
+</div>
+<h3 id="confirm-idiomtestmjs-no-native-windowconfirm"><code>confirm-idiom.test.mjs</code> — no native <code>window.confirm</code><a class="anchor" href="#confirm-idiomtestmjs-no-native-windowconfirm" aria-label="Link to this section">#</a></h3>
+<p><strong>Rule.</strong> No source file may call the global <code>confirm</code>. Destructive
+confirmations go through <code>src/components/ui/ConfirmDeleteModal.tsx</code>.</p>
+<p><strong>Why breaking it looks safe.</strong> <code>if (confirm(&quot;Delete this?&quot;))</code> is one line, has
+no imports, and works.</p>
+<p><strong>What actually goes wrong.</strong> It is unstyled, blocks the entire webview, renders
+as OS chrome that does not name the application, and cannot be asserted on in a
+component test — so any deletion path guarded by it is untestable.</p>
+<p><strong>How it is matched.</strong> The regex is
+<code>/(?&lt;![\w$.])(?:(?:window|globalThis|self)\??\.)?confirm\s*\(/</code>, applied after
+blanking quoted spans and comments per line. The lookbehind keeps it off
+<code>showConfirm(</code>, <code>onConfirm(</code>, <code>reconfirm(</code> and <code>dialog.confirm(</code>. The fence
+pins both directions: eight true-positive shapes (bare call, <code>window.</code>,
+<code>globalThis.</code>, <code>self.</code>, optional chaining, spaced call, not-first-line, after a
+stripped string) and ten false positives it must ignore (test titles containing
+the word, identifiers ending in it, comments, user-facing copy, a URL in a
+string). That second half is not decoration — an earlier version matched any
+<code>confirm (</code> outside a comment and made a test <em>title</em> fail the build.</p>
+<h3 id="attempt-provider-mappingtestmjs-never-strip-api-"><code>attempt-provider-mapping.test.mjs</code> — never strip <code>api-</code><a class="anchor" href="#attempt-provider-mappingtestmjs-never-strip-api-" aria-label="Link to this section">#</a></h3>
+<p><strong>Rule.</strong> No source file may derive a backend provider id from an agent-config
+id by stripping the <code>api-</code> prefix. Every attempt or session spec resolves it
+through <code>attemptProviderFor</code> in <code>src/lib/attemptRouting.ts</code>.</p>
+<p><strong>Why breaking it looks safe.</strong> <code>agentConfigId.replace(/^api-/, &quot;&quot;)</code> produces
+the correct provider for seven of the eight executors. It is obviously right at
+a glance.</p>
+<p><strong>What actually goes wrong.</strong> It is wrong for the <strong>default</strong> one:
+<code>api-claude</code> → <code>&quot;claude&quot;</code>, which the Rust <code>get_provider</code> dispatch rejects. The
+real mapping is not a prefix strip at all — <code>api-claude</code> → <code>anthropic</code>,
+<code>api-claude-oauth</code> → <code>claude-oauth</code>, <code>api-packetcode</code> → <code>packetcode-acp</code>,
+<code>api-custom</code> → <code>custom</code>. <code>AttemptTargetSpec.provider</code> is forwarded verbatim by
+<code>src-tauri/src/commands/flight_attempts.rs</code> into <code>start_api_agent_session</code>, and
+neither the sidecar nor the Rust dispatch knows anything about agent-config ids.</p>
+<p>There is a second reason the identity map keeps entries for retired rows:
+dropping <code>api-openai-codex</code> would send every legacy Codex conversation through
+the unknown-agent fallback and bill it to the user&#39;s Anthropic key. Identity
+still resolves; only routing is withdrawn.</p>
+<p><strong>How it is matched.</strong> True positives include the regex <code>replace</code>,
+<code>replaceAll</code>, a spaced variant, and <code>slice(&quot;api-&quot;.length)</code>. False positives it
+must ignore include <code>startsWith(&quot;api-&quot;)</code> (classification, not derivation),
+comments describing the ban, an unrelated <code>replace(/^cli-/, &quot;&quot;)</code>, and the
+helper being used correctly. The fence also asserts the helper exists and that
+<code>src/components/flights/pickedToSpec.ts</code> and <code>src/stores/asyncFlightStore.ts</code>
+still import it, so a silent revert to an inline derivation drops the import
+and shows up.</p>
+<p><code>src/lib/__tests__/attemptRouting.test.ts</code> is the single allowlisted file — it
+demonstrates the broken derivation in order to assert the helper diverges from
+it.</p>
+<h3 id="workspace-agents-boundariestestmjs-the-workspaceagents-split"><code>workspace-agents-boundaries.test.mjs</code> — the Workspace/Agents split<a class="anchor" href="#workspace-agents-boundariestestmjs-the-workspaceagents-split" aria-label="Link to this section">#</a></h3>
+<p><strong>Rule.</strong> Three boundaries, all matched across the whole tree:</p>
+<ol>
+<li>New GUI-agent creation stays out of Workspace entry surfaces. No file may
+call <code>addDraft(</code>, and <code>WorkspaceView.tsx</code>,
+<code>WorkspaceCreationModal.tsx</code> and <code>AddSessionPicker.tsx</code> may not reference
+<code>launchConversation</code>, <code>API_PROVIDERS</code>, <code>addConversationPane</code> or
+<code>useAgentTaskStore</code> at all.</li>
+<li>Saved conversation panes stay <em>read</em>-compatible with no new attachment
+producer: <code>openSession(</code>, <code>addConversationPane</code>,
+<code>ensureConversationWorkspace</code>, <code>attachConversationToWorkspace</code>,
+<code>openConversationAlongsideWorkspace</code> and <code>DraftTile</code> must appear nowhere.
+<code>sessionGlue.ts</code> must still export <code>openConversationInAgents</code> and
+<code>removeConversationPanes</code>.</li>
+<li>Every secondary native window stays on the reviewed Monitor path: no Rust
+file outside <code>commands/monitor_windows.rs</code> may use <code>WebviewWindowBuilder</code>,
+no frontend file may use <code>new WebviewWindow</code>, and
+<code>src-tauri/capabilities/monitor.json</code> must scope to <code>[&quot;monitor-*&quot;]</code> while
+carrying none of <code>shell:default</code>, <code>fs:default</code> or <code>process:default</code>.</li>
+</ol>
+<p><strong>Why breaking it looks safe.</strong> Each individual addition is small and useful —
+a &quot;new agent&quot; button on the workspace screen, a helper that attaches a
+conversation to the current workspace, a second window for a preview.</p>
+<p><strong>What actually goes wrong.</strong> Together they re-couple two engines that were
+deliberately separated, and they materialise wrapper workspaces around
+conversations that should be able to exist without one. The third boundary is a
+security posture, not an architecture preference: the Monitor window is
+read-only, and that is enforced at the invoke boundary
+(<code>command_allowed_for_window</code>) and in its capability file, not by hiding
+buttons in its frontend.</p>
+<h2 id="claudemd-and-agentsmd-are-gitignored-twins"><code>CLAUDE.md</code> and <code>AGENTS.md</code> are gitignored twins<a class="anchor" href="#claudemd-and-agentsmd-are-gitignored-twins" aria-label="Link to this section">#</a></h2>
+<p><strong>Rule.</strong> The two files must be byte-identical except for their H1
+(<code># PacketBench — CLAUDE.md</code> vs <code># PacketBench — AGENTS.md</code>). Both are listed
+in <code>.gitignore</code> and are untracked.</p>
+<p><strong>Why breaking it looks safe.</strong> Nothing enforces it. There is no test, no
+fence, and no CI. A repo-wide rename or refactor appears to have succeeded
+because <code>git status</code> is clean.</p>
+<p><strong>What actually goes wrong.</strong> Being gitignored means:</p>
+<ul>
+<li><code>git grep</code>, <code>git ls-files</code>, and any tool that respects <code>.gitignore</code> — which
+is most of them, including <code>rg</code> by default — <strong>skip both files</strong>. A sweep
+that renames a symbol everywhere leaves the two most important orientation
+documents in the repository stale, and nothing flags it.</li>
+<li>They are not in the history, so drift between them cannot be spotted in a
+diff and cannot be recovered from an earlier revision.</li>
+</ul>
+<p>Both files carry the same warning in their own preamble, which is the only
+place it is recorded in-repo.</p>
+<p><strong>How to check.</strong> There is no automated pin. Do it by hand after any edit:</p>
+<div class="code-block" data-lang="bash">
+<button class="copy" type="button" aria-label="Copy code">Copy</button>
+<pre><code>diff &lt;(tail -n +2 CLAUDE.md) &lt;(tail -n +2 AGENTS.md) &amp;&amp; echo "in sync"</code></pre>
+</div>
+<p>Edit one, then copy it over the other. They were last reconciled against source
+on 2026-08-27.</p>
+<h2 id="shorter-tripwires">Shorter tripwires<a class="anchor" href="#shorter-tripwires" aria-label="Link to this section">#</a></h2>
+<p>Same class, less to say about each.</p>
+<p><strong>Store isolation is lint-enforced.</strong> <code>agentTaskStore</code> and <code>workspaceStore</code> may
+not import each other, in either direction, per <code>no-restricted-imports</code> rules
+in <code>eslint.config.js</code>. <code>sessionGlue.ts</code> is the only bridge. The point is that a
+conversation without a tile stays a first-class citizen.</p>
+<p><strong><code>src/generated/tauri-schema.ts</code> is generated.</strong> It comes from the ignored
+<code>export_api_bindings</code> test in <code>src-tauri/tests/api_schema.rs</code>. Hand-editing it
+passes <code>tsc</code> and fails <code>pnpm check:tauri-schema</code>, which regenerates and
+byte-compares. Note that the check runs cargo with <code>cwd: src-tauri</code>, because
+Cargo discovers <code>.cargo/config.toml</code> from its working directory rather than
+from <code>--manifest-path</code>.</p>
+<p><strong>MCP trust is frozen per session.</strong> Sidecar protocol v11 takes an
+<code>mcpTrustSnapshot</code> at session start, so editing Settings mid-session cannot
+widen a running agent&#39;s server, tool or root authority. Re-reading live
+settings inside the session loop would undo the entire point.</p>
+<p><strong><code>fix_path_for_gui_launch()</code> must stay the first statement in
+<code>lib.rs::run()</code>.</strong> It calls <code>std::env::set_var</code>, sound only while the process is
+single-threaded. Moving it after <code>init_tracing()</code> — which starts a log-writer
+thread — corrupts the environment such that a later PTY <code>fork()</code>+<code>exec()</code>
+aborts in the child with &quot;crashed on child side of fork pre-exec&quot;.</p>
+<p><strong>Never hardcode the product name.</strong> Import from <code>src/lib/brand.ts</code> or
+<code>src-tauri/src/core/brand.rs</code>. The <code>LEGACY_*</code> constants there are one-shot
+migration inputs for the immediately-prior name only; do not add a third
+generation, and do not &quot;clean up&quot; the <code>packetcode</code> classification logic in
+<code>migration.rs</code> — it exists to avoid destroying a <em>live sibling product&#39;s</em> data
+directory.</p>
+<h2 id="next">Next<a class="anchor" href="#next" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><a href="agent-guide.html">Agent orientation</a> — layout, command/binding workflow,
+gates and traps.</li>
+<li><a href="dev-memory.html">Memory internals</a> — the mechanism behind the first four
+entries here.</li>
+<li><a href="dev-testing.html">Testing &amp; gates</a> — what each suite covers and when to run
+it.</li>
+</ul>
+</article>
+    <div class="prev-next"><a class="pn prev" href="agent-guide.html"><span>Previous</span><strong>Agent orientation</strong></a><span></span></div>
+  </main>
+  <nav class="toc" aria-label="On this page"><div class="toc-title">On this page</div><ul><li class="d2"><a href="#memory-search-and-injection-are-separate-scorers">Memory: search and injection are separate scorers</a></li>
+<li class="d2"><a href="#memory-capture-never-depends-on-an-llm">Memory capture never depends on an LLM</a></li>
+<li class="d2"><a href="#scope-keys-have-exactly-one-write-choke-point">Scope keys have exactly one write choke point</a></li>
+<li class="d2"><a href="#nothing-writes-gitignore-and-watching-never-creates-agentsmemory">Nothing writes <code>.gitignore</code>, and watching never creates <code>.agents/memory</code></a></li>
+<li class="d2"><a href="#issuestoreassigntoflight-is-the-authoritative-write"><code>issueStore.assignToFlight</code> is the authoritative write</a></li>
+<li class="d2"><a href="#the-repository-fences-in-scripts">The repository fences in <code>scripts/</code></a></li>
+<li class="d3"><a href="#confirm-idiomtestmjs-no-native-windowconfirm"><code>confirm-idiom.test.mjs</code> — no native <code>window.confirm</code></a></li>
+<li class="d3"><a href="#attempt-provider-mappingtestmjs-never-strip-api-"><code>attempt-provider-mapping.test.mjs</code> — never strip <code>api-</code></a></li>
+<li class="d3"><a href="#workspace-agents-boundariestestmjs-the-workspaceagents-split"><code>workspace-agents-boundaries.test.mjs</code> — the Workspace/Agents split</a></li>
+<li class="d2"><a href="#claudemd-and-agentsmd-are-gitignored-twins"><code>CLAUDE.md</code> and <code>AGENTS.md</code> are gitignored twins</a></li>
+<li class="d2"><a href="#shorter-tripwires">Shorter tripwires</a></li>
+<li class="d2"><a href="#next">Next</a></li></ul></nav>
+</div>
+<script src="assets/docs.js"></script>
+</body>
+</html>

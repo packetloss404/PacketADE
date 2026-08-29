@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Memory — PacketBench Docs</title>
+<meta name="description" content="How PacketBench records project context, distils patterns and injects them into agents." />
+<link rel="icon" href="../icon-192.png" />
+<link rel="stylesheet" href="assets/docs.css" />
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Toggle navigation" aria-expanded="false">☰</button>
+  <a class="brand" href="index.html"><img src="../icon-192.png" alt="" width="24" height="24" /><span>PacketBench</span><span class="brand-sub">Docs</span></a>
+  <div class="search-wrap">
+    <input id="search" type="search" placeholder="Search documentation…" autocomplete="off" aria-label="Search documentation" />
+    <div id="search-results" role="listbox" hidden></div>
+  </div>
+  <nav class="topbar-links">
+    <a href="../index.html">Site</a>
+    <a href="https://github.com/packetloss404/PacketADE" target="_blank" rel="noopener">GitHub</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle theme">◐</button>
+  </nav>
+</header>
+<div class="layout">
+  <aside class="sidebar" aria-label="Documentation navigation"><div class="nav-group"><div class="nav-group-title">Getting started</div><ul><li><a href="index.html">Introduction</a></li>
+<li><a href="install.html">Install & first run</a></li>
+<li><a href="concepts.html">Core concepts</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">Using PacketBench</div><ul><li><a href="workspaces.html">Workspaces & terminals</a></li>
+<li><a href="agents.html">Agents & conversations</a></li>
+<li><a href="flights.html">Flight Deck</a></li>
+<li><a href="issues.html">Issues & git hosts</a></li>
+<li><a href="memory.html" class="active">Memory</a></li>
+<li><a href="dictation.html">Dictation & analytics</a></li>
+<li><a href="mcp.html">MCP hub</a></li>
+<li><a href="remote.html">SSH remote workspaces</a></li>
+<li><a href="settings.html">Settings reference</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">Developing PacketBench</div><ul><li><a href="dev-architecture.html">Architecture</a></li>
+<li><a href="dev-build.html">Build & release</a></li>
+<li><a href="dev-agent-contract.html">Agent event contract</a></li>
+<li><a href="dev-memory.html">Memory internals</a></li>
+<li><a href="dev-testing.html">Testing & gates</a></li>
+<li><a href="dev-contributing.html">Contributing</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">For agents</div><ul><li><a href="agent-guide.html">Agent orientation</a></li>
+<li><a href="agent-invariants.html">Invariants & tripwires</a></li></ul></div></aside>
+  <main id="main" class="content">
+    <article class="prose"><h1 id="memory">Memory<a class="anchor" href="#memory" aria-label="Link to this section">#</a></h1>
+<p>PacketBench keeps two separate memories for your work. One is a <strong>corpus</strong> it
+records for you — every terminal session that ran, every Flight that landed,
+every note you saved — which it distils into short &quot;learned patterns&quot; and
+injects, in a strict budget, into agent prompts. The other is a folder of plain
+Markdown files in your repository (<code>.agents/memory</code>) that you and your agents
+write by hand and commit like any other source file.</p>
+<p>They are deliberately different things: the corpus is a record of what
+happened, the notes are a record of what you decided. This page covers both,
+the Memory pane that browses them, and exactly what does and does not reach an
+agent&#39;s prompt.</p>
+<p><img src="../screenshots/PLACEHOLDER-memory-patterns.png" alt="The Memory pane with the Patterns tab open, the memory-brief preview in the right rail, and the scope chip in the header">
+<em>The Memory pane. The header chip names the scope everything on this screen belongs to.</em></p>
+<h2 id="what-memory-is-made-of">What memory is made of<a class="anchor" href="#what-memory-is-made-of" aria-label="Link to this section">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Thing</th>
+<th>Where it lives</th>
+<th>Who writes it</th>
+<th>Reaches a prompt?</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Memory <strong>events</strong></td>
+<td>App state (<code>~/.packetbench/</code>), one flat corpus</td>
+<td>PacketBench, automatically</td>
+<td>Only session summaries (48 h) and Flight lessons (7 d)</td>
+</tr>
+<tr>
+<td>Learned <strong>patterns</strong></td>
+<td>Same app state</td>
+<td>An aux LLM, from the events</td>
+<td>Yes — the top-ranked ones</td>
+</tr>
+<tr>
+<td>Project <strong>notes</strong></td>
+<td><code>.agents/memory/*.md</code> inside the repo</td>
+<td>You, or an agent, by hand</td>
+<td>Yes — up to 5 per brief</td>
+</tr>
+</tbody></table>
+<p>Events come in four types. <code>session_completed</code> records a finished terminal
+session; <code>flight_completed</code> records a settled Flight and its retrospective;
+<code>manual_note</code> records anything you explicitly saved; <code>task_completed</code> is a
+legacy type that nothing emits any more — the autonomous task scheduler that
+produced it was removed in July 2026, and the Timeline no longer offers a filter
+chip for it. Old <code>task_completed</code> events persisted before then still render.</p>
+<div class="callout note"><div class="callout-title">Note</div><p>The event corpus is <strong>flat, not per-project</strong>. Every record carries
+a scope key, and the Memory pane, retrieval, and the prompt brief all filter
+by it — but a single Clear-all wipes every project&#39;s memory at once, and an
+export contains all of it.</p>
+</div>
+<h2 id="scope-which-project-memory-belongs-to">Scope: which project memory belongs to<a class="anchor" href="#scope-which-project-memory-belongs-to" aria-label="Link to this section">#</a></h2>
+<p>Scope is derived from the <strong>active workspace</strong>, not from whichever local folder
+happens to be open. A local workspace scopes memory to its <code>projectPath</code>. A
+remote SSH workspace scopes memory to a synthetic key of the form
+<code>ssh:&lt;serverId&gt;:&lt;remote path&gt;</code>, so two projects at the same path on two
+different servers never see each other&#39;s memory, and neither does a local
+project that happens to sit at the same path.</p>
+<p>This matters because PacketBench keeps a <em>local-only</em> mirror of the current
+project path for things that touch this machine&#39;s filesystem (git pollers, the
+file watcher, MCP). On a remote workspace that mirror still holds the last
+<strong>local</strong> project you had open. Memory does not read it.</p>
+<p>You never see the raw scope key. Timeline project chips, the pattern scope
+badge, and the Markdown export all resolve it to something readable —
+<code>build-box · app</code> — degrading to the bare server id if that connection has since
+been deleted or the memory was imported from another machine.</p>
+<h3 id="matching-mode">Matching mode<a class="anchor" href="#matching-mode" aria-label="Link to this section">#</a></h3>
+<p>Settings → Integrations &amp; Data → Memory has a <strong>Match memory by project path</strong>
+choice that governs how loosely a <em>local</em> scope matches:</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Exact</strong> (default)</td>
+<td>Normalised path equality only.</td>
+</tr>
+<tr>
+<td><strong>Parent directory</strong></td>
+<td>Either side may be a path prefix of the other, so a sub-workspace inherits its parent project&#39;s memory.</td>
+</tr>
+<tr>
+<td><strong>Global</strong></td>
+<td>Project path is ignored entirely; every project-scoped item matches everywhere.</td>
+</tr>
+</tbody></table>
+<div class="callout important"><div class="callout-title">Important</div><p>These modes govern <strong>filesystem paths only</strong>. A remote
+(<code>ssh:</code>) scope key matches by exact key identity or not at all — even under
+Global, and even under Ask&#39;s &quot;All projects&quot; toggle. Without that rule, turning
+on Global would pull every remote workspace&#39;s memory into a local project&#39;s
+prompt. Tests pin non-retrieval across servers, across paths on one server,
+and in both directions between local and remote.</p>
+</div>
+<h3 id="memory-for-remote-workspaces">Memory for remote workspaces<a class="anchor" href="#memory-for-remote-workspaces" aria-label="Link to this section">#</a></h3>
+<p>Remote capture is supported. Sessions, Flights, and saved notes that ran on an
+SSH workspace are recorded against that server and injected back into that
+workspace&#39;s agents.</p>
+<p>In earlier builds every writer stamped a plain path regardless of target, so a
+correctly-scoped remote workspace could never show anything. Memory recorded
+that way is still on disk but unreachable from the remote scope. When
+PacketBench finds some, the Memory pane shows an amber banner offering
+<strong>&quot;Adopt into &lt;server&gt;&quot;</strong>.</p>
+<div class="callout warning"><div class="callout-title">Warning</div><p>Adoption is a judgement call, which is why it is opt-in and never
+automatic. A record stamped <code>/srv/app</code> is indistinguishable from a genuinely
+local project at <code>/srv/app</code>, and from the same path on a <em>different</em> server.
+Adopt only if you are sure the memory came from this workspace. Adoption
+stores the original path, and <strong>Undo</strong> restores it exactly; records already
+correctly scoped are never touched.</p>
+</div>
+<p><code>.agents/memory</code> project notes stay local-only in every case — they are read off
+this machine&#39;s filesystem. The Project notes tab says so on a remote workspace
+rather than showing the previous local project&#39;s notes, and the injection path
+refuses to load notes for an <code>ssh:</code> scope at all.</p>
+<h2 id="capture-what-gets-recorded-and-when">Capture: what gets recorded, and when<a class="anchor" href="#capture-what-gets-recorded-and-when" aria-label="Link to this section">#</a></h2>
+<h3 id="terminal-sessions">Terminal sessions<a class="anchor" href="#terminal-sessions" aria-label="Link to this section">#</a></h3>
+<p>A PTY session is recorded when it ends <strong>and lasted longer than 10 seconds</strong>.
+Every way a session can end counts:</p>
+<ul>
+<li>the process exits on its own → status <code>done</code></li>
+<li>you press Kill, Restart, or close the pane → status <code>killed</code></li>
+<li>the pane unmounts while the session is live → status <code>killed</code></li>
+</ul>
+<p>Recording happens <strong>before</strong> any LLM is involved. PacketBench writes the
+<code>session_completed</code> event and persists it, and only then tries to enrich it with
+a summary. So the Timeline fills up even with no aux provider configured, with a
+model that returns junk, or with a provider call that hangs. Capture is
+idempotent per session id, so the exit path and the unmount path racing each
+other still produce exactly one entry.</p>
+<p>The enrichment step reads the session transcript, trims it to the <strong>last 4,000
+characters</strong>, and asks the configured auxiliary LLM for a summary, the key
+decisions, and the files touched. It is bounded by a <strong>60-second timeout</strong>. If
+it fails, the bare event stays and the Memory header says why — &quot;Session
+recorded, but summarizing failed: …&quot; — instead of failing silently.</p>
+<div class="callout note"><div class="callout-title">Note</div><p>Terminal sessions are recorded <em>from</em>, but never briefed <em>to</em>. A PTY
+pane&#39;s opening prompt is the workspace prompt, if any. Memory injection
+applies to API conversations and Flight launches only.</p>
+</div>
+<h3 id="flights">Flights<a class="anchor" href="#flights" aria-label="Link to this section">#</a></h3>
+<p>A Flight is captured once, on its transition from a non-terminal status into
+<code>done</code> — that is, at least one completed attempt and no failures. Flights that
+end <code>failed</code> or <code>paused</code> (every attempt cancelled) are <strong>not</strong> captured, and a
+Flight whose attempts are being cancelled as part of a delete is not captured
+either.</p>
+<p>Separately, and regardless of capture, a settled Flight rerates the confidence
+of every learned pattern that rode along in its launch brief: <code>done</code> adds 0.05,
+<code>failed</code> subtracts 0.1, and <code>paused</code> is treated as a user abort that rerates
+nothing. Confidence is clamped to the range 0.1–1.0.</p>
+<p>If both <strong>Capture completed flights</strong> and <strong>Summarize sessions on completion</strong>
+are on, PacketBench then fires a best-effort model-authored retrospective that
+replaces the mechanically-derived lessons. That enrichment only runs for
+all-local Flights — a Flight with any remote attempt keeps the mechanical
+payload.</p>
+<h3 id="manual-notes">Manual notes<a class="anchor" href="#manual-notes" aria-label="Link to this section">#</a></h3>
+<p>Anything you save by hand is written regardless of the capture toggles, because
+you asked for it. Four surfaces offer it:</p>
+<ul>
+<li><strong>New memory</strong> in the Memory pane header (a summary prompt and an optional
+detail prompt).</li>
+<li><strong>Save as memory</strong> on a GitHub investigation.</li>
+<li>A Flight&#39;s coordination-timeline event.</li>
+<li>An assistant message in an agent transcript, which files against that
+conversation&#39;s own scope — including its SSH target, if it has one.</li>
+</ul>
+<h2 id="learned-patterns">Learned patterns<a class="anchor" href="#learned-patterns" aria-label="Link to this section">#</a></h2>
+<p>Patterns are short statements distilled from what memory already recorded. They
+have one of four categories — architecture, convention, preference, pitfall — a
+confidence between 0 and 1, and a scope.</p>
+<p><strong>Refresh</strong> in the Memory header runs the extraction. It is enabled only when
+the current scope actually has source material: session summaries, saved notes,
+or Flight retrospectives — the last ten of them, joined together. The count next
+to the button (&quot;N memories in this project&quot;) is that source count.</p>
+<p>Extraction requires a configured auxiliary LLM provider. Without one, Refresh
+reports the failure in the header band rather than doing nothing quietly. New
+patterns are filtered to confidence ≥ 0.5 and capped, and every extraction
+preserves patterns you pinned.</p>
+<p>In the pattern list you can:</p>
+<ul>
+<li><strong>Pin</strong> a pattern (star). Pinned patterns sort first in every brief, skip the
+0.6 confidence gate that other patterns must clear, and by default survive cap
+eviction.</li>
+<li><strong>Edit</strong> the text or category. A hand-edit is treated as authoritative and
+resets confidence to 100%.</li>
+<li><strong>Delete</strong> it, behind a confirmation.</li>
+</ul>
+<p>The right rail shows a rolling 30-day digest (events by type, new patterns, top
+patterns, recent lessons) and a live preview of the brief.</p>
+<h2 id="the-memory-brief-what-actually-reaches-an-agent">The memory brief: what actually reaches an agent<a class="anchor" href="#the-memory-brief-what-actually-reaches-an-agent" aria-label="Link to this section">#</a></h2>
+<p>Retrieval and search are two different code paths over the same data, on
+purpose. This section is retrieval — the strict, budgeted selection that gets
+prepended to a prompt.</p>
+<p>The brief is assembled from four capped sources, in this order:</p>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Cap</th>
+<th>Eligibility</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Learned patterns</td>
+<td><strong>Patterns</strong> setting (default 10)</td>
+<td>Pinned, or confidence ≥ 0.6</td>
+</tr>
+<tr>
+<td>Flight lessons</td>
+<td><strong>Flight lessons</strong> setting (default 5)</td>
+<td>From retrospectives in the last <strong>7 days</strong></td>
+</tr>
+<tr>
+<td>Recent session summaries</td>
+<td><strong>Recent sessions</strong> setting (default 5)</td>
+<td>Sessions in the last <strong>48 hours</strong> that actually have a summary</td>
+</tr>
+<tr>
+<td>Project notes</td>
+<td><strong>5</strong> (fixed)</td>
+<td>Any non-archived <code>.agents/memory</code> note — no recency window, no confidence gate</td>
+</tr>
+</tbody></table>
+<p>Every candidate is scope-filtered first. When the launch carries a task or
+objective, patterns, lessons, and notes are re-ranked by IDF-weighted term
+overlap with it, blended 60/40 with confidence for patterns. A query only
+changes the <em>order</em>; the confidence gate still decides what is eligible.</p>
+<p>The assembled text is then truncated to a <strong>character budget</strong> — 1,800 by
+default, clamped to 400–4,000 — and each line is flattened to a single line of
+at most 260 characters. It is prefixed with a short header telling the model to
+prefer current repository files over stale notes.</p>
+<p>Two switches control whether the brief is used at all:</p>
+<ul>
+<li><strong>Per conversation:</strong> the <code>memoryContextEnabled</code> toggle in a conversation&#39;s
+header overflow menu. Off by default for a plain new conversation; agent
+profiles can set it; a Flight&#39;s attached conversation turns it on.</li>
+<li><strong>Per Flight launch:</strong> Settings → Memory → <strong>Inject brief into Flight
+prompts</strong> (on by default). A Flight launch also refuses to brief a mixed
+fan-out — if the selected targets span local and SSH, or two different
+servers, or two different base paths, the launch carries the raw prompt
+instead of guessing which project&#39;s memory it is entitled to.</li>
+</ul>
+<p>The Memory pane&#39;s right rail renders the <em>same</em> brief the launch pipeline would
+inject, so the token estimate can never overstate what actually gets sent.</p>
+<h2 id="ask-searching-the-whole-corpus">Ask: searching the whole corpus<a class="anchor" href="#ask-searching-the-whole-corpus" aria-label="Link to this section">#</a></h2>
+<p>The <strong>Ask</strong> tab is a keyword-ranked search over everything in scope. It makes no
+LLM call.</p>
+<p>It is deliberately not the injection selector. Ask has <strong>no confidence gate, no
+per-source cap, and no 48-hour or 7-day recency window</strong> — a note you wrote last
+week is findable, and so is a low-confidence pattern that genuinely matches.
+Scope matching is shared with the injection path, so an SSH scope still only
+sees memory keyed to that server and remote path.</p>
+<p>What Ask searches that the brief never does: Flight retrospective bodies
+(summary, what worked, what failed, suggested improvements, tags), saved notes,
+and legacy task events.</p>
+<p>Controls:</p>
+<ul>
+<li><strong>Source</strong> — All, <em>PacketBench</em> (the event/pattern corpus), or <em>Project
+Markdown</em> (<code>.agents/memory</code> notes only).</li>
+<li><strong>All projects</strong> — widens scope matching to Global for this search. Remote
+scope keys still only match by exact identity.</li>
+</ul>
+<p>Ranking is 70% relevance, plus small priors for kind, recency (60-day
+half-life-ish decay), and trust. Results are deduplicated by display title and
+capped at 50, with the header telling you how many matched in total. A query
+term can match by exact token, stem, four-character prefix, or raw substring, so
+&quot;auth&quot; finds &quot;authentication&quot;. The tokenizer also splits camelCase and
+PascalCase (<code>SshConfig</code> → <code>ssh</code>, <code>config</code>) and expands a short fixed list of
+domain acronyms — pty, acp, mcp, idf, dto, sdk, cli, tofu, ssh, ade.</p>
+<div class="callout note"><div class="callout-title">Note</div><p>That widened matching is Ask-only by design. The injection scorer
+keeps its narrower exact-token behaviour, so making search more generous can
+never make prompts more generous. A curated synonym map was evaluated and
+rejected — against a held-out query set it recovered 0% of misses while
+inflating result sets 2.75×.</p>
+</div>
+<h2 id="project-notes-agentsmemory">Project notes (<code>.agents/memory</code>)<a class="anchor" href="#project-notes-agentsmemory" aria-label="Link to this section">#</a></h2>
+<p>The <strong>Project notes</strong> tab edits plain Markdown files in <code>.agents/memory/</code> inside
+your project. They are ordinary files: version them, review them in a PR, edit
+them in your editor. PacketBench never writes a <code>.gitignore</code> for them.</p>
+<p>A managed note is YAML frontmatter followed by Markdown:</p>
+<div class="code-block" data-lang="markdown">
+<button class="copy" type="button" aria-label="Copy code">Copy</button>
+<pre><code>---
+schemaVersion: 1
+id: 9f8c2b7e-4f1a-4a44-9d0e-1b8b3f2c5a10
+title: SSH host pinning
+createdAt: 1756252800000
+updatedAt: 1756339200000
+archived: false
+tags:
+  - ssh
+  - security
+provenanceIds: []
+---
+Host keys are pinned on first save. See [[Remote workspaces]].</code></pre>
+</div>
+<p>A plain <code>.md</code> file with <strong>no</strong> frontmatter is still a valid note. Its id is
+derived from its path, its title from the first <code># </code> heading (or the filename),
+its timestamps from the filesystem, and it is tagged <code>unmanaged</code>. Editing it
+through the app rewrites it with proper frontmatter, which is the intended
+upgrade path.</p>
+<p>Notes link to each other with <code>[[Title]]</code> or <code>[label](other-note.md)</code>. The
+sidebar has a <strong>list</strong> view and a <strong>link graph</strong> view showing outbound links and
+backlinks; notes with no links either way are flagged <code>orphan</code>, and links that
+resolve to nothing are flagged as broken.</p>
+<p>Other behaviour worth knowing:</p>
+<ul>
+<li><strong>Archived</strong> notes are hidden unless you tick the Archived box. Archiving sets
+a flag in frontmatter; it never deletes the file.</li>
+<li><strong>Optimistic concurrency:</strong> every save carries the revision you loaded. If the
+file changed underneath you, the save is refused with a conflict message
+instead of clobbering it.</li>
+<li>A <strong>live watcher</strong> refreshes the list when files change on disk, with a
+trailing debounce so a mid-save file is never read. Editor lock files
+(<code>.#note.md</code>) are ignored. If the watcher cannot be armed (network drive,
+exhausted inotify handles), the notes still load and refresh becomes manual.</li>
+<li><strong>Promote global memory</strong> at the bottom of the sidebar turns any corpus event
+into a durable note, carrying its provenance ids so the same event is not
+promoted twice.</li>
+</ul>
+<p>Refusals and limits, enforced in the backend:</p>
+<table>
+<thead>
+<tr>
+<th>Limit</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Notes per project</td>
+<td>2,000</td>
+</tr>
+<tr>
+<td>Bytes per note</td>
+<td>262,144 (256 KiB)</td>
+</tr>
+<tr>
+<td>Symlinks / junctions</td>
+<td>Rejected, never followed</td>
+</tr>
+<tr>
+<td>Binary content</td>
+<td>Rejected</td>
+</tr>
+<tr>
+<td>Secret-shaped content</td>
+<td>Rejected — <code>api_key=…</code>, <code>password: …</code>, PEM private-key headers</td>
+</tr>
+</tbody></table>
+<p>Files that cannot be parsed do not vanish; they appear as warnings with a code
+(<code>malformed_frontmatter</code>, <code>unsupported_schema</code>, <code>duplicate_id</code>,
+<code>ambiguous_link</code>, <code>oversized</code>, <code>binary_rejected</code>, <code>symlink_rejected</code>,
+<code>orphaned_backup</code>, <code>count_limit</code>, …) so you can see and fix them.</p>
+<div class="callout tip"><div class="callout-title">Tip</div><p>Notes are the right home for anything you want to survive a memory
+Clear-all, share with a teammate, or review in a pull request. Learned
+patterns are a convenience; notes are the record.</p>
+</div>
+<h2 id="the-timeline">The Timeline<a class="anchor" href="#the-timeline" aria-label="Link to this section">#</a></h2>
+<p>The <strong>Events</strong> tab is the raw corpus, newest first, with:</p>
+<ul>
+<li><strong>Type chips</strong> — All, Sessions, Flights, Notes (with counts).</li>
+<li><strong>Search</strong> — ranked by relevance, with any substring hit always kept, so
+nothing a plain substring search would have found is lost.</li>
+<li><strong>When</strong> — All time / 24h / 7d / 30d.</li>
+<li><strong>Project</strong> — one chip per distinct scope key present in the corpus, labelled
+readably.</li>
+<li><strong>Delete</strong> on any event, behind a confirmation.</li>
+</ul>
+<p>A Flight chip elsewhere in the app can deep-link here with a Flight filter
+applied; a banner shows it and offers Clear.</p>
+<h2 id="import-export-and-clearing">Import, export, and clearing<a class="anchor" href="#import-export-and-clearing" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><strong>JSON</strong> exports the full corpus (<code>packetbench-memory.json</code>, version 1) —
+every event and pattern, across every project.</li>
+<li><strong>MD</strong> exports a readable Markdown digest: counts by type, a per-scope
+breakdown using resolved labels, and patterns grouped by category with
+confidence percentages.</li>
+<li><strong>Import</strong> merges a JSON export by id; existing entries win, so re-importing
+the same file adds nothing. Structurally invalid events are dropped rather
+than crashing the consumers downstream. You are told how many new events and
+patterns landed.</li>
+<li>The <strong>trash icon</strong> clears everything, behind a confirmation that says so.</li>
+</ul>
+<h2 id="retention-and-caps">Retention and caps<a class="anchor" href="#retention-and-caps" aria-label="Link to this section">#</a></h2>
+<p>Retention is applied on load, on every write, and whenever you change one of
+these settings.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Expire events by age</td>
+<td>Off</td>
+<td>When on, drop events older than <em>Keep days</em>.</td>
+</tr>
+<tr>
+<td>Keep days</td>
+<td>30</td>
+<td>Only meaningful when expiry is on. Range 1–3650.</td>
+</tr>
+<tr>
+<td>Max stored events</td>
+<td>200</td>
+<td>Oldest events beyond the cap are dropped. Range 20–2000.</td>
+</tr>
+<tr>
+<td>Max learned patterns</td>
+<td>20</td>
+<td>Range 1–100.</td>
+</tr>
+<tr>
+<td>Pinned patterns survive cap eviction</td>
+<td>On</td>
+<td>When on, pinned patterns are kept even past the cap and the unpinned remainder is trimmed by confidence then recency. When off, pinned entries compete in the same LRU.</td>
+</tr>
+</tbody></table>
+<h2 id="where-memory-shows-up-elsewhere">Where memory shows up elsewhere<a class="anchor" href="#where-memory-shows-up-elsewhere" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><strong>Conversation header overflow menu</strong> — the per-conversation memory toggle and
+a preview flyout of the exact brief that will be sent, with counts and a token
+estimate.</li>
+<li><strong>Agent profiles</strong> (Settings → Agents &amp; Models → Agent behavior) — a profile
+can set <code>memoryContextEnabled</code> for every conversation launched with it.</li>
+<li><strong>Flight launches</strong> — see <a href="flights.html">Flight Deck</a>.</li>
+<li><strong>MCP</strong> — the PacketBench MCP provider exposes <code>read_memory_context</code> plus the
+project-note read/search/create/update/archive tools. See <a href="mcp.html">MCP hub</a>.</li>
+</ul>
+<p>For the write-key choke point, the scope-matcher rules, and the invariants that
+keep search and injection separate, see <a href="dev-memory.html">Memory internals</a>.</p>
+</article>
+    <div class="prev-next"><a class="pn prev" href="issues.html"><span>Previous</span><strong>Issues & git hosts</strong></a><a class="pn next" href="dictation.html"><span>Next</span><strong>Dictation & analytics</strong></a></div>
+  </main>
+  <nav class="toc" aria-label="On this page"><div class="toc-title">On this page</div><ul><li class="d2"><a href="#what-memory-is-made-of">What memory is made of</a></li>
+<li class="d2"><a href="#scope-which-project-memory-belongs-to">Scope: which project memory belongs to</a></li>
+<li class="d3"><a href="#matching-mode">Matching mode</a></li>
+<li class="d3"><a href="#memory-for-remote-workspaces">Memory for remote workspaces</a></li>
+<li class="d2"><a href="#capture-what-gets-recorded-and-when">Capture: what gets recorded, and when</a></li>
+<li class="d3"><a href="#terminal-sessions">Terminal sessions</a></li>
+<li class="d3"><a href="#flights">Flights</a></li>
+<li class="d3"><a href="#manual-notes">Manual notes</a></li>
+<li class="d2"><a href="#learned-patterns">Learned patterns</a></li>
+<li class="d2"><a href="#the-memory-brief-what-actually-reaches-an-agent">The memory brief: what actually reaches an agent</a></li>
+<li class="d2"><a href="#ask-searching-the-whole-corpus">Ask: searching the whole corpus</a></li>
+<li class="d2"><a href="#project-notes-agentsmemory">Project notes (<code>.agents/memory</code>)</a></li>
+<li class="d2"><a href="#the-timeline">The Timeline</a></li>
+<li class="d2"><a href="#import-export-and-clearing">Import, export, and clearing</a></li>
+<li class="d2"><a href="#retention-and-caps">Retention and caps</a></li>
+<li class="d2"><a href="#where-memory-shows-up-elsewhere">Where memory shows up elsewhere</a></li></ul></nav>
+</div>
+<script src="assets/docs.js"></script>
+</body>
+</html>

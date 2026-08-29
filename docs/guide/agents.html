@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agents & conversations — PacketBench Docs</title>
+<meta name="description" content="The nine-row agent picker, the composer, tools, permissions and review." />
+<link rel="icon" href="../icon-192.png" />
+<link rel="stylesheet" href="assets/docs.css" />
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Toggle navigation" aria-expanded="false">☰</button>
+  <a class="brand" href="index.html"><img src="../icon-192.png" alt="" width="24" height="24" /><span>PacketBench</span><span class="brand-sub">Docs</span></a>
+  <div class="search-wrap">
+    <input id="search" type="search" placeholder="Search documentation…" autocomplete="off" aria-label="Search documentation" />
+    <div id="search-results" role="listbox" hidden></div>
+  </div>
+  <nav class="topbar-links">
+    <a href="../index.html">Site</a>
+    <a href="https://github.com/packetloss404/PacketADE" target="_blank" rel="noopener">GitHub</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle theme">◐</button>
+  </nav>
+</header>
+<div class="layout">
+  <aside class="sidebar" aria-label="Documentation navigation"><div class="nav-group"><div class="nav-group-title">Getting started</div><ul><li><a href="index.html">Introduction</a></li>
+<li><a href="install.html">Install & first run</a></li>
+<li><a href="concepts.html">Core concepts</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">Using PacketBench</div><ul><li><a href="workspaces.html">Workspaces & terminals</a></li>
+<li><a href="agents.html" class="active">Agents & conversations</a></li>
+<li><a href="flights.html">Flight Deck</a></li>
+<li><a href="issues.html">Issues & git hosts</a></li>
+<li><a href="memory.html">Memory</a></li>
+<li><a href="dictation.html">Dictation & analytics</a></li>
+<li><a href="mcp.html">MCP hub</a></li>
+<li><a href="remote.html">SSH remote workspaces</a></li>
+<li><a href="settings.html">Settings reference</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">Developing PacketBench</div><ul><li><a href="dev-architecture.html">Architecture</a></li>
+<li><a href="dev-build.html">Build & release</a></li>
+<li><a href="dev-agent-contract.html">Agent event contract</a></li>
+<li><a href="dev-memory.html">Memory internals</a></li>
+<li><a href="dev-testing.html">Testing & gates</a></li>
+<li><a href="dev-contributing.html">Contributing</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">For agents</div><ul><li><a href="agent-guide.html">Agent orientation</a></li>
+<li><a href="agent-invariants.html">Invariants & tripwires</a></li></ul></div></aside>
+  <main id="main" class="content">
+    <article class="prose"><h1 id="agents-amp-conversations">Agents &amp; conversations<a class="anchor" href="#agents-amp-conversations" aria-label="Link to this section">#</a></h1>
+<p>An <strong>API agent</strong> is a structured conversation: you send a turn, the provider
+streams back text, thinking, tool calls, diffs and plans, and PacketBench renders
+all of it as reviewable cards rather than terminal scrollback. Nine provider rows
+run over three different transports, but they all emit the same event contract,
+so the interface is identical whichever one you pick.</p>
+<p>Reach the surface from the left rail (robot icon) or with
+<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>. The PacketCode ACP route is the
+same surface pinned to one provider, on
+<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>6</kbd>.</p>
+<p><img src="../screenshots/PLACEHOLDER-agents-conversation.png" alt="The Agents surface with the conversation sidebar, a streaming transcript and the inspector dock"></p>
+<p><em>A running conversation: sidebar on the left, transcript with tool cards in the
+middle, and the Diff panel open in the right dock.</em></p>
+<h2 id="the-nine-provider-rows">The nine provider rows<a class="anchor" href="#the-nine-provider-rows" aria-label="Link to this section">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Row (as shown in the picker)</th>
+<th><code>AgentCli</code> id</th>
+<th>Backend</th>
+<th>Credential</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Claude Agent SDK (API)</td>
+<td><code>api-claude-oauth</code></td>
+<td>Node sidecar → Claude Agent SDK</td>
+<td>keyring <code>api-key-anthropic</code></td>
+</tr>
+<tr>
+<td>Claude (API)</td>
+<td><code>api-claude</code></td>
+<td>Rust <code>LlmProvider</code>, in-process</td>
+<td>keyring <code>api-key-anthropic</code></td>
+</tr>
+<tr>
+<td>OpenAI (API)</td>
+<td><code>api-openai</code></td>
+<td>Rust <code>LlmProvider</code></td>
+<td>keyring <code>api-key-openai</code></td>
+</tr>
+<tr>
+<td>OpenAI Agents SDK (API)</td>
+<td><code>api-openai-agents</code></td>
+<td>Node sidecar → OpenAI Agents SDK</td>
+<td>keyring <code>api-key-openai</code></td>
+</tr>
+<tr>
+<td>MiniMax (Token Plan)</td>
+<td><code>api-minimax</code></td>
+<td>Rust <code>LlmProvider</code></td>
+<td>keyring <code>api-key-minimax</code></td>
+</tr>
+<tr>
+<td>OpenRouter</td>
+<td><code>api-openrouter</code></td>
+<td>Rust <code>LlmProvider</code></td>
+<td>keyring <code>api-key-openrouter</code></td>
+</tr>
+<tr>
+<td>Ollama (Local)</td>
+<td><code>api-ollama</code></td>
+<td>Rust <code>LlmProvider</code></td>
+<td>none — HTTP probe on <code>localhost:11434</code></td>
+</tr>
+<tr>
+<td>PacketCode (ACP)</td>
+<td><code>api-packetcode</code></td>
+<td>ACP → PacketCode engine subprocess</td>
+<td>none — the engine owns its own credentials</td>
+</tr>
+<tr>
+<td>Custom endpoint (OpenAI-compatible)</td>
+<td><code>api-custom</code></td>
+<td>Rust <code>LlmProvider</code></td>
+<td>none required</td>
+</tr>
+</tbody></table>
+<p>The picker groups them as <strong>Anthropic</strong> (the two Claude rows), <strong>OpenAI</strong> (the
+two OpenAI rows) and <strong>Other</strong> (the remaining five).</p>
+<div class="callout important"><div class="callout-title">Important</div><p><code>api-claude-oauth</code> is a historical id, <strong>not</strong> an OAuth row.
+It is the Claude Agent SDK authenticated with your Anthropic <strong>API key</strong>.
+Anthropic prohibits routing Free/Pro/Max subscription credentials through
+third-party products, so the SDK stayed and only the credential moved. The id
+is unchanged because persisted conversations store it and resume with it
+verbatim. No API row in PacketBench uses a Claude.ai or ChatGPT subscription
+login.</p>
+</div>
+<div class="callout note"><div class="callout-title">Note</div><p>PTY terminal panes are unaffected by any of this. <code>claude</code> and
+<code>codex</code> CLI sessions keep their own subscription logins — that is ordinary
+end-user use of those tools. See <a href="workspaces.html">Workspaces &amp; terminals</a>.</p>
+</div>
+<h3 id="model-catalogues">Model catalogues<a class="anchor" href="#model-catalogues" aria-label="Link to this section">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Models offered (first is the default)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Claude Agent SDK</td>
+<td>Claude Opus 4.8, Opus 4.7, Sonnet 4.6, Haiku 4.5</td>
+</tr>
+<tr>
+<td>Claude (API)</td>
+<td>Claude Opus 4.8, Opus 4.7, Opus 4.6, Sonnet 4.6, Haiku 4.5</td>
+</tr>
+<tr>
+<td>OpenAI (API) / OpenAI Agents SDK</td>
+<td>GPT-5.5 (default), ChatGPT 5.4, GPT-4o, o3, o4-mini</td>
+</tr>
+<tr>
+<td>MiniMax</td>
+<td>M3, M2.5, M2</td>
+</tr>
+<tr>
+<td>OpenRouter</td>
+<td>Auto (best available), four Claude models, GPT-5.5, ChatGPT 5.4, Gemini 2.5 Pro, Llama 4 Maverick</td>
+</tr>
+<tr>
+<td>Ollama</td>
+<td>Llama 3.3 70B, Qwen 3 32B, DeepSeek Coder V2, CodeLlama 34B</td>
+</tr>
+<tr>
+<td>PacketCode (ACP)</td>
+<td>Claude Opus 4.8, Claude Sonnet 4.6, GPT-5.5</td>
+</tr>
+<tr>
+<td>Custom endpoint</td>
+<td><em>(none in the catalog)</em></td>
+</tr>
+</tbody></table>
+<p>Two of those lists are <strong>seeds, not truth</strong>:</p>
+<ul>
+<li><strong>Ollama</strong> — the real list comes from the daemon at session time. If the
+daemon is unreachable the seeded tags stand and the launch fails later.</li>
+<li><strong>PacketCode (ACP)</strong> — the engine enumerates its live models over
+<code>_packetcode/models/list</code> when it advertises that capability. The three seeded
+entries only exist so the picker renders something before the engine has been
+asked. An <strong>empty</strong> answer from the engine is a real answer and is honoured.</li>
+<li><strong>Custom endpoint</strong> — models are a runtime-managed manual list you maintain,
+which is why the static catalog carries none.</li>
+</ul>
+<p>Each model row carries a context-window size and, where one exists, USD
+input/output pricing per 1M tokens. Free and local models (rates of 0/0) stay
+unpriced rather than showing <code>$0/$0</code>.</p>
+<h3 id="a-withdrawn-row">A withdrawn row<a class="anchor" href="#a-withdrawn-row" aria-label="Link to this section">#</a></h3>
+<p><code>api-openai-codex</code> (&quot;OpenAI (ChatGPT Plus/Pro)&quot;) was removed in July 2026. It
+drove <code>codex exec</code> on a ChatGPT subscription; without one it bought nothing over
+the OpenAI Agents SDK row, which reaches the same API with the same key and —
+unlike <code>codex exec</code> — can service a per-tool approval round-trip.</p>
+<div class="callout note"><div class="callout-title">Note</div><p>Conversations on that id still hydrate and stay fully readable —
+transcript, tool cards, diffs, plan, cost — but they cannot start a new turn,
+and the transcript says so. They are deliberately <strong>not</strong> silently remapped to
+another provider, because that would move the conversation onto different
+credentials and mis-bill it.</p>
+</div>
+<h2 id="launching-a-conversation">Launching a conversation<a class="anchor" href="#launching-a-conversation" aria-label="Link to this section">#</a></h2>
+<p>With no conversation selected, the surface shows the launch composer under a
+header reading <em>&quot;New agent — Choose a project, provider, model, and execution
+posture.&quot;</em></p>
+<h3 id="auto-picked-provider">Auto-picked provider<a class="anchor" href="#auto-picked-provider" aria-label="Link to this section">#</a></h3>
+<p>On first arrival PacketBench probes credentials in this order and selects the
+first one that reports <code>ready</code>:</p>
+<div class="code-block" data-lang="text">
+<button class="copy" type="button" aria-label="Copy code">Copy</button>
+<pre><code>api-claude-oauth → api-claude → api-openai → api-openai-agents
+→ api-openrouter → api-ollama → api-minimax</code></pre>
+</div>
+<p>If none are ready it falls back to <strong>MiniMax / <code>MiniMax-M3</code></strong>. A route that pins
+a provider (the PacketCode ACP route) skips the auto-pick entirely.</p>
+<h3 id="launch-controls">Launch controls<a class="anchor" href="#launch-controls" aria-label="Link to this section">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>What it sets</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Project</strong></td>
+<td>The conversation&#39;s <code>projectPath</code>. Accepts a local folder or an <code>ssh://</code> target</td>
+</tr>
+<tr>
+<td><strong>Provider</strong></td>
+<td>The row from the table above</td>
+</tr>
+<tr>
+<td><strong>Model</strong></td>
+<td>From that provider&#39;s catalogue (or the live Ollama / engine list)</td>
+</tr>
+<tr>
+<td><strong>Mode</strong></td>
+<td>The four-button posture picker — see below</td>
+</tr>
+<tr>
+<td><strong>Profile</strong></td>
+<td>System prompt + tool whitelist + memory default — see below</td>
+</tr>
+<tr>
+<td><strong>Local / Worktree</strong></td>
+<td>Where tool calls run — see below</td>
+</tr>
+<tr>
+<td>Composer</td>
+<td>Your first turn. Supports <code>@</code> file mentions, <code>/</code> commands and image attachments</td>
+</tr>
+</tbody></table>
+<h3 id="the-four-launch-modes">The four launch modes<a class="anchor" href="#the-four-launch-modes" aria-label="Link to this section">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Description shown</th>
+<th>Resulting flags</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Agent</strong></td>
+<td>Full tools — read, write, run commands</td>
+<td><code>planMode: false</code>, <code>permissionMode: auto</code></td>
+</tr>
+<tr>
+<td><strong>Ask</strong></td>
+<td>Read-only — no edits or commands</td>
+<td><code>planMode: true</code>, <code>permissionMode: auto</code></td>
+</tr>
+<tr>
+<td><strong>Manual</strong></td>
+<td>Every risky tool requires your approval</td>
+<td><code>planMode: false</code>, <code>permissionMode: ask_for_risky</code></td>
+</tr>
+<tr>
+<td><strong>Plan</strong></td>
+<td>Produce a structured plan first, then execute</td>
+<td><code>planMode: true</code>, <code>permissionMode: auto</code></td>
+</tr>
+</tbody></table>
+<div class="callout note"><div class="callout-title">Note</div><p><strong>Ask</strong> and <strong>Plan</strong> produce identical backend flags. They differ
+only in the label and description shown at launch; both put the session in
+plan mode. The post-launch mode chip has a wider vocabulary (below) that these
+four buttons cannot express.</p>
+</div>
+<h3 id="local-vs-worktree">Local vs Worktree<a class="anchor" href="#local-vs-worktree" aria-label="Link to this section">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Choice</th>
+<th>Tooltip</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Local</strong></td>
+<td><em>&quot;edits land in the project tree (also updates the global default)&quot;</em></td>
+<td>Tool calls run directly in the project</td>
+</tr>
+<tr>
+<td><strong>Worktree</strong></td>
+<td><em>&quot;conversation runs on a fresh branch in .pkt-worktrees/ (also updates the global default)&quot;</em></td>
+<td>Provisions <code>&lt;projectPath&gt;/.pkt-worktrees/&lt;convId&gt;</code> on a new branch <code>pkt/&lt;convId&gt;</code> cut from the current HEAD</td>
+</tr>
+</tbody></table>
+<p>The choice is a <strong>global default</strong>, persisted for future launches — the tooltips
+say so.</p>
+<div class="callout warning"><div class="callout-title">Warning</div><p>If worktree provisioning fails, the launch does <strong>not</strong> abort. It
+logs a warning, falls back to the project root, and stamps no worktree
+provenance. The conversation then edits your main checkout. Check the branch
+in the conversation header if this matters.</p>
+</div>
+<h3 id="profiles">Profiles<a class="anchor" href="#profiles" aria-label="Link to this section">#</a></h3>
+<p>Profiles bundle a system prompt, a tool whitelist, a memory default and an
+optional pinned model. Three ship built-in and cannot be deleted (you can clone
+any of them into an editable copy):</p>
+<table>
+<thead>
+<tr>
+<th>Profile</th>
+<th>Allowed tools</th>
+<th>Memory</th>
+<th>Plan mode</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Default</strong> — <em>&quot;Full toolset with the autonomous agent harness — plans, uses tools, and drives the task to completion.&quot;</em></td>
+<td>all</td>
+<td>on</td>
+<td>off</td>
+</tr>
+<tr>
+<td><strong>Scout</strong> — <em>&quot;Read-only investigator — explores the codebase, recommends in prose. No edits or commands.&quot;</em></td>
+<td>read-only set</td>
+<td>per Scout config</td>
+<td>on</td>
+</tr>
+<tr>
+<td><strong>Reviewer</strong> — <em>&quot;Cheap critic — reads the staged diff, reports prioritized findings, never touches files.&quot;</em></td>
+<td><code>read_file</code>, <code>list_directory</code>, <code>grep</code></td>
+<td>off</td>
+<td>on</td>
+</tr>
+</tbody></table>
+<p>Resolution order at launch:</p>
+<ol>
+<li>A profile&#39;s <code>pinnedModel</code> <strong>overrides</strong> your model selection, so a
+known-good pinned model is never silently swapped out.</li>
+<li>Mode wins over the profile for plan/permission posture, so you can override a
+profile&#39;s defaults per launch.</li>
+<li>Memory is on by default for user-initiated launches; a profile can disable
+it, and the per-conversation toggle can turn it off afterwards.</li>
+</ol>
+<p>Built-in profiles are re-merged from the app on every load, so updates to them
+land automatically; only your own profiles are persisted.</p>
+<h3 id="what-blocks-a-launch">What blocks a launch<a class="anchor" href="#what-blocks-a-launch" aria-label="Link to this section">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Empty prompt</td>
+<td>Nothing happens</td>
+</tr>
+<tr>
+<td>No project selected</td>
+<td>Nothing happens</td>
+</tr>
+<tr>
+<td><code>ssh://</code> target whose server no longer exists</td>
+<td><em>&quot;SSH server no longer exists. Pick another from the project dropdown.&quot;</em></td>
+</tr>
+<tr>
+<td><code>ssh://</code> target with no remote path (per-session or server default)</td>
+<td><em>&quot;Enter a remote project path for this SSH server before launching.&quot;</em></td>
+</tr>
+<tr>
+<td>Backend start rejects</td>
+<td>The error appears in a dismissible toast at the bottom of the surface for 5 seconds</td>
+</tr>
+</tbody></table>
+<p>A failed launch keeps your typed prompt for a retry. The draft is only cleared
+once the launch actually succeeds.</p>
+<h2 id="the-composer">The composer<a class="anchor" href="#the-composer" aria-label="Link to this section">#</a></h2>
+<p>One component serves both the launch and the chat variants, so <code>@</code> and <code>/</code>
+behave identically in each.</p>
+<h3 id="keyboard">Keyboard<a class="anchor" href="#keyboard" aria-label="Link to this section">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Keys</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><kbd>Enter</kbd></td>
+<td>Send</td>
+</tr>
+<tr>
+<td><kbd>Shift</kbd>+<kbd>Enter</kbd></td>
+<td>Newline</td>
+</tr>
+<tr>
+<td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td>
+<td>Send</td>
+</tr>
+<tr>
+<td><kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>N</kbd></td>
+<td>New agent — but see the warning below</td>
+</tr>
+<tr>
+<td><kbd>↑</kbd> / <kbd>↓</kbd></td>
+<td>Shell-style history of your own previous turns (chat variant only, and only from an eligible cursor position)</td>
+</tr>
+<tr>
+<td><kbd>Shift</kbd>+<kbd>Tab</kbd></td>
+<td>Cycle the permission posture (chat variant only)</td>
+</tr>
+<tr>
+<td><kbd>Esc</kbd></td>
+<td>Close a popover, or leave history browsing</td>
+</tr>
+<tr>
+<td><kbd>@</kbd></td>
+<td>File mention popover</td>
+</tr>
+<tr>
+<td><kbd>/</kbd></td>
+<td>Slash-command popover</td>
+</tr>
+</tbody></table>
+<p>While a popover is open, <kbd>Enter</kbd> and <kbd>Tab</kbd> always either pick
+the highlighted row or close the popover — they never leak through as a send.</p>
+<p>The help line reads: <em>&quot;Enter to send · Shift+Enter for newline · Ctrl+N for new
+agent · @ to mention a file · / to expand a prompt template · drag/paste
+images&quot;</em>.</p>
+<div class="callout warning"><div class="callout-title">Warning</div><p>That help line over-promises <kbd>Ctrl</kbd>+<kbd>N</kbd>. The
+shortcut is bound at the app shell and <strong>yields to typing</strong> — it does nothing
+while focus is in an input, textarea or contenteditable, which includes the
+composer the help line is attached to. Click outside the composer first. The
+same typing guard applies to <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd>
+(view-mode cycle).</p>
+</div>
+<div class="callout note"><div class="callout-title">Note</div><p><kbd>Ctrl</kbd>+<kbd>N</kbd> is context-aware. On the Agents surface
+it clears the selected conversation and shows the launch composer. On every
+other surface it creates a new <strong>workspace</strong> instead.</p>
+</div>
+<div class="callout note"><div class="callout-title">Note</div><p>The placeholder degrades honestly. A conversation with no project
+path has nothing for <code>@</code> to scan, so the placeholder drops that half rather
+than advertising a dead key: <em>&quot;Do anything — / for commands&quot;</em>, <em>&quot;Do anything —
+@ for files&quot;</em>, or just <em>&quot;Do anything&quot;</em>.</p>
+</div>
+<h3 id="attachments">Attachments<a class="anchor" href="#attachments" aria-label="Link to this section">#</a></h3>
+<p>Drag or paste images into the composer. Each is capped at <strong>5 MB</strong>.</p>
+<div class="callout warning"><div class="callout-title">Warning</div><p>Attachments are currently applied on the in-process
+<code>LlmProvider</code> path only. The sidecar-backed rows (Claude Agent SDK, OpenAI
+Agents SDK) ignore them until the protocol carries them through.</p>
+</div>
+<h3 id="slash-commands">Slash commands<a class="anchor" href="#slash-commands" aria-label="Link to this section">#</a></h3>
+<p>The popover merges four sources into one ordered list: built-ins, engine-owned
+commands (ACP only), project/global <code>.claude/commands/</code> files, and your saved
+prompt templates (slugified — &quot;Code Review&quot; becomes <code>/code-review</code>, tagged
+<em>(template)</em>).</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description as shown</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>/plan</code></td>
+<td>Toggle plan mode (read-only exploration; no edits)</td>
+</tr>
+<tr>
+<td><code>/permissions</code></td>
+<td>Change permission mode (auto / ask / allow-all / deny-all)</td>
+</tr>
+<tr>
+<td><code>/model</code></td>
+<td>Switch model for this conversation</td>
+</tr>
+<tr>
+<td><code>/compact</code></td>
+<td>Trim the local transcript view; backend context is unchanged</td>
+</tr>
+<tr>
+<td><code>/review</code></td>
+<td>Spawn a Reviewer subagent on the current staged diff</td>
+</tr>
+<tr>
+<td><code>/history</code></td>
+<td>Open conversation history</td>
+</tr>
+<tr>
+<td><code>/clear</code></td>
+<td>Clear conversation messages</td>
+</tr>
+<tr>
+<td><code>/new</code></td>
+<td>Start a new agent conversation with same settings</td>
+</tr>
+<tr>
+<td><code>/help</code></td>
+<td>Show a keybinding cheatsheet</td>
+</tr>
+</tbody></table>
+<div class="callout important"><div class="callout-title">Important</div><p><code>/compact</code> is honest about its scope — it trims what <em>you</em> see,
+not what the model holds. The backend context is untouched.</p>
+</div>
+<p>Engine-owned commands (from the PacketCode ACP engine) behave differently from
+custom commands: there is no body to expand locally, so picking one splices the
+literal <code>/name</code> invocation into the composer and the engine resolves it when the
+turn arrives.</p>
+<h2 id="permission-postures">Permission postures<a class="anchor" href="#permission-postures" aria-label="Link to this section">#</a></h2>
+<p>Once a conversation exists, the mode chip in the composer row exposes a wider
+five-state vocabulary than the four launch buttons. The label is a bijection over
+<code>(planMode, permissionMode)</code>; the orthogonal <code>approveWrites</code> flag lives in the
+chip&#39;s popover and survives every mode change untouched.</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Description</th>
+<th><code>planMode</code></th>
+<th><code>permissionMode</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Default</strong></td>
+<td>Full tools — read, write, run commands</td>
+<td><code>false</code></td>
+<td><code>auto</code></td>
+</tr>
+<tr>
+<td><strong>Plan</strong></td>
+<td>Read-only exploration; no edits or commands</td>
+<td><code>true</code></td>
+<td><code>auto</code></td>
+</tr>
+<tr>
+<td><strong>Manual</strong></td>
+<td>Every risky tool requires your approval</td>
+<td><code>false</code></td>
+<td><code>ask_for_risky</code></td>
+</tr>
+<tr>
+<td><strong>Deny</strong></td>
+<td>Risky tools are refused without prompting</td>
+<td><code>false</code></td>
+<td><code>deny_all</code></td>
+</tr>
+<tr>
+<td><strong>Yolo</strong></td>
+<td>Allow-all — never prompt for permissions</td>
+<td><code>false</code></td>
+<td><code>allow_all</code></td>
+</tr>
+</tbody></table>
+<p>Colours follow escalation, not the accent palette: Plan is green (the safe
+read-only floor), Default and Manual are amber (the agent may act), Deny is blue
+(unusual but safe), and Yolo is the only red.</p>
+<p><kbd>Shift</kbd>+<kbd>Tab</kbd> cycles through them in that order.</p>
+<h3 id="restricted-vocabularies">Restricted vocabularies<a class="anchor" href="#restricted-vocabularies" aria-label="Link to this section">#</a></h3>
+<p>Some providers can&#39;t honour every posture. Two hints exist for that:</p>
+<ul>
+<li>A provider whose adapter cannot service an approval round-trip is offered only
+three sandbox postures — <strong>Read-only</strong> / <strong>Workspace-write</strong> / <strong>Full
+access</strong> — with the tooltip <em>&quot;Codex (exec) can&#39;t pause for approvals — the
+sandbox is the safety boundary&quot;</em>.</li>
+<li>A session offering fewer postures than its vocabulary knows shows:
+<em>&quot;This provider accepts fewer postures than PacketBench offers — only the ones
+it will honor are listed.&quot;</em></li>
+</ul>
+<div class="callout note"><div class="callout-title">Note</div><p>No live provider row sets <code>supportsApprovals: false</code> today. The flag
+and its whole sandbox vocabulary were introduced for the <code>codex exec</code> adapter,
+which was removed in July 2026. They are kept because &quot;this adapter cannot
+pause for approval&quot; is a real property a future adapter may have. In practice
+you will always see the five-posture set unless you use a custom adapter.</p>
+</div>
+<p>A backend that reports its own mode name renders it as the chip label directly
+(<code>accept-edits</code> → <code>Accept edits</code>) rather than being dressed up as one of the
+five postures. When no posture can honestly be named, the chip reads <strong>Provider
+default</strong>.</p>
+<h2 id="approvals-during-a-turn">Approvals during a turn<a class="anchor" href="#approvals-during-a-turn" aria-label="Link to this section">#</a></h2>
+<p>When the agent requests a risky tool in <code>ask_for_risky</code> mode, an inline approval
+card appears in the transcript.</p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Allow</strong> (<kbd>Y</kbd>)</td>
+<td>Allow this one call</td>
+</tr>
+<tr>
+<td>Allow ▾ → <strong>Allow once</strong></td>
+<td>Same as the primary click</td>
+</tr>
+<tr>
+<td>Allow ▾ → <strong>Allow for this session</strong> <em>(no rule saved)</em></td>
+<td>Stops prompting for the rest of this session; writes no persistent rule</td>
+</tr>
+<tr>
+<td>Allow ▾ → <strong>Always allow <code>&lt;pattern&gt;</code></strong></td>
+<td>Appends the inferred pattern to this conversation&#39;s allowlist. Disabled with <em>&quot;Pattern already in this conversation&#39;s allowlist&quot;</em> when it is already there</td>
+</tr>
+<tr>
+<td><strong>Deny</strong> (<kbd>N</kbd>)</td>
+<td>Refuse the call</td>
+</tr>
+<tr>
+<td><strong>with reason…</strong></td>
+<td>Opens an input — <em>&quot;Why not / what to do instead — sent to the agent&quot;</em> — then <strong>Deny &amp; steer</strong>. The reason steers the agent&#39;s next step instead of stalling the turn on a bare refusal</td>
+</tr>
+</tbody></table>
+<p>Allow and Deny are rendered with deliberately equal visual weight: PacketBench
+does not know which answer is right, so neither verb dominates. Escalation is
+signalled by the card&#39;s spine, eyebrow and a Destructive badge instead.</p>
+<p>Pending file writes are surfaced separately as <strong>pending edits</strong> with a
+red/green diff, and are approved or rejected from the review surface.</p>
+<h2 id="the-conversation-header">The conversation header<a class="anchor" href="#the-conversation-header" aria-label="Link to this section">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Element</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Auth chip</td>
+<td>Live provider-auth status with the probed provider name. Refreshes on <code>provider-auth:changed</code>, so it updates by itself after a login completes. Shown only for API-mode agents</td>
+</tr>
+<tr>
+<td>Flight chip</td>
+<td>Appears when the conversation id is linked to a Flight. Clicking it opens <a href="flights.html">Flight Deck</a> with that Flight selected</td>
+</tr>
+<tr>
+<td>Mode chip</td>
+<td>The posture picker described above</td>
+</tr>
+<tr>
+<td>Model / context cluster</td>
+<td>Hidden by default; revealed from the overflow menu</td>
+</tr>
+<tr>
+<td><strong>⋮</strong></td>
+<td>The overflow menu</td>
+</tr>
+</tbody></table>
+<p>Auth status is one of <code>ready</code>, <code>login_required</code>, <code>missing_key</code>, <code>service_down</code>
+or <code>coming_soon</code>. For the Claude Agent SDK row the badge deliberately probes the
+<strong>Anthropic API key</strong>, not the <code>claude-oauth</code> credential file, because that is
+the credential the row actually uses.</p>
+<h3 id="the-overflow-menu">The overflow menu<a class="anchor" href="#the-overflow-menu" aria-label="Link to this section">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>View mode: Summary / Normal / Verbose</strong></td>
+<td>Cycle with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd>. Summary collapses tool detail; Verbose shows raw tool inputs</td>
+</tr>
+<tr>
+<td><strong>Show / Hide model &amp; context controls</strong></td>
+<td>Reveals the inline model + context cluster in the header</td>
+</tr>
+<tr>
+<td><strong>Memory: On/Off</strong></td>
+<td>Per-conversation toggle, with an expandable preview of exactly what would be injected (patterns, lessons, approximate token count, and a note when it is truncated to the character budget). Says plainly: <em>&quot;Injected into the system prompt at session start.&quot;</em></td>
+</tr>
+<tr>
+<td><strong>Show / Hide preview pane</strong></td>
+<td>Disabled on SSH conversations — the preview reads local disk</td>
+</tr>
+<tr>
+<td><strong>Send to Monitor</strong></td>
+<td>Opens a read-only monitor window for this conversation</td>
+</tr>
+<tr>
+<td><strong>Export as Markdown</strong> / <strong>Export as JSON</strong> / <strong>Copy transcript</strong></td>
+<td>Transcript export</td>
+</tr>
+<tr>
+<td><strong>Continue in…</strong></td>
+<td>See below</td>
+</tr>
+<tr>
+<td><strong>Deploy to PacketAgent</strong></td>
+<td>Hands the conversation to the always-on PacketAgent runtime</td>
+</tr>
+<tr>
+<td><strong>Archive conversation</strong></td>
+<td>Hides it from the default sidebar filter</td>
+</tr>
+</tbody></table>
+<h3 id="continue-in">Continue in…<a class="anchor" href="#continue-in" aria-label="Link to this section">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Subtitle</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Open project in Workspace</td>
+<td>Open the same target without moving this conversation</td>
+</tr>
+<tr>
+<td>Attach terminal</td>
+<td>Add a separate shell on this exact project or worktree</td>
+</tr>
+<tr>
+<td>Continue in PacketCode…</td>
+<td>Review a bounded payload, then open PacketCode</td>
+</tr>
+<tr>
+<td>Open Git ending</td>
+<td>Review merge, PR, discard, or keep for this worktree</td>
+</tr>
+<tr>
+<td>Add to Flight…</td>
+<td>Link this conversation without copying its state</td>
+</tr>
+<tr>
+<td>Open project folder in OS</td>
+<td>Reveal the folder in Explorer / Finder</td>
+</tr>
+<tr>
+<td>Continue in CLI (<code>&lt;agent&gt;</code>)</td>
+<td>Hands off to the matching PTY CLI</td>
+</tr>
+<tr>
+<td>Open in VS Code</td>
+<td><code>vscode://file/&lt;path&gt;</code></td>
+</tr>
+<tr>
+<td>Open in Cursor</td>
+<td><code>cursor://file/&lt;path&gt;</code></td>
+</tr>
+</tbody></table>
+<h2 id="the-sidebar">The sidebar<a class="anchor" href="#the-sidebar" aria-label="Link to this section">#</a></h2>
+<p>252px wide, with the conversation count and an amber badge counting
+conversations that need you.</p>
+<ul>
+<li><strong>Search</strong> — <em>&quot;Search conversations…&quot;</em>, matched against title, project and
+message text.</li>
+<li><strong>Filters</strong> — All / Active / Done / Archived, each with a live count.</li>
+<li>A <strong>Needs you</strong> section floats conversations awaiting an approval to the top.</li>
+<li>Per-row controls: rename, pin/unpin, archive/unarchive, delete.</li>
+<li>On the PacketCode ACP route only, an extra <strong>On the engine</strong> section lists
+sessions stored by the packetcode engine, with a refresh button
+(<em>&quot;Re-read the engine&#39;s session list&quot;</em>). Opening one adopts that engine
+session rather than minting a new one.</li>
+</ul>
+<div class="callout note"><div class="callout-title">Note</div><p>Adopting an engine session does <strong>not</strong> import a transcript.
+PacketBench holds no local copy of an adopted session&#39;s history, and the
+engine&#39;s replay omits your own turns — so an adopted conversation says so in a
+durable system message rather than pretending the messages above the boundary
+are the whole story.</p>
+</div>
+<h2 id="the-inspector-dock">The inspector dock<a class="anchor" href="#the-inspector-dock" aria-label="Link to this section">#</a></h2>
+<p>The right dock ships <strong>collapsed</strong>, so Agents is a two-pane shell until
+something asks for a panel. Three panels:</p>
+<table>
+<thead>
+<tr>
+<th>Panel</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Preview</strong></td>
+<td>Rendered markdown / plan preview. Auto-reveals when a new preview target lands for <em>this</em> conversation. Disabled on SSH conversations</td>
+</tr>
+<tr>
+<td><strong>Diff</strong></td>
+<td>The review surface, with a collapsible header carrying the session/file facts. Badged with the unreviewed count. For PTY-mode conversations it shows <em>&quot;Diffs are only tracked for API-mode conversations.&quot;</em></td>
+</tr>
+<tr>
+<td><strong>Editor</strong></td>
+<td>A file browser plus buffer editor. Disabled on SSH conversations</td>
+</tr>
+</tbody></table>
+<div class="callout note"><div class="callout-title">Note</div><p>The dock used to have six tabs. Plan was dropped entirely because
+<code>PlanPanel</code> was mounted twice — here and inline in the conversation — and the
+plan belongs in the conversation. Inspector folded into the Diff panel&#39;s
+header; Files folded into the Editor.</p>
+</div>
+<h2 id="reviewing-changes">Reviewing changes<a class="anchor" href="#reviewing-changes" aria-label="Link to this section">#</a></h2>
+<p>A review bar sits above the composer whenever the conversation has produced file
+changes. It shows the file count and <code>+adds</code> / <code>-dels</code>, and turns amber when
+edits are awaiting review:</p>
+<blockquote><p><em>n files</em> <strong>+12</strong> <strong>-3</strong> — <em>2 awaiting review</em> — <strong>Y keep · N undo</strong> — <strong>Review ⌃</strong></p>
+</blockquote>
+<p>Gated files are unioned with the aggregate rather than summed, so one file never
+shows as two.</p>
+<p>Once the session settles (<code>done</code> or <code>idle</code>) with nothing pending, a second
+button appears: <strong>Finish → Commit…</strong> (<em>&quot;Commit and land this conversation&#39;s
+changes&quot;</em>), which opens the git ending flow.</p>
+<h2 id="worktree-conversations">Worktree conversations<a class="anchor" href="#worktree-conversations" aria-label="Link to this section">#</a></h2>
+<p>A conversation launched in worktree mode records its full provenance: the base
+checkout, the worktree path, the branch <code>pkt/&lt;convId&gt;</code>, the base branch it was
+cut from, and a lifecycle state of <code>active</code> / <code>landed</code> / <code>discarded</code>.</p>
+<div class="callout warning"><div class="callout-title">Warning</div><p>Conversations created <em>before</em> this field existed derive their
+paths at read time and have <strong>no</strong> recorded base branch — the base was
+discarded at their launch. Landing one requires you to pick a base branch
+explicitly.</p>
+</div>
+<p>Deleting a conversation attempts to discard its worktree. The conversation is
+deleted either way; if cleanup fails you are told, because a silently orphaned
+worktree is exactly the failure this reporting exists to catch.</p>
+<h2 id="mcp-servers">MCP servers<a class="anchor" href="#mcp-servers" aria-label="Link to this section">#</a></h2>
+<p>A conversation can be restricted to a subset of configured MCP servers.</p>
+<div class="callout important"><div class="callout-title">Important</div><p>There is no mid-session MCP swap in the sidecar protocol.
+Changing which servers are enabled applies on the <strong>next</strong> session start. To
+make this unambiguous, protocol v11 freezes a per-session <strong>MCP trust
+snapshot</strong> at session start, so later Settings edits cannot silently broaden
+server, tool or root authority mid-session.</p>
+</div>
+<p>For remote (SSH) sessions the sidecar reports which MCP servers it sourced from
+its own remote filesystem — names, transport and scope only, never commands or
+secrets — plus any read errors. That is persisted so the pill and any error
+notice survive a reload.</p>
+<p>See <a href="mcp.html">MCP hub</a>.</p>
+<h2 id="what-the-transcript-records-per-turn">What the transcript records per turn<a class="anchor" href="#what-the-transcript-records-per-turn" aria-label="Link to this section">#</a></h2>
+<p>Each assistant message carries, where the provider reports them: input tokens,
+output tokens, cached-read tokens, cached-write tokens, reasoning tokens, an
+estimated USD cost stamped at receipt time, extended-thinking text, tool calls
+with their inputs, exit codes, modified paths, stdout/stderr, and provenance
+envelopes for evidence.</p>
+<div class="callout note"><div class="callout-title">Note</div><p>Reasoning tokens are billed at the <strong>output</strong> rate by every provider
+that exposes them, and are counted alongside output tokens in cost maths.</p>
+</div>
+<div class="callout note"><div class="callout-title">Note</div><p>There is no cost dashboard. Cost is measured to enforce budget
+guardrails, not to present a running dollar readout — the reporting surface
+was removed on 2026-07-31.</p>
+</div>
+<h2 id="related">Related<a class="anchor" href="#related" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><a href="concepts.html">Core concepts</a> — the vocabulary</li>
+<li><a href="workspaces.html">Workspaces &amp; terminals</a> — conversation tiles inside a workspace</li>
+<li><a href="flights.html">Flight Deck</a> — running several agents on one task in parallel</li>
+<li><a href="memory.html">Memory</a> — what memory injection actually inserts</li>
+<li><a href="mcp.html">MCP hub</a> — configuring servers</li>
+<li><a href="remote.html">SSH remote workspaces</a> — remote execution and its limits</li>
+<li><a href="dev-agent-contract.html">Agent event contract</a> — the <code>api-agent:*</code> events behind all of this</li>
+<li><a href="settings.html">Settings reference</a> — API keys, profiles, routing</li>
+</ul>
+</article>
+    <div class="prev-next"><a class="pn prev" href="workspaces.html"><span>Previous</span><strong>Workspaces & terminals</strong></a><a class="pn next" href="flights.html"><span>Next</span><strong>Flight Deck</strong></a></div>
+  </main>
+  <nav class="toc" aria-label="On this page"><div class="toc-title">On this page</div><ul><li class="d2"><a href="#the-nine-provider-rows">The nine provider rows</a></li>
+<li class="d3"><a href="#model-catalogues">Model catalogues</a></li>
+<li class="d3"><a href="#a-withdrawn-row">A withdrawn row</a></li>
+<li class="d2"><a href="#launching-a-conversation">Launching a conversation</a></li>
+<li class="d3"><a href="#auto-picked-provider">Auto-picked provider</a></li>
+<li class="d3"><a href="#launch-controls">Launch controls</a></li>
+<li class="d3"><a href="#the-four-launch-modes">The four launch modes</a></li>
+<li class="d3"><a href="#local-vs-worktree">Local vs Worktree</a></li>
+<li class="d3"><a href="#profiles">Profiles</a></li>
+<li class="d3"><a href="#what-blocks-a-launch">What blocks a launch</a></li>
+<li class="d2"><a href="#the-composer">The composer</a></li>
+<li class="d3"><a href="#keyboard">Keyboard</a></li>
+<li class="d3"><a href="#attachments">Attachments</a></li>
+<li class="d3"><a href="#slash-commands">Slash commands</a></li>
+<li class="d2"><a href="#permission-postures">Permission postures</a></li>
+<li class="d3"><a href="#restricted-vocabularies">Restricted vocabularies</a></li>
+<li class="d2"><a href="#approvals-during-a-turn">Approvals during a turn</a></li>
+<li class="d2"><a href="#the-conversation-header">The conversation header</a></li>
+<li class="d3"><a href="#the-overflow-menu">The overflow menu</a></li>
+<li class="d3"><a href="#continue-in">Continue in…</a></li>
+<li class="d2"><a href="#the-sidebar">The sidebar</a></li>
+<li class="d2"><a href="#the-inspector-dock">The inspector dock</a></li>
+<li class="d2"><a href="#reviewing-changes">Reviewing changes</a></li>
+<li class="d2"><a href="#worktree-conversations">Worktree conversations</a></li>
+<li class="d2"><a href="#mcp-servers">MCP servers</a></li>
+<li class="d2"><a href="#what-the-transcript-records-per-turn">What the transcript records per turn</a></li>
+<li class="d2"><a href="#related">Related</a></li></ul></nav>
+</div>
+<script src="assets/docs.js"></script>
+</body>
+</html>

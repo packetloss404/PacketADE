@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dictation & analytics — PacketBench Docs</title>
+<meta name="description" content="Local Whisper voice-to-text, delivery safety, and the speaking analytics tab." />
+<link rel="icon" href="../icon-192.png" />
+<link rel="stylesheet" href="assets/docs.css" />
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Toggle navigation" aria-expanded="false">☰</button>
+  <a class="brand" href="index.html"><img src="../icon-192.png" alt="" width="24" height="24" /><span>PacketBench</span><span class="brand-sub">Docs</span></a>
+  <div class="search-wrap">
+    <input id="search" type="search" placeholder="Search documentation…" autocomplete="off" aria-label="Search documentation" />
+    <div id="search-results" role="listbox" hidden></div>
+  </div>
+  <nav class="topbar-links">
+    <a href="../index.html">Site</a>
+    <a href="https://github.com/packetloss404/PacketADE" target="_blank" rel="noopener">GitHub</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle theme">◐</button>
+  </nav>
+</header>
+<div class="layout">
+  <aside class="sidebar" aria-label="Documentation navigation"><div class="nav-group"><div class="nav-group-title">Getting started</div><ul><li><a href="index.html">Introduction</a></li>
+<li><a href="install.html">Install & first run</a></li>
+<li><a href="concepts.html">Core concepts</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">Using PacketBench</div><ul><li><a href="workspaces.html">Workspaces & terminals</a></li>
+<li><a href="agents.html">Agents & conversations</a></li>
+<li><a href="flights.html">Flight Deck</a></li>
+<li><a href="issues.html">Issues & git hosts</a></li>
+<li><a href="memory.html">Memory</a></li>
+<li><a href="dictation.html" class="active">Dictation & analytics</a></li>
+<li><a href="mcp.html">MCP hub</a></li>
+<li><a href="remote.html">SSH remote workspaces</a></li>
+<li><a href="settings.html">Settings reference</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">Developing PacketBench</div><ul><li><a href="dev-architecture.html">Architecture</a></li>
+<li><a href="dev-build.html">Build & release</a></li>
+<li><a href="dev-agent-contract.html">Agent event contract</a></li>
+<li><a href="dev-memory.html">Memory internals</a></li>
+<li><a href="dev-testing.html">Testing & gates</a></li>
+<li><a href="dev-contributing.html">Contributing</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">For agents</div><ul><li><a href="agent-guide.html">Agent orientation</a></li>
+<li><a href="agent-invariants.html">Invariants & tripwires</a></li></ul></div></aside>
+  <main id="main" class="content">
+    <article class="prose"><h1 id="dictation-amp-analytics">Dictation &amp; analytics<a class="anchor" href="#dictation-amp-analytics" aria-label="Link to this section">#</a></h1>
+<p>Dictation turns speech into text entirely on your machine: audio is captured
+with CPAL, transcribed by a local Whisper model, and delivered to whatever text
+field you were looking at. Nothing is sent to a cloud speech service, and every
+transcript is stored in a local SQLite database that also feeds a fairly
+detailed speaking-analytics tab.</p>
+<p>Dictation is a <strong>module</strong> — it can be switched off entirely in Settings →
+Integrations &amp; Data → Modules, which removes its view from the sidebar.</p>
+<div class="callout warning"><div class="callout-title">Warning</div><p>Delivery is currently <strong>Windows-only</strong>. <code>deliver_dictation_text</code>
+returns a typed error on macOS and Linux (&quot;Native dictation delivery is
+currently available on Windows&quot;), and the caller falls back to the browser
+clipboard API. Capture and transcription themselves are cross-platform.</p>
+</div>
+<h2 id="getting-set-up">Getting set up<a class="anchor" href="#getting-set-up" aria-label="Link to this section">#</a></h2>
+<ol>
+<li><strong>Download a Whisper model.</strong> Settings → Integrations &amp; Data → Dictation
+lists five: <code>tiny</code>, <code>base</code>, <code>small</code>, <code>medium</code>, <code>large-v3</code>. Download is
+streamed from the official whisper.cpp Hugging Face repository at a pinned
+revision, with live progress.</li>
+<li><strong>Pick a microphone.</strong> The picker lists every CPAL input device with its
+sample rate and channel count. Leave it on <strong>Default</strong> to follow the system
+default.</li>
+<li><strong>Test it.</strong> The stethoscope button opens the device for about 1.5 seconds
+and reports what it actually delivered — sample rate, channels, format, peak
+level, frame count.</li>
+<li>Optionally enable <strong>global shortcuts</strong> in Settings → General → Preferences →
+Keyboard Shortcuts. They are off by default.</li>
+</ol>
+<h3 id="model-verification">Model verification<a class="anchor" href="#model-verification" aria-label="Link to this section">#</a></h3>
+<p>A model counts as <strong>Ready</strong> only when its SHA-256 marker matches <em>and</em> the file
+is still the byte length it was when hashed. A model truncated after
+verification — a disk-full copy, an interrupted sync, a half-restored backup —
+is reported as unverified rather than loaded, so you get &quot;download it again&quot;
+instead of an opaque whisper.cpp failure.</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Approx. size</th>
+<th>Row shows</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>tiny</code></td>
+<td>75 MB</td>
+<td><strong>Download</strong> if absent, <strong>Verify</strong> if present but unverified, <strong>Use</strong>/<strong>Selected</strong> once Ready</td>
+</tr>
+<tr>
+<td><code>base</code></td>
+<td>142 MB</td>
+<td>″</td>
+</tr>
+<tr>
+<td><code>small</code></td>
+<td>466 MB (default selection)</td>
+<td>″</td>
+</tr>
+<tr>
+<td><code>medium</code></td>
+<td>1500 MB</td>
+<td>″</td>
+</tr>
+<tr>
+<td><code>large-v3</code></td>
+<td>3000 MB</td>
+<td>″</td>
+</tr>
+</tbody></table>
+<p>Models live in <code>~/.packetbench/models/ggml-&lt;size&gt;.bin</code>, each beside a
+<code>.sha256</code> marker. If your configured model has gone missing, PacketBench
+silently falls back to any other verified model on disk and rewrites the
+setting — the log records the substitution.</p>
+<div class="callout note"><div class="callout-title">Note</div><p>Recording refuses to start when the selected model is not verified,
+with a message pointing at Settings → Dictation. That check happens <em>before</em>
+the microphone opens, so you find out up front rather than after speaking.</p>
+</div>
+<h2 id="recording">Recording<a class="anchor" href="#recording" aria-label="Link to this section">#</a></h2>
+<p><img src="../screenshots/PLACEHOLDER-dictation-view.png" alt="The Dictation view: record button and waveform on the left, Analytics tab on the right">
+<em>The Dictation view. The left column is capture; the right is analytics and history.</em></p>
+<p>Three ways to start:</p>
+<ul>
+<li><strong>Click</strong> the round record button in the Dictation view.</li>
+<li><strong>Toggle shortcut</strong> — <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd> by default.</li>
+<li><strong>Push-to-talk</strong> — hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> by
+default; release to transcribe.</li>
+</ul>
+<p><kbd>Escape</kbd> cancels and discards. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd>
+opens the Dictation view. All three global bindings only exist while global
+shortcuts are enabled; the idle hint under the record button says so rather than
+advertising a chord that is not bound.</p>
+<p>While recording, a 25-bar exponential-frequency waveform is emitted from the
+capture thread. Audio is resampled to the 16 kHz Whisper expects, from whatever
+your device delivers (48 kHz, 44.1 kHz, 8 kHz — all handled).</p>
+<p>Recording stops automatically at the <strong>maximum recording length</strong> (default 5
+minutes, clamped by the backend to 10 seconds – 30 minutes) and transcribes what
+it has. That ceiling bounds retained PCM even if a key release is missed or the
+frontend is temporarily unresponsive.</p>
+<h3 id="when-capture-goes-wrong">When capture goes wrong<a class="anchor" href="#when-capture-goes-wrong" aria-label="Link to this section">#</a></h3>
+<p>Dictation has a lot of machinery for the case where the microphone stops
+answering, because a Bluetooth headset that walks out of range can block inside
+CPAL indefinitely.</p>
+<table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Microphone hasn&#39;t opened after 8 s</td>
+<td>An amber panel explains the likely causes and offers Cancel.</td>
+</tr>
+<tr>
+<td>Microphone hasn&#39;t opened after 15 s</td>
+<td>The store gives up, tells the backend to drop the device, and reports the failure.</td>
+</tr>
+<tr>
+<td>Transcription still running after 90 s</td>
+<td>An amber panel says large models on long recordings take this long, and offers Cancel.</td>
+</tr>
+<tr>
+<td>Transcription exceeds its budget</td>
+<td>Watchdog fires. The budget is 20× the recorded length with a 90 s floor and a 15 min ceiling.</td>
+</tr>
+<tr>
+<td>Device dies <strong>mid-recording</strong></td>
+<td>Dictation <strong>stops and transcribes anyway</strong>, so the words already spoken survive. The device error comes back as a warning on the result.</td>
+</tr>
+<tr>
+<td>Device dies <strong>while opening</strong></td>
+<td>The in-flight open is abandoned and a salvage stop runs.</td>
+</tr>
+<tr>
+<td>Capture too quiet for ~60 ticks</td>
+<td>A non-fatal <code>dictation:warning</code> stall notice appears. The capture is <em>not</em> torn down — a stall can recover, and tearing down would cost you the buffer.</td>
+</tr>
+<tr>
+<td>Capture shorter than the minimum</td>
+<td>&quot;The capture was too short to transcribe. Hold the dictation key until the waveform moves.&quot;</td>
+</tr>
+</tbody></table>
+<p>Every capture carries a monotonic id. A response that arrives after its capture
+was cancelled or superseded is discarded rather than resurrecting a dead
+recording or delivering a stale transcript — which also means dictating the same
+word twice in a row delivers twice, instead of the second being mistaken for a
+duplicate.</p>
+<p>Cancel always reaches the backend and always resets locally, so <kbd>Escape</kbd>
+can clear a wedged &quot;Transcribing…&quot; spinner. A cancel with nothing in flight is a
+state reset: it will not wipe a transcript you are still reading.</p>
+<h2 id="where-the-text-goes">Where the text goes<a class="anchor" href="#where-the-text-goes" aria-label="Link to this section">#</a></h2>
+<p>Delivery is a chain, and the destination is <strong>frozen when the capture starts</strong>,
+not when the transcript comes back. Transcription takes seconds and people click
+elsewhere while it runs; delivering into whatever happens to be focused at that
+moment would type your words into an unrelated field.</p>
+<ol>
+<li><strong>A PacketBench text field</strong> you had focused. The text is inserted directly.</li>
+<li><strong>A terminal pane</strong> you had focused. The text is written to the PTY with all
+line breaks collapsed to spaces — a newline would submit a command, and
+Whisper emits multi-line output for multi-segment audio. Dictation must never
+execute a command on its own.</li>
+<li><strong>The clipboard</strong>, always.</li>
+<li><strong>A synthetic <kbd>Ctrl</kbd>+<kbd>V</kbd> into the foreground application</strong>,
+only if you enabled &quot;Paste into other Windows apps&quot;.</li>
+</ol>
+<p>Two settings gate all of this:</p>
+<ul>
+<li><strong>Auto-paste after transcription</strong> (default off). With it off, nothing is
+delivered automatically — the transcript sits in the Dictation view for you to
+copy.</li>
+<li><strong>Paste into other Windows apps</strong> (default off, and disabled until auto-paste
+is on). This is the system-wide paste opt-in.</li>
+</ul>
+<div class="callout important"><div class="callout-title">Important</div><p>The system-wide paste opt-in is enforced in <strong>Rust</strong>, not just
+in the UI. <code>deliver_dictation_text</code> re-reads the stored setting and can only
+ever <em>narrow</em> what the caller asked for, and an unreadable or corrupt
+<code>dictation.json</code> means clipboard-only. Any caller reaching the command with
+<code>paste: true</code> cannot drive Ctrl+V into the foreground app unless you turned
+the setting on.</p>
+</div>
+<h3 id="fields-dictation-refuses">Fields dictation refuses<a class="anchor" href="#fields-dictation-refuses" aria-label="Link to this section">#</a></h3>
+<p>A field is refused as a delivery target when it is a password input, when its
+<code>autocomplete</code> is <code>current-password</code>, <code>new-password</code>, or <code>one-time-code</code>, or
+when it sits inside a region marked <code>data-dictation=&quot;off&quot;</code>,
+<code>data-dictation=&quot;secure&quot;</code>, or <code>data-sensitive=&quot;true&quot;</code>. The Dictation view itself
+is marked <code>data-dictation=&quot;off&quot;</code>, as is the Trust &amp; Provenance settings card.</p>
+<p>Focusing a secure region also <em>clears</em> the remembered field, so a transcript
+spoken at a password prompt cannot land in the form behind it. Focusing an
+ordinary button (including the mic button itself) does not clear it — clicking
+the mic is the normal way to start dictating.</p>
+<p>The clipboard deliberately keeps the transcript after a paste. Restoring a
+previous clipboard value could re-expose a password or one-time code that was
+sitting there.</p>
+<h3 id="composer-mic-buttons">Composer mic buttons<a class="anchor" href="#composer-mic-buttons" aria-label="Link to this section">#</a></h3>
+<p>An agent composer&#39;s mic button uses the same backend but <em>claims</em> the capture,
+so the automatic delivery path stands down and the composer inserts the text
+itself. Without that claim the utterance would land twice. If the composer
+unmounts mid-capture it releases the claim, and a still-open microphone is
+cancelled rather than transcribed into nowhere.</p>
+<h2 id="settings-reference">Settings reference<a class="anchor" href="#settings-reference" aria-label="Link to this section">#</a></h2>
+<p>Everything below is in Settings → Integrations &amp; Data → Dictation, except the
+shortcuts, which are in Settings → General → Preferences.</p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Whisper model</td>
+<td><code>small</code></td>
+<td>Which verified model transcribes. Larger is slower and more accurate.</td>
+</tr>
+<tr>
+<td>Microphone</td>
+<td>Default</td>
+<td>A stable host-qualified CPAL identity. Falls back to the system default when the saved device is gone — with an amber warning in the picker.</td>
+</tr>
+<tr>
+<td>Maximum recording</td>
+<td>5 minutes</td>
+<td>Auto-stop and transcribe at this length. Presets 30 s / 1 / 5 / 10 / 30 min; clamped 10 s–30 min.</td>
+</tr>
+<tr>
+<td>Language</td>
+<td>Auto-detect</td>
+<td>Whisper language code, or auto-detection. Offered: English, Spanish, French, German, Italian, Portuguese, Japanese, Chinese.</td>
+</tr>
+<tr>
+<td>Auto-paste after transcription</td>
+<td>Off</td>
+<td>Enables the delivery chain above.</td>
+</tr>
+<tr>
+<td>Paste into other Windows apps</td>
+<td>Off (needs auto-paste)</td>
+<td>Permits the synthetic Ctrl+V.</td>
+</tr>
+<tr>
+<td>Custom dictionary</td>
+<td>Empty</td>
+<td>Terms fed to Whisper as an initial prompt to bias spelling. Capped at 100 terms / 1,024 characters; duplicates ignored.</td>
+</tr>
+<tr>
+<td>Global dictation shortcuts</td>
+<td>Off</td>
+<td>Registers the three OS-global accelerators.</td>
+</tr>
+<tr>
+<td>Push to Talk (hold)</td>
+<td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd></td>
+<td>Re-bindable; must include a modifier.</td>
+</tr>
+<tr>
+<td>Toggle Recording</td>
+<td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd></td>
+<td>Re-bindable; must include a modifier.</td>
+</tr>
+<tr>
+<td>Cancel Recording</td>
+<td><kbd>Escape</kbd></td>
+<td>Fixed, in-app only.</td>
+</tr>
+<tr>
+<td>Open Dictation</td>
+<td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd></td>
+<td>Fixed.</td>
+</tr>
+</tbody></table>
+<p>The three shortcuts must all differ from each other, and PacketBench only ever
+unregisters accelerators it successfully registered itself — an existing OS or
+application binding is reported as a conflict, never taken over. The status line
+under the shortcut rows says which state you are in: off, registering, active,
+or the conflict message.</p>
+<h2 id="history">History<a class="anchor" href="#history" aria-label="Link to this section">#</a></h2>
+<p>The <strong>History</strong> tab lists past transcriptions, newest first, 100 at a time
+(server-side page cap 500). Expanding a row shows the full text plus mode,
+duration, WPM, word count, and sentiment.</p>
+<p>Search is a <code>LIKE</code> scan over the transcript text, capped at 200 results, with
+<code>%</code>, <code>_</code>, and <code>\</code> escaped so a search for a literal <code>100%</code> matches only that.</p>
+<p>Transcripts are stored in <code>~/.packetbench/dictation.db</code> (SQLite). One row per
+transcription, with <code>text</code>, <code>mode</code>, a UTC ISO-8601 <code>timestamp</code>, <code>word_count</code>,
+<code>duration_seconds</code>, <code>wpm</code>, and <code>sentiment</code>.</p>
+<div class="callout note"><div class="callout-title">Note</div><p>There is no delete-a-transcript or clear-history control in the UI,
+and no export. To remove history you delete <code>~/.packetbench/dictation.db</code>.</p>
+</div>
+<h2 id="analytics">Analytics<a class="anchor" href="#analytics" aria-label="Link to this section">#</a></h2>
+<p>The Analytics tab is built from a single backend aggregation
+(<code>get_dictation_analytics</code>) over the whole <code>entries</code> table, rendered as 21
+visualisations from three hand-rolled chart primitives. It fills in
+progressively: the first entry gives you totals, speed, and time saved; a day or
+two adds the trend lines and heatmaps; a week adds streaks, goals, and the
+week-over-week comparison.</p>
+<div class="callout important"><div class="callout-title">Important</div><p><strong>Every calendar bucket is UTC</strong> — hours, days, weekdays,
+&quot;today&quot;, &quot;this week&quot;. Timestamps are stored in UTC and the Rust aggregator has
+no time-zone database. The Date &amp; Time setting does <strong>not</strong> affect them, and
+Settings → General → Date &amp; Time says so. Away from UTC, entries near midnight
+can put a streak or a daily total on a different day than the timestamp shown
+elsewhere in the app.</p>
+</div>
+<h3 id="headline">Headline<a class="anchor" href="#headline" aria-label="Link to this section">#</a></h3>
+<p>Total words · entries · average WPM · time spoken · time saved · vocabulary
+diversity, plus average sentiment when there is any to average.</p>
+<p><strong>Time saved</strong> is measured against typing at 40 wpm, clamped at zero per day
+before summing. <strong>Vocabulary diversity</strong> is distinct words over total words.</p>
+<h3 id="trends">Trends<a class="anchor" href="#trends" aria-label="Link to this section">#</a></h3>
+<p>Six charts over a trailing series of at most 365 day-buckets (days with at least
+one entry only): words per day, words per minute, vocabulary growth, cumulative
+talking time, cumulative time saved, and sentiment over time.</p>
+<p>The two cumulative charts are seeded from a carry total for the day-buckets that
+fell outside the window, so they continue your history instead of restarting at
+zero. A line under the charts says how much was carried in.</p>
+<h3 id="rhythm">Rhythm<a class="anchor" href="#rhythm" aria-label="Link to this section">#</a></h3>
+<p>A yearly daily-activity heatmap, a weekday × hour heatmap, and two hour-of-day
+bar charts (session count, and mean WPM). Hours with no reading show as an empty
+tick, not a zero bar.</p>
+<h3 id="consistency">Consistency<a class="anchor" href="#consistency" aria-label="Link to this section">#</a></h3>
+<p>Three streak numbers that are genuinely different and are shown as such:</p>
+<table>
+<thead>
+<tr>
+<th>Number</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Current</strong></td>
+<td>Consecutive days ending <strong>today or yesterday</strong>. Zero if neither has an entry.</td>
+</tr>
+<tr>
+<td><strong>Longest</strong></td>
+<td>Best run ever.</td>
+</tr>
+<tr>
+<td><strong>Last run</strong></td>
+<td>Consecutive days ending at your last active day, however long ago that was.</td>
+</tr>
+</tbody></table>
+<p>When you have a lapsed run, a line explains why the current streak reads zero.</p>
+<p>Goals are <strong>fixed constants</strong>, not user settings: 500 words/day and 2,500
+words/week. There is no UI to change them. The section also compares this UTC
+week against last.</p>
+<h3 id="language">Language<a class="anchor" href="#language" aria-label="Link to this section">#</a></h3>
+<p>Top words, filler words, distinctive words, word-length distribution, common
+two- and three-word phrases, new words this week, and a Flesch-Kincaid reading
+level.</p>
+<p>The filler-word list is fixed and reported in declaration order including zeros,
+so the frontend controls sorting: <em>um, uh, like, basically, actually, literally,
+honestly, anyway, so, right</em>. &quot;Distinctive&quot; means over three characters, outside
+a built-in ~300-word common list, and used at least twice. Phrases must appear
+at least twice and cannot be entirely stopwords. New-words chips are capped at
+50 with the real total shown alongside.</p>
+<p>Reading level is clamped to 1–18; a value of 0 means &quot;not enough text to score&quot;
+and renders as an empty state rather than grade zero.</p>
+<h3 id="records">Records<a class="anchor" href="#records" aria-label="Link to this section">#</a></h3>
+<p>Fastest WPM, most words in a day, longest entry, longest session.</p>
+<h3 id="sentiment">Sentiment<a class="anchor" href="#sentiment" aria-label="Link to this section">#</a></h3>
+<p>Sentiment is a VADER compound score in −1…+1, computed in Rust at the single
+write point, so every new entry gets one.</p>
+<div class="callout warning"><div class="callout-title">Warning</div><p>Rows recorded <strong>before the scorer was added are null</strong>, and every
+sentiment figure is computed over scored rows only. Because a mean of nothing
+is <code>0</code>, which is byte-identical to a genuinely neutral corpus, the average
+sentiment tile and the sentiment chart only render once coverage confirms
+there is something to average — otherwise they say so. Unscored days are
+omitted from the chart, never plotted as neutral.</p>
+</div>
+<p>The coverage label (&quot;scored 12 of 840 entries&quot;) is shown wherever a sentiment
+number is.</p>
+<h3 id="deliberately-absent">Deliberately absent<a class="anchor" href="#deliberately-absent" aria-label="Link to this section">#</a></h3>
+<p>A mode breakdown donut and topic classification were removed on purpose.
+PacketBench only ever writes the <code>transcribe</code> mode, so <code>modeBreakdown</code> is always
+a single bucket; the topic rules were tuned to a different product. Do not build
+anything new on <code>modeBreakdown</code>.</p>
+<h2 id="related">Related<a class="anchor" href="#related" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><a href="settings.html">Settings reference</a> — the Dictation and Keyboard Shortcuts cards in context.</li>
+<li><a href="workspaces.html">Workspaces &amp; terminals</a> — dictating into a terminal pane.</li>
+<li><a href="agents.html">Agents &amp; conversations</a> — the composer mic button.</li>
+</ul>
+</article>
+    <div class="prev-next"><a class="pn prev" href="memory.html"><span>Previous</span><strong>Memory</strong></a><a class="pn next" href="mcp.html"><span>Next</span><strong>MCP hub</strong></a></div>
+  </main>
+  <nav class="toc" aria-label="On this page"><div class="toc-title">On this page</div><ul><li class="d2"><a href="#getting-set-up">Getting set up</a></li>
+<li class="d3"><a href="#model-verification">Model verification</a></li>
+<li class="d2"><a href="#recording">Recording</a></li>
+<li class="d3"><a href="#when-capture-goes-wrong">When capture goes wrong</a></li>
+<li class="d2"><a href="#where-the-text-goes">Where the text goes</a></li>
+<li class="d3"><a href="#fields-dictation-refuses">Fields dictation refuses</a></li>
+<li class="d3"><a href="#composer-mic-buttons">Composer mic buttons</a></li>
+<li class="d2"><a href="#settings-reference">Settings reference</a></li>
+<li class="d2"><a href="#history">History</a></li>
+<li class="d2"><a href="#analytics">Analytics</a></li>
+<li class="d3"><a href="#headline">Headline</a></li>
+<li class="d3"><a href="#trends">Trends</a></li>
+<li class="d3"><a href="#rhythm">Rhythm</a></li>
+<li class="d3"><a href="#consistency">Consistency</a></li>
+<li class="d3"><a href="#language">Language</a></li>
+<li class="d3"><a href="#records">Records</a></li>
+<li class="d3"><a href="#sentiment">Sentiment</a></li>
+<li class="d3"><a href="#deliberately-absent">Deliberately absent</a></li>
+<li class="d2"><a href="#related">Related</a></li></ul></nav>
+</div>
+<script src="assets/docs.js"></script>
+</body>
+</html>

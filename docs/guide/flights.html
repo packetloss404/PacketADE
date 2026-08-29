@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Flight Deck — PacketBench Docs</title>
+<meta name="description" content="Plan work as Flights and run parallel worktree attempts across local and SSH agents." />
+<link rel="icon" href="../icon-192.png" />
+<link rel="stylesheet" href="assets/docs.css" />
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Toggle navigation" aria-expanded="false">☰</button>
+  <a class="brand" href="index.html"><img src="../icon-192.png" alt="" width="24" height="24" /><span>PacketBench</span><span class="brand-sub">Docs</span></a>
+  <div class="search-wrap">
+    <input id="search" type="search" placeholder="Search documentation…" autocomplete="off" aria-label="Search documentation" />
+    <div id="search-results" role="listbox" hidden></div>
+  </div>
+  <nav class="topbar-links">
+    <a href="../index.html">Site</a>
+    <a href="https://github.com/packetloss404/PacketADE" target="_blank" rel="noopener">GitHub</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle theme">◐</button>
+  </nav>
+</header>
+<div class="layout">
+  <aside class="sidebar" aria-label="Documentation navigation"><div class="nav-group"><div class="nav-group-title">Getting started</div><ul><li><a href="index.html">Introduction</a></li>
+<li><a href="install.html">Install & first run</a></li>
+<li><a href="concepts.html">Core concepts</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">Using PacketBench</div><ul><li><a href="workspaces.html">Workspaces & terminals</a></li>
+<li><a href="agents.html">Agents & conversations</a></li>
+<li><a href="flights.html" class="active">Flight Deck</a></li>
+<li><a href="issues.html">Issues & git hosts</a></li>
+<li><a href="memory.html">Memory</a></li>
+<li><a href="dictation.html">Dictation & analytics</a></li>
+<li><a href="mcp.html">MCP hub</a></li>
+<li><a href="remote.html">SSH remote workspaces</a></li>
+<li><a href="settings.html">Settings reference</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">Developing PacketBench</div><ul><li><a href="dev-architecture.html">Architecture</a></li>
+<li><a href="dev-build.html">Build & release</a></li>
+<li><a href="dev-agent-contract.html">Agent event contract</a></li>
+<li><a href="dev-memory.html">Memory internals</a></li>
+<li><a href="dev-testing.html">Testing & gates</a></li>
+<li><a href="dev-contributing.html">Contributing</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">For agents</div><ul><li><a href="agent-guide.html">Agent orientation</a></li>
+<li><a href="agent-invariants.html">Invariants & tripwires</a></li></ul></div></aside>
+  <main id="main" class="content">
+    <article class="prose"><h1 id="flight-deck">Flight Deck<a class="anchor" href="#flight-deck" aria-label="Link to this section">#</a></h1>
+<p>A <strong>Flight</strong> is the top-level work organiser, above issues and above individual
+sessions. It carries an objective, an optional upfront plan, links to issues and
+conversations, and — the reason most people open it — a set of <strong>attempts</strong>: one
+agent per git worktree, all running the same prompt in parallel, each with its
+own branch, cost and review state.</p>
+<p>Reach it from the left rail (plane icon) or with
+<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd>.</p>
+<p><img src="../screenshots/PLACEHOLDER-flight-deck.png" alt="The Flight Deck with the flight list on the left and a flight&#39;s attempt grid on the right"></p>
+<p><em>A Flight with three parallel attempts, the stat grid above them and the
+attention strip flagging one that needs review.</em></p>
+<div class="callout note"><div class="callout-title">Note</div><p>&quot;Flight&quot; replaced &quot;Mission&quot; as the user-facing name. The word
+&quot;mission&quot; survives only in persisted-data compatibility aliases; nothing in
+the UI should say it. Likewise, the autonomous <strong>planner</strong> runtime was removed
+in July 2026 and is not coming back — planning is now a normal read-only agent
+conversation you explicitly apply.</p>
+</div>
+<h2 id="the-surface">The surface<a class="anchor" href="#the-surface" aria-label="Link to this section">#</a></h2>
+<p>Two panes. A 320px sidebar on the left, the selected Flight&#39;s detail on the
+right. With no Flights at all you get an empty state:</p>
+<blockquote><p><strong>No flights yet</strong> — <em>&quot;Launch a worktree attempt against a target agent and
+branch — track progress, review the diff, and accept or reject the result.&quot;</em>
+— <strong>New flight</strong></p>
+</blockquote>
+<h3 id="the-sidebar">The sidebar<a class="anchor" href="#the-sidebar" aria-label="Link to this section">#</a></h3>
+<p>Header: <strong>Flights</strong> with a count, a search toggle (<em>&quot;Search flights&quot;</em>) and a
+<strong>+</strong> (<em>&quot;New flight&quot;</em>). Search filters on title, objective and id.</p>
+<p>Flights are bucketed into four groups, each with its own count:</p>
+<table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Contains</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Drafting</strong></td>
+<td>Status <code>spec</code></td>
+</tr>
+<tr>
+<td><strong>Attention</strong></td>
+<td>Status <code>failed</code> or <code>paused</code>, or any task in <code>approval_needed</code></td>
+</tr>
+<tr>
+<td><strong>Active</strong></td>
+<td>Status <code>active</code> or <code>review</code></td>
+</tr>
+<tr>
+<td><strong>Recent</strong></td>
+<td>Everything else</td>
+</tr>
+</tbody></table>
+<p>Each row shows a short id (<code>F-XXXX</code>, the last four id characters uppercased), the
+title, a status dot, agent count, cost, a memory-hits chip (click it to open
+<a href="memory.html">Memory</a> scoped to this Flight), and a delete button.</p>
+<h3 id="status-is-computed-not-stored">Status is computed, not stored<a class="anchor" href="#status-is-computed-not-stored" aria-label="Link to this section">#</a></h3>
+<p>The status you see is derived on every read, in this precedence:</p>
+<ol>
+<li><strong>From attempts</strong> — all cancelled → <code>paused</code>; all failed → <code>failed</code>; all
+completed → <code>done</code>; any running/provisioning/queued → <code>active</code>; any reviewing
+→ <code>review</code>; then mixed terminal states resolve failed → <code>failed</code>, completed →
+<code>done</code>.</li>
+<li><strong>From tasks</strong> (if the Flight has milestones) — any <code>approval_needed</code> →
+<code>active</code>; any failed → <code>failed</code>; all done → <code>review</code>; any running/queued →
+<code>active</code>; any blocked → <code>active</code>.</li>
+<li><strong>From linked issues</strong> — any <code>needs_human</code> or <code>blocked</code> → <code>paused</code>; all done
+→ <code>done</code>; any in-progress or QA → <code>active</code>.</li>
+<li>Otherwise the Flight&#39;s stored <code>status</code>.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Label shown</th>
+<th>Dot</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>spec</code></td>
+<td>spec</td>
+<td>purple</td>
+</tr>
+<tr>
+<td><code>draft</code></td>
+<td>draft</td>
+<td>muted</td>
+</tr>
+<tr>
+<td><code>planning</code></td>
+<td>planning</td>
+<td>purple</td>
+</tr>
+<tr>
+<td><code>ready</code></td>
+<td>ready</td>
+<td>blue</td>
+</tr>
+<tr>
+<td><code>active</code></td>
+<td><strong>running</strong></td>
+<td>blue</td>
+</tr>
+<tr>
+<td><code>paused</code></td>
+<td>paused</td>
+<td>amber</td>
+</tr>
+<tr>
+<td><code>review</code></td>
+<td>review</td>
+<td>purple</td>
+</tr>
+<tr>
+<td><code>done</code></td>
+<td>done</td>
+<td>green</td>
+</tr>
+<tr>
+<td><code>failed</code></td>
+<td>failed</td>
+<td>red</td>
+</tr>
+<tr>
+<td><code>cancelled</code></td>
+<td>cancelled</td>
+<td>muted</td>
+</tr>
+</tbody></table>
+<p>Priorities render as <code>P0</code> (critical, red), <code>P1</code> (high, amber), <code>P2</code> (medium,
+blue), <code>P3</code> (low, muted). New Flights are created at <strong>medium</strong>.</p>
+<h2 id="launching">Launching<a class="anchor" href="#launching" aria-label="Link to this section">#</a></h2>
+<p>Both <strong>New flight</strong> and a Flight&#39;s own <strong>Launch attempt</strong> open the same dialog.
+Its title is <em>&quot;Launch parallel agents&quot;</em> for a new Flight, or <em>&quot;Launch attempt —
+<code>&lt;title&gt;</code>&quot;</em> when it targets an existing one.</p>
+<h3 id="fields">Fields<a class="anchor" href="#fields" aria-label="Link to this section">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Prompt</strong> (required)</td>
+<td><em>&quot;What should the agents work on? Each agent runs the same prompt independently.&quot;</em> Becomes the Flight&#39;s objective and prompt</td>
+</tr>
+<tr>
+<td><strong>Title</strong> (optional)</td>
+<td>Falls back to the first 60 characters of the prompt, then <code>Untitled flight</code></td>
+</tr>
+<tr>
+<td><strong>Targets</strong></td>
+<td>The multi-target picker, below</td>
+</tr>
+<tr>
+<td><strong>Execution supervision</strong></td>
+<td>Assisted / Settings default / YOLO</td>
+</tr>
+<tr>
+<td><strong>Publish attempts as draft PRs</strong></td>
+<td>Checkbox</td>
+</tr>
+<tr>
+<td><strong>Require an independent Reviewer Gate</strong></td>
+<td>Checkbox with its own sub-form</td>
+</tr>
+</tbody></table>
+<p>The footer reads <em>&quot;Ctrl+Enter to launch · Each agent runs in its own git
+worktree&quot;</em>, and offers <strong>Cancel</strong>, <strong>Plan first</strong> (or <strong>Open plan</strong>) and
+<strong>Launch <code>&lt;n&gt;</code> agents</strong>.</p>
+<p>While a launch or planning turn is in flight the dialog cannot be closed — the
+X is dimmed and <kbd>Esc</kbd> is suppressed.</p>
+<h3 id="the-target-picker">The target picker<a class="anchor" href="#the-target-picker" aria-label="Link to this section">#</a></h3>
+<p>Targets come from two sources: your existing <strong>local workspaces</strong> (any workspace
+with a project path that is not SSH-backed) and your configured <strong>SSH servers</strong>.</p>
+<div class="callout important"><div class="callout-title">Important</div><p>You cannot pick an arbitrary folder here. Local targets are
+drawn from workspaces, so if the picker says <em>&quot;No workspaces or SSH servers —
+open a folder or add a server first.&quot;</em>, create a workspace first.</p>
+</div>
+<p>Clicking a chip adds it. Each picked row then exposes four inline controls:</p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Default</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Base branch</td>
+<td><strong><code>main</code></strong></td>
+<td>Free text. Lowercased and trimmed downstream; empty falls back to <code>main</code></td>
+</tr>
+<tr>
+<td>Provider</td>
+<td><code>api-claude</code></td>
+<td>Any of the nine API rows</td>
+</tr>
+<tr>
+<td>Model</td>
+<td>That provider&#39;s first catalogue model</td>
+<td>Changing provider resets the model</td>
+</tr>
+<tr>
+<td>Remove</td>
+<td>—</td>
+<td>Drops the target</td>
+</tr>
+</tbody></table>
+<div class="callout warning"><div class="callout-title">Warning</div><p>The base branch defaults to the literal string <code>main</code> for every
+target, regardless of what the repository&#39;s actual default branch is. On a repo
+whose trunk is <code>master</code>, <code>develop</code> or anything else, change this before
+launching or provisioning will fail.</p>
+</div>
+<p>For an SSH target the base path pre-fills from the server&#39;s default remote path
+and is editable per attempt (blank when the server has no default).</p>
+<h4 id="unpinned-ssh-hosts-are-blocked">Unpinned SSH hosts are blocked<a class="anchor" href="#unpinned-ssh-hosts-are-blocked" aria-label="Link to this section">#</a></h4>
+<p>An SSH server with no pinned host fingerprint renders as a disabled amber chip
+(<em>&quot;Host key not verified — pin it on the Servers page&quot;</em>) and cannot be added at
+all. If one somehow ends up selected, the launch is blocked with:</p>
+<blockquote><p><em>Host key not verified for: <code>&lt;names&gt;</code>. Verify on the Servers page before
+launching.</em> — plus an <strong>Open Servers settings →</strong> link.</p>
+</blockquote>
+<p>Without a fingerprint the backend falls back to <code>StrictHostKeyChecking=accept-new</code>
+(trust-on-first-use), which is MITM-able on the first connect. See
+<a href="remote.html">SSH remote workspaces</a>.</p>
+<h3 id="path-collisions">Path collisions<a class="anchor" href="#path-collisions" aria-label="Link to this section">#</a></h3>
+<p>Two selected targets that claim the same repository root on the same branch are
+refused before anything is provisioned:</p>
+<blockquote><p><em>Selected targets 1 and 2 both claim <code>&lt;path&gt;</code> on <code>&lt;branch&gt;</code>.</em></p>
+</blockquote>
+<p>An already-live attempt on the same root and branch is refused the same way:</p>
+<blockquote><p><em>Attempt <code>&lt;id&gt;</code> is already <code>&lt;status&gt;</code> on <code>&lt;path&gt;</code> (<code>&lt;branch&gt;</code>).</em></p>
+</blockquote>
+<h3 id="quotthis-looks-familiarquot">&quot;This looks familiar&quot;<a class="anchor" href="#quotthis-looks-familiarquot" aria-label="Link to this section">#</a></h3>
+<p>If your prompt overlaps a known pitfall pattern or a lesson that has recurred
+across prior Flights, an amber hint appears under the prompt box:</p>
+<blockquote><p>⚠ <strong>This looks familiar</strong> (hit in <em>n</em> prior flights): <em><code>&lt;lesson text&gt;</code></em></p>
+</blockquote>
+<p>This is drawn from <a href="memory.html">Memory</a> and is advisory only — it never blocks a
+launch.</p>
+<h3 id="execution-supervision">Execution supervision<a class="anchor" href="#execution-supervision" aria-label="Link to this section">#</a></h3>
+<p>Three buttons: <strong>Assisted</strong>, <strong>Settings default</strong>, <strong>YOLO</strong>.</p>
+<ul>
+<li><strong>Assisted</strong> (the default, and what an absent value means) —
+<em>&quot;PacketBench detects and recommends; you launch, retry, accept, and integrate.&quot;</em></li>
+<li><strong>Settings default</strong> — copies the effective policy from Settings at opt-in
+time. If Settings currently resolves to Assisted, the card says so.</li>
+<li><strong>YOLO</strong> — an explicit bounded policy built from the Settings defaults plus
+this launch&#39;s roots and targets.</li>
+</ul>
+<p>When a policy is in effect the card prints its <strong>effective bounds</strong> verbatim:
+max total cost, max duration in minutes, retries per task, review rounds,
+concurrent agents, and which behaviours are enabled (recovery, review
+remediation, task graph, unattended in-project tools) — or <code>limits only</code>.</p>
+<div class="callout important"><div class="callout-title">Important</div><p>The policy is a <strong>versioned snapshot</strong>, not a live subscription.
+A Flight never silently follows later Settings edits: <code>settings_default</code> copies
+the effective policy at opt-in time and keeps it.</p>
+</div>
+<p>Configuration errors are surfaced before launch, e.g.:</p>
+<ul>
+<li><em><code>&lt;target&gt;</code> is outside the autonomy root allowlist.</em></li>
+<li><em><code>&lt;target&gt;</code> is outside the autonomy target allowlist.</em></li>
+<li><em>Auto-run task graph requires a Cooperative Flight.</em></li>
+<li><em>Auto-run task graph requires the independent Reviewer Gate.</em></li>
+</ul>
+<h3 id="publish-attempts-as-draft-prs">Publish attempts as draft PRs<a class="anchor" href="#publish-attempts-as-draft-prs" aria-label="Link to this section">#</a></h3>
+<blockquote><p><em>&quot;After each attempt, push the branch and open a draft PR on GitHub. Lets you
+review attempts via your normal PR flow.&quot;</em></p>
+</blockquote>
+<p>Pre-checked when you opted into that default in Settings → GitHub — but on an
+existing Flight the Flight&#39;s own stored setting wins, so re-opening the dialog to
+add an attempt does not silently rewrite it.</p>
+<h3 id="the-independent-reviewer-gate">The independent Reviewer Gate<a class="anchor" href="#the-independent-reviewer-gate" aria-label="Link to this section">#</a></h3>
+<blockquote><p><em>&quot;When an attempt finishes, automatically run one read-only reviewer. This
+incurs model usage. Acceptance stays blocked until it passes or you record an
+override.&quot;</em></p>
+</blockquote>
+<p>Enabling it reveals three controls: a <strong>Reviewer agent</strong> select (any of the nine
+providers, default OpenAI Agents SDK), a <strong>Reviewer model</strong> select, and an
+<strong>acceptance criteria</strong> textarea (<em>&quot;Acceptance criteria — one per line / Example:
+pnpm test passes&quot;</em>).</p>
+<p>Validation, all of which blocks the launch:</p>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Message</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>No provider resolved</td>
+<td><em>Choose a supported API reviewer.</em></td>
+</tr>
+<tr>
+<td>Model not in the list</td>
+<td><em>Choose a model supported by the selected reviewer.</em></td>
+</tr>
+<tr>
+<td>Ollama model with no tools template</td>
+<td><em>That Ollama model has no tools template — the reviewer needs tool calling.</em></td>
+</tr>
+<tr>
+<td>No criteria</td>
+<td><em>Add at least one acceptance criterion for the independent reviewer.</em></td>
+</tr>
+<tr>
+<td>More than 40 criteria</td>
+<td><em>Reviewer Gate supports at most 40 acceptance criteria.</em></td>
+</tr>
+</tbody></table>
+<p>The reviewer runs read-only, restricted to <code>read_file</code>, <code>list_directory</code> and
+<code>grep</code>.</p>
+<h3 id="plan-first">Plan first<a class="anchor" href="#plan-first" aria-label="Link to this section">#</a></h3>
+<p><strong>Plan first</strong> (<em>&quot;Explore the repository and refine a structured plan in a normal
+agent conversation&quot;</em>) uses the <strong>first selected target</strong> to start an ordinary
+agent conversation, titled <code>Flight plan — &lt;title&gt;</code>, with:</p>
+<ul>
+<li>a Flight-planning system prompt,</li>
+<li>a restricted planning tool set,</li>
+<li><strong>no</strong> MCP servers,</li>
+<li>memory context <strong>on</strong>,</li>
+<li><code>permissionMode: deny_all</code> and <code>approveWrites: false</code> — i.e. genuinely
+read-only.</li>
+</ul>
+<p>The Flight moves to status <code>planning</code> and the conversation is linked. Once one
+exists, the button becomes <strong>Open plan</strong> and re-opens it instead of starting a
+second.</p>
+<h3 id="launching-and-partial-failures">Launching, and partial failures<a class="anchor" href="#launching-and-partial-failures" aria-label="Link to this section">#</a></h3>
+<p>Provisioning is <strong>sequential</strong>, one target at a time. The dialog says so while it
+runs:</p>
+<blockquote><p><em>Provisioning a git worktree and starting a session for each target, one at a
+time: <code>&lt;labels&gt;</code>. Targets that come up stay live even if a later one fails.</em></p>
+</blockquote>
+<p>Before any target is provisioned, PacketBench checks your cost guardrails.
+If a daily, monthly, session, per-provider or per-Flight cap is already exceeded
+the launch is refused with that guardrail&#39;s message. Caps that are not set are
+skipped entirely.</p>
+<div class="callout important"><div class="callout-title">Important</div><p>If a later target fails, earlier attempts may already be live
+and spending. PacketBench rehydrates and re-attaches those partial successes so
+they stay visible and controllable, and the error message names how many
+actually launched — rather than telling you the launch failed while agents are
+running.</p>
+</div>
+<h2 id="what-an-attempt-is">What an attempt is<a class="anchor" href="#what-an-attempt-is" aria-label="Link to this section">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Branch</td>
+<td><code>pkt/&lt;attemptId&gt;</code></td>
+</tr>
+<tr>
+<td>Worktree</td>
+<td><code>&lt;basePath&gt;/.pkt-worktrees/&lt;attemptId&gt;</code></td>
+</tr>
+<tr>
+<td>Session</td>
+<td>A normal API-agent conversation whose id equals the attempt&#39;s session id</td>
+</tr>
+<tr>
+<td>Statuses</td>
+<td><code>queued</code> → <code>provisioning</code> → <code>running</code> → <code>reviewing</code> → <code>completed</code> / <code>failed</code> / <code>cancelled</code></td>
+</tr>
+</tbody></table>
+<p>The status labels shown on the tile are <strong>Queued</strong>, <strong>Provisioning</strong>,
+<strong>Running</strong>, <strong>Reviewing</strong>, <strong>Completed</strong>, <strong>Failed</strong>, <strong>Cancelled</strong>.</p>
+<p>A failed attempt also carries a structured failure category, one of: <code>auth</code>,
+<code>billing</code>, <code>rate_limit</code>, <code>context_overflow</code>, <code>timeout</code>, <code>server_error</code>,
+<code>not_installed</code>, <code>unknown</code>.</p>
+<h3 id="the-attempt-tile">The attempt tile<a class="anchor" href="#the-attempt-tile" aria-label="Link to this section">#</a></h3>
+<p>Each tile shows the status, the target (local folder or SSH server), a live
+transcript of the last five messages (expandable), the tool calls, and a
+follow-up composer so you can steer the agent mid-run.</p>
+<p>Action row:</p>
+<table>
+<thead>
+<tr>
+<th>Button</th>
+<th>When</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Open in Workspace</strong></td>
+<td>Session exists</td>
+<td><em>&quot;Open this attempt&#39;s project in a CLI-first Workspace&quot;</em></td>
+</tr>
+<tr>
+<td><strong>Monitor</strong></td>
+<td>Session exists</td>
+<td><em>&quot;Open a read-only monitor for this attempt&quot;</em></td>
+</tr>
+<tr>
+<td><strong>Accept</strong></td>
+<td>Status <code>reviewing</code></td>
+<td>Accepts this attempt as the Flight&#39;s result</td>
+</tr>
+<tr>
+<td><strong>Reject</strong></td>
+<td>Status <code>reviewing</code></td>
+<td>Marks it failed</td>
+</tr>
+<tr>
+<td><strong>Cancel</strong></td>
+<td>In progress</td>
+<td><em>&quot;Cancel attempt + remove worktree&quot;</em></td>
+</tr>
+</tbody></table>
+<p>Accept and Reject both open a confirmation that names the consequences exactly:</p>
+<blockquote><p><em><code>pkt/&lt;id&gt;</code> is accepted as this Flight&#39;s result. The agent session closes and
+the attempt&#39;s git worktree is force-removed.</em> — with the footnote <em>&quot;Removing
+the worktree cannot be undone. The branch is kept.&quot;</em></p>
+</blockquote>
+<p>If the worktree has uncommitted changes at that moment, the confirmation says so
+explicitly: <em>&quot;That worktree has uncommitted changes right now — they are
+destroyed, and a later Land only takes what is committed on <code>&lt;branch&gt;</code>.&quot;</em></p>
+<p><strong>Accept is blocked</strong> while a Reviewer Gate is configured and has not passed:</p>
+<table>
+<thead>
+<tr>
+<th>Gate status</th>
+<th>Reason shown</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>running</code> or <code>pending</code></td>
+<td><em>The independent reviewer has not finished.</em></td>
+</tr>
+<tr>
+<td>anything else non-passing</td>
+<td><em>The Reviewer Gate must pass or be explicitly overridden before acceptance.</em></td>
+</tr>
+</tbody></table>
+<p><code>passed</code> and <code>overridden</code> both unblock it.</p>
+<h3 id="landing-an-attempt">Landing an attempt<a class="anchor" href="#landing-an-attempt" aria-label="Link to this section">#</a></h3>
+<p>A completed attempt grows a second row with its branch name and two buttons.</p>
+<p><strong>Land</strong> squash-merges <code>pkt/&lt;attemptId&gt;</code> into the current branch of the base
+checkout, using the same command the Agents worktree bar uses. It refuses when
+the base checkout is dirty or the merge conflicts, leaving both trees untouched.
+&quot;Nothing to land&quot; is reported as a failure, not a green confirmation.</p>
+<table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>Land tooltip / result</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>SSH attempt</td>
+<td><em>&quot;Landing merges into the local checkout; this attempt ran on an SSH host. Open a PR for its branch instead.&quot;</em> — disabled</td>
+</tr>
+<tr>
+<td>Not yet terminal</td>
+<td><em>&quot;Accept or reject this attempt before landing its branch.&quot;</em> — disabled</td>
+</tr>
+<tr>
+<td>Ready</td>
+<td><em>&quot;Squash-merge <code>&lt;branch&gt;</code> into the current branch of <code>&lt;basePath&gt;</code>.&quot;</em></td>
+</tr>
+</tbody></table>
+<div class="callout note"><div class="callout-title">Note</div><p>Land works after acceptance even though acceptance removed the
+worktree — the <code>pkt/&lt;attemptId&gt;</code> branch survives in the base repo, and the Rust
+side treats an absent worktree as clean.</p>
+</div>
+<p><strong>Open PR</strong> pushes the branch and opens a draft PR on the selected GitHub repo.
+It is disabled once a PR exists (<em>&quot;Draft PR #N is already open for this
+branch&quot;</em>). The resulting PR number is stamped on the attempt and shown as a
+clickable <strong>Draft PR #N</strong> chip.</p>
+<h3 id="reassigning-a-failed-attempt">Reassigning a failed attempt<a class="anchor" href="#reassigning-a-failed-attempt" aria-label="Link to this section">#</a></h3>
+<p>A failed attempt can be relaunched on a different agent. The reassignment rebuilds
+a target from the failed attempt (same repository base and branch, the new
+agent&#39;s default model), records a <code>handoff</code> coordination event, and appends a
+fresh attempt. The failed record is kept for history.</p>
+<p>An SSH attempt can only be reassigned while its <code>ServerConfig</code> still exists —
+connection details are deliberately not persisted on the attempt record.</p>
+<h2 id="the-flight-detail-pane">The Flight detail pane<a class="anchor" href="#the-flight-detail-pane" aria-label="Link to this section">#</a></h2>
+<p>Header: short id, status pill, priority pill, title, objective, and a <strong>Send to
+Monitor</strong> button.</p>
+<h3 id="stat-grid">Stat grid<a class="anchor" href="#stat-grid" aria-label="Link to this section">#</a></h3>
+<p>Six cells: <strong>Cost</strong>, <strong>Tokens</strong>, <strong>Tasks</strong> (<code>done/total</code>), <strong>Approvals</strong>,
+<strong>Sessions</strong>, <strong>Updated</strong>. Tasks turns green while work is in progress;
+Approvals turns amber when any are outstanding.</p>
+<p>Cost formats as <code>$0.00</code>, or with no decimals above <code>$100</code>. Tokens abbreviate to
+<code>k</code> and <code>M</code>.</p>
+<h3 id="cards-in-order">Cards, in order<a class="anchor" href="#cards-in-order" aria-label="Link to this section">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Card</th>
+<th>Shown when</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Upfront plan</strong></td>
+<td>The Flight has a linked planning conversation</td>
+</tr>
+<tr>
+<td><strong>Supervision</strong></td>
+<td>Always</td>
+</tr>
+<tr>
+<td><strong>PacketAgent handoff</strong></td>
+<td>Always</td>
+</tr>
+<tr>
+<td><strong>Issue ↔ Flight mirror</strong></td>
+<td>Always</td>
+</tr>
+<tr>
+<td><strong>Cooperative task graph</strong></td>
+<td>Always (offers to enable when not cooperative)</td>
+</tr>
+<tr>
+<td><strong>Coordination inbox</strong></td>
+<td>Always</td>
+</tr>
+<tr>
+<td><strong>Attempts grid</strong></td>
+<td>Always</td>
+</tr>
+<tr>
+<td><strong>Needs attention</strong></td>
+<td>Something needs a human</td>
+</tr>
+<tr>
+<td><strong>Output review</strong></td>
+<td>The Flight has tasks, is in review, or has pending approvals</td>
+</tr>
+<tr>
+<td><strong>Milestones</strong> + <strong>Timeline</strong></td>
+<td>Always, side by side</td>
+</tr>
+</tbody></table>
+<h4 id="upfront-plan">Upfront plan<a class="anchor" href="#upfront-plan" aria-label="Link to this section">#</a></h4>
+<p>Shows <code>n milestones · m tasks</code> (or <em>&quot;No plan applied yet&quot;</em>) and the note
+<em>&quot;refined in a normal read-only agent conversation&quot;</em>, plus two buttons:
+<strong>Open conversation</strong> and <strong>Apply latest plan</strong> / <strong>Replace with latest</strong>.</p>
+<p>Applying parses the most recent <code>packetbench-flight-plan</code> block out of the
+conversation, materialises it into milestones and tasks, sets the Flight to
+<code>ready</code>, and records a handoff coordination event.</p>
+<div class="callout warning"><div class="callout-title">Warning</div><p><strong>Replace with latest</strong> does exactly that — it replaces the
+Flight&#39;s whole milestone set with the newly parsed plan. It is not a merge.</p>
+</div>
+<p>If the linked conversation is missing on this machine, both buttons report
+<em>&quot;The linked planning conversation is not available on this device.&quot;</em></p>
+<h4 id="supervision">Supervision<a class="anchor" href="#supervision" aria-label="Link to this section">#</a></h4>
+<p>Reads <code>Supervision · Assisted</code> / <code>YOLO</code> / <code>YOLO · Settings snapshot</code> /
+<code>Assisted · Settings snapshot</code>, with the runtime status badge (<code>idle</code>,
+<code>running</code>, <code>paused</code>, <code>stopped</code>, <code>needs attention</code>, <code>completed</code>).</p>
+<p>With a policy in force it shows four live counters — <strong>Cost left</strong>, <strong>Time
+left</strong>, <strong>Retry cap</strong>, <strong>Concurrency</strong> — plus play/pause/stop controls and the
+last eight autonomy actions. Without one:</p>
+<blockquote><p><em>&quot;PacketBench recommends actions; launches, retries, review acceptance, and
+integration stay under your control.&quot;</em></p>
+</blockquote>
+<h4 id="needs-attention">Needs attention<a class="anchor" href="#needs-attention" aria-label="Link to this section">#</a></h4>
+<p>An amber strip summarising, with a count: attempts awaiting review (<em>&quot;accept or
+reject below&quot;</em>), failed attempts with their failure category, and any PacketAgent
+worker with open approvals or a terminal failure.</p>
+<h4 id="milestones-and-timeline">Milestones and Timeline<a class="anchor" href="#milestones-and-timeline" aria-label="Link to this section">#</a></h4>
+<p>The Milestones card lists every task from every milestone with its title, agent,
+role (Coordinator / Builder / Reviewer / Scout) and done/running state. The
+Timeline card renders the coordination log: task started, completed, failed,
+handoff, review requested, review resolved, collision warning, escalation.</p>
+<h2 id="cooperative-flights">Cooperative Flights<a class="anchor" href="#cooperative-flights" aria-label="Link to this section">#</a></h2>
+<p>By default attempts are <strong>independent</strong> — every one runs the same prompt and you
+pick a winner. A Flight can instead be switched to a <strong>cooperative task graph</strong>:</p>
+<blockquote><p><em>&quot;Validate assignments and dependencies, then launch each ready batch from an
+isolated Flight integration branch.&quot;</em> — <strong>Enable assisted graph</strong></p>
+</blockquote>
+<p>In cooperative mode:</p>
+<ul>
+<li>A dedicated <strong>integration branch</strong> (<code>packetbench/flight/&lt;flightId&gt;</code>) and
+worktree under <code>.pkt-flight-integrations/</code> are prepared. Its status is one of
+<code>uninitialized</code>, <code>ready</code>, <code>integrating</code>, <code>needs_attention</code>, <code>landed</code>.</li>
+<li><strong>Launch ready tasks</strong> starts every task whose dependencies are satisfied.
+Disabled while the graph has validation issues or nothing is ready.</li>
+<li>Accepted tasks are merged into the integration branch rather than into your
+trunk.</li>
+<li>Once every task is integrated and the branch is <code>ready</code>, <strong>Land Flight</strong> asks
+<em>&quot;Land into <code>&lt;baseBranch&gt;</code>?&quot;</em> before merging.</li>
+<li>A conflicted integration shows the error and the conflicting file list, with a
+<strong>Retry after resolution</strong> button.</li>
+</ul>
+<h2 id="coordination-inbox">Coordination inbox<a class="anchor" href="#coordination-inbox" aria-label="Link to this section">#</a></h2>
+<p>An append-only, versioned mailbox on the Flight. You can steer a task, a role, an
+agent, or the whole Flight (<em>&quot;Steer the selected task, role, agent, or Flight…&quot;</em>).</p>
+<p>Message kinds: <code>instruction</code>, <code>question</code>, <code>answer</code>, <code>blocker</code>, <code>finding</code>,
+<code>handoff</code>, <code>artifact</code>. Delivery states: <code>queued</code>, <code>delivered</code>, <code>acknowledged</code>,
+<code>failed</code>, <code>archived</code>. Per-message controls: copy, <em>&quot;Explicitly send to a PTY
+terminal&quot;</em>, <em>&quot;Retry delivery&quot;</em>, <em>&quot;Acknowledge&quot;</em>, <em>&quot;Archive&quot;</em>.</p>
+<h2 id="issue-flight-mirror">Issue ↔ Flight mirror<a class="anchor" href="#issue-flight-mirror" aria-label="Link to this section">#</a></h2>
+<blockquote><p><em>&quot;Each task becomes a host issue grouped under a milestone named for this
+Flight. Changes reconcile every 60 seconds with revision fences and visible
+conflicts.&quot;</em></p>
+</blockquote>
+<p>Requires a repository selected in the Git Hosts pane; until then the button
+reads <em>&quot;Select a repository in GitHub first&quot;</em>.</p>
+<p>Once enabled the card shows <code>owner/repo</code>, the number of linked records, the last
+sync time, and a conflict count. Conflicts are shown, not silently resolved:</p>
+<blockquote><p><em>&quot;The newer value already won. The losing value remains here until you
+acknowledge the reconciliation.&quot;</em></p>
+</blockquote>
+<p>Each conflict lists the issue number, the field, which side won, and both values.
+<strong>Sync now</strong> and <strong>Stop mirroring</strong> are available at any time.</p>
+<p>See <a href="issues.html">Issues &amp; git hosts</a>.</p>
+<h2 id="deleting-a-flight">Deleting a Flight<a class="anchor" href="#deleting-a-flight" aria-label="Link to this section">#</a></h2>
+<p>Deletion is destructive and the confirmation says so up front. Before it opens,
+PacketBench probes the live attempts and their worktrees; until that returns the
+dialog reads &quot;checking…&quot; rather than &quot;nothing will be lost&quot;.</p>
+<blockquote><p><strong>Delete flight?</strong> — <em><code>&lt;title&gt;</code> is removed along with its attempt history, and
+any issues linked to it are unassigned. Running attempts are cancelled and
+their git worktrees removed first.</em></p>
+</blockquote>
+<p>The confirm button reads <strong>Cancel attempts &amp; delete</strong> when live attempts exist,
+otherwise <strong>Delete</strong>. Warnings enumerate the attempts, the cooperative
+integration worktree (including when it holds uncommitted work), and any tasks
+still running or awaiting approval.</p>
+<p>Cleanup is best-effort by contract: the delete <strong>always</strong> happens, and per-attempt
+cleanup failures are collected and reported rather than silently leaking a
+session or a worktree.</p>
+<h2 id="flight-issue-linking">Flight ↔ Issue linking<a class="anchor" href="#flight-issue-linking" aria-label="Link to this section">#</a></h2>
+<p>An issue&#39;s Flight assignment is authoritative on the <strong>issue</strong>. Flight records
+cache an <code>issueIds</code> list, and that cache is rebuilt from the issue store on every
+hydrate.</p>
+<div class="callout important"><div class="callout-title">Important</div><p>A one-sided assignment made from the issue side self-heals. A
+one-sided addition made only on the Flight side silently vanishes on the next
+hydrate. UI that links the two writes both — the Flight-side add is only the
+optimistic paint.</p>
+</div>
+<h2 id="related">Related<a class="anchor" href="#related" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><a href="concepts.html">Core concepts</a></li>
+<li><a href="agents.html">Agents &amp; conversations</a> — attempts are ordinary API conversations</li>
+<li><a href="issues.html">Issues &amp; git hosts</a> — linking, mirroring, and draft PRs</li>
+<li><a href="workspaces.html">Workspaces &amp; terminals</a> — opening an attempt&#39;s worktree in a workspace</li>
+<li><a href="remote.html">SSH remote workspaces</a> — remote attempts and host-key pinning</li>
+<li><a href="memory.html">Memory</a> — the recurring-error hint and flight capture</li>
+<li><a href="settings.html">Settings reference</a> — autonomy defaults, budget guardrails, GitHub defaults</li>
+</ul>
+</article>
+    <div class="prev-next"><a class="pn prev" href="agents.html"><span>Previous</span><strong>Agents & conversations</strong></a><a class="pn next" href="issues.html"><span>Next</span><strong>Issues & git hosts</strong></a></div>
+  </main>
+  <nav class="toc" aria-label="On this page"><div class="toc-title">On this page</div><ul><li class="d2"><a href="#the-surface">The surface</a></li>
+<li class="d3"><a href="#the-sidebar">The sidebar</a></li>
+<li class="d3"><a href="#status-is-computed-not-stored">Status is computed, not stored</a></li>
+<li class="d2"><a href="#launching">Launching</a></li>
+<li class="d3"><a href="#fields">Fields</a></li>
+<li class="d3"><a href="#the-target-picker">The target picker</a></li>
+<li class="d3"><a href="#path-collisions">Path collisions</a></li>
+<li class="d3"><a href="#quotthis-looks-familiarquot">&quot;This looks familiar&quot;</a></li>
+<li class="d3"><a href="#execution-supervision">Execution supervision</a></li>
+<li class="d3"><a href="#publish-attempts-as-draft-prs">Publish attempts as draft PRs</a></li>
+<li class="d3"><a href="#the-independent-reviewer-gate">The independent Reviewer Gate</a></li>
+<li class="d3"><a href="#plan-first">Plan first</a></li>
+<li class="d3"><a href="#launching-and-partial-failures">Launching, and partial failures</a></li>
+<li class="d2"><a href="#what-an-attempt-is">What an attempt is</a></li>
+<li class="d3"><a href="#the-attempt-tile">The attempt tile</a></li>
+<li class="d3"><a href="#landing-an-attempt">Landing an attempt</a></li>
+<li class="d3"><a href="#reassigning-a-failed-attempt">Reassigning a failed attempt</a></li>
+<li class="d2"><a href="#the-flight-detail-pane">The Flight detail pane</a></li>
+<li class="d3"><a href="#stat-grid">Stat grid</a></li>
+<li class="d3"><a href="#cards-in-order">Cards, in order</a></li>
+<li class="d2"><a href="#cooperative-flights">Cooperative Flights</a></li>
+<li class="d2"><a href="#coordination-inbox">Coordination inbox</a></li>
+<li class="d2"><a href="#issue-flight-mirror">Issue ↔ Flight mirror</a></li>
+<li class="d2"><a href="#deleting-a-flight">Deleting a Flight</a></li>
+<li class="d2"><a href="#flight-issue-linking">Flight ↔ Issue linking</a></li>
+<li class="d2"><a href="#related">Related</a></li></ul></nav>
+</div>
+<script src="assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agent orientation — PacketBench Docs</title>
+<meta name="description" content="A machine-oriented briefing on this codebase for coding agents working in it." />
+<link rel="icon" href="../icon-192.png" />
+<link rel="stylesheet" href="assets/docs.css" />
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Toggle navigation" aria-expanded="false">☰</button>
+  <a class="brand" href="index.html"><img src="../icon-192.png" alt="" width="24" height="24" /><span>PacketBench</span><span class="brand-sub">Docs</span></a>
+  <div class="search-wrap">
+    <input id="search" type="search" placeholder="Search documentation…" autocomplete="off" aria-label="Search documentation" />
+    <div id="search-results" role="listbox" hidden></div>
+  </div>
+  <nav class="topbar-links">
+    <a href="../index.html">Site</a>
+    <a href="https://github.com/packetloss404/PacketADE" target="_blank" rel="noopener">GitHub</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle theme">◐</button>
+  </nav>
+</header>
+<div class="layout">
+  <aside class="sidebar" aria-label="Documentation navigation"><div class="nav-group"><div class="nav-group-title">Getting started</div><ul><li><a href="index.html">Introduction</a></li>
+<li><a href="install.html">Install & first run</a></li>
+<li><a href="concepts.html">Core concepts</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">Using PacketBench</div><ul><li><a href="workspaces.html">Workspaces & terminals</a></li>
+<li><a href="agents.html">Agents & conversations</a></li>
+<li><a href="flights.html">Flight Deck</a></li>
+<li><a href="issues.html">Issues & git hosts</a></li>
+<li><a href="memory.html">Memory</a></li>
+<li><a href="dictation.html">Dictation & analytics</a></li>
+<li><a href="mcp.html">MCP hub</a></li>
+<li><a href="remote.html">SSH remote workspaces</a></li>
+<li><a href="settings.html">Settings reference</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">Developing PacketBench</div><ul><li><a href="dev-architecture.html">Architecture</a></li>
+<li><a href="dev-build.html">Build & release</a></li>
+<li><a href="dev-agent-contract.html">Agent event contract</a></li>
+<li><a href="dev-memory.html">Memory internals</a></li>
+<li><a href="dev-testing.html">Testing & gates</a></li>
+<li><a href="dev-contributing.html">Contributing</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">For agents</div><ul><li><a href="agent-guide.html" class="active">Agent orientation</a></li>
+<li><a href="agent-invariants.html">Invariants & tripwires</a></li></ul></div></aside>
+  <main id="main" class="content">
+    <article class="prose"><h1 id="agent-orientation">Agent orientation<a class="anchor" href="#agent-orientation" aria-label="Link to this section">#</a></h1>
+<p>A briefing for an AI coding agent working in the PacketBench repository. It
+assumes no prior context, states what is true rather than what would be nice,
+and points at the file that settles each question. Read
+<a href="agent-invariants.html">Invariants &amp; tripwires</a> next — it covers the rules that
+look safe to break and are not.</p>
+<div class="callout important"><div class="callout-title">Important</div><p><code>CLAUDE.md</code> (identical to <code>AGENTS.md</code> below the H1) is the
+canonical in-repo orientation document and takes precedence over this page if
+they ever disagree. Both are <strong>gitignored</strong>, so they will not appear in
+<code>git ls-files</code>, <code>git grep</code>, or any repo-wide sweep. Read them explicitly.</p>
+</div>
+<h2 id="what-this-is">What this is<a class="anchor" href="#what-this-is" aria-label="Link to this section">#</a></h2>
+<p>A Tauri v2 desktop application. Rust backend, React 19 + TypeScript frontend
+(Vite), Zustand for state, Tailwind with custom theme tokens, xterm.js over
+<code>portable-pty</code> for terminals, plus a separate Node package
+(<code>agent-sidecar/</code>) that hosts two provider SDKs and is bundled into installers.</p>
+<p>Version 0.12.1. Package manager pnpm 9.15.4. There is <strong>no CI</strong> — local gates
+are the source of truth (<code>dev/local-quality-gates.md</code>).</p>
+<p>The product was renamed twice: PacketCode → PacketADE → <strong>PacketBench</strong>
+(2026-08-26). Historical files, <code>dev/archive/</code>, <code>docs/reports/</code> and one-shot
+migration code still carry the old names on purpose. All new code uses
+PacketBench.</p>
+<h2 id="repository-layout">Repository layout<a class="anchor" href="#repository-layout" aria-label="Link to this section">#</a></h2>
+<div class="code-block" data-lang="text">
+<button class="copy" type="button" aria-label="Copy code">Copy</button>
+<pre><code>src/                      React frontend
+  App.tsx                 view routing + global event listeners
+  components/
+    agents/               chat, composer, review, diff, tool cards
+    flights/              launch modal, planning card, attempt grid
+    issues/ layout/ session/ ui/ workspace/ views/ monitor/
+  hooks/                  useGitInfo, useStatusLine, useVoiceInput, ...
+  lib/
+    tauri.ts              EVERY invoke wrapper + event helper (~4.1k lines)
+    brand.ts              APP_NAME, STORAGE_PREFIX, storageKey()
+    api-models.ts         API_PROVIDERS — the nine picker rows
+    attemptRouting.ts     agent-row id -&gt; backend provider id
+    settingsNavigation.ts SETTINGS_GROUPS (six groups)
+  stores/                 Zustand stores, one concern each
+  types/                  shared TS interfaces
+  generated/
+    tauri-schema.ts       AUTO-GENERATED from Rust DTOs — do not hand-edit
+  modules/registry.ts     Code Quality + Dictation module manifests
+
+src-tauri/                Rust backend
+  src/lib.rs              app builder, startup order, command registration
+  src/commands/           one file per feature; #[tauri::command] entry points
+  src/core/
+    brand.rs              APP_NAME, DATA_DIR_NAME, KEYRING_SERVICE, ...
+    migration.rs          one-shot rename migrations
+    storage.rs            PersistedState + state.v1.json
+    llm_provider.rs       LlmProvider trait; llm_*.rs implementations
+    execution.rs          SshConfig; worktree.rs; git_host.rs; orchestrator.rs
+  src/acp/                Agent Client Protocol transport (PacketCode engine)
+  tests/                  api_schema.rs, acp_stream.rs, ollama_e2e.rs
+  capabilities/           default.json, monitor.json
+
+agent-sidecar/            separate Node package (its own pnpm install)
+  src/protocol.ts         SidecarRequest/SidecarEvent, PROTOCOL_VERSION = 11
+  src/session-registry.ts provider factory map
+  src/providers/          anthropic.ts, openai-agents.ts, echo.ts, base.ts
+  test/                   *.mjs smoke gates
+
+scripts/                  build helpers AND the repository fences
+  confirm-idiom.test.mjs            \
+  attempt-provider-mapping.test.mjs  &gt; filesystem fences, run by vitest
+  workspace-agents-boundaries.test.mjs /
+  target-triple.test.mjs            (an ordinary unit test, not a fence)
+dev/                      planning index, runbooks, archive
+e2e/                      Playwright, web-mode only</code></pre>
+</div>
+<h2 id="three-backends-one-event-contract">Three backends, one event contract<a class="anchor" href="#three-backends-one-event-contract" aria-label="Link to this section">#</a></h2>
+<p>This is the single most load-bearing architectural fact. Conversations are
+served by three different transports and the frontend cannot tell which:</p>
+<table>
+<thead>
+<tr>
+<th>Transport</th>
+<th>Rows</th>
+<th>Entry point</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>In-process Rust</td>
+<td><code>api-claude</code>, <code>api-openai</code>, <code>api-minimax</code>, <code>api-openrouter</code>, <code>api-ollama</code>, <code>api-custom</code></td>
+<td><code>core/llm_provider.rs</code></td>
+</tr>
+<tr>
+<td>Node sidecar</td>
+<td><code>api-claude-oauth</code> (Claude Agent SDK), <code>api-openai-agents</code></td>
+<td><code>commands/agent_sidecar/</code></td>
+</tr>
+<tr>
+<td>ACP subprocess</td>
+<td><code>api-packetcode</code></td>
+<td><code>src/acp/routing.rs</code></td>
+</tr>
+</tbody></table>
+<p>All three emit <code>api-agent:{kind}:{sessionId}</code> Tauri events. <code>kind</code> ∈ <code>chunk</code>,
+<code>thinking</code>, <code>thinking-stop</code>, <code>tool-start</code>, <code>tool-result</code>,
+<code>permission-request</code>, <code>pending-edit</code>, <code>edit-baseline</code>, <code>plan-block</code>,
+<code>tool-output-extended</code>, <code>turn-summary</code>, <code>mcp-sources</code>, <code>done</code>, <code>error</code>. Global
+app events: <code>provider-auth:changed</code>, <code>sidecar-status:changed</code>.</p>
+<p><code>commands/api_agent.rs</code> branches at the top: <code>crate::acp::routing::is_acp_provider</code>
+first, then sidecar routing, then in-process. If you add a transport, it emits
+this vocabulary or the frontend does not see it. Details in
+<a href="dev-agent-contract.html">Agent event contract</a>.</p>
+<h2 id="adding-a-tauri-command">Adding a Tauri command<a class="anchor" href="#adding-a-tauri-command" aria-label="Link to this section">#</a></h2>
+<p>Four steps, in this order.</p>
+<p><strong>1. Write the command</strong> in <code>src-tauri/src/commands/&lt;feature&gt;.rs</code>:</p>
+<div class="code-block" data-lang="rust">
+<button class="copy" type="button" aria-label="Copy code">Copy</button>
+<pre><code>/// Doc comment explains WHY, not what — this codebase's comments carry the
+/// reasoning, and reviewers rely on that.
+#[tauri::command]
+pub async fn do_the_thing(project_path: String, count: u32) -&gt; Result&lt;ThingDto, String&gt; {
+    super::validate_project_path(&amp;project_path)?;
+    // ...
+    Ok(dto)
+}</code></pre>
+</div>
+<p>Errors are <code>Result&lt;T, String&gt;</code> — the frontend receives the string. Validate any
+path argument; there are shared helpers in <code>commands/mod.rs</code>.</p>
+<p><strong>2. Register it</strong> in <code>src-tauri/src/lib.rs</code>, inside the
+<code>guarded_invoke_handler![ ... ]</code> list, in the section for its feature.</p>
+<div class="callout warning"><div class="callout-title">Warning</div><p><code>guarded_invoke_handler!</code> is not plain <code>generate_handler!</code>. It
+wraps the handler with a per-window check: any window whose label starts with
+<code>monitor-</code> may only invoke commands in <code>MONITOR_ALLOWED_APP_COMMANDS</code>
+(<code>commands/monitor_windows.rs</code>). Everything else is rejected with a message.
+A new command is main-window-only unless you deliberately add it to that
+allowlist — and widening the Monitor&#39;s read-only posture is a reviewed
+decision, not a convenience.</p>
+</div>
+<p><strong>3. Add the TS binding</strong> in <code>src/lib/tauri.ts</code> — every <code>invoke</code> in the app
+goes through this file, none are scattered in components:</p>
+<div class="code-block" data-lang="ts">
+<button class="copy" type="button" aria-label="Copy code">Copy</button>
+<pre><code>export async function doTheThing(projectPath: string, count: number): Promise&lt;Thing&gt; {
+  return invoke&lt;Thing&gt;("do_the_thing", { projectPath, count });
+}</code></pre>
+</div>
+<p>Tauri converts <code>snake_case</code> Rust parameters to <code>camelCase</code> on the JS side; pass
+<code>camelCase</code> keys.</p>
+<p><strong>4. If you touched a shared DTO</strong>, regenerate the schema:</p>
+<div class="code-block" data-lang="bash">
+<button class="copy" type="button" aria-label="Copy code">Copy</button>
+<pre><code>pnpm generate:tauri-schema   # writes src/generated/tauri-schema.ts
+pnpm check:tauri-schema      # fails if the checked-in file is stale</code></pre>
+</div>
+<p><code>src/generated/tauri-schema.ts</code> is produced by the ignored <code>export_api_bindings</code>
+test in <code>src-tauri/tests/api_schema.rs</code>. Never hand-edit it.</p>
+<h2 id="store-patterns">Store patterns<a class="anchor" href="#store-patterns" aria-label="Link to this section">#</a></h2>
+<p>Zustand, <code>create&lt;StoreInterface&gt;()</code>, one store per concern, 58 of them in
+<code>src/stores/</code>. Three persistence shapes coexist:</p>
+<p><strong>Backend-authoritative.</strong> Flights, workspaces, servers, agent configs and the
+memory slice live in <code>~/.packetbench/state.v1.json</code> via <code>commands/state.rs</code>.
+The store calls a <code>save*Slice</code> wrapper from <code>lib/tauri.ts</code> after mutating.</p>
+<p><strong>localStorage.</strong> UI preferences, agent profiles, MCP trust, cost guardrails.
+Always build the key with <code>storageKey()</code> from <code>@/lib/brand</code>:</p>
+<div class="code-block" data-lang="ts">
+<button class="copy" type="button" aria-label="Copy code">Copy</button>
+<pre><code>import { storageKey } from "@/lib/brand";
+const STORAGE_KEY = storageKey("agent-profiles"); // -&gt; "packetbench:agent-profiles"</code></pre>
+</div>
+<p><strong>Both.</strong> Issues are the notable case: <code>localStorage</code> <code>packetbench:issues</code> is
+the authoritative cold-start cache, and every mutation is <em>also</em> mirrored into
+<code>PersistedState.issues</code> so Rust-side consumers (the <code>Fixes #N</code> commit-trailer
+close loop in <code>commands/git.rs</code>) see the same set. Route new mutations through
+<code>saveState</code> so they inherit both.</p>
+<h3 id="store-isolation-is-lint-enforced">Store isolation is lint-enforced<a class="anchor" href="#store-isolation-is-lint-enforced" aria-label="Link to this section">#</a></h3>
+<p><code>agentTaskStore</code> (headless conversations) and <code>workspaceStore</code> (pane placement)
+<strong>must not import each other</strong>. <code>eslint.config.js</code> carries a
+<code>no-restricted-imports</code> rule in both directions. <code>src/stores/sessionGlue.ts</code> is
+the only bridge; <code>sessionIndex</code> is a read-only projection. A conversation with
+no tile is a first-class citizen, and that is what the rule protects.</p>
+<h2 id="the-rules-that-are-not-negotiable">The rules that are not negotiable<a class="anchor" href="#the-rules-that-are-not-negotiable" aria-label="Link to this section">#</a></h2>
+<h3 id="theme-tokens-never-raw-tailwind-colours">Theme tokens, never raw Tailwind colours<a class="anchor" href="#theme-tokens-never-raw-tailwind-colours" aria-label="Link to this section">#</a></h3>
+<p><code>tailwind.config.ts</code> defines a semantic palette backed by CSS custom
+properties, so the app can be re-themed at runtime:</p>
+<ul>
+<li>backgrounds: <code>bg-bg-primary</code>, <code>bg-bg-secondary</code>, <code>bg-bg-tertiary</code>,
+<code>bg-bg-elevated</code>, <code>bg-bg-hover</code>, <code>bg-bg-border</code></li>
+<li>lines: <code>border-line-soft</code>, <code>border-line-strong</code></li>
+<li>text: <code>text-text-primary</code>, <code>text-text-secondary</code>, <code>text-text-muted</code>,
+<code>text-text-faint</code></li>
+<li>accents: <code>accent-green</code>, <code>accent-amber</code>, <code>accent-blue</code>, <code>accent-red</code>,
+<code>accent-purple</code>, plus <code>accent-soft</code> / <code>accent-line</code> fills</li>
+</ul>
+<p>Writing <code>bg-gray-800</code> or <code>text-red-500</code> hardcodes a colour outside that system
+and breaks the light theme. Type scale is compact: <code>text-xs</code> (12px) as the
+default, <code>text-[11px]</code> / <code>text-[10px]</code> for dense chrome, plus the semantic
+<code>text-ui</code> / <code>text-meta</code> / <code>text-body</code> / <code>text-chip</code> sizes. Icons are
+lucide-react at <code>size={12}</code> in toolbars, <code>size={14}</code> in headers.</p>
+<h3 id="never-hardcode-the-product-name">Never hardcode the product name<a class="anchor" href="#never-hardcode-the-product-name" aria-label="Link to this section">#</a></h3>
+<p>Import from <code>src/lib/brand.ts</code> (TS) or <code>src-tauri/src/core/brand.rs</code> (Rust).
+Literals of <code>&quot;PacketBench&quot;</code>, <code>&quot;packetbench&quot;</code> or <code>&quot;packetbench:&quot;</code> in new code
+are a defect: they are what made the last rename a ~400-file change.</p>
+<p>The <code>LEGACY_*</code> constants in both modules point at the <em>immediately prior</em> name
+(<code>packetade</code>, <code>.packetade</code>, <code>packetade:</code>) and exist only for the one-shot
+migrations of keyring secrets, the data directory and localStorage. The earlier
+<code>packetcode</code> migration has already run. Do not add a third generation.</p>
+<div class="callout note"><div class="callout-title">Note</div><p><code>PacketCode</code> is not a legacy alias to sweep away. It is a live
+sibling TUI product at <code>D:\projects\packetcode</code>, and it is also the name of
+the ACP engine row inside PacketBench. <code>migration.rs</code> classifies a
+<code>~/.packetcode</code> directory partly to avoid destroying that product&#39;s data.</p>
+</div>
+<h3 id="flight-not-mission">Flight, not Mission<a class="anchor" href="#flight-not-mission" aria-label="Link to this section">#</a></h3>
+<p>The work unit is a <strong>Flight</strong>; the surface is the <strong>Flight Deck</strong>; the route is
+<code>&quot;flights&quot;</code>; the view is <code>FlightsView.tsx</code>; the store is <code>flightStore.ts</code>.</p>
+<p>&quot;Mission&quot; survives only as read-side persisted-data compatibility — a
+<code>missionId</code> key deserializes into <code>flight_id</code> through a serde alias, and
+<code>core::migration::migrate_mission_to_flight</code> canonicalises it on the next save.
+Do not introduce Mission terminology anywhere new, and do not remove the alias
+without a release of lead time.</p>
+<h3 id="modals-confirms-and-dropdowns">Modals, confirms and dropdowns<a class="anchor" href="#modals-confirms-and-dropdowns" aria-label="Link to this section">#</a></h3>
+<p>Use the shared wrappers: <code>src/components/ui/Modal.tsx</code>,
+<code>ConfirmDeleteModal.tsx</code>, <code>Dropdown.tsx</code>. Native <code>window.confirm</code> is banned and
+fenced (see below). <code>NewSessionModal</code> and <code>LaunchAsyncFlightModal</code> are the
+reference implementations.</p>
+<h2 id="running-the-gates">Running the gates<a class="anchor" href="#running-the-gates" aria-label="Link to this section">#</a></h2>
+<p>There is no CI. The ladder, from <code>dev/local-quality-gates.md</code>:</p>
+<div class="code-block" data-lang="bash">
+<button class="copy" type="button" aria-label="Copy code">Copy</button>
+<pre><code>pnpm preflight   # format:check + lint:src + vitest + tsc/vite build
+pnpm check       # preflight + e2e + sidecar:check + tauri-schema + rust:check + rust:test</code></pre>
+</div>
+<p>Individual gates, for iterating:</p>
+<div class="code-block" data-lang="bash">
+<button class="copy" type="button" aria-label="Copy code">Copy</button>
+<pre><code>pnpm lint                 # eslint over src/ and e2e/
+pnpm build                # tsc --noEmit equivalent + vite build
+pnpm test                 # vitest (unit, stores, AND the scripts/ fences)
+pnpm e2e                  # Playwright, web-mode only — not the Tauri shell
+pnpm rust:check           # cargo check
+pnpm rust:test            # cargo test
+pnpm sidecar:check        # install + build + 13 protocol/provider smoke scripts
+pnpm check:tauri-schema   # generated bindings are current</code></pre>
+</div>
+<p>Choose by what you touched: Rust command/provider/state changes need
+<code>rust:check</code> + <code>rust:test</code>; <code>agent-sidecar/</code> or protocol changes need
+<code>sidecar:check</code>; shared DTO changes need <code>check:tauri-schema</code>. Release-facing
+work climbs the whole ladder, then <code>pnpm release:readiness</code>.</p>
+<div class="callout tip"><div class="callout-title">Tip</div><p><code>vitest</code> runs <code>src/**/*.{test,spec}.{ts,tsx}</code> <strong>and</strong>
+<code>scripts/**/*.{test,spec}.{mjs,ts}</code>. The <code>scripts/*.test.mjs</code> files are
+filesystem fences that walk the whole source tree; they are why <code>pnpm test</code>
+can fail without any test file near your change.</p>
+</div>
+<h2 id="traps">Traps<a class="anchor" href="#traps" aria-label="Link to this section">#</a></h2>
+<p>Ordered by how much time they cost when they bite.</p>
+<p><strong><code>CLAUDE.md</code> and <code>AGENTS.md</code> are gitignored.</strong> A repo-wide refactor, a
+<code>git grep</code>, or a &quot;rename every occurrence&quot; sweep silently skips both. They must
+also stay byte-identical below the H1. Edit one, copy it to the other, verify
+with <code>diff &lt;(tail -n +2 CLAUDE.md) &lt;(tail -n +2 AGENTS.md)</code>.</p>
+<p><strong><code>src-tauri/.cargo/config.toml</code> may redirect the build output.</strong> On the
+maintainer&#39;s machine it sets <code>[build] target-dir</code> to a path outside the repo. It
+is local-only (excluded via <code>.git/info/exclude</code>), and Cargo discovers it from
+its <em>working directory</em>, not from <code>--manifest-path</code> — which is why
+<code>check-tauri-schema.mjs</code> runs cargo with <code>cwd: src-tauri</code>. Bundles will not be
+where you expect if you ignore this.</p>
+<p><strong>Startup order in <code>lib.rs::run()</code> is load-bearing.</strong>
+<code>core::shell_path::fix_path_for_gui_launch()</code> calls <code>std::env::set_var</code>, which
+is only sound while the process is single-threaded, so it must remain the very
+first statement — before <code>init_tracing()</code> starts its log-writer thread.
+Mutating the environment after another thread exists corrupts it such that a
+later PTY <code>fork()</code>+<code>exec()</code> aborts in the child. Then, in order:
+<code>migrate_data_dir</code> → <code>migrate_mission_to_flight</code> → panic hook →
+<code>reprice_historical_costs</code> → <code>reap_orphaned_pty_children</code> →
+<code>recover_flights_on_startup</code>. Each depends on the data directory having settled.</p>
+<p><strong>The PTY allowlist is closed.</strong> <code>commands/pty.rs</code> accepts only <code>claude</code>,
+<code>codex</code>, <code>opencode</code>, <code>packetcode</code>, the shells, and <code>ssh</code>. Matching is on the
+<em>program name</em>, and on Windows a <code>.cmd</code> wrapper is spawned as
+<code>cmd.exe /c &lt;name&gt;.cmd</code>, which changes how the process tree is killed.</p>
+<p><strong><code>src/lib/tauri.ts</code> is the only place that calls <code>invoke</code>.</strong> Adding one in a
+component works at runtime and will be rejected in review; there is no
+type-level safety net for it, only convention.</p>
+<p><strong>Cost is a control input, not a dashboard.</strong> The cost-reporting surface was
+removed on 2026-07-31; there is no <code>CostDashboardView</code>. Spend is measured to
+enforce budget guardrails at launch. Do not resurrect a dollar readout.</p>
+<p><strong>The autonomous planner is gone.</strong> Removed July 2026 (~13,300 net lines).
+<code>planner_*</code> fields on DTOs remain read-compatible so old records hydrate
+losslessly. Flight planning is a normal read-only conversation whose
+<code>packetbench-flight-plan</code> block you apply. Do not rebuild the runtime.</p>
+<p><strong>No API-agent row uses a subscription login.</strong> Every keyed row uses an API key
+from the OS keyring. <code>api-claude-oauth</code> is a historical id for the Claude Agent
+SDK on <code>api-key-anthropic</code>; <code>api-openai-codex</code> is retired. PTY <code>claude</code> /
+<code>codex</code> panes keep their own CLI logins — that is ordinary end-user use and is
+unaffected.</p>
+<p><strong>Windows is the day-to-day dev platform.</strong> Paths in comments and tests are
+often Windows-shaped, and path normalisation matters. macOS and Linux builds
+are supported but exercised far less; see <code>dev/multi-platform-build.md</code>.</p>
+<h2 id="documentation-map">Documentation map<a class="anchor" href="#documentation-map" aria-label="Link to this section">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Use it for</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>CLAUDE.md</code> / <code>AGENTS.md</code></td>
+<td>canonical orientation (gitignored)</td>
+</tr>
+<tr>
+<td><code>backlog.md</code></td>
+<td>the master ledger of outstanding work — add items here</td>
+</tr>
+<tr>
+<td><code>ROADMAP.md</code></td>
+<td>Now / Next / Later product direction</td>
+</tr>
+<tr>
+<td><code>CHANGELOG.md</code></td>
+<td>shipped history only, never a task list</td>
+</tr>
+<tr>
+<td><code>dev/README.md</code></td>
+<td>planning index, runbooks, archive</td>
+</tr>
+<tr>
+<td><code>dev/local-quality-gates.md</code></td>
+<td>the gate ladder in full</td>
+</tr>
+<tr>
+<td><code>dev/multi-platform-build.md</code></td>
+<td>macOS / Linux build</td>
+</tr>
+<tr>
+<td><code>HANDOFF.md</code></td>
+<td>current restart point and build evidence</td>
+</tr>
+</tbody></table>
+<p>Put new open work in <code>backlog.md</code>. Do not let a finished planning document
+become a task register.</p>
+<h2 id="next">Next<a class="anchor" href="#next" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><a href="agent-invariants.html">Invariants &amp; tripwires</a> — read this before editing
+memory, scope keys, provider routing, or anything under <code>.agents/</code>.</li>
+<li><a href="dev-architecture.html">Architecture</a> — how a turn actually flows.</li>
+<li><a href="dev-testing.html">Testing &amp; gates</a> — what each suite covers.</li>
+</ul>
+</article>
+    <div class="prev-next"><a class="pn prev" href="dev-contributing.html"><span>Previous</span><strong>Contributing</strong></a><a class="pn next" href="agent-invariants.html"><span>Next</span><strong>Invariants & tripwires</strong></a></div>
+  </main>
+  <nav class="toc" aria-label="On this page"><div class="toc-title">On this page</div><ul><li class="d2"><a href="#what-this-is">What this is</a></li>
+<li class="d2"><a href="#repository-layout">Repository layout</a></li>
+<li class="d2"><a href="#three-backends-one-event-contract">Three backends, one event contract</a></li>
+<li class="d2"><a href="#adding-a-tauri-command">Adding a Tauri command</a></li>
+<li class="d2"><a href="#store-patterns">Store patterns</a></li>
+<li class="d3"><a href="#store-isolation-is-lint-enforced">Store isolation is lint-enforced</a></li>
+<li class="d2"><a href="#the-rules-that-are-not-negotiable">The rules that are not negotiable</a></li>
+<li class="d3"><a href="#theme-tokens-never-raw-tailwind-colours">Theme tokens, never raw Tailwind colours</a></li>
+<li class="d3"><a href="#never-hardcode-the-product-name">Never hardcode the product name</a></li>
+<li class="d3"><a href="#flight-not-mission">Flight, not Mission</a></li>
+<li class="d3"><a href="#modals-confirms-and-dropdowns">Modals, confirms and dropdowns</a></li>
+<li class="d2"><a href="#running-the-gates">Running the gates</a></li>
+<li class="d2"><a href="#traps">Traps</a></li>
+<li class="d2"><a href="#documentation-map">Documentation map</a></li>
+<li class="d2"><a href="#next">Next</a></li></ul></nav>
+</div>
+<script src="assets/docs.js"></script>
+</body>
+</html>

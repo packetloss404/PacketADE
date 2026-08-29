@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Contributing — PacketBench Docs</title>
+<meta name="description" content="Conventions, commit style, and how changes are reviewed." />
+<link rel="icon" href="../icon-192.png" />
+<link rel="stylesheet" href="assets/docs.css" />
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Toggle navigation" aria-expanded="false">☰</button>
+  <a class="brand" href="index.html"><img src="../icon-192.png" alt="" width="24" height="24" /><span>PacketBench</span><span class="brand-sub">Docs</span></a>
+  <div class="search-wrap">
+    <input id="search" type="search" placeholder="Search documentation…" autocomplete="off" aria-label="Search documentation" />
+    <div id="search-results" role="listbox" hidden></div>
+  </div>
+  <nav class="topbar-links">
+    <a href="../index.html">Site</a>
+    <a href="https://github.com/packetloss404/PacketADE" target="_blank" rel="noopener">GitHub</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle theme">◐</button>
+  </nav>
+</header>
+<div class="layout">
+  <aside class="sidebar" aria-label="Documentation navigation"><div class="nav-group"><div class="nav-group-title">Getting started</div><ul><li><a href="index.html">Introduction</a></li>
+<li><a href="install.html">Install & first run</a></li>
+<li><a href="concepts.html">Core concepts</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">Using PacketBench</div><ul><li><a href="workspaces.html">Workspaces & terminals</a></li>
+<li><a href="agents.html">Agents & conversations</a></li>
+<li><a href="flights.html">Flight Deck</a></li>
+<li><a href="issues.html">Issues & git hosts</a></li>
+<li><a href="memory.html">Memory</a></li>
+<li><a href="dictation.html">Dictation & analytics</a></li>
+<li><a href="mcp.html">MCP hub</a></li>
+<li><a href="remote.html">SSH remote workspaces</a></li>
+<li><a href="settings.html">Settings reference</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">Developing PacketBench</div><ul><li><a href="dev-architecture.html">Architecture</a></li>
+<li><a href="dev-build.html">Build & release</a></li>
+<li><a href="dev-agent-contract.html">Agent event contract</a></li>
+<li><a href="dev-memory.html">Memory internals</a></li>
+<li><a href="dev-testing.html">Testing & gates</a></li>
+<li><a href="dev-contributing.html" class="active">Contributing</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">For agents</div><ul><li><a href="agent-guide.html">Agent orientation</a></li>
+<li><a href="agent-invariants.html">Invariants & tripwires</a></li></ul></div></aside>
+  <main id="main" class="content">
+    <article class="prose"><h1 id="contributing">Contributing<a class="anchor" href="#contributing" aria-label="Link to this section">#</a></h1>
+<p>There is no <code>CONTRIBUTING.md</code> in the repository and no pull-request template.
+The conventions live in <code>CLAUDE.md</code> / <code>AGENTS.md</code>, in the linters, in four
+repository fences, and in the commit history. This page collects them.</p>
+<h2 id="orientation-first">Orientation first<a class="anchor" href="#orientation-first" aria-label="Link to this section">#</a></h2>
+<p><code>CLAUDE.md</code> at the repository root is the canonical orientation document:
+project structure, key conventions, the nine-row provider table, the sidecar
+protocol, entry-point resolution, and the auth probe. Read it before your first
+change.</p>
+<div class="callout important"><div class="callout-title">Important</div><p><code>CLAUDE.md</code> and <code>AGENTS.md</code> are byte-identical except for their
+<code># H1</code>, and <strong>both are listed in <code>.gitignore</code></strong>. Repo-wide sweeps never touch
+them and nothing flags when they drift from source. If you edit one, copy it
+over the other by hand. They were last reconciled against source on
+2026-08-27.</p>
+</div>
+<p>The planning surfaces are separate and should not be conflated:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>README.md</code></td>
+<td>Public overview and setup</td>
+</tr>
+<tr>
+<td><code>ROADMAP.md</code></td>
+<td>Direction: Now / Next / Later</td>
+</tr>
+<tr>
+<td><code>backlog.md</code></td>
+<td>The master ledger for outstanding work</td>
+</tr>
+<tr>
+<td><code>dev/README.md</code></td>
+<td>Canonical planning index; plans, runbooks, archives</td>
+</tr>
+<tr>
+<td><code>CHANGELOG.md</code></td>
+<td>Shipped history <strong>only</strong> — never a task list</td>
+</tr>
+</tbody></table>
+<p>New open items go in <code>backlog.md</code>. Do not let an old planning doc become a task
+register.</p>
+<h2 id="naming-and-brand">Naming and brand<a class="anchor" href="#naming-and-brand" aria-label="Link to this section">#</a></h2>
+<p>The product has been renamed twice: PacketCode → PacketADE → <strong>PacketBench</strong>
+(2026-08-26, commit <code>5404fb85</code>).</p>
+<div class="callout warning"><div class="callout-title">Warning</div><p>Never hardcode <code>&quot;PacketBench&quot;</code>, <code>&quot;packetbench&quot;</code> or
+<code>&quot;packetbench:&quot;</code>. Import from <code>src-tauri/src/core/brand.rs</code> (Rust) or
+<code>src/lib/brand.ts</code> (TypeScript) so the next rename is a one-file change
+instead of a ~400-file churn.</p>
+</div>
+<p>The <code>LEGACY_*</code> constants in those files point at the <em>immediately prior</em> name
+only (<code>packetade</code>, <code>.packetade</code>, <code>packetade:</code>) and exist solely to migrate
+keyring secrets, the data dir and localStorage forward on first launch. The
+earlier <code>packetcode</code> migration has already run.</p>
+<p>Expect lingering references to both old names in historical files (mostly
+<code>dev/archive/</code> and <code>docs/reports/</code>), in comments, and in one-shot migration
+code. All <strong>new</strong> code uses PacketBench.</p>
+<div class="callout note"><div class="callout-title">Note</div><p>The GitHub remote is still <code>git@github.com:packetloss404/PacketADE.git</code>.
+GitHub redirects it, so fetch and push work, but the repository itself has not
+been renamed. &quot;PacketCode&quot; now belongs to the sibling TUI project at
+<code>D:\projects\packetcode</code>; do not create a junction or symlink back to either
+old path.</p>
+</div>
+<h2 id="vocabulary">Vocabulary<a class="anchor" href="#vocabulary" aria-label="Link to this section">#</a></h2>
+<p><strong>Flight, not Mission.</strong> The left-nav surface is labelled &quot;Flight Deck&quot; and work
+units are &quot;Flights&quot;. The <code>CoreView</code> route is <code>&quot;flights&quot;</code>, rendered by
+<code>FlightsView.tsx</code>. &quot;Mission&quot; survives only in intentional persisted-data
+compatibility aliases — there is even a startup migration
+(<code>core::migration::migrate_mission_to_flight</code>) that canonicalises leftover
+<code>missionId</code> keys. Use Flight terminology in all new code.</p>
+<p><strong>Provider id, not agent-config id.</strong> <code>api-claude</code> is an <code>AgentCli</code>;
+<code>&quot;anthropic&quot;</code> is a provider id. They are different vocabularies and one is not
+derivable from the other. See <a href="dev-agent-contract.html">Agent event contract</a>.</p>
+<h2 id="where-things-go">Where things go<a class="anchor" href="#where-things-go" aria-label="Link to this section">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Adding</th>
+<th>Put it</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>A view</td>
+<td><code>src/components/views/</code>, routed via the <code>AppView</code> union in <code>appStore.ts</code></td>
+</tr>
+<tr>
+<td>A Tauri command</td>
+<td><code>src-tauri/src/commands/</code>, register in <code>lib.rs</code>, add a TS binding in <code>src/lib/tauri.ts</code></td>
+</tr>
+<tr>
+<td>A Zustand store</td>
+<td><code>src/stores/</code>, <code>create&lt;StoreInterface&gt;()</code>, localStorage key via <code>storageKey()</code></td>
+</tr>
+<tr>
+<td>A modal</td>
+<td>Use the shared wrapper in <code>src/components/ui/Modal.tsx</code>; <code>NewSessionModal</code> and <code>LaunchAsyncFlightModal</code> are the reference implementations</td>
+</tr>
+<tr>
+<td>A shared constant</td>
+<td><code>src/lib/flight-colors.ts</code> (status/priority), <code>src/lib/time.ts</code> (formatting), <code>src/lib/colors.ts</code> (labels/priority)</td>
+</tr>
+</tbody></table>
+<p>Registering a command without a TS binding leaves a dead surface. Several
+already exist — see the list in <a href="dev-memory.html">Memory internals</a> and the
+report at the end of this page — and they cost real confusion.</p>
+<h2 id="ui-conventions">UI conventions<a class="anchor" href="#ui-conventions" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><strong>Theme tokens only.</strong> Never raw Tailwind colours. Use <code>bg-bg-primary</code>,
+<code>text-text-secondary</code>, <code>text-accent-green</code> and friends.</li>
+<li><strong>Font sizes</strong> are mostly <code>text-xs</code> (12px), with <code>text-[11px]</code> and
+<code>text-[10px]</code> for compact chrome.</li>
+<li><strong>Icons</strong> are lucide-react, typically <code>size={12}</code> in toolbars and <code>size={14}</code>
+in headers.</li>
+<li><strong>No native <code>confirm()</code>.</strong> Use <code>ConfirmDeleteModal</code>. This is fenced — see
+<code>scripts/confirm-idiom.test.mjs</code> and <a href="dev-testing.html">Testing &amp; gates</a>.</li>
+</ul>
+<h2 id="architectural-rules-the-linters-enforce">Architectural rules the linters enforce<a class="anchor" href="#architectural-rules-the-linters-enforce" aria-label="Link to this section">#</a></h2>
+<p>These are not style preferences; breaking them fails a gate.</p>
+<table>
+<thead>
+<tr>
+<th>Rule</th>
+<th>Enforced by</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>agentTaskStore</code> and <code>workspaceStore</code> may not import each other; <code>sessionGlue</code> is the only bridge</td>
+<td><code>no-restricted-imports</code> in <code>eslint.config.js</code></td>
+</tr>
+<tr>
+<td>No <code>window.confirm</code> / bare <code>confirm(</code> in <code>src/</code></td>
+<td><code>scripts/confirm-idiom.test.mjs</code></td>
+</tr>
+<tr>
+<td>No deriving a provider id by stripping <code>api-</code></td>
+<td><code>scripts/attempt-provider-mapping.test.mjs</code></td>
+</tr>
+<tr>
+<td><code>WebviewWindowBuilder</code> only in <code>commands/monitor_windows.rs</code>; <code>new WebviewWindow</code> nowhere in the frontend</td>
+<td><code>scripts/workspace-agents-boundaries.test.mjs</code></td>
+</tr>
+<tr>
+<td>Workspace views may not reach into the Agents launch path</td>
+<td><code>scripts/workspace-agents-boundaries.test.mjs</code></td>
+</tr>
+</tbody></table>
+<h2 id="rules-the-linters-do-not-catch">Rules the linters do <strong>not</strong> catch<a class="anchor" href="#rules-the-linters-do-not-catch" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><strong><code>issueStore.assignToFlight</code> is the authoritative write</strong> for the Flight ↔
+Issue link. <code>flightStore.reconcileIssueIdsFromIssues</code> rebuilds every flight&#39;s
+<code>issueIds</code> from <code>issueStore</code> on hydrate, so a one-sided <code>assignToFlight</code>
+self-heals while a one-sided <code>addIssueToFlight</code> silently vanishes on the next
+hydrate. Call both at UI sites — <code>addIssueToFlight</code> is the optimistic paint —
+but never rely on <code>addIssueToFlight</code> alone.</li>
+<li><strong>Always populate <code>SshConfig.host_fingerprint</code></strong> from
+<code>ServerConfig.hostFingerprint</code> so host-key pinning is enforced. Without it the
+Rust side falls back to TOFU <code>accept-new</code> and logs a warning.</li>
+<li><strong>Never persist tokens</strong> in frontend state, workspace DTOs or ordinary files.
+Git-host and SSH credentials live in the OS keyring.</li>
+<li><strong>Do not revive the autonomous planner.</strong> Its UI, FSM, journal and Rust /
+sidecar backend were removed in July 2026. Legacy <code>planner_*</code> DTO fields
+remain read-compatible only. Flight planning is a normal read-only
+conversation that the user applies.</li>
+<li><strong>Do not add a cost dashboard.</strong> Spend is measured to <em>enforce</em> budget caps,
+not to present a running readout. <code>CostDashboardView</code> was removed on
+2026-07-31 on purpose.</li>
+<li><strong>Keep event names feature-scoped</strong> — <code>insights:chunk</code>, <code>side-chat:chunk</code>,
+<code>api-agent:*</code>. Build names through the helpers in <code>src/lib/events.ts</code>, never
+by interpolation at a call site.</li>
+</ul>
+<h2 id="commit-style">Commit style<a class="anchor" href="#commit-style" aria-label="Link to this section">#</a></h2>
+<p>Conventional Commits, lowercase subject, imperative mood, optional scope. From
+the recent history:</p>
+<div class="code-block">
+<button class="copy" type="button" aria-label="Copy code">Copy</button>
+<pre><code>feat(memory): capture and retrieve memory for remote (SSH) workspaces
+fix(dictation): harden capture, transcription, delivery and UI
+docs(site): add a Markdown-sourced documentation site generator
+test: make the filesystem fences deterministic under a full parallel run
+chore: bump to 0.12.1
+refactor: remove the Syndicate execution-target integration</code></pre>
+</div>
+<p>Scopes in use include <code>memory</code>, <code>dictation</code>, <code>acp</code>, <code>aux</code>, <code>settings</code>,
+<code>scripts</code>, <code>site</code>, <code>changelog</code>, <code>backlog</code>.</p>
+<h3 id="bodies-do-the-real-work">Bodies do the real work<a class="anchor" href="#bodies-do-the-real-work" aria-label="Link to this section">#</a></h3>
+<p>This repository&#39;s commit bodies are unusually substantial, and that is the
+convention rather than an accident. A good body says <strong>what was wrong, why the
+obvious fix was wrong, and what was deliberately not done</strong>. The <code>docs(site)</code>
+commit that introduced this documentation site is a fair model: it explains the
+one-dependency decision, why the output goes to <code>docs/guide/</code> (an earlier
+iteration wrote over the marketing landing page), and that nineteen declared
+pages were still unwritten.</p>
+<p>Sign off agent-assisted commits with the trailer already in use:</p>
+<div class="code-block">
+<button class="copy" type="button" aria-label="Copy code">Copy</button>
+<pre><code>Co-Authored-By: Claude Opus 5 &lt;noreply@anthropic.com&gt;</code></pre>
+</div>
+<h2 id="before-you-push">Before you push<a class="anchor" href="#before-you-push" aria-label="Link to this section">#</a></h2>
+<div class="code-block" data-lang="bash">
+<button class="copy" type="button" aria-label="Copy code">Copy</button>
+<pre><code>pnpm preflight    # format:check, lint:src, test, build</code></pre>
+</div>
+<p>For anything touching the backend, the sidecar, provider routing, persisted
+state shapes or generated contracts, climb further:</p>
+<div class="code-block" data-lang="bash">
+<button class="copy" type="button" aria-label="Copy code">Copy</button>
+<pre><code>pnpm check        # + e2e, sidecar:check, check:tauri-schema, rust:check, rust:test</code></pre>
+</div>
+<div class="callout warning"><div class="callout-title">Warning</div><p>Run the bare <code>pnpm test</code>, not <code>vitest src</code>. Scoping to a
+directory silently skips all four repository fences, because they are pulled
+in by the <code>scripts/**</code> glob in <code>vitest.config.ts</code>.</p>
+</div>
+<p>Match the gate to the change:</p>
+<table>
+<thead>
+<tr>
+<th>Changed</th>
+<th>Also run</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>agent-sidecar/</code>, provider routing, protocol types, supervisor</td>
+<td><code>pnpm sidecar:check</code></td>
+</tr>
+<tr>
+<td>Shared contracts, generated types, persisted state, request/response payloads</td>
+<td><code>pnpm check:tauri-schema</code></td>
+</tr>
+<tr>
+<td>Backend commands, providers, state, orchestration</td>
+<td><code>pnpm rust:test</code></td>
+</tr>
+<tr>
+<td>Anything user-facing in the browser</td>
+<td><code>pnpm e2e</code></td>
+</tr>
+</tbody></table>
+<p><code>dev/local-quality-gates.md</code> is the canonical ladder document — and note that it
+is itself covered by <code>format:check</code>, so editing it with the wrong Prettier
+formatting breaks <code>preflight</code>.</p>
+<h2 id="documentation-changes">Documentation changes<a class="anchor" href="#documentation-changes" aria-label="Link to this section">#</a></h2>
+<p>This site is Markdown in <code>docs/src/</code>, rendered by <code>node scripts/build-docs.mjs</code>
+(<code>pnpm docs:build</code>) into <code>docs/guide/</code>. The output directory is deliberately
+<em>not</em> <code>docs/</code> — an earlier iteration wrote <code>index.md</code> straight over the
+marketing landing page at <code>docs/index.html</code>.</p>
+<p>To add a page: create <code>docs/src/&lt;name&gt;.md</code> starting with a single <code># Title</code>,
+then add an entry to <code>docs/src/nav.json</code> with <code>page</code>, <code>title</code> and
+<code>description</code>. <code>##</code> and <code>###</code> headings become the on-this-page rail, so make
+them specific. A page declared in <code>nav.json</code> with no Markdown file is reported
+as missing and skipped rather than failing the build.</p>
+<p>Callout syntax is a blockquote opening with a bolded keyword:</p>
+<div class="code-block" data-lang="markdown">
+<button class="copy" type="button" aria-label="Copy code">Copy</button>
+<pre><code>&gt; **Note:** …
+&gt; **Tip:** …
+&gt; **Warning:** …
+&gt; **Important:** …</code></pre>
+</div>
+<h2 id="reviewing">Reviewing<a class="anchor" href="#reviewing" aria-label="Link to this section">#</a></h2>
+<p>The bar this codebase actually holds itself to, judging by the comments left
+behind in it:</p>
+<ul>
+<li><strong>Explain the failure mode, not the fix.</strong> Nearly every non-obvious line in
+<code>src-tauri/src/lib.rs</code>, <code>storage.rs</code> and <code>apiAgentListeners.ts</code> carries a
+comment naming the bug it prevents. That is what makes the ordering
+constraints survivable.</li>
+<li><strong>Prefer a fence to a comment</strong> when the wrong shape is one that <em>survives
+review</em> — a plausible idiom that is correct in most instances and quietly
+wrong in one.</li>
+<li><strong>A test that pins a deliberate narrowness is not redundant.</strong> The
+injection-scorer assertions in <code>src/stores/__tests__/corpusRelevance.test.ts</code>
+exist to make a future &quot;improvement&quot; fail loudly.</li>
+<li><strong>Say what you did not do.</strong> The changelog entries and commit bodies here name
+their gaps explicitly. That is why the 0.12.1 entry can be trusted.</li>
+</ul>
+<h2 id="related">Related<a class="anchor" href="#related" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><a href="dev-architecture.html">Architecture</a> — the shape you are contributing to</li>
+<li><a href="dev-testing.html">Testing &amp; gates</a> — every gate in detail</li>
+<li><a href="agent-invariants.html">Invariants &amp; tripwires</a> — the rules that look safe to break</li>
+<li><a href="agent-guide.html">Agent orientation</a> — the machine-facing version of this page</li>
+</ul>
+</article>
+    <div class="prev-next"><a class="pn prev" href="dev-testing.html"><span>Previous</span><strong>Testing & gates</strong></a><a class="pn next" href="agent-guide.html"><span>Next</span><strong>Agent orientation</strong></a></div>
+  </main>
+  <nav class="toc" aria-label="On this page"><div class="toc-title">On this page</div><ul><li class="d2"><a href="#orientation-first">Orientation first</a></li>
+<li class="d2"><a href="#naming-and-brand">Naming and brand</a></li>
+<li class="d2"><a href="#vocabulary">Vocabulary</a></li>
+<li class="d2"><a href="#where-things-go">Where things go</a></li>
+<li class="d2"><a href="#ui-conventions">UI conventions</a></li>
+<li class="d2"><a href="#architectural-rules-the-linters-enforce">Architectural rules the linters enforce</a></li>
+<li class="d2"><a href="#rules-the-linters-do-not-catch">Rules the linters do <strong>not</strong> catch</a></li>
+<li class="d2"><a href="#commit-style">Commit style</a></li>
+<li class="d3"><a href="#bodies-do-the-real-work">Bodies do the real work</a></li>
+<li class="d2"><a href="#before-you-push">Before you push</a></li>
+<li class="d2"><a href="#documentation-changes">Documentation changes</a></li>
+<li class="d2"><a href="#reviewing">Reviewing</a></li>
+<li class="d2"><a href="#related">Related</a></li></ul></nav>
+</div>
+<script src="assets/docs.js"></script>
+</body>
+</html>
