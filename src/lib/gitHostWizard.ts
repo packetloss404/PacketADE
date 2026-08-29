@@ -18,7 +18,7 @@
 // else. See `gitHostProbe.ts` for the transport contract.
 
 import type { GitHostKind } from "@/lib/tauri";
-import { githubSetToken, gitHostAddGitea } from "@/lib/tauri";
+import { githubSetToken, gitHostAddConnection, gitHostAddGitea } from "@/lib/tauri";
 import { GITHUB_CONNECTION_ID } from "@/lib/git-hosts";
 import type { GitHostProbeOutcome, GitHostProbeResult } from "@/lib/gitHostProbe";
 
@@ -45,6 +45,17 @@ export interface GitHostProbeSpec {
   accept?: string;
   /** Response header listing granted scopes, when the host reports them. */
   scopeHeader?: string;
+  /**
+   * Endpoint reporting the credential's own scopes, for hosts that expose them
+   * as a resource rather than a response header. GitLab serves
+   * `/personal_access_tokens/self`. Only consulted when `scopeHeader` did not
+   * answer, and only after identity succeeded — so a host is never asked twice
+   * for a credential it already rejected. A failure here degrades to
+   * "scopes unknown", never to a rejection.
+   */
+  scopePath?: string;
+  /** JSON field on the `scopePath` response holding the scope array. Default `scopes`. */
+  scopeField?: string;
   /** JSON fields that may carry the account name, in priority order. */
   loginFields: string[];
 }
@@ -192,6 +203,46 @@ const GITEA_DESCRIPTOR: GitHostWizardDescriptor = {
   },
 };
 
+const GITLAB_DESCRIPTOR: GitHostWizardDescriptor = {
+  id: "gitlab",
+  kind: "gitlab",
+  label: "GitLab",
+  blurb: "gitlab.com or self-hosted CE/EE.",
+  // gitlab.com goes through the same field as a self-hosted instance: unlike
+  // GitHub there is no separate API hostname, so the origin IS the base URL.
+  needsInstanceUrl: true,
+  instanceUrlPlaceholder: "https://gitlab.com",
+  strippableApiPaths: ["/api/v4", "/api"],
+  tokenLabel: "Personal access token",
+  tokenPlaceholder: "glpat-…",
+  tokenCreateUrl: (origin) =>
+    origin ? `${origin}/-/user_settings/personal_access_tokens` : null,
+  tokenCreateHint:
+    "Your instance → Preferences → Access tokens → Add new token, then tick the scopes below.",
+  scopes: [
+    { id: "api", reason: "Read and write projects, issues, and merge requests." },
+    {
+      id: "read_api",
+      reason: "Lets PacketBench verify this token's own scopes.",
+      optional: true,
+    },
+  ],
+  probe: {
+    apiPrefix: "/api/v4",
+    identityPath: "/user",
+    authScheme: "private-token",
+    accept: "application/json",
+    // GitLab reports scopes as a resource, not a header — see `scopePath`.
+    scopePath: "/personal_access_tokens/self",
+    scopeField: "scopes",
+    loginFields: ["username", "name"],
+  },
+  save: async ({ baseUrl, label, token }) => {
+    const connectionId = await gitHostAddConnection("gitlab", baseUrl, label, token);
+    return { connectionId };
+  },
+};
+
 /**
  * Ordered host options. Append a descriptor to support another forge — the
  * wizard, its step flow, its validation and its copy are all derived from these.
@@ -199,6 +250,7 @@ const GITEA_DESCRIPTOR: GitHostWizardDescriptor = {
 export const GIT_HOST_WIZARD_DESCRIPTORS: GitHostWizardDescriptor[] = [
   GITHUB_DESCRIPTOR,
   GITHUB_ENTERPRISE_DESCRIPTOR,
+  GITLAB_DESCRIPTOR,
   GITEA_DESCRIPTOR,
 ];
 

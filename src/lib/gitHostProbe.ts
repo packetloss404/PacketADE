@@ -60,6 +60,8 @@ export async function probeGitHostCredential(
       authScheme: spec.authScheme,
       accept: spec.accept ?? null,
       scopeHeader: spec.scopeHeader ?? null,
+      scopePath: spec.scopePath ?? null,
+      scopeField: spec.scopeField ?? null,
       loginFields: spec.loginFields,
       token,
     },

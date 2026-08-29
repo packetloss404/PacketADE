@@ -54,6 +54,16 @@ pub struct GitHostProbeRequest {
     /// (`x-oauth-scopes` on GitHub). Absent => the host doesn't tell us.
     #[serde(default)]
     pub scope_header: Option<String>,
+    /// Endpoint that reports the credential's own scopes, for hosts that expose
+    /// them as a *resource* rather than a response header — GitLab serves
+    /// `/personal_access_tokens/self`. Consulted only when `scope_header` did
+    /// not already answer, and only after identity succeeded.
+    #[serde(default)]
+    pub scope_path: Option<String>,
+    /// JSON field on the `scope_path` response holding the scope array
+    /// (`scopes` on GitLab). Defaults to `scopes`.
+    #[serde(default)]
+    pub scope_field: Option<String>,
     /// Candidate JSON fields holding the account name, in priority order.
     #[serde(default)]
     pub login_fields: Vec<String>,
@@ -216,6 +226,56 @@ fn error_chain(err: &reqwest::Error) -> String {
 }
 
 /// Split a comma-separated scope header (`repo, read:org`) into scope names.
+/// Ask a host that reports scopes as a *resource* for this credential's scopes.
+///
+/// GitLab has no `x-oauth-scopes` header; it serves `/personal_access_tokens/self`
+/// returning `{"scopes": ["api", "read_user"], ...}`.
+///
+/// Deliberately best-effort. A token can be perfectly valid for the API and
+/// still be unable to read its own metadata — older GitLab versions lack the
+/// endpoint entirely, and a token without `read_api` is refused there. Any
+/// failure returns `None`, which the caller reports as "the host didn't say"
+/// rather than "no scopes". Failing the whole probe here would reject working
+/// credentials over a courtesy request.
+async fn fetch_scopes_from_resource(
+    client: &reqwest::Client,
+    endpoint: &str,
+    headers: reqwest::header::HeaderMap,
+    field: &str,
+) -> Option<Vec<String>> {
+    let response = client.get(endpoint).headers(headers).send().await.ok()?;
+    if !response.status().is_success() {
+        warn!(
+            "git-host scope probe answered HTTP {} — reporting scopes as unknown",
+            response.status().as_u16()
+        );
+        return None;
+    }
+    scopes_from_body(&response.text().await.ok()?, field)
+}
+
+/// Pull the scope array out of a scope-resource body. Split out from the request
+/// so the parsing is testable without a server.
+///
+/// An empty array is treated as *unknown*, not as "no scopes": a malformed or
+/// unexpected body produces the same empty vector, and the caller only warns on
+/// unknown while it hard-blocks on a scope it believes is missing. Guessing
+/// wrong in that direction refuses a working token.
+fn scopes_from_body(body: &str, field: &str) -> Option<Vec<String>> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    let scopes: Vec<String> = value
+        .get(field)?
+        .as_array()?
+        .iter()
+        .filter_map(|v| v.as_str().map(str::to_string))
+        .collect();
+    if scopes.is_empty() {
+        None
+    } else {
+        Some(scopes)
+    }
+}
+
 fn parse_scopes(raw: &str) -> Vec<String> {
     raw.split(',')
         .map(|s| s.trim())
@@ -283,6 +343,7 @@ pub async fn git_host_probe_credential(
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
+    let scope_headers = headers.clone();
     let response = match client.get(&endpoint).headers(headers).send().await {
         Ok(r) => r,
         Err(e) => {
@@ -343,6 +404,23 @@ pub async fn git_host_probe_credential(
             .and_then(|v| v.get("avatar_url"))
             .and_then(|v| v.as_str())
             .map(str::to_string);
+        // Identity is established. Hosts that expose scopes as a resource rather
+        // than a header get one extra request now — never before, so a host that
+        // would have rejected the credential is never asked twice.
+        let mut scopes = scopes;
+        if scopes.is_none() {
+            if let Some(scope_path) = request.scope_path.as_deref() {
+                if let Ok(scope_endpoint) =
+                    build_endpoint(&request.base_url, &request.api_prefix, scope_path)
+                {
+                    let field = request.scope_field.as_deref().unwrap_or("scopes");
+                    scopes =
+                        fetch_scopes_from_resource(&client, &scope_endpoint, scope_headers, field)
+                            .await;
+                }
+            }
+        }
+
         return Ok(GitHostProbeResult {
             outcome: GitHostProbeOutcome::Ok,
             status: Some(status.as_u16()),
@@ -398,6 +476,37 @@ pub async fn git_host_probe_credential(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn scopes_from_body_reads_a_gitlab_token_resource() {
+        // Shape of GitLab's /personal_access_tokens/self response.
+        let body = r#"{"id":1,"name":"pb","scopes":["api","read_user"],"active":true}"#;
+        assert_eq!(
+            scopes_from_body(body, "scopes"),
+            Some(vec!["api".to_string(), "read_user".to_string()])
+        );
+    }
+
+    #[test]
+    fn scopes_from_body_treats_unusable_answers_as_unknown() {
+        // Each of these must be "the host didn't say", never "no scopes" —
+        // the caller warns on unknown but blocks on a scope it thinks is absent.
+        assert_eq!(scopes_from_body("not json", "scopes"), None);
+        assert_eq!(scopes_from_body(r#"{"scopes":[]}"#, "scopes"), None);
+        assert_eq!(scopes_from_body(r#"{"other":["api"]}"#, "scopes"), None);
+        assert_eq!(scopes_from_body(r#"{"scopes":"api"}"#, "scopes"), None);
+        assert_eq!(scopes_from_body(r#"{"scopes":[1,2]}"#, "scopes"), None);
+    }
+
+    #[test]
+    fn scope_endpoint_is_built_from_the_same_prefix_as_identity() {
+        // A self-hosted GitLab under a sub-path must keep it on both requests.
+        assert_eq!(
+            build_endpoint("https://git.example.com/gl", "/api/v4", "/personal_access_tokens/self")
+                .unwrap(),
+            "https://git.example.com/gl/api/v4/personal_access_tokens/self"
+        );
+    }
     use super::*;
 
     #[test]

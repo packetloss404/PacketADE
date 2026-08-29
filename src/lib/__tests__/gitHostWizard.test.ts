@@ -31,10 +31,11 @@ function probe(overrides: Partial<GitHostProbeResult> = {}): GitHostProbeResult 
 }
 
 describe("git-host wizard descriptors", () => {
-  it("exposes github, github enterprise, and gitea out of the box", () => {
+  it("exposes github, github enterprise, gitlab, and gitea out of the box", () => {
     expect(GIT_HOST_WIZARD_DESCRIPTORS.map((d) => d.id)).toEqual([
       "github",
       "github-enterprise",
+      "gitlab",
       "gitea",
     ]);
   });
@@ -305,5 +306,38 @@ describe("connection labelling", () => {
     expect(defaultConnectionLabel(descriptor("gitea"), "https://git.example.com:3000")).toBe(
       "git.example.com:3000",
     );
+  });
+});
+
+describe("GitLab descriptor", () => {
+  const gitlab = GIT_HOST_WIZARD_DESCRIPTORS.find((d) => d.id === "gitlab");
+
+  it("is offered and is not marked unsupported", () => {
+    expect(gitlab).toBeDefined();
+    expect(gitlab?.unsupported).toBeUndefined();
+    expect(gitlab?.kind).toBe("gitlab");
+  });
+
+  it("checks scopes via the token resource, since GitLab has no scope header", () => {
+    // Without scopePath a GitLab token can only ever land on `scopes_unknown`,
+    // which is the gap this closes.
+    expect(gitlab?.probe.scopeHeader).toBeUndefined();
+    expect(gitlab?.probe.scopePath).toBe("/personal_access_tokens/self");
+    expect(gitlab?.probe.scopeField).toBe("scopes");
+    expect(gitlab?.probe.apiPrefix).toBe("/api/v4");
+    expect(gitlab?.probe.authScheme).toBe("private-token");
+  });
+
+  it("treats gitlab.com as an instance URL like any self-hosted host", () => {
+    // GitLab has no separate API hostname, so the origin IS the base URL.
+    expect(gitlab?.needsInstanceUrl).toBe(true);
+    expect(gitlab?.fixedBaseUrl).toBeUndefined();
+  });
+
+  it("points at the token page on whichever instance the user entered", () => {
+    expect(gitlab?.tokenCreateUrl("https://gitlab.example.com")).toContain(
+      "https://gitlab.example.com",
+    );
+    expect(gitlab?.tokenCreateUrl(null)).toBeNull();
   });
 });
