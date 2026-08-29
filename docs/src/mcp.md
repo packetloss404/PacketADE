@@ -21,12 +21,14 @@ rows and only some of them can use an MCP server at all.
 | --- | --- | --- |
 | Node sidecar | Claude Agent SDK (API), OpenAI Agents SDK (API) | **Full.** Server config forwarded, trust snapshot frozen at session start, per-tool enforcement at call time. |
 | ACP (PacketCode engine) | PacketCode (ACP) | **Server-level only.** PacketBench chooses which servers the engine may use; the engine owns the MCP client, so per-tool allowlists and the denial floors cannot be enforced across that boundary. |
-| In-process `LlmProvider` | Claude (API), OpenAI (API), MiniMax, OpenRouter, Ollama, Custom endpoint | **None.** These rows have no MCP client. |
+| In-process `LlmProvider` | Claude (API), OpenAI (API), MiniMax, OpenRouter, Ollama, Custom endpoint | **Full, and the strictest of the three.** Tool definitions load through the trust bridge and every `mcp__*` call is dispatched through it, so the per-tool allowlist, the `readOnlyHint` probe, the workspace roots, and the credential/publish/mutation denial floors all apply. |
 
-> **Important:** Configuring an MCP server does nothing for a conversation
-> running on an in-process provider row. If you want MCP tools in a
-> conversation, start it on the Claude Agent SDK, OpenAI Agents SDK, or
-> PacketCode row.
+> **Note:** The one place restrictions do not fully apply is the ACP row. The
+> PacketCode engine owns its own MCP client, so PacketBench can choose which
+> servers it may use but cannot veto an individual tool call. Where that
+> happens, the Hub and the consent pane name the specific restrictions that
+> lapse for that server — rather than presenting a weaker guarantee as if it
+> were the same one.
 
 PTY terminal sessions (`claude`, `codex`, `opencode`, `packetcode` in a
 Workspace pane) read the same config files themselves, directly. PacketBench

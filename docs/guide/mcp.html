@@ -79,13 +79,15 @@ rows and only some of them can use an MCP server at all.</p>
 <tr>
 <td>In-process <code>LlmProvider</code></td>
 <td>Claude (API), OpenAI (API), MiniMax, OpenRouter, Ollama, Custom endpoint</td>
-<td><strong>None.</strong> These rows have no MCP client.</td>
+<td><strong>Full, and the strictest of the three.</strong> Tool definitions load through the trust bridge and every <code>mcp__*</code> call is dispatched through it, so the per-tool allowlist, the <code>readOnlyHint</code> probe, the workspace roots, and the credential/publish/mutation denial floors all apply.</td>
 </tr>
 </tbody></table>
-<div class="callout important"><div class="callout-title">Important</div><p>Configuring an MCP server does nothing for a conversation
-running on an in-process provider row. If you want MCP tools in a
-conversation, start it on the Claude Agent SDK, OpenAI Agents SDK, or
-PacketCode row.</p>
+<div class="callout note"><div class="callout-title">Note</div><p>The one place restrictions do not fully apply is the ACP row. The
+PacketCode engine owns its own MCP client, so PacketBench can choose which
+servers it may use but cannot veto an individual tool call. Where that
+happens, the Hub and the consent pane name the specific restrictions that
+lapse for that server — rather than presenting a weaker guarantee as if it
+were the same one.</p>
 </div>
 <p>PTY terminal sessions (<code>claude</code>, <code>codex</code>, <code>opencode</code>, <code>packetcode</code> in a
 Workspace pane) read the same config files themselves, directly. PacketBench
