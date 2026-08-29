@@ -110,10 +110,10 @@ function AnalyticsEmptyState() {
  * "this week", the hour-of-day and weekday heatmaps — in UTC, because
  * `src-tauri` carries no tz database and shipping the whole transcript corpus
  * to the frontend to re-bucket it is exactly what `analytics.rs` refuses to
- * do. Meanwhile the History tab renders each timestamp in local time, so an
- * entry recorded either side of local midnight lands in a different day on the
- * two tabs. That was documented only in Tools → Date & Time, which is not
- * where anyone reads a streak.
+ * do. Meanwhile the History tab renders each timestamp in the zone configured
+ * in Tools → Date & Time, so an entry recorded either side of midnight there
+ * lands in a different day on the two tabs. That was documented only in the
+ * Date & Time card, which is not where anyone reads a streak.
  *
  * Rendered only when the effective zone actually has a non-zero offset: at
  * UTC+00:00 the buckets and the timestamps agree and the note would be noise.
@@ -136,8 +136,8 @@ function UtcBucketNote() {
         Days, weeks and hours on this tab are counted in{" "}
         <span className="font-mono text-text-secondary">UTC</span>, not in{" "}
         <span className="font-mono text-text-secondary">{zone}</span> (
-        {timeZoneOffsetLabel(zone)}). History timestamps are shown in local time, so
-        an entry recorded near midnight can fall on a different day in the two
+        {timeZoneOffsetLabel(zone)}), the zone History timestamps use. An entry
+        recorded near midnight can therefore fall on a different day in the two
         tabs.
       </span>
     </p>

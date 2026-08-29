@@ -7,7 +7,18 @@ export const DEFAULT_MEMORY_PATTERN_REFRESH_THRESHOLD = 3;
 export const DEFAULT_MEMORY_CONTEXT_MAX_PATTERNS = 10;
 export const DEFAULT_MEMORY_CONTEXT_MAX_SESSIONS = 5;
 export const DEFAULT_MEMORY_CONTEXT_MAX_LESSONS = 5;
+export const DEFAULT_MEMORY_CONTEXT_MAX_NOTES = 5;
 export const DEFAULT_MEMORY_RETENTION_DAYS = 30;
+/**
+ * Character ceiling on the composed memory brief. Lived in `memoryStore.ts`
+ * as an un-settable constant with an `options.maxChars` override that no
+ * caller ever passed, so it was the real binding limit on every injected
+ * brief while the source caps beside it were user-editable. The bounds are
+ * the ones `clampBriefChars` already enforced.
+ */
+export const DEFAULT_MEMORY_BRIEF_MAX_CHARS = 1800;
+export const MIN_MEMORY_BRIEF_MAX_CHARS = 400;
+export const MAX_MEMORY_BRIEF_MAX_CHARS = 4000;
 
 const STORAGE_KEY = storageKey("memory-settings");
 
@@ -44,6 +55,23 @@ export interface MemorySettingsValues {
   contextMaxPatterns: number;
   contextMaxSessions: number;
   contextMaxLessons: number;
+  /**
+   * Durable `.agents/memory` project notes allowed into the composed brief.
+   *
+   * Its three siblings above were settings from the start; this one was a
+   * hardcoded `MAX_CONTEXT_PROJECT_NOTES = 5` in `memoryStore.ts` from the
+   * day note injection landed, so a project whose memory lives mostly in
+   * hand-written notes could not widen the brief the way a
+   * pattern-heavy project could. The default is still 5, so the shipped
+   * behaviour is unchanged. `0` drops notes from the brief entirely.
+   */
+  contextMaxNotes: number;
+  /**
+   * Hard character budget for the composed brief. Sources are assembled in
+   * order and the brief stops once this is reached, so raising a source cap
+   * above what this budget can hold changes nothing.
+   */
+  briefMaxChars: number;
   /** v0.8: how to match `projectPath` for memory context lookups. */
   projectPathMatching: MemoryProjectPathMatching;
   /**
@@ -67,6 +95,8 @@ interface MemorySettingsStore extends MemorySettingsValues {
   setContextMaxPatterns: (count: number) => void;
   setContextMaxSessions: (count: number) => void;
   setContextMaxLessons: (count: number) => void;
+  setContextMaxNotes: (count: number) => void;
+  setBriefMaxChars: (chars: number) => void;
   setProjectPathMatching: (mode: MemoryProjectPathMatching) => void;
   setPinnedExemptFromCap: (enabled: boolean) => void;
   resetMemorySettings: () => void;
@@ -85,6 +115,8 @@ const DEFAULTS: MemorySettingsValues = {
   contextMaxPatterns: DEFAULT_MEMORY_CONTEXT_MAX_PATTERNS,
   contextMaxSessions: DEFAULT_MEMORY_CONTEXT_MAX_SESSIONS,
   contextMaxLessons: DEFAULT_MEMORY_CONTEXT_MAX_LESSONS,
+  contextMaxNotes: DEFAULT_MEMORY_CONTEXT_MAX_NOTES,
+  briefMaxChars: DEFAULT_MEMORY_BRIEF_MAX_CHARS,
   projectPathMatching: "exact",
   pinnedExemptFromCap: true,
 };
@@ -143,6 +175,13 @@ function normalize(raw: Partial<MemorySettingsValues> | null | undefined): Memor
       0,
       50,
     ),
+    contextMaxNotes: clampInteger(source.contextMaxNotes, DEFAULTS.contextMaxNotes, 0, 50),
+    briefMaxChars: clampInteger(
+      source.briefMaxChars,
+      DEFAULTS.briefMaxChars,
+      MIN_MEMORY_BRIEF_MAX_CHARS,
+      MAX_MEMORY_BRIEF_MAX_CHARS,
+    ),
     projectPathMatching: normalizeProjectPathMatching(source.projectPathMatching),
     pinnedExemptFromCap:
       typeof source.pinnedExemptFromCap === "boolean"
@@ -196,6 +235,8 @@ export const useMemorySettingsStore = create<MemorySettingsStore>((set, get) => 
     setContextMaxPatterns: (contextMaxPatterns) => update({ contextMaxPatterns }),
     setContextMaxSessions: (contextMaxSessions) => update({ contextMaxSessions }),
     setContextMaxLessons: (contextMaxLessons) => update({ contextMaxLessons }),
+    setContextMaxNotes: (contextMaxNotes) => update({ contextMaxNotes }),
+    setBriefMaxChars: (briefMaxChars) => update({ briefMaxChars }),
     setProjectPathMatching: (projectPathMatching) => update({ projectPathMatching }),
     setPinnedExemptFromCap: (pinnedExemptFromCap) => update({ pinnedExemptFromCap }),
     resetMemorySettings: () => update(DEFAULTS),
@@ -217,6 +258,8 @@ export function getMemorySettings(): MemorySettingsValues {
     contextMaxPatterns: state.contextMaxPatterns,
     contextMaxSessions: state.contextMaxSessions,
     contextMaxLessons: state.contextMaxLessons,
+    contextMaxNotes: state.contextMaxNotes,
+    briefMaxChars: state.briefMaxChars,
     projectPathMatching: state.projectPathMatching,
     pinnedExemptFromCap: state.pinnedExemptFromCap,
   });

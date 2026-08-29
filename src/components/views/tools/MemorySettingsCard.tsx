@@ -10,10 +10,13 @@ import {
   Terminal,
 } from "lucide-react";
 import {
+  DEFAULT_MEMORY_BRIEF_MAX_CHARS,
   DEFAULT_MEMORY_MAX_EVENTS,
   DEFAULT_MEMORY_MAX_PATTERNS,
   DEFAULT_MEMORY_PATTERN_REFRESH_THRESHOLD,
   DEFAULT_MEMORY_RETENTION_DAYS,
+  MAX_MEMORY_BRIEF_MAX_CHARS,
+  MIN_MEMORY_BRIEF_MAX_CHARS,
   type MemoryProjectPathMatching,
   useMemorySettingsStore,
 } from "@/stores/memorySettingsStore";
@@ -36,6 +39,8 @@ export function MemorySettingsCard() {
   const contextMaxPatterns = useMemorySettingsStore((s) => s.contextMaxPatterns);
   const contextMaxSessions = useMemorySettingsStore((s) => s.contextMaxSessions);
   const contextMaxLessons = useMemorySettingsStore((s) => s.contextMaxLessons);
+  const contextMaxNotes = useMemorySettingsStore((s) => s.contextMaxNotes);
+  const briefMaxChars = useMemorySettingsStore((s) => s.briefMaxChars);
   const projectPathMatching = useMemorySettingsStore((s) => s.projectPathMatching);
   const pinnedExemptFromCap = useMemorySettingsStore((s) => s.pinnedExemptFromCap);
 
@@ -51,13 +56,19 @@ export function MemorySettingsCard() {
   const setContextMaxPatterns = useMemorySettingsStore((s) => s.setContextMaxPatterns);
   const setContextMaxSessions = useMemorySettingsStore((s) => s.setContextMaxSessions);
   const setContextMaxLessons = useMemorySettingsStore((s) => s.setContextMaxLessons);
+  const setContextMaxNotes = useMemorySettingsStore((s) => s.setContextMaxNotes);
+  const setBriefMaxChars = useMemorySettingsStore((s) => s.setBriefMaxChars);
   const setProjectPathMatching = useMemorySettingsStore((s) => s.setProjectPathMatching);
   const setPinnedExemptFromCap = useMemorySettingsStore((s) => s.setPinnedExemptFromCap);
   const resetMemorySettings = useMemorySettingsStore((s) => s.resetMemorySettings);
 
   const retentionEnabled = retentionDays !== null;
   const retentionValue = retentionDays ?? DEFAULT_MEMORY_RETENTION_DAYS;
-  const briefSourceCap = contextMaxPatterns + contextMaxSessions + contextMaxLessons;
+  // Every capped source the brief can draw from. Project notes were missing
+  // here while their cap was a constant, so the stat under-reported the
+  // brief's real ceiling on any project with `.agents/memory` notes.
+  const briefSourceCap =
+    contextMaxPatterns + contextMaxSessions + contextMaxLessons + contextMaxNotes;
 
   function updateAndPrune(action: () => void) {
     action();
@@ -191,10 +202,40 @@ export function MemorySettingsCard() {
             max={50}
             onChange={setContextMaxLessons}
           />
+          <NumberRow
+            label="Project notes"
+            value={contextMaxNotes}
+            min={0}
+            max={50}
+            onChange={setContextMaxNotes}
+          />
+          <p className="text-[10px] leading-snug text-text-muted">
+            Project notes come from <span className="font-mono">.agents/memory</span> and are
+            hand-written, so a notes-heavy project usually wants a higher cap than a
+            pattern-heavy one. Set any source to 0 to keep it out of the brief.
+          </p>
+          <NumberRow
+            label="Character budget"
+            value={briefMaxChars}
+            min={MIN_MEMORY_BRIEF_MAX_CHARS}
+            max={MAX_MEMORY_BRIEF_MAX_CHARS}
+            onChange={setBriefMaxChars}
+          />
+          <p className="text-[10px] leading-snug text-text-muted">
+            The brief stops here even if the source caps above would allow more, so raising a
+            source without raising this changes nothing. Roughly{" "}
+            {Math.round(briefMaxChars / 4)} tokens; default{" "}
+            {DEFAULT_MEMORY_BRIEF_MAX_CHARS.toLocaleString()}.
+          </p>
         </Section>
 
         <Section title="Project scope">
           <ProjectPathMatchingRadio value={projectPathMatching} onChange={setProjectPathMatching} />
+          <p className="text-[10px] leading-snug text-text-muted">
+            Matching applies within one workspace's memory. A remote (SSH) workspace keeps its
+            own memory keyed by server, so a local project at the same path never sees it —
+            Memory offers a one-off adoption there instead.
+          </p>
           <Toggle
             icon={Pin}
             label="Pinned patterns survive cap eviction"
