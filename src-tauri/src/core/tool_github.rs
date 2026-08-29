@@ -9,9 +9,16 @@
 //!
 //! G14 scope: these `gh_*` agent read-tools are **GitHub-scoped** by design —
 //! they load the GitHub connection's token directly and have no per-workspace
-//! host context. Gitea/Forgejo agent-tool parity is a deferred follow-up
-//! (see `dev/gitea-support-loop.md` → Deferred). The interactive GitHub pane is
-//! the primary Gitea surface and is fully host-aware.
+//! host context. Gitea/Forgejo and GitLab agent-tool parity is a deferred
+//! follow-up (see `dev/gitea-support-loop.md` → Deferred). The interactive
+//! Git Hosts pane is the host-aware surface.
+//!
+//! Because the token here is read straight from the `github-token` keyring
+//! account and every URL is a literal `https://api.github.com/...`, the
+//! credential and the destination cannot diverge — the tools have no notion of
+//! an "active connection" to get wrong. That is why they are safe as-is; it is
+//! also why they must NOT be given one without also routing them through
+//! `GitHost`.
 
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 use tracing::warn;
@@ -154,22 +161,25 @@ fn truncate(mut s: String) -> String {
     s
 }
 
+/// Log the raw failure body (never surfaced — it can echo tokens and private
+/// repo data) and return a sanitized message that names whichever host actually
+/// answered.
+///
+/// This used to hardcode "GitHub API error" and its own copy of the
+/// status→reason table. `b3de2bdf` fixed the same defect in
+/// `commands/github.rs` by deriving the label from the response URL; the two
+/// helpers now share one implementation in `core::git_host` rather than
+/// drifting apart the way the two review-comment guards did. These tools are
+/// still GitHub-scoped (see the module doc), so today the label always resolves
+/// to "GitHub" — but it is derived, not asserted, so a self-hosted GitHub
+/// Enterprise base or a future host-aware variant cannot silently mislabel.
 async fn handle_status(resp: reqwest::Response) -> Result<String, String> {
     if !resp.status().is_success() {
         let status = resp.status();
+        let label = crate::core::git_host::host_label_from_url(resp.url());
         let body = resp.text().await.unwrap_or_default();
-        warn!("GitHub API error {}: {}", status, body);
-        return Err(format!(
-            "GitHub API error {}: {}",
-            status.as_u16(),
-            match status.as_u16() {
-                401 => "unauthorized — check your GitHub token",
-                403 => "forbidden — missing permissions or rate-limited",
-                404 => "not found",
-                429 => "rate limited",
-                _ => "request failed",
-            }
-        ));
+        warn!("{} API error {}: {}", label, status, body);
+        return Err(crate::core::git_host::sanitize_host_error(&label, status));
     }
     resp.text()
         .await
@@ -463,6 +473,27 @@ mod tests {
         let big = "a".repeat(MAX_OUTPUT_CHARS + 100);
         let out = truncate(big);
         assert!(out.ends_with("[truncated]"));
+    }
+
+    // Regression: `handle_status` used to hardcode "GitHub API error" and its
+    // own status→reason table, duplicating the one `b3de2bdf` centralized.
+    #[test]
+    fn errors_are_named_from_the_response_url_not_hardcoded() {
+        let url = reqwest::Url::parse("https://api.github.com/repos/o/r/issues").unwrap();
+        let label = crate::core::git_host::host_label_from_url(&url);
+        assert_eq!(label, "GitHub");
+        assert_eq!(
+            crate::core::git_host::sanitize_host_error(&label, reqwest::StatusCode::UNAUTHORIZED),
+            "GitHub API error 401: unauthorized — check your GitHub token"
+        );
+        // The shared helper is not GitHub-specific, so a non-GitHub responder
+        // is named correctly rather than blamed on GitHub.
+        let other = reqwest::Url::parse("https://gitlab.com/api/v4/projects/o%2Fr").unwrap();
+        let msg = crate::core::git_host::sanitize_host_error(
+            &crate::core::git_host::host_label_from_url(&other),
+            reqwest::StatusCode::UNAUTHORIZED,
+        );
+        assert!(!msg.contains("GitHub"), "{msg}");
     }
 
     #[test]

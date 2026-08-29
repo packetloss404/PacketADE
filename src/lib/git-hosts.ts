@@ -1,7 +1,7 @@
-// G2: git-host provider catalog (GitHub cloud + Gitea/Forgejo self-hosted),
-// the git-host analogue of `api-models.ts`'s provider catalog. Metadata only —
-// connections + tokens live in the backend keyring; the frontend just needs
-// display strings and a base-URL validator.
+// G2: git-host provider catalog (GitHub cloud, Gitea/Forgejo self-hosted, and
+// GitLab), the git-host analogue of `api-models.ts`'s provider catalog.
+// Metadata only — connections + tokens live in the backend keyring; the
+// frontend just needs display strings and a base-URL validator.
 
 import type { GitHostKind } from "@/lib/tauri";
 
@@ -15,6 +15,12 @@ export interface GitHostMeta {
   needsBaseUrl: boolean;
   tokenLabel: string;
   tokenHint: string;
+  /**
+   * Placeholder for the base-URL field, when `needsBaseUrl`. GitLab takes the
+   * *instance origin* for gitlab.com too — unlike GitHub there is no separate
+   * API hostname, so `https://gitlab.com` is a normal, valid value here.
+   */
+  baseUrlPlaceholder?: string;
 }
 
 export const GIT_HOSTS: Record<GitHostKind, GitHostMeta> = {
@@ -31,6 +37,17 @@ export const GIT_HOSTS: Record<GitHostKind, GitHostMeta> = {
     needsBaseUrl: true,
     tokenLabel: "Access token",
     tokenHint: "Settings → Applications → Generate New Token (scope: repo, issue)",
+    baseUrlPlaceholder: "https://git.example.com",
+  },
+  gitlab: {
+    kind: "gitlab",
+    name: "GitLab",
+    // gitlab.com AND self-hosted both go through this field: GitLab serves
+    // /api/v4 under the instance origin in both cases.
+    needsBaseUrl: true,
+    tokenLabel: "Personal access token",
+    tokenHint: "glpat-… with the api scope (Preferences → Access tokens)",
+    baseUrlPlaceholder: "https://gitlab.com",
   },
 };
 
@@ -40,21 +57,37 @@ export const GIT_HOSTS: Record<GitHostKind, GitHostMeta> = {
  * render broken on a Gitea/Forgejo workspace.
  */
 export interface GitHostCapabilities {
-  /** GraphQL draft ⇄ ready toggle (GitHub). Gitea uses a `WIP:` title. */
+  /** GraphQL draft ⇄ ready toggle (GitHub). Gitea uses a `WIP:` title prefix,
+   *  GitLab a `Draft:` one — neither has a mutation to call. */
   draftPrToggle: boolean;
-  /** Modern check-runs API. Gitea has combined commit status only. */
+  /** Modern check-runs API. Gitea has combined commit status only; GitLab
+   *  splits the concept into pipelines + commit statuses. */
   checkRuns: boolean;
-  /** Typed Events activity feed. Gitea has no equivalent. */
+  /** Typed Events activity feed. Neither other host has an equivalent. */
   activityFeed: boolean;
-  /** Inline PR reviews + review comments (both hosts, via G11). */
+  /** Formal review objects listed per change request. GitLab has none. */
   prReviews: boolean;
-  /** Author line-anchored review comments. Gitea's model is incompatible. */
+  /** Author line-anchored review comments. Gitea's model is flat; GitLab's
+   *  needs a three-SHA diff position hash. */
   inlineReviewComments: boolean;
   /** AI assist (investigate / PR description / review / catch-up / triage).
    *  These query api.github.com directly, so they're GitHub-only. */
   aiAssist: boolean;
+  /** The notification inbox. GitLab's analogue is Todos, a different shape. */
+  notifications: boolean;
+  /** Requesting reviewers by username on an existing change request. */
+  requestReviewers: boolean;
+  /** Assigning issues by username. GitLab takes numeric `assignee_ids`. */
+  assigneesByLogin: boolean;
+  /** What this host calls a change request, for user-facing prose. */
+  changeRequestNoun: "pull request" | "merge request";
 }
 
+// Mirrors `HostCapability` in `src-tauri/src/core/git_host.rs`. Both sides are
+// exhaustive per-kind ALLOW-lists rather than "everything except Gitea"
+// deny-lists: a deny-list silently admitted every host kind it had not been
+// told about, which is how a GitLab workspace would have ended up firing the
+// GitHub token at api.github.com.
 export const GIT_HOST_CAPABILITIES: Record<GitHostKind, GitHostCapabilities> = {
   github: {
     draftPrToggle: true,
@@ -63,6 +96,10 @@ export const GIT_HOST_CAPABILITIES: Record<GitHostKind, GitHostCapabilities> = {
     prReviews: true,
     inlineReviewComments: true,
     aiAssist: true,
+    notifications: true,
+    requestReviewers: true,
+    assigneesByLogin: true,
+    changeRequestNoun: "pull request",
   },
   gitea: {
     draftPrToggle: false,
@@ -71,6 +108,22 @@ export const GIT_HOST_CAPABILITIES: Record<GitHostKind, GitHostCapabilities> = {
     prReviews: true,
     inlineReviewComments: false,
     aiAssist: false,
+    notifications: true,
+    requestReviewers: true,
+    assigneesByLogin: true,
+    changeRequestNoun: "pull request",
+  },
+  gitlab: {
+    draftPrToggle: false,
+    checkRuns: false,
+    activityFeed: false,
+    prReviews: false,
+    inlineReviewComments: false,
+    aiAssist: false,
+    notifications: false,
+    requestReviewers: false,
+    assigneesByLogin: false,
+    changeRequestNoun: "merge request",
   },
 };
 
@@ -80,28 +133,47 @@ export function capabilitiesFor(kind: GitHostKind): GitHostCapabilities {
 
 /** Display name for a host kind (branding). */
 export function hostLabel(kind: GitHostKind): string {
-  return kind === "gitea" ? "Gitea" : "GitHub";
+  return GIT_HOSTS[kind]?.name === "Gitea / Forgejo" ? "Gitea" : (GIT_HOSTS[kind]?.name ?? "GitHub");
 }
 
 export type NormalizeResult = { value: string } | { error: string };
 
+/** The API-root suffix each self-hosted kind appends to its instance origin. */
+const API_SUFFIX: Partial<Record<GitHostKind, RegExp>> = {
+  gitea: /\/api\/v1$/i,
+  gitlab: /\/api\/v4$/i,
+};
+
 /**
- * Validate + normalize a Gitea/Forgejo instance base URL, mirroring the Rust
- * `git_host_add_gitea` check. Returns the bare origin (no trailing slash, no
- * `/api/v1` suffix) so the backend can append `/api/v1` itself, or an error.
+ * Validate + normalize a self-hosted instance base URL, mirroring the Rust
+ * `git_host_add_connection` check. Returns the bare origin (no trailing slash,
+ * no API-root suffix) so the backend can append the suffix itself, or an error.
+ *
+ * The same function serves gitlab.com and a self-hosted GitLab: GitLab has no
+ * separate API hostname, so `https://gitlab.com` is a perfectly ordinary value
+ * here — there is nothing to special-case.
  */
-export function normalizeGiteaBaseUrl(input: string): NormalizeResult {
+export function normalizeInstanceBaseUrl(kind: GitHostKind, input: string): NormalizeResult {
   const trimmed = input.trim().replace(/\/+$/, "");
   if (!trimmed) return { error: "Base URL is required" };
   if (!/^https?:\/\//i.test(trimmed)) {
     return { error: "Base URL must start with http:// or https://" };
   }
   // Accept a pasted API root and strip it back to the origin.
-  const stripped = trimmed.replace(/\/api\/v1$/i, "");
+  const suffix = API_SUFFIX[kind];
+  const stripped = suffix ? trimmed.replace(suffix, "") : trimmed;
   try {
     new URL(stripped);
   } catch {
     return { error: "Not a valid URL" };
   }
   return { value: stripped };
+}
+
+/**
+ * Gitea-specific alias of {@link normalizeInstanceBaseUrl}, kept so existing
+ * call sites (`GitHubSettingsCard`) keep compiling unchanged.
+ */
+export function normalizeGiteaBaseUrl(input: string): NormalizeResult {
+  return normalizeInstanceBaseUrl("gitea", input);
 }
