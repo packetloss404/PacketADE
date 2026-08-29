@@ -285,8 +285,22 @@ nothing belonging to the other product is moved, renamed or deleted.</li>
 <p>If migration cannot complete, the app keeps reading the legacy directory
 rather than starting empty. Keyring entries migrate lazily: a read falls back
 to the legacy <code>packetade</code> service, writes the value into <code>packetbench</code>, then
-deletes the old entry. <code>localStorage</code> keys are copied from <code>packetade:</code> to
-<code>packetbench:</code> on first boot.</p>
+deletes the old entry.</p>
+<div class="callout warning"><div class="callout-title">Warning</div><p><strong>UI preferences do not survive a packaged upgrade, by design.</strong>
+The rename also moved the app&#39;s bundle identifier, and the webview keys its
+storage by that identifier — so an installed PacketBench starts against a
+fresh, empty webview profile and the <code>packetade:</code> keys are simply not visible
+to it. Pane layouts, dock state, your project-history list and any unsent
+composer drafts start over. Flights, issues, workspaces, agent profiles,
+memory and API keys are <strong>not</strong> affected: those live in the data directory and
+the OS keyring, both of which migrate correctly.</p>
+<p>Nothing is deleted. The old profile stays at
+<code>%LOCALAPPDATA%\com.packetade.desktop\EBWebView\</code>. This was accepted rather
+than fixed — reading another application&#39;s storage engine is a feature with
+its own failure modes, for data that is mostly preference.</p>
+</div>
+<p>A source build is unaffected: it keeps the same identifier throughout, so the
+<code>packetade:</code> → <code>packetbench:</code> copy on first boot works there.</p>
 <div class="callout warning"><div class="callout-title">Warning</div><p>This migration has only ever been executed from a <strong>source
 build</strong>, against a copy of a real legacy data directory. No packaged
 PacketBench installer has ever been installed over pre-rename state. If your

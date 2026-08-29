@@ -143,7 +143,10 @@ and the initial PWA under PacketBench's `remoteagents/` workspace. See
 The source behind these slices is implemented. Keep them open until the named
 environment or packaged matrix has actually run.
 
-- **P1 - localStorage does not migrate across a packaged upgrade.**
+- **ACCEPTED 2026-08-29 - localStorage does not migrate across a packaged
+  upgrade.** Owner decision: **accept the loss and state it in the release
+  notes.** Not a defect to fix; a documented consequence of the rename.
+
   `migrateLegacyStorage()` (`src/lib/storage-migration.ts:14`) reads
   `localStorage` from inside its own WebView2 profile, and WebView2 keys that
   profile by bundle identifier. The rename moved the identifier from
@@ -155,11 +158,21 @@ environment or packaged matrix has actually run.
   `packetade:agent-drafts` (unsent composer drafts), `packetade:project-history`,
   `packetade:issues`, and `packetade:workspaces-cache`. The migrator's own logic
   is sound — guard key, copy-not-clobber, legacy kept as rollback — it simply
-  cannot see what it is meant to migrate. Fixing it means reading another
-  application's LevelDB store from Rust, which is a feature with its own failure
-  modes, so it needs an owner decision: build the reader, accept the loss and say
-  so in release notes, or ship a one-time importer. The data-dir and keyring
-  migrations are unaffected. Recorded under 0.12.0 in `CHANGELOG.md`.
+  cannot see what it is meant to migrate.
+
+  Rejected: a Rust LevelDB reader for the old profile. It is a real feature with
+  its own failure modes — parsing another application's store, which that
+  application may still hold open — for data that is mostly UI preference. The
+  one genuinely costly item is unsent composer drafts.
+
+  **Nothing is deleted.** The old profile stays on disk at
+  `%LOCALAPPDATA%\com.packetade.desktop\EBWebView\`, so a determined user can
+  recover from it by hand, and a future importer could still be written.
+
+  Follow-up that is NOT this item: the migrator currently writes its guard key
+  and reports success on a profile it could never have read. That silence is
+  what made this hard to find. Consider having it record that it found nothing,
+  so the next person sees a fact rather than an absence.
 - **DONE 2026-08-28 - Memory capture for remote workspaces.** Records are
   stamped through a single write choke point, with the scope resolved from the
   workspace the work ran in rather than the active one. Scope keys render as

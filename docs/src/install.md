@@ -233,8 +233,24 @@ claims the *older* `PacketCode` name:
 If migration cannot complete, the app keeps reading the legacy directory
 rather than starting empty. Keyring entries migrate lazily: a read falls back
 to the legacy `packetade` service, writes the value into `packetbench`, then
-deletes the old entry. `localStorage` keys are copied from `packetade:` to
-`packetbench:` on first boot.
+deletes the old entry.
+
+> **Warning:** **UI preferences do not survive a packaged upgrade, by design.**
+> The rename also moved the app's bundle identifier, and the webview keys its
+> storage by that identifier — so an installed PacketBench starts against a
+> fresh, empty webview profile and the `packetade:` keys are simply not visible
+> to it. Pane layouts, dock state, your project-history list and any unsent
+> composer drafts start over. Flights, issues, workspaces, agent profiles,
+> memory and API keys are **not** affected: those live in the data directory and
+> the OS keyring, both of which migrate correctly.
+>
+> Nothing is deleted. The old profile stays at
+> `%LOCALAPPDATA%\com.packetade.desktop\EBWebView\`. This was accepted rather
+> than fixed — reading another application's storage engine is a feature with
+> its own failure modes, for data that is mostly preference.
+
+A source build is unaffected: it keeps the same identifier throughout, so the
+`packetade:` → `packetbench:` copy on first boot works there.
 
 > **Warning:** This migration has only ever been executed from a **source
 > build**, against a copy of a real legacy data directory. No packaged

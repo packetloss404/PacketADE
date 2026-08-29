@@ -236,7 +236,7 @@ Verified against a copy of the real directory above: classified `Mixed`, all
 This does not retroactively rescue a machine where `~/.packetbench` already
 exists — `migrate_data_dir_in` still returns early there, by design.
 
-### Known defect — localStorage does not migrate across a packaged upgrade
+### Upgrading from a pre-rename install resets UI preferences
 
 `migrateLegacyStorage()` reads `localStorage` from inside its own WebView2
 profile, and WebView2 keys that profile by bundle identifier. The rename moved the
@@ -249,10 +249,20 @@ against 19 KiB under the new one, with twelve stranded keys including
 `packetade:agent-drafts` (unsent composer drafts), `packetade:project-history`,
 `packetade:issues`, and `packetade:workspaces-cache`.
 
-Not fixed here. Reaching the old profile means reading another application's
-LevelDB store from Rust, which is a feature with its own failure modes rather
-than a migration patch. The keyring migration is unaffected — it is per-key and
-read-through, with tests covering partial failure.
+**Accepted rather than fixed (owner decision, 2026-08-29.)** Reaching the old
+profile means reading another application's LevelDB store from Rust — a real
+feature with its own failure modes, for data that is mostly UI preference. The
+one genuinely costly item is unsent composer drafts.
+
+So, plainly: **upgrading a packaged install from a pre-rename build starts with
+fresh UI preferences.** Pane layouts, the collapsed/expanded dock, your project
+history list and any unsent composer drafts do not come across. Your flights,
+issues, workspaces, agent profiles, memory and API keys are unaffected — those
+live in the data dir and the OS keyring, both of which migrate correctly.
+
+Nothing is deleted: the old profile remains at
+`%LOCALAPPDATA%\com.packetade.desktop\EBWebView\`, so the data can be
+recovered by hand and a one-time importer could still be written later.
 
 ### Fixed — the Memory pane never showed anything
 
