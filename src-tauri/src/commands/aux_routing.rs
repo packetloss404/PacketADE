@@ -150,8 +150,14 @@ mod tests {
 
     /// LM4 (3C-2/3C-5) — the migrated pure-text surfaces must stay off the
     /// Claude CLI, and the de-hardcoded surfaces must stay off a literal
-    /// model id. `scan_codebase_memory` is the one sanctioned `run_claude`
-    /// survivor in memory.rs (3C-3, deferred: it needs the CLI's file tools).
+    /// model id.
+    ///
+    /// 3C-3 memory half (done): `scan_codebase_memory` now assembles its
+    /// context in `core::aux_context` and runs one seam turn, so **no**
+    /// `run_claude` caller survives in memory.rs. `run_claude` itself stays —
+    /// `github.rs::github_investigate_issue` and
+    /// `insights.rs::ask_agent_chat_stream` still need the bounded read-only
+    /// tool loop that is the other half of 3C-3.
     #[test]
     fn migrated_surfaces_stay_on_the_aux_seam() {
         assert!(
@@ -160,8 +166,8 @@ mod tests {
         );
         assert_eq!(
             include_str!("memory.rs").matches("run_claude(").count(),
-            1,
-            "memory.rs must keep exactly one run_claude caller (scan_codebase_memory) until 3C-3"
+            0,
+            "memory.rs is fully migrated (3C-3 memory half) — it must not call the Claude CLI"
         );
         // Mechanism-1 sites: the provider/model choice must come from the
         // routing seam, never a string literal.

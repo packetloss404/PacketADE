@@ -356,17 +356,32 @@ collapse to ACP `read-only` (`acp/routing.rs:70`, tests at `:535,:539`). The
 
 Deliberate leftovers from the LM / PacketAgent-handoff implementation wave
 (branches `feat/lm-and-packetagent-handoff` in this repo and
-`feat/packet-product-handoff-surface` in PacketAgent). Re-verified 2026-08-27:
-`run_claude` still has live callers in `commands/memory.rs`,
-`commands/github.rs`, and `commands/spec.rs`, so 3C-3 below is unchanged:
+`feat/packet-product-handoff-surface` in PacketAgent). Re-verified 2026-08-28:
+the Claude CLI shell-out now has exactly two live callers,
+`commands/github.rs` (`run_claude`) and `commands/insights.rs`
+(`claude_command`):
 
-- **P2 - LM 3C-3 codebase-dependent aux migrations.** `scan_codebase_memory`,
-  `github_investigate_issue`, and `ask_agent_chat_stream` remain on the Claude
-  CLI (`run_claude`/`claude_command`) because they depend on its file tools.
-  Migrating them needs Rust-side context assembly (memory scan) and a bounded
-  read-only tool loop parameterized on an `AuxRoute` (investigate/agent-chat).
+- **P2 - LM 3C-3 tool-loop half.** `github_investigate_issue` and
+  `ask_agent_chat_stream` remain on the Claude CLI
+  (`run_claude`/`claude_command`) because they depend on its file tools: unlike
+  the memory scan, they cannot know up front which files matter, so they need a
+  bounded read-only tool loop parameterized on an `AuxRoute`.
+  `core::tool_subagent::run_agent_loop` is most of that loop already (8
+  iterations, `read_only_tool_definitions`, workspace-confined
+  `tool_runtime::execute_tool`); what it lacks is `AuxRoute` parameterization
+  (it derives its provider from the parent session, with a hardcoded Anthropic
+  fallback) plus byte and wall-clock budgets on top of the iteration cap.
   `run_claude` cannot be deleted until then. See
   [`dev/local-model-routing.md`](./dev/local-model-routing.md).
+- **P3 - `scan_codebase_memory` has no caller.** The memory half of 3C-3
+  landed 2026-08-28: `core::aux_context` assembles a bounded, root-confined
+  file manifest in Rust and the command runs one `memory-scan` turn over it, so
+  `commands/memory.rs` is off the Claude CLI entirely. The command is still
+  registered in `lib.rs` with **no** TypeScript caller and no consumer for its
+  `[{path, summary}]` output. Owner call needed: wire it into the Memory view
+  (a "Scan codebase" action feeding project notes), or delete the command and
+  its task class. Migrating it was the cheap half; giving it a product surface
+  is a product decision, not a refactor.
 - **P2 - LM local-opt-in surface.** The "route aux tasks locally" banner and
   one-click pin are gated on a green `cargo test --test ollama_e2e -- --ignored`
   run against the live daemon (test ships ignored-by-default).

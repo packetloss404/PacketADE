@@ -1,6 +1,9 @@
 pub mod agent;
 pub mod agent_config;
 pub mod agents_md;
+// LM4 (3C-3) — bounded, root-confined Rust-side context assembly for the
+// auxiliary seam. Replaces the Claude CLI file tools for the memory scan.
+pub mod aux_context;
 // WI-1 — the auxiliary LLM seam every non-agentic feature routes through.
 pub mod aux_llm;
 pub mod brand;
