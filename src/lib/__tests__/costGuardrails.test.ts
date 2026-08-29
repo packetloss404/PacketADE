@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   computeCostGuardrailStatus,
+  evaluateCostGuardrail,
+  evaluationMessage,
   isUnknownPricedUsage,
   normalizeCostGuardrailSettings,
   providerSourceForAgentProvider,
@@ -86,5 +88,70 @@ describe("cost guardrails", () => {
     expect(providerSourceForAgentProvider("minimax")).toBe("api-minimax");
     expect(providerSourceForAgentProvider("api-minimax-api")).toBe("api-minimax");
     expect(providerSourceForAgentProvider("minimax-api")).toBe("api-minimax");
+  });
+
+  /**
+   * FAULT: Settings offers "Hard stop at % · Block launches at this share",
+   * but the launch gate (`assertCostGuardrailsAllowLaunch` →
+   * `evaluateCostGuardrail`) hard-coded its refusal at 100% of the cap and
+   * never received the setting. The status/notification path already honoured
+   * it, so the two halves of one control disagreed and the safety half was the
+   * one that ignored the user.
+   */
+  describe("hard stop share", () => {
+    const base = {
+      key: "daily",
+      label: "Daily spend",
+      limitUsd: 10,
+      warningRatio: 0.8,
+    };
+
+    it("blocks at the configured share, not only at the full cap", () => {
+      const at85 = evaluateCostGuardrail({ ...base, currentUsd: 8.5, hardStopRatio: 0.85 });
+      expect(at85.status).toBe("blocked");
+      expect(at85.hardStopUsd).toBe(8.5);
+      // Just below the stop is still only a warning.
+      expect(evaluateCostGuardrail({ ...base, currentUsd: 8.4, hardStopRatio: 0.85 }).status).toBe(
+        "warning",
+      );
+    });
+
+    it("keeps the pre-existing behaviour when no share is given", () => {
+      // The default (`hardStopThresholdPercent: 100`) must be byte-identical
+      // to the old hard-coded rule, or every existing install changes.
+      expect(evaluateCostGuardrail({ ...base, currentUsd: 9.99 }).status).toBe("warning");
+      expect(evaluateCostGuardrail({ ...base, currentUsd: 10 }).status).toBe("blocked");
+      expect(evaluateCostGuardrail({ ...base, currentUsd: 10, hardStopRatio: 1 }).status).toBe(
+        "blocked",
+      );
+    });
+
+    it("never lets the stop fall below the warning, which would hide the warning", () => {
+      const evaluation = evaluateCostGuardrail({ ...base, currentUsd: 8, hardStopRatio: 0.5 });
+      expect(evaluation.hardStopUsd).toBe(8);
+    });
+
+    it("still yields to an active override", () => {
+      const evaluation = evaluateCostGuardrail({
+        ...base,
+        currentUsd: 9,
+        hardStopRatio: 0.85,
+        overrideUntil: 2_000,
+        now: 1_000,
+      });
+      expect(evaluation.status).toBe("warning");
+      expect(evaluation.overrideActive).toBe(true);
+    });
+
+    it("names the stop in the refusal when it is below the cap", () => {
+      const message = evaluationMessage(
+        evaluateCostGuardrail({ ...base, currentUsd: 9, hardStopRatio: 0.85 }),
+      );
+      expect(message).toContain("hard stop at $8.50");
+      // At a full-cap stop the extra clause would be noise.
+      expect(evaluationMessage(evaluateCostGuardrail({ ...base, currentUsd: 11 }))).not.toContain(
+        "hard stop at",
+      );
+    });
   });
 });

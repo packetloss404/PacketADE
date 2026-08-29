@@ -3,6 +3,7 @@ import { FileText, Save, AlertTriangle, ArrowRightLeft } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { readFileContents, writeFileContents } from "@/lib/tauri";
 import { CardHeader } from "./CardHeader";
+import { formatTime } from "@/lib/time";
 
 const STARTER_TEMPLATE = `# Project Rules
 
@@ -197,11 +198,8 @@ export function ProjectRulesCard() {
         <div className="flex items-center gap-2">
           {lastSavedAt && (
             <span className="text-[10px] text-text-muted">
-              Saved{" "}
-              {new Date(lastSavedAt).toLocaleTimeString(undefined, {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
+              {/* Settings → Date & Time owns the zone. */}
+              Saved {formatTime(lastSavedAt)}
             </span>
           )}
           <button

@@ -6,6 +6,7 @@ import {
   type WorkspaceAgentsDogfoodEvent,
 } from "@/stores/workspaceAgentsDogfoodStore";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
+import { formatDateWithYear } from "@/lib/time";
 
 const HANDOFF_ROWS: Array<{
   event: WorkspaceAgentsDogfoodEvent;
@@ -120,7 +121,7 @@ export function WorkspaceAgentsDogfoodCard() {
           label="Migration audits"
           value={`${evidence.migration.audits} runs · ${evidence.migration.missingConversationReferences} missing refs · ${evidence.migration.orphanConversationWrappers} orphan wrappers`}
         />
-        <Metric label="Evidence since" value={new Date(evidence.startedAt).toLocaleDateString()} />
+        <Metric label="Evidence since" value={formatDateWithYear(evidence.startedAt)} />
       </div>
 
       <div className="mt-3 rounded border border-accent-line bg-accent-soft px-3 py-2">

@@ -76,6 +76,8 @@ export interface CostGuardrailEvaluation {
   currentUsd: number;
   limitUsd: number | null;
   warningUsd: number | null;
+  /** Spend at which a launch is refused — `limitUsd × hardStopRatio`. */
+  hardStopUsd: number | null;
   percentUsed: number | null;
   status: CostGuardrailEvaluationStatus;
   overrideActive: boolean;
@@ -253,12 +255,25 @@ export function computeCostGuardrailStatus(
   };
 }
 
+/**
+ * FAULT: the launch gate hard-coded its refusal at 100% of the cap, so
+ * Settings → "Hard stop at % · Block launches at this share" changed nothing
+ * on the one path that actually blocks a launch. The status/notification path
+ * (`scopeStatus`) had always honoured `hardStopThresholdPercent`, so the two
+ * halves of the same setting disagreed.
+ *
+ * `hardStopRatio` defaults to 1, which is exactly the old behaviour — and
+ * `DEFAULT_COST_GUARDRAIL_SETTINGS.hardStopThresholdPercent` is 100, so an
+ * existing user sees no change until they move the field.
+ */
 export function evaluateCostGuardrail(input: {
   key: string;
   label: string;
   currentUsd: number;
   limitUsd: number | null | undefined;
   warningRatio: number;
+  /** Share of the cap at which a launch is refused. Defaults to 1 (the cap). */
+  hardStopRatio?: number;
   overrideUntil?: number | null;
   now?: number;
 }): CostGuardrailEvaluation {
@@ -271,6 +286,13 @@ export function evaluateCostGuardrail(input: {
     Number.isFinite(input.warningRatio) && input.warningRatio > 0
       ? Math.min(1, input.warningRatio)
       : 0.8;
+  // A hard stop below the warning share would make the warning unreachable,
+  // so it is clamped up — the same ordering `normalizeCostGuardrailSettings`
+  // enforces on the persisted pair.
+  const hardStopRatio =
+    Number.isFinite(input.hardStopRatio) && (input.hardStopRatio as number) > 0
+      ? Math.max(warningRatio, Math.min(1, input.hardStopRatio as number))
+      : 1;
   const overrideActive = Boolean(
     input.overrideUntil && input.overrideUntil > (input.now ?? Date.now()),
   );
@@ -282,6 +304,7 @@ export function evaluateCostGuardrail(input: {
       currentUsd,
       limitUsd: null,
       warningUsd: null,
+      hardStopUsd: null,
       percentUsed: null,
       status: "off",
       overrideActive,
@@ -289,8 +312,9 @@ export function evaluateCostGuardrail(input: {
   }
 
   const percentUsed = (currentUsd / limitUsd) * 100;
+  const hardStopUsd = limitUsd * hardStopRatio;
   const status: CostGuardrailEvaluationStatus =
-    currentUsd >= limitUsd && !overrideActive
+    currentUsd >= hardStopUsd && !overrideActive
       ? "blocked"
       : currentUsd >= limitUsd * warningRatio
         ? "warning"
@@ -302,6 +326,7 @@ export function evaluateCostGuardrail(input: {
     currentUsd,
     limitUsd,
     warningUsd: limitUsd * warningRatio,
+    hardStopUsd,
     percentUsed,
     status,
     overrideActive,
@@ -310,7 +335,13 @@ export function evaluateCostGuardrail(input: {
 
 export function evaluationMessage(evaluation: CostGuardrailEvaluation): string {
   if (evaluation.status === "blocked" && evaluation.limitUsd !== null) {
-    return `${evaluation.label} is at $${evaluation.currentUsd.toFixed(2)} of its $${evaluation.limitUsd.toFixed(2)} limit. Approve an override before launching more autonomous work.`;
+    // Name the stop when it is below the cap, or the refusal reads as a bug:
+    // "$6 of its $10 limit" gives the user no clue why $6 was refused.
+    const stop =
+      evaluation.hardStopUsd !== null && evaluation.hardStopUsd < evaluation.limitUsd
+        ? ` (hard stop at $${evaluation.hardStopUsd.toFixed(2)})`
+        : "";
+    return `${evaluation.label} is at $${evaluation.currentUsd.toFixed(2)} of its $${evaluation.limitUsd.toFixed(2)} limit${stop}. Approve an override before launching more autonomous work.`;
   }
   if (evaluation.status === "warning" && evaluation.warningUsd !== null) {
     return `${evaluation.label} has passed the $${evaluation.warningUsd.toFixed(2)} warning threshold.`;

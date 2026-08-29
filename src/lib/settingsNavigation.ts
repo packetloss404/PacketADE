@@ -84,6 +84,11 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
           "wsl",
           "path",
           "restore",
+          // The bypass default and the GitHub auto-bind toggle live on this
+          // section's WorkspaceSettingsCard but were unsearchable.
+          "bypass",
+          "permission prompts",
+          "auto-detect repo",
         ],
       },
       {
@@ -138,7 +143,23 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
         label: "Agent behavior",
         description: "Conversation defaults, profiles, cleanup, failover, and onboarding.",
         scopes: ["App", "New conversations"],
-        keywords: ["profile", "worktree", "archive", "failover", "conversation", "tools", "rail"],
+        keywords: [
+          "profile",
+          "worktree",
+          "archive",
+          "failover",
+          "conversation",
+          "tools",
+          // `rail` was dropped: the "Start right rail collapsed" control was
+          // retired (see PlaceboSettingsControls.test.tsx) and searching for
+          // it landed on a section that no longer offers it.
+          "transcript",
+          "density",
+          "verbose",
+          "summary",
+          "cleanup",
+          "onboarding",
+        ],
       },
       {
         key: "providers",
@@ -179,9 +200,26 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
       {
         key: "routing",
         label: "Task Role Defaults",
-        description: "Desired agent assignments by task role.",
+        description:
+          "Desired agent assignments by task role, and the provider for PacketBench's own auxiliary AI tasks.",
         scopes: ["App", "New conversations", "New Flights"],
-        keywords: ["routing", "task", "role", "review", "research", "debug", "agent"],
+        keywords: [
+          "routing",
+          "task",
+          "role",
+          "review",
+          "research",
+          "debug",
+          "agent",
+          // The auxiliary-task half of this card was entirely unsearchable.
+          "auxiliary",
+          "aux",
+          "spec import",
+          "pr description",
+          "triage",
+          "side chat",
+          "cheapest",
+        ],
       },
       {
         key: "packet-agent",
@@ -227,7 +265,12 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
         key: "issues",
         label: "Issues",
         description: "Ticket identifiers, epics, labels, and issue organization.",
-        scopes: ["Project"],
+        // FAULT: badged "Project". The ticket prefix, epics, and labels are
+        // held in one global slice — `issueStore` writes them to a single
+        // localStorage key and `storage.rs::save_issues` to one state file,
+        // neither keyed by project path — so switching projects does not
+        // switch any of them.
+        scopes: ["App"],
         keywords: ["ticket", "prefix", "epic", "label", "taxonomy"],
       },
       {

@@ -63,6 +63,20 @@ export function bypassCaveat(agentIds: Iterable<string>): string | null {
 }
 
 /**
+ * The caveat for a surface that sets the bypass DEFAULT rather than applying
+ * it — Settings → Workspace defaults, which has no pane list to check because
+ * the workspace it pre-checks does not exist yet.
+ *
+ * Derived from the same table as {@link bypassCaveat} over every CLI the PTY
+ * allowlist can launch, so the app-wide default can never promise more than a
+ * per-workspace launch delivers. Returns `null` only if every launchable CLI
+ * gains a flag.
+ */
+export function bypassDefaultCaveat(): string | null {
+  return bypassCaveat(Object.keys(AGENT_LABELS));
+}
+
+/**
  * What the workspace header may claim about the toggle. "partial" exists
  * because "on" was a straight overstatement whenever the workspace held a CLI
  * the flag never reaches.
