@@ -1,6 +1,15 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { GripHorizontal, Plus, Play, X, Maximize2, Minimize2, MoreVertical } from "lucide-react";
+import {
+  AlertTriangle,
+  GripHorizontal,
+  Plus,
+  Play,
+  X,
+  Maximize2,
+  Minimize2,
+  MoreVertical,
+} from "lucide-react";
 import { MosaicWindowContext } from "react-mosaic-component";
 import { TerminalPane, type TerminalHeaderRenderState } from "@/components/session/TerminalPane";
 import { useAgentStore } from "@/stores/agentStore";
@@ -25,16 +34,7 @@ import { accountLoginCliForSlot, useAccountLaunchGate } from "@/hooks/useAccount
 import type { WorkspacePane as WorkspacePaneType } from "@/types/workspace";
 import { useTerminalSettingsStore } from "@/stores/terminalSettingsStore";
 import { resolveTerminalShellLaunch } from "@/lib/terminalShells";
-
-/** Per-agent CLI flag to bypass all permission prompts.
- * OpenCode is intentionally omitted — it has no equivalent launch flag and
- * passing one makes it print `--help` and exit. Permissions are configured
- * inside the OpenCode TUI/config instead. */
-const BYPASS_FLAGS: Record<string, string> = {
-  "claude-code": "--dangerously-skip-permissions",
-  // codex >= 0.x dropped `--full-auto`; the full-bypass equivalent is this.
-  codex: "--dangerously-bypass-approvals-and-sandbox",
-};
+import { BYPASS_FLAGS } from "@/lib/bypassFlags";
 
 interface WorkspacePaneProps {
   pane: WorkspacePaneType;
@@ -183,6 +183,11 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
     pane.agentId === "terminal"
       ? `${agentName} · ${isRemote ? "Remote login shell" : terminalShellLaunch.label}`
       : agentName;
+  // Only a local terminal pane actually launches the configured shell; a
+  // remote pane always gets the host's login shell, so its stored selection
+  // was never in play and there is nothing to report.
+  const shellFallbackReason =
+    pane.agentId === "terminal" && !isRemote ? terminalShellLaunch.fallbackReason : undefined;
   const localPlatform =
     typeof navigator !== "undefined" &&
     /windows|win32|win64/i.test(navigator.userAgent || navigator.platform || "")
@@ -314,6 +319,19 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
           <span className={`truncate text-ui font-semibold ${c.text}`} title={paneIdentity}>
             {paneIdentity}
           </span>
+          {/* FAULT: an unhonourable custom-shell selection fell back to
+              auto-detect with no signal at all — the header simply named a
+              shell the user had not chosen. */}
+          {shellFallbackReason && (
+            <span
+              role="img"
+              aria-label={shellFallbackReason}
+              title={shellFallbackReason}
+              className="shrink-0 text-accent-amber"
+            >
+              <AlertTriangle size={11} />
+            </span>
+          )}
           {/* Right next to the agent identity: two tiles running the same CLI
               under two logins are otherwise identical. Ambient panes render
               nothing here. */}
@@ -621,6 +639,7 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
     [
       agentConfig,
       paneIdentity,
+      shellFallbackReason,
       mosaicWindowActions,
       isZoomed,
       setZoomedPane,

@@ -154,9 +154,18 @@ interface IssueStore {
    * it can be invoked from anywhere (slash commands, hotkeys, plan
    * promotion, etc.) without re-implementing the workspace plumbing.
    */
-  sendIssueToWorkspace: (
-    issueId: string,
-  ) => Promise<{ workspaceId: string; sessionId: string } | null>;
+  sendIssueToWorkspace: (issueId: string) => Promise<{
+    workspaceId: string;
+    sessionId: string;
+    /**
+     * Present when the workspace opened but the auto-Done close loop will NOT
+     * fire for it (no per-Issue worktree, so no `prepare-commit-msg` hook).
+     * Callers must show it: the Issue card paints "→ Workspace" either way, so
+     * without this the user is told the handoff worked in full when half of it
+     * silently did not.
+     */
+    warning?: string;
+  } | null>;
 }
 
 const generateIssueId = () => genId("issue");
@@ -684,8 +693,15 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
     // error and fall back to the original project path. The user still
     // gets a working pane — they just won't get auto-Done from this
     // session and will have to flip the Issue status manually.
+    //
+    // FAULT: both fallbacks below used to be console.warn only. The handoff
+    // then looked complete — the card grew its "→ Workspace" pill and the
+    // Issue flipped to in_progress — while the half the user actually relies
+    // on (the Issue closing itself on commit) was quietly not wired up. The
+    // reason now rides back on the return value for the caller to show.
     const parsedIssueNumber = ticketNumMatch ? Number(ticketNumMatch[1]) : NaN;
     let worktreePath = projectPath;
+    let warning: string | undefined;
     if (Number.isFinite(parsedIssueNumber) && parsedIssueNumber > 0) {
       try {
         worktreePath = await createIssueWorktree(
@@ -701,12 +717,19 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
           err,
         );
         worktreePath = projectPath;
+        warning =
+          `${ticketTag}: worktree setup failed, so this session runs in the project root ` +
+          `and will not close the Issue automatically on commit. ` +
+          `${err instanceof Error ? err.message : String(err)}`;
       }
     } else {
       console.warn(
         `[issueStore] Issue ${issueId} has no numeric ticket suffix (ticketTag="${ticketTag}"); ` +
           `skipping worktree provisioning — auto-Done close-loop will NOT fire for this session.`,
       );
+      warning =
+        `${ticketTag} has no numeric ticket number, so no per-Issue worktree was created ` +
+        `and this session will not close the Issue automatically on commit.`;
     }
 
     const workspaceId = workspaceState.createWorkspace(wsName, [getPreferredWorkspaceCli()], worktreePath, {
@@ -736,7 +759,7 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
     useWorkspaceStore.getState().setActiveWorkspace(workspaceId);
     useAppStore.getState().setActiveView("workspace");
 
-    return { workspaceId, sessionId: paneId };
+    return { workspaceId, sessionId: paneId, ...(warning ? { warning } : {}) };
   },
 }));
 

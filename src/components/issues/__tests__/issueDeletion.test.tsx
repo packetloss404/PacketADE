@@ -16,6 +16,7 @@
  */
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { ToastProvider } from "@/components/ui/Toast";
 import type { Flight } from "@/types/flight";
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
@@ -103,7 +104,7 @@ afterEach(() => {
 describe("IssueBoard — deleting an issue from its card", () => {
   it("requires the confirm; cancel leaves the board untouched", () => {
     const issue = seedIssue();
-    render(<IssueBoard />);
+    render(<IssueBoard />, { wrapper: ToastProvider });
 
     fireEvent.click(screen.getByRole("button", { name: `Delete issue ${issue.ticketId}` }));
     expect(issues()).toHaveLength(1);
@@ -116,7 +117,7 @@ describe("IssueBoard — deleting an issue from its card", () => {
 
   it("deletes and persists only from the confirm button", async () => {
     const issue = seedIssue();
-    render(<IssueBoard />);
+    render(<IssueBoard />, { wrapper: ToastProvider });
 
     fireEvent.click(screen.getByRole("button", { name: `Delete issue ${issue.ticketId}` }));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
@@ -144,7 +145,7 @@ describe("IssueBoard — deleting an issue from its card", () => {
       workspaces: [{ id: "ws-1", name: "auth-fix", projectPath: "/test", panes: [] } as never],
     });
 
-    render(<IssueBoard />);
+    render(<IssueBoard />, { wrapper: ToastProvider });
     fireEvent.click(screen.getByRole("button", { name: `Delete issue ${issue.ticketId}` }));
 
     // The record is NAMED, not a bare "Are you sure?".
@@ -163,7 +164,7 @@ describe("IssueBoard — deleting an issue from its card", () => {
     const issue = seedIssue({ flightId: "flight-1" });
     useFlightStore.setState({ flights: [makeFlight({ issueIds: [issue.id, "issue-other"] })] });
 
-    render(<IssueBoard />);
+    render(<IssueBoard />, { wrapper: ToastProvider });
     fireEvent.click(screen.getByRole("button", { name: `Delete issue ${issue.ticketId}` }));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
@@ -181,7 +182,7 @@ describe("IssueBoard — deleting an issue from its card", () => {
     useIssueStore.getState().addBlockedBy(blocked.id, blocker.id);
     expect(issues().find((i) => i.id === blocked.id)!.blockedBy).toContain(blocker.id);
 
-    render(<IssueBoard />);
+    render(<IssueBoard />, { wrapper: ToastProvider });
     fireEvent.click(screen.getByRole("button", { name: `Delete issue ${blocker.ticketId}` }));
     expect(screen.getByText("1 dependency link on other issues is cleared.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
@@ -195,7 +196,7 @@ describe("IssueBoard — deleting an issue from its card", () => {
 describe("IssueDetail — deleting the issue you have open", () => {
   it("confirms first, then deletes and closes the detail panel", async () => {
     const issue = seedIssue();
-    render(<IssueBoard />);
+    render(<IssueBoard />, { wrapper: ToastProvider });
 
     // Open the detail panel from the card.
     fireEvent.click(screen.getByText(issue.title));
@@ -223,7 +224,7 @@ describe("IssueDetail — deleting the issue you have open", () => {
 
   it("closes itself when the open issue is deleted out from under it", async () => {
     const issue = seedIssue();
-    render(<IssueBoard />);
+    render(<IssueBoard />, { wrapper: ToastProvider });
 
     fireEvent.click(screen.getByText(issue.title));
     expect(await screen.findByText(`${issue.ticketId}: ${issue.title}`)).toBeInTheDocument();

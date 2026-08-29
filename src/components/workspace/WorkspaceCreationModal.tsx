@@ -18,6 +18,7 @@ import { parseGithubRemote } from "@/lib/git";
 import { storageKey } from "@/lib/brand";
 import { AdvancedAccordion } from "@/components/agents/composer/AdvancedAccordion";
 import { getPreferredWorkspaceCli } from "@/lib/workspaceCliDefaults";
+import { bypassCaveat } from "@/lib/bypassFlags";
 import { isAccountAwareSlot, resolveAccountId } from "@/lib/sessionAccountDefaults";
 import { SessionAccountPicker } from "@/components/workspace/SessionAccountPicker";
 import { isLocalWorkspace, type WorkspaceAgentSlot } from "@/types/workspace";
@@ -361,6 +362,9 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
 
   // CLI sessions with model/permission configuration (not a plain shell).
   const selectedCliAgents = AGENT_SLOTS.filter((s) => selected.has(s.id) && s.cliId);
+
+  // Which of the picked CLIs the bypass toggle cannot actually reach.
+  const bypassSelectionCaveat = bypassCaveat(selectedCliAgents.map((s) => s.id));
 
   // Count of non-default per-agent model overrides — feeds the Advanced
   // section's collapsed summary so an active override stays visible.
@@ -970,10 +974,12 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                     Bypass permissions
                   </span>
                 </label>
-                {bypassPermissions && selected.has("opencode") && (
-                  <span className="text-meta text-text-muted ml-5">
-                    Not applied to OpenCode — no equivalent CLI flag in current release. Approve tools in the TUI or set rules in opencode.json.
-                  </span>
+                {/* FAULT: this caveat used to name OpenCode only, so a
+                    PacketCode session showed "Bypass permissions" checked while
+                    the flag was never passed. `bypassCaveat` derives the list
+                    from the same table the spawn path reads. */}
+                {bypassPermissions && bypassSelectionCaveat && (
+                  <span className="text-meta text-text-muted ml-5">{bypassSelectionCaveat}</span>
                 )}
               </div>
             )}

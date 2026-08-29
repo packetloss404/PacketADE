@@ -183,6 +183,52 @@ describe("launchConversation — fallback to project root on provisioning failur
     warnSpy.mockRestore();
   });
 
+  // FAULT: the fallback was a console.warn only, so a user who asked for
+  // worktree isolation got the project root with nothing telling them the
+  // isolation they picked had been revoked.
+  it("reports the root fallback through setLaunchError, not just the console", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const setLaunchError = vi.fn();
+    getGitBranchMock.mockResolvedValue("main");
+    createConversationWorktreeMock.mockRejectedValue(new Error("worktree add failed"));
+
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { launchConversation } = await import("@/lib/launchConversation");
+
+    launchConversation(baseParams({ composerMode: "worktree", setLaunchError }));
+
+    await vi.waitFor(() => {
+      expect(useAgentTaskStore.getState().conversations[0]).toBeDefined();
+    });
+
+    const message = setLaunchError.mock.calls
+      .map(([arg]) => arg)
+      .find((arg): arg is string => typeof arg === "string");
+    expect(message).toBeDefined();
+    expect(message).toContain("project root");
+    // The underlying git failure has to survive into the message — "it failed"
+    // with no reason is barely better than silence.
+    expect(message).toContain("worktree add failed");
+    warnSpy.mockRestore();
+  });
+
+  it("does not raise a launch error when provisioning succeeds", async () => {
+    const setLaunchError = vi.fn();
+    getGitBranchMock.mockResolvedValue("main");
+    createConversationWorktreeMock.mockResolvedValue(`${SELECTED_REPO}/.pkt-worktrees/ok`);
+
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { launchConversation } = await import("@/lib/launchConversation");
+
+    launchConversation(baseParams({ composerMode: "worktree", setLaunchError }));
+
+    await vi.waitFor(() => {
+      expect(useAgentTaskStore.getState().conversations[0]?.worktree).toBeDefined();
+    });
+
+    expect(setLaunchError.mock.calls.every(([arg]) => arg === null)).toBe(true);
+  });
+
   it("local (non-worktree) mode never provisions a worktree and stamps none", async () => {
     const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
     const { launchConversation } = await import("@/lib/launchConversation");

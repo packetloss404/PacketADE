@@ -51,6 +51,36 @@ describe("terminal shell profiles", () => {
     ).toMatchObject({ command: "powershell", label: "Windows PowerShell (Auto)" });
   });
 
+  // FAULT: an unhonourable custom selection fell back to auto with no trace,
+  // so the pane launched a shell the user had not chosen and looked as though
+  // they had never configured one.
+  it("reports why a custom shell was downgraded to auto-detect", () => {
+    const unsupported = resolveTerminalShellLaunch(
+      { profile: "custom", executable: "C:\\Windows\\System32\\calc.exe" },
+      "powershell",
+    );
+    expect(unsupported.fallbackReason).toContain("calc.exe");
+    expect(unsupported.fallbackReason).toContain("not a supported shell program");
+
+    const missingExecutable = resolveTerminalShellLaunch({ profile: "custom" }, "bash");
+    expect(missingExecutable.command).toBe("bash");
+    expect(missingExecutable.fallbackReason).toContain("no executable set");
+
+    // An honoured selection — and every non-custom profile, including the
+    // plain `auto` one — must carry no reason, or the pane would flag a
+    // downgrade that never happened.
+    expect(
+      resolveTerminalShellLaunch(
+        { profile: "custom", executable: "C:\\Tools\\pwsh.exe" },
+        "powershell",
+      ).fallbackReason,
+    ).toBeUndefined();
+    expect(resolveTerminalShellLaunch(undefined, "powershell").fallbackReason).toBeUndefined();
+    expect(
+      resolveTerminalShellLaunch({ profile: "git-bash" }, "powershell").fallbackReason,
+    ).toBeUndefined();
+  });
+
   it("normalizes corrupted persistence and parses quoted startup args", () => {
     expect(normalizeTerminalShellSelection({ profile: "unknown" })).toEqual({ profile: "auto" });
     expect(parseTerminalShellArgs('--login --rcfile "C:/shell files/rc"')).toEqual([

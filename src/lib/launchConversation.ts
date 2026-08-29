@@ -74,7 +74,9 @@ export interface LaunchConversationParams {
  * including the `baseBranch` that was previously computed then discarded — is
  * stamped onto the conversation's `worktree` field so later phases can land or
  * discard it. On provisioning failure the launch falls back to the project
- * root exactly as before and no `worktree` field is stamped.
+ * root and no `worktree` field is stamped — and, since that silently revokes
+ * the isolation the user asked for, the fallback is reported through
+ * `setLaunchError` rather than only to the console.
  */
 export function launchConversation({
   rawText,
@@ -232,9 +234,20 @@ export function launchConversation({
               state: "active",
             };
           } catch (e) {
+            // FAULT: this fallback used to be a bare console.warn. The user
+            // picked "worktree" precisely so the agent could not touch the
+            // main checkout — running in the project root instead is the one
+            // outcome they were guarding against, so it has to reach the UI.
+            // The launch still proceeds (a working pane beats no pane), but
+            // `setLaunchError` puts the downgrade in front of them.
+            const reason = e instanceof Error ? e.message : String(e);
             console.warn(
               "Worktree provisioning failed; falling back to project root:",
               e,
+            );
+            setLaunchError(
+              `Worktree provisioning failed — this agent is running in the project root, ` +
+                `NOT an isolated worktree. ${reason}`,
             );
           }
         }

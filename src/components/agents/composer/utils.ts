@@ -109,8 +109,19 @@ export function fileToImageAttachment(file: File): Promise<ImageAttachment> {
   });
 }
 
+/**
+ * FAULT: this used to advertise "Ctrl+N for new agent". It is rendered under
+ * the LAUNCH composer only, where that promise is wrong twice over:
+ * `useAgentTabHoists` returns early on `isEditableTarget`, so the chord is
+ * inert while the caret is in the composer it is printed beneath; and even
+ * when it does fire from the Agents route it runs
+ * `selectConversation(null)` — already the state the launch composer IS. The
+ * chord was not made to fire from a textarea instead, because Ctrl+N is
+ * caret-down in macOS text fields and stealing it would break editing to
+ * deliver a no-op. Every other hint here is live from inside the composer.
+ */
 export const COMPOSER_HELP_TEXT =
-  "Enter to send · Shift+Enter for newline · Ctrl+N for new agent · @ to mention a file · / to expand a prompt template · drag/paste images";
+  "Enter to send · Shift+Enter for newline · @ to mention a file · / to expand a prompt template · drag/paste images";
 
 /**
  * The composer placeholder must not promise an affordance this session cannot

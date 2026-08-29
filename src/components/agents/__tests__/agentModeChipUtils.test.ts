@@ -9,6 +9,7 @@ import {
   nextModeIn,
   SANDBOX_MODE_ORDER,
   SANDBOX_POSTURE_LABEL,
+  SANDBOX_POSTURE_TOOLTIP,
 } from "../agentModeChipUtils";
 
 function conversation(overrides: Partial<AgentConversation>): AgentConversation {
@@ -118,7 +119,7 @@ describe("capability-filtered mode set", () => {
     expect(modesForApprovals(false)).toEqual(["plan", "default", "yolo"]);
   });
 
-  it("excludes the approval-implying manual and deny postures for Codex", () => {
+  it("excludes the approval-implying manual and deny postures", () => {
     expect(modesForApprovals(false)).not.toContain("manual");
     expect(modesForApprovals(false)).not.toContain("deny");
   });
@@ -127,6 +128,17 @@ describe("capability-filtered mode set", () => {
     expect(SANDBOX_POSTURE_LABEL.plan).toBe("Read-only");
     expect(SANDBOX_POSTURE_LABEL.default).toBe("Workspace-write");
     expect(SANDBOX_POSTURE_LABEL.yolo).toBe("Full access");
+  });
+
+  // FAULT: the tooltip this branch renders named "Codex (exec)" — a provider
+  // no catalog row has offered since 2026-07. The branch is deliberately KEPT
+  // (see the DECISION note on SANDBOX_MODE_ORDER) because "this adapter cannot
+  // pause for approval" is a real adapter property, but a future approval-
+  // incapable adapter is not Codex, so the copy must not name one.
+  it("explains the restriction without naming a removed provider", () => {
+    expect(SANDBOX_POSTURE_TOOLTIP).not.toMatch(/codex/i);
+    expect(SANDBOX_POSTURE_TOOLTIP).toContain("can't pause for approvals");
+    expect(SANDBOX_POSTURE_TOOLTIP).toContain("sandbox is the safety boundary");
   });
 
   it("cycles only through the filtered order and wraps around", () => {

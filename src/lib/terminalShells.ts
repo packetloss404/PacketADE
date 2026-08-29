@@ -165,6 +165,13 @@ export interface TerminalShellLaunch {
   command: string;
   args: string[];
   label: string;
+  /**
+   * Set only when the stored selection could NOT be honoured and auto-detect
+   * was substituted. The pane header renders it, because otherwise a workspace
+   * configured for a custom shell launches a different shell with nothing
+   * anywhere saying why.
+   */
+  fallbackReason?: string;
 }
 
 function autoShellLabel(command: string): string {
@@ -224,7 +231,20 @@ export function resolveTerminalShellLaunch(
       if (executable && isSupportedCustomShell(executable)) {
         return { command: executable, args: selection.args ?? [], label: "Custom shell" };
       }
-      return { command: autoCommand, args: [], label: autoShellLabel(autoCommand) };
+      // FAULT: this downgrade used to be indistinguishable from never having
+      // configured a custom shell at all. A selection can reach here long
+      // after the Settings card validated it — it is persisted per workspace
+      // and per pane, and an executable that is supported on one platform is
+      // not on another — so the reason travels with the launch.
+      return {
+        command: autoCommand,
+        args: [],
+        label: autoShellLabel(autoCommand),
+        fallbackReason: executable
+          ? `Custom shell "${executable}" is not a supported shell program ` +
+            `(${CUSTOM_SHELL_PROGRAMS.join(", ")}). Auto-detect is running instead.`
+          : "Custom shell profile has no executable set. Auto-detect is running instead.",
+      };
     case "auto":
     default:
       // Compatibility contract: byte-for-byte the old command/args choice.

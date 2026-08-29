@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
+import { ToastProvider } from "@/components/ui/Toast";
 import { IssueBoard } from "@/components/issues/IssueBoard";
 import { useIssueStore } from "@/stores/issueStore";
 import { useFlightStore } from "@/stores/flightStore";
@@ -26,7 +27,7 @@ describe("IssueBoard column layout", () => {
   });
 
   it("renders all six columns in a single non-wrapping row", () => {
-    const { container } = render(<IssueBoard />);
+    const { container } = render(<IssueBoard />, { wrapper: ToastProvider });
 
     const columns = screen.getAllByTestId("issue-board-column");
     expect(columns).toHaveLength(BOARD_COLUMN_LABELS.length);
@@ -55,7 +56,7 @@ describe("IssueBoard column layout", () => {
   });
 
   it("labels the six columns in board order", () => {
-    render(<IssueBoard />);
+    render(<IssueBoard />, { wrapper: ToastProvider });
     const headings = screen
       .getAllByTestId("issue-board-column")
       .map((col) => col.textContent ?? "");
@@ -72,7 +73,7 @@ describe("New Issue modal dismissal", () => {
   });
 
   it("closes on Escape without creating an issue", () => {
-    render(<IssueBoard />);
+    render(<IssueBoard />, { wrapper: ToastProvider });
 
     fireEvent.click(screen.getByRole("button", { name: /New issue/i }));
     expect(screen.getByText("New Issue")).toBeInTheDocument();

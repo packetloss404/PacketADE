@@ -5,6 +5,7 @@ import { useFlightStore } from "@/stores/flightStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore } from "@/stores/appStore";
 import { getLabelColor } from "@/lib/colors";
+import { useToast } from "@/components/ui/Toast";
 
 interface IssueCardProps {
   issue: Issue;
@@ -50,6 +51,7 @@ export function IssueCard({
   const flights = useFlightStore((s) => s.flights);
   const flight = flights.find((f) => f.issueIds.includes(issue.id)) ?? null;
   const sendIssueToWorkspace = useIssueStore((s) => s.sendIssueToWorkspace);
+  const toast = useToast();
 
   // v0.8.5 — only show the "→ Workspace" pill when the linked workspace
   // still exists. If the user archived/deleted the workspace, fall back
@@ -72,7 +74,11 @@ export function IssueCard({
     if (sending || isLinked) return;
     setSending(true);
     try {
-      await sendIssueToWorkspace(issue.id);
+      const result = await sendIssueToWorkspace(issue.id);
+      // The card paints "→ Workspace" on success regardless, so a degraded
+      // handoff (no per-Issue worktree ⇒ no auto-Done on commit) has to say so
+      // here or it never reaches the user at all.
+      if (result?.warning) toast.error(result.warning);
     } finally {
       setSending(false);
     }
