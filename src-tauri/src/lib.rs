@@ -413,6 +413,7 @@ pub fn run() {
             commands::github::git_host_set_token,
             commands::github::git_host_has_token,
             commands::github::git_host_set_active,
+            commands::git_host_probe::git_host_probe_credential,
             commands::github::github_device_flow_start,
             commands::github::github_device_flow_poll,
             commands::github::github_oauth_configured,
