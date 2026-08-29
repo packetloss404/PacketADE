@@ -65,4 +65,36 @@ describe("corpusRelevanceScores", () => {
     // must not widen injection, so this pins the old behaviour deliberately.
     expect(relevanceScores("auth", ["authentication uses JWT"])[0]).toBe(0);
   });
+
+  it("matches a camelCase identifier from prose, and prose from an identifier", () => {
+    // The asymmetry that used to bite: prose->identifier worked via raw
+    // substring, identifier->prose did not.
+    const [proseDoc] = corpusRelevanceScores("SshConfig", ["the ssh config record is canonical"]);
+    expect(proseDoc.score).toBeGreaterThan(0);
+
+    const [identDoc] = corpusRelevanceScores("host fingerprint", [
+      "always populate SshConfig.hostFingerprint",
+    ]);
+    expect(identDoc.score).toBeGreaterThan(0);
+  });
+
+  it("splits PascalCase runs with a trailing word", () => {
+    const [hit] = corpusRelevanceScores("chat pane", ["AgentChatPane owns the transcript"]);
+    expect(hit.score).toBeGreaterThan(0);
+  });
+
+  it("expands a domain acronym in both directions", () => {
+    const [expansion] = corpusRelevanceScores("pseudoterminal", ["the PTY exited cleanly"]);
+    expect(expansion.score).toBeGreaterThan(0);
+
+    const [acronym] = corpusRelevanceScores("PTY", ["the pseudoterminal exited cleanly"]);
+    expect(acronym.score).toBeGreaterThan(0);
+  });
+
+  it("still leaves the injection scorer untouched by any of this", () => {
+    // camelCase splitting and acronym expansion are Ask-only.
+    expect(relevanceScores("SshConfig", ["the ssh config record"])[0]).toBe(0);
+    expect(relevanceScores("pseudoterminal", ["the PTY exited"])[0]).toBe(0);
+  });
+
 });

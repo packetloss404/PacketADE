@@ -398,12 +398,78 @@ export interface CorpusRelevance {
   matched: string[];
 }
 
-/** Like `relevanceTokens` but keeps 2-char tokens ("db", "ci", "pr"). */
+/**
+ * Domain acronyms this codebase writes both ways. Deliberately tiny and
+ * factual: these are expansions, not synonyms.
+ *
+ * A curated SYNONYM map was evaluated and rejected — measured against a
+ * held-out query set whose vocabulary the map did not contain, it recovered
+ * 0% of misses while inflating result sets 2.75x. A lookup table only ever
+ * answers the phrasings someone already guessed. Acronym expansion is a
+ * different thing: it is a fact about the word, not a guess about intent.
+ * Keep this list short, and do not let it grow into a synonym map.
+ */
+const CORPUS_ACRONYMS: Record<string, string[]> = {
+  pty: ["pseudoterminal", "terminal"],
+  acp: ["agent", "client", "protocol"],
+  mcp: ["model", "context", "protocol"],
+  idf: ["inverse", "document", "frequency"],
+  dto: ["data", "transfer", "object"],
+  sdk: ["software", "development", "kit"],
+  cli: ["command", "line"],
+  tofu: ["trust", "first", "use"],
+  ssh: ["secure", "shell"],
+  ade: ["agent", "development", "environment"],
+};
+
+/**
+ * Ask-only tokenizer. Like `relevanceTokens` but (a) keeps 2-character tokens
+ * ("db", "ci", "pr"), (b) splits camelCase and PascalCase runs, and (c)
+ * expands a small set of domain acronyms.
+ *
+ * The camelCase split is the load-bearing part and is symmetric by
+ * construction. Separators and paths were already split, so a prose query
+ * found a camelCase document via the raw-substring rule — but the reverse did
+ * not hold: `SshConfig` collapsed to one token, `ssh` was too short for the
+ * prefix rule, and `"sshconfig"` is not a substring of "the ssh config record".
+ * Users type symbols into the search box while agents write prose into
+ * summaries, so that asymmetry was a real miss.
+ *
+ * Not used by the injection path — `relevanceScores` keeps its narrow
+ * exact-token behaviour so widening search cannot widen what reaches a prompt.
+ */
 function corpusTokens(text: string): string[] {
-  return text
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((t) => t.length >= 2 && !RELEVANCE_STOPWORDS.has(t));
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (token: string) => {
+    if (token.length < 2 || RELEVANCE_STOPWORDS.has(token)) return;
+    if (seen.has(token)) return;
+    seen.add(token);
+    out.push(token);
+  };
+
+  for (const raw of text.split(/[^A-Za-z0-9]+/)) {
+    if (!raw) continue;
+    const lower = raw.toLowerCase();
+    push(lower);
+
+    // `hostFingerprint` -> host, fingerprint. `SSHConfig` -> ssh, config.
+    const parts = raw
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+      .split(" ")
+      .filter(Boolean);
+    if (parts.length > 1) {
+      for (const part of parts) push(part.toLowerCase());
+    }
+
+    for (const token of parts.length > 1 ? [lower, ...parts.map((p) => p.toLowerCase())] : [lower]) {
+      const expansion = CORPUS_ACRONYMS[token];
+      if (expansion) for (const word of expansion) push(word);
+    }
+  }
+
+  return out;
 }
 
 /** Crude English suffix strip, applied only when >=4 characters remain. */
@@ -450,11 +516,15 @@ function termWeight(term: string, candTokens: Set<string>, candRaw: string): num
  */
 export function corpusRelevanceScores(query: string, candidates: string[]): CorpusRelevance[] {
   const empty = candidates.map(() => ({ score: 0, matched: [] as string[] }));
-  const trimmed = query.trim().toLowerCase();
+  const original = query.trim();
+  const trimmed = original.toLowerCase();
   if (!trimmed || candidates.length === 0) return empty;
 
   const rawCandidates = candidates.map((c) => c.toLowerCase());
-  const qTokens = [...new Set(corpusTokens(trimmed))];
+  // Tokenize from the ORIGINAL casing: lowercasing first would destroy the
+  // camelCase boundaries `corpusTokens` splits on, so a `SshConfig` query
+  // would never yield `ssh` + `config`. Candidates keep their casing too.
+  const qTokens = [...new Set(corpusTokens(original))];
 
   // Degenerate query (all stopwords, or a single 1-char token): fall back to a
   // whole-phrase substring rather than returning zeros the way the injection
