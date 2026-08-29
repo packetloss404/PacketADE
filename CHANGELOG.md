@@ -9,14 +9,77 @@ task list.
 
 ## [0.12.0] - 2026-08-28
 
-**Not packaged.** No installer exists at this version; the artifacts recorded
-under 0.11.0 below are still the newest bundles. Everything here was verified
-from source only, so the packaged paths — the `LEGACY_*` data-dir, keyring, and
-localStorage migrators most of all — remain untested at this version.
+Windows artifacts, built 2026-08-28 21:13 from `544e4cc6`, **unsigned**:
 
-Gates at this tree: `cargo check` clean, 798 Rust lib tests (2 ignored) + 31
+| Artifact | SHA-256 |
+| --- | --- |
+| `PacketBench_0.12.0_x64-setup.exe` (NSIS, 85.3 MiB) | `60e63fbbd683220ea1744c1b7cd28ac036a20aefef71f44f6500cec0123ecf3a` |
+| `PacketBench_0.12.0_x64_en-US.msi` (133.0 MiB) | `cb12c50ee74f632311d3ddb152a71674ffe19d4c6f8b99c9f91dc6682d80348c` |
+
+> **Built, not accepted — and the acceptance matrix has still only partly run.**
+> Section 1 of `dev/acceptance-0.11.0.md` (the migration path) was executed
+> against source and a copy of a real legacy data dir; it found two defects, one
+> fixed below and one open. Sections 2–5 — launch and lifecycle, dictation on real
+> hardware, analytics, and the two-display Monitor matrix — have **not** run.
+> They need a person at the keyboard with the headset attached. No installed
+> upgrade of this package has been performed. The artifacts live in
+> `C:/Users/ianwalmsley/packetbench-build/release/bundle/`, not in the repo.
+>
+> An earlier pair of 0.12.0 bundles was produced at 21:00 and deleted: that build
+> spanned a source edit, so it could not be tied to a commit. Only the hashes
+> above are real.
+
+Gates at this tree: `cargo check` clean, 803 Rust lib tests (2 ignored) + 31
 `acp_stream` passing, `tsc --noEmit` 0 errors, `pnpm lint` 0 errors, `vitest run`
 2372/2372 across 264 files, `check:tauri-schema` clean.
+
+### Fixed — the rename stranded a shared legacy data dir
+
+`classify_legacy_dir` tested the packetcode-TUI marker list first and
+unconditionally, so a `~/.packetade` carrying both shapes read as `Foreign` and
+the entire migration was vetoed — abandoning our own state living in the same
+directory.
+
+Found on a real machine: `~/.packetade` held `config.toml` and `cost-tally.json`,
+folded in by the earlier PacketCode → PacketADE rename, beside a live
+`state.v1.json` at version 1471 with 14 issues and 3 workspaces. It classified
+`Foreign`, a fresh `~/.packetbench` was created, and every one of those issues
+and workspaces silently stopped existing as far as the app was concerned. Nothing
+was deleted — the app simply stopped reading them.
+`classify_legacy_dir_lets_the_tui_veto_win` pinned that precedence, so the suite
+endorsed it.
+
+The veto exists to stop us *destroying* a TUI home, and a blanket veto
+over-served that. Such a directory is now `Mixed`: only our own known entries are
+**copied** into the new dir, and the legacy directory is left exactly as found —
+nothing of the TUI's is moved, renamed, or deleted. A TUI-only directory is still
+skipped outright, and the rescue never overwrites an entry the new dir already
+has, because merging two live states is not a decision a migration can make.
+
+Verified against a copy of the real directory above: classified `Mixed`, all
+41,885 bytes of `state.v1.json` recovered byte-identically with its 14 issues and
+3 workspaces, `config.toml` and `cost-tally.json` left behind, legacy dir intact.
+
+This does not retroactively rescue a machine where `~/.packetbench` already
+exists — `migrate_data_dir_in` still returns early there, by design.
+
+### Known defect — localStorage does not migrate across a packaged upgrade
+
+`migrateLegacyStorage()` reads `localStorage` from inside its own WebView2
+profile, and WebView2 keys that profile by bundle identifier. The rename moved the
+identifier from `com.packetade.desktop` to `com.packetbench.desktop`, so a
+packaged upgrade gets a **new, empty profile**: the migrator finds zero
+`packetade:*` keys, writes its guard key, and reports success by silence.
+
+Measured on the machine above: 159 KiB of localStorage under the old identifier
+against 19 KiB under the new one, with twelve stranded keys including
+`packetade:agent-drafts` (unsent composer drafts), `packetade:project-history`,
+`packetade:issues`, and `packetade:workspaces-cache`.
+
+Not fixed here. Reaching the old profile means reading another application's
+LevelDB store from Rust, which is a feature with its own failure modes rather
+than a migration patch. The keyring migration is unaffected — it is per-key and
+read-through, with tests covering partial failure.
 
 ### Fixed — the Memory pane never showed anything
 
