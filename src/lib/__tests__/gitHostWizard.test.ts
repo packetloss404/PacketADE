@@ -3,6 +3,7 @@ import {
   GIT_HOST_WIZARD_DESCRIPTORS,
   defaultConnectionLabel,
   descriptorById,
+  descriptorForKind,
   missingRequiredScopes,
   normalizeInstanceUrl,
   verdictFor,
@@ -339,5 +340,22 @@ describe("GitLab descriptor", () => {
       "https://gitlab.example.com",
     );
     expect(gitlab?.tokenCreateUrl(null)).toBeNull();
+  });
+});
+
+describe("descriptorForKind (the edit/rotate entry point)", () => {
+  it("finds the descriptor for each kind the connection model can store", () => {
+    expect(descriptorForKind("github")?.id).toBe("github");
+    expect(descriptorForKind("gitlab")?.id).toBe("gitlab");
+    expect(descriptorForKind("gitea")?.id).toBe("gitea");
+  });
+
+  it("never resolves to an unsupported descriptor", () => {
+    // GitHub Enterprise shares kind `github` but cannot be stored, and its
+    // probe speaks /api/v3 — handing it to a rotation on the github.com
+    // singleton would probe the wrong endpoint with a live credential.
+    const resolved = descriptorForKind("github");
+    expect(resolved?.unsupported).toBeUndefined();
+    expect(resolved?.probe.apiPrefix).toBe("");
   });
 });

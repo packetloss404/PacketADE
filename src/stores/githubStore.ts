@@ -26,6 +26,7 @@ import {
   gitHostListConnections,
   gitHostAddConnection,
   gitHostRemoveConnection,
+  gitHostUpdateConnection,
   gitHostSetActive,
   gitHostHasToken,
   gitGetOriginUrl,
@@ -33,6 +34,7 @@ import {
 import type {
   GithubNotification,
   GitHostConnectionInfo,
+  GitHostConnectionUpdate,
   GitHostKind,
   GitHubRelease,
 } from "@/lib/tauri";
@@ -196,6 +198,19 @@ interface GitHubStore {
   // one at that. Use `addGitHostConnection(kind, ...)`.
   /** G2: remove a non-GitHub connection. */
   removeGitHostConnection: (id: string) => Promise<void>;
+  /**
+   * Rotate an existing connection's token and/or rename it, in place.
+   *
+   * The alternative used to be remove-then-re-add, because
+   * `git_host_add_connection` mints a new id — so a user rotating an expired
+   * PAT had to pass through a state with no working credential at all. The
+   * backend validates a replacement token against the connection's stored host
+   * before it overwrites anything, and rejects the whole update otherwise, so
+   * a failed rotation leaves the working credential exactly where it was.
+   *
+   * The token is a parameter to this call and is never held in store state.
+   */
+  updateGitHostConnection: (id: string, update: GitHostConnectionUpdate) => Promise<void>;
   /** G3: manually set the active connection (host override). */
   setActiveConnection: (id: string, force?: boolean) => void;
   /** G3: resolve + set the active connection from a project's origin remote. */
@@ -636,6 +651,20 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   addGitHostConnection: async (kind, baseUrl, label, token) => {
     await gitHostAddConnection(kind, baseUrl, label, token);
     await get().loadConnections();
+  },
+
+  updateGitHostConnection: async (id, update) => {
+    // Deliberately un-caught: the caller (the edit modal) renders the failure
+    // next to the field, and swallowing it here would let a refused rotation
+    // look like a successful one.
+    await gitHostUpdateConnection(id, update);
+    await get().loadConnections();
+    // A rotated credential on the connection the pane is pointed at means the
+    // cached identity (and any auth error) is stale. Re-probe so the header
+    // badge reflects the new token rather than the old one's user.
+    if (update.token && get().activeConnectionId === id) {
+      await get().initializeAuth();
+    }
   },
 
   removeGitHostConnection: async (id) => {

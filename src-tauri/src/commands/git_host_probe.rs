@@ -34,6 +34,52 @@ const PROBE_TIMEOUT_SECS: u64 = 15;
 /// paste out of an HTTP header.
 const MAX_TOKEN_LEN: usize = 4096;
 
+/// Everything host-specific about a probe *except* the origin and the
+/// credential — i.e. the frontend descriptor's `probe` block on its own.
+///
+/// Split out from [`GitHostProbeRequest`] so a caller inside Rust can pair a
+/// descriptor with an origin it already trusts. Token rotation
+/// (`git_host_update_connection`) does exactly that: it takes the spec from the
+/// frontend but the `base_url` from the *stored* connection, so a rotation can
+/// never be talked into shipping the new credential at an origin the user did
+/// not already configure.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHostProbeSpec {
+    #[serde(default)]
+    pub api_prefix: String,
+    pub identity_path: String,
+    pub auth_scheme: String,
+    #[serde(default)]
+    pub accept: Option<String>,
+    #[serde(default)]
+    pub scope_header: Option<String>,
+    #[serde(default)]
+    pub scope_path: Option<String>,
+    #[serde(default)]
+    pub scope_field: Option<String>,
+    #[serde(default)]
+    pub login_fields: Vec<String>,
+}
+
+impl GitHostProbeSpec {
+    /// Pair this descriptor with an origin and a credential.
+    pub fn into_request(self, base_url: String, token: String) -> GitHostProbeRequest {
+        GitHostProbeRequest {
+            base_url,
+            api_prefix: self.api_prefix,
+            identity_path: self.identity_path,
+            auth_scheme: self.auth_scheme,
+            accept: self.accept,
+            scope_header: self.scope_header,
+            scope_path: self.scope_path,
+            scope_field: self.scope_field,
+            login_fields: self.login_fields,
+            token,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitHostProbeRequest {
@@ -298,6 +344,18 @@ fn scrub(detail: Option<String>, token: &str) -> Option<String> {
 
 #[tauri::command]
 pub async fn git_host_probe_credential(
+    request: GitHostProbeRequest,
+) -> Result<GitHostProbeResult, String> {
+    probe_credential(request).await
+}
+
+/// The probe itself, callable from Rust.
+///
+/// `git_host_probe_credential` is a thin `#[tauri::command]` wrapper over this
+/// so that in-process callers — token rotation, above all — validate through
+/// exactly the same code path the wizard does, rather than growing a second
+/// validation implementation that could drift from this one.
+pub async fn probe_credential(
     request: GitHostProbeRequest,
 ) -> Result<GitHostProbeResult, String> {
     let token = request.token.trim().to_string();

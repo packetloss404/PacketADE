@@ -23,6 +23,12 @@ vi.mock("@/components/gitHost/GitHostSetupWizard", () => ({
   ),
 }));
 
+vi.mock("@/components/gitHost/GitHostEditConnectionModal", () => ({
+  GitHostEditConnectionModal: ({ connection }: { connection: { id: string } }) => (
+    <div data-testid="edit-modal">edit:{connection.id}</div>
+  ),
+}));
+
 vi.mock("@/stores/githubStore", () => ({
   useGitHubStore: (selector: (s: Record<string, unknown>) => unknown) => selector(mocks.storeState),
 }));
@@ -51,6 +57,7 @@ beforeEach(() => {
     loadConnections: vi.fn().mockResolvedValue(undefined),
     setActiveConnection: vi.fn(),
     removeGitHostConnection: vi.fn(),
+    updateGitHostConnection: vi.fn().mockResolvedValue(undefined),
     initializeAuth: vi.fn(),
   };
 });
@@ -146,5 +153,43 @@ describe("Git Hosts settings card → connection list", () => {
     expect(screen.getByText("Active")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Use gitlab.com" }));
     expect(mocks.storeState.setActiveConnection).toHaveBeenCalledWith("gitlab-1");
+  });
+});
+
+/**
+ * Rotation used to be spelled "remove the connection and add it again",
+ * because `git_host_add_connection` mints a new id. That advice was printed in
+ * this card's own help text, and following it meant deleting the only working
+ * credential in order to replace an expiring one.
+ */
+describe("Git Hosts settings card → editing a connection", () => {
+  const GITLAB = {
+    id: "gitlab-1",
+    kind: "gitlab" as const,
+    baseUrl: "https://gitlab.com",
+    label: "gitlab.com",
+    hasToken: true,
+  };
+  const GITHUB = {
+    id: "github",
+    kind: "github" as const,
+    baseUrl: "https://api.github.com",
+    label: "GitHub",
+    hasToken: true,
+  };
+
+  it("opens the edit modal for a connection from its row", () => {
+    mocks.storeState.connections = [GITHUB, GITLAB];
+    render(<GitHubSettingsCard />);
+    expect(screen.queryByTestId("edit-modal")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit gitlab.com" }));
+    expect(screen.getByTestId("edit-modal")).toHaveTextContent("edit:gitlab-1");
+  });
+
+  it("no longer tells the user to remove and re-add a host to change its token", () => {
+    mocks.storeState.connections = [GITHUB, GITLAB];
+    render(<GitHubSettingsCard />);
+    expect(document.body.textContent).not.toMatch(/remove it and add it again/i);
+    expect(document.body.textContent).toMatch(/replaces an expiring token in place/i);
   });
 });
