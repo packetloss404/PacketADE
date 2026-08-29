@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>PacketBench Manual | User Guide</title>
-<meta name="description" content="User manual for PacketBench v0.10.3 — the local-first desktop Agent Development Environment. Workspaces, Agents, Flight Deck, Issues, Memory, MCP, SSH remotes, dictation, and budget guardrails." />
+<meta name="description" content="User manual for PacketBench v0.12.1 — the local-first desktop Agent Development Environment. Workspaces, Agents, Flight Deck, Issues, Memory, MCP, SSH remotes, dictation, and budget guardrails." />
 <link rel="canonical" href="https://packetbench.app/packetbench-manual.html" />
 <link rel="icon" type="image/png" href="favicon.png" />
 <style>
@@ -297,8 +297,8 @@ footer.manual-foot a{color:var(--text-secondary)}
     <h1>PacketBench <span>Manual</span></h1>
     <p class="lede">How to install PacketBench, wire up your providers, and run real development work through Workspaces, Agents, and the Flight Deck. Task-oriented where possible, honest about limits everywhere.</p>
     <div class="meta">
-      <span>v0.10.3</span>
-      <span>Last updated 2026-08-06</span>
+      <span>v0.12.1 source</span>
+      <span>Last updated 2026-08-29</span>
       <span>Apache 2.0</span>
       <span>Tauri v2 &middot; React 19 &middot; Rust &middot; Node sidecar</span>
       <span>Local-first &middot; BYOK</span>
@@ -429,7 +429,14 @@ pnpm tauri build    # production build (also fetches Node + builds the sidecar)<
 </ul>
 
 <h3 class="section-title" id="ch2-memory">Memory</h3>
-<p>The Memory view keeps project context that outlives individual conversations, in four tabs: <strong>Patterns</strong> (learned, deduplicated observations), <strong>Timeline</strong> (auto-captured events), <strong>Project notes</strong> (manual), and <strong>Ask</strong> (query your memory). Memory can be exported as JSON or a Markdown digest, imported, filtered by flight or project, and cleared.</p>
+<p>The Memory view keeps project context that outlives individual conversations, in four tabs.</p>
+<ul>
+  <li><strong>Timeline</strong> &mdash; what actually happened. Terminal sessions longer than ten seconds are recorded when they end, however they end, and finished Flights are captured with their retrospective. A session is recorded first and summarised afterwards, so the timeline still fills in even with no AI provider configured; the summary is an enrichment, not a precondition. <strong>New memory</strong> in the header saves a note yourself.</li>
+  <li><strong>Patterns</strong> &mdash; conventions and pitfalls distilled from what memory already holds. <strong>Refresh</strong> extracts them and needs an aux provider configured under <em>Settings &rarr; API Keys</em>; it tells you what it did either way.</li>
+  <li><strong>Project notes</strong> &mdash; durable Markdown files in <code>.agents/memory</code>, meant to be committed with your repo. Edit them in PacketBench or in your own editor; a plain <code>.md</code> file with no frontmatter is a perfectly good note, taking its title from the first heading. These are injected into agent prompts alongside patterns and lessons.</li>
+  <li><strong>Ask</strong> &mdash; keyword search across the entire corpus with no AI call and no recency window: every pattern regardless of confidence, every event regardless of age, saved notes, and project notes. It reports what it searched, so an empty answer is legible. <em>All projects</em> widens the search beyond the current one.</li>
+</ul>
+<p>Memory is scoped to the project you are in, and the header always shows which. A remote SSH workspace keeps its own memory under that server &mdash; nothing from a local project leaks into it, or the reverse. Memory can be exported as JSON or a Markdown digest, imported, filtered by flight or project, and cleared.</p>
 <p>In an Agents conversation, a header <strong>memory toggle</strong> controls whether memory context is injected into the system prompt — its tooltip previews exactly what would be injected.</p>
 
 <h3 class="section-title" id="ch2-mcp">The MCP hub</h3>
@@ -530,7 +537,8 @@ pnpm tauri build    # production build (also fetches Node + builds the sidecar)<
   <li>Download a Whisper model (sizes trade speed for accuracy) and pick your input device in <em>Settings &rarr; Integrations &amp; Data &rarr; Dictation</em>.</li>
   <li>Record: <strong>push-to-talk</strong> (hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> — release to transcribe and auto-paste) or <strong>toggle</strong> (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd>). <kbd>Esc</kbd> cancels a recording.</li>
 </ol>
-<p>Notes: OS-global shortcuts are an explicit opt-in (both shortcuts are re-bindable); transcripts auto-paste into the focused PacketBench field, with an optional system-wide paste into whatever app is foregrounded; a custom dictionary biases transcription toward your jargon; language can be fixed or auto-detected; recordings are capped (configurable, 10–1800&nbsp;s). The view also keeps a history with analytics — WPM, streaks, top words.</p>
+<p>Notes: OS-global shortcuts are an explicit opt-in (both shortcuts are re-bindable); transcripts auto-paste into the focused PacketBench field, with an optional system-wide paste into whatever app is foregrounded; a custom dictionary biases transcription toward your jargon; language can be fixed or auto-detected; recordings are capped (configurable, 10–1800&nbsp;s). The view also keeps a searchable history.</p>
+<p>An <strong>Analytics</strong> tab charts that history: words per minute over time, daily and cumulative volume, streaks, vocabulary and top words, speaking rhythm, and sentiment. Sentiment is scored locally against a bundled lexicon as new dictations arrive &mdash; entries recorded before the feature shipped stay unscored, and coverage is reported honestly rather than counting them as neutral. Analytics buckets by UTC day while the history list shows your local time, so the two can disagree either side of local midnight.</p>
 
 <h3 class="section-title" id="ch3-budgets">Stay inside a budget</h3>
 <p>PacketBench measures what your agents spend, but it deliberately does <strong>not</strong> report it back to you. There is no cost dashboard, no toolbar spend chip, and no per-turn dollar figure — a reporting surface has to be maintained, re-verified against changing vendor rates, and trusted, and spend <em>control</em> was judged worth that while a spend <em>report</em> was not. Token counts are still shown per turn and per session.</p>
@@ -695,7 +703,7 @@ pnpm tauri build    # production build (also fetches Node + builds the sidecar)<
 <table class="ref-table">
   <thead><tr><th>Group</th><th>Sections</th></tr></thead>
   <tbody>
-    <tr><td>General</td><td>Preferences (theme, notifications, global keyboard behavior)</td></tr>
+    <tr><td>General</td><td>Preferences (theme, notifications, global keyboard behavior) &middot; Date &amp; Time (time zone for displayed timestamps)</td></tr>
     <tr><td>Workspaces &amp; Terminal</td><td>Workspace defaults (including the local terminal shell) &middot; CLI Clients &middot; Remote Hosts (SSH) &middot; Project Rules</td></tr>
     <tr><td>Agents &amp; Models</td><td>Agent behavior (profiles, cleanup, failover) &middot; Providers &amp; Models (API keys, CLI subscription logins, endpoints, provider routing)</td></tr>
     <tr><td>Automation</td><td>Flights &amp; Autonomy (including Budget guardrails) &middot; Task Role Defaults &middot; PacketAgent</td></tr>
@@ -734,7 +742,7 @@ tool-output-extended · turn-summary · mcp-sources · done · error</code></pre
 
 <div class="callout callout-info">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-  <div class="callout-body"><strong>Accuracy note.</strong> This manual is written against the PacketBench v0.10.3 source, last reviewed 2026-08-06. Where behavior depends on environments we can't verify from source (packaged-build specifics on every OS, remote-host edge cases), the manual says so rather than guessing. Corrections welcome via GitHub issues.</div>
+  <div class="callout-body"><strong>Accuracy note.</strong> This manual is written against the PacketBench v0.12.1 source, last reviewed 2026-08-29. Where behavior depends on environments we can't verify from source (packaged-build specifics on every OS, remote-host edge cases), the manual says so rather than guessing. Corrections welcome via GitHub issues.</div>
 </div>
 </section>
 
@@ -746,7 +754,7 @@ tool-output-extended · turn-summary · mcp-sources · done · error</code></pre
 </button>
 
 <footer class="manual-foot">
-  <span>PacketBench Manual &middot; v0.10.3 &middot; Apache 2.0</span>
+  <span>PacketBench Manual &middot; v0.12.1 &middot; Apache 2.0</span>
   <span><a href="index.html">Home</a> &middot; <a href="roadmap.html">Roadmap</a> &middot; <a href="https://github.com/packetloss404/PacketBench" target="_blank" rel="noopener">GitHub</a></span>
 </footer>
 

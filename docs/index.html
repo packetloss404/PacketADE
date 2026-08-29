@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>PacketBench — Your agent fleet. One flight deck.</title>
-<meta name="description" content="PacketBench is a local-first desktop Agent Development Environment: multi-CLI workspaces (Claude Code, Codex CLI, OpenCode, PacketCode), a seven-provider bring-your-own-API-key agent picker, Flight Deck orchestration with parallel worktree attempts, SSH remote workspaces, an MCP hub, project memory, issue tracking with GitHub and Gitea sync, dictation, and enforced budget guardrails — in one native Tauri app." />
+<meta name="description" content="PacketBench is a local-first desktop Agent Development Environment: multi-CLI workspaces (Claude Code, Codex CLI, OpenCode, PacketCode), a nine-row bring-your-own-API-key agent picker, Flight Deck orchestration with parallel worktree attempts, SSH remote workspaces, an MCP hub, project memory, issue tracking with GitHub and Gitea sync, dictation with speaking analytics, and enforced budget guardrails — in one native Tauri app." />
 <meta property="og:title" content="PacketBench — Your agent fleet. One flight deck." />
 <meta property="og:description" content="A local-first desktop ADE for orchestrating AI software work: CLI and API agents, Flight Deck orchestration with parallel worktree attempts, SSH remotes, MCP hub, memory, issues, dictation, and budget guardrails." />
 <meta property="og:image" content="https://packetbench.app/screenshot.png" />
@@ -242,7 +242,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   <p class="hero-tagline reveal" style="--delay:0.12s">Your agent fleet. One flight deck.</p>
   <p class="hero-lead reveal" style="--delay:0.2s">A local-first desktop <strong>Agent Development Environment</strong>. Run coding-agent CLIs in multi-pane workspaces, hold structured conversations across seven API-key provider backends, and orchestrate larger units of work as <strong>Flights</strong> with parallel worktree attempts &mdash; on your machine or over SSH.</p>
   <div class="hero-buttons reveal" style="--delay:0.28s">
-    <a href="https://github.com/packetloss404/PacketBench/releases" class="btn-primary">Download</a>
+    <a href="https://github.com/packetloss404/PacketBench#getting-started" class="btn-primary">Build from source</a>
     <a href="packetbench-manual.html" class="btn-outline">Read the Manual</a>
     <a href="https://github.com/packetloss404/PacketBench" class="btn-outline" target="_blank" rel="noopener">View Source</a>
   </div>
@@ -303,8 +303,8 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <div class="feature-icon purple" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         </div>
-        <h3>Seven-Row Agent Picker</h3>
-        <p>Structured conversations with the <strong>Claude Agent SDK</strong>, <strong>Claude API</strong>, <strong>OpenAI API</strong>, <strong>OpenAI Agents SDK</strong>, <strong>MiniMax</strong>, <strong>OpenRouter</strong>, and local <strong>Ollama</strong> &mdash; each row with a live auth badge, one shared composer, one event contract. Every row authenticates with your own API key; Ollama needs none.</p>
+        <h3>Nine-Row Agent Picker</h3>
+        <p>Structured conversations with the <strong>Claude Agent SDK</strong>, <strong>Claude API</strong>, <strong>OpenAI API</strong>, <strong>OpenAI Agents SDK</strong>, <strong>MiniMax</strong>, <strong>OpenRouter</strong>, local <strong>Ollama</strong>, the <strong>PacketCode</strong> engine over ACP, and any <strong>OpenAI-compatible endpoint</strong> you point it at &mdash; each row with a live auth badge, one shared composer, one event contract. Every keyed row uses your own API key; the last three need none. <strong>No row uses a Claude.ai or ChatGPT subscription login.</strong></p>
       </div>
 
       <div class="feature-card reveal" style="--delay:0.1s">
@@ -336,7 +336,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.4 1 2.3h6c0-.9.4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg>
         </div>
         <h3>Project Memory</h3>
-        <p>An auto-learning memory layer keeps file maps, conventions, and pitfalls per project, injects relevant context into agent sessions (with a visible toggle and preview), and is browsable in a dedicated view.</p>
+        <p>Terminal sessions and finished Flights are recorded automatically, conventions and pitfalls are distilled into learned patterns, and durable notes live as ordinary Markdown in <code>.agents/memory</code> &mdash; committed with your repo, editable in your own editor. Relevant context is injected into agent sessions behind a visible toggle and preview, and <strong>Ask</strong> keyword-searches the whole corpus without an AI call. Memory is scoped per project, and a remote SSH workspace keeps its own.</p>
       </div>
 
       <div class="feature-card reveal" style="--delay:0.3s">
@@ -351,8 +351,8 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <div class="feature-icon red" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </div>
-        <h3>Dictation</h3>
-        <p>Local Whisper voice-to-text with OS-global push-to-talk and toggle hotkeys, focus-aware transcript insertion, a microphone doctor, and a custom dictionary. No audio leaves the machine.</p>
+        <h3>Dictation &amp; Speaking Analytics</h3>
+        <p>Local Whisper voice-to-text with OS-global push-to-talk and toggle hotkeys, focus-aware transcript insertion, a microphone doctor, and a custom dictionary. An analytics tab charts words per minute, streaks, vocabulary, speaking rhythm, and sentiment over your history. <strong>No audio leaves the machine</strong> &mdash; transcription and scoring both run locally.</p>
       </div>
 
       <div class="feature-card reveal" style="--delay:0.4s">
@@ -371,12 +371,12 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
 <section class="status" id="status">
   <div class="container">
     <div class="status-panel reveal">
-      <h2>Current status <span class="ver">v0.10.3</span></h2>
-      <p class="status-intro">PacketBench is in active development and dogfooded daily. Here is exactly where distribution stands today &mdash; no surprises after you download. Last updated 2026-08-06 against v0.10.3.</p>
+      <h2>Current status <span class="ver">v0.12.1 source</span></h2>
+      <p class="status-intro">PacketBench is in active development and dogfooded daily. Here is exactly where distribution stands today &mdash; no surprises after you download. Last updated 2026-08-29 against source v0.12.1.</p>
       <div class="status-list">
-        <div class="status-item ok">
-          <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
-          <div><strong>Windows builds are available</strong> <span>from <a href="https://github.com/packetloss404/PacketBench/releases">GitHub Releases</a>. They are <strong>unsigned</strong> &mdash; expect a SmartScreen warning on first run until code-signing certificates are in place.</span></div>
+        <div class="status-item warn">
+          <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
+          <div><strong>The published download is well behind the source.</strong> <span>The newest build on <a href="https://github.com/packetloss404/PacketBench/releases">GitHub Releases</a> is <code>v0.5.0</code> from May 2026, and its installers are still named <code>PacketADE</code> &mdash; the product was renamed afterwards. Source is at <code>0.12.1</code>; Windows installers are built from it locally but have <strong>not</strong> been published, signed, or put through the packaged acceptance matrix. If you want current PacketBench today, build from source.</span></div>
         </div>
         <div class="status-item warn">
           <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
@@ -384,7 +384,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         </div>
         <div class="status-item warn">
           <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
-          <div><strong>No auto-updater yet.</strong> <span>New versions are installed manually from Releases. Code signing and the Tauri updater are planned release-trust gates on the <a href="roadmap.html">roadmap</a>.</span></div>
+          <div><strong>Unsigned, and no auto-updater.</strong> <span>Every artifact so far is unsigned &mdash; expect a SmartScreen warning on first run. New versions are installed manually. Code signing and the Tauri updater are planned release-trust gates on the <a href="roadmap.html">roadmap</a>.</span></div>
         </div>
         <div class="status-item ok">
           <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
