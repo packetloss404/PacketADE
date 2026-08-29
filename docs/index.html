@@ -12,195 +12,7 @@
 <link rel="canonical" href="https://packetbench.app" />
 <link rel="icon" type="image/png" href="icon-192.png" />
 <link rel="apple-touch-icon" href="icon-192.png" />
-<style>
-/* ===== RESET & BASE ===== */
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg-primary:#0d1117;--bg-secondary:#161b22;--bg-tertiary:#1c2333;--bg-elevated:#21283b;
-  --border:#30363d;--text-primary:#e6edf3;--text-secondary:#8b949e;--text-muted:#484f58;
-  --green:#3fb950;--neon:#00ff41;--blue:#58a6ff;--purple:#bc8cff;--amber:#d29922;--red:#f85149;--cyan:#39d2c0;
-  --font-sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-  --font-mono:ui-monospace,SFMono-Regular,"Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
-  --nav-h:60px;
-}
-html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
-body{font-family:var(--font-sans);background:var(--bg-primary);color:var(--text-primary);line-height:1.6;overflow-x:hidden;-webkit-font-smoothing:antialiased}
-a{color:inherit;text-decoration:none}
-img{max-width:100%;display:block}
-button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
-ul{list-style:none}
-section{position:relative}
-code{font-family:var(--font-mono)}
-
-/* ===== BACKDROP ===== */
-.grid-bg{position:fixed;inset:0;z-index:0;pointer-events:none;
-  background-image:linear-gradient(rgba(63,185,80,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(63,185,80,0.03) 1px,transparent 1px);
-  background-size:64px 64px}
-.aurora{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
-.aurora::before{content:'';position:absolute;width:800px;height:800px;top:-20%;left:-10%;border-radius:50%;
-  filter:blur(120px);background:radial-gradient(circle,rgba(63,185,80,0.07) 0%,transparent 70%)}
-.aurora::after{content:'';position:absolute;width:600px;height:600px;bottom:-10%;right:-5%;border-radius:50%;
-  filter:blur(120px);background:radial-gradient(circle,rgba(57,210,192,0.05) 0%,transparent 70%)}
-
-.container{max-width:1100px;margin:0 auto;padding:0 24px;position:relative;z-index:1}
-
-/* ===== NAV ===== */
-nav{position:fixed;top:0;left:0;right:0;z-index:100;height:var(--nav-h);display:flex;align-items:center;
-  background:rgba(13,17,23,0.88);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
-  border-bottom:1px solid rgba(48,54,61,0.5)}
-nav .container{display:flex;align-items:center;justify-content:space-between;width:100%}
-.nav-brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.05rem;letter-spacing:-0.02em}
-.nav-brand img{width:28px;height:28px;border-radius:7px}
-.nav-links{display:flex;align-items:center;gap:26px}
-.nav-links a{font-size:0.85rem;color:var(--text-secondary);transition:color 0.2s;font-weight:500}
-.nav-links a:hover{color:var(--text-primary)}
-.btn-github{display:flex;align-items:center;gap:6px;padding:6px 14px;border:1px solid var(--border);border-radius:8px;font-size:0.8rem;font-weight:500;transition:all 0.2s;color:var(--text-secondary)}
-.btn-github:hover{border-color:var(--text-muted);color:var(--text-primary)}
-.btn-github svg{width:16px;height:16px}
-.hamburger{display:none;flex-direction:column;gap:5px;padding:4px}
-.hamburger span{display:block;width:22px;height:2px;background:var(--text-secondary);border-radius:2px}
-
-/* ===== HERO ===== */
-.hero{min-height:88vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;
-  padding:calc(var(--nav-h) + 56px) 24px 64px;position:relative}
-.hero-logo{font-family:var(--font-mono);font-size:clamp(2rem,5vw,3rem);font-weight:700;color:var(--neon);
-  margin-bottom:22px;text-shadow:0 0 18px rgba(0,255,65,0.55),0 0 50px rgba(0,255,65,0.25);letter-spacing:-0.02em}
-.hero h1{font-size:clamp(2.4rem,6.5vw,4.4rem);font-weight:800;letter-spacing:-0.04em;line-height:1.08;margin-bottom:18px}
-.gradient-text{background:linear-gradient(135deg,var(--green),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.hero-tagline{font-size:clamp(1.1rem,2.4vw,1.45rem);color:var(--text-primary);font-weight:600;margin-bottom:14px;letter-spacing:-0.01em}
-.hero-lead{font-size:clamp(0.95rem,1.8vw,1.1rem);color:var(--text-secondary);max-width:660px;margin:0 auto 32px;line-height:1.7}
-.hero-lead strong{color:var(--text-primary);font-weight:600}
-.hero-buttons{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:30px}
-.btn-primary{padding:13px 30px;border-radius:999px;font-size:0.92rem;font-weight:600;
-  background:linear-gradient(135deg,var(--green),#2ea043);color:#fff;transition:all 0.3s;
-  box-shadow:0 0 30px rgba(63,185,80,0.2),0 4px 20px rgba(0,0,0,0.3)}
-.btn-primary:hover{box-shadow:0 0 50px rgba(63,185,80,0.35),0 8px 30px rgba(0,0,0,0.4);transform:translateY(-2px)}
-.btn-outline{padding:13px 30px;border-radius:999px;font-size:0.92rem;font-weight:600;
-  border:1px solid var(--border);color:var(--text-primary);transition:all 0.3s}
-.btn-outline:hover{border-color:var(--text-muted);background:rgba(255,255,255,0.03);transform:translateY(-2px)}
-.tag-chips{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:48px}
-.tag-chip{padding:4px 12px;border:1px solid var(--border);border-radius:999px;font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);font-weight:500}
-.hero-screenshot{position:relative;max-width:940px;width:100%;margin:0 auto}
-.window-frame{border-radius:14px;overflow:hidden;border:1px solid var(--border);background:var(--bg-secondary);box-shadow:0 25px 80px rgba(0,0,0,0.5)}
-.window-titlebar{display:flex;align-items:center;gap:8px;padding:11px 16px;background:var(--bg-tertiary);border-bottom:1px solid var(--border)}
-.window-dot{width:11px;height:11px;border-radius:50%}
-.window-dot.r{background:var(--red)}.window-dot.y{background:var(--amber)}.window-dot.g{background:var(--green)}
-.window-title{margin-left:8px;font-family:var(--font-mono);font-size:0.72rem;color:var(--text-muted)}
-.window-frame img{width:100%;display:block}
-.hero-glow{position:absolute;top:50%;left:50%;width:700px;height:700px;transform:translate(-50%,-50%);
-  background:radial-gradient(circle,rgba(63,185,80,0.08) 0%,transparent 65%);pointer-events:none;z-index:-1}
-
-/* ===== REVEAL ===== */
-.reveal{opacity:0;transform:translateY(22px);transition:opacity 0.7s ease,transform 0.7s ease;transition-delay:var(--delay,0s)}
-.reveal.show{opacity:1;transform:translateY(0)}
-
-/* ===== SECTION HEADERS ===== */
-.section-header{text-align:center;margin-bottom:48px}
-.section-header h2{font-size:clamp(1.7rem,3.8vw,2.5rem);font-weight:800;letter-spacing:-0.03em;margin-bottom:12px}
-.section-header p{color:var(--text-secondary);font-size:clamp(0.92rem,1.5vw,1.05rem);max-width:620px;margin:0 auto}
-.eyebrow{display:inline-block;font-family:var(--font-mono);font-size:0.68rem;font-weight:600;letter-spacing:0.18em;
-  text-transform:uppercase;color:var(--green);margin-bottom:14px;padding:5px 14px;border:1px solid rgba(63,185,80,0.3);
-  border-radius:999px;background:rgba(63,185,80,0.06)}
-
-/* ===== WHAT IT IS ===== */
-.what{padding:90px 0 60px}
-.what-body{max-width:760px;margin:0 auto}
-.what-body p{color:var(--text-secondary);font-size:clamp(0.95rem,1.6vw,1.05rem);line-height:1.8;margin-bottom:18px}
-.what-body p strong{color:var(--text-primary);font-weight:600}
-.what-body p code{font-size:0.85em;color:var(--cyan)}
-.what-body p:last-child{margin-bottom:0}
-
-/* ===== CAPABILITIES ===== */
-.features{padding:70px 0 80px}
-.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
-.feature-card{position:relative;padding:28px 24px;background:rgba(22,27,34,0.6);border:1px solid var(--border);border-radius:18px;
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);transition:all 0.3s ease;overflow:hidden}
-.feature-card:hover{transform:translateY(-4px);border-color:var(--text-muted);box-shadow:0 12px 40px rgba(0,0,0,0.25)}
-.feature-icon{width:44px;height:44px;border-radius:13px;display:flex;align-items:center;justify-content:center;margin-bottom:16px}
-.feature-icon.green{background:rgba(63,185,80,0.12);color:var(--green)}
-.feature-icon.purple{background:rgba(188,140,255,0.12);color:var(--purple)}
-.feature-icon.cyan{background:rgba(57,210,192,0.12);color:var(--cyan)}
-.feature-icon.amber{background:rgba(210,153,34,0.12);color:var(--amber)}
-.feature-icon.blue{background:rgba(88,166,255,0.12);color:var(--blue)}
-.feature-icon.red{background:rgba(248,81,73,0.12);color:var(--red)}
-.feature-icon svg{width:22px;height:22px}
-.feature-card h3{font-size:1rem;font-weight:700;margin-bottom:8px;letter-spacing:-0.01em}
-.feature-card p{font-size:0.83rem;color:var(--text-secondary);line-height:1.65}
-.feature-card p strong{color:var(--text-primary);font-weight:600}
-.feature-card p code{font-size:0.76rem;color:var(--cyan)}
-
-/* ===== STATUS STRIP ===== */
-.status{padding:60px 0}
-.status-panel{max-width:860px;margin:0 auto;background:rgba(22,27,34,0.6);border:1px solid rgba(210,153,34,0.3);
-  border-radius:18px;padding:32px 36px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
-.status-panel h2{font-size:1.15rem;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.status-panel h2 .ver{font-family:var(--font-mono);font-size:0.75rem;font-weight:600;color:var(--green);
-  padding:3px 10px;border:1px solid rgba(63,185,80,0.35);border-radius:999px;background:rgba(63,185,80,0.08)}
-.status-intro{font-size:0.85rem;color:var(--text-secondary);margin-bottom:20px}
-.status-list{display:flex;flex-direction:column;gap:12px}
-.status-item{display:flex;align-items:flex-start;gap:12px;font-size:0.85rem;line-height:1.6}
-.status-item .mark{flex-shrink:0;width:18px;height:18px;margin-top:2px;display:flex;align-items:center;justify-content:center}
-.status-item .mark svg{width:16px;height:16px}
-.status-item.ok .mark{color:var(--green)}
-.status-item.warn .mark{color:var(--amber)}
-.status-item strong{color:var(--text-primary);font-weight:600}
-.status-item span{color:var(--text-secondary)}
-.status-item a{color:var(--cyan);border-bottom:1px dotted rgba(57,210,192,0.4)}
-.status-item a:hover{color:var(--green);border-bottom-color:var(--green)}
-.status-item code{font-size:0.78rem;color:var(--cyan)}
-
-/* ===== LINKS / CTA ===== */
-.links{padding:70px 0 100px;text-align:center}
-.links::before{content:'';position:absolute;top:50%;left:50%;width:800px;height:800px;transform:translate(-50%,-50%);
-  background:radial-gradient(circle,rgba(63,185,80,0.06) 0%,transparent 55%);pointer-events:none}
-.links-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;max-width:860px;margin:0 auto}
-.link-card{padding:28px 24px;background:rgba(22,27,34,0.6);border:1px solid var(--border);border-radius:18px;
-  transition:all 0.3s;text-align:left;display:block}
-.link-card:hover{transform:translateY(-4px);border-color:var(--text-muted);box-shadow:0 12px 40px rgba(0,0,0,0.25)}
-.link-card h3{font-size:0.98rem;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px}
-.link-card h3 svg{width:18px;height:18px;color:var(--green);flex-shrink:0}
-.link-card p{font-size:0.8rem;color:var(--text-secondary);line-height:1.6}
-.link-card p code{font-size:0.72rem;color:var(--cyan)}
-.link-card .go{display:inline-block;margin-top:12px;font-family:var(--font-mono);font-size:0.72rem;color:var(--cyan);font-weight:600}
-.link-card:hover .go{color:var(--green)}
-
-/* ===== FOOTER ===== */
-footer{border-top:1px solid var(--border);padding:30px 0;position:relative;z-index:1}
-footer .container{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px}
-.footer-brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:0.88rem;color:var(--text-secondary)}
-.footer-brand img{width:22px;height:22px;border-radius:6px}
-.footer-links{display:flex;gap:22px}
-.footer-links a{font-size:0.8rem;color:var(--text-muted);transition:color 0.2s}
-.footer-links a:hover{color:var(--text-secondary)}
-.footer-note{font-size:0.75rem;color:var(--text-muted)}
-
-a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offset:2px;border-radius:4px}
-
-/* ===== RESPONSIVE ===== */
-@media(max-width:1024px){
-  .features-grid{grid-template-columns:repeat(2,1fr)}
-}
-@media(max-width:768px){
-  .nav-links{position:fixed;top:var(--nav-h);left:0;right:0;background:rgba(13,17,23,0.97);backdrop-filter:blur(20px);
-    flex-direction:column;padding:24px;gap:20px;border-bottom:1px solid var(--border);
-    transform:translateY(-110%);opacity:0;pointer-events:none;transition:all 0.3s}
-  .nav-links.open{transform:translateY(0);opacity:1;pointer-events:all}
-  .hamburger{display:flex}
-  .features-grid{grid-template-columns:1fr}
-  .links-grid{grid-template-columns:1fr}
-  .status-panel{padding:26px 22px}
-  footer .container{flex-direction:column;text-align:center}
-}
-@media(max-width:480px){
-  .hero-buttons{flex-direction:column;align-items:center}
-  .btn-primary,.btn-outline{width:100%;text-align:center}
-}
-
-@media(prefers-reduced-motion:reduce){
-  .reveal{opacity:1;transform:none;transition:none}
-  *{transition-duration:0.01ms !important;animation-duration:0.01ms !important}
-}
-</style>
+<link rel="stylesheet" href="assets/landing.css" />
 </head>
 <body>
 
@@ -238,22 +50,22 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
 <!-- ===== HERO ===== -->
 <section class="hero" id="hero">
   <div class="hero-logo reveal" aria-hidden="true">P&gt;_</div>
-  <h1 class="reveal" style="--delay:0.05s">Packet<span class="gradient-text">ADE</span></h1>
-  <p class="hero-tagline reveal" style="--delay:0.12s">Your agent fleet. One flight deck.</p>
-  <p class="hero-lead reveal" style="--delay:0.2s">A local-first desktop <strong>Agent Development Environment</strong>. Run coding-agent CLIs in multi-pane workspaces, hold structured conversations across seven API-key provider backends, and orchestrate larger units of work as <strong>Flights</strong> with parallel worktree attempts &mdash; on your machine or over SSH.</p>
-  <div class="hero-buttons reveal" style="--delay:0.28s">
+  <h1 class="reveal dly-05">Packet<span class="gradient-text">ADE</span></h1>
+  <p class="hero-tagline reveal dly-12">Your agent fleet. One flight deck.</p>
+  <p class="hero-lead reveal dly-20">A local-first desktop <strong>Agent Development Environment</strong>. Run coding-agent CLIs in multi-pane workspaces, hold structured conversations across seven API-key provider backends, and orchestrate larger units of work as <strong>Flights</strong> with parallel worktree attempts &mdash; on your machine or over SSH.</p>
+  <div class="hero-buttons reveal dly-28">
     <a href="https://github.com/packetloss404/PacketADE#getting-started" class="btn-primary">Build from source</a>
     <a href="packetbench-manual.html" class="btn-outline">Read the Manual</a>
     <a href="https://github.com/packetloss404/PacketADE" class="btn-outline" target="_blank" rel="noopener">View Source</a>
   </div>
-  <div class="tag-chips reveal" style="--delay:0.34s">
+  <div class="tag-chips reveal dly-34">
     <span class="tag-chip">Tauri v2</span>
     <span class="tag-chip">Local-First</span>
     <span class="tag-chip">BYOK</span>
     <span class="tag-chip">7 Provider Rows</span>
     <span class="tag-chip">Open Source</span>
   </div>
-  <div class="hero-screenshot reveal" style="--delay:0.42s">
+  <div class="hero-screenshot reveal dly-42">
     <div class="hero-glow"></div>
     <div class="window-frame">
       <div class="window-titlebar">
@@ -274,7 +86,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
       <span class="eyebrow">What it is</span>
       <h2>One native app for real agent-driven development</h2>
     </div>
-    <div class="what-body reveal" style="--delay:0.1s">
+    <div class="what-body reveal dly-10">
       <p>PacketBench combines two complementary execution styles in a single desktop window. <strong>PTY-backed CLI sessions</strong> run Claude Code, Codex CLI, OpenCode, PacketCode, or a plain shell in draggable workspace panes, driven by each CLI&rsquo;s own interface. <strong>GUI/API agents</strong> in the Agents view hold durable structured conversations &mdash; streaming responses, tool calls, permission gating, plan review, and per-hunk diff acceptance &mdash; against seven API-key provider backends that all normalize into one event contract.</p>
       <p>Above both sits the <strong>Flight Deck</strong>: define a Flight, refine its plan in a read-only agent conversation, then launch one or more local or SSH agents against isolated git worktrees and supervise every attempt from a single master-detail surface. Issues, project memory, MCP configuration, git-host integration, dictation, and budget guardrails live in the same app.</p>
       <p>Everything stays on your machine: API keys in the OS keyring, transcripts and memory on local disk, execution local or over SSH connections you configure. There is no hosted service &mdash; API agents run on API keys you supply, and terminal panes use whatever logins the CLIs you launch already have.</p>
@@ -291,7 +103,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
     </div>
     <div class="features-grid">
 
-      <div class="feature-card reveal" style="--delay:0s">
+      <div class="feature-card reveal dly-0">
         <div class="feature-icon green" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
         </div>
@@ -299,7 +111,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <p>Run <strong>Claude Code</strong>, <strong>Codex CLI</strong>, <strong>OpenCode</strong>, <strong>PacketCode</strong>, and plain shells side by side in persistent draggable pane mosaics, with per-CLI status lines and saved layouts that hydrate dormant &mdash; nothing launches until you open the workspace. Raw terminals choose their own shell &mdash; PowerShell 7, Windows PowerShell, Command Prompt, Git Bash, WSL, or Auto &mdash; and every pane header shows the shell it actually resolved to.</p>
       </div>
 
-      <div class="feature-card reveal" style="--delay:0.05s">
+      <div class="feature-card reveal dly-05">
         <div class="feature-icon purple" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         </div>
@@ -307,7 +119,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <p>Structured conversations with the <strong>Claude Agent SDK</strong>, <strong>Claude API</strong>, <strong>OpenAI API</strong>, <strong>OpenAI Agents SDK</strong>, <strong>MiniMax</strong>, <strong>OpenRouter</strong>, local <strong>Ollama</strong>, the <strong>PacketCode</strong> engine over ACP, and any <strong>OpenAI-compatible endpoint</strong> you point it at &mdash; each row with a live auth badge, one shared composer, one event contract. Every keyed row uses your own API key; the last three need none. <strong>No row uses a Claude.ai or ChatGPT subscription login.</strong></p>
       </div>
 
-      <div class="feature-card reveal" style="--delay:0.1s">
+      <div class="feature-card reveal dly-10">
         <div class="feature-icon cyan" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
         </div>
@@ -315,7 +127,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <p>Organize work as <strong>Flights</strong>: plan in a read-only agent conversation, apply structured milestones and tasks, then launch parallel <strong>worktree attempts</strong> across local and SSH agents with status, attention, and cost rollups.</p>
       </div>
 
-      <div class="feature-card reveal" style="--delay:0.15s">
+      <div class="feature-card reveal dly-15">
         <div class="feature-icon blue" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
         </div>
@@ -323,7 +135,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <p>Add servers with key, agent, or password auth, detect installed CLIs, and run agent sessions and worktree attempts on remote machines. Host-key pinning is enforced whenever a server&rsquo;s fingerprint is saved.</p>
       </div>
 
-      <div class="feature-card reveal" style="--delay:0.2s">
+      <div class="feature-card reveal dly-20">
         <div class="feature-icon amber" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-6"/><path d="M6 20v-4"/><path d="M18 20v-8"/><rect x="2" y="2" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="10" y1="6" x2="10.01" y2="6"/></svg>
         </div>
@@ -331,7 +143,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <p>Manage the MCP servers PacketBench consumes and the configs it writes for Claude Code and Codex in one place, with per-conversation server toggles and trust frozen into each managed session.</p>
       </div>
 
-      <div class="feature-card reveal" style="--delay:0.25s">
+      <div class="feature-card reveal dly-25">
         <div class="feature-icon green" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.4 1 2.3h6c0-.9.4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg>
         </div>
@@ -339,7 +151,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <p>Terminal sessions and finished Flights are recorded automatically, conventions and pitfalls are distilled into learned patterns, and durable notes live as ordinary Markdown in <code>.agents/memory</code> &mdash; committed with your repo, editable in your own editor. Relevant context is injected into agent sessions behind a visible toggle and preview, and <strong>Ask</strong> keyword-searches the whole corpus without an AI call. Memory is scoped per project, and a remote SSH workspace keeps its own.</p>
       </div>
 
-      <div class="feature-card reveal" style="--delay:0.3s">
+      <div class="feature-card reveal dly-30">
         <div class="feature-icon blue" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
         </div>
@@ -347,7 +159,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <p>A kanban issue board with AI-structured issue creation, send-to-session handoffs, Flight linkage, and sync against cloud <strong>GitHub</strong> and self-hosted <strong>Gitea/Forgejo</strong> &mdash; both configurable at once.</p>
       </div>
 
-      <div class="feature-card reveal" style="--delay:0.35s">
+      <div class="feature-card reveal dly-35">
         <div class="feature-icon red" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </div>
@@ -355,7 +167,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <p>Local Whisper voice-to-text with OS-global push-to-talk and toggle hotkeys, focus-aware transcript insertion, a microphone doctor, and a custom dictionary. An analytics tab charts words per minute, streaks, vocabulary, speaking rhythm, and sentiment over your history. <strong>No audio leaves the machine</strong> &mdash; transcription and scoring both run locally.</p>
       </div>
 
-      <div class="feature-card reveal" style="--delay:0.4s">
+      <div class="feature-card reveal dly-40">
         <div class="feature-icon amber" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         </div>
@@ -403,17 +215,17 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
       <h2>Docs &amp; source</h2>
     </div>
     <div class="links-grid">
-      <a href="packetbench-manual.html" class="link-card reveal" style="--delay:0s">
+      <a href="packetbench-manual.html" class="link-card reveal dly-0">
         <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>User Manual</h3>
         <p>Task-oriented documentation for every surface: Workspaces, Agents, Flight Deck, SSH, MCP, memory, dictation, and settings.</p>
         <span class="go">Read the manual &rarr;</span>
       </a>
-      <a href="roadmap.html" class="link-card reveal" style="--delay:0.07s">
+      <a href="roadmap.html" class="link-card reveal dly-07">
         <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>Roadmap</h3>
         <p>Where the product is headed: distribution trust (signing + updater), Flight Deck supervision, and the Remote Agents bet.</p>
         <span class="go">See what&rsquo;s next &rarr;</span>
       </a>
-      <a href="https://github.com/packetloss404/PacketADE" class="link-card reveal" style="--delay:0.14s" target="_blank" rel="noopener">
+      <a href="https://github.com/packetloss404/PacketADE" class="link-card reveal dly-14" target="_blank" rel="noopener">
         <h3><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</h3>
         <p>Full source, releases, and issue tracker. Star the repo, file bugs, or build it yourself from the runbooks in <code>dev/</code>.</p>
         <span class="go">View the source &rarr;</span>
@@ -441,54 +253,6 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   </div>
 </footer>
 
-<script>
-(function(){
-  'use strict';
-
-  /* Mobile nav toggle */
-  var hamburger = document.getElementById('hamburger');
-  var navLinks = document.getElementById('nav-links');
-  if (hamburger && navLinks) {
-    hamburger.addEventListener('click', function() {
-      var isOpen = navLinks.classList.toggle('open');
-      hamburger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-    });
-    navLinks.addEventListener('click', function(e) {
-      if (e.target.tagName === 'A') {
-        navLinks.classList.remove('open');
-        hamburger.setAttribute('aria-expanded', 'false');
-      }
-    });
-  }
-
-  /* Scroll reveals */
-  var revealEls = document.querySelectorAll('.reveal');
-  if ('IntersectionObserver' in window) {
-    var revealObs = new IntersectionObserver(function(entries) {
-      entries.forEach(function(e) {
-        if (e.isIntersecting) {
-          e.target.classList.add('show');
-          revealObs.unobserve(e.target);
-        }
-      });
-    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
-    revealEls.forEach(function(el) { revealObs.observe(el); });
-  } else {
-    revealEls.forEach(function(el) { el.classList.add('show'); });
-  }
-
-  /* Smooth in-page scroll */
-  document.querySelectorAll('a[href^="#"]').forEach(function(a) {
-    a.addEventListener('click', function(e) {
-      var target = document.querySelector(this.getAttribute('href'));
-      if (target) {
-        e.preventDefault();
-        target.scrollIntoView({ behavior: 'smooth' });
-      }
-    });
-  });
-
-})();
-</script>
+<script src="assets/landing.js"></script>
 </body>
 </html>
