@@ -12,9 +12,8 @@
  * Adding a `CoreView` without a registry row is a compile error, and every
  * consumer derives its list from `ROUTE_REGISTRY`.
  *
- * Renames land here too: the P2 bundle's "GitHub → Git Hosts" rail rename and
- * the Settings/Tools label mismatch are each a one-line change in this table
- * (deliberately NOT applied here — they are separate P2 items).
+ * Renames land here too: the "GitHub → Git Hosts" rail rename was a one-line
+ * change in this table.
  */
 import {
   Bot,
@@ -192,16 +191,17 @@ export const ROUTE_REGISTRY: Record<CoreView, RouteMeta> = {
       keywords: ["context", "knowledge", "files"],
     },
   },
-  // P2 (not applied here): rename to "Git Hosts" so the shell matches
-  // GitHub/Gitea/Forgejo behaviour. One-line change, this row only.
+  // Named "Git Hosts", not "GitHub": the pane heading and the Settings section
+  // already say "Git Hosts", and the route serves GitHub *and* self-hosted
+  // Gitea/Forgejo. The rail was the last surface still naming only one vendor.
   github: {
     id: "github",
-    label: "GitHub",
+    label: "Git Hosts",
     icon: Github,
     rail: { placement: "primary", order: 60 },
     palette: {
       visible: true,
-      description: "GitHub integration",
+      description: "GitHub, Gitea and Forgejo integration",
       iconColor: "text-text-primary",
       keywords: ["git", "repo", "pr", "pull request", "gitea", "forgejo", "host"],
     },

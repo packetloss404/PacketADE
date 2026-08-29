@@ -15,6 +15,7 @@ vi.mock("@/stores/flightStore", () => ({
   },
 }));
 
+import { storageKey } from "@/lib/brand";
 import { useIssueStore, type IssueStatus } from "../issueStore";
 
 /** Helper to get current store state outside of React */
@@ -106,6 +107,15 @@ describe("issueStore", () => {
       expect(raw).toBeTruthy();
       const parsed = JSON.parse(raw!);
       expect(parsed.issues).toHaveLength(1);
+    });
+
+    // The store now builds its key with `storageKey()` instead of spelling the
+    // brand prefix out. That refactor is only safe while the resolved key is
+    // byte-identical — a drift here silently orphans every user's issues.
+    it("writes under exactly the historical key", () => {
+      store().addIssue(makeIssue());
+      expect(storageKey("issues")).toBe("packetbench:issues");
+      expect(Object.keys(localStorage)).toContain("packetbench:issues");
     });
   });
 
@@ -388,6 +398,56 @@ describe("issueStore", () => {
       store().addLabel("bug");
       // "bug" is in defaults, should still only appear once
       expect(store().labels.filter((l) => l === "bug")).toHaveLength(1);
+    });
+  });
+
+  // Epics/labels used to be add-only — a typo could be created but never
+  // taken back, from the store or the UI.
+  describe("removeEpic / removeLabel", () => {
+    it("removes an epic from the catalogue", () => {
+      store().addEpic("Authentication");
+      store().removeEpic("Authentication");
+      expect(store().epics).not.toContain("Authentication");
+    });
+
+    it("detaches the removed epic from every issue that named it", () => {
+      store().addEpic("Authentication");
+      const tagged = store().addIssue(makeIssue({ epic: "Authentication" }));
+      const untouched = store().addIssue(makeIssue({ epic: "Billing" }));
+
+      store().removeEpic("Authentication");
+
+      expect(store().issues.find((i) => i.id === tagged.id)?.epic).toBeNull();
+      // Only the removed epic is cleared; unrelated issues keep theirs.
+      expect(store().issues.find((i) => i.id === untouched.id)?.epic).toBe("Billing");
+    });
+
+    it("removes a label from the catalogue and strips it off issues", () => {
+      const issue = store().addIssue(makeIssue({ labels: ["bug", "api"] }));
+
+      store().removeLabel("bug");
+
+      expect(store().labels).not.toContain("bug");
+      expect(store().issues.find((i) => i.id === issue.id)?.labels).toEqual(["api"]);
+    });
+
+    it("is a no-op for an unknown epic or label", () => {
+      const epicsBefore = store().epics;
+      const labelsBefore = store().labels;
+
+      store().removeEpic("never-existed");
+      store().removeLabel("never-existed");
+
+      expect(store().epics).toBe(epicsBefore);
+      expect(store().labels).toBe(labelsBefore);
+    });
+
+    it("persists the removal", () => {
+      store().addEpic("Authentication");
+      store().removeEpic("Authentication");
+
+      const saved = JSON.parse(localStorage.getItem("packetbench:issues") ?? "{}");
+      expect(saved.epics).not.toContain("Authentication");
     });
   });
 

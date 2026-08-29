@@ -375,6 +375,24 @@ async fn active_host_kind(auth: &GitHubAuthState) -> GitHostKind {
         .unwrap_or(GitHostKind::GitHub)
 }
 
+/// G11: guard the inline review-comment commands (create + reply).
+///
+/// Both hardcode `https://api.github.com/...`, so on a Gitea workspace they
+/// would send the GitHub token to GitHub carrying Gitea owner/repo/comment ids.
+/// Gitea's inline-comment model (review-scoped path+position) differs enough
+/// that v1 gates authoring; the user can still leave a regular PR comment, and
+/// viewing reviews works on both hosts. One helper so create and reply cannot
+/// drift — `reply` shipped without the guard the `create` side already had.
+async fn require_github_for_inline_review(auth: &GitHubAuthState) -> Result<(), String> {
+    if active_host_kind(auth).await == GitHostKind::Gitea {
+        return Err(
+            "Inline review comments aren't supported on Gitea yet — post a regular PR comment instead."
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 /// Guard GitHub-only commands (the AI features query api.github.com directly
 /// via the GitHub connection). On a Gitea workspace, refuse with a clear error
 /// rather than firing the GitHub token at api.github.com with a Gitea repo.
@@ -392,29 +410,55 @@ fn github_client(token: &str) -> Result<reqwest::Client, String> {
     GitHost::github().build_client(token)
 }
 
-fn sanitize_github_error(status: reqwest::StatusCode) -> String {
+/// Human name for whichever host actually answered a request.
+///
+/// These commands now target GitHub *or* a self-hosted Gitea/Forgejo instance,
+/// but the sanitized error said "GitHub API error" unconditionally — so a 401
+/// from the user's own Gitea told them to check a GitHub token they had never
+/// used. The response URL is the one thing every call site has in hand, so the
+/// label is derived from it: GitHub cloud is always `api.github.com`; anything
+/// else is the user's own instance, named by its hostname.
+fn host_label_from_url(url: &reqwest::Url) -> String {
+    match url.host_str() {
+        Some("api.github.com") => "GitHub".to_string(),
+        Some(host) => host.to_string(),
+        // Hostless URL (only reachable for non-network schemes) — stay generic
+        // rather than blaming a host we cannot name.
+        None => "Git host".to_string(),
+    }
+}
+
+fn sanitize_host_error(host_label: &str, status: reqwest::StatusCode) -> String {
     let reason = match status.as_u16() {
-        401 => "unauthorized — check your GitHub token",
-        403 => "forbidden — you may lack permissions or be rate-limited",
-        404 => "not found — the resource may not exist or may be private",
-        422 => "validation failed — check your request parameters",
-        429 => "rate limited — try again later",
-        _ if status.is_client_error() => "client error",
-        _ if status.is_server_error() => "GitHub server error — try again later",
-        _ => "unexpected error",
+        401 => format!("unauthorized — check your {} token", host_label),
+        403 => "forbidden — you may lack permissions or be rate-limited".to_string(),
+        404 => "not found — the resource may not exist or may be private".to_string(),
+        422 => "validation failed — check your request parameters".to_string(),
+        429 => "rate limited — try again later".to_string(),
+        _ if status.is_client_error() => "client error".to_string(),
+        _ if status.is_server_error() => format!("{} server error — try again later", host_label),
+        _ => "unexpected error".to_string(),
     };
-    format!("GitHub API error {}: {}", status.as_u16(), reason)
+    format!("{} API error {}: {}", host_label, status.as_u16(), reason)
+}
+
+/// Log the raw failure body (never surfaced to the user — it can echo tokens
+/// and private repo data) and return the sanitized, host-named message.
+async fn host_error_from_response(resp: reqwest::Response) -> String {
+    let status = resp.status();
+    let label = host_label_from_url(resp.url());
+    warn!(
+        "{} API error {}: {}",
+        label,
+        status,
+        resp.text().await.unwrap_or_default()
+    );
+    sanitize_host_error(&label, status)
 }
 
 async fn github_response_text(resp: reqwest::Response) -> Result<String, String> {
     if !resp.status().is_success() {
-        let status = resp.status();
-        warn!(
-            "GitHub API error {}: {}",
-            status,
-            resp.text().await.unwrap_or_default()
-        );
-        return Err(sanitize_github_error(status));
+        return Err(host_error_from_response(resp).await);
     }
     resp.text()
         .await
@@ -2853,13 +2897,7 @@ pub async fn github_merge_pr(
     if host.kind == GitHostKind::Gitea {
         // Empty body — treat any 2xx as a successful merge.
         if !resp.status().is_success() {
-            let status = resp.status();
-            warn!(
-                "Gitea merge error {}: {}",
-                status,
-                resp.text().await.unwrap_or_default()
-            );
-            return Err(sanitize_github_error(status));
+            return Err(host_error_from_response(resp).await);
         }
         return Ok(GitHubMergeResult {
             sha: String::new(),
@@ -3539,15 +3577,7 @@ pub async fn github_post_pr_review_comment(
     if trimmed.is_empty() {
         return Err("Comment body cannot be empty".to_string());
     }
-    // G11: Gitea's inline-comment model (review-scoped path+position) differs
-    // enough that v1 gates authoring — the user can still leave a regular PR
-    // comment. Viewing reviews works on both hosts.
-    if active_host_kind(auth.inner()).await == GitHostKind::Gitea {
-        return Err(
-            "Inline review comments aren't supported on Gitea yet — post a regular PR comment instead."
-                .to_string(),
-        );
-    }
+    require_github_for_inline_review(auth.inner()).await?;
     // GitHub only accepts LEFT/RIGHT; default anything else to RIGHT (new file).
     let side_norm = if side.eq_ignore_ascii_case("LEFT") {
         "LEFT"
@@ -3615,6 +3645,10 @@ pub async fn github_reply_to_pr_review_comment(
     if trimmed.is_empty() {
         return Err("Comment body cannot be empty".to_string());
     }
+    // Same guard as `github_post_pr_review_comment` — this command hardcodes
+    // `api.github.com`, so without it a Gitea workspace fires the GitHub token
+    // at GitHub carrying a Gitea owner/repo/comment id.
+    require_github_for_inline_review(auth.inner()).await?;
     let client = github_client_from_state(auth.inner()).await?;
     let url = format!(
         "https://api.github.com/repos/{}/{}/pulls/{}/comments/{}/replies",
@@ -3792,13 +3826,7 @@ pub async fn github_mark_notification_read(
     // On success GitHub returns 205 (reset content) with an empty body, so we
     // check the status directly rather than reading a JSON body.
     if !resp.status().is_success() {
-        let status = resp.status();
-        warn!(
-            "GitHub API error {}: {}",
-            status,
-            resp.text().await.unwrap_or_default()
-        );
-        return Err(sanitize_github_error(status));
+        return Err(host_error_from_response(resp).await);
     }
     Ok(())
 }
@@ -3859,5 +3887,113 @@ mod tests {
         assert!(s.ends_with('Z'));
         assert_eq!(&s[4..5], "-");
         assert_eq!(&s[10..11], "T");
+    }
+
+    // --- host-named errors -------------------------------------------------
+    // Regression: every sanitized failure used to read "GitHub API error",
+    // including responses that came back from a self-hosted Gitea/Forgejo.
+
+    fn url(s: &str) -> reqwest::Url {
+        reqwest::Url::parse(s).expect("test url")
+    }
+
+    #[test]
+    fn host_label_names_github_cloud() {
+        assert_eq!(
+            host_label_from_url(&url("https://api.github.com/repos/o/r/pulls/1")),
+            "GitHub"
+        );
+    }
+
+    #[test]
+    fn host_label_names_the_gitea_instance_that_answered() {
+        assert_eq!(
+            host_label_from_url(&url("https://git.example.com/api/v1/repos/o/r/issues")),
+            "git.example.com"
+        );
+    }
+
+    #[test]
+    fn sanitized_error_does_not_blame_github_for_a_gitea_response() {
+        let msg = sanitize_host_error(
+            &host_label_from_url(&url("https://git.example.com/api/v1/user")),
+            reqwest::StatusCode::UNAUTHORIZED,
+        );
+        assert_eq!(
+            msg,
+            "git.example.com API error 401: unauthorized — check your git.example.com token"
+        );
+        assert!(!msg.contains("GitHub"));
+    }
+
+    #[test]
+    fn sanitized_error_still_names_github_for_a_github_response() {
+        let label = host_label_from_url(&url("https://api.github.com/user"));
+        assert_eq!(
+            sanitize_host_error(&label, reqwest::StatusCode::UNAUTHORIZED),
+            "GitHub API error 401: unauthorized — check your GitHub token"
+        );
+        assert_eq!(
+            sanitize_host_error(&label, reqwest::StatusCode::INTERNAL_SERVER_ERROR),
+            "GitHub API error 500: GitHub server error — try again later"
+        );
+    }
+
+    #[test]
+    fn sanitized_error_keeps_host_neutral_reasons_unchanged() {
+        let label = host_label_from_url(&url("https://git.example.com/api/v1/user"));
+        assert_eq!(
+            sanitize_host_error(&label, reqwest::StatusCode::NOT_FOUND),
+            "git.example.com API error 404: not found — the resource may not exist or may be private"
+        );
+    }
+
+    // --- G11 inline-review guard -------------------------------------------
+    // Regression: `github_reply_to_pr_review_comment` hardcodes
+    // `https://api.github.com/...` but shipped without the Gitea guard its
+    // sibling `github_post_pr_review_comment` had, so a Gitea workspace sent
+    // the GitHub token to GitHub with a Gitea repo path.
+
+    fn auth_state(connections: Vec<GitHostConnection>, active: &str) -> GitHubAuthState {
+        GitHubAuthState {
+            connections: RwLock::new(connections),
+            tokens: RwLock::new(HashMap::new()),
+            active_connection_id: RwLock::new(active.to_string()),
+        }
+    }
+
+    fn gitea_connection() -> GitHostConnection {
+        GitHostConnection {
+            id: "gitea-1".to_string(),
+            kind: GitHostKind::Gitea,
+            base_url: "https://git.example.com".to_string(),
+            label: "Self-hosted".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn inline_review_guard_refuses_a_gitea_workspace() {
+        let auth = auth_state(
+            vec![GitHostConnection::github(), gitea_connection()],
+            "gitea-1",
+        );
+        let err = require_github_for_inline_review(&auth)
+            .await
+            .expect_err("Gitea must be refused before any api.github.com request");
+        assert!(err.contains("Gitea"), "unexpected message: {err}");
+    }
+
+    #[tokio::test]
+    async fn inline_review_guard_allows_a_github_workspace() {
+        let auth = auth_state(vec![GitHostConnection::github()], GITHUB_CONNECTION_ID);
+        assert!(require_github_for_inline_review(&auth).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn inline_review_guard_defaults_to_github_for_an_unknown_connection() {
+        // `active_host_kind` falls back to GitHub when the active id resolves to
+        // nothing; the guard must not block on that path.
+        let auth = auth_state(vec![GitHostConnection::github()], "vanished");
+        assert!(require_github_for_inline_review(&auth).await.is_ok());
     }
 }

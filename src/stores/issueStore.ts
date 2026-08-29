@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { loadFromStorage, saveToStorage, generateId as genId } from "@/lib/storage";
-import { MONITOR_WINDOW_QUERY_KEY } from "@/lib/brand";
+import { MONITOR_WINDOW_QUERY_KEY, storageKey } from "@/lib/brand";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createIssueWorktree, saveIssuesSlice } from "@/lib/tauri";
 import { logSwallowed } from "@/lib/logSwallowed";
@@ -115,6 +115,15 @@ interface IssueStore {
   assignToFlight: (issueId: string, flightId: string | null) => void;
   addEpic: (epic: string) => void;
   addLabel: (label: string) => void;
+  /**
+   * Retire an epic from the catalogue AND detach it from every issue that
+   * named it. Leaving the issue pointing at an epic that no longer exists
+   * would strand it: the epic `<select>` is controlled, so a value with no
+   * matching `<option>` renders blank and the issue can never be re-filed.
+   */
+  removeEpic: (epic: string) => void;
+  /** Retire a label from the catalogue AND strip it off every issue. */
+  removeLabel: (label: string) => void;
   setTicketPrefix: (prefix: string) => void;
   hydrateFromBackend: (issues?: Issue[]) => void;
   getIssuesByStatus: (status: IssueStatus) => Issue[];
@@ -205,8 +214,18 @@ const DEFAULT_ISSUE_STATE: IssueState = {
   ],
 };
 
+/**
+ * localStorage key for the whole issue slice.
+ *
+ * Built from `storageKey()` rather than spelled out (CLAUDE.md: never hardcode
+ * the `packetbench:` prefix — it has already moved twice). The resolved value
+ * is byte-identical to the previous literal `"packetbench:issues"`, so existing
+ * installs keep reading the issues they already have.
+ */
+const ISSUES_STORAGE_KEY = storageKey("issues");
+
 function loadState(): IssueState {
-  const parsed = loadFromStorage<IssueState>("packetbench:issues", DEFAULT_ISSUE_STATE);
+  const parsed = loadFromStorage<IssueState>(ISSUES_STORAGE_KEY, DEFAULT_ISSUE_STATE);
   return { ...parsed, issues: (parsed.issues || []).map(migrateIssue) };
 }
 
@@ -259,7 +278,7 @@ function syncIssuesToBackend(issues: Issue[]) {
 }
 
 function saveState(state: IssueState) {
-  saveToStorage("packetbench:issues", state);
+  saveToStorage(ISSUES_STORAGE_KEY, state);
   // Mirror to Rust PersistedState so server-side consumers (notably
   // `emit_fixes_events` in `commands/git.rs`) see the same data on every
   // mutation. Routed through a single helper here so every code path that
@@ -445,6 +464,44 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
     });
   },
 
+  removeEpic: (epic) => {
+    set((s) => {
+      if (!s.epics.includes(epic)) return {};
+      const epics = s.epics.filter((e) => e !== epic);
+      const now = Date.now();
+      const issues = s.issues.map((i) => (i.epic === epic ? { ...i, epic: null, updatedAt: now } : i));
+      saveState({
+        issues,
+        nextTicketNum: s.nextTicketNum,
+        ticketPrefix: s.ticketPrefix,
+        epics,
+        labels: s.labels,
+      });
+      return { epics, issues };
+    });
+  },
+
+  removeLabel: (label) => {
+    set((s) => {
+      if (!s.labels.includes(label)) return {};
+      const labels = s.labels.filter((l) => l !== label);
+      const now = Date.now();
+      const issues = s.issues.map((i) =>
+        i.labels.includes(label)
+          ? { ...i, labels: i.labels.filter((l) => l !== label), updatedAt: now }
+          : i,
+      );
+      saveState({
+        issues,
+        nextTicketNum: s.nextTicketNum,
+        ticketPrefix: s.ticketPrefix,
+        epics: s.epics,
+        labels,
+      });
+      return { labels, issues };
+    });
+  },
+
   setTicketPrefix: (prefix) => {
     set((s) => {
       saveState({
@@ -487,7 +544,7 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
     };
 
     set(nextState);
-    saveToStorage("packetbench:issues", nextState);
+    saveToStorage(ISSUES_STORAGE_KEY, nextState);
     syncIssuesToBackend(issues);
     queueIssueFlightReconciliation();
   },
@@ -815,7 +872,7 @@ async function registerIssueWatcher() {
 
 // Read-only Monitor windows evaluate this module too (main.tsx statically
 // imports the whole App graph), but their issueStore snapshot is frozen at
-// window boot and this handler whole-slice-saves `packetbench:issues` —
+// window boot and this handler whole-slice-saves the issues slice —
 // registering here would let a stale monitor copy clobber the shared
 // localStorage. The main window owns the close-loop. (Inline check instead
 // of `isMonitorBoot()` to avoid the issueStore → monitorWindows →
