@@ -4,10 +4,13 @@
 
 PacketBench is a Tauri v2 desktop app that brings AI coding agents, planning, issue tracking, memory, and workspace management into a single native environment. It is built for running real development workflows across multiple agent CLIs without leaving the app.
 
-Current source release: **v0.10.3** (2026-08-02), tagged from pushed `main`
-commit `61e0669`; `main` has since advanced with documentation-only commits —
-the tagged tree is the shipped source. Fresh unsigned Windows app, NSIS, and
-MSI artifacts were compiled from that exact revision; see
+Source is at **0.12.1**. `v0.10.3` (2026-08-02, commit `61e0669`) remains the
+newest annotated tag, but `main` has advanced well past it — see
+[`CHANGELOG.md`](./CHANGELOG.md). Unsigned Windows NSIS and MSI artifacts have
+been built locally at 0.11.0, 0.12.0 and 0.12.1 but **none has been published**;
+the newest build on GitHub Releases is `v0.5.0` from May 2026, still carrying the
+previous `PacketADE` product name. Nothing is code signed, and no packaged
+install has completed the acceptance matrix. For the v0.10.3 record, see
 [`HANDOFF.md`](./HANDOFF.md#latest-windows-build) for the exact artifacts and
 hashes.
 
@@ -17,6 +20,12 @@ _An actual native PacketBench capture: PacketCode and Claude Code running their 
 
 ## Documentation Map
 
+**Start here: [the documentation site](https://packetbench-docs-production.up.railway.app/guide/)** — 20 pages
+covering every surface, a settings reference, a deep developer section, and an
+orientation briefing written for coding agents working in this repository. It is
+generated from Markdown in [`docs/src/`](./docs/src) by `pnpm docs:build` and
+deployed as its own container; edit the Markdown, not the HTML.
+
 - [`docs/reports/state-of-the-ade-2026-07-30.md`](./docs/reports/state-of-the-ade-2026-07-30.md) — primary AI-readable State of the ADE living record; Section 0 is the current 2026-08-03 authority.
 - [`docs/reports/state-of-the-ade-2026-07-30.pdf`](./docs/reports/state-of-the-ade-2026-07-30.pdf) — identical paginated human edition.
 - [`docs/reports/fable5-review-2026-08-05.md`](./docs/reports/fable5-review-2026-08-05.md) — the 2026-08-05 seven-team deep review and v1.0.0 plan (`.html` sibling is the human edition with screenshots).
@@ -25,7 +34,11 @@ _An actual native PacketBench capture: PacketCode and Claude Code running their 
 - [`ROADMAP.md`](./ROADMAP.md) — current product direction and release path.
 - [`backlog.md`](./backlog.md) — master ledger for outstanding work.
 - [`dev/release-v0.10.3.md`](./dev/release-v0.10.3.md) — immutable tagged-source,
-  gate, artifact, and hash record for the current release.
+  gate, artifact, and hash record for `v0.10.3`. Still the newest annotated tag,
+  but no longer current source; `CHANGELOG.md` records 0.11.0, 0.12.0 and 0.12.1
+  after it.
+- [`dev/acceptance-0.12.1.md`](./dev/acceptance-0.12.1.md) — the packaged
+  acceptance checklist. Sections 0 and 1 have run; 2–5 have not.
 - [`dev/README.md`](./dev/README.md) — planning index, active implementation briefs, runbooks, and archive.
 - [`dev/remoteagents/README.md`](./dev/remoteagents/README.md) — canonical Remote Agents plan.
 - [`CHANGELOG.md`](./CHANGELOG.md) — shipped history only.
@@ -42,9 +55,10 @@ decisions: auth provider and the E2EE launch gate.
 
 ## What It Does
 
-- Create and supervise structured conversations with seven API-agent providers
+- Create and supervise structured conversations with nine API-agent providers
   in the first-class **Agents** surface — Claude Agent SDK/API, OpenAI
-  API/Agents SDK, MiniMax, OpenRouter, and local Ollama all normalize into one
+  API/Agents SDK, MiniMax, OpenRouter, local Ollama, the PacketCode engine over
+  ACP, and any OpenAI-compatible endpoint you configure all normalize into one
   event contract
 - Run PacketCode, Claude Code, Codex CLI, OpenCode, and plain shells in
   CLI-first **Workspaces** with persistent draggable mosaics
@@ -71,7 +85,13 @@ decisions: auth provider and the E2EE launch gate.
 
 ![PacketBench issue board with Flight, label, epic, workspace, and assignee filters](./docs/reports/visual-audit-2026-07-30/05-issues-board-1920.png)
 
-These captures show the current rendered UI using PacketBench's deterministic
+> **Note:** These captures are from the 2026-07-30 visual audit and therefore
+> **predate the 2026-08-26 rename** — they carry the previous product name and
+> do not show anything built since, including the reworked Memory pane and the
+> dictation analytics tab. They are kept because the layouts are still
+> representative; treat the branding and any specific copy as out of date.
+
+These captures show the rendered UI using PacketBench's deterministic
 web-mode fixture. The full viewport set, method, and environment limitations
 are documented in the
 [`2026-07-30 visual audit`](./docs/reports/visual-audit-2026-07-30/findings.md).
@@ -269,16 +289,29 @@ The Claude Agent SDK and OpenAI Agents SDK providers run in a Node sidecar that 
 
 ### Memory — Auto-Learning System
 
-- Automatically learns from completed sessions: reads PTY transcripts, summarizes via Claude, extracts reusable patterns
+- Records every terminal session longer than ten seconds, however it ends, and
+  every settled Flight. The event is written **before** any summarization, so
+  the timeline fills in even with no AI provider configured — the summary is an
+  enrichment, not a precondition.
+- Summarization and pattern extraction route through the aux-LLM seam, so they
+  use whichever provider you have configured rather than a fixed vendor.
 - Learned patterns with confidence scores and categories (architecture, convention, preference, pitfall)
-- Live context injection into workspace sessions (patterns + lessons + recent summaries)
-- Per-project scoping with bounded context to avoid token overflow
+- Live context injection into sessions (patterns + lessons + recent summaries +
+  project notes), behind a visible toggle that previews exactly what will be sent
+- Scope is derived from the active workspace, so a remote SSH workspace keeps its
+  own memory and neither side leaks into the other
 - A **Project notes** source stores ordinary Markdown plus schema-v1 YAML
   frontmatter under `.agents/memory`. Notes have stable IDs, optimistic
   revisions, links/backlinks, broken-link/orphan health, provenance references,
   search, and safe external-editor reload/conflict handling.
-- Unified “Ask your project” retrieval ranks eligible global and project-note
-  excerpts together with source filters and a bounded context budget.
+- **Ask** searches the entire corpus — every pattern regardless of confidence,
+  every event regardless of age, saved notes and project notes — with no recency
+  window and no character budget, and reports what it searched so an empty
+  answer is legible. It is deliberately a **separate** path from prompt
+  injection: widening what search can find must never widen what reaches an
+  agent, and tests pin that separation.
+- Project notes are plain Markdown. A file with no YAML frontmatter is a valid
+  note, taking its title from the first heading.
 - Project notes are normal project files and are version-control-capable by
   default. PacketBench never edits `.gitignore`; teams decide whether to track
   `.agents/memory`.
@@ -481,7 +514,17 @@ PacketBench is developed on Windows but is designed to ship on macOS and Linux a
 
 ### Beta Distribution Status
 
-Current beta builds are distributed through GitHub Releases and installed manually. Windows Authenticode signing, macOS Developer ID signing/notarization, and the Tauri v2 auto-updater are planned release-trust gates but are not enabled in the repo today. Until those credentials and updater manifests exist, beta users may see SmartScreen or Gatekeeper warnings on fresh downloads.
+**Nothing current is published.** The newest build on GitHub Releases is
+`v0.5.0` from May 2026, and its installers still carry the previous `PacketADE`
+product name. Unsigned Windows NSIS and MSI artifacts exist locally for 0.11.0,
+0.12.0 and 0.12.1 but have not been uploaded, and no packaged install has
+completed the acceptance matrix. Building from source is the only way to run
+current PacketBench.
+
+Windows Authenticode signing, macOS Developer ID signing/notarization, and the
+Tauri v2 auto-updater are planned release-trust gates and are not enabled in the
+repo today. Until those credentials and updater manifests exist, any fresh
+download will raise SmartScreen or Gatekeeper warnings.
 
 The source tag and application version move together. Local release gates are
 explicit: run `pnpm lint`, `pnpm test`, `pnpm build`,
@@ -514,6 +557,15 @@ pnpm preflight       # format check + lint + unit tests + web build
 pnpm check           # preflight + e2e + sidecar:check + Tauri schema + Rust check/tests
 pnpm sidecar:check   # 14 chained sidecar build/protocol/provider smoke gates
 ```
+
+The documentation site has its own build, which is not part of those ladders:
+
+```bash
+pnpm docs:build      # renders docs/src/*.md into docs/guide/
+```
+
+It fails if a page declared in `docs/src/nav.json` has no Markdown, so a broken
+nav surfaces as a failed build rather than a 404 in production.
 
 Individual rungs are also available directly:
 
@@ -583,7 +635,12 @@ PacketBench/
   agent-sidecar/               # Node sidecar for API-key-backed Agent SDK providers
   scripts/                     # Build, sidecar, schema-check, and bundling scripts
   e2e/                         # Playwright tests
-  docs/                        # Documentation site assets
+  docs/
+    src/                       # Documentation site SOURCE — Markdown + nav.json; edit these
+    guide/                     # Generated site output (pnpm docs:build); do not hand-edit
+    Dockerfile, Caddyfile      # Container that rebuilds and serves the site
+    index.html, *.html         # Hand-authored landing page, manual and roadmap
+    assets/, screenshots/      # Extracted page CSS/JS and screenshot assets
   public/                      # Static frontend assets
 ```
 
