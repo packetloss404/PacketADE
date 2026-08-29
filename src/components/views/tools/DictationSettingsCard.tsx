@@ -9,12 +9,20 @@ import {
   Stethoscope,
   RotateCw,
   AlertTriangle,
+  Trash2,
 } from "lucide-react";
 import { useDictationStore } from "@/stores/dictationStore";
 import { useAppStore } from "@/stores/appStore";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { listAudioDevices, testAudioDevice } from "@/lib/tauri";
 import { isWindows } from "@/lib/platform";
-import { MAX_WORD_GOAL, type AudioDevice, type AudioDeviceTestResult } from "@/types/dictation";
+import { modelSizeLabel } from "@/lib/whisperModels";
+import {
+  MAX_WORD_GOAL,
+  type AudioDevice,
+  type AudioDeviceTestResult,
+  type WhisperModel,
+} from "@/types/dictation";
 
 /** Mirrors `normalize_config` in `src-tauri/src/commands/dictation/config.rs`,
  *  which clamps `max_duration_seconds` to this range. Keep in sync. */
@@ -76,6 +84,7 @@ export function DictationSettingsCard() {
   const loadSettings = useDictationStore((s) => s.loadSettings);
   const updateSettings = useDictationStore((s) => s.updateSettings);
   const downloadModel = useDictationStore((s) => s.downloadModel);
+  const deleteModel = useDictationStore((s) => s.deleteModel);
   const setActiveView = useAppStore((s) => s.setActiveView);
 
   const [devices, setDevices] = useState<AudioDevice[]>([]);
@@ -84,6 +93,10 @@ export function DictationSettingsCard() {
   const [testingDevice, setTestingDevice] = useState(false);
   const [refreshingDevices, setRefreshingDevices] = useState(false);
   const [newWord, setNewWord] = useState("");
+  /** Size of the model the confirm dialog is currently asking about. */
+  const [modelPendingDelete, setModelPendingDelete] = useState<string | null>(null);
+  /** Size of the model whose delete is in flight. */
+  const [deletingModel, setDeletingModel] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -209,6 +222,54 @@ export function DictationSettingsCard() {
     });
   };
 
+  /** The model dictation would fall back to if `size` were removed: the first
+   *  other model that is verified and ready. `undefined` means removing this
+   *  one leaves nothing usable installed. */
+  const replacementFor = (size: string): WhisperModel | undefined =>
+    models.find((m) => m.size !== size && m.downloaded);
+
+  /** True once the configured model is not ready and nothing else is either —
+   *  the state a user lands in by deleting their last model. Said out loud
+   *  under the list, because an empty row set and no green border is not an
+   *  explanation of why dictation has stopped working. */
+  const noModelReady = models.length > 0 && !models.some((m) => m.downloaded);
+
+  const pendingModel = models.find((m) => m.size === modelPendingDelete) ?? null;
+  const pendingIsSelected = pendingModel != null && settings?.modelSize === pendingModel.size;
+  const pendingReplacement = pendingModel ? replacementFor(pendingModel.size) : undefined;
+
+  /** Consequences the row itself cannot show. Deleting the model dictation is
+   *  set to use is allowed — refusing would strand a user who wants the disk
+   *  back — but never silently: the callout names what transcription runs on
+   *  afterwards, and the switch below actually performs it. */
+  const pendingWarnings = pendingIsSelected
+    ? [
+        pendingReplacement
+          ? `Dictation is set to use this model. Deleting it switches dictation to the ${pendingReplacement.size} model.`
+          : "Dictation is set to use this model, and no other model is ready. Deleting it means dictation cannot transcribe until you download a model again.",
+      ]
+    : [];
+
+  const handleDeleteModel = async (size: string) => {
+    setModelPendingDelete(null);
+    setDeletingModel(size);
+    const wasSelected = settings?.modelSize === size;
+    const replacement = replacementFor(size);
+    try {
+      const deleted = await deleteModel(size);
+      if (!mountedRef.current) return;
+      // Only re-point the setting once the file is actually gone. A failed
+      // delete leaves both the file and the selection exactly as they were,
+      // and the store has already re-read the list from disk so the row that
+      // survived is still on screen with the error above it.
+      if (deleted && wasSelected && replacement && settings) {
+        await updateSettings({ ...settings, modelSize: replacement.size });
+      }
+    } finally {
+      if (mountedRef.current) setDeletingModel(null);
+    }
+  };
+
   const deviceOptions = buildDeviceOptions(devices);
   const selectedDeviceValue =
     settings?.deviceId ??
@@ -280,39 +341,73 @@ export function DictationSettingsCard() {
                 <span className="text-[11px] font-medium capitalize text-text-primary">
                   {m.size}
                 </span>
-                <span className="text-[9px] text-text-muted">{m.fileSizeMb} MB</span>
+                <span
+                  className="text-[9px] text-text-muted"
+                  title={
+                    m.installed && m.diskBytes != null
+                      ? "Size on disk"
+                      : "Approximate download size"
+                  }
+                >
+                  {modelSizeLabel(m)}
+                </span>
               </div>
-              {m.downloaded ? (
-                <button
-                  type="button"
-                  onClick={() => settings && updateSettings({ ...settings, modelSize: m.size })}
-                  aria-pressed={settings?.modelSize === m.size}
-                  className="flex items-center gap-1 text-[10px] text-accent-green"
-                  title={`Use the ${m.size} model`}
-                >
-                  <Check size={10} aria-hidden="true" />
-                  {settings?.modelSize === m.size ? "Selected" : "Use"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => downloadModel(m.size)}
-                  disabled={modelProgress[m.size] != null && modelProgress[m.size] < 100}
-                  aria-busy={modelProgress[m.size] != null && modelProgress[m.size] < 100}
-                  aria-label={`${m.installed ? "Verify" : "Download"} the ${m.size} Whisper model`}
-                  className="hover:bg-accent-purple/10 flex items-center gap-1 rounded px-2 py-0.5 text-[10px] text-accent-purple transition-colors disabled:opacity-40"
-                >
-                  <Download size={10} aria-hidden="true" />
-                  {modelProgress[m.size] != null && modelProgress[m.size] < 100
-                    ? `${modelProgress[m.size]}%`
-                    : m.installed
-                      ? "Verify"
-                      : "Download"}
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {m.downloaded ? (
+                  <button
+                    type="button"
+                    onClick={() => settings && updateSettings({ ...settings, modelSize: m.size })}
+                    aria-pressed={settings?.modelSize === m.size}
+                    className="flex items-center gap-1 text-[10px] text-accent-green"
+                    title={`Use the ${m.size} model`}
+                  >
+                    <Check size={10} aria-hidden="true" />
+                    {settings?.modelSize === m.size ? "Selected" : "Use"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => downloadModel(m.size)}
+                    disabled={modelProgress[m.size] != null && modelProgress[m.size] < 100}
+                    aria-busy={modelProgress[m.size] != null && modelProgress[m.size] < 100}
+                    aria-label={`${m.installed ? "Verify" : "Download"} the ${m.size} Whisper model`}
+                    className="hover:bg-accent-purple/10 flex items-center gap-1 rounded px-2 py-0.5 text-[10px] text-accent-purple transition-colors disabled:opacity-40"
+                  >
+                    <Download size={10} aria-hidden="true" />
+                    {modelProgress[m.size] != null && modelProgress[m.size] < 100
+                      ? `${modelProgress[m.size]}%`
+                      : m.installed
+                        ? "Verify"
+                        : "Download"}
+                  </button>
+                )}
+                {/* Offered for anything on disk, verified or not: an unverified
+                    half-file occupies the same gigabytes and is the case a user
+                    most wants to clear. Hidden while that model is downloading
+                    so the delete cannot race the writer. */}
+                {m.installed && modelProgress[m.size] == null && (
+                  <button
+                    type="button"
+                    onClick={() => setModelPendingDelete(m.size)}
+                    disabled={deletingModel != null}
+                    aria-busy={deletingModel === m.size}
+                    aria-label={`Delete the ${m.size} Whisper model from disk`}
+                    title={`Delete the ${m.size} model and free ${modelSizeLabel(m)}`}
+                    className="hover:bg-accent-red/10 rounded p-1 text-text-muted transition-colors hover:text-accent-red disabled:opacity-40"
+                  >
+                    <Trash2 size={10} aria-hidden="true" />
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
+        {noModelReady && (
+          <p className="mt-2 text-[10px] text-accent-amber">
+            No model is ready, so dictation cannot transcribe. Download one above to start
+            recording again.
+          </p>
+        )}
       </div>
 
       {/* Microphone selector */}
@@ -616,6 +711,20 @@ export function DictationSettingsCard() {
           </div>
         )}
       </div>
+
+      {pendingModel && (
+        <ConfirmDeleteModal
+          title="Delete Whisper model?"
+          entityName={`${pendingModel.size} model`}
+          description={`will be removed from disk, freeing ${modelSizeLabel(pendingModel)}.`}
+          warnings={pendingWarnings}
+          warningTitle="This is the model dictation uses"
+          confirmLabel="Delete model"
+          undoNote={`You can download it again later, which re-fetches about ${pendingModel.fileSizeMb} MB.`}
+          onConfirm={() => void handleDeleteModel(pendingModel.size)}
+          onClose={() => setModelPendingDelete(null)}
+        />
+      )}
     </div>
   );
 }

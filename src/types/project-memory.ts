@@ -49,15 +49,6 @@ export interface ProjectMemorySnapshot {
   revision: string;
 }
 
-export interface ProjectMemorySearchResult {
-  id: string;
-  title: string;
-  relativePath: string;
-  excerpt: string;
-  score: number;
-  provenanceIds: string[];
-}
-
 export interface CreateProjectMemoryInput {
   title: string;
   body: string;

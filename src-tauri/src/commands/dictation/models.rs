@@ -75,9 +75,19 @@ pub struct WhisperModelInfo {
     pub downloaded: bool,
     /// Whether a model file exists but may still need checksum verification.
     pub installed: bool,
-    /// Approximate file size in megabytes
+    /// Approximate file size in megabytes, from the shipped spec. This is what
+    /// a download will cost; it is not what the file on disk actually weighs.
     #[serde(rename = "fileSizeMb")]
     pub file_size_mb: u32,
+    /// Actual bytes the model file occupies right now, or `None` when nothing
+    /// is on disk (or the metadata read failed).
+    ///
+    /// The delete affordance quotes this rather than `file_size_mb`: the spec
+    /// figure is rounded to the nearest 100 MB at the large end, so telling a
+    /// user they will reclaim "3000 MB" when the file is 3.09 GB — or when a
+    /// half-written file is 40 MB — is a claim the disk will not honour.
+    #[serde(rename = "diskBytes")]
+    pub disk_bytes: Option<u64>,
     /// Full path to the model file (only set if downloaded)
     pub path: Option<String>,
 }
@@ -235,11 +245,20 @@ pub fn list_whisper_models() -> Result<Vec<WhisperModelInfo>, String> {
         let path = model_path(spec.size)?;
         let installed = path.is_file();
         let downloaded = installed && has_verified_marker(spec.size, spec.sha256);
+        // Report the size for anything present, verified or not: an installed
+        // but unverified file still occupies the disk, and deleting it is
+        // exactly the case where knowing the real number matters.
+        let disk_bytes = if installed {
+            std::fs::metadata(&path).ok().map(|meta| meta.len())
+        } else {
+            None
+        };
         models.push(WhisperModelInfo {
             size: spec.size.to_string(),
             downloaded,
             installed,
             file_size_mb: spec.file_size_mb,
+            disk_bytes,
             path: if downloaded {
                 Some(path.to_string_lossy().to_string())
             } else {

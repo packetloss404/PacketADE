@@ -10,6 +10,7 @@ const tauriMocks = vi.hoisted(() => ({
   getDictationSettings: vi.fn(),
   setDictationSettings: vi.fn(),
   downloadWhisperModel: vi.fn(),
+  deleteWhisperModel: vi.fn(),
   listWhisperModels: vi.fn(),
   deleteDictationEntry: vi.fn(),
   clearDictationHistory: vi.fn(),
@@ -51,6 +52,7 @@ const readyModel = {
   downloaded: true,
   installed: true,
   fileSizeMb: 142,
+  diskBytes: 147_964_211,
   path: "C:\\models\\ggml-base.bin",
 };
 const dictationResult = {
@@ -608,5 +610,59 @@ describe("dictationStore — word goals", () => {
       dailyWordGoal: 500,
       weeklyWordGoal: 2_500,
     });
+  });
+});
+
+/**
+ * Whisper models are 75 MB to 3 GB each and the card had no way to remove one.
+ * The store action is the seam that keeps the list honest: the model list is
+ * re-read from disk on BOTH paths, so a delete that failed cannot leave the UI
+ * rendering a row it merely assumed had gone (or, worse, dropping one that is
+ * still on disk).
+ */
+describe("dictationStore — model deletion", () => {
+  const onDisk = { ...readyModel };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useDictationStore.setState({ models: [onDisk], error: null });
+  });
+
+  it("removes the file and re-reads the list", async () => {
+    tauriMocks.deleteWhisperModel.mockResolvedValue(undefined);
+    tauriMocks.listWhisperModels.mockResolvedValue([]);
+
+    const deleted = await useDictationStore.getState().deleteModel("base");
+
+    expect(deleted).toBe(true);
+    expect(tauriMocks.deleteWhisperModel).toHaveBeenCalledWith("base");
+    expect(useDictationStore.getState().models).toEqual([]);
+    expect(useDictationStore.getState().error).toBeNull();
+  });
+
+  it("reports the failure and keeps the row when the file will not delete", async () => {
+    tauriMocks.deleteWhisperModel.mockRejectedValue(
+      "Failed to delete model file: Access is denied. (os error 5)",
+    );
+    tauriMocks.listWhisperModels.mockResolvedValue([onDisk]);
+
+    const deleted = await useDictationStore.getState().deleteModel("base");
+
+    expect(deleted).toBe(false);
+    // The list is still re-read: whatever the disk says wins over the guess.
+    expect(tauriMocks.listWhisperModels).toHaveBeenCalled();
+    expect(useDictationStore.getState().models).toEqual([onDisk]);
+    expect(useDictationStore.getState().error).toMatch(/Access is denied/);
+  });
+
+  // The backend rejects any size that is not a shipped model id (its
+  // path-traversal guard). That rejection must reach the user, not be
+  // swallowed into a silent no-op.
+  it("surfaces a rejected model id", async () => {
+    tauriMocks.deleteWhisperModel.mockRejectedValue("Unknown model size '../../secrets'");
+    tauriMocks.listWhisperModels.mockResolvedValue([onDisk]);
+
+    expect(await useDictationStore.getState().deleteModel("../../secrets")).toBe(false);
+    expect(useDictationStore.getState().error).toMatch(/Unknown model size/);
   });
 });

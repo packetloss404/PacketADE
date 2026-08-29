@@ -922,14 +922,6 @@ pub fn archive_project_memory(
     archive_project_memory_inner(&project_path, &id, &expected_revision)
 }
 
-#[tauri::command]
-pub fn search_project_memory(
-    project_path: String,
-    query: String,
-) -> Result<Vec<ProjectMemorySearchResult>, String> {
-    search_project_memory_inner(&project_path, &query)
-}
-
 /// Wait until the filesystem burst tracked by `sequence` has been quiet for
 /// `quiet`, or until `max` has elapsed since the first event of the burst.
 ///

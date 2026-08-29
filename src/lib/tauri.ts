@@ -26,7 +26,6 @@ import type { MemoryEvent, LearnedPattern } from "@/types/memory";
 import type {
   CreateProjectMemoryInput,
   ProjectMemoryNote,
-  ProjectMemorySearchResult,
   ProjectMemorySnapshot,
   UpdateProjectMemoryInput,
 } from "@/types/project-memory";
@@ -593,16 +592,6 @@ export async function archiveProjectMemory(
     projectPath,
     id,
     expectedRevision,
-  });
-}
-
-export async function searchProjectMemory(
-  projectPath: string,
-  query: string,
-): Promise<ProjectMemorySearchResult[]> {
-  return invoke<ProjectMemorySearchResult[]>("search_project_memory", {
-    projectPath,
-    query,
   });
 }
 
@@ -3181,6 +3170,12 @@ export function downloadWhisperModel(size: string): Promise<void> {
 
 export function listWhisperModels(): Promise<unknown> {
   return invoke("list_whisper_models");
+}
+
+/** Remove a downloaded Whisper model file and its checksum marker.
+ *  Rejects any size that is not one of the shipped model ids. */
+export function deleteWhisperModel(size: string): Promise<void> {
+  return invoke("delete_whisper_model", { size });
 }
 
 export function testAudioDevice(

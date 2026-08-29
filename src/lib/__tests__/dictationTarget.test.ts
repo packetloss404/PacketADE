@@ -31,6 +31,7 @@ vi.mock("@/lib/tauri", () => ({
   getDictationSettings: vi.fn().mockResolvedValue("{}"),
   setDictationSettings: vi.fn(),
   downloadWhisperModel: vi.fn(),
+  deleteWhisperModel: vi.fn(),
   listWhisperModels: vi.fn().mockResolvedValue([]),
   listAudioDevices: vi.fn().mockResolvedValue([]),
 }));

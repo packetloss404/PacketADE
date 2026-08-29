@@ -128,9 +128,10 @@ baseline**, so nothing in this plan may claim a saving until Phase 0 lands.
    `CACHED_INPUT_RATE_RATIO = 0.25` was wrong for every vendor. Both tables are
    deleted. Rates now live in `shared/model-pricing.json`, compiled into Rust
    with `include_str!` and imported by `src/lib/modelPricing.ts` — one file,
-   two readers, no possible divergence. `calculate_turn_cost` remains
-   registered but is still uncalled by the frontend **by design**: per-message
-   IPC is the wrong shape, and it is no longer a second source of truth.
+   two readers, no possible divergence. `calculate_turn_cost` was the thin
+   Tauri wrapper over `calculate_cost_at`; it stayed registered but uncalled
+   **by design** (per-message IPC is the wrong shape) and was deleted in the
+   2026-08-29 dead-command sweep. `calculate_cost_at` is untouched and live.
 2. **Codex cached tokens are double-counted.** `analytics.rs:217-223` and
    `agent_sidecar/handler.rs:627-633` pass `input` **and** `cached` as separate
    arguments into `calculate_cost`, which is purely additive

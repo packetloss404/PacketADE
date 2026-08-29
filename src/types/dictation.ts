@@ -198,7 +198,11 @@ export interface WhisperModel {
   size: string;
   downloaded: boolean;
   installed: boolean;
+  /** Advertised download size from the shipped spec, in MB. */
   fileSizeMb: number;
+  /** Bytes the file actually occupies on disk right now, or `null` when
+   *  nothing is installed. Deletion quotes this, not `fileSizeMb`. */
+  diskBytes: number | null;
   path: string | null;
 }
 

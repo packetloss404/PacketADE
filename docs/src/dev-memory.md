@@ -479,11 +479,12 @@ O(notes² × tokens-per-note × query-terms), which is to say a hang.
 Documenting these so nobody spends a day wiring up something that is already
 wired to nothing.
 
-**`search_project_memory`** is half dead. The Tauri command is registered and
-`src/lib/tauri.ts:568` exports a `searchProjectMemory` wrapper — but nothing
-calls the wrapper. The Ask tab uses the TypeScript `askMemory` path instead. The
-underlying `search_project_memory_inner` *is* live, reached through the MCP
-server (`src-tauri/src/mcp_server/mod.rs:480`) rather than through Tauri.
+**`search_project_memory` is no longer a Tauri command.** It was registered
+with a `searchProjectMemory` wrapper in `src/lib/tauri.ts` that nothing called
+— the Ask tab uses the TypeScript `askMemory` path instead — so the command and
+the wrapper were both removed. The underlying `search_project_memory_inner`
+*is* live and unchanged, reached through the MCP server
+(`src-tauri/src/mcp_server/mod.rs`) rather than through Tauri.
 
 Everything else is live: `list_project_memory`, `create_project_memory`,
 `update_project_memory`, `archive_project_memory` and `watch_project_memory` via

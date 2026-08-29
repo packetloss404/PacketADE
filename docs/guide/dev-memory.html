@@ -538,26 +538,41 @@ O(notes² × tokens-per-note × query-terms), which is to say a hang.</p>
 <h2 id="dead-surfaces">Dead surfaces<a class="anchor" href="#dead-surfaces" aria-label="Link to this section">#</a></h2>
 <p>Documenting these so nobody spends a day wiring up something that is already
 wired to nothing.</p>
-<p><strong><code>scan_codebase_memory</code></strong> (<code>src-tauri/src/commands/memory.rs:47</code>, registered at
-<code>src-tauri/src/lib.rs:471</code>) has <strong>no caller anywhere in <code>src/</code></strong>. There is no
-<code>invoke(&quot;scan_codebase_memory&quot;)</code> and no TypeScript wrapper. Consequences:</p>
-<ul>
-<li>The entire <code>src-tauri/src/core/aux_context.rs</code> module is unreachable in
-production — <code>assemble_project_manifest</code> has exactly one caller, and that
-caller is <code>scan_codebase_memory</code>.</li>
-<li>The <code>AuxTaskClass::MemoryScan</code> row shown in Settings → AI Provider Routing
-(labelled &quot;Codebase memory scan&quot;) configures a feature nothing can invoke.</li>
-</ul>
-<p><strong><code>search_project_memory</code></strong> is half dead. The Tauri command is registered and
-<code>src/lib/tauri.ts:568</code> exports a <code>searchProjectMemory</code> wrapper — but nothing
-calls the wrapper. The Ask tab uses the TypeScript <code>askMemory</code> path instead. The
-underlying <code>search_project_memory_inner</code> <em>is</em> live, reached through the MCP
-server (<code>src-tauri/src/mcp_server/mod.rs:480</code>) rather than through Tauri.</p>
+<p><strong><code>search_project_memory</code> is no longer a Tauri command.</strong> It was registered
+with a <code>searchProjectMemory</code> wrapper in <code>src/lib/tauri.ts</code> that nothing called
+— the Ask tab uses the TypeScript <code>askMemory</code> path instead — so the command and
+the wrapper were both removed. The underlying <code>search_project_memory_inner</code>
+<em>is</em> live and unchanged, reached through the MCP server
+(<code>src-tauri/src/mcp_server/mod.rs</code>) rather than through Tauri.</p>
 <p>Everything else is live: <code>list_project_memory</code>, <code>create_project_memory</code>,
 <code>update_project_memory</code>, <code>archive_project_memory</code> and <code>watch_project_memory</code> via
 <code>src/stores/projectMemoryStore.ts</code>; <code>summarize_session</code> and <code>extract_patterns</code>
 via <code>memoryStore</code>; <code>summarize_flight</code> via <code>asyncFlightStore</code>;
-<code>toggle_pinned_pattern</code> and <code>save_memory_slice</code> via <code>memoryStore</code>.</p>
+<code>toggle_pinned_pattern</code> and <code>save_memory_slice</code> via <code>memoryStore</code>;
+<code>scan_codebase_memory</code> via <code>memoryStore.scanCodebase</code> (see below).</p>
+<h2 id="codebase-scan">Codebase scan<a class="anchor" href="#codebase-scan" aria-label="Link to this section">#</a></h2>
+<p>The Memory pane header&#39;s <strong>Scan codebase</strong> button →
+<code>memoryStore.scanCodebase</code> → <code>scan_codebase_memory</code>. The command resolves the
+<code>memory-scan</code> auxiliary route <em>before</em> touching the disk (no provider means no
+filesystem read at all), then <code>core::aux_context::assemble_project_manifest</code>
+walks the project under hard bounds — depth, entries, listed files, excerpt
+count and bytes, and a 10s wall clock — skipping symlinks/junctions,
+dot-entries, <code>SKIP_DIRS</code>, secret-shaped filenames and binary content. One
+auxiliary turn turns that manifest into <code>[{path, summary}]</code>.</p>
+<p>The command returns <code>CodebaseScanResult</code>: the model&#39;s raw <code>response</code> plus the
+walk&#39;s own stats. <code>truncated</code> / <code>timedOut</code> come from <code>ScanStats</code>, never from
+the model, because only the walk knows whether a bound clipped it — a partial
+index is labelled <code>(partial)</code>, tagged <code>#partial</code>, says <code>PARTIAL:</code> in its body,
+and leaves a caveat on the pane&#39;s status chip.</p>
+<p>The result is stored as an ordinary <code>manual_note</code> whose <code>source</code> is
+<code>codebase-scan</code> (<code>CODEBASE_SCAN_SOURCE</code>), so it needs no new persisted event
+type and inherits Timeline, Ask/search and both exports; <code>refreshPatterns</code>
+also treats it as pattern source material. It is deliberately NOT part of
+<code>computeContextItems</code>, so a scan is searchable but not silently injected into
+every launch brief. Re-running replaces the scope&#39;s existing scan note rather
+than stacking near-duplicates, and the button reads &quot;Re-scan codebase&quot; once one
+exists. Local scopes only — the walk reads this machine&#39;s filesystem, so the
+button is disabled under a remote (<code>ssh:</code>) workspace.</p>
 <h2 id="agents-reach-memory-over-mcp-too">Agents reach memory over MCP too<a class="anchor" href="#agents-reach-memory-over-mcp-too" aria-label="Link to this section">#</a></h2>
 <p><code>src-tauri/src/mcp_server/mod.rs</code> exposes <code>read_memory_context</code> (learned
 patterns), <code>search_project_memory</code>, <code>read_project_memory</code>, and — gated on
@@ -607,6 +622,7 @@ caller-supplied path.</p>
 <li class="d3"><a href="#link-graph">Link graph</a></li>
 <li class="d3"><a href="#search">Search</a></li>
 <li class="d2"><a href="#dead-surfaces">Dead surfaces</a></li>
+<li class="d2"><a href="#codebase-scan">Codebase scan</a></li>
 <li class="d2"><a href="#agents-reach-memory-over-mcp-too">Agents reach memory over MCP too</a></li>
 <li class="d2"><a href="#related">Related</a></li></ul></nav>
 </div>
