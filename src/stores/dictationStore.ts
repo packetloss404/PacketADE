@@ -8,6 +8,7 @@ import type {
   DictationShortcutStatus,
   WhisperModel,
 } from "@/types/dictation";
+import { MAX_WORD_GOAL } from "@/types/dictation";
 import {
   startRecordingCmd,
   stopRecordingCmd,
@@ -19,6 +20,8 @@ import {
   setDictationSettings,
   downloadWhisperModel as downloadWhisperModelCmd,
   listWhisperModels,
+  deleteDictationEntry as deleteDictationEntryCmd,
+  clearDictationHistory as clearDictationHistoryCmd,
 } from "@/lib/tauri";
 
 interface DictationStore {
@@ -57,6 +60,11 @@ interface DictationStore {
   cancelRecording: () => Promise<void>;
   loadHistory: (limit?: number, offset?: number) => Promise<void>;
   searchHistory: (query: string) => Promise<void>;
+  /** Delete one transcript. Resolves `true` when the row is gone. */
+  deleteEntry: (id: number) => Promise<boolean>;
+  /** Delete every transcript. Resolves with the number of rows removed, or
+   *  `null` when the sweep failed. */
+  clearHistory: () => Promise<number | null>;
   loadAnalytics: () => Promise<void>;
   loadSettings: () => Promise<void>;
   updateSettings: (settings: DictationSettings) => Promise<void>;
@@ -88,6 +96,21 @@ const TRANSCRIBE_MAX_TIMEOUT_MS = 15 * 60_000;
 /** Whisper runs well under realtime on CPU; 20x the recorded length plus the
  *  90s floor (model load from cold disk) is slack, not a deadline. */
 const TRANSCRIBE_REALTIME_FACTOR = 20;
+
+/** Shipped word-goal defaults. Mirrors `DEFAULT_DAILY_WORD_GOAL` /
+ *  `DEFAULT_WEEKLY_WORD_GOAL` in `src-tauri/src/commands/dictation/config.rs`;
+ *  used only when the stored config has no usable value. */
+export const DEFAULT_DAILY_WORD_GOAL = 500;
+export const DEFAULT_WEEKLY_WORD_GOAL = 2_500;
+
+/** Coerce a stored word goal. Negative and non-finite values are not "no
+ *  goal", they are corruption, so they take the default; a real `0` is kept. */
+function wordGoal(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return fallback;
+  }
+  return Math.min(MAX_WORD_GOAL, Math.floor(value));
+}
 
 class DictationTimeoutError extends Error {}
 
@@ -518,6 +541,43 @@ export const useDictationStore = create<DictationStore>((set, get) => {
       }
     },
 
+    /**
+     * Delete one transcript.
+     *
+     * The row is dropped from `history` only AFTER the backend confirms, and
+     * analytics are refetched rather than adjusted locally: every one of the
+     * twenty-one derived figures (streaks, vocabulary first-seen days, n-gram
+     * ranks) depends on the full corpus, so there is no correct local edit.
+     */
+    async deleteEntry(id: number) {
+      try {
+        await deleteDictationEntryCmd(id);
+        set((state) => ({
+          error: null,
+          history: state.history.filter((entry) => entry.id !== id),
+        }));
+        await get().loadAnalytics();
+        return true;
+      } catch (err) {
+        set({ error: String(err) });
+        return false;
+      }
+    },
+
+    /** Delete every transcript. See {@link DictationStore.deleteEntry} for why
+     *  analytics are refetched instead of recomputed. */
+    async clearHistory() {
+      try {
+        const removed = await clearDictationHistoryCmd();
+        set({ error: null, history: [] });
+        await get().loadAnalytics();
+        return removed;
+      } catch (err) {
+        set({ error: String(err) });
+        return null;
+      }
+    },
+
     async loadAnalytics() {
       try {
         const raw = await getDictationAnalytics();
@@ -562,6 +622,11 @@ export const useDictationStore = create<DictationStore>((set, get) => {
                 : 300,
             ),
           ),
+          // `0` is meaningful ("no goal"), so an absent/garbage value falls
+          // back to the shipped default rather than to 0 — otherwise a config
+          // written before the goals existed would silently hide both charts.
+          dailyWordGoal: wordGoal(parsed.dailyWordGoal, DEFAULT_DAILY_WORD_GOAL),
+          weeklyWordGoal: wordGoal(parsed.weeklyWordGoal, DEFAULT_WEEKLY_WORD_GOAL),
         };
         set({ settings });
       } catch (err) {

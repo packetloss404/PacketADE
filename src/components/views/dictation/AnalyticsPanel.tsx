@@ -18,6 +18,7 @@ import {
   BookOpen,
   Clock,
   Flame,
+  Globe,
   Hash,
   Mic,
   Timer,
@@ -27,6 +28,8 @@ import {
 } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import type { DictationAnalytics } from "@/types/dictation";
+import { useAppStore } from "@/stores/appStore";
+import { resolvedTimeZone, timeZoneOffsetLabel, timeZoneOffsetMinutes } from "@/lib/time";
 import { BarSeries, ChartFrame } from "./charts";
 import { AnalyticsRhythm } from "./AnalyticsRhythm";
 import { AnalyticsTrends } from "./AnalyticsTrends";
@@ -48,6 +51,7 @@ export function AnalyticsPanel({ analytics }: { analytics: DictationAnalytics })
 
   return (
     <div className="max-w-[860px] space-y-5">
+      <UtcBucketNote />
       <Headline analytics={analytics} />
       <Section title="Trends">
         <AnalyticsTrends analytics={analytics} />
@@ -96,6 +100,47 @@ function AnalyticsEmptyState() {
         after the scorer was added, so it stays empty on older history.
       </p>
     </div>
+  );
+}
+
+/**
+ * States, on the tab itself, that the calendar buckets are UTC.
+ *
+ * The backend buckets every date-derived figure here — streaks, "today",
+ * "this week", the hour-of-day and weekday heatmaps — in UTC, because
+ * `src-tauri` carries no tz database and shipping the whole transcript corpus
+ * to the frontend to re-bucket it is exactly what `analytics.rs` refuses to
+ * do. Meanwhile the History tab renders each timestamp in local time, so an
+ * entry recorded either side of local midnight lands in a different day on the
+ * two tabs. That was documented only in Tools → Date & Time, which is not
+ * where anyone reads a streak.
+ *
+ * Rendered only when the effective zone actually has a non-zero offset: at
+ * UTC+00:00 the buckets and the timestamps agree and the note would be noise.
+ */
+function UtcBucketNote() {
+  // Subscribed, not read imperatively: `resolvedTimeZone` goes through
+  // `getState()`, so without this the note would keep naming the old zone
+  // until something else re-rendered the tab.
+  useAppStore((s) => s.timeZone);
+  const zone = resolvedTimeZone();
+  if (timeZoneOffsetMinutes(zone) === 0) return null;
+
+  return (
+    <p
+      className="flex items-start gap-1.5 rounded border border-bg-border bg-bg-secondary px-3 py-2 text-[10px] leading-snug text-text-muted"
+      role="note"
+    >
+      <Globe size={11} className="mt-[1px] shrink-0" aria-hidden="true" />
+      <span>
+        Days, weeks and hours on this tab are counted in{" "}
+        <span className="font-mono text-text-secondary">UTC</span>, not in{" "}
+        <span className="font-mono text-text-secondary">{zone}</span> (
+        {timeZoneOffsetLabel(zone)}). History timestamps are shown in local time, so
+        an entry recorded near midnight can fall on a different day in the two
+        tabs.
+      </span>
+    </p>
   );
 }
 

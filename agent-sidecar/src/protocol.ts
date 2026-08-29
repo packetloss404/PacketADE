@@ -33,11 +33,11 @@
 // sidecar event. The Anthropic provider catches `RateLimitError` from the
 // Claude Agent SDK's message iterator, parses the `retry-after` header
 // when present, and emits this typed event alongside its existing `error`
-// emit. The Rust supervisor routes the event into
-// `FlightPlannerRegistry::on_rate_limited`, which flips the owning
-// planner's status to `QuotaPaused`, schedules an auto-resume timer
-// (clamped to 60-600s), and emits a per-flight Tauri event the frontend
-// turns into an OS-level desktop notification.
+// emit. It originally drove `FlightPlannerRegistry::on_rate_limited`
+// (QuotaPaused + an auto-resume timer + a desktop notification); that
+// registry went with the planner in v7, so the supervisor's `rate_limited`
+// arm in `commands/agent_sidecar/handler.rs` now only logs the signal —
+// the paired `error` event is what the session surfaces to the user.
 //
 // v7 (planner amputation): removes the in-process planner MCP surface —
 // the `planner_tool` event, the `planner_tool_result` request, and
@@ -375,13 +375,14 @@ export type SidecarEvent =
   // v6 additions ----------------------------------------------------------
   /** Flight Planner E6: the underlying provider returned a rate-limit
    * error (HTTP 429 in Anthropic's case). Emitted IN ADDITION to the
-   * regular `error` event so legacy listeners still react. The Rust
-   * supervisor consumes this in `agent_sidecar::handle_event` and
-   * delegates to `FlightPlannerRegistry::on_rate_limited`, which arms
-   * the QuotaPaused backoff window. `retryAfterSeconds` is parsed from
-   * the SDK error's `retry-after` header when present (Anthropic returns
-   * a number-of-seconds value); the field is omitted when the header is
-   * absent so the Rust side can fall back to a default window. */
+   * regular `error` event, which is what actually surfaces the failure to
+   * the user. The Rust supervisor consumes this in
+   * `agent_sidecar::handle_event`, where it now only logs the signal — the
+   * `FlightPlannerRegistry` that armed a QuotaPaused backoff window was
+   * removed with the planner in v7. `retryAfterSeconds` is parsed from the
+   * SDK error's `retry-after` header when present (Anthropic returns a
+   * number-of-seconds value); the field is omitted when the header is
+   * absent. Kept on the wire as the generic 429 surface. */
   | {
       type: "rate_limited";
       sessionId: string;

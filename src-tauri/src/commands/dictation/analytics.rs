@@ -380,11 +380,26 @@ const COMMON_WORDS: &[&str] = &[
 /// pre-existing `timeSavedMinutes` field and upstream's `d.words / 40`.
 const TYPING_WPM_BASELINE: f64 = 40.0;
 
-/// Ported from upstream's `DAILY_WORD_GOAL` / `WEEKLY_WORD_GOAL`. Emitted in the
-/// payload rather than hardcoded in the UI so they can become a setting later
-/// without a second source of truth.
-const DAILY_WORD_GOAL: u32 = 500;
-const WEEKLY_WORD_GOAL: u32 = 2500;
+/// The word targets charted in the Consistency section.
+///
+/// These live in `dictation.json` (`daily_word_goal` / `weekly_word_goal`) and
+/// are emitted in the payload rather than read by the UI, so the goal the
+/// charts are drawn against and the goal the user set can never drift apart.
+/// `0` means "no goal" and the panel drops that bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WordGoals {
+    pub daily: u32,
+    pub weekly: u32,
+}
+
+impl Default for WordGoals {
+    fn default() -> Self {
+        Self {
+            daily: super::config::DEFAULT_DAILY_WORD_GOAL,
+            weekly: super::config::DEFAULT_WEEKLY_WORD_GOAL,
+        }
+    }
+}
 
 /// `dailySeries` is capped to this many trailing day-buckets. Everything older
 /// is folded into `dailySeriesCarry` so cumulative charts still start from the
@@ -680,7 +695,16 @@ pub fn get_dictation_analytics() -> Result<String, String> {
         .filter_map(|r| r.ok())
         .collect();
 
-    let analytics = compute_analytics(&rows, current_day_index());
+    // An unreadable config must not fail the whole tab: the goals are one
+    // section of twenty-one, so fall back to the shipped defaults and render.
+    let goals = super::config::read_dictation_config()
+        .map(|config| WordGoals {
+            daily: config.daily_word_goal,
+            weekly: config.weekly_word_goal,
+        })
+        .unwrap_or_default();
+
+    let analytics = compute_analytics_with_goals(&rows, current_day_index(), goals);
 
     serde_json::to_string(&analytics).map_err(|e| format!("JSON serialization error: {e}"))
 }
@@ -711,8 +735,13 @@ struct DayAccumulator {
 ///
 /// `today` is the UTC day index (days since the epoch) that "today", "this
 /// week" and `currentStreak` are measured against; it is a parameter so tests
-/// can pin it.
-fn compute_analytics(rows: &[EntryRow], today: i64) -> DictationAnalytics {
+/// can pin it. `goals` comes from `dictation.json` and is passed through
+/// untouched — see [`WordGoals`].
+fn compute_analytics_with_goals(
+    rows: &[EntryRow],
+    today: i64,
+    goals: WordGoals,
+) -> DictationAnalytics {
     let total_entries = rows.len() as u32;
 
     let stopwords: HashSet<&str> = STOPWORDS.iter().copied().collect();
@@ -1080,8 +1109,8 @@ fn compute_analytics(rows: &[EntryRow], today: i64) -> DictationAnalytics {
         max_words_in_day,
         longest_session_seconds,
         today_words,
-        daily_word_goal: DAILY_WORD_GOAL,
-        weekly_word_goal: WEEKLY_WORD_GOAL,
+        daily_word_goal: goals.daily,
+        weekly_word_goal: goals.weekly,
         this_week,
         last_week,
         filler_counts: FILLER_WORDS
@@ -1416,6 +1445,14 @@ fn are_consecutive_days(a: &str, b: &str) -> bool {
     } else {
         false
     }
+}
+
+/// [`compute_analytics_with_goals`] at the shipped goals. Test-only: the real
+/// caller always has a config to read, and defaulting silently in production
+/// would be exactly the drift the goals were made configurable to avoid.
+#[cfg(test)]
+fn compute_analytics(rows: &[EntryRow], today: i64) -> DictationAnalytics {
+    compute_analytics_with_goals(rows, today, WordGoals::default())
 }
 
 #[cfg(test)]
@@ -1778,8 +1815,45 @@ mod tests {
 
         // Today's goal bucket is the UTC day, not the week.
         assert_eq!(analytics.today_words, 2);
-        assert_eq!(analytics.daily_word_goal, DAILY_WORD_GOAL);
-        assert_eq!(analytics.weekly_word_goal, WEEKLY_WORD_GOAL);
+        assert_eq!(analytics.daily_word_goal, WordGoals::default().daily);
+        assert_eq!(analytics.weekly_word_goal, WordGoals::default().weekly);
+    }
+
+    /// The goals used to be `const`s in this file, so the payload could not
+    /// disagree with the UI. Now they come from `dictation.json`, and this
+    /// pins the only thing that matters: whatever the config says is what the
+    /// charts are drawn against.
+    #[test]
+    fn configured_word_goals_reach_the_payload() {
+        let rows = vec![entry("2026-09-02T08:00:00Z", "alpha beta")];
+        let analytics = compute_analytics_with_goals(
+            &rows,
+            day("2026-09-02"),
+            WordGoals {
+                daily: 1_234,
+                weekly: 7_654,
+            },
+        );
+        assert_eq!(analytics.daily_word_goal, 1_234);
+        assert_eq!(analytics.weekly_word_goal, 7_654);
+    }
+
+    /// `0` is the "no goal" encoding the panel keys off to drop the bar; it
+    /// must survive the payload verbatim rather than being backfilled with a
+    /// default somewhere along the way.
+    #[test]
+    fn a_zero_word_goal_is_carried_through_rather_than_defaulted() {
+        let rows = vec![entry("2026-09-02T08:00:00Z", "alpha beta")];
+        let analytics = compute_analytics_with_goals(
+            &rows,
+            day("2026-09-02"),
+            WordGoals {
+                daily: 0,
+                weekly: 0,
+            },
+        );
+        assert_eq!(analytics.daily_word_goal, 0);
+        assert_eq!(analytics.weekly_word_goal, 0);
     }
 
     #[test]

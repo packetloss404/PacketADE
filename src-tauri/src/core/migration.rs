@@ -1,4 +1,4 @@
-//! One-shot startup migrations for the PacketCode → PacketBench rename.
+//! One-shot startup migrations for the PacketADE → PacketBench rename.
 //!
 //! Runs once per launch early in `lib::run`. Best-effort — logs warnings on
 //! failure but never blocks app startup.
@@ -8,7 +8,7 @@ use std::path::Path;
 use tracing::{info, warn};
 
 /// Entries only ever created in the data dir by THIS app (the PacketBench IDE).
-/// Presence of any one of them is positive evidence that a `~/.packetcode` is
+/// Presence of any one of them is positive evidence that a `~/.packetade` is
 /// our own pre-rename directory and is safe to migrate.
 ///
 /// Deliberately excludes `sessions/`, `backups/` and `commands/`: the sibling
@@ -49,7 +49,7 @@ const PACKETCODE_TUI_MARKERS: &[&str] = &[
     "workflows",
 ];
 
-/// Who owns a `~/.packetcode` directory found on disk.
+/// Who owns a legacy data directory (`~/.packetade`) found on disk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LegacyDirShape {
     /// Our own pre-rename data dir — safe to migrate and safe to read from.
@@ -67,7 +67,7 @@ pub(crate) enum LegacyDirShape {
     Unknown,
 }
 
-/// Classify a legacy `~/.packetcode` directory by the files it contains.
+/// Classify a legacy `~/.packetade` directory by the files it contains.
 ///
 /// A directory carrying both shapes is `Mixed`, not `Foreign`. The veto exists
 /// to stop us DESTROYING a TUI home, and a blanket veto over-served that: it

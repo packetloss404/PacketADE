@@ -11,6 +11,8 @@ const tauriMocks = vi.hoisted(() => ({
   setDictationSettings: vi.fn(),
   downloadWhisperModel: vi.fn(),
   listWhisperModels: vi.fn(),
+  deleteDictationEntry: vi.fn(),
+  clearDictationHistory: vi.fn(),
 }));
 
 // The store only subscribes to backend events when Tauri is present, so make it
@@ -83,6 +85,8 @@ describe("dictationStore", () => {
     tauriMocks.stopRecordingCmd.mockResolvedValue(dictationResult);
     tauriMocks.cancelRecordingCmd.mockResolvedValue(undefined);
     tauriMocks.getDictationHistory.mockResolvedValue("[]");
+    tauriMocks.deleteDictationEntry.mockResolvedValue(undefined);
+    tauriMocks.clearDictationHistory.mockResolvedValue(0);
     tauriMocks.getDictationAnalytics.mockResolvedValue(
       JSON.stringify({
         totalEntries: 0,
@@ -489,5 +493,120 @@ describe("dictationStore", () => {
     expect(useDictationStore.getState().settings?.globalShortcutsEnabled ?? false).toBe(
       false,
     );
+  });
+});
+
+describe("dictationStore — history removal", () => {
+  const entry = (id: number, text: string) => ({
+    id,
+    text,
+    mode: "transcribe",
+    timestamp: "2026-08-29T10:00:00Z",
+    wordCount: 2,
+    durationSeconds: 1,
+    wpm: 120,
+    sentiment: null,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    tauriMocks.deleteDictationEntry.mockResolvedValue(undefined);
+    tauriMocks.clearDictationHistory.mockResolvedValue(3);
+    tauriMocks.getDictationAnalytics.mockResolvedValue(
+      JSON.stringify({ totalEntries: 0, totalWords: 0 }),
+    );
+    useDictationStore.setState({
+      error: null,
+      history: [entry(1, "keep me"), entry(2, "delete me")],
+    });
+  });
+
+  it("drops only the deleted row and refetches analytics", async () => {
+    const ok = await useDictationStore.getState().deleteEntry(2);
+
+    expect(ok).toBe(true);
+    expect(tauriMocks.deleteDictationEntry).toHaveBeenCalledWith(2);
+    expect(useDictationStore.getState().history.map((e) => e.id)).toEqual([1]);
+    // Streaks, vocabulary first-seen days and n-gram ranks all depend on the
+    // whole corpus, so there is no correct local edit — the payload is refetched.
+    expect(tauriMocks.getDictationAnalytics).toHaveBeenCalledTimes(1);
+  });
+
+  // The row must NOT vanish from the list when the backend refused, or the
+  // user is left believing a transcript is gone while it is still on disk.
+  it("keeps the row and surfaces the error when the delete fails", async () => {
+    tauriMocks.deleteDictationEntry.mockRejectedValue(new Error("No dictation entry with id 2"));
+
+    const ok = await useDictationStore.getState().deleteEntry(2);
+
+    expect(ok).toBe(false);
+    expect(useDictationStore.getState().history.map((e) => e.id)).toEqual([1, 2]);
+    expect(useDictationStore.getState().error).toMatch(/No dictation entry/);
+    expect(tauriMocks.getDictationAnalytics).not.toHaveBeenCalled();
+  });
+
+  it("empties the list and reports how many rows went", async () => {
+    const removed = await useDictationStore.getState().clearHistory();
+
+    expect(removed).toBe(3);
+    expect(useDictationStore.getState().history).toEqual([]);
+    expect(tauriMocks.getDictationAnalytics).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the list intact when the clear fails", async () => {
+    tauriMocks.clearDictationHistory.mockRejectedValue(new Error("database is locked"));
+
+    const removed = await useDictationStore.getState().clearHistory();
+
+    expect(removed).toBeNull();
+    expect(useDictationStore.getState().history).toHaveLength(2);
+    expect(useDictationStore.getState().error).toMatch(/database is locked/);
+  });
+});
+
+describe("dictationStore — word goals", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("reads the configured goals", async () => {
+    tauriMocks.getDictationSettings.mockResolvedValue(
+      JSON.stringify({ dailyWordGoal: 800, weeklyWordGoal: 4_000 }),
+    );
+
+    await useDictationStore.getState().loadSettings();
+
+    expect(useDictationStore.getState().settings).toMatchObject({
+      dailyWordGoal: 800,
+      weeklyWordGoal: 4_000,
+    });
+  });
+
+  // 0 means "no goal" and drops the chart; a config predating the setting has
+  // no field at all and must inherit the shipped values, not 0.
+  it("keeps an explicit 0 but defaults a missing goal", async () => {
+    tauriMocks.getDictationSettings.mockResolvedValue(
+      JSON.stringify({ dailyWordGoal: 0 }),
+    );
+
+    await useDictationStore.getState().loadSettings();
+
+    expect(useDictationStore.getState().settings).toMatchObject({
+      dailyWordGoal: 0,
+      weeklyWordGoal: 2_500,
+    });
+  });
+
+  it("treats a corrupt goal as absent rather than as no goal", async () => {
+    tauriMocks.getDictationSettings.mockResolvedValue(
+      JSON.stringify({ dailyWordGoal: -5, weeklyWordGoal: "lots" }),
+    );
+
+    await useDictationStore.getState().loadSettings();
+
+    expect(useDictationStore.getState().settings).toMatchObject({
+      dailyWordGoal: 500,
+      weeklyWordGoal: 2_500,
+    });
   });
 });

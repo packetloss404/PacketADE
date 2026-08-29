@@ -319,7 +319,7 @@ describe("legacy conversation hydration strips mirror fields and canonicalizes a
     }));
     vi.doMock("@/stores/memoryStore", () => ({
       useMemoryStore: {
-        getState: vi.fn(() => ({ getContextForSession: vi.fn(() => "") })),
+        getState: vi.fn(() => ({})),
       },
     }));
     vi.doMock("@/stores/layoutStore", () => ({

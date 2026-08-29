@@ -3050,6 +3050,17 @@ export function deliverDictationText(text: string, paste: boolean): Promise<void
   return invoke("deliver_dictation_text", { text, paste });
 }
 
+/** Remove one transcript. Rejects when `id` matched no row, so a caller that
+ *  dropped the row optimistically can put it back. */
+export function deleteDictationEntry(id: number): Promise<void> {
+  return invoke("delete_dictation_entry", { id });
+}
+
+/** Remove every transcript. Resolves with the number of rows deleted. */
+export function clearDictationHistory(): Promise<number> {
+  return invoke("clear_dictation_history");
+}
+
 export function getDictationHistory(limit: number, offset: number): Promise<string> {
   return invoke<string>("get_dictation_history", { limit, offset });
 }

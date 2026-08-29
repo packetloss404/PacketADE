@@ -3,6 +3,8 @@ import {
   DEFAULT_AGENT_AUTO_ARCHIVE_DAYS,
   useAgentSettingsStore,
   type AgentComposerMode,
+  type TranscriptViewMode,
+  type WorktreeCleanupPolicy,
 } from "@/stores/agentSettingsStore";
 import { CardHeader } from "./CardHeader";
 
@@ -23,13 +25,66 @@ const COMPOSER_OPTIONS: Array<{
   },
 ];
 
+/** Render density for agent transcripts. Persisted globally, and until now
+ *  reachable only from a conversation's header overflow menu — so a user who
+ *  had no conversation open could not find it at all. */
+const TRANSCRIPT_VIEW_OPTIONS: Array<{
+  mode: TranscriptViewMode;
+  label: string;
+  title: string;
+}> = [
+  {
+    mode: "summary",
+    label: "Summary",
+    title: "Collapse tool calls and long output to one line each",
+  },
+  { mode: "normal", label: "Normal", title: "The default transcript density" },
+  {
+    mode: "verbose",
+    label: "Verbose",
+    title: "Expand tool calls and show full command output",
+  },
+];
+
+/** Mirrors the ruled Bravo policy documented on `WorktreeCleanupPolicy`. The
+ *  copy states the guarantee that does NOT change between options: a dirty
+ *  worktree is never removed by any of them. */
+const WORKTREE_CLEANUP_OPTIONS: Array<{
+  policy: WorktreeCleanupPolicy;
+  label: string;
+  title: string;
+}> = [
+  {
+    policy: "never",
+    label: "Keep",
+    title: "Archiving never removes a worktree",
+  },
+  {
+    policy: "only-when-safe",
+    label: "When safe",
+    title:
+      "Remove only a clean worktree whose work is provably landed (merged, or zero commits ahead)",
+  },
+  {
+    policy: "always",
+    label: "Always",
+    title: "Remove any clean worktree on archive; a dirty worktree is still kept",
+  },
+];
+
 export function AgentSettingsCard() {
   const composerMode = useAgentSettingsStore((s) => s.composerMode);
   const onboardingDismissed = useAgentSettingsStore((s) => s.onboardingDismissed);
   const autoArchiveDays = useAgentSettingsStore((s) => s.autoArchiveDays);
   const autoFailoverEnabled = useAgentSettingsStore((s) => s.autoFailoverEnabled);
+  const transcriptViewMode = useAgentSettingsStore((s) => s.transcriptViewMode);
+  const worktreeCleanupPolicy = useAgentSettingsStore((s) => s.worktreeCleanupPolicy);
 
   const setComposerMode = useAgentSettingsStore((s) => s.setComposerMode);
+  const setTranscriptViewMode = useAgentSettingsStore((s) => s.setTranscriptViewMode);
+  const setWorktreeCleanupPolicy = useAgentSettingsStore(
+    (s) => s.setWorktreeCleanupPolicy,
+  );
   const dismissOnboarding = useAgentSettingsStore((s) => s.dismissOnboarding);
   const showOnboarding = useAgentSettingsStore((s) => s.showOnboarding);
   const setAutoArchiveDays = useAgentSettingsStore((s) => s.setAutoArchiveDays);
@@ -83,6 +138,26 @@ export function AgentSettingsCard() {
           </p>
         </div>
 
+        <div>
+          <div className="mb-1.5 text-[10px] uppercase tracking-wider text-text-muted">
+            Transcript density
+          </div>
+          <Segmented
+            options={TRANSCRIPT_VIEW_OPTIONS.map((option) => ({
+              value: option.mode,
+              label: option.label,
+              title: option.title,
+            }))}
+            value={transcriptViewMode}
+            onChange={setTranscriptViewMode}
+            ariaLabel="Transcript density"
+          />
+          <p className="mt-1.5 text-[10px] leading-snug text-text-muted">
+            Applies to every conversation. Also cycleable from any chat header&apos;s
+            overflow menu.
+          </p>
+        </div>
+
         <div className="space-y-2">
           <div className="text-[10px] uppercase tracking-wider text-text-muted">Onboarding</div>
           <div className="flex items-center justify-between gap-3">
@@ -127,6 +202,27 @@ export function AgentSettingsCard() {
               <span className="text-[11px]">days</span>
             </div>
           </label>
+
+          <div className="pt-1">
+            <div className="mb-1.5 text-[11px] text-text-secondary">
+              Worktree on archive
+            </div>
+            <Segmented
+              options={WORKTREE_CLEANUP_OPTIONS.map((option) => ({
+                value: option.policy,
+                label: option.label,
+                title: option.title,
+              }))}
+              value={worktreeCleanupPolicy}
+              onChange={setWorktreeCleanupPolicy}
+              ariaLabel="Worktree cleanup on archive"
+            />
+            <p className="mt-1.5 text-[10px] leading-snug text-text-muted">
+              A worktree with uncommitted work is never removed by any of these, and
+              the hourly auto-archive sweep always keeps the tree — it cannot prompt,
+              so it never cleans.
+            </p>
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -143,6 +239,48 @@ export function AgentSettingsCard() {
           </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Segmented picker, matching the "Default launch location" row above it.
+ *  Extracted once a third enum control landed on this card. */
+function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  options: Array<{ value: T; label: string; title: string }>;
+  value: T;
+  onChange: (value: T) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className="inline-flex overflow-hidden rounded-md border border-bg-border"
+    >
+      {options.map((option) => {
+        const isActive = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            title={option.title}
+            aria-pressed={isActive}
+            className={`px-2.5 py-1 text-[11px] transition-colors ${
+              isActive
+                ? "bg-accent-purple/15 text-accent-purple"
+                : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

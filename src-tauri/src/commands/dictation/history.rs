@@ -269,6 +269,61 @@ pub fn search_dictation_history(query: String) -> Result<String, String> {
     serde_json::to_string(&entries).map_err(|e| format!("JSON serialization error: {e}"))
 }
 
+/// Delete one transcript by row id.
+///
+/// Until this existed the only way to remove a transcript was to delete the
+/// `dictation.db` file by hand, which takes the whole corpus with it.
+/// Dictation captures whatever was said into the microphone, so a single
+/// misfire can hold something the user does not want kept, and "all or
+/// nothing" is not an acceptable answer to that.
+///
+/// A missing id is an error rather than a silent success: the UI removes the
+/// row optimistically, and a no-op DELETE would leave it looking deleted while
+/// the transcript is still on disk.
+#[tauri::command]
+pub fn delete_dictation_entry(id: i64) -> Result<(), String> {
+    let conn = get_db()?;
+    delete_entry_with_conn(&conn, id)
+}
+
+fn delete_entry_with_conn(conn: &Connection, id: i64) -> Result<(), String> {
+    let removed = conn
+        .execute("DELETE FROM entries WHERE id = ?1", params![id])
+        .map_err(|e| format!("SQL delete error: {e}"))?;
+    if removed == 0 {
+        return Err(format!("No dictation entry with id {id}"));
+    }
+    Ok(())
+}
+
+/// Delete every transcript, returning how many rows went.
+///
+/// The count is what the caller reports back to the user; a bare `Ok(())`
+/// after a destructive sweep gives them no way to tell "cleared 412 entries"
+/// from "the button did nothing".
+///
+/// `VACUUM` follows the delete on purpose: SQLite would otherwise keep the
+/// freed pages in the file, so a user who clears their history to get the
+/// transcripts off disk would find the database exactly as large as before.
+/// A failed vacuum is logged, not surfaced — the rows are already gone and
+/// the user's request has been honoured.
+#[tauri::command]
+pub fn clear_dictation_history() -> Result<u32, String> {
+    let conn = get_db()?;
+    let removed = clear_entries_with_conn(&conn)?;
+    if let Err(err) = conn.execute_batch("VACUUM") {
+        tracing::warn!("Cleared dictation history but could not vacuum the database: {err}");
+    }
+    Ok(removed)
+}
+
+fn clear_entries_with_conn(conn: &Connection) -> Result<u32, String> {
+    let removed = conn
+        .execute("DELETE FROM entries", [])
+        .map_err(|e| format!("SQL delete error: {e}"))?;
+    Ok(u32::try_from(removed).unwrap_or(u32::MAX))
+}
+
 #[tauri::command]
 pub fn insert_dictation_entry(
     text: String,
@@ -303,6 +358,75 @@ mod tests {
         assert_eq!(stamp.len(), 20);
         assert_eq!(&stamp[..10], "2024-12-31");
         assert_eq!(stamp[11..13].parse::<u32>().unwrap(), 23);
+    }
+
+    fn count_entries(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
+            .expect("count entries")
+    }
+
+    fn insert_text(conn: &Connection, text: &str) {
+        insert_entry_with_conn(
+            conn,
+            text,
+            "transcribe",
+            "2026-08-29T10:00:00Z",
+            Some(1.0),
+            Some(1),
+            Some(60),
+        )
+        .expect("insert");
+    }
+
+    #[test]
+    fn deleting_one_entry_leaves_the_rest_alone() {
+        let conn = memory_db();
+        insert_text(&conn, "keep this one");
+        insert_text(&conn, "remove this one");
+        let doomed: i64 = conn
+            .query_row(
+                "SELECT id FROM entries WHERE text = 'remove this one'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("select id");
+
+        delete_entry_with_conn(&conn, doomed).expect("delete");
+
+        assert_eq!(count_entries(&conn), 1);
+        let survivor: String = conn
+            .query_row("SELECT text FROM entries", [], |row| row.get(0))
+            .expect("select survivor");
+        assert_eq!(survivor, "keep this one");
+    }
+
+    /// The UI drops the row before the round-trip returns, so a DELETE that
+    /// matched nothing has to come back as an error — otherwise a transcript
+    /// stays on disk while the user watches it disappear.
+    #[test]
+    fn deleting_a_missing_entry_is_an_error_not_a_silent_no_op() {
+        let conn = memory_db();
+        insert_text(&conn, "the only entry");
+
+        let result = delete_entry_with_conn(&conn, 9_999);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("9999"));
+        assert_eq!(count_entries(&conn), 1);
+    }
+
+    #[test]
+    fn clearing_removes_every_entry_and_reports_the_count() {
+        let conn = memory_db();
+        for text in ["one", "two", "three"] {
+            insert_text(&conn, text);
+        }
+
+        assert_eq!(clear_entries_with_conn(&conn).expect("clear"), 3);
+        assert_eq!(count_entries(&conn), 0);
+        // Clearing an already-empty history is not an error; it just moves no
+        // rows. The confirm dialog is reachable from an empty list too.
+        assert_eq!(clear_entries_with_conn(&conn).expect("clear again"), 0);
     }
 
     #[test]

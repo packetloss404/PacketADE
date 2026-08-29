@@ -156,8 +156,9 @@ pub fn run() {
     core::shell_path::fix_path_for_gui_launch();
 
     init_tracing();
-    // Rename ~/.packetcode → ~/.packetbench once per upgrade. Must run before
-    // any command that reads/writes the data dir.
+    // Rename ~/.packetade → ~/.packetbench once per upgrade (LEGACY_DATA_DIR_NAME
+    // is the immediately-prior name; the older ~/.packetcode hop already ran).
+    // Must run before any command that reads/writes the data dir.
     core::migration::migrate_data_dir();
     // Canonicalize any lingering legacy `missionId` keys in persisted
     // flight-approval records to `flightId`. Runs after migrate_data_dir so the
@@ -498,6 +499,8 @@ pub fn run() {
             commands::dictation::deliver_dictation_text,
             commands::dictation::get_dictation_history,
             commands::dictation::search_dictation_history,
+            commands::dictation::delete_dictation_entry,
+            commands::dictation::clear_dictation_history,
             commands::dictation::insert_dictation_entry,
             commands::dictation::get_dictation_analytics,
             commands::dictation::get_dictation_settings,

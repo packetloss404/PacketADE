@@ -11,7 +11,7 @@ vi.mock("@/lib/agentsMd", () => ({
 }));
 vi.mock("@/stores/memoryStore", () => ({
   useMemoryStore: {
-    getState: vi.fn(() => ({ getContextForSession: vi.fn(() => "") })),
+    getState: vi.fn(() => ({})),
   },
 }));
 vi.mock("@/lib/tauri", () => ({
