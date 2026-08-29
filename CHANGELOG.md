@@ -7,7 +7,30 @@ For current direction, use [`ROADMAP.md`](./ROADMAP.md). For planning briefs and
 runbooks, use [`dev/README.md`](./dev/README.md). This file is history, not a
 task list.
 
-## [Unreleased]
+## [0.12.1] - 2026-08-28
+
+Windows artifacts, built 2026-08-28 23:08 from `f83fad64`, **unsigned**:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `PacketBench_0.12.1_x64-setup.exe` (NSIS, 85.3 MiB) | `5ebd455d7b2d2736179f43a4e51cee1154346db3ef03a71d94264b771bd1f28d` |
+| `PacketBench_0.12.1_x64_en-US.msi` (133.0 MiB) | `6dc6764a168f49cb18223b2af6d9ba2ff91fc731a53a9c18c0f6deda63c86ec0` |
+
+> **Built, not accepted.** Sections 2–5 of
+> [`dev/acceptance-0.12.1.md`](./dev/acceptance-0.12.1.md) — launch and
+> lifecycle, dictation on real hardware, analytics, and the two-display Monitor
+> matrix — have still never run, and **no installed upgrade of any PacketBench
+> package has ever been performed.** Section 1 has only been executed from
+> source and against a copy of a real legacy data dir. The artifacts live in
+> `C:/Users/ianwalmsley/packetbench-build/release/bundle/`, not in the repo.
+
+Gates at `f83fad64`: `cargo check` clean, 842 Rust lib tests (2 ignored) + 31
+`acp_stream` passing, `tsc --noEmit` 0 errors, `pnpm lint` 0 errors, `vitest run`
+2418/2418 across 266 files, `check:tauri-schema` clean.
+
+This release exists because four memory workstreams landed after the 0.12.0
+bundles were built, so those installers do not contain any of the work below.
+
 
 ### Fixed — Project Memory lost or corrupted notes under ordinary editor saves
 
@@ -88,6 +111,16 @@ configured the disk is never read. `run_claude` remains for `github.rs` and
 `insights.rs`. The command still has no caller — whether to wire it up or delete
 it is filed as a decision rather than left to drift.
 
+### Fixed — the repository fences failed under a full parallel test run
+
+The three filesystem fences in `scripts/` re-walked and re-read every file under
+`src/` once per assertion — a dozen times per test. Alone they took 9–25 s;
+under a full 266-file parallel run they contended for the disk and blew vitest's
+5 s default, failing one to four tests per run with **timeouts, not assertion
+failures**, and a different set each time. They now read through a module-scope
+cache, walk once, and carry a timeout matched to what they are: filesystem
+scans, not unit tests. All four fence files run in ~3 s. No assertion changed.
+
 ### Added — memory capture for remote (SSH) workspaces
 
 0.12.0 recorded that remote memory was empty **by construction**:
@@ -153,7 +186,7 @@ Windows artifacts, built 2026-08-28 21:13 from `544e4cc6`, **unsigned**:
 | `PacketBench_0.12.0_x64_en-US.msi` (133.0 MiB) | `cb12c50ee74f632311d3ddb152a71674ffe19d4c6f8b99c9f91dc6682d80348c` |
 
 > **Built, not accepted — and the acceptance matrix has still only partly run.**
-> Section 1 of `dev/acceptance-0.12.0.md` (the migration path) was executed
+> Section 1 of `dev/acceptance-0.12.1.md` (the migration path) was executed
 > against source and a copy of a real legacy data dir; it found two defects, one
 > fixed below and one open. Sections 2–5 — launch and lifecycle, dictation on real
 > hardware, analytics, and the two-display Monitor matrix — have **not** run.

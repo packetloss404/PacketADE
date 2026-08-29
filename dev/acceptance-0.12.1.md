@@ -1,7 +1,9 @@
-# PacketBench 0.12.0 — Packaged Acceptance Matrix
+# PacketBench 0.12.1 — Packaged Acceptance Matrix
 
-Created 2026-08-28 for 0.11.0; retargeted to 0.12.0 the same day, after section 0
-was executed and the version was bumped. This is a runnable checklist, not a
+Created 2026-08-28 for 0.11.0; retargeted the same day to 0.12.0 and then to
+0.12.1, each time after section 0 was re-executed against a fresh build. The
+0.12.0 bundles were superseded because four memory workstreams landed after they
+were built — they do not contain that work. This is a runnable checklist, not a
 status report. Tick rows as you go and record the evidence each one asks for.
 
 Sections 2–5 have still never run. `dev/proof-audit-2026-08-01.md` says why that
@@ -13,12 +15,15 @@ upgrade of any `PacketBench` package has been performed.**
 
 ## 0. Build the thing you are actually testing — DONE 2026-08-28
 
-Built from `544e4cc6`, **unsigned**:
+Built from `f83fad64`, **unsigned**:
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `PacketBench_0.12.0_x64-setup.exe` (NSIS, 85.3 MiB) | `60e63fbbd683220ea1744c1b7cd28ac036a20aefef71f44f6500cec0123ecf3a` |
-| `PacketBench_0.12.0_x64_en-US.msi` (133.0 MiB) | `cb12c50ee74f632311d3ddb152a71674ffe19d4c6f8b99c9f91dc6682d80348c` |
+| `PacketBench_0.12.1_x64-setup.exe` (NSIS, 85.3 MiB) | `5ebd455d7b2d2736179f43a4e51cee1154346db3ef03a71d94264b771bd1f28d` |
+| `PacketBench_0.12.1_x64_en-US.msi` (133.0 MiB) | `6dc6764a168f49cb18223b2af6d9ba2ff91fc731a53a9c18c0f6deda63c86ec0` |
+
+The 0.11.0 and 0.12.0 bundles remain on disk and are **not** what this matrix
+accepts. Check the version in the filename before installing.
 
 They live in `C:/Users/ianwalmsley/packetbench-build/release/bundle/`, not in the
 repo. An earlier 0.12.0 pair built at 21:00 was **deleted**: that build spanned a
@@ -32,7 +37,7 @@ export PATH="/c/Users/ianwalmsley/.rustup/toolchains/stable-x86_64-pc-windows-ms
 Afterwards run `pnpm sidecar:install` — `prebundle` strips the sidecar's
 devDependencies. (Done for this build.)
 
-- [x] Version bumped — 0.11.0 → **0.12.0** in `package.json`,
+- [x] Version bumped — 0.12.0 → **0.12.1** in `package.json`,
       `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` (+ `Cargo.lock`)
 - [x] Rebuilt; commit, both filenames and both SHA-256s recorded in `CHANGELOG.md`
 

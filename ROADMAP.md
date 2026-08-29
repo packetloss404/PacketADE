@@ -21,12 +21,13 @@ only product direction and ordering.
 
 ## Current baseline
 
-- Source is at **0.12.0** (`package.json`, `src-tauri/tauri.conf.json`,
+- Source is at **0.12.1** (`package.json`, `src-tauri/tauri.conf.json`,
   `src-tauri/Cargo.toml`). `v0.10.3` — packaged for Windows from release source
   `61e0669` — is still the newest annotated tag, while `CHANGELOG.md` records
-  0.10.4 and 0.10.5 as released, and 0.11.0 and 0.12.0 as built but unreleased.
+  0.10.4 and 0.10.5 as released, and 0.11.0, 0.12.0 and 0.12.1 as built but
+  unreleased.
 - **The renamed product has been packaged, but never installed.** Windows
-  bundles exist at 0.11.0 and 0.12.0 (hashes in `CHANGELOG.md`); the 2026-08-26
+  bundles exist at 0.11.0, 0.12.0 and 0.12.1 (hashes in `CHANGELOG.md`); the 2026-08-26
   rename moved the Tauri bundle identifier from `com.packetade.desktop` to
   `com.packetbench.desktop` along with the product name. Section 1 of the
   acceptance matrix ran from source on 2026-08-28 and found **two migration
@@ -63,14 +64,14 @@ only product direction and ordering.
   replacing the Cloud Run deployment it ran while it served Syndicate.
 
 The remaining bottleneck is packaged, real-host acceptance proof, not another
-broad source feature wave — and the package to prove is 0.12.0, which is built
+broad source feature wave — and the package to prove is 0.12.1, which is built
 and waiting to be installed.
 
 ## Now
 
 | Track                       | Priority | Current state                                                                                                    | Next action                                                                                                                                           |
 | --------------------------- | -------: | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Packaged Windows acceptance |       P1 | 0.12.0 bundles built 2026-08-28 from `544e4cc6` and hashed in `CHANGELOG.md`; sections 0 and 1 of `dev/acceptance-0.12.0.md` have run and found two migration defects. Nothing has been **installed** | Install the 0.12.0 package over a machine carrying pre-rename state; prove the new bundle identifier and the data-dir/keyring migrations end to end; then run sections 2-5 — Terminal panes, Claude statusline, close/lifecycle, dictation on the real headset, analytics, Monitor, accessibility, and denial behavior |
+| Packaged Windows acceptance |       P1 | 0.12.1 bundles built 2026-08-28 from `f83fad64` and hashed in `CHANGELOG.md`, superseding the 0.12.0 pair which predates the memory workstreams; sections 0 and 1 of `dev/acceptance-0.12.1.md` have run and found two migration defects. Nothing has been **installed** | Install the 0.12.1 package over a machine carrying pre-rename state; prove the new bundle identifier and the data-dir/keyring migrations end to end; then run sections 2-5 — Terminal panes, Claude statusline, close/lifecycle, dictation on the real headset, analytics, Monitor, accessibility, and denial behavior |
 | Distribution trust          |       P1 | **DEFERRED ON COST 2026-08-27** — owner decision to spend nothing on signing for now; v0.10.3 reported 0 failures / 6 readiness warnings and all artifacts remain unsigned | Keep shipping unsigned local builds. On the stated trigger — the first build handed to anyone who is not the owner — take the cheapest path (Azure Trusted Signing, ~$10/month), then wire hosted CI, notarization, and the updater. Terms in `backlog.md` |
 | macOS release               |       P1 | Builds, bundles a DMG, and runs from source on real hardware; never signed, notarized, or interactively accepted | Run the unsigned acceptance matrix; start Apple Developer Program enrollment when v1.1 starts rather than now (deferred alongside signing on 2026-08-27); ship arm64 DMG in v1.1 (`dev/macos-release-plan.md`) |
 | Remote Agents decisions     |       P1 | **UNPAUSED 2026-08-27** (paused 2026-08-16). The E2EE gate stays ratified — encrypted agent, approval, and file payloads are a hard requirement before any external beta. Auth resolved 2026-08-28: build passkey/magic-link into the relay (Rust on PostgreSQL), owner accepting the owned surface. **No blocking owner decision remains** | Run Sprint 0 against PacketRelay — PacketBench-owned, deploying to Railway. Size in the owned auth surface (WebAuthn, sessions, recovery, rate limiting) and treat the pre-beta security review as a gate alongside E2EE |
@@ -154,7 +155,7 @@ built into the relay — is an open owner decision, not settled here.
 
 ## Release path
 
-1. Interactively prove the packaged 0.12.0 `PacketBench` Windows package
+1. Interactively prove the packaged 0.12.1 `PacketBench` Windows package
    (built 2026-08-28), including upgrade from a pre-rename install.
 2. Close available real-host, microphone, provider, MCP, and cross-product
    evidence gates.
