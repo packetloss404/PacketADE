@@ -11,14 +11,15 @@ import {
   Server,
   ShieldAlert,
   Trash2,
+  Wand2,
   X,
 } from "lucide-react";
 import {
   useGitHubStore,
   type GitHubMergeStrategy,
 } from "@/stores/githubStore";
-import { normalizeGiteaBaseUrl } from "@/lib/git-hosts";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
+import { GitHostSetupWizard } from "@/components/gitHost/GitHostSetupWizard";
 import {
   githubDeviceFlowStart,
   githubDeviceFlowPoll,
@@ -75,16 +76,12 @@ export function GitHubSettingsCard() {
   // G2: Gitea/Forgejo self-hosted connections.
   const connections = useGitHubStore((s) => s.connections);
   const loadConnections = useGitHubStore((s) => s.loadConnections);
-  const addGiteaHost = useGitHubStore((s) => s.addGiteaHost);
   const removeGitHostConnection = useGitHubStore((s) => s.removeGitHostConnection);
   const giteaConnections = connections.filter((c) => c.kind === "gitea");
 
-  const [giteaOpen, setGiteaOpen] = useState(false);
-  const [giteaUrl, setGiteaUrl] = useState("");
-  const [giteaLabel, setGiteaLabel] = useState("");
-  const [giteaToken, setGiteaToken] = useState("");
-  const [giteaError, setGiteaError] = useState<string | null>(null);
-  const [giteaBusy, setGiteaBusy] = useState(false);
+  // The inline "paste a URL + a token and hope" form was replaced by the
+  // guided wizard, which validates the credential before anything is written.
+  const [wizardHostId, setWizardHostId] = useState<string | null>(null);
   const [pendingHostRemoval, setPendingHostRemoval] = useState<{
     id: string;
     label: string;
@@ -94,31 +91,6 @@ export function GitHubSettingsCard() {
   useEffect(() => {
     void loadConnections();
   }, [loadConnections]);
-
-  async function handleAddGitea() {
-    const normalized = normalizeGiteaBaseUrl(giteaUrl);
-    if ("error" in normalized) {
-      setGiteaError(normalized.error);
-      return;
-    }
-    if (!giteaToken.trim()) {
-      setGiteaError("Access token is required");
-      return;
-    }
-    setGiteaBusy(true);
-    setGiteaError(null);
-    try {
-      await addGiteaHost(normalized.value, giteaLabel.trim(), giteaToken.trim());
-      setGiteaUrl("");
-      setGiteaLabel("");
-      setGiteaToken("");
-      setGiteaOpen(false);
-    } catch (e) {
-      setGiteaError(String(e));
-    } finally {
-      setGiteaBusy(false);
-    }
-  }
 
   async function handleSaveToken() {
     const trimmed = tokenInput.trim();
@@ -250,6 +222,14 @@ export function GitHubSettingsCard() {
 
         {!showTokenInput && (
           <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setWizardHostId("github")}
+              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] text-accent-green hover:bg-accent-green/10 rounded transition-colors"
+            >
+              <Wand2 size={10} />
+              Guided setup
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -449,19 +429,17 @@ export function GitHubSettingsCard() {
             <Server size={12} className="text-text-muted" />
             Self-hosted (Gitea / Forgejo)
           </h4>
-          {!giteaOpen && (
-            <button
-              type="button"
-              onClick={() => setGiteaOpen(true)}
-              className="inline-flex items-center gap-1 text-[11px] text-accent-green hover:text-accent-green/80"
-            >
-              <Plus size={11} />
-              Add host
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setWizardHostId("gitea")}
+            className="inline-flex items-center gap-1 text-[11px] text-accent-green hover:text-accent-green/80"
+          >
+            <Plus size={11} />
+            Add host
+          </button>
         </div>
 
-        {giteaConnections.length === 0 && !giteaOpen && (
+        {giteaConnections.length === 0 && (
           <p className="text-[10px] text-text-muted leading-snug">
             Connect an on-prem Gitea or Forgejo instance. Each workspace uses the
             host its <code className="text-text-secondary">origin</code> remote
@@ -501,55 +479,14 @@ export function GitHubSettingsCard() {
           </div>
         )}
 
-        {giteaOpen && (
-          <div className="flex flex-col gap-2 rounded border border-bg-border bg-bg-primary p-2.5">
-            <input
-              type="text"
-              value={giteaUrl}
-              onChange={(e) => setGiteaUrl(e.target.value)}
-              placeholder="https://git.example.com"
-              className="w-full rounded border border-bg-border bg-bg-secondary px-2 py-1.5 text-[11px] text-text-primary outline-none focus:border-accent-green/50"
-            />
-            <input
-              type="text"
-              value={giteaLabel}
-              onChange={(e) => setGiteaLabel(e.target.value)}
-              placeholder="Label (optional)"
-              className="w-full rounded border border-bg-border bg-bg-secondary px-2 py-1.5 text-[11px] text-text-primary outline-none focus:border-accent-green/50"
-            />
-            <input
-              type="password"
-              value={giteaToken}
-              onChange={(e) => setGiteaToken(e.target.value)}
-              placeholder="Access token"
-              className="w-full rounded border border-bg-border bg-bg-secondary px-2 py-1.5 text-[11px] text-text-primary outline-none focus:border-accent-green/50"
-            />
-            {giteaError && (
-              <p className="text-[10px] text-accent-red leading-snug">{giteaError}</p>
-            )}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={giteaBusy}
-                onClick={handleAddGitea}
-                className="inline-flex items-center gap-1 rounded bg-accent-green/20 px-2.5 py-1 text-[11px] font-medium text-accent-green hover:bg-accent-green/30 disabled:opacity-40"
-              >
-                {giteaBusy ? "Adding…" : "Add host"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setGiteaOpen(false);
-                  setGiteaError(null);
-                }}
-                className="text-[11px] text-text-muted hover:text-text-secondary"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
       </div>
+
+      {wizardHostId && (
+        <GitHostSetupWizard
+          initialDescriptorId={wizardHostId}
+          onClose={() => setWizardHostId(null)}
+        />
+      )}
 
       {pendingHostRemoval && (
         <ConfirmDeleteModal

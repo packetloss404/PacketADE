@@ -20,6 +20,7 @@ pub mod error_classifier;
 pub mod flight_attempts;
 pub mod fs;
 pub mod git;
+pub mod git_host_probe;
 pub mod github;
 pub mod history;
 pub mod insights;

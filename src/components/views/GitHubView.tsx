@@ -16,12 +16,14 @@ import {
   Plane,
   RefreshCw,
   Send,
+  Wand2,
   X,
 } from "lucide-react";
 import { useGitHubStore } from "@/stores/githubStore";
 import { capabilitiesFor, hostLabel } from "@/lib/git-hosts";
 import { useNotificationsPoller } from "@/hooks/useNotificationsPoller";
 import { HostIcon } from "@/components/HostIcon";
+import { GitHostSetupWizard } from "@/components/gitHost/GitHostSetupWizard";
 import type { GitHostKind, GitHubRelease } from "@/lib/tauri";
 import type { ReviewComment } from "@/lib/reviewCommentThreads";
 import { useIssueStore } from "@/stores/issueStore";
@@ -134,6 +136,7 @@ export function GitHubView() {
   const activeProjectLocalPath = activeProjectWorkspace?.projectPath ?? "";
 
   const [tokenInput, setTokenInput] = useState("");
+  const [showSetupWizard, setShowSetupWizard] = useState(false);
   const [tab, setTab] = useState<TabKey>("issues");
   const [selectedIssueNum, setSelectedIssueNum] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -375,6 +378,18 @@ export function GitHubView() {
             {isInitializing && (
               <p className="mb-3 text-[11px] text-text-muted">Checking auth state...</p>
             )}
+            {/* Primary path: the guided wizard validates the URL, the scopes,
+                and the credential before anything reaches the keyring. The
+                paste-a-PAT field below stays for users who already know what
+                they are doing. */}
+            <button
+              type="button"
+              onClick={() => setShowSetupWizard(true)}
+              className="mb-3 inline-flex w-full items-center justify-center gap-1.5 rounded border border-accent-green/30 bg-accent-green/15 px-4 py-1.5 text-xs font-medium text-accent-green transition-colors hover:bg-accent-green/25"
+            >
+              <Wand2 size={12} />
+              Set up a git host
+            </button>
             {activeHostKind === "gitea" ? (
               <button
                 type="button"
@@ -405,6 +420,9 @@ export function GitHubView() {
             {error && <p className="mt-3 text-[11px] text-accent-red">{error}</p>}
           </div>
         </div>
+        {showSetupWizard && (
+          <GitHostSetupWizard onClose={() => setShowSetupWizard(false)} />
+        )}
       </div>
     );
   }
