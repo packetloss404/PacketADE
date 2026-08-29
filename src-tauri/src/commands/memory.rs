@@ -7,23 +7,93 @@
 //! contracts are unchanged; the fixed instructions moved to the system prompt
 //! and the variable payload became the user turn.
 //!
-//! `scan_codebase_memory` deliberately STAYS on the Claude CLI: it depends on
-//! the CLI's file tools to walk the project tree (3C-3, deferred). It gets a
-//! seam-side context-assembly design before it moves — see backlog.md.
+//! LM4 (3C-3): `scan_codebase_memory` has moved too. It only ever shelled out
+//! to the Claude CLI so that the CLI's file tools would walk the project for
+//! it, and a key-file index does not need the model to *choose* what to read —
+//! the walk is deterministic. [`crate::core::aux_context`] now assembles a
+//! bounded, root-confined manifest in Rust and the seam runs one turn over it,
+//! so `memory.rs` no longer touches the Claude CLI at all.
+//!
+//! `run_claude` itself stays: `commands/github.rs` (`github_investigate_issue`)
+//! and `commands/insights.rs` (`ask_agent_chat_stream`) are still on it. Those
+//! two genuinely need a bounded read-only tool *loop*, which is the remaining
+//! half of 3C-3.
 
-use crate::claude::binary::run_claude;
+use crate::core::aux_context;
 use crate::core::aux_llm::{self, AuxRoutingState, AuxTaskClass};
 use crate::core::storage;
 use serde::Deserialize;
 use tauri::State;
 use tracing::info;
 
+/// Fixed instructions for the codebase key-file scan. The JSON output contract
+/// is byte-for-byte the pre-migration one, so any future caller sees the same
+/// shape the Claude CLI produced.
+const MEMORY_SCAN_SYSTEM_PROMPT: &str = r#"You are indexing a codebase. The user gives you a file manifest and short excerpts, both assembled locally from the project on disk.
+
+Identify the most important 30-50 files and give each a one-line summary of its role.
+
+Rules:
+- Output ONLY a JSON array with no markdown formatting, like: [{"path": "src/main.ts", "summary": "App entry point"}].
+- Use paths exactly as they appear in the manifest.
+- Never invent a file that is not listed. If the manifest is short, return fewer entries."#;
+
+/// Index the key files of a project.
+///
+/// Ordering matters: the auxiliary route is resolved **before** the filesystem
+/// is touched, so a user with no configured provider gets the seam's honest
+/// no-provider error and this command never reads a single file. What the walk
+/// will and will not read is documented on [`crate::core::aux_context`].
 #[tauri::command]
-pub async fn scan_codebase_memory(project_path: String) -> Result<String, String> {
+pub async fn scan_codebase_memory(
+    routing: State<'_, AuxRoutingState>,
+    project_path: String,
+) -> Result<String, String> {
     super::validate_project_path(&project_path)?;
-    info!(project_path = %project_path, "Scanning codebase memory");
-    let prompt = r#"List the key files in this project with 1-line summaries. Output ONLY a JSON array with no markdown formatting, like: [{"path": "src/main.ts", "summary": "App entry point"}]. Include the most important 30-50 files."#;
-    run_claude(prompt, Some(&project_path)).await
+
+    // Resolve first: no provider => no disk access, no egress, clear error.
+    let route = routing.resolve(AuxTaskClass::MemoryScan)?;
+
+    let scan_path = project_path.clone();
+    let manifest = tokio::task::spawn_blocking(move || {
+        aux_context::assemble_project_manifest(&scan_path)
+    })
+    .await
+    .map_err(|e| format!("Codebase scan task failed: {}", e))??;
+
+    info!(
+        project_path = %project_path,
+        provider = %route.provider,
+        model = %route.model,
+        files_listed = manifest.files.len(),
+        files_seen = manifest.stats.files_seen,
+        excerpts = manifest.excerpt_count(),
+        symlinks_skipped = manifest.stats.symlinks_skipped,
+        sensitive_skipped = manifest.stats.sensitive_skipped,
+        truncated = manifest.stats.truncated,
+        "Scanning codebase memory"
+    );
+
+    if manifest.files.is_empty() {
+        return Err(format!(
+            "No readable project files found under '{}'. Nothing was sent to a model.",
+            project_path
+        ));
+    }
+
+    let session_id = format!(
+        "{}-{}",
+        AuxTaskClass::MemoryScan.id(),
+        uuid::Uuid::new_v4()
+    );
+    aux_llm::run_aux_oneshot(
+        AuxTaskClass::MemoryScan,
+        &route,
+        &session_id,
+        MEMORY_SCAN_SYSTEM_PROMPT.to_string(),
+        manifest.render(),
+    )
+    .await
 }
 
 async fn run_memory_turn(

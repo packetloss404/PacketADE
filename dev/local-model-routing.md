@@ -4,7 +4,7 @@ Status: **IN PROGRESS** — LM1 shipped (barring picker gating), LM3 partial,
 LM5 done, LM7 needs re-specifying (its target view was deleted)
 Created: 2026-07-30
 Owner decision recorded: 2026-07-30
-Last updated: 2026-07-31
+Last updated: 2026-08-28
 
 ## Decision record
 
@@ -229,6 +229,69 @@ Move `memory.rs`, `insights.rs`, `spec.rs`, and `github.rs:1577` off
 `run_claude` onto `aux_llm`. Removes the hard `claude`-on-PATH dependency and
 brings four surfaces into token accounting for the first time. Easiest
 migration; do before LM5.
+
+**Status 2026-08-28.** `spec.rs` and the pure-text memory turns landed as
+3C-2. `memory.rs` is now fully migrated (3C-3 memory half, below). The two
+survivors are `github.rs::github_investigate_issue` (`run_claude`) and
+`insights.rs::ask_agent_chat_stream` (`claude_command`, streaming).
+
+#### 3C-3 memory half — DONE 2026-08-28
+
+`scan_codebase_memory` never needed the model to *decide* what to read: "list
+the key files with one-line summaries" is a deterministic walk followed by one
+turn. `core/aux_context.rs` does the walk in Rust and the command runs a single
+`memory-scan` turn over the rendered manifest. `memory.rs` no longer imports
+`claude::binary` at all.
+
+Assembly contract:
+
+- **Rooted and symlink-free.** The walk canonicalizes the project path and
+  descends only into real directories beneath it. Symlinks — and Windows
+  junctions, which `FileType::is_symlink` also reports — are *skipped, never
+  followed*, for files as well as directories, so a link cannot be used to
+  reach outside the root. Each file is canonicalized again immediately before
+  it is opened and re-checked against the root, closing the walk→read TOCTOU
+  window. Non-regular files (FIFOs, sockets, devices) are ignored.
+- **Refusals.** Dot-entries, `core::shared::SKIP_DIRS`, secret-shaped names
+  (key/cert extensions, `id_rsa*`, `*credential*`/`*secret*`/`*password*`, and
+  ambiguous stems like `tokens`/`auth`/`keys` when paired with a data
+  extension), and binary content (NUL byte in the head) — binaries may be
+  listed by path but are never excerpted.
+- **Bounds.** Depth 12; 20 000 directory entries visited; 400 files listed; 60
+  files excerpted; 2 KiB per excerpt; 512 KB max size to be excerpt-eligible;
+  192 KB total assembled payload; 10 s wall clock. Every bound degrades to a
+  truncated manifest that says so in the rendered text, never to a silent
+  partial result.
+- **Fails closed on routing.** The command resolves the `AuxRoute` *before*
+  touching the filesystem, so a user with no configured provider gets
+  `no_provider_error` and nothing is read from disk, let alone sent anywhere.
+  `AUX_PROVIDERS` membership already guarantees no subscription-OAuth path.
+
+#### 3C-3 tool-loop half — still open
+
+`github_investigate_issue` and `ask_agent_chat_stream` cannot pre-compute their
+context: which files matter depends on the issue or the question. They need the
+bounded read-only loop. Most of it exists: `core::tool_subagent::run_agent_loop`
+already caps at 8 iterations, advertises only `read_file` / `list_directory` /
+`grep` / `web_fetch` via `read_only_tool_definitions`, and dispatches through
+`tool_runtime::execute_tool`, whose `resolve_workspace_path` enforces the same
+canonicalized workspace confinement plus a 2 MB per-file and 256 KB per-output
+cap.
+
+What it lacks for aux use:
+
+1. **`AuxRoute` parameterization.** It derives provider/model from the parent
+   session (`PARENT_LLM`) and falls back to a hardcoded `anthropic` /
+   `claude-haiku-4-5`. An aux caller has no parent session, so the loop needs to
+   accept a resolved `AuxRoute` — and reject anything outside `AUX_PROVIDERS`.
+2. **Budgets beyond the iteration cap.** Total tool-result bytes and a
+   wall-clock deadline, so a model that greps in circles is stopped by
+   something other than iteration count.
+3. **A narrower tool set.** `web_fetch` is egress and has no place in a
+   codebase investigation; the aux loop should advertise the three filesystem
+   tools only.
+4. **Usage accounting per iteration**, so the loop's spend lands in
+   `usage.jsonl` the way `run_aux_oneshot` already does.
 
 ### LM5 — Migrate mechanism-2 sites
 
