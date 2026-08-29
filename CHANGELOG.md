@@ -7,6 +7,63 @@ For current direction, use [`ROADMAP.md`](./ROADMAP.md). For planning briefs and
 runbooks, use [`dev/README.md`](./dev/README.md). This file is history, not a
 task list.
 
+## [Unreleased]
+
+### Added — memory capture for remote (SSH) workspaces
+
+0.12.0 recorded that remote memory was empty **by construction**:
+`computeContextItems` read the `ssh:<serverId>:<path>` scope keys, but every
+writer in production stamped a plain path, so a correctly-scoped remote
+workspace could never show anything. This closes that.
+
+`memoryStore.memoryWriteKey` is now the single choke point every new record's
+scope goes through — local scopes keep their plain filesystem path (so parent
+matching, project chips, and `.agents/memory` loading are untouched), remote
+scopes get the `ssh:` key. The four writers that used to stamp a path
+independently — PTY session capture, flight retrospectives, the coordination and
+transcript capture builders, and `captureManually` — all resolve a
+`MemoryBriefScope` and hand it to the store instead. `lib/memoryWriteScope.ts`
+resolves that scope from the workspace the work actually ran in, not from
+whichever workspace happens to be active when a session ends.
+
+This also fixes a pre-existing write-only-dead path: a manual capture from a
+**remote** agent transcript was stamped with the bare remote path, which no ssh
+brief scope will ever match. It now keys off `conversation.sshTarget`.
+
+Retrieval follows: remote flights get a launch brief (previously any non-local
+target skipped injection entirely), Ask is scope-aware rather than local-only,
+and pattern extraction runs against the remote corpus and stamps its output with
+the same key. `summarize_session` / `extract_patterns` validate a *scope label*
+(`validate_memory_scope`) instead of requiring a local directory — neither
+command ever touches the filesystem with that value, and it never reaches the
+model.
+
+Scope keys never reach a human: `lib/memoryProjectLabel.ts` resolves them for
+display ("build-box · app"), degrading to the bare server id when the connection
+is gone — an import from another machine, or a deleted server. Timeline project
+chips, the pattern scope badge, and the Markdown export all go through it. The
+0.12.0 "remote workspaces record no memory" banner and its dedicated empty
+states are gone, because they would now be lying.
+
+**Isolation got stricter, not looser.** A synthetic scope key now matches by
+exact key identity or not at all: under `projectPathMatching: "global"` — and
+under Ask's "All projects" toggle, which forces it — a local project's brief
+would otherwise have pulled in every remote workspace's memory. Tests pin
+non-retrieval across servers, across paths on one server, and in both directions
+between local and remote.
+
+**Migration is opt-in and reversible; nothing is rewritten automatically.**
+Memory recorded under a plain remote path before this landed cannot be
+attributed safely: `/srv/app` is indistinguishable from a genuinely local
+project at `/srv/app`, and from the same path on a different server. The Memory
+pane offers a per-scope "Adopt into &lt;server&gt;" action instead, which stamps
+the scope key and stores the original in `legacyProjectPath`; "Undo" restores it
+exactly. Records already correctly scoped are never touched.
+
+`.agents/memory` project notes remain local-only — they are read off this
+machine's filesystem — and `projectNotesFor` now refuses an ssh scope outright
+so a local project sharing a remote path's spelling cannot leak notes into it.
+
 ## [0.12.0] - 2026-08-28
 
 Windows artifacts, built 2026-08-28 21:13 from `544e4cc6`, **unsigned**:

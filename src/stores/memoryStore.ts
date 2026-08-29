@@ -117,7 +117,7 @@ interface MemoryStore {
   hydrateFromBackend: (persisted: Awaited<ReturnType<typeof loadPersistedState>>) => void;
 
   // Auto-capture (called from the flight lifecycle)
-  captureFlightCompleted: (payload: FlightCompletedPayload, projectPath: string) => void;
+  captureFlightCompleted: (payload: FlightCompletedPayload, scope: MemoryScopeInput) => void;
   /** M9: merge a rich LLM retrospective onto the already-captured
    *  `flight_completed` event for `flightId` (async enrichment). No-op if the
    *  event was never captured (e.g. `captureFlights` disabled). */
@@ -132,7 +132,8 @@ interface MemoryStore {
    * default to `[source]` so the event is filterable later.
    */
   captureManually: (input: {
-    projectPath: string;
+    /** A plain path (local) or a full `MemoryBriefScope` (remote-capable). */
+    scope: MemoryScopeInput;
     source: string;
     summary: string;
     body: string;
@@ -151,13 +152,22 @@ interface MemoryStore {
   learnFromSession: (
     sessionId: string,
     agentId: string,
-    projectPath: string,
+    scope: MemoryScopeInput,
     durationMs: number,
     status?: SessionCompletedPayload["status"],
   ) => Promise<void>;
 
   // Manual pattern refresh
-  refreshPatterns: (projectPath: string) => Promise<void>;
+  refreshPatterns: (scope: MemoryScopeInput) => Promise<void>;
+
+  /**
+   * Opt-in, reversible migration: re-stamp memory recorded under the plain
+   * remote path with this remote scope's key. Returns how many records moved.
+   * Never called automatically — see `findLegacyRemoteMemory`.
+   */
+  adoptLegacyRemoteMemory: (scope: MemoryBriefScope) => number;
+  /** Undo `adoptLegacyRemoteMemory` for this scope. Returns records restored. */
+  revertAdoptedRemoteMemory: (scope: MemoryBriefScope) => number;
 
   // Cleanup
   deleteEvent: (id: string) => void;
@@ -316,8 +326,50 @@ export function remoteMemoryProjectKey(serverId: string, remotePath: string): st
   return `ssh:${serverId}:${normalizePath(remotePath)}`;
 }
 
+/**
+ * Matched by `createProjectScopeMatcher` but deliberately never WRITTEN by
+ * `memoryWriteKey`. It is a read-side alias only, so a scope can opt into
+ * workspace-pinned memory later without invalidating anything already
+ * recorded. Stamping it today would sever every local record from its project
+ * path and break parent matching and every path-shaped display.
+ */
 export function workspaceMemoryProjectKey(workspaceId: string): string {
   return `workspace:${workspaceId}`;
+}
+
+/** Anything a caller may hand the memory store to identify a scope. */
+export type MemoryScopeInput = string | MemoryBriefScope;
+
+/**
+ * THE write choke point. Every new memory record's `projectPath` field is
+ * stamped from here, so scope keying lives in one place instead of at each of
+ * the four capture call sites (which is why remote memory used to be empty by
+ * construction — all four stamped a plain path).
+ *
+ * - local -> the plain filesystem path, unchanged. Parent matching, the
+ *            project chips, `refreshPatterns` and `.agents/memory` note
+ *            loading all still see a real path.
+ * - ssh   -> `ssh:<serverId>:<normalized remote path>`, the only thing
+ *            `createProjectScopeMatcher` will match under an ssh scope.
+ */
+export function memoryWriteKey(input: MemoryScopeInput): string {
+  const scope = normalizeScopeInput(input);
+  if (scope.kind === "ssh" && scope.serverId) {
+    return remoteMemoryProjectKey(scope.serverId, scope.remotePath || scope.projectPath);
+  }
+  return scope.projectPath;
+}
+
+/**
+ * The `project_path` argument handed to the aux-LLM Tauri commands
+ * (`summarize_session`, `extract_patterns`). Identical to the write key by
+ * design — the stamped scope and the attributed scope must never disagree.
+ * The Rust side validates it with `validate_memory_scope`, which accepts an
+ * `ssh:` label as well as a local directory because neither command touches
+ * the filesystem with this value and it never reaches the model.
+ */
+export function memoryAuxScopeArg(input: MemoryScopeInput): string {
+  return memoryWriteKey(input);
 }
 
 function memoryScopeKey(scope: Required<MemoryBriefScope>): string {
@@ -326,6 +378,69 @@ function memoryScopeKey(scope: Required<MemoryBriefScope>): string {
   }
   if (scope.workspaceId) return workspaceMemoryProjectKey(scope.workspaceId);
   return normalizePath(scope.projectPath);
+}
+
+/** True when a recorded `projectPath` is one of our synthetic scope keys
+ *  rather than a filesystem path. */
+export function isMemoryScopeKey(recorded: string | undefined | null): boolean {
+  if (!recorded) return false;
+  return recorded.startsWith("ssh:") || recorded.startsWith("workspace:");
+}
+
+/** Ids of records eligible for adoption into a remote scope. */
+export interface LegacyRemoteMemoryCandidates {
+  eventIds: string[];
+  patternIds: string[];
+}
+
+/**
+ * Records stamped with the PLAIN remote path (`/srv/app`) instead of the
+ * `ssh:` scope key. They were written before remote scoping existed — a manual
+ * capture from a remote agent transcript, for instance — and no ssh scope will
+ * ever match them, so they are write-only-dead.
+ *
+ * We never rewrite them automatically. A plain `/srv/app` is indistinguishable
+ * from a genuinely local project at `/srv/app`, and from the same path on a
+ * DIFFERENT server; guessing would silently move user data between scopes. The
+ * user adopts them explicitly, per scope, and `revertAdoptedRemoteMemory`
+ * puts them back.
+ */
+export function findLegacyRemoteMemory(
+  events: MemoryEvent[],
+  patterns: LearnedPattern[],
+  scope: MemoryBriefScope,
+): LegacyRemoteMemoryCandidates {
+  const normalized = normalizeScopeInput(scope);
+  if (normalized.kind !== "ssh" || !normalized.serverId) {
+    return { eventIds: [], patternIds: [] };
+  }
+  const target = normalizePath(normalized.remotePath || normalized.projectPath);
+  if (!target) return { eventIds: [], patternIds: [] };
+  const isCandidate = (recorded: string | undefined | null): boolean =>
+    !!recorded && !isMemoryScopeKey(recorded) && normalizePath(recorded) === target;
+  return {
+    eventIds: events.filter((e) => isCandidate(e.projectPath)).map((e) => e.id),
+    patternIds: patterns.filter((p) => isCandidate(p.projectPath)).map((p) => p.id),
+  };
+}
+
+/** Records previously adopted into `scope` that `revert` would put back. */
+export function findAdoptedRemoteMemory(
+  events: MemoryEvent[],
+  patterns: LearnedPattern[],
+  scope: MemoryBriefScope,
+): LegacyRemoteMemoryCandidates {
+  const normalized = normalizeScopeInput(scope);
+  if (normalized.kind !== "ssh" || !normalized.serverId) {
+    return { eventIds: [], patternIds: [] };
+  }
+  const key = memoryWriteKey(scope);
+  const isAdopted = (r: { projectPath?: string | null; legacyProjectPath?: string }): boolean =>
+    typeof r.legacyProjectPath === "string" && r.projectPath === key;
+  return {
+    eventIds: events.filter(isAdopted).map((e) => e.id),
+    patternIds: patterns.filter(isAdopted).map((p) => p.id),
+  };
 }
 
 async function persistState(events: MemoryEvent[], patterns?: LearnedPattern[]) {
@@ -731,14 +846,38 @@ export function mergeMemoryImport(
   return { events: e.merged, patterns: p.merged, addedEvents: e.added, addedPatterns: p.added };
 }
 
-/** M3: a human-readable Markdown digest of the memory corpus. */
-export function serializeMemoryMarkdown(events: MemoryEvent[], patterns: LearnedPattern[]): string {
+/** M3: a human-readable Markdown digest of the memory corpus.
+ *
+ *  `labelScope` resolves a stored scope key to display text. Without it the
+ *  scope breakdown would print raw `ssh:<serverId>:<path>` keys, so the section
+ *  is only emitted when a resolver is supplied (which the Memory pane does). */
+export function serializeMemoryMarkdown(
+  events: MemoryEvent[],
+  patterns: LearnedPattern[],
+  options: { labelScope?: (key: string) => string } = {},
+): string {
   const lines: string[] = ["# PacketBench memory export", ""];
   const byType = new Map<string, number>();
   for (const ev of events) byType.set(ev.type, (byType.get(ev.type) ?? 0) + 1);
   lines.push(`- Events: ${events.length}`);
   for (const [t, n] of byType) lines.push(`  - ${t}: ${n}`);
   lines.push(`- Learned patterns: ${patterns.length}`, "");
+
+  const labelScope = options.labelScope;
+  if (labelScope) {
+    const byScope = new Map<string, number>();
+    for (const ev of events) {
+      if (!ev.projectPath) continue;
+      byScope.set(ev.projectPath, (byScope.get(ev.projectPath) ?? 0) + 1);
+    }
+    if (byScope.size > 0) {
+      lines.push("## Scopes", "");
+      for (const [key, n] of [...byScope].sort((a, b) => b[1] - a[1])) {
+        lines.push(`- ${labelScope(key)}: ${n} event${n === 1 ? "" : "s"}`);
+      }
+      lines.push("");
+    }
+  }
 
   if (patterns.length) {
     const byCat = new Map<string, LearnedPattern[]>();
@@ -880,6 +1019,13 @@ export function createProjectScopeMatcher(
 
     if (!recorded) return true; // legacy/global item - always relevant
     if (explicitScopeKeys.has(normalizePath(recorded))) return true;
+    // A synthetic scope key (`ssh:` / `workspace:`) matches by EXACT key
+    // identity or not at all. Without this, `global` matching — and any
+    // `parent` prefix collision — would pull another server's remote memory
+    // into a local project's brief, which is the one thing ssh isolation must
+    // never allow. Path-matching modes are about filesystem paths; a scope key
+    // is not one.
+    if (isMemoryScopeKey(recorded)) return false;
     if (options.matching === "global") return true;
     const recordedN = normalizePath(recorded);
     if (recordedN === normalizedCurrent) return true;
@@ -1074,10 +1220,16 @@ export function computeContextItems(
  * snapshot from a previously-open project must never leak into another
  * project's prompt.
  */
-function projectNotesFor(projectPath: string): ProjectMemoryNote[] {
+function projectNotesFor(scope: MemoryScopeInput): ProjectMemoryNote[] {
+  const normalized = normalizeScopeInput(scope);
+  // `.agents/memory` is read off THIS machine's filesystem, so it can only
+  // ever belong to a local scope. Without this guard a local project that
+  // happens to sit at the same path as a remote one (`/srv/app` on a Linux
+  // workstation) would leak its notes into that remote workspace's brief.
+  if (normalized.kind === "ssh") return [];
   const store = useProjectMemoryStore.getState();
   if (!store.projectPath) return [];
-  if (normalizePath(store.projectPath) !== normalizePath(projectPath)) return [];
+  if (normalizePath(store.projectPath) !== normalizePath(normalized.projectPath)) return [];
   return store.snapshot.notes;
 }
 
@@ -1135,9 +1287,9 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     }
   },
 
-  captureFlightCompleted: (payload, projectPath) => {
+  captureFlightCompleted: (payload, scope) => {
     if (!getMemorySettings().captureFlights) return;
-    const event = createEvent("flight_completed", projectPath, payload);
+    const event = createEvent("flight_completed", memoryWriteKey(scope), payload);
     const events = capEvents([...get().events, event]);
     set({ events });
     void persistState(events, get().patterns);
@@ -1179,7 +1331,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
   },
 
   captureManually: ({
-    projectPath,
+    scope,
     source,
     summary,
     body,
@@ -1196,7 +1348,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     };
     const event = createEvent(
       "manual_note",
-      projectPath,
+      memoryWriteKey(scope),
       payload,
       provenance,
     );
@@ -1206,7 +1358,10 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     return event;
   },
 
-  learnFromSession: async (sessionId, agentId, projectPath, durationMs, status = "done") => {
+  learnFromSession: async (sessionId, agentId, scope, durationMs, status = "done") => {
+    // The scope is resolved once, here: the stamped key and the aux-LLM
+    // argument must never disagree about which project this session belongs to.
+    const writeKey = memoryWriteKey(scope);
     const settings = getMemorySettings();
     if (!settings.captureSessions) return;
     // Per-session guard: two panes closing together must both be recorded, and
@@ -1225,7 +1380,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     learningSessions.add(sessionId);
 
     // --- Phase 1: record the bare event. No network, no LLM, no failure mode.
-    const event = createEvent("session_completed", projectPath, {
+    const event = createEvent("session_completed", writeKey, {
       sessionId,
       agentId,
       durationMs,
@@ -1258,7 +1413,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
 
       set({ learningStatus: "Summarizing session..." });
       const summaryResult = await withTimeout(
-        summarizeSession(projectPath, trimmedTranscript),
+        summarizeSession(memoryAuxScopeArg(scope), trimmedTranscript),
         SUMMARIZE_TIMEOUT_MS,
         "Summarization timed out",
       );
@@ -1293,7 +1448,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
       // Auto-extract patterns if threshold met
       if (settings.extractPatterns && count >= settings.patternRefreshThreshold) {
         set({ learningStatus: "Extracting patterns..." });
-        await get().refreshPatterns(projectPath);
+        await get().refreshPatterns(scope);
       }
 
       set({ isLearning: false, learningStatus: null });
@@ -1312,9 +1467,14 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     }
   },
 
-  refreshPatterns: async (projectPath) => {
+  refreshPatterns: async (scope) => {
     const { events } = get();
-    const normalizedPath = normalizePath(projectPath);
+    // Extraction is keyed on the WRITE key, not the display path: under a
+    // remote scope the corpus is the `ssh:<server>:<path>` records, and the
+    // patterns it produces are stamped with the same key so they can only be
+    // retrieved back into that same remote workspace.
+    const writeKey = memoryWriteKey(scope);
+    const normalizedPath = normalizePath(writeKey);
     const inProject = events.filter(
       (e) => normalizePath(e.projectPath) === normalizedPath,
     );
@@ -1351,7 +1511,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
 
     set({ isLearning: true, learningStatus: "Extracting patterns..." });
     try {
-      const result = await extractPatterns(projectPath, summaries);
+      const result = await extractPatterns(memoryAuxScopeArg(scope), summaries);
       const parsed = parseJsonFromResponse(result) as {
         pattern: string;
         category: string;
@@ -1383,10 +1543,10 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
           category: (p.category as LearnedPattern["category"]) ?? "convention",
           confidence: p.confidence,
           extractedAt,
-          // v0.8-H — stamp the project so patterns no longer leak across
+          // v0.8-H — stamp the scope so patterns no longer leak across
           // workspaces. Source events were already filtered by
-          // `normalizedPath` above so this is the right project to attribute.
-          projectPath,
+          // `normalizedPath` above so this is the right scope to attribute.
+          projectPath: writeKey,
           pinned: false,
           provenance: memoryRecordProvenance(
             id,
@@ -1499,6 +1659,51 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     void persistState([], []);
   },
 
+  adoptLegacyRemoteMemory: (scope) => {
+    const { events, patterns } = get();
+    const found = findLegacyRemoteMemory(events, patterns, scope);
+    const eventIds = new Set(found.eventIds);
+    const patternIds = new Set(found.patternIds);
+    if (eventIds.size === 0 && patternIds.size === 0) return 0;
+    const key = memoryWriteKey(scope);
+    // `legacyProjectPath` is written once and only once: if a record was
+    // somehow adopted before, its ORIGINAL path is what revert must restore.
+    const nextEvents = events.map((e) =>
+      eventIds.has(e.id)
+        ? { ...e, projectPath: key, legacyProjectPath: e.legacyProjectPath ?? e.projectPath }
+        : e,
+    );
+    const nextPatterns = patterns.map((p) =>
+      patternIds.has(p.id)
+        ? { ...p, projectPath: key, legacyProjectPath: p.legacyProjectPath ?? p.projectPath }
+        : p,
+    );
+    set({ events: nextEvents, patterns: nextPatterns });
+    void persistState(nextEvents, nextPatterns);
+    return eventIds.size + patternIds.size;
+  },
+
+  revertAdoptedRemoteMemory: (scope) => {
+    const { events, patterns } = get();
+    const found = findAdoptedRemoteMemory(events, patterns, scope);
+    const eventIds = new Set(found.eventIds);
+    const patternIds = new Set(found.patternIds);
+    if (eventIds.size === 0 && patternIds.size === 0) return 0;
+    const restore = <T extends { id: string; projectPath?: string; legacyProjectPath?: string }>(
+      record: T,
+      ids: Set<string>,
+    ): T => {
+      if (!ids.has(record.id) || record.legacyProjectPath === undefined) return record;
+      const { legacyProjectPath, ...rest } = record;
+      return { ...rest, projectPath: legacyProjectPath } as T;
+    };
+    const nextEvents = events.map((e) => restore(e, eventIds));
+    const nextPatterns = patterns.map((p) => restore(p, patternIds));
+    set({ events: nextEvents, patterns: nextPatterns });
+    void persistState(nextEvents, nextPatterns);
+    return eventIds.size + patternIds.size;
+  },
+
   importMemory: (json) => {
     const parsed = parseMemoryImport(json);
     if (!parsed) return null;
@@ -1519,7 +1724,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
       get().patterns,
       typeof input === "string" ? { projectPath } : input,
       undefined,
-      projectNotesFor(projectPath),
+      projectNotesFor(typeof input === "string" ? { projectPath } : input),
     );
     if (items.length === 0) return "";
 
@@ -1557,7 +1762,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
       get().patterns,
       scope,
       options?.query,
-      projectNotesFor(scope.projectPath),
+      projectNotesFor(scope),
     );
     const scopeKey = memoryScopeKey(scope);
     if (items.length === 0) {

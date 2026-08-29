@@ -237,7 +237,7 @@ describe("memoryStore settings integration", () => {
 
     for (let i = 1; i <= 21; i += 1) {
       useMemoryStore.getState().captureManually({
-        projectPath: "D:/projects/example",
+        scope: "D:/projects/example",
         source: "test",
         summary: `note-${i}`,
         body: "",

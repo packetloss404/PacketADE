@@ -21,14 +21,20 @@ import {
   Server,
 } from "lucide-react";
 import { useMemoryScope } from "@/hooks/useMemoryScope";
+import { useMemoryProjectLabel } from "@/hooks/useMemoryProjectLabel";
 import { scopeBasename } from "@/lib/memoryScope";
+import type { MemoryProjectLabel } from "@/lib/memoryProjectLabel";
 import {
   useMemoryStore,
   memoryBriefStats,
+  memoryWriteKey,
   searchMemoryEvents,
   filterMemoryEventsByScope,
+  findLegacyRemoteMemory,
+  findAdoptedRemoteMemory,
   serializeMemoryExport,
   serializeMemoryMarkdown,
+  type MemoryBriefScope,
   type MemoryDateRange,
 } from "@/stores/memoryStore";
 import { computeMemoryDigest, type MemoryDigest } from "@/lib/memoryDigest";
@@ -59,11 +65,12 @@ const DATE_RANGES: { key: MemoryDateRange; label: string }[] = [
   { key: "30d", label: "30d" },
 ];
 
-/** Last path segment of a project path, for a compact project chip label. */
-function projectBasename(p: string): string {
-  const parts = p.replace(/[\\/]+$/, "").split(/[\\/]/);
-  return parts[parts.length - 1] || p;
-}
+// The old `projectBasename` helper lived here. It assumed every stored
+// `projectPath` was a filesystem path, so once remote capture started stamping
+// `ssh:<serverId>:<path>` keys it would have rendered a raw scope key at the
+// user. Scope display now goes through `useMemoryProjectLabel`, which resolves
+// the server name ("build-box · app") and degrades to the bare id when the
+// server is gone.
 
 function ScopeChip({
   active,
@@ -140,7 +147,10 @@ export function MemoryView() {
   // local-FS Tauri command can never be handed a remote path.
   const projectPath = scope.kind === "local" ? scope.projectPath : null;
   const briefScope = scope.kind === "none" ? null : scope.briefScope;
-  const isRemoteScope = scope.kind === "ssh";
+  // The key everything in this scope is stored under. For a local scope this
+  // is just the project path; for a remote one it is the `ssh:` scope key.
+  const scopeKey = briefScope ? memoryWriteKey(briefScope) : null;
+  const labelProject = useMemoryProjectLabel();
   const events = useMemoryStore((s) => s.events);
   const patterns = useMemoryStore((s) => s.patterns);
   const lastPatternRefreshAt = useMemoryStore((s) => s.lastPatternRefreshAt);
@@ -155,6 +165,8 @@ export function MemoryView() {
   const clearMemory = useMemoryStore((s) => s.clearMemory);
   const importMemory = useMemoryStore((s) => s.importMemory);
   const composeMemoryBrief = useMemoryStore((s) => s.composeMemoryBrief);
+  const adoptLegacyRemoteMemory = useMemoryStore((s) => s.adoptLegacyRemoteMemory);
+  const revertAdoptedRemoteMemory = useMemoryStore((s) => s.revertAdoptedRemoteMemory);
   const captureSessions = useMemorySettingsStore((s) => s.captureSessions);
   const captureFlights = useMemorySettingsStore((s) => s.captureFlights);
   const [pendingDelete, setPendingDelete] = useState<PendingMemoryDelete | null>(null);
@@ -215,9 +227,9 @@ export function MemoryView() {
   // Scoped to the active project, because `refreshPatterns` filters by project.
   // A global count enabled the button for projects with nothing to extract.
   const refreshableCount = useMemo(() => {
-    if (!projectPath) return 0;
+    if (!scopeKey) return 0;
     const norm = (p: string) => p.split("\\").join("/").toLowerCase();
-    const target = norm(projectPath);
+    const target = norm(scopeKey);
     return events.filter(
       (e) =>
         norm(e.projectPath) === target &&
@@ -225,7 +237,7 @@ export function MemoryView() {
           e.type === "flight_completed" ||
           (e.type === "session_completed" && e.payload.summary !== null)),
     ).length;
-  }, [events, projectPath]);
+  }, [events, scopeKey]);
 
   const eventCounts = useMemo(() => {
     const counts: Record<FilterType, number> = {
@@ -285,12 +297,35 @@ export function MemoryView() {
     [briefScope, composeMemoryBrief, patterns, events],
   );
 
+  // Memory recorded under the plain remote path before remote scoping existed
+  // (adoptable), and memory already adopted into this scope (revertible).
+  const { adoptableCount, adoptedCount } = useMemo(() => {
+    if (!briefScope || scope.kind !== "ssh") return { adoptableCount: 0, adoptedCount: 0 };
+    const legacy = findLegacyRemoteMemory(events, patterns, briefScope);
+    const adopted = findAdoptedRemoteMemory(events, patterns, briefScope);
+    return {
+      adoptableCount: legacy.eventIds.length + legacy.patternIds.length,
+      adoptedCount: adopted.eventIds.length + adopted.patternIds.length,
+    };
+  }, [events, patterns, briefScope, scope.kind]);
+
   const injectedPreview = memoryBrief?.text ?? "";
   const tokenEstimate = memoryBrief ? memoryBriefStats(memoryBrief).approxTokens : 0;
   const captureEnabled = captureSessions || captureFlights;
 
   function handleRefreshPatterns() {
-    if (projectPath) void refreshPatterns(projectPath);
+    if (briefScope) void refreshPatterns(briefScope);
+  }
+
+  function handleAdoptLegacy() {
+    if (!briefScope || scope.kind !== "ssh") return;
+    const moved = adoptLegacyRemoteMemory(briefScope);
+    if (moved > 0) setActiveTab("timeline");
+  }
+
+  function handleRevertAdopted() {
+    if (!briefScope || scope.kind !== "ssh") return;
+    revertAdoptedRemoteMemory(briefScope);
   }
 
   // Confirm-gating for the three destructive memory actions. Before this the
@@ -326,7 +361,9 @@ export function MemoryView() {
   function handleExportMarkdown() {
     downloadBlob(
       "packetbench-memory.md",
-      serializeMemoryMarkdown(events, patterns),
+      serializeMemoryMarkdown(events, patterns, {
+        labelScope: (key) => labelProject(key).title,
+      }),
       "text/markdown",
     );
   }
@@ -351,12 +388,14 @@ export function MemoryView() {
    *  way at all to put something into memory - every capture affordance lived
    *  on some other surface. */
   function handleAddNote() {
-    if (!projectPath) return;
+    // Scoped, not path-gated: a remote workspace can save a note too, and it
+    // lands under that workspace's `ssh:` key rather than a bare path.
+    if (!briefScope) return;
     const summary = window.prompt("What should PacketBench remember?");
     if (!summary?.trim()) return;
     const body = window.prompt("Any detail to go with it? (optional)") ?? "";
     captureManually({
-      projectPath,
+      scope: briefScope,
       source: "manual",
       summary: summary.trim(),
       body: body.trim() || summary.trim(),
@@ -429,14 +468,14 @@ export function MemoryView() {
 
         <button
           onClick={handleAddNote}
-          disabled={!projectPath}
+          disabled={!briefScope}
           className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10.5px] text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary disabled:opacity-40 disabled:hover:bg-transparent"
           title={
-            projectPath
-              ? "Save a note to memory"
-              : isRemoteScope
-                ? "Memory capture is not available for remote workspaces yet"
-                : "Open a project to add a memory"
+            !briefScope
+              ? "Open a workspace to add a memory"
+              : scope.kind === "ssh"
+                ? `Save a note to ${scope.serverName}'s memory for ${scope.remotePath}`
+                : "Save a note to memory"
           }
         >
           <Plus size={10} />
@@ -445,16 +484,14 @@ export function MemoryView() {
 
         <button
           onClick={handleRefreshPatterns}
-          disabled={isLearning || !projectPath || refreshableCount === 0}
+          disabled={isLearning || !briefScope || refreshableCount === 0}
           className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10.5px] text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary disabled:opacity-40 disabled:hover:bg-transparent"
           title={
-            isRemoteScope
-              ? "Pattern extraction needs local project memory — not available for remote workspaces yet"
-              : !projectPath
-                ? "Open a project to extract patterns"
+            !briefScope
+              ? "Open a workspace to extract patterns"
               : refreshableCount === 0
-                ? "Nothing to extract from yet in this project"
-                : `Extract patterns from ${refreshableCount} memories in this project`
+                ? "Nothing to extract from yet in this workspace"
+                : `Extract patterns from ${refreshableCount} memories in this workspace`
           }
         >
           <RefreshCw size={10} className={isLearning ? "animate-spin" : ""} />
@@ -553,15 +590,44 @@ export function MemoryView() {
         </span>
       </div>
 
-      {isRemoteScope && scope.kind === "ssh" && (
+      {/* The old banner here said remote workspaces record no memory. They do
+          now, so the only remote-specific notice left is the one about memory
+          recorded BEFORE remote scoping existed. */}
+      {scope.kind === "ssh" && (adoptableCount > 0 || adoptedCount > 0) && (
         <div className="border-accent-amber/40 flex flex-shrink-0 items-start gap-1.5 border-b bg-bg-elevated px-3.5 py-1.5 text-[10.5px] text-accent-amber">
           <Server size={10} className="mt-0.5 shrink-0" />
-          <span>
-            <span className="font-semibold">Remote workspace on {scope.serverName}.</span>{" "}
-            PacketBench records memory only for local projects, so nothing below is scoped to{" "}
-            <span className="font-mono">{scope.remotePath}</span> — and nothing from your local
-            projects is shown here.
-          </span>
+          {adoptableCount > 0 ? (
+            <span>
+              <span className="font-semibold">
+                {adoptableCount} older {adoptableCount === 1 ? "memory" : "memories"} recorded
+                under the plain path <span className="font-mono">{scope.remotePath}</span>.
+              </span>{" "}
+              They were saved before memory was scoped per server, so nothing links them to{" "}
+              {scope.serverName}. Adopt them only if they really came from this workspace — a
+              local project at the same path would look identical. You can undo it.
+              <button
+                onClick={handleAdoptLegacy}
+                className="ml-1.5 rounded border border-accent-amber/50 px-1.5 py-0.5 font-medium transition-colors hover:bg-accent-amber/10"
+              >
+                Adopt into {scope.serverName}
+              </button>
+            </span>
+          ) : (
+            <span>
+              <span className="font-semibold">
+                {adoptedCount} adopted {adoptedCount === 1 ? "memory" : "memories"}.
+              </span>{" "}
+              Records moved here from the plain path <span className="font-mono">
+                {scope.remotePath}
+              </span>. Undo puts them back exactly where they were.
+              <button
+                onClick={handleRevertAdopted}
+                className="ml-1.5 rounded border border-accent-amber/50 px-1.5 py-0.5 font-medium transition-colors hover:bg-accent-amber/10"
+              >
+                Undo
+              </button>
+            </span>
+          )}
         </div>
       )}
 
@@ -627,7 +693,8 @@ export function MemoryView() {
           projectFilter={projectFilter}
           onProjectChange={setProjectFilter}
           projects={projects}
-          onAddNote={projectPath ? handleAddNote : undefined}
+          labelProject={labelProject}
+          onAddNote={briefScope ? handleAddNote : undefined}
         />
       )}
 
@@ -647,10 +714,9 @@ export function MemoryView() {
         <AskTab
           events={events}
           patterns={patterns}
-          projectPath={projectPath}
+          scope={briefScope}
           projectNotes={projectMemoryNotes}
-          onAddNote={projectPath ? handleAddNote : undefined}
-          isRemote={isRemoteScope}
+          onAddNote={briefScope ? handleAddNote : undefined}
         />
       )}
 
@@ -947,6 +1013,8 @@ interface PatternRowProps {
 
 function PatternRow({ pattern, meta, onDelete, onUpdate, onTogglePin }: PatternRowProps) {
   const pct = Math.round(pattern.confidence * 100);
+  const labelProject = useMemoryProjectLabel();
+  const scopeLabel = pattern.projectPath ? labelProject(pattern.projectPath) : null;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(pattern.pattern);
   const [draftCategory, setDraftCategory] = useState<PatternCategory>(pattern.category);
@@ -1054,12 +1122,14 @@ function PatternRow({ pattern, meta, onDelete, onUpdate, onTogglePin }: PatternR
           <span className="text-[10px] text-text-faint">
             extracted {relativeTime(pattern.extractedAt)}
           </span>
-          {pattern.projectPath && (
+          {scopeLabel && (
             <span
-              className="max-w-[160px] truncate text-[10px] text-text-faint"
-              title={pattern.projectPath}
+              className={`max-w-[180px] truncate text-[10px] ${
+                scopeLabel.kind === "ssh" ? "text-accent-amber" : "text-text-faint"
+              }`}
+              title={scopeLabel.title}
             >
-              · {pattern.projectPath.split(/[/\\]/).pop() || pattern.projectPath}
+              · {scopeLabel.label}
             </span>
           )}
         </div>
@@ -1115,6 +1185,8 @@ interface TimelineTabProps {
   projectFilter: string | null;
   onProjectChange: (p: string | null) => void;
   projects: string[];
+  /** Resolves a stored scope key to display text — never show the raw key. */
+  labelProject: (key: string) => MemoryProjectLabel;
   onAddNote?: () => void;
 }
 
@@ -1133,6 +1205,7 @@ function TimelineTab({
   projectFilter,
   onProjectChange,
   projects,
+  labelProject,
   onAddNote,
 }: TimelineTabProps) {
   return (
@@ -1197,15 +1270,21 @@ function TimelineTab({
                 label="All"
                 onClick={() => onProjectChange(null)}
               />
-              {projects.map((p) => (
-                <ScopeChip
-                  key={p}
-                  active={projectFilter === p}
-                  label={projectBasename(p)}
-                  title={p}
-                  onClick={() => onProjectChange(p)}
-                />
-              ))}
+              {projects.map((p) => {
+                // The chip's VALUE stays the raw stored key (that is what
+                // `filterMemoryEventsByScope` matches on); only the text is
+                // resolved.
+                const resolved = labelProject(p);
+                return (
+                  <ScopeChip
+                    key={p}
+                    active={projectFilter === p}
+                    label={resolved.label}
+                    title={resolved.title}
+                    onClick={() => onProjectChange(p)}
+                  />
+                );
+              })}
             </>
           )}
         </div>
@@ -1265,17 +1344,16 @@ const ASK_ICON: Record<MemorySearchKind, React.ReactNode> = {
 function AskTab({
   events,
   patterns,
-  projectPath,
+  scope,
   projectNotes,
   onAddNote,
-  isRemote,
 }: {
   events: MemoryEvent[];
   patterns: LearnedPattern[];
-  projectPath: string | null;
+  /** The active memory scope — local or ssh. Null when no workspace is open. */
+  scope: MemoryBriefScope | null;
   projectNotes: ReturnType<typeof useProjectMemoryStore.getState>["snapshot"]["notes"];
   onAddNote?: () => void;
-  isRemote?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
@@ -1284,14 +1362,16 @@ function AskTab({
 
   const outcome = useMemo(() => {
     const q = submitted.trim();
-    if (!q || !projectPath) return null;
+    if (!q || !scope) return null;
     // Searches the whole corpus, not the prompt-injection budget: no
-    // confidence gate, no per-source cap, no 48h/7d recency windows.
-    return askMemory(q, events, patterns, projectNotes, { kind: "local", projectPath }, {
+    // confidence gate, no per-source cap, no 48h/7d recency windows. Scope
+    // matching is shared with the injection path, so an ssh scope still only
+    // sees memory keyed to that server + remote path.
+    return askMemory(q, events, patterns, projectNotes, scope, {
       source,
       includeAllProjects,
     });
-  }, [events, patterns, projectNotes, projectPath, source, submitted, includeAllProjects]);
+  }, [events, patterns, projectNotes, scope, source, submitted, includeAllProjects]);
 
   const submit = () => setSubmitted(query);
   const results = outcome?.results ?? [];
@@ -1312,7 +1392,7 @@ function AskTab({
         />
         <button
           onClick={submit}
-          disabled={!query.trim() || !projectPath}
+          disabled={!query.trim() || !scope}
           className="rounded bg-accent-green/20 px-2.5 py-1.5 text-[11px] font-medium text-accent-green transition-colors hover:bg-accent-green/30 disabled:opacity-40"
         >
           Ask
@@ -1346,13 +1426,7 @@ function AskTab({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3.5 py-3">
-        {isRemote ? (
-          <EmptyState
-            icon={<Server size={20} className="text-text-faint" />}
-            title="Nothing to ask yet"
-            body="Memory is not recorded for remote workspaces, so there is nothing here to search. Ask from a local workspace instead."
-          />
-        ) : !projectPath ? (
+        {!scope ? (
           <EmptyState
             icon={<MessageSquare size={20} className="text-text-faint" />}
             title="No project open"
