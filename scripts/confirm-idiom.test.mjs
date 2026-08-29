@@ -11,6 +11,22 @@ import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { extname, join, relative } from "node:path";
 
+/**
+ * Read-once cache. These fences scan every file under `src/` for a dozen
+ * patterns; re-reading the tree per pattern made them take 9-25 s and time out
+ * against vitest's 5 s default whenever the disk was busy — a fence that fails
+ * for reasons unrelated to what it guards is worse than no fence.
+ */
+const FILE_CONTENTS = new Map();
+function contentsOf(file) {
+  let text = FILE_CONTENTS.get(file);
+  if (text === undefined) {
+    text = readFileSync(file, "utf8");
+    FILE_CONTENTS.set(file, text);
+  }
+  return text;
+}
+
 const ROOT = process.cwd();
 
 function sourceFiles(root) {
@@ -62,14 +78,22 @@ export function callsNativeConfirm(body) {
     .some((line) => NATIVE_CONFIRM.test(line));
 }
 
+/** Walked once: the fences below share it. */
+const SRC_FILES = sourceFiles(join(ROOT, "src"));
+
+// Filesystem fences, not unit tests. Under a full parallel run they contend
+// with 265 other test files for the disk, and vitest's 5 s default made them
+// fail for reasons unrelated to what they guard.
+const FENCE_TIMEOUT_MS = 30_000;
+
 describe("destructive-confirm idiom", () => {
   it("no source file calls the native window.confirm", () => {
-    const offenders = sourceFiles(join(ROOT, "src"))
-      .filter((file) => callsNativeConfirm(readFileSync(file, "utf8")))
+    const offenders = SRC_FILES
+      .filter((file) => callsNativeConfirm(contentsOf(file)))
       .map((file) => relative(ROOT, file).replaceAll("\\", "/"));
 
     expect(offenders).toEqual([]);
-  });
+  }, FENCE_TIMEOUT_MS);
 
   // The fence itself is load-bearing, so it gets both directions pinned. It
   // previously matched any `confirm (` outside a comment, which made a test
@@ -107,8 +131,8 @@ describe("destructive-confirm idiom", () => {
     const shared = "src/components/ui/ConfirmDeleteModal.tsx";
     expect(readFileSync(join(ROOT, shared), "utf8")).toContain("export function ConfirmDeleteModal");
 
-    const importers = sourceFiles(join(ROOT, "src"))
-      .filter((file) => /ConfirmDeleteModal/.test(readFileSync(file, "utf8")))
+    const importers = SRC_FILES
+      .filter((file) => /ConfirmDeleteModal/.test(contentsOf(file)))
       .map((file) => relative(ROOT, file).replaceAll("\\", "/"));
 
     // Every path the deletion sweep touched, so a silent revert to a bare
@@ -131,5 +155,5 @@ describe("destructive-confirm idiom", () => {
     ]) {
       expect(importers).toContain(expected);
     }
-  });
+  }, FENCE_TIMEOUT_MS);
 });

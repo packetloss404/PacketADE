@@ -2,6 +2,22 @@ import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { extname, join, relative } from "node:path";
 
+/**
+ * Read-once cache. These fences scan every file under `src/` for a dozen
+ * patterns; re-reading the tree per pattern made them take 9-25 s and time out
+ * against vitest's 5 s default whenever the disk was busy — a fence that fails
+ * for reasons unrelated to what it guards is worse than no fence.
+ */
+const FILE_CONTENTS = new Map();
+function contentsOf(file) {
+  let text = FILE_CONTENTS.get(file);
+  if (text === undefined) {
+    text = readFileSync(file, "utf8");
+    FILE_CONTENTS.set(file, text);
+  }
+  return text;
+}
+
 const ROOT = process.cwd();
 
 function sourceFiles(root, extensions) {
@@ -26,13 +42,16 @@ function matchingFiles(files, pattern, allowed = []) {
   const allowedSet = new Set(allowed);
   return files
     .filter((file) => !allowedSet.has(relative(ROOT, file).replaceAll("\\", "/")))
-    .filter((file) => pattern.test(readFileSync(file, "utf8")))
+    .filter((file) => pattern.test(contentsOf(file)))
     .map((file) => relative(ROOT, file).replaceAll("\\", "/"))
     .sort();
 }
 
 const frontendSources = sourceFiles(join(ROOT, "src"), new Set([".ts", ".tsx"]));
 const rustSources = sourceFiles(join(ROOT, "src-tauri", "src"), new Set([".rs"]));
+
+// Filesystem fences, not unit tests — see confirm-idiom.test.mjs.
+const FENCE_TIMEOUT_MS = 30_000;
 
 describe("Workspace/Agents north-star boundaries", () => {
   it("keeps new GUI-agent creation out of current Workspace entry surfaces", () => {
@@ -52,7 +71,7 @@ describe("Workspace/Agents north-star boundaries", () => {
     const agentsView = read("src/components/views/AgentsView.tsx");
     expect(agentsView).toContain("launchConversation({");
     expect(agentsView).not.toMatch(/\bonLaunched\s*:/);
-  });
+  }, FENCE_TIMEOUT_MS);
 
   it("keeps saved conversation panes read-compatible without any new attachment producer", () => {
     expect(matchingFiles(frontendSources, /\bopenSession\s*\(/)).toEqual([]);
@@ -69,7 +88,7 @@ describe("Workspace/Agents north-star boundaries", () => {
     const mosaic = read("src/components/workspace/WorkspaceMosaicContainer.tsx");
     expect(mosaic).toContain('pane.kind === "conversation"');
     expect(mosaic).toContain("<ConversationTile");
-  });
+  }, FENCE_TIMEOUT_MS);
 
   it("keeps every secondary native window on the reviewed Monitor path", () => {
     expect(
@@ -88,5 +107,5 @@ describe("Workspace/Agents north-star boundaries", () => {
     expect(capability.permissions).not.toContain("shell:default");
     expect(capability.permissions).not.toContain("fs:default");
     expect(capability.permissions).not.toContain("process:default");
-  });
+  }, FENCE_TIMEOUT_MS);
 });

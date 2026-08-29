@@ -20,6 +20,22 @@ import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { extname, join, relative } from "node:path";
 
+/**
+ * Read-once cache. These fences scan every file under `src/` for a dozen
+ * patterns; re-reading the tree per pattern made them take 9-25 s and time out
+ * against vitest's 5 s default whenever the disk was busy — a fence that fails
+ * for reasons unrelated to what it guards is worse than no fence.
+ */
+const FILE_CONTENTS = new Map();
+function contentsOf(file) {
+  let text = FILE_CONTENTS.get(file);
+  if (text === undefined) {
+    text = readFileSync(file, "utf8");
+    FILE_CONTENTS.set(file, text);
+  }
+  return text;
+}
+
 const ROOT = process.cwd();
 
 /** Files allowed to mention the banned pattern, and why. */
@@ -64,16 +80,22 @@ export function stripsApiPrefix(body) {
   return PREFIX_STRIP.test(stripComments(body));
 }
 
+/** Walked once: the fence below shares it. */
+const SRC_FILES = sourceFiles(join(ROOT, "src"));
+
+// A filesystem fence, not a unit test — see confirm-idiom.test.mjs.
+const FENCE_TIMEOUT_MS = 30_000;
+
 describe("attempt provider-id derivation", () => {
   it("no source file derives a provider id by stripping the api- prefix", () => {
-    const offenders = sourceFiles(join(ROOT, "src"))
+    const offenders = SRC_FILES
       .map((file) => [relative(ROOT, file).replaceAll("\\", "/"), file])
       .filter(([rel]) => !ALLOWED.has(rel))
-      .filter(([, file]) => stripsApiPrefix(readFileSync(file, "utf8")))
+      .filter(([, file]) => stripsApiPrefix(contentsOf(file)))
       .map(([rel]) => rel);
 
     expect(offenders).toEqual([]);
-  });
+  }, FENCE_TIMEOUT_MS);
 
   it.each([
     ["regex replace", 'const provider = agent.replace(/^api-/, "");'],
