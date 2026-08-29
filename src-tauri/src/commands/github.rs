@@ -2,8 +2,11 @@ use crate::core::brand::{
     DATA_DIR_NAME, KEYRING_SERVICE, LEGACY_DATA_DIR_NAME, LEGACY_KEYRING_SERVICE,
     USER_AGENT as BRAND_USER_AGENT,
 };
-use crate::core::git_host::{GitHost, GitHostKind};
-use reqwest::header::{ACCEPT, AUTHORIZATION, LINK, USER_AGENT};
+use crate::core::git_host::{
+    self, host_label_from_url, sanitize_host_error, GitHost, GitHostKind, HostCapability,
+    ListState, RepoRef,
+};
+use reqwest::header::{ACCEPT, LINK, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::{AppHandle, Emitter, State};
@@ -11,7 +14,12 @@ use tokio::sync::RwLock;
 use tracing::{info, warn};
 use zeroize::Zeroizing;
 
-/// Validate that a GitHub owner or repo name contains only allowed characters.
+/// Validate a single opaque identifier (notification thread ids, and anything
+/// else that is not a repo coordinate).
+///
+/// Repository coordinates no longer come through here — they go through
+/// [`RepoRef::new`], which additionally permits the nested namespaces GitLab
+/// subgroups require while still validating each segment.
 fn validate_github_name(name: &str, field: &str) -> Result<(), String> {
     if name.is_empty() {
         return Err(format!("{} cannot be empty", field));
@@ -123,10 +131,7 @@ impl GitHostConnection {
 
     /// Resolve this connection to a `GitHost` for request building.
     fn to_host(&self) -> GitHost {
-        match self.kind {
-            GitHostKind::GitHub => GitHost::github(),
-            GitHostKind::Gitea => GitHost::gitea(&self.base_url),
-        }
+        GitHost::from_parts(self.kind, &self.base_url)
     }
 }
 
@@ -174,9 +179,18 @@ fn git_hosts_config_path() -> Option<std::path::PathBuf> {
     })
 }
 
-/// Load persisted Gitea connections (metadata only). GitHub is never persisted
-/// here — it is seeded implicitly.
-fn load_gitea_connections() -> Vec<GitHostConnection> {
+/// Whether a connection is persisted to `git-hosts.json`.
+///
+/// Everything except GitHub: the GitHub connection is seeded implicitly on
+/// every launch, so writing it would create a duplicate on load. This used to
+/// be spelled `kind == Gitea` on both sides, which silently *dropped* any
+/// other kind on the next save — a GitLab connection would vanish on restart.
+fn is_persisted_connection(c: &GitHostConnection) -> bool {
+    c.kind != GitHostKind::GitHub && c.id != GITHUB_CONNECTION_ID
+}
+
+/// Load persisted self-hosted/third-party connections (metadata only).
+fn load_host_connections() -> Vec<GitHostConnection> {
     let Some(path) = git_hosts_config_path() else {
         return vec![];
     };
@@ -186,20 +200,20 @@ fn load_gitea_connections() -> Vec<GitHostConnection> {
     serde_json::from_str::<Vec<GitHostConnection>>(&raw)
         .unwrap_or_default()
         .into_iter()
-        .filter(|c| c.kind == GitHostKind::Gitea && c.id != GITHUB_CONNECTION_ID)
+        .filter(is_persisted_connection)
         .collect()
 }
 
-fn save_gitea_connections(conns: &[GitHostConnection]) -> Result<(), String> {
+fn save_host_connections(conns: &[GitHostConnection]) -> Result<(), String> {
     let path = git_hosts_config_path().ok_or_else(|| "no data dir".to_string())?;
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let gitea: Vec<&GitHostConnection> = conns
+    let persisted: Vec<&GitHostConnection> = conns
         .iter()
-        .filter(|c| c.kind == GitHostKind::Gitea)
+        .filter(|c| is_persisted_connection(c))
         .collect();
-    let json = serde_json::to_string_pretty(&gitea).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string_pretty(&persisted).map_err(|e| e.to_string())?;
     std::fs::write(&path, json).map_err(|e| format!("Failed to write git-hosts.json: {}", e))
 }
 
@@ -287,7 +301,7 @@ impl GitHubAuthState {
         migrate_github_token_to_keyring();
 
         let mut connections = vec![GitHostConnection::github()];
-        connections.extend(load_gitea_connections());
+        connections.extend(load_host_connections());
 
         let mut tokens = HashMap::new();
         for c in &connections {
@@ -365,81 +379,57 @@ pub async fn git_host_set_active(
     Ok(())
 }
 
-/// G10: the kind of the currently-active host, for capability gating of
-/// GitHub-only surfaces (check-runs, GraphQL draft toggle).
-async fn active_host_kind(auth: &GitHubAuthState) -> GitHostKind {
+/// Resolve the active session *and* the repo coordinate in one step.
+///
+/// The coordinate is validated first so a malformed owner/repo still fails
+/// before any keyring read or client build, preserving the old error ordering.
+async fn repo_session(
+    auth: &GitHubAuthState,
+    owner: &str,
+    repo: &str,
+) -> Result<(reqwest::Client, GitHost, RepoRef), String> {
+    let r = RepoRef::new(owner, repo)?;
+    let (client, host) = active_host_session(auth).await?;
+    Ok((client, host, r))
+}
+
+/// The active connection resolved to a `GitHost` (without building a client).
+///
+/// This replaces the old `active_host_kind`, which returned a bare kind that
+/// every call site then compared against `GitHostKind::Gitea` by hand — the
+/// deny-list shape that failed open. Returning the whole host means callers ask
+/// it what it supports instead of enumerating what it isn't.
+async fn active_host(auth: &GitHubAuthState) -> GitHost {
     let id = auth.active_connection_id.read().await.clone();
     auth.connection(&id)
         .await
-        .map(|c| c.kind)
-        .unwrap_or(GitHostKind::GitHub)
+        .map(|c| c.to_host())
+        .unwrap_or_else(GitHost::github)
 }
 
-/// G11: guard the inline review-comment commands (create + reply).
+/// Refuse a command whose host lacks the capability it needs.
 ///
-/// Both hardcode `https://api.github.com/...`, so on a Gitea workspace they
-/// would send the GitHub token to GitHub carrying Gitea owner/repo/comment ids.
-/// Gitea's inline-comment model (review-scoped path+position) differs enough
-/// that v1 gates authoring; the user can still leave a regular PR comment, and
-/// viewing reviews works on both hosts. One helper so create and reply cannot
-/// drift — `reply` shipped without the guard the `create` side already had.
-async fn require_github_for_inline_review(auth: &GitHubAuthState) -> Result<(), String> {
-    if active_host_kind(auth).await == GitHostKind::Gitea {
-        return Err(
-            "Inline review comments aren't supported on Gitea yet — post a regular PR comment instead."
-                .to_string(),
-        );
+/// This replaces the family of `if active_host_kind() == Gitea { refuse }`
+/// guards. Those were a **deny-list**, and a deny-list fails open: every one of
+/// them let an unrecognised host kind through, and the command then went on to
+/// hit its hardcoded `https://api.github.com/...` URL — sending the GitHub
+/// token to GitHub carrying the *other* host's owner/repo/ids. The capability
+/// table in `core::git_host` is an explicit per-kind allow-list, so a host that
+/// was never considered is refused rather than silently mis-routed.
+async fn require_capability(auth: &GitHubAuthState, cap: HostCapability) -> Result<(), String> {
+    let host = active_host(auth).await;
+    if host.supports(cap) {
+        Ok(())
+    } else {
+        Err(host.unsupported(cap))
     }
-    Ok(())
-}
-
-/// Guard GitHub-only commands (the AI features query api.github.com directly
-/// via the GitHub connection). On a Gitea workspace, refuse with a clear error
-/// rather than firing the GitHub token at api.github.com with a Gitea repo.
-async fn require_github_host(auth: &GitHubAuthState) -> Result<(), String> {
-    if active_host_kind(auth).await == GitHostKind::Gitea {
-        return Err("This AI feature is available on GitHub workspaces only.".to_string());
-    }
-    Ok(())
 }
 
 /// Build an authenticated client for the given host + token. GitHub construction
 /// is byte-identical to the previous inline builder (Bearer + vnd.github+json +
-/// brand UA); Gitea uses the `token` scheme.
+/// brand UA).
 fn github_client(token: &str) -> Result<reqwest::Client, String> {
     GitHost::github().build_client(token)
-}
-
-/// Human name for whichever host actually answered a request.
-///
-/// These commands now target GitHub *or* a self-hosted Gitea/Forgejo instance,
-/// but the sanitized error said "GitHub API error" unconditionally — so a 401
-/// from the user's own Gitea told them to check a GitHub token they had never
-/// used. The response URL is the one thing every call site has in hand, so the
-/// label is derived from it: GitHub cloud is always `api.github.com`; anything
-/// else is the user's own instance, named by its hostname.
-fn host_label_from_url(url: &reqwest::Url) -> String {
-    match url.host_str() {
-        Some("api.github.com") => "GitHub".to_string(),
-        Some(host) => host.to_string(),
-        // Hostless URL (only reachable for non-network schemes) — stay generic
-        // rather than blaming a host we cannot name.
-        None => "Git host".to_string(),
-    }
-}
-
-fn sanitize_host_error(host_label: &str, status: reqwest::StatusCode) -> String {
-    let reason = match status.as_u16() {
-        401 => format!("unauthorized — check your {} token", host_label),
-        403 => "forbidden — you may lack permissions or be rate-limited".to_string(),
-        404 => "not found — the resource may not exist or may be private".to_string(),
-        422 => "validation failed — check your request parameters".to_string(),
-        429 => "rate limited — try again later".to_string(),
-        _ if status.is_client_error() => "client error".to_string(),
-        _ if status.is_server_error() => format!("{} server error — try again later", host_label),
-        _ => "unexpected error".to_string(),
-    };
-    format!("{} API error {}: {}", host_label, status.as_u16(), reason)
 }
 
 /// Log the raw failure body (never surfaced to the user — it can echo tokens
@@ -463,6 +453,46 @@ async fn github_response_text(resp: reqwest::Response) -> Result<String, String>
     resp.text()
         .await
         .map_err(|e| format!("Failed to read response: {}", e))
+}
+
+/// Project a raw JSON **array** body into the canonical GitHub-shaped wire DTO.
+///
+/// The frontend is written against GitHub's field names throughout
+/// (`src/types/github.ts`), so rather than teach ~30 React components a third
+/// vocabulary the projection happens here. GitHub and Gitea already speak the
+/// canonical shape, so this is a no-op for them and the body passes through
+/// byte-for-byte; only GitLab's payloads are rewritten. A non-array body (an
+/// error envelope that slipped through) also passes through untouched so the
+/// original text still reaches the user.
+fn normalize_list(
+    host: &GitHost,
+    body: String,
+    f: fn(&serde_json::Value) -> serde_json::Value,
+) -> Result<String, String> {
+    if host.kind != GitHostKind::GitLab {
+        return Ok(body);
+    }
+    let v: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse response: {}", e))?;
+    serde_json::to_string(&git_host::normalize_array(&v, f))
+        .map_err(|e| format!("Failed to serialize response: {}", e))
+}
+
+/// Single-object counterpart to [`normalize_list`].
+fn normalize_one(
+    host: &GitHost,
+    body: String,
+    f: fn(&serde_json::Value) -> serde_json::Value,
+) -> Result<String, String> {
+    if host.kind != GitHostKind::GitLab {
+        return Ok(body);
+    }
+    let v: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse response: {}", e))?;
+    if !v.is_object() {
+        return Ok(body);
+    }
+    serde_json::to_string(&f(&v)).map_err(|e| format!("Failed to serialize response: {}", e))
 }
 
 #[tauri::command]
@@ -682,8 +712,16 @@ pub async fn git_host_list_connections(
         .collect())
 }
 
-/// Derive a stable, unique connection id from a Gitea base URL host.
-fn unique_gitea_id(base_url: &str, existing: &[GitHostConnection]) -> String {
+/// Derive a stable, unique connection id from a kind + base URL host.
+///
+/// The kind is part of the id (`gitea-…` / `gitlab-…`) so the same hostname can
+/// legitimately host two different kinds without colliding, and so an id is
+/// self-describing in logs and in the keyring account name.
+fn unique_connection_id(
+    kind: GitHostKind,
+    base_url: &str,
+    existing: &[GitHostConnection],
+) -> String {
     let host = base_url
         .split("://")
         .nth(1)
@@ -701,7 +739,12 @@ fn unique_gitea_id(base_url: &str, existing: &[GitHostConnection]) -> String {
             }
         })
         .collect();
-    let base = format!("gitea-{}", slug.trim_matches('-'));
+    let prefix = match kind {
+        GitHostKind::Gitea => "gitea",
+        GitHostKind::GitLab => "gitlab",
+        GitHostKind::GitHub => "github",
+    };
+    let base = format!("{}-{}", prefix, slug.trim_matches('-'));
     if !existing.iter().any(|c| c.id == base) {
         return base;
     }
@@ -711,20 +754,39 @@ fn unique_gitea_id(base_url: &str, existing: &[GitHostConnection]) -> String {
         .unwrap_or(base)
 }
 
+/// Add a self-hosted / third-party git-host connection.
+///
+/// `base_url` is the **instance origin** — the API suffix (`/api/v1` for Gitea,
+/// `/api/v4` for GitLab) is appended by `GitHost`, idempotently, so a pasted
+/// API root also works. gitlab.com is not special-cased: GitLab serves
+/// `/api/v4` under the instance origin on SaaS exactly as it does self-hosted.
+///
+/// The token goes straight to the OS keyring under this connection's own
+/// account (`git-host-token-{id}`) and is never returned to the frontend or
+/// written to `git-hosts.json`.
 #[tauri::command]
-pub async fn git_host_add_gitea(
+pub async fn git_host_add_connection(
     auth: State<'_, GitHubAuthState>,
+    kind: GitHostKind,
     base_url: String,
     label: String,
     token: String,
 ) -> Result<String, String> {
+    // The GitHub connection is seeded implicitly and owns the historical
+    // `github-token` keyring account; a second one would shadow it.
+    if kind == GitHostKind::GitHub {
+        return Err("The GitHub connection is built in and cannot be added.".to_string());
+    }
     let base = base_url.trim().trim_end_matches('/');
     if !(base.starts_with("http://") || base.starts_with("https://")) {
-        return Err("Gitea base URL must start with http:// or https://".to_string());
+        return Err(format!(
+            "{} base URL must start with http:// or https://",
+            kind.label()
+        ));
     }
     let token = token.trim();
     if token.is_empty() {
-        return Err("Gitea token cannot be empty".to_string());
+        return Err(format!("{} token cannot be empty", kind.label()));
     }
     let label = {
         let l = label.trim();
@@ -736,14 +798,14 @@ pub async fn git_host_add_gitea(
     };
 
     let mut conns = auth.connections.write().await;
-    let id = unique_gitea_id(base, &conns);
+    let id = unique_connection_id(kind, base, &conns);
     conns.push(GitHostConnection {
         id: id.clone(),
-        kind: GitHostKind::Gitea,
+        kind,
         base_url: base.to_string(),
         label,
     });
-    save_gitea_connections(&conns)?;
+    save_host_connections(&conns)?;
     drop(conns);
 
     save_host_token(&id, token)?;
@@ -751,7 +813,7 @@ pub async fn git_host_add_gitea(
         .write()
         .await
         .insert(id.clone(), token.to_string());
-    info!("Added Gitea connection '{}'", id);
+    info!("Added {} connection '{}'", kind.label(), id);
     Ok(id)
 }
 
@@ -769,7 +831,7 @@ pub async fn git_host_remove_connection(
     if conns.len() == before {
         return Err(format!("Unknown connection '{}'.", id));
     }
-    save_gitea_connections(&conns)?;
+    save_host_connections(&conns)?;
     drop(conns);
 
     delete_host_token(&id);
@@ -812,12 +874,36 @@ pub async fn git_host_has_token(
     Ok(auth.tokens.read().await.contains_key(&id))
 }
 
+/// Client for the commands that legitimately target `api.github.com` directly
+/// (the AI features, the GraphQL draft toggle, check-runs, inline reviews).
+///
+/// **This used to read the token of the connection literally named `github`,
+/// not the token of the *active* connection.** Every caller is preceded by a
+/// capability guard, so on a correctly-guarded path the two coincide — but the
+/// coupling was implicit, and the one command that shipped without its guard
+/// (`github_reply_to_pr_review_comment`, fixed in `b3de2bdf`) turned that into
+/// a live credential leak. Resolving the *active* connection and asserting its
+/// kind makes the invariant explicit and enforced here, so a future
+/// missing-guard bug fails closed instead of reaching for the GitHub token.
 async fn github_client_from_state(auth: &GitHubAuthState) -> Result<reqwest::Client, String> {
+    let id = auth.active_connection_id.read().await.clone();
+    let conn = auth
+        .connection(&id)
+        .await
+        // An unresolvable active id means we cannot prove which host this is,
+        // so we refuse rather than defaulting to GitHub and its token.
+        .ok_or_else(|| format!("Unknown git-host connection '{}'.", id))?;
+    if conn.kind != GitHostKind::GitHub {
+        return Err(format!(
+            "This action is available on GitHub workspaces only — the active connection is {}.",
+            conn.kind.label()
+        ));
+    }
     let token = auth
         .tokens
         .read()
         .await
-        .get(GITHUB_CONNECTION_ID)
+        .get(&conn.id)
         .cloned()
         .ok_or_else(|| "GitHub token not set. Connect first.".to_string())?;
     github_client(&token)
@@ -826,19 +912,16 @@ async fn github_client_from_state(auth: &GitHubAuthState) -> Result<reqwest::Cli
 async fn github_get_issue_with_client(
     client: &reqwest::Client,
     host: &GitHost,
-    owner: &str,
-    repo: &str,
+    r: &RepoRef,
     issue_number: u32,
 ) -> Result<String, String> {
     let resp = client
-        .get(host.url(&format!(
-            "/repos/{}/{}/issues/{}",
-            owner, repo, issue_number
-        )))
+        .get(host.url(&host.issue_path(r, issue_number)))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    github_response_text(resp).await
+    let body = github_response_text(resp).await?;
+    normalize_one(host, body, git_host::normalize_issue)
 }
 
 #[tauri::command]
@@ -849,7 +932,8 @@ pub async fn github_list_repos(auth: State<'_, GitHubAuthState>) -> Result<Strin
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    github_response_text(resp).await
+    let body = github_response_text(resp).await?;
+    normalize_list(&host, body, git_host::normalize_repo)
 }
 
 #[derive(serde::Serialize)]
@@ -865,48 +949,48 @@ pub struct GhUser {
 pub async fn github_get_authenticated_user(
     auth: State<'_, GitHubAuthState>,
 ) -> Result<GhUser, String> {
-    // G4: route to the active host (GitHub or Gitea). Both return {login,
-    // avatar_url} from `/user`, so no normalization is needed.
+    // G4: route to the active host. GitHub and Gitea both return
+    // {login, avatar_url} from `/user`; GitLab returns {username, avatar_url}
+    // and is projected onto the same shape.
     let (client, host) = active_host_session(auth.inner()).await?;
     let resp = client
-        .get(host.url("/user"))
+        .get(host.url(host.user_path()))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    let body = github_response_text(resp).await?;
+    let body = normalize_one(
+        &host,
+        github_response_text(resp).await?,
+        git_host::normalize_authenticated_user,
+    )?;
     let parsed: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("Failed to parse user: {}", e))?;
     let login = parsed["login"]
         .as_str()
-        .ok_or_else(|| "GitHub /user response missing 'login'".to_string())?
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("{} /user response missing a username", host.kind.label()))?
         .to_string();
     let avatar_url = parsed["avatar_url"].as_str().unwrap_or("").to_string();
     Ok(GhUser { login, avatar_url })
 }
 
-/// GP6: list a repo's releases (raw passthrough JSON). Both GitHub and Gitea
-/// expose `/repos/{o}/{r}/releases` with a compatible shape.
+/// GP6: list a repo's releases. GitHub and Gitea share
+/// `/repos/{o}/{r}/releases`; GitLab's `/projects/{p}/releases` is projected
+/// onto the same shape.
 #[tauri::command]
 pub async fn github_list_releases(
     auth: State<'_, GitHubAuthState>,
     owner: String,
     repo: String,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!(
-        "/repos/{}/{}/releases?{}",
-        owner,
-        repo,
-        host.page_params(30, 1)
-    ));
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
     let resp = client
-        .get(url)
+        .get(host.url(&host.releases_path(&r, 30)))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    github_response_text(resp).await
+    let body = github_response_text(resp).await?;
+    normalize_list(&host, body, git_host::normalize_release)
 }
 
 #[tauri::command]
@@ -915,24 +999,21 @@ pub async fn github_list_issues(
     owner: String,
     repo: String,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!(
-        "/repos/{}/{}/issues?state=open&{}",
-        owner,
-        repo,
-        host.page_params(50, 1)
-    ));
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
     let resp = client
-        .get(url)
+        .get(host.url(&host.issues_path(&r, ListState::Open, 50, 1)))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    let body = github_response_text(resp).await?;
+    let body = normalize_list(
+        &host,
+        github_response_text(resp).await?,
+        git_host::normalize_issue,
+    )?;
     // GitHub's /issues endpoint returns BOTH issues and PRs; PRs carry a
     // `pull_request` object on each item. Strip them server-side so the
-    // Issues tab badge and list show only real issues.
+    // Issues tab badge and list show only real issues. (GitLab's issue
+    // endpoint never returns merge requests, so nothing is filtered there.)
     match serde_json::from_str::<Vec<serde_json::Value>>(&body) {
         Ok(items) => {
             let filtered: Vec<serde_json::Value> = items
@@ -956,10 +1037,8 @@ pub async fn github_get_issue(
     repo: String,
     issue_number: u32,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let (client, host) = active_host_session(auth.inner()).await?;
-    github_get_issue_with_client(&client, &host, &owner, &repo, issue_number).await
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
+    github_get_issue_with_client(&client, &host, &r, issue_number).await
 }
 
 /// GP7: create a host issue for an Issue↔Flight mirror. Labels and milestone
@@ -973,21 +1052,26 @@ pub async fn github_create_issue(
     title: String,
     body: String,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
     super::validate_input_size(&title, 512, "issue title")?;
     super::validate_input_size(&body, 250_000, "issue body")?;
     if title.trim().is_empty() {
         return Err("Issue title cannot be empty".to_string());
     }
-    let (client, host) = active_host_session(auth.inner()).await?;
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
+    // GitLab names the prose field `description`; sending `body` there is
+    // accepted and silently ignored, producing an issue with no text.
+    let body_field = match host.kind {
+        GitHostKind::GitLab => "description",
+        _ => "body",
+    };
     let response = client
-        .post(host.url(&format!("/repos/{}/{}/issues", owner, repo)))
-        .json(&serde_json::json!({ "title": title.trim(), "body": body }))
+        .post(host.url(&host.issues_create_path(&r)))
+        .json(&serde_json::json!({ "title": title.trim(), body_field: body }))
         .send()
         .await
         .map_err(|error| format!("Request failed: {error}"))?;
-    github_response_text(response).await
+    let text = github_response_text(response).await?;
+    normalize_one(&host, text, git_host::normalize_issue)
 }
 
 /// GP7: update mirror-owned prose/title in one revision-fenced write.
@@ -1000,20 +1084,18 @@ pub async fn github_update_issue(
     title: String,
     body: String,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
     super::validate_input_size(&title, 512, "issue title")?;
     super::validate_input_size(&body, 250_000, "issue body")?;
     if title.trim().is_empty() {
         return Err("Issue title cannot be empty".to_string());
     }
-    patch_issue(
-        auth.inner(),
-        &owner,
-        &repo,
-        number,
-        serde_json::json!({ "title": title.trim(), "body": body }),
-    )
+    patch_issue(auth.inner(), &owner, &repo, number, |host| {
+        let body_field = match host.kind {
+            GitHostKind::GitLab => "description",
+            _ => "body",
+        };
+        serde_json::json!({ "title": title.trim(), body_field: body })
+    })
     .await
 }
 
@@ -1035,32 +1117,18 @@ pub async fn github_create_pr(
     base: String,
     draft: Option<bool>,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!("/repos/{}/{}/pulls", owner, repo));
-
-    let mut payload = serde_json::json!({
-        "title": title,
-        "body": body,
-        "head": head,
-        "base": base,
-    });
-    // GitHub accepts a `draft` flag at creation; Gitea does not (draft is a
-    // WIP: title convention — see G10), so only send it to GitHub.
-    if host.kind == GitHostKind::GitHub {
-        if let Some(d) = draft {
-            payload["draft"] = serde_json::Value::Bool(d);
-        }
-    }
-
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
+    // Field names, and the very meaning of "draft", differ per host — see
+    // `GitHost::create_change_request_body`.
+    let payload = host.create_change_request_body(&title, &body, &head, &base, draft);
     let resp = client
-        .post(url)
+        .post(host.url(&host.change_requests_create_path(&r)))
         .json(&payload)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    github_response_text(resp).await
+    let text = github_response_text(resp).await?;
+    normalize_one(&host, text, git_host::normalize_change_request)
 }
 
 #[tauri::command]
@@ -1069,21 +1137,14 @@ pub async fn github_list_prs(
     owner: String,
     repo: String,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!(
-        "/repos/{}/{}/pulls?state=open&{}",
-        owner,
-        repo,
-        host.page_params(30, 1)
-    ));
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
     let resp = client
-        .get(url)
+        .get(host.url(&host.change_requests_path(&r, ListState::Open, 30, 1)))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    github_response_text(resp).await
+    let body = github_response_text(resp).await?;
+    normalize_list(&host, body, git_host::normalize_change_request)
 }
 
 #[tauri::command]
@@ -1093,15 +1154,14 @@ pub async fn github_get_pr_diff(
     repo: String,
     pr_number: u32,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    // G6: GitHub serves the diff from the PR resource via a media-type Accept
-    // header; Gitea serves it at a `.diff` URL suffix. Route through the active
-    // host's client so auth is correct for either.
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&host.pr_diff_path(&owner, &repo, pr_number));
+    // G6: three hosts, three mechanisms, one unified-diff result — GitHub via a
+    // media-type Accept header on the PR resource, Gitea via a `.diff` URL
+    // suffix, GitLab via its `raw_diffs` sub-resource. Route through the active
+    // host's client so auth is correct for all three.
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
+    let url = host.url(&host.change_request_diff_path(&r, pr_number));
     let mut req = client.get(url);
-    if let Some(accept) = host.pr_diff_accept() {
+    if let Some(accept) = host.change_request_diff_accept() {
         req = req.header(ACCEPT, accept);
     }
     let resp = req
@@ -1179,22 +1239,17 @@ pub async fn github_list_issue_comments(
     repo: String,
     number: u32,
 ) -> Result<Vec<GhIssueComment>, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!(
-        "/repos/{}/{}/issues/{}/comments?{}",
-        owner,
-        repo,
-        number,
-        host.page_params(100, 1)
-    ));
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
     let resp = client
-        .get(url)
+        .get(host.url(&host.issue_comments_path(&r, number, 100)))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    let body = github_response_text(resp).await?;
+    let body = normalize_list(
+        &host,
+        github_response_text(resp).await?,
+        git_host::normalize_comment,
+    )?;
     let arr: Vec<serde_json::Value> =
         serde_json::from_str(&body).map_err(|e| format!("Failed to parse comments: {}", e))?;
     Ok(arr.iter().map(parse_comment).collect())
@@ -1208,45 +1263,53 @@ pub async fn github_post_issue_comment(
     number: u32,
     body: String,
 ) -> Result<GhIssueComment, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
     let trimmed = body.trim();
     if trimmed.is_empty() {
         return Err("Comment body cannot be empty".to_string());
     }
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!(
-        "/repos/{}/{}/issues/{}/comments",
-        owner, repo, number
-    ));
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
     let resp = client
-        .post(url)
+        .post(host.url(&host.issue_comment_create_path(&r, number)))
         .json(&serde_json::json!({ "body": trimmed }))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    let text = github_response_text(resp).await?;
+    let text = normalize_one(
+        &host,
+        github_response_text(resp).await?,
+        git_host::normalize_comment,
+    )?;
     let v: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("Failed to parse comment: {}", e))?;
     Ok(parse_comment(&v))
 }
 
-async fn patch_issue(
+/// Update an issue in place. The payload is built by the caller *from the
+/// resolved host*, because the field names diverge (`state` vs `state_event`,
+/// `body` vs `description`, `milestone` vs `milestone_id`) and GitLab silently
+/// ignores an unknown field rather than erroring — a mis-named field there is a
+/// 200 OK that changes nothing.
+async fn patch_issue<F>(
     auth: &GitHubAuthState,
     owner: &str,
     repo: &str,
     number: u32,
-    payload: serde_json::Value,
-) -> Result<String, String> {
-    let (client, host) = active_host_session(auth).await?;
-    let url = host.url(&format!("/repos/{}/{}/issues/{}", owner, repo, number));
+    build_payload: F,
+) -> Result<String, String>
+where
+    F: FnOnce(&GitHost) -> serde_json::Value,
+{
+    let (client, host, r) = repo_session(auth, owner, repo).await?;
+    let payload = build_payload(&host);
     let resp = client
-        .patch(url)
+        // GitLab updates with PUT where GitHub and Gitea use PATCH.
+        .request(host.update_method(), host.url(&host.issue_path(&r, number)))
         .json(&payload)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    github_response_text(resp).await
+    let text = github_response_text(resp).await?;
+    normalize_one(&host, text, git_host::normalize_issue)
 }
 
 #[tauri::command]
@@ -1256,15 +1319,9 @@ pub async fn github_close_issue(
     repo: String,
     number: u32,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    patch_issue(
-        auth.inner(),
-        &owner,
-        &repo,
-        number,
-        serde_json::json!({ "state": "closed" }),
-    )
+    patch_issue(auth.inner(), &owner, &repo, number, |host| {
+        host.state_change_body(false)
+    })
     .await
 }
 
@@ -1275,15 +1332,9 @@ pub async fn github_reopen_issue(
     repo: String,
     number: u32,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    patch_issue(
-        auth.inner(),
-        &owner,
-        &repo,
-        number,
-        serde_json::json!({ "state": "open" }),
-    )
+    patch_issue(auth.inner(), &owner, &repo, number, |host| {
+        host.state_change_body(true)
+    })
     .await
 }
 
@@ -1295,14 +1346,16 @@ pub async fn github_set_issue_assignees(
     number: u32,
     assignees: Vec<String>,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
+    // GitLab assigns by numeric `assignee_ids`, not by username. The frontend
+    // only ever has logins, and GitLab would accept + ignore an `assignees`
+    // field, so refuse instead of pretending the write landed.
+    require_capability(auth.inner(), HostCapability::AssigneesByLogin).await?;
     patch_issue(
         auth.inner(),
         &owner,
         &repo,
         number,
-        serde_json::json!({ "assignees": assignees }),
+        |_| serde_json::json!({ "assignees": assignees }),
     )
     .await
 }
@@ -1315,19 +1368,20 @@ pub async fn github_set_issue_labels(
     number: u32,
     labels: Vec<String>,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!(
-        "/repos/{}/{}/issues/{}/labels",
-        owner, repo, number
-    ));
-    // GitHub's PUT accepts label *names*; Gitea expects label *ids*, so resolve
-    // names → ids against the repo's label set first.
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
+    // Three contracts for one operation:
+    //   GitHub — PUT /issues/{n}/labels with an array of label *names*
+    //   Gitea  — the same sub-resource, but an array of label *ids*
+    //   GitLab — no sub-resource at all: a comma-joined string on the issue
+    let Some(labels_path) = host.issue_labels_path(&r, number) else {
+        return patch_issue(auth.inner(), &owner, &repo, number, |host| {
+            host.labels_body_from_names(&labels)
+        })
+        .await;
+    };
     let payload = match host.kind {
-        GitHostKind::GitHub => serde_json::json!({ "labels": labels }),
         GitHostKind::Gitea => {
-            let ids = resolve_gitea_label_ids(&client, &host, &owner, &repo, &labels).await?;
+            let ids = resolve_gitea_label_ids(&client, &host, &r, &labels).await?;
             // Labels PUT is a full replace — if the caller asked for labels but
             // NONE resolved to a Gitea id, refuse rather than silently clearing
             // every existing label.
@@ -1338,9 +1392,10 @@ pub async fn github_set_issue_labels(
             }
             serde_json::json!({ "labels": ids })
         }
+        _ => host.labels_body_from_names(&labels),
     };
     let resp = client
-        .put(url)
+        .put(host.url(&labels_path))
         .json(&payload)
         .send()
         .await
@@ -1353,16 +1408,10 @@ pub async fn github_set_issue_labels(
 async fn resolve_gitea_label_ids(
     client: &reqwest::Client,
     host: &GitHost,
-    owner: &str,
-    repo: &str,
+    r: &RepoRef,
     names: &[String],
 ) -> Result<Vec<u64>, String> {
-    let url = host.url(&format!(
-        "/repos/{}/{}/labels?{}",
-        owner,
-        repo,
-        host.page_params(100, 1)
-    ));
+    let url = host.url(&host.labels_path(r, 100));
     let resp = client
         .get(url)
         .send()
@@ -1390,13 +1439,10 @@ pub async fn github_set_issue_milestone(
     number: u32,
     milestone: Option<u64>,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let payload = match milestone {
-        Some(n) => serde_json::json!({ "milestone": n }),
-        None => serde_json::json!({ "milestone": serde_json::Value::Null }),
-    };
-    patch_issue(auth.inner(), &owner, &repo, number, payload).await
+    patch_issue(auth.inner(), &owner, &repo, number, |host| {
+        host.milestone_body(milestone)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1405,21 +1451,14 @@ pub async fn github_list_repo_labels(
     owner: String,
     repo: String,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!(
-        "/repos/{}/{}/labels?{}",
-        owner,
-        repo,
-        host.page_params(100, 1)
-    ));
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
     let resp = client
-        .get(url)
+        .get(host.url(&host.labels_path(&r, 100)))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    github_response_text(resp).await
+    let body = github_response_text(resp).await?;
+    normalize_list(&host, body, git_host::normalize_label)
 }
 
 #[tauri::command]
@@ -1428,21 +1467,14 @@ pub async fn github_list_repo_milestones(
     owner: String,
     repo: String,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!(
-        "/repos/{}/{}/milestones?state=open&{}",
-        owner,
-        repo,
-        host.page_params(100, 1)
-    ));
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
     let resp = client
-        .get(&url)
+        .get(host.url(&host.milestones_path(&r, 100)))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    github_response_text(resp).await
+    let body = github_response_text(resp).await?;
+    normalize_list(&host, body, git_host::normalize_milestone_row)
 }
 
 #[tauri::command]
@@ -1453,16 +1485,14 @@ pub async fn github_create_repo_milestone(
     title: String,
     description: String,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
     super::validate_input_size(&title, 512, "milestone title")?;
     super::validate_input_size(&description, 10_000, "milestone description")?;
     if title.trim().is_empty() {
         return Err("Milestone title cannot be empty".to_string());
     }
-    let (client, host) = active_host_session(auth.inner()).await?;
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
     let response = client
-        .post(host.url(&format!("/repos/{}/{}/milestones", owner, repo)))
+        .post(host.url(&host.milestones_create_path(&r)))
         .json(&serde_json::json!({
             "title": title.trim(),
             "description": description
@@ -1470,7 +1500,8 @@ pub async fn github_create_repo_milestone(
         .send()
         .await
         .map_err(|error| format!("Request failed: {error}"))?;
-    github_response_text(response).await
+    let body = github_response_text(response).await?;
+    normalize_one(&host, body, git_host::normalize_milestone_row)
 }
 
 #[tauri::command]
@@ -1479,21 +1510,14 @@ pub async fn github_list_repo_assignable_users(
     owner: String,
     repo: String,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!(
-        "/repos/{}/{}/assignees?{}",
-        owner,
-        repo,
-        host.page_params(100, 1)
-    ));
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
     let resp = client
-        .get(&url)
+        .get(host.url(&host.assignable_users_path(&r, 100)))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    github_response_text(resp).await
+    let body = github_response_text(resp).await?;
+    normalize_list(&host, body, git_host::normalize_member)
 }
 
 #[tauri::command]
@@ -1504,32 +1528,25 @@ pub async fn github_list_issues_page(
     state: String,
     page: u32,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let state_clean = match state.as_str() {
-        "open" | "closed" | "all" => state,
-        _ => "open".to_string(),
-    };
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!(
-        "/repos/{}/{}/issues?state={}&{}",
-        owner,
-        repo,
-        state_clean,
-        host.page_params(30, page)
-    ));
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
     let resp = client
-        .get(url)
+        .get(host.url(&host.issues_path(&r, ListState::parse(&state), 30, page)))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    // Both GitHub and Gitea emit RFC5988 Link headers with rel="next".
+    // All three hosts emit RFC5988 Link headers with rel="next". (GitLab also
+    // sends `x-next-page`, but its Link header is documented and present, so
+    // one detection path serves every host.)
     let has_more = resp
         .headers()
         .get(LINK)
         .and_then(|value| value.to_str().ok())
         .is_some_and(|link| link.contains("rel=\"next\""));
-    let body = github_response_text(resp).await?;
+    let body = normalize_list(
+        &host,
+        github_response_text(resp).await?,
+        git_host::normalize_issue,
+    )?;
     match serde_json::from_str::<Vec<serde_json::Value>>(&body) {
         Ok(items) => {
             let filtered: Vec<serde_json::Value> = items
@@ -1554,26 +1571,14 @@ pub async fn github_list_prs_page(
     state: String,
     page: u32,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let state_clean = match state.as_str() {
-        "open" | "closed" | "all" => state,
-        _ => "open".to_string(),
-    };
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!(
-        "/repos/{}/{}/pulls?state={}&{}",
-        owner,
-        repo,
-        state_clean,
-        host.page_params(30, page)
-    ));
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
     let resp = client
-        .get(url)
+        .get(host.url(&host.change_requests_path(&r, ListState::parse(&state), 30, page)))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    github_response_text(resp).await
+    let body = github_response_text(resp).await?;
+    normalize_list(&host, body, git_host::normalize_change_request)
 }
 
 #[tauri::command]
@@ -1587,7 +1592,8 @@ pub async fn github_list_repos_page(
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    github_response_text(resp).await
+    let body = github_response_text(resp).await?;
+    normalize_list(&host, body, git_host::normalize_repo)
 }
 
 #[tauri::command]
@@ -1599,14 +1605,15 @@ pub async fn github_investigate_issue(
     issue_number: u32,
 ) -> Result<String, String> {
     super::validate_project_path(&project_path)?;
-    require_github_host(auth.inner()).await?;
+    require_capability(auth.inner(), HostCapability::AiAssist).await?;
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
     let client = github_client_from_state(auth.inner()).await?;
 
+    // Guarded to GitHub above, so the coordinate is a plain two-segment one.
+    let issue_ref = RepoRef::new(&owner, &repo)?;
     let issue_json =
-        github_get_issue_with_client(&client, &GitHost::github(), &owner, &repo, issue_number)
-            .await?;
+        github_get_issue_with_client(&client, &GitHost::github(), &issue_ref, issue_number).await?;
     let issue: serde_json::Value =
         serde_json::from_str(&issue_json).map_err(|e| format!("Failed to parse issue: {}", e))?;
 
@@ -1681,23 +1688,20 @@ async fn fetch_compare_patch(
     base: &str,
     head: &str,
 ) -> Result<String, String> {
-    let token = auth
-        .tokens
-        .read()
-        .await
-        .get(GITHUB_CONNECTION_ID)
-        .cloned()
-        .ok_or_else(|| "GitHub token not set".to_string())?;
+    // Sibling defect to `github_client_from_state`: this used to read the
+    // token of the connection named "github" out of the map itself and build a
+    // bare client around it, so it had its own private answer to "which
+    // credential for which host". Routing through the one accessor means the
+    // GitHub-kind assertion cannot be skipped here. Only the media type is
+    // per-request, so it goes on the request rather than the client.
+    let client = github_client_from_state(auth).await?;
     let url = format!(
         "https://api.github.com/repos/{}/{}/compare/{}...{}",
         owner, repo, base, head
     );
-    let client = reqwest::Client::new();
     let resp = client
         .get(&url)
-        .header(AUTHORIZATION, format!("Bearer {}", token))
         .header(ACCEPT, "application/vnd.github.v3.diff")
-        .header(USER_AGENT, BRAND_USER_AGENT)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -1807,7 +1811,7 @@ pub async fn github_ai_pr_description(
     // fails instantly instead of after a multi-second diff download.
     let route = routing.resolve(AI_PR_DESCRIPTION_TASK)?;
 
-    require_github_host(auth.inner()).await?;
+    require_capability(auth.inner(), HostCapability::AiAssist).await?;
 
     let auth_inner = auth.inner();
 
@@ -1922,7 +1926,7 @@ pub async fn github_ai_pr_review(
     // Resolve the route before the GitHub fetches — fail fast, fail clearly.
     let route = routing.resolve(AI_PR_REVIEW_TASK)?;
 
-    require_github_host(auth.inner()).await?;
+    require_capability(auth.inner(), HostCapability::AiAssist).await?;
 
     let client = github_client_from_state(auth.inner()).await?;
     let pr_url = format!(
@@ -1948,19 +1952,13 @@ pub async fn github_ai_pr_review(
         .unwrap_or("")
         .to_string();
 
-    let token = auth
-        .tokens
-        .read()
-        .await
-        .get(GITHUB_CONNECTION_ID)
-        .cloned()
-        .ok_or_else(|| "GitHub token not set".to_string())?;
-    let raw_client = reqwest::Client::new();
-    let diff_resp = raw_client
+    // Same request, different media type — reuse the already-resolved client
+    // rather than reading the token out of the map again and hand-rolling a
+    // second one. (That second copy was a private answer to "which credential
+    // for which host", the exact drift this pass exists to remove.)
+    let diff_resp = client
         .get(&pr_url)
-        .header(AUTHORIZATION, format!("Bearer {}", token))
         .header(ACCEPT, "application/vnd.github.v3.diff")
-        .header(USER_AGENT, BRAND_USER_AGENT)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -2026,17 +2024,9 @@ pub async fn github_list_branches(
     owner: String,
     repo: String,
 ) -> Result<Vec<GitHubBranch>, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!(
-        "/repos/{}/{}/branches?{}",
-        owner,
-        repo,
-        host.page_params(100, 1)
-    ));
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
     let resp = client
-        .get(url)
+        .get(host.url(&host.branches_path(&r, 100)))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -2050,7 +2040,8 @@ pub async fn github_list_branches(
         if name.is_empty() {
             continue;
         }
-        // GitHub exposes the tip SHA as commit.sha; Gitea as commit.id.
+        // GitHub exposes the tip SHA as commit.sha; Gitea and GitLab as
+        // commit.id.
         let sha = b["commit"]["sha"]
             .as_str()
             .or_else(|| b["commit"]["id"].as_str())
@@ -2078,15 +2069,18 @@ pub async fn github_set_pr_reviewers(
     number: u32,
     reviewers: Vec<String>,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
     if reviewers.is_empty() {
         return Ok("{}".to_string());
     }
-    let (client, host) = active_host_session(auth.inner()).await?;
+    // Only GitHub has a `requested_reviewers` sub-resource that takes logins.
+    // GitLab's MR update takes numeric `reviewer_ids`; Gitea's review-request
+    // model differs again. Refuse rather than POSTing to a path that does not
+    // exist on the active host.
+    require_capability(auth.inner(), HostCapability::RequestReviewers).await?;
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
     let url = host.url(&format!(
-        "/repos/{}/{}/pulls/{}/requested_reviewers",
-        owner, repo, number
+        "{}/requested_reviewers",
+        host.change_request_path(&r, number)
     ));
     let payload = serde_json::json!({ "reviewers": reviewers });
     let resp = client
@@ -2109,18 +2103,26 @@ pub async fn github_set_pr_labels(
     number: u32,
     labels: Vec<String>,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!(
-        "/repos/{}/{}/issues/{}/labels",
-        owner, repo, number
-    ));
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
+    // On GitHub/Gitea a PR *is* an issue, so the issue label sub-resource
+    // works. GitLab keeps merge requests and issues separate: labels are a
+    // comma-joined string on the MR itself.
+    let Some(labels_path) = host.issue_labels_path(&r, number) else {
+        let resp = client
+            .request(
+                host.update_method(),
+                host.url(&host.change_request_path(&r, number)),
+            )
+            .json(&host.labels_body_from_names(&labels))
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
+        return github_response_text(resp).await;
+    };
     // Gitea expects label ids; GitHub accepts names.
     let payload = match host.kind {
-        GitHostKind::GitHub => serde_json::json!({ "labels": labels }),
         GitHostKind::Gitea => {
-            let ids = resolve_gitea_label_ids(&client, &host, &owner, &repo, &labels).await?;
+            let ids = resolve_gitea_label_ids(&client, &host, &r, &labels).await?;
             // Labels PUT is a full replace — if the caller asked for labels but
             // NONE resolved to a Gitea id, refuse rather than silently clearing
             // every existing label.
@@ -2131,9 +2133,10 @@ pub async fn github_set_pr_labels(
             }
             serde_json::json!({ "labels": ids })
         }
+        _ => host.labels_body_from_names(&labels),
     };
     let resp = client
-        .put(url)
+        .put(host.url(&labels_path))
         .json(&payload)
         .send()
         .await
@@ -2152,17 +2155,16 @@ pub async fn github_set_pr_milestone(
     number: u32,
     milestone: Option<u64>,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!("/repos/{}/{}/issues/{}", owner, repo, number));
-    let payload = match milestone {
-        Some(n) => serde_json::json!({ "milestone": n }),
-        None => serde_json::json!({ "milestone": serde_json::Value::Null }),
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
+    // GitHub/Gitea: a PR is an issue, so PATCH the issue resource. GitLab:
+    // merge requests are their own resource, so PUT the MR.
+    let path = match host.kind {
+        GitHostKind::GitLab => host.change_request_path(&r, number),
+        _ => host.issue_path(&r, number),
     };
     let resp = client
-        .patch(url)
-        .json(&payload)
+        .request(host.update_method(), host.url(&path))
+        .json(&host.milestone_body(milestone))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -2424,7 +2426,7 @@ pub async fn github_ai_catch_up(
 ) -> Result<(), String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    require_github_host(auth.inner()).await?;
+    require_capability(auth.inner(), HostCapability::AiAssist).await?;
     if session_id.trim().is_empty() {
         return Err("session_id cannot be empty".to_string());
     }
@@ -2679,7 +2681,7 @@ pub async fn github_ai_triage(
 ) -> Result<Vec<TriageSuggestion>, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    require_github_host(auth.inner()).await?;
+    require_capability(auth.inner(), HostCapability::AiAssist).await?;
     if issue_numbers.is_empty() {
         return Ok(Vec::new());
     }
@@ -2692,11 +2694,12 @@ pub async fn github_ai_triage(
     }
 
     let client = github_client_from_state(auth.inner()).await?;
+    let triage_ref = RepoRef::new(&owner, &repo)?;
 
     let mut issue_payloads: Vec<serde_json::Value> = Vec::with_capacity(issue_numbers.len());
     for n in &issue_numbers {
         let body =
-            github_get_issue_with_client(&client, &GitHost::github(), &owner, &repo, *n).await?;
+            github_get_issue_with_client(&client, &GitHost::github(), &triage_ref, *n).await?;
         let parsed: serde_json::Value = serde_json::from_str(&body)
             .map_err(|e| format!("Failed to parse issue #{}: {}", n, e))?;
         let title = parsed
@@ -2876,25 +2879,20 @@ pub async fn github_merge_pr(
     number: u32,
     merge_method: String,
 ) -> Result<GitHubMergeResult, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
     let method = validate_merge_method(&merge_method)?;
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!("/repos/{}/{}/pulls/{}/merge", owner, repo, number));
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
     // GitHub: PUT with `merge_method`, returns {sha, merged, message}.
     // Gitea:  POST with `Do`, returns an empty 2xx body on success.
-    let req = match host.kind {
-        GitHostKind::GitHub => client
-            .put(url)
-            .json(&serde_json::json!({ "merge_method": method })),
-        GitHostKind::Gitea => client.post(url).json(&serde_json::json!({ "Do": method })),
-    };
-    let resp = req
+    // GitLab: PUT with `squash`, returns the merged MR (no `sha`/`merged`).
+    let (verb, payload) = host.merge_request_shape(method)?;
+    let resp = client
+        .request(verb, host.url(&host.change_request_merge_path(&r, number)))
+        .json(&payload)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
 
-    if host.kind == GitHostKind::Gitea {
+    if !host.merge_returns_body() {
         // Empty body — treat any 2xx as a successful merge.
         if !resp.status().is_success() {
             return Err(host_error_from_response(resp).await);
@@ -2909,6 +2907,21 @@ pub async fn github_merge_pr(
     let body = github_response_text(resp).await?;
     let v: serde_json::Value = serde_json::from_str(&body)
         .map_err(|e| format!("Failed to parse merge response: {}", e))?;
+    if host.kind == GitHostKind::GitLab {
+        // GitLab answers with the MR itself: `state` becomes "merged" and
+        // `merge_commit_sha` holds what GitHub calls `sha`.
+        let merged = v.get("state").and_then(|x| x.as_str()) == Some("merged");
+        return Ok(GitHubMergeResult {
+            sha: v
+                .get("merge_commit_sha")
+                .or_else(|| v.get("squash_commit_sha"))
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            merged,
+            message: if merged { "Merged" } else { "Not merged" }.to_string(),
+        });
+    }
     Ok(GitHubMergeResult {
         sha: v
             .get("sha")
@@ -2929,20 +2942,25 @@ async fn patch_pr_state(
     owner: &str,
     repo: &str,
     number: u32,
-    state: &str,
+    open: bool,
 ) -> Result<String, String> {
-    let (client, host) = active_host_session(auth).await?;
-    let url = host.url(&format!("/repos/{}/{}/pulls/{}", owner, repo, number));
+    let (client, host, r) = repo_session(auth, owner, repo).await?;
     let resp = client
-        .patch(url)
-        .json(&serde_json::json!({ "state": state }))
+        .request(
+            host.update_method(),
+            host.url(&host.change_request_path(&r, number)),
+        )
+        // GitHub/Gitea set `state`; GitLab takes a `state_event` verb and
+        // silently ignores a `state` field, so this must be host-derived.
+        .json(&host.state_change_body(open))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    github_response_text(resp).await
+    let text = github_response_text(resp).await?;
+    normalize_one(&host, text, git_host::normalize_change_request)
 }
 
-/// `PATCH /repos/{owner}/{repo}/pulls/{number}` with `state=closed`.
+/// Close an open change request.
 #[tauri::command]
 pub async fn github_close_pr(
     auth: State<'_, GitHubAuthState>,
@@ -2950,12 +2968,10 @@ pub async fn github_close_pr(
     repo: String,
     number: u32,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    patch_pr_state(auth.inner(), &owner, &repo, number, "closed").await
+    patch_pr_state(auth.inner(), &owner, &repo, number, false).await
 }
 
-/// `PATCH /repos/{owner}/{repo}/pulls/{number}` with `state=open`.
+/// Reopen a closed change request.
 #[tauri::command]
 pub async fn github_reopen_pr(
     auth: State<'_, GitHubAuthState>,
@@ -2963,9 +2979,7 @@ pub async fn github_reopen_pr(
     repo: String,
     number: u32,
 ) -> Result<String, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    patch_pr_state(auth.inner(), &owner, &repo, number, "open").await
+    patch_pr_state(auth.inner(), &owner, &repo, number, true).await
 }
 
 /// Toggle a PR between draft and ready-for-review. REST returns the PR's
@@ -2981,14 +2995,10 @@ pub async fn github_convert_pr_to_draft(
 ) -> Result<bool, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    // G10: the draft toggle uses GitHub's GraphQL API, which Gitea has no
-    // equivalent for (Gitea marks drafts via a `WIP:` title prefix).
-    if active_host_kind(auth.inner()).await == GitHostKind::Gitea {
-        return Err(
-            "Draft toggle isn't supported on Gitea — prefix the PR title with \"WIP:\" instead."
-                .to_string(),
-        );
-    }
+    // G10: the draft toggle uses GitHub's GraphQL API. Gitea marks drafts via a
+    // `WIP:` title prefix and GitLab via a `Draft:` one; neither has a mutation
+    // to call, so the capability table refuses both.
+    require_capability(auth.inner(), HostCapability::DraftToggle).await?;
     let client = github_client_from_state(auth.inner()).await?;
 
     // Step 1: REST fetch to resolve the GraphQL node_id for this PR.
@@ -3163,8 +3173,14 @@ pub async fn github_get_pr_checks(
 ) -> Result<GitHubPrChecksDto, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    // G10: Gitea has no check-runs API — degrade to empty rather than 404.
-    if active_host_kind(auth.inner()).await == GitHostKind::Gitea {
+    // G10: only GitHub has a check-runs API. Gitea has combined commit status
+    // only; GitLab splits the concept into pipelines + commit statuses. Degrade
+    // to an empty summary rather than 404-ing (or, worse, asking GitHub about
+    // another host's SHA).
+    if !active_host(auth.inner())
+        .await
+        .supports(HostCapability::CheckRuns)
+    {
         return Ok(GitHubPrChecksDto {
             combined_state: "none".to_string(),
             total: 0,
@@ -3498,18 +3514,16 @@ pub async fn github_list_pr_reviews(
     repo: String,
     pr_number: u32,
 ) -> Result<Vec<PullRequestReview>, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let (client, host) = active_host_session(auth.inner()).await?;
-    let url = host.url(&format!(
-        "/repos/{}/{}/pulls/{}/reviews?{}",
-        owner,
-        repo,
-        pr_number,
-        host.page_params(100, 1)
-    ));
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
+    // GitHub and Gitea both serve `/pulls/{n}/reviews`. GitLab has no review
+    // *object* at all, so asking for one would 404 (or, before the capability
+    // table, would have gone out on a `/repos/...` path GitLab does not have).
+    // Degrade to an empty list — the reviews tab renders "no reviews".
+    if !host.supports(HostCapability::PrReviews) {
+        return Ok(vec![]);
+    }
     let resp = client
-        .get(url)
+        .get(host.url(&host.reviews_path(&r, pr_number, 100)))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -3529,21 +3543,16 @@ pub async fn github_list_pr_review_comments(
     repo: String,
     pr_number: u32,
 ) -> Result<Vec<PullRequestReviewComment>, String> {
-    validate_github_name(&owner, "owner")?;
-    validate_github_name(&repo, "repo")?;
-    let (client, host) = active_host_session(auth.inner()).await?;
-    // Gitea's flat PR-comments listing differs from GitHub's; degrade to an
-    // empty thread list rather than erroring (inline authoring is gated below).
-    if host.kind == GitHostKind::Gitea {
+    let (client, host, r) = repo_session(auth.inner(), &owner, &repo).await?;
+    // Only GitHub's line-anchored comment model matches what the frontend
+    // threads by `path` + `in_reply_to_id`. Gitea's listing is flat; GitLab
+    // puts line comments on discussions with a three-SHA position hash.
+    // Degrade to an empty thread list rather than erroring (authoring is
+    // gated by the same capability below).
+    if !host.supports(HostCapability::InlineReviewComments) {
         return Ok(vec![]);
     }
-    let url = host.url(&format!(
-        "/repos/{}/{}/pulls/{}/comments?{}",
-        owner,
-        repo,
-        pr_number,
-        host.page_params(100, 1)
-    ));
+    let url = host.url(&host.review_comments_path(&r, pr_number, 100));
     let resp = client
         .get(url)
         .send()
@@ -3577,7 +3586,7 @@ pub async fn github_post_pr_review_comment(
     if trimmed.is_empty() {
         return Err("Comment body cannot be empty".to_string());
     }
-    require_github_for_inline_review(auth.inner()).await?;
+    require_capability(auth.inner(), HostCapability::InlineReviewComments).await?;
     // GitHub only accepts LEFT/RIGHT; default anything else to RIGHT (new file).
     let side_norm = if side.eq_ignore_ascii_case("LEFT") {
         "LEFT"
@@ -3648,7 +3657,7 @@ pub async fn github_reply_to_pr_review_comment(
     // Same guard as `github_post_pr_review_comment` — this command hardcodes
     // `api.github.com`, so without it a Gitea workspace fires the GitHub token
     // at GitHub carrying a Gitea owner/repo/comment id.
-    require_github_for_inline_review(auth.inner()).await?;
+    require_capability(auth.inner(), HostCapability::InlineReviewComments).await?;
     let client = github_client_from_state(auth.inner()).await?;
     let url = format!(
         "https://api.github.com/repos/{}/{}/pulls/{}/comments/{}/replies",
@@ -3698,12 +3707,20 @@ pub struct GithubNotification {
 /// `https://api.github.com/repos/o/r/pulls/12`). We rewrite the host and the
 /// `pulls` → `pull` path segment so the link opens in a browser. Unknown
 /// shapes fall back to the repository html url.
+///
+/// `web_base` comes from the *active* host rather than being hardcoded to
+/// `https://github.com`. This fallback fires whenever `subject.html_url` is
+/// absent, and emitting a github.com link for a self-hosted instance would send
+/// the user to a stranger's repository (or a 404) — the link-level echo of the
+/// wrong-host bug this pass exists to close.
 fn notification_subject_html_url(
+    web_base: &str,
+    api_base: &str,
     subject_type: &str,
     subject_url: Option<&str>,
     repo_full_name: &str,
 ) -> String {
-    let repo_html = format!("https://github.com/{}", repo_full_name);
+    let repo_html = format!("{}/{}", web_base, repo_full_name);
     // Releases resolve by tag in the browser, not by the numeric API id, so the
     // notification alone can't yield a canonical release page — send the user to
     // the repo's releases list instead of a 404-ing `/releases/{id}` URL.
@@ -3713,7 +3730,7 @@ fn notification_subject_html_url(
     let Some(url) = subject_url else {
         return repo_html;
     };
-    let Some(rest) = url.strip_prefix("https://api.github.com/repos/") else {
+    let Some(rest) = url.strip_prefix(&format!("{}/repos/", api_base)) else {
         return repo_html;
     };
     // `rest` looks like "o/r/pulls/12", "o/r/issues/5", or "o/r/commits/{sha}".
@@ -3723,10 +3740,10 @@ fn notification_subject_html_url(
     let html = rest
         .replacen("/pulls/", "/pull/", 1)
         .replacen("/commits/", "/commit/", 1);
-    format!("https://github.com/{}", html)
+    format!("{}/{}", web_base, html)
 }
 
-fn parse_notification(v: &serde_json::Value) -> GithubNotification {
+fn parse_notification(host: &GitHost, v: &serde_json::Value) -> GithubNotification {
     let repository = v
         .get("repository")
         .and_then(|r| r.get("full_name"))
@@ -3773,7 +3790,13 @@ fn parse_notification(v: &serde_json::Value) -> GithubNotification {
             .to_string(),
         subject_type: subject_type.to_string(),
         html_url: subject_html_url.map(str::to_string).unwrap_or_else(|| {
-            notification_subject_html_url(subject_type, subject_url, &repository)
+            notification_subject_html_url(
+                &host.web_base(),
+                &host.api_base,
+                subject_type,
+                subject_url,
+                &repository,
+            )
         }),
         repository,
     }
@@ -3787,12 +3810,14 @@ pub async fn github_list_notifications(
     all: Option<bool>,
 ) -> Result<Vec<GithubNotification>, String> {
     let (client, host) = active_host_session(auth.inner()).await?;
+    // GitLab has no notification inbox — its analogue is Todos, a different
+    // resource with a different shape. Return nothing rather than 404-ing the
+    // whole pane on a `/notifications` path GitLab does not serve.
+    if !host.supports(HostCapability::Notifications) {
+        return Ok(vec![]);
+    }
     let all = all.unwrap_or(false);
-    let url = host.url(&format!(
-        "/notifications?all={}&{}",
-        all,
-        host.page_params(50, 1)
-    ));
+    let url = host.url(&host.notifications_path(all, 50));
     let resp = client
         .get(url)
         .send()
@@ -3801,7 +3826,7 @@ pub async fn github_list_notifications(
     let body = github_response_text(resp).await?;
     let arr: Vec<serde_json::Value> =
         serde_json::from_str(&body).map_err(|e| format!("Failed to parse notifications: {}", e))?;
-    Ok(arr.iter().map(parse_notification).collect())
+    Ok(arr.iter().map(|v| parse_notification(&host, v)).collect())
 }
 
 /// `PATCH /notifications/threads/{thread_id}` — mark a single notification
@@ -3813,10 +3838,11 @@ pub async fn github_mark_notification_read(
 ) -> Result<(), String> {
     validate_github_name(&thread_id, "thread_id")?;
     let (client, host) = active_host_session(auth.inner()).await?;
+    require_capability(auth.inner(), HostCapability::Notifications).await?;
     // GitHub marks a thread read with a bare PATCH; Gitea needs ?to-status=read.
     let path = match host.kind {
-        GitHostKind::GitHub => format!("/notifications/threads/{}", thread_id),
         GitHostKind::Gitea => format!("/notifications/threads/{}?to-status=read", thread_id),
+        _ => format!("/notifications/threads/{}", thread_id),
     };
     let resp = client
         .patch(host.url(&path))
@@ -3948,16 +3974,35 @@ mod tests {
         );
     }
 
-    // --- G11 inline-review guard -------------------------------------------
-    // Regression: `github_reply_to_pr_review_comment` hardcodes
-    // `https://api.github.com/...` but shipped without the Gitea guard its
+    // --- capability guards (the denial paths) -------------------------------
+    //
+    // Regression the guards exist for: `github_reply_to_pr_review_comment`
+    // hardcodes `https://api.github.com/...` but shipped without the guard its
     // sibling `github_post_pr_review_comment` had, so a Gitea workspace sent
-    // the GitHub token to GitHub with a Gitea repo path.
+    // the GitHub token to GitHub with a Gitea repo path (fixed in b3de2bdf).
+    // The guards are now an allow-list, so a host kind nobody wrote a
+    // deny-branch for is refused rather than admitted.
 
     fn auth_state(connections: Vec<GitHostConnection>, active: &str) -> GitHubAuthState {
         GitHubAuthState {
             connections: RwLock::new(connections),
             tokens: RwLock::new(HashMap::new()),
+            active_connection_id: RwLock::new(active.to_string()),
+        }
+    }
+
+    fn auth_state_with_tokens(
+        connections: Vec<GitHostConnection>,
+        active: &str,
+        tokens: &[(&str, &str)],
+    ) -> GitHubAuthState {
+        let map: HashMap<String, String> = tokens
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        GitHubAuthState {
+            connections: RwLock::new(connections),
+            tokens: RwLock::new(map),
             active_connection_id: RwLock::new(active.to_string()),
         }
     }
@@ -3971,29 +4016,224 @@ mod tests {
         }
     }
 
+    fn gitlab_connection() -> GitHostConnection {
+        GitHostConnection {
+            id: "gitlab-gitlab-com".to_string(),
+            kind: GitHostKind::GitLab,
+            base_url: "https://gitlab.com".to_string(),
+            label: "GitLab".to_string(),
+        }
+    }
+
     #[tokio::test]
     async fn inline_review_guard_refuses_a_gitea_workspace() {
         let auth = auth_state(
             vec![GitHostConnection::github(), gitea_connection()],
             "gitea-1",
         );
-        let err = require_github_for_inline_review(&auth)
+        let err = require_capability(&auth, HostCapability::InlineReviewComments)
             .await
             .expect_err("Gitea must be refused before any api.github.com request");
         assert!(err.contains("Gitea"), "unexpected message: {err}");
     }
 
     #[tokio::test]
+    async fn inline_review_guard_refuses_a_gitlab_workspace() {
+        // THE fail-open regression: the old guard was `if kind == Gitea`, so a
+        // GitLab workspace passed straight through into the hardcoded
+        // api.github.com request.
+        let auth = auth_state(
+            vec![GitHostConnection::github(), gitlab_connection()],
+            "gitlab-gitlab-com",
+        );
+        let err = require_capability(&auth, HostCapability::InlineReviewComments)
+            .await
+            .expect_err("GitLab must be refused before any api.github.com request");
+        assert!(err.contains("GitLab"), "unexpected message: {err}");
+    }
+
+    #[tokio::test]
+    async fn ai_assist_guard_refuses_every_non_github_host() {
+        for (conns, active, name) in [
+            (
+                vec![GitHostConnection::github(), gitea_connection()],
+                "gitea-1",
+                "Gitea",
+            ),
+            (
+                vec![GitHostConnection::github(), gitlab_connection()],
+                "gitlab-gitlab-com",
+                "GitLab",
+            ),
+        ] {
+            let auth = auth_state(conns, active);
+            let err = require_capability(&auth, HostCapability::AiAssist)
+                .await
+                .expect_err("the AI commands hardcode api.github.com and must be refused");
+            assert!(err.contains(name), "expected {name} in: {err}");
+        }
+    }
+
+    #[tokio::test]
+    async fn check_runs_and_notifications_stay_available_on_gitea() {
+        // Guard against the allow-list quietly narrowing Gitea's existing
+        // surface while adding GitLab.
+        let auth = auth_state(
+            vec![GitHostConnection::github(), gitea_connection()],
+            "gitea-1",
+        );
+        assert!(require_capability(&auth, HostCapability::Notifications)
+            .await
+            .is_ok());
+        assert!(require_capability(&auth, HostCapability::PrReviews)
+            .await
+            .is_ok());
+        assert!(require_capability(&auth, HostCapability::RequestReviewers)
+            .await
+            .is_ok());
+        // ...and that check-runs is still refused there, as before.
+        assert!(require_capability(&auth, HostCapability::CheckRuns)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
     async fn inline_review_guard_allows_a_github_workspace() {
         let auth = auth_state(vec![GitHostConnection::github()], GITHUB_CONNECTION_ID);
-        assert!(require_github_for_inline_review(&auth).await.is_ok());
+        assert!(
+            require_capability(&auth, HostCapability::InlineReviewComments)
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
     async fn inline_review_guard_defaults_to_github_for_an_unknown_connection() {
         // `active_host_kind` falls back to GitHub when the active id resolves to
-        // nothing; the guard must not block on that path.
+        // nothing; the guard must not block on that path. The hard stop for
+        // that case is `github_client_from_state`, below — it refuses to hand
+        // out a credential it cannot attribute to a host.
         let auth = auth_state(vec![GitHostConnection::github()], "vanished");
-        assert!(require_github_for_inline_review(&auth).await.is_ok());
+        assert!(
+            require_capability(&auth, HostCapability::InlineReviewComments)
+                .await
+                .is_ok()
+        );
+    }
+
+    // --- github_client_from_state picks the ACTIVE connection ---------------
+
+    #[tokio::test]
+    async fn github_only_client_refuses_a_non_github_active_connection() {
+        // Previously this read the token of the connection literally named
+        // "github" regardless of which connection was active, so a missing
+        // capability guard upstream meant the GitHub PAT went out to
+        // api.github.com carrying another host's ids. It now fails closed.
+        let auth = auth_state_with_tokens(
+            vec![GitHostConnection::github(), gitlab_connection()],
+            "gitlab-gitlab-com",
+            &[
+                (GITHUB_CONNECTION_ID, "gh-secret"),
+                ("gitlab-gitlab-com", "gl-secret"),
+            ],
+        );
+        let err = github_client_from_state(&auth)
+            .await
+            .err()
+            .expect("a GitLab-active workspace must not receive a GitHub client");
+        assert!(err.contains("GitLab"), "unexpected message: {err}");
+        assert!(!err.contains("gh-secret"));
+    }
+
+    #[tokio::test]
+    async fn github_only_client_refuses_an_unresolvable_active_connection() {
+        // No connection, no proof of which host this is — refuse rather than
+        // defaulting to GitHub and reaching for its token.
+        let auth = auth_state_with_tokens(
+            vec![GitHostConnection::github()],
+            "vanished",
+            &[(GITHUB_CONNECTION_ID, "gh-secret")],
+        );
+        assert!(github_client_from_state(&auth).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn github_only_client_works_on_a_github_workspace() {
+        let auth = auth_state_with_tokens(
+            vec![GitHostConnection::github(), gitlab_connection()],
+            GITHUB_CONNECTION_ID,
+            &[(GITHUB_CONNECTION_ID, "gh-secret")],
+        );
+        assert!(github_client_from_state(&auth).await.is_ok());
+    }
+
+    // --- connection persistence --------------------------------------------
+
+    #[test]
+    fn every_non_github_kind_is_persisted() {
+        // Regression: `save_gitea_connections` filtered on `kind == Gitea`, so
+        // a GitLab connection was silently dropped on the next save and
+        // vanished on restart.
+        assert!(is_persisted_connection(&gitea_connection()));
+        assert!(is_persisted_connection(&gitlab_connection()));
+        assert!(!is_persisted_connection(&GitHostConnection::github()));
+    }
+
+    #[test]
+    fn connection_ids_are_prefixed_by_kind_and_deduplicated() {
+        let existing = vec![GitHostConnection::github()];
+        assert_eq!(
+            unique_connection_id(GitHostKind::GitLab, "https://gitlab.com", &existing),
+            "gitlab-gitlab-com"
+        );
+        assert_eq!(
+            unique_connection_id(GitHostKind::Gitea, "https://git.example.com", &existing),
+            "gitea-git-example-com"
+        );
+        // The same hostname serving two kinds does not collide.
+        let mut two = existing.clone();
+        two.push(gitlab_connection());
+        assert_eq!(
+            unique_connection_id(GitHostKind::Gitea, "https://gitlab.com", &two),
+            "gitea-gitlab-com"
+        );
+        // A second connection to the same host is suffixed.
+        assert_eq!(
+            unique_connection_id(GitHostKind::GitLab, "https://gitlab.com", &two),
+            "gitlab-gitlab-com-2"
+        );
+    }
+
+    // --- notification links stay on the host that issued them ---------------
+
+    #[test]
+    fn notification_fallback_link_uses_the_active_hosts_web_origin() {
+        let gh = GitHost::github();
+        assert_eq!(
+            notification_subject_html_url(
+                &gh.web_base(),
+                &gh.api_base,
+                "PullRequest",
+                Some("https://api.github.com/repos/o/r/pulls/12"),
+                "o/r"
+            ),
+            "https://github.com/o/r/pull/12"
+        );
+        // A self-hosted instance must not be linked to github.com.
+        let gt = GitHost::gitea("https://git.example.com");
+        let link = notification_subject_html_url(
+            &gt.web_base(),
+            &gt.api_base,
+            "Issue",
+            Some("https://git.example.com/api/v1/repos/o/r/issues/5"),
+            "o/r",
+        );
+        assert_eq!(link, "https://git.example.com/o/r/issues/5");
+        assert!(!link.contains("github.com"));
+        // Unknown subject shapes fall back to the repo page on the same host.
+        assert_eq!(
+            notification_subject_html_url(&gt.web_base(), &gt.api_base, "Release", None, "o/r"),
+            "https://git.example.com/o/r/releases"
+        );
     }
 }

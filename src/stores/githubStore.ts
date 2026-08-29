@@ -24,13 +24,18 @@ import {
   githubListNotifications,
   githubMarkNotificationRead,
   gitHostListConnections,
-  gitHostAddGitea,
+  gitHostAddConnection,
   gitHostRemoveConnection,
   gitHostSetActive,
   gitHostHasToken,
   gitGetOriginUrl,
 } from "@/lib/tauri";
-import type { GithubNotification, GitHostConnectionInfo, GitHubRelease } from "@/lib/tauri";
+import type {
+  GithubNotification,
+  GitHostConnectionInfo,
+  GitHostKind,
+  GitHubRelease,
+} from "@/lib/tauri";
 import { resolveConnectionForRemote } from "@/lib/gitHostResolve";
 import { GITHUB_CONNECTION_ID } from "@/lib/git-hosts";
 import type {
@@ -173,7 +178,18 @@ interface GitHubStore {
   disconnect: () => Promise<void>;
   /** G2: refresh the connection list from the backend. */
   loadConnections: () => Promise<void>;
-  /** G2: add a Gitea/Forgejo host (base URL already normalized). */
+  /**
+   * G2: add a self-hosted / third-party host (base URL already normalized to
+   * the instance origin by `normalizeInstanceBaseUrl`). The token goes straight
+   * to the backend keyring — it is never held in store state.
+   */
+  addGitHostConnection: (
+    kind: Exclude<GitHostKind, "github">,
+    baseUrl: string,
+    label: string,
+    token: string,
+  ) => Promise<void>;
+  /** Gitea-specific alias of `addGitHostConnection`, kept for existing callers. */
   addGiteaHost: (baseUrl: string, label: string, token: string) => Promise<void>;
   /** G2: remove a non-GitHub connection. */
   removeGitHostConnection: (id: string) => Promise<void>;
@@ -614,9 +630,13 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
     }
   },
 
-  addGiteaHost: async (baseUrl, label, token) => {
-    await gitHostAddGitea(baseUrl, label, token);
+  addGitHostConnection: async (kind, baseUrl, label, token) => {
+    await gitHostAddConnection(kind, baseUrl, label, token);
     await get().loadConnections();
+  },
+
+  addGiteaHost: async (baseUrl, label, token) => {
+    await get().addGitHostConnection("gitea", baseUrl, label, token);
   },
 
   removeGitHostConnection: async (id) => {

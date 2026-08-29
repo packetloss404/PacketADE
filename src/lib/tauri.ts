@@ -2310,8 +2310,9 @@ export async function githubHasToken(): Promise<boolean> {
   return invoke<boolean>("github_has_token");
 }
 
-// G2: multi-connection git-host config (GitHub + Gitea/Forgejo).
-export type GitHostKind = "github" | "gitea";
+// G2: multi-connection git-host config (GitHub + Gitea/Forgejo + GitLab).
+// Mirrors `GitHostKind` in `src-tauri/src/core/git_host.rs`.
+export type GitHostKind = "github" | "gitea" | "gitlab";
 
 export interface GitHostConnectionInfo {
   id: string;
@@ -2325,13 +2326,39 @@ export async function gitHostListConnections(): Promise<GitHostConnectionInfo[]>
   return invoke<GitHostConnectionInfo[]>("git_host_list_connections");
 }
 
-/** Add a Gitea/Forgejo host (base URL + PAT). Returns the new connection id. */
+/**
+ * Add a self-hosted / third-party host (base URL + access token). Returns the
+ * new connection id.
+ *
+ * `kind` selects the API dialect: `"gitea"` → `/api/v1`, `"gitlab"` →
+ * `/api/v4`. `"github"` is rejected — the GitHub connection is implicit and
+ * always present. Pass the **instance origin**, not the API root; the backend
+ * appends the suffix (and tolerates one already being there). For GitLab that
+ * origin is `https://gitlab.com` on SaaS just as much as it is
+ * `https://gitlab.internal` self-hosted.
+ *
+ * The token never round-trips back to the frontend — it goes straight into the
+ * OS keyring under the new connection's account.
+ */
+export async function gitHostAddConnection(
+  kind: Exclude<GitHostKind, "github">,
+  baseUrl: string,
+  label: string,
+  token: string,
+): Promise<string> {
+  return invoke<string>("git_host_add_connection", { kind, baseUrl, label, token });
+}
+
+/**
+ * Add a Gitea/Forgejo host. Retained so existing call sites keep working;
+ * new code should use {@link gitHostAddConnection}.
+ */
 export async function gitHostAddGitea(
   baseUrl: string,
   label: string,
   token: string,
 ): Promise<string> {
-  return invoke<string>("git_host_add_gitea", { baseUrl, label, token });
+  return gitHostAddConnection("gitea", baseUrl, label, token);
 }
 
 export async function gitHostRemoveConnection(id: string): Promise<void> {

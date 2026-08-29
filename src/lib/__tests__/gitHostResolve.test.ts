@@ -83,3 +83,69 @@ describe("resolveConnectionForRemote (G3)", () => {
     });
   });
 });
+
+describe("GitLab resolution", () => {
+  const gitlabCloud = conn({
+    id: "gitlab-gitlab-com",
+    kind: "gitlab",
+    baseUrl: "https://gitlab.com",
+    label: "GitLab",
+  });
+  const gitlabSelf = conn({
+    id: "gitlab-gitlab-internal",
+    kind: "gitlab",
+    baseUrl: "https://gitlab.internal",
+    label: "Internal",
+  });
+
+  it("maps a GitLab connection to its own origin", () => {
+    // Unlike GitHub (api.github.com vs github.com) GitLab serves API and repos
+    // from the same origin, so the base URL is already the remote host.
+    expect(connectionHost(gitlabCloud)).toBe("gitlab.com");
+    expect(connectionHost(gitlabSelf)).toBe("gitlab.internal");
+  });
+
+  it("routes gitlab.com remotes once a GitLab connection exists", () => {
+    const all = [github, gitea, gitlabCloud];
+    expect(resolveConnectionForRemote("git@gitlab.com:group/sub/proj.git", all)).toEqual({
+      connectionId: "gitlab-gitlab-com",
+      ambiguous: false,
+    });
+    expect(resolveConnectionForRemote("https://gitlab.com/group/proj.git", all)).toEqual({
+      connectionId: "gitlab-gitlab-com",
+      ambiguous: false,
+    });
+  });
+
+  it("keeps self-hosted GitLab distinct from gitlab.com", () => {
+    const all = [gitlabCloud, gitlabSelf];
+    expect(resolveConnectionForRemote("https://gitlab.internal/g/p.git", all).connectionId).toBe(
+      "gitlab-gitlab-internal",
+    );
+    expect(resolveConnectionForRemote("https://gitlab.com/g/p.git", all).connectionId).toBe(
+      "gitlab-gitlab-com",
+    );
+  });
+
+  it("does NOT route a gitlab.com remote to the GitHub connection", () => {
+    // The whole point of resolution: an unmatched remote resolves to nothing,
+    // so the pane never fires the GitHub token at a host it was not issued for.
+    expect(resolveConnectionForRemote("https://gitlab.com/g/p.git", [github, gitea])).toEqual({
+      connectionId: null,
+      ambiguous: false,
+    });
+  });
+
+  it("matches a path-prefixed self-hosted GitLab by hostname", () => {
+    const prefixed = conn({
+      id: "gitlab-example-com",
+      kind: "gitlab",
+      baseUrl: "https://example.com/gitlab",
+    });
+    expect(connectionHost(prefixed)).toBe("example.com");
+    expect(resolveConnectionForRemote("https://example.com/gitlab/g/p.git", [prefixed])).toEqual({
+      connectionId: "gitlab-example-com",
+      ambiguous: false,
+    });
+  });
+});

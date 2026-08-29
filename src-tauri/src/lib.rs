@@ -408,7 +408,7 @@ pub fn run() {
             commands::github::github_clear_token,
             commands::github::github_has_token,
             commands::github::git_host_list_connections,
-            commands::github::git_host_add_gitea,
+            commands::github::git_host_add_connection,
             commands::github::git_host_remove_connection,
             commands::github::git_host_set_token,
             commands::github::git_host_has_token,
