@@ -51,7 +51,8 @@
     "rust:test": "cd src-tauri && cargo test",
     "release:readiness": "node scripts/release-readiness.mjs",
     "release:readiness:report": "node scripts/release-readiness.mjs --report-only",
-    "check": "pnpm run preflight && pnpm run e2e && pnpm run sidecar:check && pnpm run check:tauri-schema && pnpm run rust:check && pnpm run rust:test"
+    "check": "pnpm run preflight && pnpm run e2e && pnpm run sidecar:check && pnpm run check:tauri-schema && pnpm run rust:check && pnpm run rust:test",
+    "docs:build": "node scripts/build-docs.mjs"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
@@ -94,6 +95,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "jsdom": "^29.0.1",
+    "marked": "^18.0.11",
     "postcss": "^8.5.1",
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",

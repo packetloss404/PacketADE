@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PacketBench Docs</title>
+<meta name="description" content="What PacketBench is, who it is for, and what it deliberately is not." />
+<link rel="icon" href="../icon-192.png" />
+<link rel="stylesheet" href="assets/docs.css" />
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Toggle navigation" aria-expanded="false">☰</button>
+  <a class="brand" href="index.html"><img src="../icon-192.png" alt="" width="24" height="24" /><span>PacketBench</span><span class="brand-sub">Docs</span></a>
+  <div class="search-wrap">
+    <input id="search" type="search" placeholder="Search documentation…" autocomplete="off" aria-label="Search documentation" />
+    <div id="search-results" role="listbox" hidden></div>
+  </div>
+  <nav class="topbar-links">
+    <a href="../index.html">Site</a>
+    <a href="https://github.com/packetloss404/PacketBench" target="_blank" rel="noopener">GitHub</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle theme">◐</button>
+  </nav>
+</header>
+<div class="layout">
+  <aside class="sidebar" aria-label="Documentation navigation"><div class="nav-group"><div class="nav-group-title">Getting started</div><ul><li><a href="index.html" class="active">Introduction</a></li>
+<li><a href="install.html">Install & first run</a></li>
+<li><a href="concepts.html">Core concepts</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">Using PacketBench</div><ul><li><a href="workspaces.html">Workspaces & terminals</a></li>
+<li><a href="agents.html">Agents & conversations</a></li>
+<li><a href="flights.html">Flight Deck</a></li>
+<li><a href="issues.html">Issues & git hosts</a></li>
+<li><a href="memory.html">Memory</a></li>
+<li><a href="dictation.html">Dictation & analytics</a></li>
+<li><a href="mcp.html">MCP hub</a></li>
+<li><a href="remote.html">SSH remote workspaces</a></li>
+<li><a href="settings.html">Settings reference</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">Developing PacketBench</div><ul><li><a href="dev-architecture.html">Architecture</a></li>
+<li><a href="dev-build.html">Build & release</a></li>
+<li><a href="dev-agent-contract.html">Agent event contract</a></li>
+<li><a href="dev-memory.html">Memory internals</a></li>
+<li><a href="dev-testing.html">Testing & gates</a></li>
+<li><a href="dev-contributing.html">Contributing</a></li></ul></div>
+<div class="nav-group"><div class="nav-group-title">For agents</div><ul><li><a href="agent-guide.html">Agent orientation</a></li>
+<li><a href="agent-invariants.html">Invariants & tripwires</a></li></ul></div></aside>
+  <main id="main" class="content">
+    <article class="prose"><h1 id="packetbench-documentation">PacketBench documentation<a class="anchor" href="#packetbench-documentation" aria-label="Link to this section">#</a></h1>
+<p>PacketBench is a local-first desktop <strong>Agent Development Environment</strong>. It wraps
+PTY-backed coding CLIs and API-agent providers into one native application, so
+the terminal agents, the chat agents, the issue tracker, the orchestration layer
+and the project memory all sit in a single window and share state.</p>
+<p>It is a Tauri v2 application: a Rust backend, a React 19 frontend, and a Node
+sidecar for the two provider SDKs that need one.</p>
+<div class="callout note"><div class="callout-title">Note</div><p>This documentation is written against source <strong>v0.12.1</strong>. Where
+behaviour depends on a version, the version is named. Anything not yet proven
+on a packaged install is marked as such rather than described as if it were.</p>
+</div>
+<h2 id="start-here">Start here<a class="anchor" href="#start-here" aria-label="Link to this section">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>If you want to</th>
+<th>Read</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Get it running on your machine</td>
+<td><a href="install.html">Install &amp; first run</a></td>
+</tr>
+<tr>
+<td>Understand the vocabulary before clicking around</td>
+<td><a href="concepts.html">Core concepts</a></td>
+</tr>
+<tr>
+<td>Drive terminal CLIs in panes</td>
+<td><a href="workspaces.html">Workspaces &amp; terminals</a></td>
+</tr>
+<tr>
+<td>Talk to an API agent with tools and review</td>
+<td><a href="agents.html">Agents &amp; conversations</a></td>
+</tr>
+<tr>
+<td>Run several attempts at one task in parallel</td>
+<td><a href="flights.html">Flight Deck</a></td>
+</tr>
+<tr>
+<td>Understand how the app remembers your project</td>
+<td><a href="memory.html">Memory</a></td>
+</tr>
+<tr>
+<td>Work on PacketBench itself</td>
+<td><a href="dev-architecture.html">Architecture</a></td>
+</tr>
+<tr>
+<td>Point a coding agent at this repository</td>
+<td><a href="agent-guide.html">Agent orientation</a></td>
+</tr>
+</tbody></table>
+<h2 id="what-it-does">What it does<a class="anchor" href="#what-it-does" aria-label="Link to this section">#</a></h2>
+<p><strong>Multi-CLI workspaces.</strong> Claude Code, Codex CLI, OpenCode, PacketCode and plain
+shells run side by side in draggable pane mosaics, each pane a real PTY. Layouts
+persist and hydrate dormant — nothing launches until you open the workspace.</p>
+<p><strong>A nine-row agent picker.</strong> Structured conversations with the Claude Agent SDK,
+Claude API, OpenAI API, OpenAI Agents SDK, MiniMax, OpenRouter, local Ollama, the
+PacketCode engine over ACP, and any OpenAI-compatible endpoint you configure.
+Three transports, one event contract, so the interface is identical whichever
+row you pick.</p>
+<p><strong>Flight Deck.</strong> Organise work as Flights: plan in a read-only agent
+conversation, apply structured milestones, then launch parallel worktree
+attempts across local and SSH agents with status, attention and cost rollups.</p>
+<p><strong>Project memory.</strong> Terminal sessions and finished Flights are recorded
+automatically, conventions are distilled into learned patterns, and durable
+notes live as ordinary Markdown in <code>.agents/memory</code> — committed with your repo.
+Relevant context is injected into agent sessions behind a visible toggle.</p>
+<p><strong>Issues, MCP, SSH, dictation, budgets.</strong> A kanban board that syncs with GitHub
+and self-hosted Gitea/Forgejo; an MCP hub that both consumes servers and
+publishes PacketBench&#39;s own resources; remote workspaces with pinned host keys;
+local Whisper dictation with speaking analytics; and spend caps that are
+enforced at launch.</p>
+<h2 id="what-it-deliberately-is-not">What it deliberately is not<a class="anchor" href="#what-it-deliberately-is-not" aria-label="Link to this section">#</a></h2>
+<p>Being clear about the boundaries saves you looking for things that are not
+there on purpose.</p>
+<ul>
+<li><strong>No hosted service.</strong> There is no PacketBench account, backend or telemetry
+endpoint. Everything runs on your machine.</li>
+<li><strong>No subscription logins for API agents.</strong> Every keyed row authenticates with
+an API key you supply, stored in your OS keyring. Terminal panes running the
+<code>claude</code> or <code>codex</code> CLIs keep those tools&#39; own logins, which is ordinary
+end-user use of those tools.</li>
+<li><strong>No cost dashboard.</strong> Spend is measured to <em>enforce</em> budget caps, not to
+present a running dollar readout. That was removed deliberately in July 2026.</li>
+<li><strong>No autonomous planner.</strong> Flight planning is a normal read-only conversation
+that you apply. The autonomous planner runtime was removed in July 2026 and is
+not coming back.</li>
+</ul>
+<h2 id="status">Status<a class="anchor" href="#status" aria-label="Link to this section">#</a></h2>
+<p>PacketBench is in active development and dogfooded daily. Windows installers are
+built locally from source; the newest artifact published to GitHub Releases is
+considerably older and still carries the previous product name. Nothing is code
+signed yet, and no packaged install has been through the full acceptance matrix.</p>
+<p>See <a href="install.html">Install &amp; first run</a> for exactly what that means for you.</p>
+</article>
+    <div class="prev-next"><span></span><a class="pn next" href="install.html"><span>Next</span><strong>Install & first run</strong></a></div>
+  </main>
+  <nav class="toc" aria-label="On this page"><div class="toc-title">On this page</div><ul><li class="d2"><a href="#start-here">Start here</a></li>
+<li class="d2"><a href="#what-it-does">What it does</a></li>
+<li class="d2"><a href="#what-it-deliberately-is-not">What it deliberately is not</a></li>
+<li class="d2"><a href="#status">Status</a></li></ul></nav>
+</div>
+<script src="assets/docs.js"></script>
+</body>
+</html>

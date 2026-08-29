@@ -1,0 +1,42 @@
+[
+  {
+    "group": "Getting started",
+    "pages": [
+      { "page": "index", "title": "Introduction", "description": "What PacketBench is, who it is for, and what it deliberately is not." },
+      { "page": "install", "title": "Install & first run", "description": "Install PacketBench on Windows, macOS or Linux, and get through the first launch." },
+      { "page": "concepts", "title": "Core concepts", "description": "Workspaces, panes, conversations, Flights, issues and memory — and how they relate." }
+    ]
+  },
+  {
+    "group": "Using PacketBench",
+    "pages": [
+      { "page": "workspaces", "title": "Workspaces & terminals", "description": "PTY-backed CLI panes, shell selection, layouts and session persistence." },
+      { "page": "agents", "title": "Agents & conversations", "description": "The nine-row agent picker, the composer, tools, permissions and review." },
+      { "page": "flights", "title": "Flight Deck", "description": "Plan work as Flights and run parallel worktree attempts across local and SSH agents." },
+      { "page": "issues", "title": "Issues & git hosts", "description": "The kanban board and syncing with GitHub, Gitea and Forgejo." },
+      { "page": "memory", "title": "Memory", "description": "How PacketBench records project context, distils patterns and injects them into agents." },
+      { "page": "dictation", "title": "Dictation & analytics", "description": "Local Whisper voice-to-text, delivery safety, and the speaking analytics tab." },
+      { "page": "mcp", "title": "MCP hub", "description": "Consume MCP servers and publish PacketBench's own resources to other clients." },
+      { "page": "remote", "title": "SSH remote workspaces", "description": "Run agents and worktree attempts on remote hosts with pinned host keys." },
+      { "page": "settings", "title": "Settings reference", "description": "Every settings group and what each control affects." }
+    ]
+  },
+  {
+    "group": "Developing PacketBench",
+    "pages": [
+      { "page": "dev-architecture", "title": "Architecture", "description": "Process model, the Rust/React split, the sidecar, and how a turn actually flows." },
+      { "page": "dev-build", "title": "Build & release", "description": "Toolchain, dev loop, bundling, the sidecar prune, and the release checklist." },
+      { "page": "dev-agent-contract", "title": "Agent event contract", "description": "The api-agent:* event surface every provider transport must satisfy." },
+      { "page": "dev-memory", "title": "Memory internals", "description": "Capture, scope keys, the injection/search split and the invariants that hold it together." },
+      { "page": "dev-testing", "title": "Testing & gates", "description": "The test suites, the repository fences, and what has to be green before a release." },
+      { "page": "dev-contributing", "title": "Contributing", "description": "Conventions, commit style, and how changes are reviewed." }
+    ]
+  },
+  {
+    "group": "For agents",
+    "pages": [
+      { "page": "agent-guide", "title": "Agent orientation", "description": "A machine-oriented briefing on this codebase for coding agents working in it." },
+      { "page": "agent-invariants", "title": "Invariants & tripwires", "description": "Rules that look safe to break and are not, with the tests that pin them." }
+    ]
+  }
+]
