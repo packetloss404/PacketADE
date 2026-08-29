@@ -119,12 +119,14 @@ export const AUX_TASK_CLASS_LABELS: Record<AuxTaskClass, { label: string; descri
  * the backend `AuxTaskClass` arms still exist, and `core::aux_llm` resolves
  * them the moment a caller arrives — but each says what it does today.
  *
+ * `memory-scan` was the third. Its caveat is gone because the Memory pane's
+ * "Scan codebase" button now invokes `scan_codebase_memory`, so the pin it
+ * always honoured finally has a caller.
+ *
  * Drift guard: `commands/aux_routing.rs::unrouted_aux_surfaces_stay_declared`
  * fails when one of these surfaces moves onto the seam, pointing back here.
  */
 export const AUX_TASK_CLASS_CAVEATS: Partial<Record<AuxTaskClass, string>> = {
-  "memory-scan":
-    "Not reachable yet — the backend command exists and honours this pin, but no PacketBench surface invokes a codebase scan.",
   "issue-investigate":
     "Not applied yet — still runs the local Claude CLI, so it uses whatever login that CLI has, including a subscription.",
   "agent-chat":

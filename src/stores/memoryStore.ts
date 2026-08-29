@@ -4,6 +4,7 @@ import {
   summarizeSession,
   extractPatterns,
   readPtyTranscript,
+  scanCodebaseMemory,
   togglePinnedPattern as togglePinnedPatternBackend,
 } from "@/lib/tauri";
 import { parseJsonFromResponse, generateId } from "@/lib/storage";
@@ -157,6 +158,30 @@ interface MemoryStore {
 
   // Manual pattern refresh
   refreshPatterns: (scope: MemoryScopeInput) => Promise<void>;
+
+  /**
+   * Index this project's key files into memory (Memory pane → "Scan codebase").
+   *
+   * Walks the project in Rust (`core::aux_context`, bounded and root-confined)
+   * and runs ONE auxiliary turn over the manifest, then stores the result as a
+   * `manual_note` tagged {@link CODEBASE_SCAN_SOURCE}. Deliberately not a new
+   * persisted event type: the index is a note a human asked for, it needs no
+   * new state schema, and going through the existing note path means the
+   * Timeline, Ask/search, both exports and `refreshPatterns`' corpus all pick
+   * it up for free. (It does NOT enter the injected launch brief —
+   * `computeContextItems` only carries patterns, flight lessons, sessions and
+   * `.agents/memory` notes — so a scan makes memory searchable and
+   * distillable, not automatically prompt-injected.)
+   *
+   * Re-running REPLACES this scope's previous scan note rather than stacking
+   * near-duplicates — an index is a snapshot of the tree as it is now, and two
+   * of them disagreeing is worse than one being stale.
+   *
+   * Local scopes only: the walk reads THIS machine's filesystem, so a remote
+   * `ssh:` scope is refused rather than silently indexing the wrong tree.
+   * Resolves `true` when a note was written.
+   */
+  scanCodebase: (scope: MemoryScopeInput) => Promise<boolean>;
 
   /**
    * Opt-in, reversible migration: re-stamp memory recorded under the plain
@@ -370,6 +395,38 @@ export function memoryWriteKey(input: MemoryScopeInput): string {
  */
 export function memoryAuxScopeArg(input: MemoryScopeInput): string {
   return memoryWriteKey(input);
+}
+
+/**
+ * `ManualNotePayload.source` stamped on the note a codebase scan writes. It is
+ * the note's identity: `scanCodebase` replaces the note carrying this source
+ * in the same scope instead of appending a second one, and the Memory pane
+ * uses it to say "Re-scan" rather than "Scan".
+ */
+export const CODEBASE_SCAN_SOURCE = "codebase-scan";
+
+/** Files named in a scan note before it starts saying "and N more". A scan
+ *  asks the model for 30-50; this is the guard against a model that ignores
+ *  that and returns the whole manifest. */
+const MAX_SCAN_NOTE_FILES = 200;
+
+/** The codebase-scan note recorded for this scope, if any. */
+export function findCodebaseScanNote(
+  events: MemoryEvent[],
+  scope: MemoryScopeInput,
+): MemoryEvent | null {
+  const target = normalizePath(memoryWriteKey(scope));
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const e = events[i];
+    if (
+      e.type === "manual_note" &&
+      e.payload.source === CODEBASE_SCAN_SOURCE &&
+      normalizePath(e.projectPath) === target
+    ) {
+      return e;
+    }
+  }
+  return null;
 }
 
 function memoryScopeKey(scope: Required<MemoryBriefScope>): string {
@@ -1580,6 +1637,127 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
       const reason = e instanceof Error ? e.message : String(e);
       console.warn("Pattern extraction failed:", e);
       set({ isLearning: false, learningStatus: `Pattern extraction failed: ${reason}` });
+    }
+  },
+
+  scanCodebase: async (scope) => {
+    const normalized = normalizeScopeInput(scope);
+    // The walk is a local-filesystem walk. A remote workspace would either
+    // index this machine's tree under the remote scope's key or fail deep in
+    // Rust with a path error; say so up front instead.
+    if (normalized.kind === "ssh") {
+      set({
+        isLearning: false,
+        learningStatus:
+          "Codebase scan reads this machine's files, so it only runs on a local workspace.",
+      });
+      return false;
+    }
+    const projectPath = normalized.projectPath?.trim();
+    if (!projectPath) {
+      set({ isLearning: false, learningStatus: "Open a project to scan its codebase." });
+      return false;
+    }
+    // One learning job at a time — `isLearning`/`learningStatus` is a single
+    // shared channel, and two writers make the pane lie about what is running.
+    if (get().isLearning) return false;
+
+    set({ isLearning: true, learningStatus: "Scanning project files..." });
+    try {
+      const result = await scanCodebaseMemory(projectPath);
+
+      let parsed: unknown = null;
+      try {
+        parsed = parseJsonFromResponse(result.response);
+      } catch {
+        parsed = null;
+      }
+      const entries = (Array.isArray(parsed) ? parsed : [])
+        .map((raw) => raw as { path?: unknown; summary?: unknown })
+        .filter((raw): raw is { path: string; summary?: unknown } => typeof raw.path === "string")
+        .map((raw) => ({
+          path: raw.path.trim().slice(0, 400),
+          summary: typeof raw.summary === "string" ? raw.summary.trim().slice(0, 240) : "",
+        }))
+        .filter((entry) => entry.path.length > 0);
+
+      if (entries.length === 0) {
+        // The walk may well have succeeded — this is the model returning
+        // nothing usable. Don't write an empty index over a good one.
+        set({
+          isLearning: false,
+          learningStatus: `Codebase scan read ${result.filesListed} file(s), but the model returned no usable file list.`,
+        });
+        return false;
+      }
+
+      const partial = result.truncated || result.timedOut;
+      const shown = entries.slice(0, MAX_SCAN_NOTE_FILES);
+      const lines = shown.map((e) => (e.summary ? `- ${e.path} — ${e.summary}` : `- ${e.path}`));
+      if (entries.length > shown.length) {
+        lines.push(`- ...and ${entries.length - shown.length} more not recorded.`);
+      }
+
+      const header = [
+        `Codebase index for ${projectPath}, ${new Date().toLocaleString()}.`,
+        `${result.filesListed} of ${result.filesSeen} file(s) were offered to the model, ${result.excerptCount} with excerpts.`,
+      ];
+      if (result.symlinksSkipped > 0 || result.sensitiveSkipped > 0) {
+        header.push(
+          `Skipped ${result.symlinksSkipped} symlink(s) and ${result.sensitiveSkipped} secret-shaped file(s) — neither is ever read.`,
+        );
+      }
+      if (partial) {
+        header.push(
+          result.timedOut
+            ? "PARTIAL: the walk ran out of time, so this covers only part of the project."
+            : "PARTIAL: the walk hit its bounds, so this covers only part of the project.",
+        );
+      }
+      header.push("Replaces any earlier codebase scan for this project.");
+
+      const summary = `Codebase index: ${entries.length} key file${entries.length === 1 ? "" : "s"}${partial ? " (partial)" : ""}`;
+      const body = `${header.join("\n")}\n\n${lines.join("\n")}`;
+
+      // Replace, don't accumulate. Done inline rather than through
+      // `captureManually` so the removal and the insert land in ONE set and
+      // ONE persist — otherwise the pane briefly shows zero scans, and a
+      // failure between the two writes could drop the old index for nothing.
+      const writeKey = memoryWriteKey(scope);
+      const target = normalizePath(writeKey);
+      const kept = get().events.filter(
+        (e) =>
+          !(
+            e.type === "manual_note" &&
+            e.payload.source === CODEBASE_SCAN_SOURCE &&
+            normalizePath(e.projectPath) === target
+          ),
+      );
+      const event = createEvent("manual_note", writeKey, {
+        source: CODEBASE_SCAN_SOURCE,
+        summary,
+        body,
+        tags: partial ? [CODEBASE_SCAN_SOURCE, "partial"] : [CODEBASE_SCAN_SOURCE],
+      });
+      const events = capEvents([...kept, event]);
+      set({
+        events,
+        isLearning: false,
+        // A partial index is a standing caveat, not a transient one: leave it
+        // on the status chip so the pane never implies a complete scan.
+        learningStatus: partial
+          ? `Codebase scan saved ${entries.length} file(s), but the walk hit its bounds — this index is a partial view of the project.`
+          : null,
+      });
+      void persistState(events, get().patterns);
+      return true;
+    } catch (e) {
+      // Includes the aux seam's no-provider error, which is the single most
+      // likely outcome on a fresh install. It must be readable in the pane.
+      const reason = e instanceof Error ? e.message : String(e);
+      console.warn("Codebase scan failed:", e);
+      set({ isLearning: false, learningStatus: `Codebase scan failed: ${reason}` });
+      return false;
     }
   },
 

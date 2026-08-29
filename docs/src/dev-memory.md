@@ -479,16 +479,6 @@ O(notes² × tokens-per-note × query-terms), which is to say a hang.
 Documenting these so nobody spends a day wiring up something that is already
 wired to nothing.
 
-**`scan_codebase_memory`** (`src-tauri/src/commands/memory.rs:47`, registered at
-`src-tauri/src/lib.rs:471`) has **no caller anywhere in `src/`**. There is no
-`invoke("scan_codebase_memory")` and no TypeScript wrapper. Consequences:
-
-- The entire `src-tauri/src/core/aux_context.rs` module is unreachable in
-  production — `assemble_project_manifest` has exactly one caller, and that
-  caller is `scan_codebase_memory`.
-- The `AuxTaskClass::MemoryScan` row shown in Settings → AI Provider Routing
-  (labelled "Codebase memory scan") configures a feature nothing can invoke.
-
 **`search_project_memory`** is half dead. The Tauri command is registered and
 `src/lib/tauri.ts:568` exports a `searchProjectMemory` wrapper — but nothing
 calls the wrapper. The Ask tab uses the TypeScript `askMemory` path instead. The
@@ -499,7 +489,35 @@ Everything else is live: `list_project_memory`, `create_project_memory`,
 `update_project_memory`, `archive_project_memory` and `watch_project_memory` via
 `src/stores/projectMemoryStore.ts`; `summarize_session` and `extract_patterns`
 via `memoryStore`; `summarize_flight` via `asyncFlightStore`;
-`toggle_pinned_pattern` and `save_memory_slice` via `memoryStore`.
+`toggle_pinned_pattern` and `save_memory_slice` via `memoryStore`;
+`scan_codebase_memory` via `memoryStore.scanCodebase` (see below).
+
+## Codebase scan
+
+The Memory pane header's **Scan codebase** button →
+`memoryStore.scanCodebase` → `scan_codebase_memory`. The command resolves the
+`memory-scan` auxiliary route *before* touching the disk (no provider means no
+filesystem read at all), then `core::aux_context::assemble_project_manifest`
+walks the project under hard bounds — depth, entries, listed files, excerpt
+count and bytes, and a 10s wall clock — skipping symlinks/junctions,
+dot-entries, `SKIP_DIRS`, secret-shaped filenames and binary content. One
+auxiliary turn turns that manifest into `[{path, summary}]`.
+
+The command returns `CodebaseScanResult`: the model's raw `response` plus the
+walk's own stats. `truncated` / `timedOut` come from `ScanStats`, never from
+the model, because only the walk knows whether a bound clipped it — a partial
+index is labelled `(partial)`, tagged `#partial`, says `PARTIAL:` in its body,
+and leaves a caveat on the pane's status chip.
+
+The result is stored as an ordinary `manual_note` whose `source` is
+`codebase-scan` (`CODEBASE_SCAN_SOURCE`), so it needs no new persisted event
+type and inherits Timeline, Ask/search and both exports; `refreshPatterns`
+also treats it as pattern source material. It is deliberately NOT part of
+`computeContextItems`, so a scan is searchable but not silently injected into
+every launch brief. Re-running replaces the scope's existing scan note rather
+than stacking near-duplicates, and the button reads "Re-scan codebase" once one
+exists. Local scopes only — the walk reads this machine's filesystem, so the
+button is disabled under a remote (`ssh:`) workspace.
 
 ## Agents reach memory over MCP too
 

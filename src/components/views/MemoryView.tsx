@@ -19,6 +19,7 @@ import {
   Plus,
   Folder,
   Server,
+  ScanSearch,
 } from "lucide-react";
 import { useMemoryScope } from "@/hooks/useMemoryScope";
 import { useMemoryProjectLabel } from "@/hooks/useMemoryProjectLabel";
@@ -32,6 +33,7 @@ import {
   filterMemoryEventsByScope,
   findLegacyRemoteMemory,
   findAdoptedRemoteMemory,
+  findCodebaseScanNote,
   serializeMemoryExport,
   serializeMemoryMarkdown,
   type MemoryBriefScope,
@@ -162,6 +164,7 @@ export function MemoryView() {
   const updatePattern = useMemoryStore((s) => s.updatePattern);
   const togglePinPattern = useMemoryStore((s) => s.togglePinPattern);
   const refreshPatterns = useMemoryStore((s) => s.refreshPatterns);
+  const scanCodebase = useMemoryStore((s) => s.scanCodebase);
   const clearMemory = useMemoryStore((s) => s.clearMemory);
   const importMemory = useMemoryStore((s) => s.importMemory);
   const composeMemoryBrief = useMemoryStore((s) => s.composeMemoryBrief);
@@ -309,12 +312,33 @@ export function MemoryView() {
     };
   }, [events, patterns, briefScope, scope.kind]);
 
+  // A scan already recorded for this scope. Its presence changes the button
+  // from "Scan" to "Re-scan", because a second run REPLACES this note rather
+  // than adding another one, and the user should know that before clicking.
+  const priorScan = useMemo(
+    () => (briefScope ? findCodebaseScanNote(events, briefScope) : null),
+    [events, briefScope],
+  );
+
   const injectedPreview = memoryBrief?.text ?? "";
   const tokenEstimate = memoryBrief ? memoryBriefStats(memoryBrief).approxTokens : 0;
   const captureEnabled = captureSessions || captureFlights;
 
   function handleRefreshPatterns() {
     if (briefScope) void refreshPatterns(briefScope);
+  }
+
+  /** Index this project's key files into memory. Local-only: the walk reads
+   *  this machine's filesystem, which is why the button is gated on
+   *  `projectPath` (null under a remote scope) rather than on `briefScope`. */
+  function handleScanCodebase() {
+    if (!projectPath) return;
+    void scanCodebase(projectPath).then((wrote) => {
+      // The scan lands as a note in the Timeline; go where it landed. On
+      // failure the header status chip already says what went wrong, and
+      // yanking the user to an unchanged tab would only confuse that.
+      if (wrote) setActiveTab("timeline");
+    });
   }
 
   function handleAdoptLegacy() {
@@ -496,6 +520,26 @@ export function MemoryView() {
         >
           <RefreshCw size={10} className={isLearning ? "animate-spin" : ""} />
           Refresh
+        </button>
+
+        {/* Secondary to browsing and Ask: same quiet header treatment as
+            Refresh, and it never becomes the pane's loudest control. */}
+        <button
+          onClick={handleScanCodebase}
+          disabled={isLearning || !projectPath}
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10.5px] text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary disabled:opacity-40 disabled:hover:bg-transparent"
+          title={
+            scope.kind === "ssh"
+              ? "Codebase scan reads this machine's files, so it is local-workspace only"
+              : !projectPath
+                ? "Open a local workspace to index its codebase"
+                : priorScan
+                  ? "Re-index this project's key files — replaces the existing codebase index note"
+                  : "Index this project's key files into memory. Needs a provider for the 'Codebase scan' task in Settings > Task Role Defaults."
+          }
+        >
+          <ScanSearch size={10} />
+          {priorScan ? "Re-scan codebase" : "Scan codebase"}
         </button>
         {(events.length > 0 || patterns.length > 0) && (
           <>

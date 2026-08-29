@@ -88,18 +88,21 @@ describe("Settings runtime honesty", () => {
 
   /**
    * FAULT: three rows of the auxiliary-routing table configured nothing.
-   * `memory-scan` routes a command (`scan_codebase_memory`) that no frontend
-   * surface invokes; `issue-investigate` and `agent-chat` still shell out to
-   * the local Claude CLI and never consult the route at all — which also made
-   * the section's blanket "these never use a subscription login" false.
+   * `issue-investigate` and `agent-chat` still shell out to the local Claude
+   * CLI and never consult the route at all — which also made the section's
+   * blanket "these never use a subscription login" false.
    * `commands/aux_routing.rs::unrouted_aux_surfaces_stay_declared` fails if
-   * any of the three is migrated without this list being trimmed.
+   * either is migrated without this list being trimmed.
+   *
+   * `memory-scan` was the third, and is no longer flagged: the Memory pane's
+   * "Scan codebase" button invokes `scan_codebase_memory`, so the row now
+   * configures a feature the user can actually run. A caveat left in place
+   * here would be the same lie in the opposite direction.
    */
   it("flags every auxiliary routing row that cannot take effect yet", () => {
     expect(Object.keys(AUX_TASK_CLASS_CAVEATS).sort()).toEqual([
       "agent-chat",
       "issue-investigate",
-      "memory-scan",
     ]);
     // Every flagged class must still be a real row, or the note renders nowhere.
     for (const taskClass of Object.keys(AUX_TASK_CLASS_CAVEATS)) {
@@ -109,7 +112,8 @@ describe("Settings runtime honesty", () => {
     // no-subscription claim does not hold for them.
     expect(AUX_TASK_CLASS_CAVEATS["agent-chat"]).toMatch(/Claude CLI/);
     expect(AUX_TASK_CLASS_CAVEATS["issue-investigate"]).toMatch(/Claude CLI/);
-    expect(AUX_TASK_CLASS_CAVEATS["memory-scan"]).toMatch(/no PacketBench surface invokes/i);
+    // The reachable row carries no caveat at all.
+    expect(AUX_TASK_CLASS_CAVEATS["memory-scan"]).toBeUndefined();
   });
 
   it("renders the unrouted flags next to the rows they belong to", async () => {
@@ -117,7 +121,7 @@ describe("Settings runtime honesty", () => {
     // The pickers still work — the row is honest, not disabled.
     expect(await screen.findByLabelText("Agent chat provider")).toBeInTheDocument();
     expect(screen.getAllByText(/still runs the local Claude CLI/)).toHaveLength(2);
-    expect(screen.getByText(/no PacketBench surface invokes a codebase scan/)).toBeInTheDocument();
+    expect(screen.queryByText(/no PacketBench surface invokes a codebase scan/)).toBeNull();
     // …and the section header no longer makes the blanket claim the two
     // CLI-backed rows falsify.
     expect(

@@ -511,6 +511,37 @@ export async function extractPatterns(projectPath: string, summaries: string): P
   return invoke<string>("extract_patterns", { projectPath, summaries });
 }
 
+/**
+ * Result of a codebase key-file scan. Mirrors the Rust
+ * `commands::memory::CodebaseScanResult`.
+ *
+ * `response` is the model's raw JSON array (`[{path, summary}]`); every other
+ * field describes the local walk that produced the manifest, straight from
+ * `core::aux_context::ScanStats`. The model cannot know whether a bound
+ * clipped the walk, so `truncated` is the only trustworthy answer to "did I
+ * see the whole project?" — the UI must not present a truncated scan as a
+ * complete one.
+ */
+export interface CodebaseScanResult {
+  response: string;
+  filesListed: number;
+  filesSeen: number;
+  excerptCount: number;
+  symlinksSkipped: number;
+  sensitiveSkipped: number;
+  truncated: boolean;
+  timedOut: boolean;
+}
+
+/**
+ * Walk a LOCAL project (this machine's filesystem only) and index its key
+ * files through the `memory-scan` auxiliary route. Rejects — before reading a
+ * single file — when no auxiliary provider is configured.
+ */
+export async function scanCodebaseMemory(projectPath: string): Promise<CodebaseScanResult> {
+  return invoke<CodebaseScanResult>("scan_codebase_memory", { projectPath });
+}
+
 /** M9: input to the `summarize_flight` LLM retrospective. Mirrors the Rust
  *  `FlightSummaryInput` DTO, which carries `#[serde(rename_all = "camelCase")]`
  *  so these camelCase keys deserialize into its snake_case fields (Tauri only
