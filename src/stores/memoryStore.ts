@@ -11,7 +11,11 @@ import {
   memoryRecordProvenance,
   unknownProvenance,
 } from "@/lib/provenance";
-import { getMemorySettings } from "@/stores/memorySettingsStore";
+import {
+  getMemorySettings,
+  MAX_MEMORY_BRIEF_MAX_CHARS,
+  MIN_MEMORY_BRIEF_MAX_CHARS,
+} from "@/stores/memorySettingsStore";
 import type { MemoryProjectPathMatching } from "@/stores/memorySettingsStore";
 import type {
   MemoryEvent,
@@ -98,12 +102,6 @@ export function memoryBriefStats(brief: MemoryBrief): {
   const approxTokens = Math.max(0, Math.round(brief.text.length / 4));
   return { patterns, lessons, summaries, notes, approxTokens };
 }
-
-/** Cap on durable project notes injected into a brief. */
-const MAX_CONTEXT_PROJECT_NOTES = 5;
-
-const DEFAULT_MEMORY_BRIEF_MAX_CHARS = 1800;
-const MAX_MEMORY_BRIEF_MAX_CHARS = 4000;
 
 interface MemoryStore {
   events: MemoryEvent[];
@@ -287,10 +285,16 @@ function capPatterns(patterns: LearnedPattern[]): LearnedPattern[] {
   return patterns.filter((p) => survivors.has(p.id));
 }
 
+/** The brief's character ceiling. An explicit `options.maxChars` still wins
+ *  (nothing in the app passes one today); otherwise the user's configured
+ *  budget applies, clamped to the same bounds either way. */
 function clampBriefChars(value: unknown): number {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return DEFAULT_MEMORY_BRIEF_MAX_CHARS;
-  return Math.max(400, Math.min(MAX_MEMORY_BRIEF_MAX_CHARS, Math.round(parsed)));
+  const requested = Number.isFinite(parsed) ? parsed : getMemorySettings().briefMaxChars;
+  return Math.max(
+    MIN_MEMORY_BRIEF_MAX_CHARS,
+    Math.min(MAX_MEMORY_BRIEF_MAX_CHARS, Math.round(requested)),
+  );
 }
 
 function normalizeBriefText(text: string, maxChars = 260): string {
@@ -1193,7 +1197,7 @@ export function computeContextItems(
         if (noteRel && a.rel !== b.rel) return b.rel - a.rel;
         return (b.n.metadata.updatedAt ?? 0) - (a.n.metadata.updatedAt ?? 0);
       })
-      .slice(0, MAX_CONTEXT_PROJECT_NOTES)
+      .slice(0, settings.contextMaxNotes)
       .forEach(({ n, rel }) => {
         out.push({
           id: `note:${n.metadata.id}`,

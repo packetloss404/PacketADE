@@ -78,8 +78,9 @@ export function TimeSettingsCard() {
         Dictation analytics — streaks, hourly activity, and the daily and weekly
         totals — are still grouped by <span className="font-mono">UTC</span> days
         in the backend and do not yet follow this setting. Away from UTC they can
-        disagree with the timestamps shown elsewhere for entries near midnight.
-        The Analytics tab says so inline rather than leaving it to this card.
+        disagree with the dictation History list, which does follow it, for
+        entries near midnight. The Analytics tab says so inline rather than
+        leaving it to this card.
       </p>
     </div>
   );

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MemoryEvent } from "@/types/memory";
+import { storageKey } from "@/lib/brand";
 
 const mocks = vi.hoisted(() => ({
   saveMemorySlice: vi.fn(),
@@ -201,6 +202,144 @@ describe("memory briefs", () => {
     expect(brief.text).toContain("Project notes");
     expect(brief.text).toContain("SSH host pinning");
     expect(brief.items.some((i) => i.kind === "project_note")).toBe(true);
+  });
+
+  it("truncates the brief at the configured character budget", async () => {
+    localStorage.setItem(
+      storageKey("memory-settings"),
+      JSON.stringify({ briefMaxChars: 400, contextMaxSessions: 50 }),
+    );
+    const { useMemoryStore } = await loadStores();
+
+    const long = "x".repeat(200);
+    useMemoryStore.setState({
+      events: Array.from({ length: 20 }, (_, i) =>
+        sessionEvent(`s-${i}`, "D:/projects/example", `${long} ${i}`),
+      ),
+      patterns: [],
+    });
+
+    const brief = useMemoryStore
+      .getState()
+      .composeMemoryBrief({ projectPath: "D:/projects/example", kind: "local" });
+
+    expect(brief.charBudget).toBe(400);
+    expect(brief.text.length).toBeLessThanOrEqual(400);
+    expect(brief.truncated).toBe(true);
+  });
+
+  it("lets a raised character budget carry more of the same memory", async () => {
+    localStorage.setItem(
+      storageKey("memory-settings"),
+      JSON.stringify({ briefMaxChars: 4000, contextMaxSessions: 50 }),
+    );
+    const { useMemoryStore } = await loadStores();
+
+    const long = "x".repeat(200);
+    useMemoryStore.setState({
+      events: Array.from({ length: 20 }, (_, i) =>
+        sessionEvent(`s-${i}`, "D:/projects/example", `${long} ${i}`),
+      ),
+      patterns: [],
+    });
+
+    const brief = useMemoryStore
+      .getState()
+      .composeMemoryBrief({ projectPath: "D:/projects/example", kind: "local" });
+
+    expect(brief.charBudget).toBe(4000);
+    expect(brief.text.length).toBeGreaterThan(400);
+  });
+
+  // The cap on project notes used to be `MAX_CONTEXT_PROJECT_NOTES = 5`, a
+  // constant, while patterns/sessions/lessons were all user settings. It is
+  // now `contextMaxNotes`, and the brief has to actually obey it.
+  it("caps project notes in the brief at the configured contextMaxNotes", async () => {
+    localStorage.setItem(
+      storageKey("memory-settings"),
+      JSON.stringify({ contextMaxNotes: 2 }),
+    );
+    const { useMemoryStore } = await loadStores();
+    const { useProjectMemoryStore } = await import("../projectMemoryStore");
+
+    useProjectMemoryStore.setState({
+      projectPath: "D:/projects/example",
+      snapshot: {
+        schemaVersion: 1,
+        directory: ".agents/memory",
+        notes: [1, 2, 3, 4, 5, 6, 7].map((n) => ({
+          metadata: {
+            schemaVersion: 1,
+            id: `note-${n}`,
+            title: `Note ${n}`,
+            tags: [],
+            createdAt: n,
+            updatedAt: n,
+            archived: false,
+            provenanceIds: [],
+          },
+          body: `Body ${n}`,
+          path: `.agents/memory/note-${n}.md`,
+        })),
+        warnings: [],
+        revision: "r1",
+      },
+    } as never);
+
+    useMemoryStore.setState({ events: [], patterns: [] });
+
+    const brief = useMemoryStore
+      .getState()
+      .composeMemoryBrief({ projectPath: "D:/projects/example", kind: "local" });
+
+    expect(brief.items.filter((i) => i.kind === "project_note")).toHaveLength(2);
+    // Most recently updated first, so the two survivors are 7 and 6.
+    expect(brief.text).toContain("Note 7");
+    expect(brief.text).not.toContain("Note 5");
+  });
+
+  it("keeps project notes out of the brief entirely at contextMaxNotes 0", async () => {
+    localStorage.setItem(
+      storageKey("memory-settings"),
+      JSON.stringify({ contextMaxNotes: 0 }),
+    );
+    const { useMemoryStore } = await loadStores();
+    const { useProjectMemoryStore } = await import("../projectMemoryStore");
+
+    useProjectMemoryStore.setState({
+      projectPath: "D:/projects/example",
+      snapshot: {
+        schemaVersion: 1,
+        directory: ".agents/memory",
+        notes: [
+          {
+            metadata: {
+              schemaVersion: 1,
+              id: "note-1",
+              title: "Suppressed note",
+              tags: [],
+              createdAt: 1,
+              updatedAt: 2,
+              archived: false,
+              provenanceIds: [],
+            },
+            body: "Should not be injected.",
+            path: ".agents/memory/note-1.md",
+          },
+        ],
+        warnings: [],
+        revision: "r1",
+      },
+    } as never);
+
+    useMemoryStore.setState({ events: [], patterns: [] });
+
+    const brief = useMemoryStore
+      .getState()
+      .composeMemoryBrief({ projectPath: "D:/projects/example", kind: "local" });
+
+    expect(brief.items.some((i) => i.kind === "project_note")).toBe(false);
+    expect(brief.text).not.toContain("Suppressed note");
   });
 
   it("does not leak another project's notes into the brief", async () => {

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Mic, MicOff, Loader2, Check, BarChart3, Clock, Search, ChevronDown, ChevronRight, AlertTriangle, Trash2, X } from "lucide-react";
 import { useDictationStore } from "@/stores/dictationStore";
+import { useAppStore } from "@/stores/appStore";
+import { formatDate, formatDateTime } from "@/lib/time";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { AnalyticsPanel } from "./dictation/AnalyticsPanel";
 import {
@@ -369,6 +371,10 @@ function HistoryPanel({
   // fences `window.confirm` out of `src/` (scripts/confirm-idiom.test.mjs).
   const [pendingDelete, setPendingDelete] = useState<DictationEntry | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
+  // Subscribed so a change in Tools → Date & Time re-renders these timestamps.
+  // `formatDate`/`formatDateTime` read the zone through `getState()`, which is
+  // not reactive on its own.
+  useAppStore((s) => s.timeZone);
 
   return (
     <div className="space-y-3 max-w-[700px]">
@@ -448,7 +454,12 @@ function HistoryPanel({
                       {entry.wordCount != null && (
                         <span className="text-[9px] text-text-muted">{entry.wordCount} words</span>
                       )}
-                      <span className="text-[9px] text-text-muted">{formatTimestamp(entry.timestamp)}</span>
+                      <span
+                        className="text-[9px] text-text-muted"
+                        title={formatDateTime(entry.timestamp)}
+                      >
+                        {formatTimestamp(entry.timestamp)}
+                      </span>
                     </div>
                   </button>
                   <button
@@ -575,15 +586,21 @@ function sentimentEmoji(s: number): string {
   return "~";
 }
 
+/** Entry timestamps are UTC-tagged ISO strings from `history.rs`, so parsing is
+ *  unambiguous; only the *rendering* zone was wrong. This used to call
+ *  `toLocaleDateString` with the browser's zone, which ignored Tools → Date &
+ *  Time — the one card that claims to govern every date in the app. Away from
+ *  the host zone that also broke the Analytics tab's UTC-bucketing note, whose
+ *  "is this worth showing?" test is computed against the *configured* zone. */
 function formatTimestamp(ts: string): string {
   try {
     const d = new Date(ts);
-    const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
+    if (Number.isNaN(d.getTime())) return ts;
+    const diffMs = Date.now() - d.getTime();
     if (diffMs < 60_000) return "just now";
     if (diffMs < 3_600_000) return `${Math.floor(diffMs / 60_000)}m ago`;
     if (diffMs < 86_400_000) return `${Math.floor(diffMs / 3_600_000)}h ago`;
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return formatDate(d) || ts;
   } catch {
     return ts;
   }
