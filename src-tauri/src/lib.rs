@@ -478,7 +478,6 @@ pub fn run() {
             commands::project_memory::create_project_memory,
             commands::project_memory::update_project_memory,
             commands::project_memory::archive_project_memory,
-            commands::project_memory::search_project_memory,
             commands::project_memory::watch_project_memory,
             // Prompt history
             commands::history::read_prompt_history,
@@ -502,7 +501,6 @@ pub fn run() {
             commands::dictation::search_dictation_history,
             commands::dictation::delete_dictation_entry,
             commands::dictation::clear_dictation_history,
-            commands::dictation::insert_dictation_entry,
             commands::dictation::get_dictation_analytics,
             commands::dictation::get_dictation_settings,
             commands::dictation::set_dictation_settings,
@@ -579,18 +577,10 @@ pub fn run() {
             commands::conversations::load_conversations,
             commands::conversations::delete_conversation_file,
             commands::conversations::export_conversation_markdown,
-            // Checkpoints
-            commands::checkpoints::save_checkpoint,
-            commands::checkpoints::list_checkpoints,
-            commands::checkpoints::delete_checkpoint,
             // Slash commands (user-defined)
             commands::slash_commands::list_slash_commands,
             // Skills (Claude-Code-style ~/.claude/skills/<name>/SKILL.md)
             commands::skills::list_skills,
-            // Custom agents (Claude-Code-style ~/.claude/agents/<name>.md)
-            commands::custom_agents::list_custom_agents,
-            // Pricing / cost helpers
-            commands::pricing::calculate_turn_cost,
             // Sidecar lifecycle status (for the status-bar chip)
             commands::agent_sidecar::get_sidecar_status,
             // N3 — PacketBench-as-MCP-server lifecycle

@@ -548,11 +548,12 @@ caller is <code>scan_codebase_memory</code>.</li>
 <li>The <code>AuxTaskClass::MemoryScan</code> row shown in Settings → AI Provider Routing
 (labelled &quot;Codebase memory scan&quot;) configures a feature nothing can invoke.</li>
 </ul>
-<p><strong><code>search_project_memory</code></strong> is half dead. The Tauri command is registered and
-<code>src/lib/tauri.ts:568</code> exports a <code>searchProjectMemory</code> wrapper — but nothing
-calls the wrapper. The Ask tab uses the TypeScript <code>askMemory</code> path instead. The
-underlying <code>search_project_memory_inner</code> <em>is</em> live, reached through the MCP
-server (<code>src-tauri/src/mcp_server/mod.rs:480</code>) rather than through Tauri.</p>
+<p><strong><code>search_project_memory</code> is no longer a Tauri command.</strong> It was registered
+with a <code>searchProjectMemory</code> wrapper in <code>src/lib/tauri.ts</code> that nothing called
+— the Ask tab uses the TypeScript <code>askMemory</code> path instead — so the command and
+the wrapper were both removed. The underlying <code>search_project_memory_inner</code>
+<em>is</em> live and unchanged, reached through the MCP server
+(<code>src-tauri/src/mcp_server/mod.rs</code>) rather than through Tauri.</p>
 <p>Everything else is live: <code>list_project_memory</code>, <code>create_project_memory</code>,
 <code>update_project_memory</code>, <code>archive_project_memory</code> and <code>watch_project_memory</code> via
 <code>src/stores/projectMemoryStore.ts</code>; <code>summarize_session</code> and <code>extract_patterns</code>

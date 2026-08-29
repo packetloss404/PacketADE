@@ -19,6 +19,7 @@ import {
   getDictationSettings,
   setDictationSettings,
   downloadWhisperModel as downloadWhisperModelCmd,
+  deleteWhisperModel as deleteWhisperModelCmd,
   listWhisperModels,
   deleteDictationEntry as deleteDictationEntryCmd,
   clearDictationHistory as clearDictationHistoryCmd,
@@ -70,6 +71,10 @@ interface DictationStore {
   updateSettings: (settings: DictationSettings) => Promise<void>;
   loadModels: () => Promise<void>;
   downloadModel: (size: string) => Promise<void>;
+  /** Delete a downloaded model file. Resolves `true` when the file is gone.
+   *  The model list is re-read from disk either way, so a failed delete
+   *  cannot leave the caller rendering a row that no longer reflects disk. */
+  deleteModel: (size: string) => Promise<boolean>;
   clearResult: () => void;
   setDeliveryNotice: (notice: string | null) => void;
   setShortcutStatus: (status: DictationShortcutStatus) => void;
@@ -670,6 +675,23 @@ export const useDictationStore = create<DictationStore>((set, get) => {
           return { error: String(err), modelProgress };
         });
       }
+    },
+
+    async deleteModel(size: string) {
+      let deleted = false;
+      try {
+        set({ error: null });
+        await deleteWhisperModelCmd(size);
+        deleted = true;
+      } catch (err) {
+        set({ error: String(err) });
+      }
+      // Reload on both paths. On success this is the confirmation that the
+      // file is gone; on failure it is what stops the UI from keeping — or
+      // dropping — a row on an assumption the disk never agreed to. A partial
+      // failure (file removed, marker left) also lands here correctly.
+      await get().loadModels();
+      return deleted;
     },
 
     clearResult() {

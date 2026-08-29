@@ -7,7 +7,6 @@ pub mod api_keys;
 pub mod auth_watcher;
 // WI-1 — auxiliary LLM routing settings surface (see core::aux_llm).
 pub mod aux_routing;
-pub mod checkpoints;
 pub mod cli_account;
 pub mod code_quality;
 // v0.8.8 quality autofix

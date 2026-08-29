@@ -734,18 +734,22 @@ below was re-read in source on that date unless it says otherwise.
   console. Pane-close and app-exit reaping do work on Windows, so only a hard
   crash strands a child. If crash-orphans prove real in practice, add a
   stronger identity token (process creation time) before building the sweep.
-- **P3 - Dead code and hygiene.** Delete the unreferenced checkpoints command
-  module and the other verified-dead commands/wrappers; delete the ~15
-  orphaned frontend files (incl. `IssueDetailView.tsx`, the dead twin
-  `views/SpecImportModal.tsx`, and the 16 dead `tauri.ts` wrappers after a
-  Rust-side check); unify the flight status-dot colour maps; rename
-  `IssueFlightMirrorCard`; backfill the 19 missing release tags; document
-  sidecar protocol v11 in the Rust module docs; align the two error-taxonomy
-  serializations (`rate_limit` vs `ratelimit`). Re-verified 2026-08-27:
-  `commands/checkpoints.rs`, `src/components/issues/IssueDetailView.tsx`, and
-  `src/components/views/SpecImportModal.tsx` all still exist, so at least the
-  named deletions are outstanding. The tag backfill, the colour-map
-  unification, and the wrapper count are **unverified** this pass.
+- **P3 - Dead code and hygiene.** Delete the ~15 orphaned frontend files
+  (incl. `IssueDetailView.tsx`, the dead twin `views/SpecImportModal.tsx`, and
+  the remaining dead `tauri.ts` wrappers after a Rust-side check); unify the
+  flight status-dot colour maps; rename `IssueFlightMirrorCard`; backfill the
+  19 missing release tags; document sidecar protocol v11 in the Rust module
+  docs; align the two error-taxonomy serializations (`rate_limit` vs
+  `ratelimit`). **Done 2026-08-29:** the `commands/checkpoints.rs` module
+  (`save_checkpoint` / `list_checkpoints` / `delete_checkpoint`, subsumed by
+  `forkAndResend`) and the four verified-dead wrapper commands
+  `calculate_turn_cost`, `list_custom_agents`, `insert_dictation_entry` and
+  `search_project_memory` (plus its TS wrapper) are gone; their live inner
+  functions — `calculate_cost_at`, `discover_custom_agents`, `insert_entry`,
+  `search_project_memory_inner` — were kept. Re-verified 2026-08-27:
+  `src/components/issues/IssueDetailView.tsx` and
+  `src/components/views/SpecImportModal.tsx` still exist. The tag backfill, the
+  colour-map unification, and the wrapper count are **unverified** this pass.
 
 #### Landed since the review
 

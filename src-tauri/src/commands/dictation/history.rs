@@ -71,9 +71,10 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
 /// Insert a new dictation entry. Called internally after transcription completes.
 ///
 /// `sentiment` is derived here rather than passed in: it is a pure function of
-/// `text`, and every caller (`audio.rs` after a transcription, the
-/// `insert_dictation_entry` command) wants the same score. Deriving it at the
-/// single write point is what stops the column going NULL again.
+/// `text`, and every caller wants the same score. Deriving it at the single
+/// write point is what stops the column going NULL again. (There used to be a
+/// second caller, the `insert_dictation_entry` Tauri command; it was never
+/// invoked from the frontend and was removed.)
 pub fn insert_entry(
     text: &str,
     mode: &str,
@@ -322,17 +323,6 @@ fn clear_entries_with_conn(conn: &Connection) -> Result<u32, String> {
         .execute("DELETE FROM entries", [])
         .map_err(|e| format!("SQL delete error: {e}"))?;
     Ok(u32::try_from(removed).unwrap_or(u32::MAX))
-}
-
-#[tauri::command]
-pub fn insert_dictation_entry(
-    text: String,
-    mode: String,
-    duration_seconds: Option<f64>,
-    word_count: Option<i64>,
-    wpm: Option<i64>,
-) -> Result<(), String> {
-    insert_entry(&text, &mode, duration_seconds, word_count, wpm)
 }
 
 #[cfg(test)]

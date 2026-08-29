@@ -797,9 +797,10 @@ fn compute_analytics_with_goals(
     for row in rows {
         // Word count.
         //
-        // `insert_dictation_entry` is a Tauri command that accepts arbitrary
-        // i64s, and older rows may hold anything. `x as u32` on a negative i64
-        // wraps to ~4 billion, which used to blow out `longestEntryWords`,
+        // Word counts are stored as arbitrary i64s and older rows — including
+        // ones written by the since-removed `insert_dictation_entry` command,
+        // which accepted any i64 — may hold anything. `x as u32` on a
+        // negative i64 wraps to ~4 billion, which used to blow out `longestEntryWords`,
         // `fastestWpm` and the `totalWords` sum. Clamp at the boundary instead.
         let wc = row
             .word_count

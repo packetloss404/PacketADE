@@ -47,6 +47,7 @@ const state = {
   loadModels: vi.fn(),
   updateSettings,
   downloadModel: vi.fn(),
+  deleteModel: vi.fn(),
 };
 vi.mock("@/stores/dictationStore", () => ({
   useDictationStore: (selector: (s: typeof state) => unknown) => selector(state),

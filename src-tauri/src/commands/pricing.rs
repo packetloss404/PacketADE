@@ -360,34 +360,6 @@ pub fn calculate_cost_at(
         + (cache_write_1h as f64 / m) * p.cache_write_1h_per_mtok
 }
 
-/// Tauri command wrapper around `calculate_cost_at` for per-turn cost display
-/// in the API agent UI.
-///
-/// `cache_write_1h` and `at` are optional: omitted means "all cache writes used
-/// the default 5-minute TTL" and "price at today's rates" respectively. Pass
-/// `at` (the turn's `YYYY-MM-DD`) when re-pricing anything historical.
-#[tauri::command]
-pub fn calculate_turn_cost(
-    model: String,
-    input_tokens: u64,
-    output_tokens: u64,
-    cache_read: u64,
-    cache_write: u64,
-    cache_write_1h: Option<u64>,
-    at: Option<String>,
-) -> f64 {
-    let date = at.unwrap_or_else(today);
-    calculate_cost_at(
-        &model,
-        &date,
-        input_tokens,
-        output_tokens,
-        cache_read,
-        cache_write,
-        cache_write_1h.unwrap_or(0),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -184,8 +184,3 @@ pub fn discover_custom_agents(project_path: &str) -> Vec<CustomAgentDef> {
     out.sort_by(|a, b| a.name.cmp(&b.name));
     out
 }
-
-#[tauri::command]
-pub fn list_custom_agents(project_path: String) -> Result<Vec<CustomAgentDef>, String> {
-    Ok(discover_custom_agents(&project_path))
-}
