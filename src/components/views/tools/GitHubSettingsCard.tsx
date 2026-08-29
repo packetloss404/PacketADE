@@ -6,6 +6,7 @@ import {
   Github,
   GitMerge,
   LogOut,
+  Pencil,
   Plus,
   RefreshCw,
   Server,
@@ -22,6 +23,8 @@ import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { HostIcon } from "@/components/HostIcon";
 import { hostLabel } from "@/lib/git-hosts";
 import { GitHostSetupWizard } from "@/components/gitHost/GitHostSetupWizard";
+import { GitHostEditConnectionModal } from "@/components/gitHost/GitHostEditConnectionModal";
+import type { GitHostConnectionInfo } from "@/lib/tauri";
 import {
   githubDeviceFlowStart,
   githubDeviceFlowPoll,
@@ -91,6 +94,7 @@ export function GitHubSettingsCard() {
   const loadConnections = useGitHubStore((s) => s.loadConnections);
   const setActiveConnection = useGitHubStore((s) => s.setActiveConnection);
   const removeGitHostConnection = useGitHubStore((s) => s.removeGitHostConnection);
+  const updateGitHostConnection = useGitHubStore((s) => s.updateGitHostConnection);
   const additionalConnections = connections.filter((c) => c.kind !== "github");
 
   // The inline "paste a URL + a token and hope" form was replaced by the
@@ -104,6 +108,10 @@ export function GitHubSettingsCard() {
     label: string;
     baseUrl: string;
   } | null>(null);
+  // Rotate a token / rename a host in place. Before this existed the card's own
+  // help text told users to remove the connection and add it back, which meant
+  // routinely dropping the only working credential to replace an expiring one.
+  const [editingConnection, setEditingConnection] = useState<GitHostConnectionInfo | null>(null);
 
   useEffect(() => {
     void loadConnections();
@@ -516,6 +524,15 @@ export function GitHubSettingsCard() {
                     )}
                     <button
                       type="button"
+                      onClick={() => setEditingConnection(c)}
+                      title={`Edit ${c.label}`}
+                      aria-label={`Edit ${c.label}`}
+                      className="text-text-muted hover:text-text-primary p-1 rounded"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() =>
                         setPendingHostRemoval({ id: c.id, label: c.label, baseUrl: c.baseUrl })
                       }
@@ -537,8 +554,9 @@ export function GitHubSettingsCard() {
             Opening a workspace re-resolves the host from that repository&apos;s{" "}
             <code className="text-text-secondary">origin</code> remote, so
             &quot;Use&quot; is an override that holds until you switch workspace.
-            To change a host&apos;s token, remove it and add it again — the wizard
-            verifies the new credential before anything reaches the keyring.
+            Edit renames a host or replaces an expiring token in place — the new
+            credential is checked against the host first, and the current one
+            keeps working unless it passes.
           </p>
         )}
       </div>
@@ -553,6 +571,14 @@ export function GitHubSettingsCard() {
             setWizard(null);
             void loadConnections();
           }}
+        />
+      )}
+
+      {editingConnection && (
+        <GitHostEditConnectionModal
+          connection={editingConnection}
+          onSave={updateGitHostConnection}
+          onClose={() => setEditingConnection(null)}
         />
       )}
 

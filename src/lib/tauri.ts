@@ -2369,6 +2369,59 @@ export async function gitHostSetToken(id: string, token: string): Promise<void> 
   return invoke("git_host_set_token", { id, token });
 }
 
+/**
+ * How a replacement token is validated before it is allowed to overwrite the
+ * working one. Structurally the wizard descriptor's `probe` block — see
+ * `GitHostProbeSpec` in `lib/gitHostWizard.ts`, which is what call sites pass.
+ */
+export interface GitHostProbeSpecPayload {
+  apiPrefix: string;
+  identityPath: string;
+  authScheme: "bearer" | "token" | "private-token";
+  accept?: string | null;
+  scopeHeader?: string | null;
+  scopePath?: string | null;
+  scopeField?: string | null;
+  loginFields: string[];
+}
+
+/**
+ * An in-place edit of an existing connection. Omitted fields are left alone —
+ * in particular, omitting `token` leaves the stored credential completely
+ * untouched, which is what makes renaming possible without re-typing a token.
+ *
+ * `kind` / `baseUrl` are assertions, not edits: the backend refuses the update
+ * if either differs from what it has stored, because changing one would make
+ * this a different connection (different keyring account, different repos).
+ */
+export interface GitHostConnectionUpdate {
+  label?: string;
+  /** Required alongside `probe`; never returned, never logged. */
+  token?: string;
+  /** Required whenever `token` is set — there is no unvalidated write path. */
+  probe?: GitHostProbeSpecPayload;
+  kind?: GitHostKind;
+  baseUrl?: string;
+}
+
+/**
+ * Rotate a connection's token and/or rename it, keyed by connection id.
+ *
+ * The token is rewritten under the connection's *existing* keyring account, so
+ * nothing else has to be re-pointed. It is probed against the connection's
+ * stored base URL first: anything short of a clean pass rejects the whole
+ * update and leaves the previous credential exactly where it was.
+ *
+ * The token goes into this call and no further — it is never returned, never
+ * stored in a Zustand store, and never echoed in the rejection message.
+ */
+export async function gitHostUpdateConnection(
+  id: string,
+  update: GitHostConnectionUpdate,
+): Promise<void> {
+  return invoke("git_host_update_connection", { id, update });
+}
+
 export async function gitHostHasToken(id: string): Promise<boolean> {
   return invoke<boolean>("git_host_has_token", { id });
 }

@@ -258,6 +258,19 @@ export function descriptorById(id: string): GitHostWizardDescriptor | null {
   return GIT_HOST_WIZARD_DESCRIPTORS.find((d) => d.id === id) ?? null;
 }
 
+/**
+ * The descriptor that describes an already-saved connection of this kind — how
+ * to probe it, and which scopes it needs. Used by the edit/rotate flow, which
+ * starts from a stored connection rather than from the host picker.
+ *
+ * Skips `unsupported` entries: those describe hosts the connection model
+ * cannot store, so no saved connection can be one of them, and their `probe`
+ * spec would be the wrong dialect for whatever actually is stored.
+ */
+export function descriptorForKind(kind: GitHostKind): GitHostWizardDescriptor | null {
+  return GIT_HOST_WIZARD_DESCRIPTORS.find((d) => d.kind === kind && !d.unsupported) ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Step flow (descriptor-driven)
 // ---------------------------------------------------------------------------

@@ -411,6 +411,7 @@ pub fn run() {
             commands::github::git_host_add_connection,
             commands::github::git_host_remove_connection,
             commands::github::git_host_set_token,
+            commands::github::git_host_update_connection,
             commands::github::git_host_has_token,
             commands::github::git_host_set_active,
             commands::git_host_probe::git_host_probe_credential,

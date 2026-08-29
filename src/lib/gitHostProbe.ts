@@ -8,8 +8,11 @@
 //
 //   1. `probeGitHostCredential` — one outbound request, never persisted.
 //   2. the descriptor's `save` — an existing keyring-backed Tauri command.
+//   3. `gitHostUpdateConnection` (`lib/tauri.ts`) — rotation on an EXISTING
+//      connection, which re-runs (1) inside Rust before it writes, so a token
+//      that does not work never displaces one that does.
 //
-// There is no third. The token is never returned by either call, never placed
+// There is no fourth. The token is never returned by any of them, never placed
 // in a store, and never interpolated into a message.
 
 import { invoke } from "@tauri-apps/api/core";

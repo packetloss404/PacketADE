@@ -6,6 +6,9 @@ use crate::core::git_host::{
     self, host_label_from_url, sanitize_host_error, GitHost, GitHostKind, HostCapability,
     ListState, RepoRef,
 };
+use crate::commands::git_host_probe::{
+    GitHostProbeOutcome, GitHostProbeRequest, GitHostProbeResult, GitHostProbeSpec,
+};
 use reqwest::header::{ACCEPT, LINK, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -848,6 +851,12 @@ pub async fn git_host_remove_connection(
     Ok(())
 }
 
+/// Overwrite a connection's token **without validating it first**.
+///
+/// Retained for the paths that have already validated (or that deliberately
+/// cannot, like the device flow). User-driven rotation must go through
+/// [`git_host_update_connection`] instead: this one will happily replace a
+/// working credential with a dead one.
 #[tauri::command]
 pub async fn git_host_set_token(
     auth: State<'_, GitHubAuthState>,
@@ -872,6 +881,268 @@ pub async fn git_host_has_token(
     id: String,
 ) -> Result<bool, String> {
     Ok(auth.tokens.read().await.contains_key(&id))
+}
+
+// ---- Editing an existing connection in place (rotation + rename) ----------
+//
+// Before this, the only way to give an existing host a fresh token was to
+// remove the connection and run the setup wizard again — because
+// `git_host_add_connection` mints a NEW id via `unique_connection_id`, so
+// re-running the wizard against a host you already have produces a second
+// connection rather than rotating the first. Tokens expire on a schedule
+// (GitHub and GitLab PATs both carry an expiry), so rotation is the ordinary
+// case, and remove-then-re-add makes the ordinary case pass through a window
+// in which the user has no working credential at all.
+//
+// The property this code exists to guarantee: **a rotation that does not end
+// in a working credential leaves the working one exactly where it was.** Every
+// ordering decision below follows from that.
+
+/// An in-place edit of an existing connection. Every field is optional; an
+/// absent field means "leave this alone".
+///
+/// `kind` / `base_url` are *assertions*, not edits: supply them and they must
+/// match what is stored. Changing either would make this a different
+/// connection with a different keyring account and a different set of repos —
+/// adding a new connection is the correct move there, so this refuses.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHostConnectionUpdate {
+    /// New display label. `None` leaves the stored label alone.
+    pub label: Option<String>,
+    /// New credential. `None` leaves the stored token *completely untouched* —
+    /// which is what makes a label-only edit possible without re-typing a
+    /// token the user may not have a copy of any more.
+    pub token: Option<String>,
+    /// The host descriptor used to validate `token` before it is written.
+    /// Required whenever `token` is present; there is no unvalidated path.
+    pub probe: Option<GitHostProbeSpec>,
+    /// Caller's belief about this connection's kind. Refused if it differs.
+    pub kind: Option<GitHostKind>,
+    /// Caller's belief about this connection's base URL. Refused if it differs.
+    pub base_url: Option<String>,
+}
+
+/// What an update resolves to once every guard has passed.
+#[derive(Debug, PartialEq, Eq)]
+struct ConnectionUpdatePlan {
+    /// A label to persist, when it actually differs from the stored one.
+    label: Option<String>,
+    /// Whether the stored credential is being replaced.
+    rotates_token: bool,
+}
+
+/// Compare two base URLs the way the add path normalises them, so echoing back
+/// `https://git.example.com/` for a stored `https://git.example.com` is not
+/// mistaken for an attempt to change the address.
+fn same_base_url(a: &str, b: &str) -> bool {
+    a.trim().trim_end_matches('/') == b.trim().trim_end_matches('/')
+}
+
+/// Every guard that can be decided without touching the network or the keyring.
+///
+/// Deliberately pure: the refusals below are the ones most worth pinning in a
+/// test, and they must all run *before* the probe, which must in turn run
+/// before any write.
+fn plan_connection_update(
+    conn: &GitHostConnection,
+    update: &GitHostConnectionUpdate,
+) -> Result<ConnectionUpdatePlan, String> {
+    if let Some(kind) = update.kind {
+        if kind != conn.kind {
+            return Err(format!(
+                "A connection's host kind cannot be changed ({} → {}). Add a new connection instead.",
+                conn.kind.label(),
+                kind.label()
+            ));
+        }
+    }
+    if let Some(base_url) = update.base_url.as_deref() {
+        if !same_base_url(base_url, &conn.base_url) {
+            return Err(
+                "A connection's address cannot be changed. Add a new connection for the new address instead."
+                    .to_string(),
+            );
+        }
+    }
+
+    let label = match update.label.as_deref().map(str::trim) {
+        None => None,
+        Some("") => return Err("Display name cannot be empty.".to_string()),
+        Some(l) if l == conn.label => None,
+        // The GitHub connection is seeded fresh on every launch and is excluded
+        // from `git-hosts.json`, so a renamed label would silently revert on
+        // restart. Refuse rather than pretend. Reached only when the label
+        // actually differs — the arm above absorbs a re-submitted one.
+        Some(_) if conn.id == GITHUB_CONNECTION_ID => {
+            return Err(
+                "The built-in GitHub connection's name is fixed — only its token can be changed."
+                    .to_string(),
+            );
+        }
+        Some(l) => Some(l.to_string()),
+    };
+
+    let rotates_token = match update.token.as_deref().map(str::trim) {
+        None => false,
+        Some("") => return Err("Token cannot be empty.".to_string()),
+        Some(_) => true,
+    };
+    if rotates_token && update.probe.is_none() {
+        // Refusing here rather than saving unvalidated is the whole point: a
+        // caller that cannot describe how to check the credential cannot be
+        // allowed to replace a working one with it.
+        return Err(
+            "A replacement token must be verified against the host before it is saved."
+                .to_string(),
+        );
+    }
+
+    if label.is_none() && !rotates_token {
+        return Err("Nothing to update.".to_string());
+    }
+    Ok(ConnectionUpdatePlan {
+        label,
+        rotates_token,
+    })
+}
+
+/// Why a rotation was refused, built from the probe *outcome* alone.
+///
+/// Never interpolates the token, and never the response body: `detail` is
+/// omitted here even though the probe already scrubs it, because the outcome
+/// class is what tells the user what to do.
+fn rotation_refusal(outcome: GitHostProbeOutcome) -> String {
+    let reason = match outcome {
+        GitHostProbeOutcome::InvalidToken => "the host rejected it",
+        GitHostProbeOutcome::Forbidden => {
+            "the host recognised it but refused the request (SSO authorization, IP allow-list, or a revoked token)"
+        }
+        GitHostProbeOutcome::RateLimited => "the host is rate-limiting this credential",
+        GitHostProbeOutcome::NotAHost => "the host's API did not answer as expected",
+        GitHostProbeOutcome::Unreachable => "the host could not be contacted",
+        GitHostProbeOutcome::TlsError => "the host's TLS certificate could not be verified",
+        GitHostProbeOutcome::ServerError => "the host returned a server error",
+        GitHostProbeOutcome::Unknown => {
+            "the host answered in a way PacketBench does not recognise"
+        }
+        // Unreachable in practice; a green probe never lands here.
+        GitHostProbeOutcome::Ok => "of an internal error",
+    };
+    format!(
+        "The new token was not saved because {}. The existing credential is unchanged.",
+        reason
+    )
+}
+
+/// The update, with its two effects injected.
+///
+/// Split out from the command so the ordering guarantee can be tested without
+/// an OS keyring or a live host: the tests below drive this with a fake probe
+/// and a counting token writer and assert that a red probe reaches neither.
+///
+/// Order of operations, and why:
+///  1. Guards (`plan_connection_update`) — cheapest, and nothing has moved yet.
+///  2. Probe — network, still nothing written.
+///  3. Label — non-secret metadata; rolled back in memory if the file write
+///     fails, so the in-memory list never disagrees with `git-hosts.json`.
+///  4. Token — last, and only on a green probe. A failure at 3 leaves the old
+///     (working) token; a failure at 4 leaves the old token *and* the old
+///     label is already correct. Neither order can lose a credential.
+async fn update_connection_inner<P, Fut>(
+    auth: &GitHubAuthState,
+    id: &str,
+    update: GitHostConnectionUpdate,
+    probe: P,
+    // `+ Sync` so the returned future stays `Send`: Tauri requires it of every
+    // async command, and a `&dyn Fn` is only `Send` when the `Fn` is `Sync`.
+    persist_connections: &(dyn Fn(&[GitHostConnection]) -> Result<(), String> + Sync),
+    persist_token: &(dyn Fn(&str, &str) -> Result<(), String> + Sync),
+) -> Result<(), String>
+where
+    P: FnOnce(GitHostProbeRequest) -> Fut,
+    Fut: std::future::Future<Output = Result<GitHostProbeResult, String>>,
+{
+    let conn = auth
+        .connection(id)
+        .await
+        .ok_or_else(|| format!("Unknown connection '{}'.", id))?;
+    let plan = plan_connection_update(&conn, &update)?;
+
+    // (2) Validate the replacement before the old one is anywhere near being
+    // overwritten. The origin comes from the STORED connection, never from the
+    // request, so a rotation cannot be redirected to another host.
+    let new_token = if plan.rotates_token {
+        let token = update
+            .token
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let spec = update
+            .probe
+            .clone()
+            .ok_or_else(|| "A replacement token must be verified before it is saved.".to_string())?;
+        let result = probe(spec.into_request(conn.base_url.clone(), token.clone())).await?;
+        if result.outcome != GitHostProbeOutcome::Ok {
+            return Err(rotation_refusal(result.outcome));
+        }
+        Some(token)
+    } else {
+        None
+    };
+
+    // (3) Label.
+    if let Some(new_label) = plan.label.clone() {
+        let mut conns = auth.connections.write().await;
+        let Some(slot) = conns.iter_mut().find(|c| c.id == id) else {
+            return Err(format!("Unknown connection '{}'.", id));
+        };
+        let previous = std::mem::replace(&mut slot.label, new_label);
+        if let Err(e) = persist_connections(&conns) {
+            if let Some(slot) = conns.iter_mut().find(|c| c.id == id) {
+                slot.label = previous;
+            }
+            return Err(e);
+        }
+    }
+
+    // (4) Token. The keyring is written first; the in-memory map is only
+    // updated once the durable copy is there, so a keyring failure cannot
+    // leave this process using a credential that will not survive a restart.
+    if let Some(token) = new_token {
+        persist_token(id, &token)?;
+        auth.tokens.write().await.insert(id.to_string(), token);
+        info!("Rotated the token for git-host connection '{}'", id);
+    }
+    Ok(())
+}
+
+/// Edit an existing connection in place: a new token, a new display name, or
+/// both. Keyed by connection id, so nothing else has to be re-pointed — the
+/// token is rewritten under the connection's existing keyring account.
+///
+/// Works for the built-in GitHub connection too (`id == "github"`), whose
+/// account is the historical `github-token`; only its *label* is fixed.
+///
+/// A replacement token is probed against the connection's stored base URL
+/// first, and anything short of a clean pass aborts the whole update with the
+/// previous credential untouched.
+#[tauri::command]
+pub async fn git_host_update_connection(
+    auth: State<'_, GitHubAuthState>,
+    id: String,
+    update: GitHostConnectionUpdate,
+) -> Result<(), String> {
+    update_connection_inner(
+        &auth,
+        &id,
+        update,
+        crate::commands::git_host_probe::probe_credential,
+        &save_host_connections,
+        &save_host_token,
+    )
+    .await
 }
 
 /// Client for the commands that legitimately target `api.github.com` directly
@@ -4235,5 +4506,479 @@ mod tests {
             notification_subject_html_url(&gt.web_base(), &gt.api_base, "Release", None, "o/r"),
             "https://git.example.com/o/r/releases"
         );
+    }
+
+    // --- editing / rotating an existing connection ---------------------------
+    //
+    // The property under test throughout: a rotation that does not end in a
+    // verified credential must leave the working one exactly where it was.
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    fn probe_spec() -> GitHostProbeSpec {
+        GitHostProbeSpec {
+            api_prefix: "/api/v4".to_string(),
+            identity_path: "/user".to_string(),
+            auth_scheme: "private-token".to_string(),
+            accept: Some("application/json".to_string()),
+            scope_header: None,
+            scope_path: None,
+            scope_field: None,
+            login_fields: vec!["username".to_string()],
+        }
+    }
+
+    fn probe_ok() -> GitHostProbeResult {
+        GitHostProbeResult {
+            outcome: GitHostProbeOutcome::Ok,
+            status: Some(200),
+            login: Some("octocat".to_string()),
+            avatar_url: None,
+            scopes: Some(vec!["api".to_string()]),
+            detail: None,
+            endpoint: "https://gitlab.com/api/v4/user".to_string(),
+        }
+    }
+
+    fn probe_failed(outcome: GitHostProbeOutcome) -> GitHostProbeResult {
+        GitHostProbeResult {
+            outcome,
+            status: Some(401),
+            login: None,
+            avatar_url: None,
+            scopes: None,
+            detail: Some("The host rejected this token.".to_string()),
+            endpoint: "https://gitlab.com/api/v4/user".to_string(),
+        }
+    }
+
+    /// Records every keyring/config write so a test can assert one never happened.
+    #[derive(Default)]
+    struct Writes {
+        tokens: Mutex<Vec<(String, String)>>,
+        connections: Mutex<Vec<Vec<GitHostConnection>>>,
+        fail_token_write: bool,
+    }
+
+    impl Writes {
+        fn token_writer(&self) -> impl Fn(&str, &str) -> Result<(), String> + '_ {
+            move |id: &str, token: &str| {
+                if self.fail_token_write {
+                    return Err("OS keyring unavailable".to_string());
+                }
+                self.tokens
+                    .lock()
+                    .unwrap()
+                    .push((id.to_string(), token.to_string()));
+                Ok(())
+            }
+        }
+        fn connection_writer(&self) -> impl Fn(&[GitHostConnection]) -> Result<(), String> + '_ {
+            move |conns: &[GitHostConnection]| {
+                self.connections.lock().unwrap().push(conns.to_vec());
+                Ok(())
+            }
+        }
+        fn token_writes(&self) -> Vec<(String, String)> {
+            self.tokens.lock().unwrap().clone()
+        }
+    }
+
+    fn rotation(token: &str) -> GitHostConnectionUpdate {
+        GitHostConnectionUpdate {
+            token: Some(token.to_string()),
+            probe: Some(probe_spec()),
+            ..Default::default()
+        }
+    }
+
+    fn gitlab_state() -> GitHubAuthState {
+        auth_state_with_tokens(
+            vec![GitHostConnection::github(), gitlab_connection()],
+            "gitlab-gitlab-com",
+            &[
+                (GITHUB_CONNECTION_ID, "gh-old-secret"),
+                ("gitlab-gitlab-com", "glpat-old-secret"),
+            ],
+        )
+    }
+
+    #[tokio::test]
+    async fn rotation_replaces_the_token_once_the_host_accepts_it() {
+        let auth = gitlab_state();
+        let writes = Writes::default();
+        let probes = AtomicUsize::new(0);
+
+        update_connection_inner(
+            &auth,
+            "gitlab-gitlab-com",
+            rotation("glpat-new-secret"),
+            |req| {
+                probes.fetch_add(1, Ordering::SeqCst);
+                // The origin must come from the STORED connection, never the
+                // request — otherwise a rotation could be pointed elsewhere.
+                assert_eq!(req.base_url, "https://gitlab.com");
+                assert_eq!(req.token, "glpat-new-secret");
+                async { Ok(probe_ok()) }
+            },
+            &writes.connection_writer(),
+            &writes.token_writer(),
+        )
+        .await
+        .expect("a green probe must save");
+
+        assert_eq!(probes.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            writes.token_writes(),
+            vec![(
+                "gitlab-gitlab-com".to_string(),
+                "glpat-new-secret".to_string()
+            )],
+            "the token must land under the SAME connection id"
+        );
+        assert_eq!(
+            auth.tokens.read().await.get("gitlab-gitlab-com").unwrap(),
+            "glpat-new-secret"
+        );
+        // Nothing else moved.
+        assert_eq!(
+            auth.tokens.read().await.get(GITHUB_CONNECTION_ID).unwrap(),
+            "gh-old-secret"
+        );
+        assert_eq!(auth.connections.read().await.len(), 2, "no new connection");
+    }
+
+    #[tokio::test]
+    async fn a_rejected_token_leaves_the_working_one_in_place() {
+        // THE property. Every red outcome must abort before any write.
+        for outcome in [
+            GitHostProbeOutcome::InvalidToken,
+            GitHostProbeOutcome::Forbidden,
+            GitHostProbeOutcome::RateLimited,
+            GitHostProbeOutcome::NotAHost,
+            GitHostProbeOutcome::Unreachable,
+            GitHostProbeOutcome::TlsError,
+            GitHostProbeOutcome::ServerError,
+            GitHostProbeOutcome::Unknown,
+        ] {
+            let auth = gitlab_state();
+            let writes = Writes::default();
+
+            let err = update_connection_inner(
+                &auth,
+                "gitlab-gitlab-com",
+                rotation("glpat-DEAD-secret"),
+                |_req| async move { Ok(probe_failed(outcome)) },
+                &writes.connection_writer(),
+                &writes.token_writer(),
+            )
+            .await
+            .expect_err("a red probe must refuse the rotation");
+
+            assert!(
+                writes.token_writes().is_empty(),
+                "{outcome:?}: nothing may reach the keyring"
+            );
+            assert_eq!(
+                auth.tokens.read().await.get("gitlab-gitlab-com").unwrap(),
+                "glpat-old-secret",
+                "{outcome:?}: the working credential must survive"
+            );
+            assert!(
+                !err.contains("glpat-DEAD-secret"),
+                "{outcome:?}: the error echoed the token back"
+            );
+            assert!(err.contains("unchanged"), "{outcome:?}: unhelpful: {err}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_probe_that_cannot_run_at_all_also_keeps_the_old_token() {
+        // The probe command itself can reject the arguments (unencodable token,
+        // malformed descriptor path). That is not a green light either.
+        let auth = gitlab_state();
+        let writes = Writes::default();
+
+        update_connection_inner(
+            &auth,
+            "gitlab-gitlab-com",
+            rotation("glpat-new-secret"),
+            |_req| async { Err("Token cannot be encoded as an HTTP header value.".to_string()) },
+            &writes.connection_writer(),
+            &writes.token_writer(),
+        )
+        .await
+        .expect_err("a probe error must not be treated as a pass");
+
+        assert!(writes.token_writes().is_empty());
+        assert_eq!(
+            auth.tokens.read().await.get("gitlab-gitlab-com").unwrap(),
+            "glpat-old-secret"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_keyring_write_failure_leaves_the_process_on_the_old_token() {
+        // If the durable copy did not land, the in-memory copy must not either
+        // — otherwise this session would run on a credential that vanishes at
+        // restart, and the user would have no idea which one is live.
+        let auth = gitlab_state();
+        let writes = Writes {
+            fail_token_write: true,
+            ..Default::default()
+        };
+
+        update_connection_inner(
+            &auth,
+            "gitlab-gitlab-com",
+            rotation("glpat-new-secret"),
+            |_req| async { Ok(probe_ok()) },
+            &writes.connection_writer(),
+            &writes.token_writer(),
+        )
+        .await
+        .expect_err("a keyring failure must surface");
+
+        assert_eq!(
+            auth.tokens.read().await.get("gitlab-gitlab-com").unwrap(),
+            "glpat-old-secret"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_label_only_edit_never_asks_for_a_token() {
+        let auth = gitlab_state();
+        let writes = Writes::default();
+
+        update_connection_inner(
+            &auth,
+            "gitlab-gitlab-com",
+            GitHostConnectionUpdate {
+                label: Some("  Work GitLab  ".to_string()),
+                ..Default::default()
+            },
+            |_req| async {
+                panic!("a label-only edit must not probe — there is no new credential");
+            },
+            &writes.connection_writer(),
+            &writes.token_writer(),
+        )
+        .await
+        .expect("renaming must not require re-entering a token");
+
+        assert!(
+            writes.token_writes().is_empty(),
+            "the stored token must not be rewritten by a rename"
+        );
+        assert_eq!(
+            auth.tokens.read().await.get("gitlab-gitlab-com").unwrap(),
+            "glpat-old-secret"
+        );
+        assert_eq!(
+            auth.connections.read().await[1].label,
+            "Work GitLab",
+            "the label is trimmed and applied"
+        );
+        assert_eq!(writes.connections.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn the_github_singleton_rotates_under_its_historical_account() {
+        // The built-in connection stores its token as `github-token`, not
+        // `git-host-token-github`. Rotation must reach that same account so
+        // nothing else has to be re-pointed.
+        let auth = gitlab_state();
+        let writes = Writes::default();
+
+        update_connection_inner(
+            &auth,
+            GITHUB_CONNECTION_ID,
+            rotation("ghp-new-secret"),
+            |req| {
+                assert_eq!(req.base_url, "https://api.github.com");
+                async { Ok(probe_ok()) }
+            },
+            &writes.connection_writer(),
+            &writes.token_writer(),
+        )
+        .await
+        .expect("the GitHub singleton must be rotatable");
+
+        assert_eq!(
+            writes.token_writes(),
+            vec![(
+                GITHUB_CONNECTION_ID.to_string(),
+                "ghp-new-secret".to_string()
+            )]
+        );
+        assert_eq!(host_token_account(GITHUB_CONNECTION_ID), "github-token");
+    }
+
+    #[tokio::test]
+    async fn an_unknown_connection_is_refused_before_anything_is_probed() {
+        let auth = gitlab_state();
+        let writes = Writes::default();
+
+        let err = update_connection_inner(
+            &auth,
+            "gitea-does-not-exist",
+            rotation("glpat-new-secret"),
+            |_req| async {
+                panic!("an unknown connection must never reach the probe");
+            },
+            &writes.connection_writer(),
+            &writes.token_writer(),
+        )
+        .await
+        .expect_err("unknown ids must be refused");
+        assert!(err.contains("Unknown connection"), "unexpected: {err}");
+        assert!(writes.token_writes().is_empty());
+    }
+
+    // --- the pure guards ---------------------------------------------------
+
+    #[test]
+    fn changing_kind_or_base_url_is_refused_as_a_different_connection() {
+        let conn = gitlab_connection();
+
+        let err = plan_connection_update(
+            &conn,
+            &GitHostConnectionUpdate {
+                kind: Some(GitHostKind::Gitea),
+                label: Some("renamed".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect_err("a kind change is a different connection");
+        assert!(err.contains("cannot be changed"), "unexpected: {err}");
+
+        let err = plan_connection_update(
+            &conn,
+            &GitHostConnectionUpdate {
+                base_url: Some("https://gitlab.internal".to_string()),
+                label: Some("renamed".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect_err("an address change is a different connection");
+        assert!(err.contains("cannot be changed"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn echoing_back_the_unchanged_kind_and_url_is_not_a_change() {
+        // The UI sends both as an optimistic-concurrency assertion; a trailing
+        // slash difference must not read as an attempted edit.
+        let conn = gitlab_connection();
+        let plan = plan_connection_update(
+            &conn,
+            &GitHostConnectionUpdate {
+                kind: Some(GitHostKind::GitLab),
+                base_url: Some("https://gitlab.com/".to_string()),
+                label: Some("Work".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("an unchanged assertion must pass");
+        assert_eq!(
+            plan,
+            ConnectionUpdatePlan {
+                label: Some("Work".to_string()),
+                rotates_token: false,
+            }
+        );
+    }
+
+    #[test]
+    fn a_token_without_a_way_to_check_it_is_refused() {
+        // No descriptor means no validation, and an unvalidated write is
+        // exactly the failure mode this command exists to remove.
+        let err = plan_connection_update(
+            &gitlab_connection(),
+            &GitHostConnectionUpdate {
+                token: Some("glpat-new".to_string()),
+                probe: None,
+                ..Default::default()
+            },
+        )
+        .expect_err("an unverifiable token must be refused");
+        assert!(err.contains("verified"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn empty_fields_and_no_op_updates_are_refused() {
+        let conn = gitlab_connection();
+        assert!(plan_connection_update(
+            &conn,
+            &GitHostConnectionUpdate {
+                token: Some("   ".to_string()),
+                probe: Some(probe_spec()),
+                ..Default::default()
+            }
+        )
+        .is_err());
+        assert!(plan_connection_update(
+            &conn,
+            &GitHostConnectionUpdate {
+                label: Some("  ".to_string()),
+                ..Default::default()
+            }
+        )
+        .is_err());
+        // Re-submitting the same label with no token changes nothing.
+        assert!(plan_connection_update(
+            &conn,
+            &GitHostConnectionUpdate {
+                label: Some(conn.label.clone()),
+                ..Default::default()
+            }
+        )
+        .is_err());
+        assert!(plan_connection_update(&conn, &GitHostConnectionUpdate::default()).is_err());
+    }
+
+    #[test]
+    fn the_github_singletons_label_is_fixed_but_its_token_is_not() {
+        let conn = GitHostConnection::github();
+        let err = plan_connection_update(
+            &conn,
+            &GitHostConnectionUpdate {
+                label: Some("My GitHub".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect_err("a rename would silently revert on restart");
+        assert!(err.contains("fixed"), "unexpected: {err}");
+
+        let plan = plan_connection_update(
+            &conn,
+            &GitHostConnectionUpdate {
+                token: Some("ghp-new".to_string()),
+                probe: Some(probe_spec()),
+                ..Default::default()
+            },
+        )
+        .expect("rotation must still work on the singleton");
+        assert!(plan.rotates_token);
+        assert_eq!(plan.label, None);
+    }
+
+    #[test]
+    fn a_rotation_refusal_never_carries_the_credential() {
+        for outcome in [
+            GitHostProbeOutcome::InvalidToken,
+            GitHostProbeOutcome::Forbidden,
+            GitHostProbeOutcome::RateLimited,
+            GitHostProbeOutcome::NotAHost,
+            GitHostProbeOutcome::Unreachable,
+            GitHostProbeOutcome::TlsError,
+            GitHostProbeOutcome::ServerError,
+            GitHostProbeOutcome::Unknown,
+            GitHostProbeOutcome::Ok,
+        ] {
+            let message = rotation_refusal(outcome);
+            assert!(message.contains("existing credential is unchanged"));
+            assert!(!message.contains("glpat"));
+        }
     }
 }
