@@ -90,7 +90,7 @@ These are the only current product decisions blocking implementation.
    shipped but the first served update deferred to 1.1, and an explicit "1.0 is
    NOT" list (macOS/Linux, Remote Agents, Global Undo, hosted CI, the
    environment-gated proof matrices). The owner **rejected** that definition on
-   2026-08-16; PacketBench continues the 0.x cadence (now 0.11.0) with no 1.0
+   2026-08-16; PacketBench continues the 0.x cadence (now 0.12.0) with no 1.0
    milestone. See
    [`docs/reports/fable5-review-2026-08-05.md`](./docs/reports/fable5-review-2026-08-05.md).
 
@@ -143,6 +143,49 @@ and the initial PWA under PacketBench's `remoteagents/` workspace. See
 The source behind these slices is implemented. Keep them open until the named
 environment or packaged matrix has actually run.
 
+- **P1 - localStorage does not migrate across a packaged upgrade.**
+  `migrateLegacyStorage()` (`src/lib/storage-migration.ts:14`) reads
+  `localStorage` from inside its own WebView2 profile, and WebView2 keys that
+  profile by bundle identifier. The rename moved the identifier from
+  `com.packetade.desktop` to `com.packetbench.desktop`, so a packaged upgrade
+  gets a **new, empty profile**: the migrator finds zero `packetade:*` keys,
+  writes its guard key, and reports success by silence. Measured 2026-08-28 on
+  the development machine: 159 KiB of localStorage under the old identifier
+  against 19 KiB under the new one, with twelve stranded keys including
+  `packetade:agent-drafts` (unsent composer drafts), `packetade:project-history`,
+  `packetade:issues`, and `packetade:workspaces-cache`. The migrator's own logic
+  is sound — guard key, copy-not-clobber, legacy kept as rollback — it simply
+  cannot see what it is meant to migrate. Fixing it means reading another
+  application's LevelDB store from Rust, which is a feature with its own failure
+  modes, so it needs an owner decision: build the reader, accept the loss and say
+  so in release notes, or ship a one-time importer. The data-dir and keyring
+  migrations are unaffected. Recorded under 0.12.0 in `CHANGELOG.md`.
+- **P2 - Memory capture for remote workspaces.** `computeContextItems`
+  (`src/stores/memoryStore.ts`) reads the `ssh:<serverId>:<path>` and
+  `workspace:<id>` scope keys, but nothing in production writes them: every
+  writer stamps a plain path (`useTerminalSession.ts`, `asyncFlightStore.ts`,
+  `lib/memoryCapture.ts`, `captureManually`). A correctly-scoped remote
+  workspace therefore shows no memory, permanently, by construction. Since
+  2026-08-28 the Memory pane states this honestly rather than showing another
+  project's data, so this is a missing feature and no longer a silent lie.
+  Doing it means re-keying the writers **and** teaching every display, filter,
+  and export surface to render a scope key as something a human recognises —
+  Timeline project chips, the pattern project badge, `filterMemoryEventsByScope`,
+  `serializeMemoryExport` / `serializeMemoryMarkdown` / `importMemory` — plus a
+  migration story for memory already recorded under plain remote paths. Fold in
+  the related pre-existing bug: manual captures from a remote agent transcript
+  (`lib/memoryCapture.ts`) already write a plain remote path that no `ssh` brief
+  scope will ever match, so they are write-only-dead today.
+- **P2 - Packaged acceptance sections 2-5 at 0.12.0.** Section 0 (build) and
+  section 1 (migration) of
+  [`dev/acceptance-0.12.0.md`](./dev/acceptance-0.12.0.md) have run; section 1
+  found two defects, one fixed and one filed above. **Launch and lifecycle,
+  dictation on real hardware, dictation analytics, and the two-display Monitor
+  matrix have not run** and cannot be run from source — they need a person at
+  the keyboard with the headset attached and the package installed. The
+  dictation section is the highest-yield: those fixes were written for Bluetooth
+  failure paths that only a real headset can provoke. No installed upgrade of
+  any `PacketBench` package has been performed.
 - **P1 - Distribution trust and hosted gates.** Add hosted CI; acquire Windows
   Authenticode and Apple Developer ID credentials; wire Tauri updater
   signing/configuration and hosted `latest.json`. Current Windows artifacts are
@@ -171,11 +214,13 @@ environment or packaged matrix has actually run.
   `~/.zshrc`-defined aliases and env are missing. Nothing reads `$SHELL`.
   fish/nu/xonsh are never probed on posix despite the backend allowlist and the
   UI copy promising them.
-- **P1 - Packaged application acceptance.** Run v0.10.3 launch, lifecycle,
+- **P1 - Packaged application acceptance.** Run the launch, lifecycle,
   accessibility, denial, credential, and real-host matrices. Build success is
-  not interactive acceptance. See
-  [`dev/release-v0.10.3.md`](./dev/release-v0.10.3.md) and
-  [`dev/proof-audit-2026-08-01.md`](./dev/proof-audit-2026-08-01.md).
+  not interactive acceptance. The ordered checklist is
+  [`dev/acceptance-0.12.0.md`](./dev/acceptance-0.12.0.md), which supersedes the
+  prose scattered through
+  [`dev/release-v0.10.3.md`](./dev/release-v0.10.3.md); the standard of evidence
+  is [`dev/proof-audit-2026-08-01.md`](./dev/proof-audit-2026-08-01.md).
 - **P1 - Flight supervision.** Run packaged local and disposable pinned-SSH
   matrices for Reviewer Gate, cooperative integration, Coordination Inbox, and
   bounded YOLO (RG8/CG9/CI9/AP9).

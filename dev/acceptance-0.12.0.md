@@ -1,48 +1,48 @@
-# PacketBench 0.11.0 — Packaged Acceptance Matrix
+# PacketBench 0.12.0 — Packaged Acceptance Matrix
 
-Created 2026-08-28. This is a runnable checklist, not a status report. Tick rows
-as you go and record the evidence each one asks for.
+Created 2026-08-28 for 0.11.0; retargeted to 0.12.0 the same day, after section 0
+was executed and the version was bumped. This is a runnable checklist, not a
+status report. Tick rows as you go and record the evidence each one asks for.
 
-The gates below have never run. `dev/proof-audit-2026-08-01.md` says why that
-matters: *"fresh binaries prove compilation and bundling only."* Every green
-tick in `CHANGELOG.md` for 0.11.0 today describes source tests. Nothing has been
-proved about the running application.
+Sections 2–5 have still never run. `dev/proof-audit-2026-08-01.md` says why that
+matters: *"fresh binaries prove compilation and bundling only."* Every green tick
+in `CHANGELOG.md` for those sections today describes source tests. **No installed
+upgrade of any `PacketBench` package has been performed.**
 
 ---
 
-## 0. Build the thing you are actually testing — do this first
+## 0. Build the thing you are actually testing — DONE 2026-08-28
 
-**The installers currently on disk are the wrong build.** They were produced
-2026-08-28 01:05 from `5f1375ca`:
+Built from `544e4cc6`, **unsigned**:
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `PacketBench_0.11.0_x64-setup.exe` | `dd65f12b80ceb8bb225be159e1211e211e1006fb5c87362f75b6d1079d55b500` |
-| `PacketBench_0.11.0_x64_en-US.msi` | `19731f62cdb31c40bdb228117ceeadb7b4ea0c6a82ec10b99e99cc8c237b5cb7` |
+| `PacketBench_0.12.0_x64-setup.exe` (NSIS, 85.3 MiB) | `60e63fbbd683220ea1744c1b7cd28ac036a20aefef71f44f6500cec0123ecf3a` |
+| `PacketBench_0.12.0_x64_en-US.msi` (133.0 MiB) | `cb12c50ee74f632311d3ddb152a71674ffe19d4c6f8b99c9f91dc6682d80348c` |
 
-Six commits have landed since, including **every dictation fix and the entire
-analytics port**. Sections 3 and 4 of this matrix cannot be run against those
-files — they would test the code the fixes replaced.
-
-**Bump the version before rebuilding.** Both `package.json` and
-`src-tauri/tauri.conf.json` still read `0.11.0`, so a rebuild produces a second
-pair of `PacketBench_0.11.0_*` installers with different hashes and nothing to
-tell them apart — the exact collision `CHANGELOG.md` records for the two
-0.10.5 builds and warns must not recur. Move to `0.11.1` first.
+They live in `C:/Users/ianwalmsley/packetbench-build/release/bundle/`, not in the
+repo. An earlier 0.12.0 pair built at 21:00 was **deleted**: that build spanned a
+source edit and could not be tied to a commit, and an installer you cannot
+attribute is worse than none.
 
 ```bash
 export PATH="/c/Users/ianwalmsley/.rustup/toolchains/stable-x86_64-pc-windows-msvc/bin:$PATH" && cd /d/projects/PacketBench && pnpm tauri build
 ```
 
 Afterwards run `pnpm sidecar:install` — `prebundle` strips the sidecar's
-devDependencies.
+devDependencies. (Done for this build.)
 
-- [ ] Version bumped in both files
-- [ ] Rebuilt; record commit, both filenames and both SHA-256s in `CHANGELOG.md`
+- [x] Version bumped — 0.11.0 → **0.12.0** in `package.json`,
+      `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` (+ `Cargo.lock`)
+- [x] Rebuilt; commit, both filenames and both SHA-256s recorded in `CHANGELOG.md`
 
 ---
 
 ## 1. The migration path — the single most valuable test here
+
+**Partially run 2026-08-28, from source and against a copy of a real legacy data
+dir. It found two defects.** The rows below that need an installed upgrade are
+still open.
 
 The rename moved the Tauri bundle identifier (`com.packetade.desktop` →
 `com.packetbench.desktop`) and every one-shot data-dir, keyring, and
@@ -50,11 +50,27 @@ localStorage migrator (`LEGACY_*` in `src-tauri/src/core/brand.rs` and
 `src/lib/brand.ts`). **Those migrators have only ever run from a source build.**
 No installed, upgraded PacketBench package has ever existed.
 
-Run this on a machine (or VM snapshot) carrying pre-rename `packetade` state.
+Run the remaining rows on a machine (or VM snapshot) carrying pre-rename
+`packetade` state.
 
-- [ ] Data dir migrates `.packetade` → `.packetbench`; flights, issues, workspaces, and history all survive
-- [ ] Keyring secrets migrate from the legacy service name — API keys and git host tokens still work without re-entry
-- [ ] `packetade:*` localStorage keys migrate to `packetbench:*`
+- [x] **DEFECT FOUND AND FIXED — data dir.** A `~/.packetade` carrying both our
+      markers and the packetcode TUI's classified `Foreign`, vetoing the whole
+      migration and abandoning our own state in the same directory. On the
+      development machine that stranded `state.v1.json` at version 1471 with 14
+      issues and 3 workspaces. Such a directory is now `Mixed`: our entries are
+      copied out, the legacy dir is left exactly as found. Verified against a
+      copy of that real directory — classified `Mixed`, all 41,885 bytes
+      recovered byte-identically, `config.toml`/`cost-tally.json` left behind,
+      legacy dir intact. Fixed in `544e4cc6`.
+- [x] **DEFECT FOUND, NOT FIXED — localStorage.** WebView2 keys its profile by
+      bundle identifier, so a packaged upgrade gets an empty profile and
+      `migrateLegacyStorage()` finds nothing to migrate. Twelve stranded keys
+      measured. Filed in `backlog.md`; needs an owner decision.
+- [x] Keyring migration reviewed — per-key, read-through, write-new-then-delete-legacy,
+      with tests covering partial failure. No analogous flaw. **Still needs a
+      packaged run to confirm end to end.**
+- [ ] Data dir migrates on a real installed upgrade; flights, issues, workspaces, and history all survive
+- [ ] Keyring secrets migrate — API keys and git host tokens still work without re-entry
 - [ ] The new bundle identifier does **not** install alongside the old app as a second entry in Add/Remove Programs
 - [ ] Launch a second time — migrators are one-shot and must not re-run or double-apply
 - [ ] A **clean-machine** install (no prior state) also launches correctly
@@ -63,7 +79,6 @@ Evidence: commit, package SHA-256, host OS build, and what pre-rename state the
 machine carried.
 
 ---
-
 ## 2. Launch, lifecycle, and shell
 
 - [ ] Cold start to usable window
