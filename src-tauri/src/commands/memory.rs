@@ -22,7 +22,7 @@
 use crate::core::aux_context;
 use crate::core::aux_llm::{self, AuxRoutingState, AuxTaskClass};
 use crate::core::storage;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 use tracing::info;
 
@@ -38,6 +38,51 @@ Rules:
 - Use paths exactly as they appear in the manifest.
 - Never invent a file that is not listed. If the manifest is short, return fewer entries."#;
 
+/// What a codebase scan produced.
+///
+/// `response` is the model's output verbatim — the JSON-array contract in
+/// [`MEMORY_SCAN_SYSTEM_PROMPT`] is unchanged. Everything else describes the
+/// **walk**, and comes from [`aux_context::ScanStats`] rather than from the
+/// model: only this side knows whether a bound clipped the manifest, and a
+/// partial index must never reach the user dressed as a complete one. The
+/// model is never asked to self-report coverage because it cannot know.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodebaseScanResult {
+    /// Raw model output. Callers parse the JSON array out of this.
+    pub response: String,
+    /// Files named in the manifest the model saw.
+    pub files_listed: usize,
+    /// Files the walk found before ranking and the listing cap.
+    pub files_seen: usize,
+    /// How many of the listed files carried a content excerpt.
+    pub excerpt_count: usize,
+    /// Symlinks and junctions skipped — never followed.
+    pub symlinks_skipped: usize,
+    /// Secret-shaped filenames refused before they could be read.
+    pub sensitive_skipped: usize,
+    /// A bound (depth, entries, listed files, or the wall clock) clipped the
+    /// walk, so the manifest is a partial view of the project.
+    pub truncated: bool,
+    /// The clock specifically, rather than a size bound, ended the walk.
+    pub timed_out: bool,
+}
+
+impl CodebaseScanResult {
+    fn new(response: String, manifest: &aux_context::ProjectManifest) -> Self {
+        Self {
+            response,
+            files_listed: manifest.files.len(),
+            files_seen: manifest.stats.files_seen,
+            excerpt_count: manifest.excerpt_count(),
+            symlinks_skipped: manifest.stats.symlinks_skipped,
+            sensitive_skipped: manifest.stats.sensitive_skipped,
+            truncated: manifest.stats.truncated,
+            timed_out: manifest.stats.timed_out,
+        }
+    }
+}
+
 /// Index the key files of a project.
 ///
 /// Ordering matters: the auxiliary route is resolved **before** the filesystem
@@ -48,7 +93,7 @@ Rules:
 pub async fn scan_codebase_memory(
     routing: State<'_, AuxRoutingState>,
     project_path: String,
-) -> Result<String, String> {
+) -> Result<CodebaseScanResult, String> {
     super::validate_project_path(&project_path)?;
 
     // Resolve first: no provider => no disk access, no egress, clear error.
@@ -86,14 +131,16 @@ pub async fn scan_codebase_memory(
         AuxTaskClass::MemoryScan.id(),
         uuid::Uuid::new_v4()
     );
-    aux_llm::run_aux_oneshot(
+    let response = aux_llm::run_aux_oneshot(
         AuxTaskClass::MemoryScan,
         &route,
         &session_id,
         MEMORY_SCAN_SYSTEM_PROMPT.to_string(),
         manifest.render(),
     )
-    .await
+    .await?;
+
+    Ok(CodebaseScanResult::new(response, &manifest))
 }
 
 async fn run_memory_turn(
@@ -231,4 +278,77 @@ Output format:
 pub async fn toggle_pinned_pattern(pattern_id: String) -> Result<Option<bool>, String> {
     info!(pattern_id = %pattern_id, "Toggling pinned flag on pattern");
     storage::toggle_pinned_pattern(&pattern_id).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::aux_context::{ProjectFile, ProjectManifest, ScanStats};
+    use std::path::PathBuf;
+
+    fn manifest(files: usize, stats: ScanStats) -> ProjectManifest {
+        ProjectManifest {
+            root: PathBuf::from("/tmp/project"),
+            files: (0..files)
+                .map(|i| ProjectFile {
+                    rel_path: format!("src/file{}.ts", i),
+                    size: 100,
+                    score: 10,
+                    excerpt: Some("export const x = 1;".to_string()),
+                })
+                .collect(),
+            stats,
+        }
+    }
+
+    /// The truncation fact belongs to the walk, not to the model. A complete
+    /// JSON array assembled from a partial manifest must still report
+    /// `truncated`, or the UI presents a clipped index as a full one.
+    #[test]
+    fn scan_result_reports_the_walks_truncation_not_the_models() {
+        let stats = ScanStats {
+            files_seen: 900,
+            symlinks_skipped: 3,
+            sensitive_skipped: 2,
+            truncated: true,
+            timed_out: true,
+            ..ScanStats::default()
+        };
+        let result = CodebaseScanResult::new("[]".to_string(), &manifest(400, stats));
+        assert!(result.truncated);
+        assert!(result.timed_out);
+        assert_eq!(result.files_listed, 400);
+        assert_eq!(result.files_seen, 900);
+        assert_eq!(result.excerpt_count, 400);
+        assert_eq!(result.symlinks_skipped, 3);
+        assert_eq!(result.sensitive_skipped, 2);
+    }
+
+    #[test]
+    fn a_complete_walk_is_not_flagged_partial() {
+        let stats = ScanStats {
+            files_seen: 12,
+            ..ScanStats::default()
+        };
+        let result = CodebaseScanResult::new("[]".to_string(), &manifest(12, stats));
+        assert!(!result.truncated);
+        assert!(!result.timed_out);
+    }
+
+    /// The frontend DTO in `src/lib/tauri.ts` reads camelCase keys, and the
+    /// model output must survive the trip byte-for-byte.
+    #[test]
+    fn scan_result_serializes_camel_case_for_the_frontend() {
+        let raw = r#"[{"path":"src/main.ts","summary":"Entry point"}]"#;
+        let value = serde_json::to_value(CodebaseScanResult::new(
+            raw.to_string(),
+            &manifest(1, ScanStats::default()),
+        ))
+        .expect("serialize");
+        assert_eq!(value["response"], raw);
+        assert_eq!(value["filesListed"], 1);
+        assert_eq!(value["excerptCount"], 1);
+        assert_eq!(value["symlinksSkipped"], 0);
+        assert_eq!(value["truncated"], false);
+    }
 }

@@ -426,15 +426,6 @@ the Claude CLI shell-out now has exactly two live callers,
   fallback) plus byte and wall-clock budgets on top of the iteration cap.
   `run_claude` cannot be deleted until then. See
   [`dev/local-model-routing.md`](./dev/local-model-routing.md).
-- **P3 - `scan_codebase_memory` has no caller.** The memory half of 3C-3
-  landed 2026-08-28: `core::aux_context` assembles a bounded, root-confined
-  file manifest in Rust and the command runs one `memory-scan` turn over it, so
-  `commands/memory.rs` is off the Claude CLI entirely. The command is still
-  registered in `lib.rs` with **no** TypeScript caller and no consumer for its
-  `[{path, summary}]` output. Owner call needed: wire it into the Memory view
-  (a "Scan codebase" action feeding project notes), or delete the command and
-  its task class. Migrating it was the cheap half; giving it a product surface
-  is a product decision, not a refactor.
 - **P2 - LM local-opt-in surface.** The "route aux tasks locally" banner and
   one-click pin are gated on a green `cargo test --test ollama_e2e -- --ignored`
   run against the live daemon (test ships ignored-by-default).

@@ -11,7 +11,7 @@
  */
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { LearnedPattern } from "@/types/memory";
+import type { LearnedPattern, MemoryEvent } from "@/types/memory";
 
 // memoryStore is REAL (composeMemoryBrief + memoryBriefStats are the subject);
 // only its Tauri boundary is stubbed.
@@ -20,6 +20,7 @@ vi.mock("@/lib/tauri", () => ({
   summarizeSession: vi.fn(),
   extractPatterns: vi.fn(),
   readPtyTranscript: vi.fn(),
+  scanCodebaseMemory: vi.fn(),
   togglePinnedPattern: vi.fn(),
   loadPersistedState: vi.fn(),
   // Pulled in transitively now that event cards deep-link into conversations
@@ -34,7 +35,7 @@ vi.mock("@/stores/layoutStore", () => ({
 }));
 
 import { MemoryView } from "@/components/views/MemoryView";
-import { useMemoryStore } from "@/stores/memoryStore";
+import { useMemoryStore, CODEBASE_SCAN_SOURCE } from "@/stores/memoryStore";
 
 function pattern(over: Partial<LearnedPattern> = {}): LearnedPattern {
   return {
@@ -124,5 +125,59 @@ describe("MemoryView delete confirmations", () => {
     fireEvent.click(screen.getByTitle("Delete pattern"));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     expect(useMemoryStore.getState().patterns).toHaveLength(0);
+  });
+});
+
+/**
+ * "Scan codebase" is the Memory pane's entry point to `scan_codebase_memory`,
+ * which had no caller at all — the Settings row that routes it configured a
+ * feature nothing could run.
+ */
+describe("MemoryView codebase scan", () => {
+  function scanNote(): MemoryEvent {
+    return {
+      id: "mem-scan-1",
+      type: "manual_note",
+      timestamp: Date.now(),
+      projectPath: "D:/projects/current",
+      payload: {
+        source: CODEBASE_SCAN_SOURCE,
+        summary: "Codebase index: 2 key files",
+        body: "- src/main.ts — App entry point",
+        tags: [CODEBASE_SCAN_SOURCE],
+      },
+    };
+  }
+
+  it("runs the scan for the active local project", () => {
+    const scanCodebase = vi.fn().mockResolvedValue(true);
+    useMemoryStore.setState({ scanCodebase });
+
+    render(<MemoryView />);
+    fireEvent.click(screen.getByRole("button", { name: /Scan codebase/ }));
+
+    expect(scanCodebase).toHaveBeenCalledWith("D:/projects/current");
+  });
+
+  it("says Re-scan once this project already has an index, because a rerun replaces it", () => {
+    useMemoryStore.setState({ events: [scanNote()] });
+
+    render(<MemoryView />);
+
+    const button = screen.getByRole("button", { name: /Re-scan codebase/ });
+    expect(button).toHaveAttribute(
+      "title",
+      expect.stringContaining("replaces the existing codebase index note"),
+    );
+  });
+
+  it("cannot be run with no project open", () => {
+    layoutState.projectPath = "";
+
+    render(<MemoryView />);
+
+    const button = screen.getByRole("button", { name: /Scan codebase/ });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("title", "Open a local workspace to index its codebase");
   });
 });
