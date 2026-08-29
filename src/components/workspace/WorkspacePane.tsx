@@ -752,6 +752,7 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
           cliArgs={effectiveArgs}
           env={isRemote ? undefined : paneEnv}
           projectPath={workspace?.projectPath}
+          workspaceId={workspaceId}
           initialPrompt={initialPrompt}
           renderHeader={renderHeader}
           onSessionCreated={(sessionId) =>

@@ -85,6 +85,11 @@ describe("ProjectNotesTab", () => {
       />,
     );
     expect(screen.getByText("Project notes are local-only")).toBeInTheDocument();
-    expect(screen.getByText("build-box")).toBeInTheDocument();
+    // Named twice now: once in the "not reachable from here" explanation and
+    // once in the reassurance that the REST of memory does work remotely.
+    expect(screen.getAllByText("build-box").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(/Only these Markdown files are local-only/i),
+    ).toBeInTheDocument();
   });
 });

@@ -210,7 +210,9 @@ describe("InvestigationPanel", () => {
     });
 
     expect(mocks.memoryState.captureManually).toHaveBeenCalledWith({
-      projectPath: "D:\\projects\\PacketBench",
+      // A plain path is still a valid scope input — the GitHub pane always
+      // works against a checked-out local repo.
+      scope: "D:\\projects\\PacketBench",
       source: "github-investigation",
       summary: "Investigation for #7: Tiny bug",
       body: "Investigation body content",

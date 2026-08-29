@@ -36,7 +36,8 @@ import { useServerStore } from "@/stores/serverStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useGitHubStore } from "@/stores/githubStore";
 import { assertCostGuardrailsAllowLaunch } from "@/stores/costGuardrailStore";
-import { useMemoryStore } from "@/stores/memoryStore";
+import { useMemoryStore, type MemoryBriefScope } from "@/stores/memoryStore";
+import { memoryScopeForWorkspace } from "@/lib/memoryWriteScope";
 import { getMemorySettings } from "@/stores/memorySettingsStore";
 import type { FlightCompletedPayload } from "@/types/memory";
 import type { Attempt, AttemptStatus, Flight } from "@/types/flight";
@@ -805,20 +806,43 @@ function composeAsyncLaunchPrompt(
   // Flight-prompt injection is opt-out via memory settings. When disabled,
   // launches carry the raw user prompt with no ambient project memory.
   if (!getMemorySettings().injectIntoFlightPrompts) return prompt;
-  if (targets.length === 0 || targets.some((target) => target.kind !== "local")) {
-    return prompt;
-  }
+  if (targets.length === 0) return prompt;
 
-  const candidatePaths = [flight?.projectPath, ...targets.map((target) => target.basePath)].filter(
-    (path): path is string => Boolean(path?.trim()),
+  // Every target must agree on one scope, or we cannot say which project's
+  // memory this launch is entitled to. A mixed local/ssh fan-out, or an ssh
+  // fan-out spanning two servers, gets no brief rather than an arbitrary one.
+  const kinds = new Set(targets.map((target) => target.kind));
+  if (kinds.size !== 1) return prompt;
+  const kind = targets[0].kind;
+  // `AttemptTargetSpec.targetId` IS the `ServerConfig.id`, which is what
+  // `remoteMemoryProjectKey` keys on.
+  const serverIds = new Set(
+    targets.map((target) => (target.kind === "ssh" ? target.targetId : "")),
   );
+  if (serverIds.size !== 1) return prompt;
+
+  const candidatePaths = [
+    // A remote flight's `projectPath` is a path on the remote host; the local
+    // mirror must never be mixed in, so only remote targets contribute here.
+    kind === "ssh" ? undefined : flight?.projectPath,
+    ...targets.map((target) => target.basePath),
+  ].filter((path): path is string => Boolean(path?.trim()));
   const normalized = new Set(candidatePaths.map((path) => path.replace(/\\/g, "/").toLowerCase()));
   if (normalized.size !== 1) return prompt;
 
   const [projectPath] = candidatePaths;
-  const brief = useMemoryStore
-    .getState()
-    .composeMemoryBrief({ kind: "local", projectPath }, { query: prompt });
+  const serverId = [...serverIds][0];
+  const scope: MemoryBriefScope =
+    kind === "ssh"
+      ? {
+          kind: "ssh",
+          projectPath,
+          serverId,
+          remotePath: projectPath,
+          workspaceId: flight?.workspaceId ?? null,
+        }
+      : { kind: "local", projectPath, workspaceId: flight?.workspaceId ?? null };
+  const brief = useMemoryStore.getState().composeMemoryBrief(scope, { query: prompt });
   if (!brief.text.trim()) return prompt;
   // M5: remember which learned patterns rode along in this brief so their
   // confidence can be rerated when the flight settles.
@@ -952,7 +976,10 @@ function captureFlightCompletionOnTransition(flightId: string, statusBefore: str
   // Memory capture + the LLM retrospective are only meaningful for a flight
   // that actually landed work — keep those gated on `done`.
   if (status !== "done") return;
-  memory.captureFlightCompleted(buildFlightCompletedPayload(flight), flight.projectPath);
+  memory.captureFlightCompleted(
+    buildFlightCompletedPayload(flight),
+    memoryScopeForWorkspace(flight.workspaceId, flight.projectPath),
+  );
   // M9: opt-in LLM retrospective enrichment (fire-and-forget). Runs after the
   // mechanical capture so a missing/unauthed CLI just leaves the derived
   // payload in place.

@@ -32,6 +32,8 @@ interface TerminalPaneProps {
   accountId?: string | null;
   initialPrompt?: string;
   projectPath?: string;
+  /** Owning workspace — memory capture resolves its (local vs ssh) scope from it. */
+  workspaceId?: string;
   issueId?: string;
   onSessionCreated?: (sessionId: string) => void;
   onSessionEnded?: () => void;
@@ -50,6 +52,7 @@ export function TerminalPane({
   accountId,
   initialPrompt,
   projectPath: paneProjectPath,
+  workspaceId,
   issueId,
   onSessionCreated,
   onSessionEnded,
@@ -86,6 +89,7 @@ export function TerminalPane({
     cliArgs,
     env,
     projectPath: paneProjectPath,
+    workspaceId,
     initialPrompt,
     issueId,
     xtermRef,

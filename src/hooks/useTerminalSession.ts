@@ -20,6 +20,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useTabStore } from "@/stores/tabStore";
 import { useActivityStore } from "@/stores/activityStore";
 import { useMemoryStore } from "@/stores/memoryStore";
+import { memoryScopeForWorkspace } from "@/lib/memoryWriteScope";
 import { usePtyStateDetector, type PtyDetectorState } from "@/hooks/usePtyStateDetector";
 import {
   notifyApprovalNeeded,
@@ -42,6 +43,13 @@ interface UseTerminalSessionOptions {
   cliArgs?: string[];
   env?: Record<string, string>;
   projectPath?: string;
+  /**
+   * The workspace this pane belongs to. Memory capture resolves its scope from
+   * this, so a session in a remote workspace is recorded under that
+   * workspace's `ssh:` scope instead of being stamped with a bare path that no
+   * remote scope can ever match.
+   */
+  workspaceId?: string;
   initialPrompt?: string;
   issueId?: string;
   xtermRef: RefObject<Terminal | null>;
@@ -79,6 +87,7 @@ export function useTerminalSession({
   cliArgs,
   env,
   projectPath: paneProjectPath,
+  workspaceId,
   initialPrompt,
   issueId,
   xtermRef,
@@ -127,6 +136,10 @@ export function useTerminalSession({
 
   const globalProjectPath = useLayoutStore((s) => s.projectPath);
   const projectPath = paneProjectPath ?? globalProjectPath;
+
+  // The unmount path captures from a cleanup callback that deliberately does
+  // not re-subscribe to props, so the scope inputs ride along in a ref.
+  const memoryScopeInputRef = useLatestRef({ workspaceId, projectPath });
 
   const handleStateChange = useCallback(
     (prev: PtyDetectorState, next: PtyDetectorState) => {
@@ -328,7 +341,7 @@ export function useTerminalSession({
             .learnFromSession(
               sessionId,
               cliCommand,
-              projectPath,
+              memoryScopeForWorkspace(workspaceId, projectPath),
               tab.durationMs,
               wasRequested ? "killed" : "done",
             );
@@ -414,6 +427,7 @@ export function useTerminalSession({
     }
   }, [
     projectPath,
+    workspaceId,
     cliCommand,
     cliArgs,
     env,
@@ -465,9 +479,20 @@ export function useTerminalSession({
         const tid = tabIdRef.current;
         const tab = tid ? useTabStore.getState().getTab(tid) : null;
         if (tab?.projectPath && tab.durationMs > MIN_MEMORY_CAPTURE_MS) {
+          // Reading `.current` at cleanup time is the point, not a mistake:
+          // this effect must NOT re-run when the project path changes (that
+          // would tear down a live PTY), so the scope inputs cannot be deps.
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+          const { workspaceId: wsId, projectPath: paneProject } = memoryScopeInputRef.current;
           void useMemoryStore
             .getState()
-            .learnFromSession(sid, cliCommandRef.current, tab.projectPath, tab.durationMs, "killed");
+            .learnFromSession(
+              sid,
+              cliCommandRef.current,
+              memoryScopeForWorkspace(wsId, paneProject || tab.projectPath),
+              tab.durationMs,
+              "killed",
+            );
         }
         // Unmount cleanup — swallow errors; PTY may already be dead.
         killPty(sid).catch(() => {});
@@ -480,7 +505,7 @@ export function useTerminalSession({
         useActivityStore.getState().clearActivity(tid);
       }
     };
-  }, [paneId, stopDurationTimer, sessionIdRef, emitSessionEnded]);
+  }, [paneId, stopDurationTimer, sessionIdRef, memoryScopeInputRef, emitSessionEnded]);
 
   const handleKill = useCallback(async () => {
     const sid = sessionIdRef.current;

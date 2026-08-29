@@ -147,6 +147,25 @@ function localTarget(basePath: string, baseBranch = "main"): AttemptTargetSpec {
   };
 }
 
+function sshTarget(
+  targetId: string,
+  basePath: string,
+  baseBranch = "main",
+): AttemptTargetSpec {
+  return {
+    kind: "ssh",
+    targetId,
+    host: "h",
+    port: 22,
+    user: "u",
+    basePath,
+    baseBranch,
+    agentConfigId: "api-claude",
+    provider: "claude",
+    model: "claude-sonnet-4-6",
+  };
+}
+
 function flight(overrides: Partial<Flight> = {}): Flight {
   return {
     id: "flight-1",
@@ -640,8 +659,11 @@ describe("asyncFlightStore flight-completion memory capture", () => {
     await useAsyncFlightStore.getState().setAttemptStatus("flight-1", "att-b", "completed");
 
     expect(mocks.captureFlightCompleted).toHaveBeenCalledTimes(1);
-    const [payload, projectPath] = mocks.captureFlightCompleted.mock.calls[0];
-    expect(projectPath).toBe("D:/repo");
+    // Capture is now scope-keyed, not path-keyed, so a flight in a remote
+    // workspace files under that workspace's `ssh:` key. This flight has no
+    // workspace, so it resolves to a plain local scope on its own path.
+    const [payload, scope] = mocks.captureFlightCompleted.mock.calls[0];
+    expect(scope).toEqual({ kind: "local", projectPath: "D:/repo", workspaceId: null });
     expect(payload).toMatchObject({
       flightId: "flight-1",
       flightTitle: "Flight",
@@ -707,8 +729,11 @@ describe("asyncFlightStore flight-completion memory capture", () => {
     await useAsyncFlightStore.getState().cancelAttempt("flight-1", "att-b");
 
     expect(mocks.captureFlightCompleted).toHaveBeenCalledTimes(1);
-    const [payload, projectPath] = mocks.captureFlightCompleted.mock.calls[0];
-    expect(projectPath).toBe("D:/repo");
+    // Capture is now scope-keyed, not path-keyed, so a flight in a remote
+    // workspace files under that workspace's `ssh:` key. This flight has no
+    // workspace, so it resolves to a plain local scope on its own path.
+    const [payload, scope] = mocks.captureFlightCompleted.mock.calls[0];
+    expect(scope).toEqual({ kind: "local", projectPath: "D:/repo", workspaceId: null });
     expect(payload).toMatchObject({ flightId: "flight-1", flightTitle: "Flight" });
   });
 
@@ -765,6 +790,55 @@ describe("asyncFlightStore flight-prompt injection gate", () => {
     expect(mocks.createApiConversation).toHaveBeenCalledWith(
       expect.objectContaining({ initialMessage: promptArg }),
     );
+  });
+
+  it("briefs an all-ssh launch with that server's remote scope", async () => {
+    // Previously ANY non-local target skipped the brief entirely, so a remote
+    // flight could never receive project memory.
+    useMemorySettingsStore.getState().setInjectIntoFlightPrompts(true);
+    mocks.launchFlightAsync.mockResolvedValue([attempt()]);
+
+    await useAsyncFlightStore
+      .getState()
+      .launchAsync("flight-1", "Do it", [sshTarget("srv-1", "/srv/app")]);
+
+    expect(mocks.composeMemoryBrief).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "ssh", serverId: "srv-1", remotePath: "/srv/app" }),
+      expect.anything(),
+    );
+    // The flight's own (local-mirror) projectPath must not leak into the scope.
+    const scopeArg = mocks.composeMemoryBrief.mock.calls[0][0] as Record<string, unknown>;
+    expect(scopeArg.projectPath).toBe("/srv/app");
+  });
+
+  it("refuses to brief an ssh fan-out that spans two servers", async () => {
+    // No single scope owns this launch, so no memory rides along rather than
+    // an arbitrary server's memory being handed to the other's agent.
+    useMemorySettingsStore.getState().setInjectIntoFlightPrompts(true);
+    mocks.launchFlightAsync.mockResolvedValue([attempt()]);
+
+    await useAsyncFlightStore
+      .getState()
+      .launchAsync("flight-1", "Do it", [
+        sshTarget("srv-1", "/srv/app"),
+        sshTarget("srv-2", "/srv/app"),
+      ]);
+
+    expect(mocks.composeMemoryBrief).not.toHaveBeenCalled();
+  });
+
+  it("refuses to brief a mixed local + ssh fan-out", async () => {
+    useMemorySettingsStore.getState().setInjectIntoFlightPrompts(true);
+    mocks.launchFlightAsync.mockResolvedValue([attempt()]);
+
+    await useAsyncFlightStore
+      .getState()
+      .launchAsync("flight-1", "Do it", [
+        localTarget("d:/repo"),
+        sshTarget("srv-1", "/srv/app"),
+      ]);
+
+    expect(mocks.composeMemoryBrief).not.toHaveBeenCalled();
   });
 
   it("sends the raw prompt when injectIntoFlightPrompts is off", async () => {

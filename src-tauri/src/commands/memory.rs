@@ -49,7 +49,10 @@ pub async fn summarize_session(
     project_path: String,
     session_log: String,
 ) -> Result<String, String> {
-    super::validate_project_path(&project_path)?;
+    // A memory *scope*, not a path we open: a local scope is still validated as
+    // a real directory, and a remote `ssh:<serverId>:<path>` scope is accepted
+    // so remote workspaces can be summarized at all.
+    super::validate_memory_scope(&project_path)?;
     super::validate_input_size(&session_log, super::MAX_INPUT_SIZE, "Session log")?;
     run_memory_turn(
         routing,
@@ -67,7 +70,8 @@ pub async fn extract_patterns(
     project_path: String,
     summaries: String,
 ) -> Result<String, String> {
-    super::validate_project_path(&project_path)?;
+    // See `summarize_session` — scope label, not a path this command opens.
+    super::validate_memory_scope(&project_path)?;
     super::validate_input_size(&summaries, super::MAX_INPUT_SIZE, "Summaries")?;
     run_memory_turn(
         routing,

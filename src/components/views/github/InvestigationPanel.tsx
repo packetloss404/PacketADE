@@ -164,7 +164,9 @@ export function InvestigationPanel({
     setFeedback(null);
     try {
       captureManually({
-        projectPath: resolvedProjectPath,
+        // GitHub investigations are always run against a checked-out local
+        // repo, so this surface has no remote scope to resolve.
+        scope: resolvedProjectPath,
         source: "github-investigation",
         summary: `Investigation for #${issue.number}: ${issue.title}`,
         body: investigation,

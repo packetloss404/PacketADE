@@ -26,6 +26,7 @@ import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { useToast } from "@/components/ui/Toast";
 import { reassignTargetFromEscalation } from "@/lib/flightCoordination";
 import { buildCoordinationMemoryInput } from "@/lib/memoryCapture";
+import { memoryScopeForWorkspace } from "@/lib/memoryWriteScope";
 import { getProviderForAgent } from "@/lib/api-models";
 import type { AgentCli } from "@/stores/agentTaskStore";
 import { useMemoryStore } from "@/stores/memoryStore";
@@ -1105,7 +1106,13 @@ function TimelineRow({ event, flight }: { event: CoordinationEvent; flight: Flig
 
   const doCapture = () => {
     if (captured) return;
-    captureManually(buildCoordinationMemoryInput(event, flight));
+    captureManually(
+      buildCoordinationMemoryInput(
+        event,
+        flight,
+        memoryScopeForWorkspace(flight.workspaceId, flight.projectPath),
+      ),
+    );
     setCaptured(true);
   };
 

@@ -204,6 +204,12 @@ export function ProjectNotesTab({
           <span className="text-text-muted">{remote.serverName}</span>, so its notes are not
           reachable from here. Open the project locally to read or edit them.
         </p>
+        <p className="max-w-[380px] text-[10px] leading-relaxed text-text-faint">
+          Everything else in Memory does work for this workspace — sessions, flights and saved
+          notes are recorded against{" "}
+          <span className="text-text-muted">{remote.serverName}</span> and injected back into its
+          agents. Only these Markdown files are local-only.
+        </p>
       </div>
     );
   }

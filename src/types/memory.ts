@@ -64,7 +64,18 @@ export interface ManualNotePayload {
 interface MemoryEventBase {
   id: string;
   timestamp: number;
+  /**
+   * The scope this record belongs to. Either a plain filesystem path (local
+   * scope) or a synthetic scope key — `ssh:<serverId>:<remotePath>` for a
+   * remote workspace. Always stamped through `memoryStore.memoryWriteKey`.
+   */
   projectPath: string;
+  /**
+   * Set only by the opt-in "adopt into this remote workspace" migration: the
+   * plain path this record carried before it was adopted. Its presence is what
+   * makes the adoption reversible, and it is never written by normal capture.
+   */
+  legacyProjectPath?: string;
   provenance?: ProvenanceEnvelope;
 }
 
@@ -88,6 +99,8 @@ export interface LearnedPattern {
    * back-compat with patterns extracted before the field existed —
    * legacy entries are treated as "global" and match every project. */
   projectPath?: string;
+  /** See `MemoryEventBase.legacyProjectPath` — reversible-adoption marker. */
+  legacyProjectPath?: string;
   /** v0.8-H: pinned patterns sort first in the injected context and
    * are exempt from the `capPatterns` confidence-based eviction. */
   pinned?: boolean;

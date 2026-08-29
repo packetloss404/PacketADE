@@ -68,6 +68,43 @@ pub fn validate_project_path(path: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Longest accepted memory scope label. Generous for a deep remote path,
+/// far short of anything that could be used as a smuggling channel.
+const MAX_MEMORY_SCOPE_LEN: usize = 1024;
+
+/// Validate a *memory scope label*.
+///
+/// The aux-LLM memory commands (`summarize_session`, `extract_patterns`) take a
+/// scope only to attribute the request — neither one opens, reads, writes, or
+/// executes anything at that location, and the value never reaches the model.
+/// A LOCAL scope is still a real directory and is validated as one. A REMOTE
+/// scope is the frontend's `ssh:<serverId>:<remotePath>` key, which names a
+/// directory on another host and therefore cannot pass an `is_dir` check on
+/// this machine; rejecting it is what kept remote workspaces from ever getting
+/// a session summary or a learned pattern.
+pub fn validate_memory_scope(scope: &str) -> Result<(), String> {
+    if scope.is_empty() {
+        return Err("Memory scope cannot be empty".to_string());
+    }
+    if scope.len() > MAX_MEMORY_SCOPE_LEN {
+        return Err("Memory scope is too long".to_string());
+    }
+    if scope.contains('\0') {
+        return Err("Memory scope contains an invalid character".to_string());
+    }
+    if let Some(rest) = scope.strip_prefix("ssh:") {
+        // `ssh:<serverId>:<remotePath>` — both halves must be present, so a
+        // bare "ssh:" cannot be used to skip validation entirely.
+        return match rest.split_once(':') {
+            Some((server_id, remote_path)) if !server_id.is_empty() && !remote_path.is_empty() => {
+                Ok(())
+            }
+            _ => Err(format!("Malformed remote memory scope: {}", scope)),
+        };
+    }
+    validate_project_path(scope)
+}
+
 /// Check that a path does not escape above the given workspace root via `..` or symlinks.
 pub fn is_within_workspace(path: &str, workspace: &str) -> Result<(), String> {
     let canonical_workspace = std::fs::canonicalize(workspace)
@@ -153,6 +190,36 @@ mod tests {
     fn validate_project_path_rejects_relative() {
         let result = validate_project_path("relative/path");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn memory_scope_accepts_remote_scope_key() {
+        // The whole point: a remote scope names a directory on ANOTHER host, so
+        // it can never pass an is_dir check here.
+        assert!(validate_memory_scope("ssh:srv-1:/srv/app").is_ok());
+        assert!(validate_memory_scope("ssh:srv-1:c:/srv/app").is_ok());
+    }
+
+    #[test]
+    fn memory_scope_rejects_malformed_remote_keys() {
+        assert!(validate_memory_scope("ssh:").is_err());
+        assert!(validate_memory_scope("ssh:srv-1").is_err());
+        assert!(validate_memory_scope("ssh::/srv/app").is_err());
+        assert!(validate_memory_scope("ssh:srv-1:").is_err());
+    }
+
+    #[test]
+    fn memory_scope_still_validates_local_paths_as_directories() {
+        assert!(validate_memory_scope("").is_err());
+        assert!(validate_memory_scope("relative/path").is_err());
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert!(validate_memory_scope(dir.path().to_str().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn memory_scope_rejects_oversized_and_nul_bearing_labels() {
+        assert!(validate_memory_scope(&"x".repeat(MAX_MEMORY_SCOPE_LEN + 1)).is_err());
+        assert!(validate_memory_scope("ssh:srv-1:/srv/\0app").is_err());
     }
 
     #[test]
