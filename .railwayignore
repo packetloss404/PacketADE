@@ -1,0 +1,12 @@
+# Railway only needs the docs source and the generator; the Dockerfile copies
+# exactly those. Keeping the upload small keeps deploys fast.
+src/
+src-tauri/
+agent-sidecar/
+e2e/
+dev/
+node_modules/
+target/
+dist/
+*.md
+!docs/**/*.md
