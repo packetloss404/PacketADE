@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, RefreshCw, Trash2, Eye, X } from "lucide-react";
 import { listCrashes, readCrash, deleteCrash, type CrashEntry } from "@/lib/tauri";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
+import { formatDateTime } from "@/lib/time";
 
 export function CrashViewerCard() {
   const [crashes, setCrashes] = useState<CrashEntry[]>([]);
@@ -48,7 +49,8 @@ export function CrashViewerCard() {
   function formatTimestamp(ts: string): string {
     const n = Number(ts);
     if (!Number.isFinite(n)) return ts;
-    return new Date(n * 1000).toLocaleString();
+    // Settings → Date & Time owns the zone; a bare toLocaleString ignored it.
+    return formatDateTime(n * 1000);
   }
 
   return (

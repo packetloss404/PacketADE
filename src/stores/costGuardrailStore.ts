@@ -128,6 +128,7 @@ export const useCostGuardrailStore = create<CostGuardrailStore>((set, get) => {
           currentUsd: analyticsTodayCost(data),
           limitUsd: state.dailyLimitUsd,
           warningRatio: state.warningThresholdPercent / 100,
+          hardStopRatio: state.hardStopThresholdPercent / 100,
           overrideUntil: state.overrideUntilByKey[costGuardrailKey.daily],
         }),
         evaluateCostGuardrail({
@@ -136,6 +137,7 @@ export const useCostGuardrailStore = create<CostGuardrailStore>((set, get) => {
           currentUsd: data.currentMonthCostUsd ?? data.totalCostUsd,
           limitUsd: state.monthlyLimitUsd,
           warningRatio: state.warningThresholdPercent / 100,
+          hardStopRatio: state.hardStopThresholdPercent / 100,
           overrideUntil: state.overrideUntilByKey[costGuardrailKey.monthly],
         }),
       ];
@@ -148,6 +150,7 @@ export const useCostGuardrailStore = create<CostGuardrailStore>((set, get) => {
             currentUsd: providerCost(data, providerSource),
             limitUsd: state.providerLimitsUsd[providerSource] ?? null,
             warningRatio: state.warningThresholdPercent / 100,
+            hardStopRatio: state.hardStopThresholdPercent / 100,
             overrideUntil: state.overrideUntilByKey[costGuardrailKey.provider(providerSource)],
           }),
         );
@@ -182,6 +185,7 @@ export async function assertCostGuardrailsAllowLaunch(
       currentUsd: 0,
       limitUsd: state.sessionLimitUsd,
       warningRatio: state.warningThresholdPercent / 100,
+      hardStopRatio: state.hardStopThresholdPercent / 100,
       overrideUntil: state.overrideUntilByKey[costGuardrailKey.session],
     }),
   );
@@ -194,6 +198,7 @@ export async function assertCostGuardrailsAllowLaunch(
         currentUsd: flight?.totalCost ?? 0,
         limitUsd: state.flightLimitsUsd[flightId] ?? null,
         warningRatio: state.warningThresholdPercent / 100,
+        hardStopRatio: state.hardStopThresholdPercent / 100,
         overrideUntil: state.overrideUntilByKey[costGuardrailKey.flight(flightId)],
       }),
     );

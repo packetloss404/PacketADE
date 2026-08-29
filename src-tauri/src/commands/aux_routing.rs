@@ -198,6 +198,41 @@ mod tests {
         assert!(rows.iter().all(|r| r.is_err()));
     }
 
+    /// The three task classes the Settings card flags as "not routed yet"
+    /// must stay the three that really are unrouted.
+    ///
+    /// `src/types/routing.ts::AUX_TASK_CLASS_CAVEATS` tells the user that
+    /// `issue-investigate` and `agent-chat` still shell out to the local
+    /// Claude CLI — so the pin in that table does not apply, and the task
+    /// runs on whatever login the CLI holds, possibly a subscription. When
+    /// either moves onto the seam, delete its caveat there; otherwise
+    /// Settings swaps over-claiming for under-claiming.
+    #[test]
+    fn unrouted_aux_surfaces_stay_declared() {
+        let github = include_str!("github.rs");
+        let insights = include_str!("insights.rs");
+        assert!(
+            github.contains("run_claude("),
+            "github_investigate_issue moved off the Claude CLI - remove the \
+             issue-investigate entry from AUX_TASK_CLASS_CAVEATS in src/types/routing.ts"
+        );
+        assert!(
+            insights.contains("claude_command()"),
+            "ask_agent_chat_stream moved off the Claude CLI - remove the \
+             agent-chat entry from AUX_TASK_CLASS_CAVEATS in src/types/routing.ts"
+        );
+        // Neither surface resolves an auxiliary route today. The moment one
+        // does, its Settings row stops lying and the caveat must go.
+        assert!(
+            !github.contains("AuxTaskClass::IssueInvestigate"),
+            "github.rs now resolves IssueInvestigate - drop its AUX_TASK_CLASS_CAVEATS entry"
+        );
+        assert!(
+            !insights.contains("AuxTaskClass::AgentChat"),
+            "insights.rs now resolves AgentChat - drop its AUX_TASK_CLASS_CAVEATS entry"
+        );
+    }
+
     #[test]
     fn unknown_task_class_ids_are_ignored_not_fatal() {
         // A newer frontend pushing a task class this build doesn't know must

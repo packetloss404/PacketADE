@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BYPASS_FLAGS,
   bypassCaveat,
+  bypassDefaultCaveat,
   bypassStatusLabel,
   supportsBypassFlag,
   unsupportedBypassAgents,
@@ -64,5 +65,20 @@ describe("bypass flags", () => {
     const caveat = bypassCaveat(["codex", "opencode", "packetcode"]);
     expect(caveat).toContain("OpenCode and PacketCode");
     expect(caveat).toContain("no equivalent CLI flag");
+  });
+
+  /**
+   * FAULT: Settings → Workspace defaults set the app-wide default for this
+   * toggle with no caveat at all, while the creation modal and the workspace
+   * header both carried one. The default has no pane list to inspect, so it
+   * must speak for every CLI the PTY allowlist can launch.
+   */
+  it("gives the app-wide default the same caveat, over every launchable CLI", () => {
+    const caveat = bypassDefaultCaveat();
+    expect(caveat).toContain("OpenCode and PacketCode");
+    expect(caveat).toContain("no equivalent CLI flag");
+    // It must never name a CLI that DOES honour the flag.
+    expect(caveat).not.toContain("Claude Code");
+    expect(caveat).not.toContain("Codex CLI");
   });
 });

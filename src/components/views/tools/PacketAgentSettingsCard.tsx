@@ -6,12 +6,10 @@ import {
   setPacketAgentToken,
 } from "@/lib/tauri";
 import { usePacketAgentStore } from "@/stores/packetAgentStore";
-import {
-  PACKET_AGENT_CONTRACT_COMMIT,
-  WORKER_PACKAGE_SCHEMA_VERSION,
-} from "@/types/packet-agent";
+import { PACKET_AGENT_CONTRACT_COMMIT, WORKER_PACKAGE_SCHEMA_VERSION } from "@/types/packet-agent";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { parseContractSummary, type ContractSummary } from "@/lib/packetAgentContract";
+import { formatDateTime } from "@/lib/time";
 
 export function PacketAgentSettingsCard() {
   const endpoint = usePacketAgentStore((state) => state.endpoint);
@@ -150,7 +148,7 @@ export function PacketAgentSettingsCard() {
             type="button"
             onClick={() => setPendingRemoveToken(true)}
             disabled={busy}
-            className="border-accent-red/30 hover:bg-accent-red/10 rounded border px-2 text-accent-red disabled:opacity-50"
+            className="rounded border border-accent-red/30 px-2 text-accent-red hover:bg-accent-red/10 disabled:opacity-50"
             title="Remove stored token"
           >
             <Trash2 size={12} />
@@ -203,7 +201,7 @@ export function PacketAgentSettingsCard() {
               )}
               {contract.credentialExpiresAt && (
                 <p className="mt-1 text-text-muted">
-                  Token expires {new Date(contract.credentialExpiresAt).toLocaleString()}
+                  Token expires {formatDateTime(contract.credentialExpiresAt)}
                   {contract.credentialDisplayName ? ` · ${contract.credentialDisplayName}` : ""}
                 </p>
               )}

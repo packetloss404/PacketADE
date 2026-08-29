@@ -19,7 +19,10 @@ import type { CostGuardrailSettings } from "@/lib/costGuardrails";
 
 const HELP =
   "Caps are evaluated before an agent or flight launches, and again on the " +
-  "background poll while work runs. Leave a field blank to disable that cap.";
+  "background poll while work runs. Leave a field blank to disable that cap. " +
+  "The hard stop is a share of each cap above — at 100% (the default) a launch " +
+  "is refused only once a cap is reached; lower it to stop short of the cap. " +
+  "It can never sit below the warning share, or the warning would be unreachable.";
 
 function CapField({
   label,
@@ -43,10 +46,12 @@ function CapField({
         step={step}
         value={value ?? ""}
         placeholder="off"
-        onChange={(e) => onChange(e.currentTarget.value === "" ? null : Number(e.currentTarget.value))}
+        onChange={(e) =>
+          onChange(e.currentTarget.value === "" ? null : Number(e.currentTarget.value))
+        }
         className="w-full rounded border border-bg-border bg-bg-primary px-1.5 py-1 font-mono text-[10px] text-text-primary outline-none"
       />
-      <span className="normal-case tracking-normal text-[9px] text-text-faint">{hint}</span>
+      <span className="text-[9px] normal-case tracking-normal text-text-faint">{hint}</span>
     </label>
   );
 }
@@ -74,7 +79,7 @@ function PercentField({
         onChange={(e) => onChange(Number(e.currentTarget.value))}
         className="w-full rounded border border-bg-border bg-bg-primary px-1.5 py-1 font-mono text-[10px] text-text-primary outline-none"
       />
-      <span className="normal-case tracking-normal text-[9px] text-text-faint">{hint}</span>
+      <span className="text-[9px] normal-case tracking-normal text-text-faint">{hint}</span>
     </label>
   );
 }

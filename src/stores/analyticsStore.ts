@@ -195,8 +195,7 @@ async function fireGuardrailTransitions(
 
     // Only fire on an upward transition (ok→warning, warning→limit, or a
     // straight ok→limit spike). Steady or improving levels just track.
-    const isUpward =
-      LEVEL_RANK[scope.level] > LEVEL_RANK[prev] && scope.level !== "ok";
+    const isUpward = LEVEL_RANK[scope.level] > LEVEL_RANK[prev] && scope.level !== "ok";
     if (!isUpward) {
       lastGuardrailLevelByScope[scope.scope] = scope.level;
       continue;
@@ -208,6 +207,9 @@ async function fireGuardrailTransitions(
       currentUsd: scope.spendUsd,
       limitUsd: scope.limitUsd,
       warningUsd: scope.limitUsd * warningRatio,
+      // `scopeStatus` reached "limit" via `hardStopThresholdPercent`, so the
+      // notification names the same stop the launch gate would refuse at.
+      hardStopUsd: scope.limitUsd * (settings.hardStopThresholdPercent / 100),
       percentUsed: scope.percentUsed,
       status: scope.level === "limit" ? "blocked" : "warning",
       overrideActive: false,

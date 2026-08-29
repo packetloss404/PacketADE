@@ -77,10 +77,7 @@ export const ALL_AUX_TASK_CLASSES: AuxTaskClass[] = [
   "side-chat",
 ];
 
-export const AUX_TASK_CLASS_LABELS: Record<
-  AuxTaskClass,
-  { label: string; description: string }
-> = {
+export const AUX_TASK_CLASS_LABELS: Record<AuxTaskClass, { label: string; description: string }> = {
   "spec-import": { label: "Spec import", description: "Spec / PRD → issue drafts" },
   "spec-to-flight": { label: "Spec → flight plan", description: "Spec text → structured flight" },
   "spec-to-tickets": { label: "Spec → tickets", description: "Spec text → ticket array" },
@@ -112,6 +109,29 @@ export const AUX_TASK_CLASS_LABELS: Record<
 };
 
 /**
+ * Task classes whose Settings row cannot take effect today, and why.
+ *
+ * FAULT: three of the sixteen rows were configuring nothing, with no way for a
+ * user to tell. Two of them additionally falsified the section's blanket claim
+ * that auxiliary tasks never touch a subscription login: they still shell out
+ * to the local `claude` binary, which authenticates however that CLI is logged
+ * in. The rows are KEPT rather than deleted — the pins are already persisted,
+ * the backend `AuxTaskClass` arms still exist, and `core::aux_llm` resolves
+ * them the moment a caller arrives — but each says what it does today.
+ *
+ * Drift guard: `commands/aux_routing.rs::unrouted_aux_surfaces_stay_declared`
+ * fails when one of these surfaces moves onto the seam, pointing back here.
+ */
+export const AUX_TASK_CLASS_CAVEATS: Partial<Record<AuxTaskClass, string>> = {
+  "memory-scan":
+    "Not reachable yet — the backend command exists and honours this pin, but no PacketBench surface invokes a codebase scan.",
+  "issue-investigate":
+    "Not applied yet — still runs the local Claude CLI, so it uses whatever login that CLI has, including a subscription.",
+  "agent-chat":
+    "Not applied yet — still runs the local Claude CLI, so it uses whatever login that CLI has, including a subscription.",
+};
+
+/**
  * Settings-card grouping for the auxiliary task classes. Rendered as
  * headed sections once the flat list outgrows a single screenful (>8 rows);
  * every class must appear in exactly one group.
@@ -121,7 +141,13 @@ export const AUX_TASK_CLASS_GROUPS: { label: string; classes: AuxTaskClass[] }[]
   { label: "Code Quality", classes: ["code-quality-explain", "code-quality-summarize"] },
   {
     label: "GitHub",
-    classes: ["pr-description", "pr-review", "github-catch-up", "github-triage", "issue-investigate"],
+    classes: [
+      "pr-description",
+      "pr-review",
+      "github-catch-up",
+      "github-triage",
+      "issue-investigate",
+    ],
   },
   {
     label: "Memory & flights",

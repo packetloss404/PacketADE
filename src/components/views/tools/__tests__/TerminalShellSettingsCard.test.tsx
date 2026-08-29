@@ -41,6 +41,7 @@ vi.mock("@/hooks/useTerminalShellDetection", () => ({
 }));
 
 import { TerminalShellSettingsCard } from "@/components/views/tools/TerminalShellSettingsCard";
+import { CUSTOM_SHELL_PROGRAMS, isSupportedCustomShell } from "@/lib/terminalShells";
 import { useTerminalSettingsStore } from "@/stores/terminalSettingsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type { Workspace } from "@/types/workspace";
@@ -102,5 +103,38 @@ describe("TerminalShellSettingsCard", () => {
     await waitFor(() => expect(probeTerminalShell).toHaveBeenCalledWith("powershell", "/repo"));
     expect(screen.getByText(/5\.1\.26100/)).toHaveTextContent("powershell.exe");
     expect(screen.getByText(/5\.1\.26100/)).toHaveTextContent("cwd /repo");
+  });
+
+  /**
+   * FAULT: the edit-time warning listed the accepted programs by hand and had
+   * drifted from `CUSTOM_SHELL_PROGRAMS` — it omitted `sh` and `wsl`, so the
+   * card told the user two programs were unsupported that the spawn path
+   * accepts. `resolveTerminalShellLaunch`'s fallback message already renders
+   * the real list; both now read from the same constant.
+   */
+  it("names exactly the programs the spawn path accepts", () => {
+    useTerminalSettingsStore.setState({
+      defaultShell: { profile: "custom", executable: "C:\\Tools\\nope.exe" },
+    });
+    render(<TerminalShellSettingsCard />);
+
+    const warning = screen.getByText(/Choose a supported shell executable/);
+    for (const program of CUSTOM_SHELL_PROGRAMS) {
+      expect(warning).toHaveTextContent(program);
+    }
+    expect(warning).toHaveTextContent("Auto remains the effective launch");
+  });
+
+  it("accepts a program the old hand-written list wrongly rejected", () => {
+    // `sh` and `wsl` are in CUSTOM_SHELL_PROGRAMS but were missing from the
+    // warning's copy — proof the two sources are joined, not merely similar.
+    expect(isSupportedCustomShell("/bin/sh")).toBe(true);
+    expect(isSupportedCustomShell("C:\\Windows\\System32\\wsl.exe")).toBe(true);
+
+    useTerminalSettingsStore.setState({
+      defaultShell: { profile: "custom", executable: "/bin/sh" },
+    });
+    render(<TerminalShellSettingsCard />);
+    expect(screen.queryByText(/Choose a supported shell executable/)).not.toBeInTheDocument();
   });
 });

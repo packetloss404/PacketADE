@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ExternalLink, RefreshCw, TerminalSquare } from "lucide-react";
 import { useTerminalShellDetection } from "@/hooks/useTerminalShellDetection";
 import {
+  CUSTOM_SHELL_PROGRAMS,
   formatTerminalShellArgs,
   isSupportedCustomShell,
   parseTerminalShellArgs,
@@ -280,10 +281,15 @@ function ShellChoiceEditor({
               className="w-full rounded border border-bg-border bg-bg-secondary px-2 py-1.5 font-mono text-[10px] text-text-primary focus:border-accent-green focus:outline-none disabled:opacity-50"
             />
           </label>
+          {/* FAULT: this sentence used to carry its own hand-written list,
+              which had drifted from `CUSTOM_SHELL_PROGRAMS` — it omitted `sh`
+              and `wsl`, so the card refused two programs the spawn path
+              actually accepts. Both the edit-time warning and the spawn-time
+              `fallbackReason` now name the same list. */}
           {!customValid && (
             <p className="text-[9px] text-accent-amber md:col-span-2">
-              Choose a supported shell executable such as pwsh, powershell, cmd, bash, zsh, fish,
-              nu, or xonsh. Auto remains the effective launch until this is valid.
+              Choose a supported shell executable ({CUSTOM_SHELL_PROGRAMS.join(", ")}). Auto remains
+              the effective launch until this is valid.
             </p>
           )}
         </div>

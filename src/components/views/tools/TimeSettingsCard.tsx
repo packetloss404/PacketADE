@@ -25,22 +25,20 @@ export function TimeSettingsCard() {
   const effective = stored && isValidTimeZone(stored) ? stored : host;
 
   return (
-    <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
-      <h3 className="text-xs font-semibold text-text-primary mb-3 flex items-center gap-2">
+    <div className="rounded-lg border border-bg-border bg-bg-secondary p-4">
+      <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold text-text-primary">
         <Clock size={12} className="text-accent-green" aria-hidden="true" />
         Date &amp; Time
       </h3>
 
-      <p className="mb-3 text-[10px] text-text-muted leading-snug">
-        The zone every date and time in PacketBench is displayed in. Stored as a
-        zone name, so daylight saving is applied correctly to each timestamp
-        rather than a single fixed offset.
+      <p className="mb-3 text-[10px] leading-snug text-text-muted">
+        The zone dates and times are displayed in. Stored as a zone name, so daylight saving is
+        applied correctly to each timestamp rather than a single fixed offset. It reaches every
+        surface that formats through <span className="font-mono">lib/time</span>; a few older views
+        still format against the host zone directly and are called out below.
       </p>
 
-      <label
-        htmlFor="tz-select"
-        className="mb-1 block text-[10px] font-medium text-text-secondary"
-      >
+      <label htmlFor="tz-select" className="mb-1 block text-[10px] font-medium text-text-secondary">
         Time zone
       </label>
       <select
@@ -52,9 +50,7 @@ export function TimeSettingsCard() {
         <option value={SYSTEM}>
           System default — {host} ({timeZoneOffsetLabel(host)})
         </option>
-        {storedIsUnknown && (
-          <option value={stored}>{stored} — not known to this system</option>
-        )}
+        {storedIsUnknown && <option value={stored}>{stored} — not known to this system</option>}
         {zones.map((zone) => (
           <option key={zone} value={zone}>
             {zone} ({timeZoneOffsetLabel(zone)})
@@ -63,23 +59,30 @@ export function TimeSettingsCard() {
       </select>
 
       <p className="mt-2 text-[10px] text-text-muted" role="status">
-        Now in {effective}: <span className="text-text-secondary">{formatDateTime(Date.now())}</span>
+        Now in {effective}:{" "}
+        <span className="text-text-secondary">{formatDateTime(Date.now())}</span>
       </p>
 
       {storedIsUnknown && (
-        <p className="mt-2 text-[10px] text-accent-amber leading-snug" role="alert">
-          The saved zone <span className="font-mono">{stored}</span> is not one this
-          system recognises, so dates are being shown in {host} instead. Pick a
-          zone from the list to clear this.
+        <p className="mt-2 text-[10px] leading-snug text-accent-amber" role="alert">
+          The saved zone <span className="font-mono">{stored}</span> is not one this system
+          recognises, so dates are being shown in {host} instead. Pick a zone from the list to clear
+          this.
         </p>
       )}
 
-      <p className="mt-3 border-t border-bg-border pt-2 text-[10px] text-text-muted leading-snug">
-        Dictation analytics — streaks, hourly activity, and the daily and weekly
-        totals — are still grouped by <span className="font-mono">UTC</span> days
-        in the backend and do not yet follow this setting. Away from UTC they can
-        disagree with the timestamps shown elsewhere for entries near midnight.
-        The Analytics tab says so inline rather than leaving it to this card.
+      <p className="mt-3 border-t border-bg-border pt-2 text-[10px] leading-snug text-text-muted">
+        Dictation analytics — streaks, hourly activity, and the daily and weekly totals — are still
+        grouped by <span className="font-mono">UTC</span> days in the backend and do not yet follow
+        this setting. Away from UTC they can disagree with the timestamps shown elsewhere for
+        entries near midnight. The Analytics tab says so inline rather than leaving it to this card.
+      </p>
+
+      <p className="mt-2 text-[10px] leading-snug text-text-muted">
+        Still on the host zone: History, the Issue detail pane, Code Quality run stamps, and the
+        Memory project-notes list. They format dates without going through{" "}
+        <span className="font-mono">lib/time</span>, so away from the host zone they can disagree
+        with the rest of the app.
       </p>
     </div>
   );

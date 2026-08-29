@@ -5,6 +5,7 @@ import { useAgentStore } from "@/stores/agentStore";
 import {
   ALL_AUX_TASK_CLASSES,
   ALL_TASK_TYPES,
+  AUX_TASK_CLASS_CAVEATS,
   AUX_TASK_CLASS_GROUPS,
   AUX_TASK_CLASS_LABELS,
   TASK_TYPE_LABELS,
@@ -60,15 +61,15 @@ export function ProviderRoutingCard() {
   }
 
   return (
-    <div className="bg-bg-secondary border border-bg-border rounded-lg p-4 col-span-2">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-semibold text-text-primary flex items-center gap-2">
+    <div className="col-span-2 rounded-lg border border-bg-border bg-bg-secondary p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 text-xs font-semibold text-text-primary">
           <Route size={12} className="text-accent-blue" />
           AI Provider Routing
         </h3>
         <button
           onClick={resetToDefaults}
-          className="flex items-center gap-1 px-2 py-1 text-[10px] text-text-muted hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
+          className="flex items-center gap-1 rounded px-2 py-1 text-[10px] text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
           title="Reset all to defaults"
         >
           <RotateCcw size={10} />
@@ -76,17 +77,23 @@ export function ProviderRoutingCard() {
         </button>
       </div>
 
-      <p className="text-[10px] text-text-muted mb-3">
+      <p className="mb-3 text-[10px] text-text-muted">
         Assign a preferred AI agent and model for each workflow role. Tasks auto-fill from these
         defaults, and automatic Flight launches (such as GitHub → Draft patch) use the
         Implementation role. Only API executors can run a Flight attempt.
       </p>
 
       {/* Header row */}
-      <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 mb-1.5 px-3">
-        <span className="text-[9px] text-text-muted uppercase tracking-wider font-medium">Role</span>
-        <span className="text-[9px] text-text-muted uppercase tracking-wider font-medium">Agent</span>
-        <span className="text-[9px] text-text-muted uppercase tracking-wider font-medium">Model</span>
+      <div className="mb-1.5 grid grid-cols-[1fr_1fr_1fr] gap-2 px-3">
+        <span className="text-[9px] font-medium uppercase tracking-wider text-text-muted">
+          Role
+        </span>
+        <span className="text-[9px] font-medium uppercase tracking-wider text-text-muted">
+          Agent
+        </span>
+        <span className="text-[9px] font-medium uppercase tracking-wider text-text-muted">
+          Model
+        </span>
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -101,11 +108,11 @@ export function ProviderRoutingCard() {
           return (
             <div
               key={taskType}
-              className="grid grid-cols-[1fr_1fr_1fr] gap-2 items-center px-3 py-2 bg-bg-primary border border-bg-border rounded"
+              className="grid grid-cols-[1fr_1fr_1fr] items-center gap-2 rounded border border-bg-border bg-bg-primary px-3 py-2"
             >
               {/* Role label */}
               <div className="min-w-0">
-                <div className="text-[11px] text-text-primary font-medium">{meta.label}</div>
+                <div className="text-[11px] font-medium text-text-primary">{meta.label}</div>
                 <div className="text-[9px] text-text-muted">{meta.description}</div>
               </div>
 
@@ -113,12 +120,13 @@ export function ProviderRoutingCard() {
               <select
                 value={agentId}
                 onChange={(e) => handleAgentChange(taskType, e.target.value)}
-                className="bg-bg-elevated border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:border-accent-green truncate"
+                className="truncate rounded border border-bg-border bg-bg-elevated px-2 py-1 text-[11px] text-text-primary focus:border-accent-green focus:outline-none"
               >
                 <optgroup label="CLI agents">
                   {agents.map((a) => (
                     <option key={a.id} value={a.id}>
-                      {a.name}{!a.installed ? " (not installed)" : ""}
+                      {a.name}
+                      {!a.installed ? " (not installed)" : ""}
                     </option>
                   ))}
                 </optgroup>
@@ -135,7 +143,7 @@ export function ProviderRoutingCard() {
               <select
                 value={modelValue ?? ""}
                 onChange={(e) => handleModelChange(taskType, e.target.value || null)}
-                className={`bg-bg-elevated border border-bg-border rounded px-2 py-1 text-[11px] focus:outline-none focus:border-accent-green truncate ${
+                className={`truncate rounded border border-bg-border bg-bg-elevated px-2 py-1 text-[11px] focus:border-accent-green focus:outline-none ${
                   agent && !agent.installed ? "text-text-muted" : "text-text-primary"
                 }`}
               >
@@ -244,12 +252,12 @@ function AuxRoutingSection() {
   }
 
   return (
-    <div className="mt-5 pt-4 border-t border-bg-border">
-      <div className="flex items-center justify-between mb-1.5">
+    <div className="mt-5 border-t border-bg-border pt-4">
+      <div className="mb-1.5 flex items-center justify-between">
         <h4 className="text-[11px] font-semibold text-text-primary">Auxiliary AI tasks</h4>
         <button
           onClick={resetAuxToDefaults}
-          className="flex items-center gap-1 px-2 py-1 text-[10px] text-text-muted hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
+          className="flex items-center gap-1 rounded px-2 py-1 text-[10px] text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
           title="Reset every auxiliary task to Auto"
         >
           <RotateCcw size={10} />
@@ -257,17 +265,24 @@ function AuxRoutingSection() {
         </button>
       </div>
 
-      <p className="text-[10px] text-text-muted mb-3">
-        Short generation tasks PacketBench runs for you. <span className="text-text-secondary">Auto</span>{" "}
-        picks the cheapest provider you have an API key for. These never use a Claude or
-        ChatGPT subscription login.
+      <p className="mb-3 text-[10px] text-text-muted">
+        Short generation tasks PacketBench runs for you.{" "}
+        <span className="text-text-secondary">Auto</span> picks the cheapest provider you have an
+        API key for. No task routed through this table uses a Claude or ChatGPT subscription login —
+        a row flagged below is not routed through it yet and says what it does instead.
       </p>
 
-      <div className="grid grid-cols-[1fr_0.9fr_0.9fr_1.1fr] gap-2 mb-1.5 px-3">
-        <span className="text-[9px] text-text-muted uppercase tracking-wider font-medium">Task</span>
-        <span className="text-[9px] text-text-muted uppercase tracking-wider font-medium">Provider</span>
-        <span className="text-[9px] text-text-muted uppercase tracking-wider font-medium">Model</span>
-        <span className="text-[9px] text-text-muted uppercase tracking-wider font-medium">
+      <div className="mb-1.5 grid grid-cols-[1fr_0.9fr_0.9fr_1.1fr] gap-2 px-3">
+        <span className="text-[9px] font-medium uppercase tracking-wider text-text-muted">
+          Task
+        </span>
+        <span className="text-[9px] font-medium uppercase tracking-wider text-text-muted">
+          Provider
+        </span>
+        <span className="text-[9px] font-medium uppercase tracking-wider text-text-muted">
+          Model
+        </span>
+        <span className="text-[9px] font-medium uppercase tracking-wider text-text-muted">
           Resolves to
         </span>
       </div>
@@ -280,7 +295,7 @@ function AuxRoutingSection() {
       ).map((group) => (
         <div key={group.label || "all"} className="mb-2 last:mb-0">
           {group.label && (
-            <h5 className="text-[9px] font-semibold uppercase tracking-wider text-text-muted mt-2.5 mb-1 px-1">
+            <h5 className="mb-1 mt-2.5 px-1 text-[9px] font-semibold uppercase tracking-wider text-text-muted">
               {group.label}
             </h5>
           )}
@@ -289,6 +304,7 @@ function AuxRoutingSection() {
               const mapping = auxMappings.find((m) => m.taskClass === taskClass);
               const meta = AUX_TASK_CLASS_LABELS[taskClass];
               const resolved = describeResolution(taskClass);
+              const caveat = AUX_TASK_CLASS_CAVEATS[taskClass];
               const pinnedProvider = mapping?.provider ?? null;
               const models = pinnedProvider ? modelOptionsFor(pinnedProvider) : [];
               const isOllamaPin = pinnedProvider === "ollama";
@@ -296,18 +312,24 @@ function AuxRoutingSection() {
               return (
                 <div
                   key={taskClass}
-                  className="grid grid-cols-[1fr_0.9fr_0.9fr_1.1fr] gap-2 items-center px-3 py-2 bg-bg-primary border border-bg-border rounded"
+                  className="grid grid-cols-[1fr_0.9fr_0.9fr_1.1fr] items-center gap-2 rounded border border-bg-border bg-bg-primary px-3 py-2"
                 >
                   <div className="min-w-0">
-                    <div className="text-[11px] text-text-primary font-medium">{meta.label}</div>
+                    <div className="text-[11px] font-medium text-text-primary">{meta.label}</div>
                     <div className="text-[9px] text-text-muted">{meta.description}</div>
+                    {caveat && (
+                      <div className="mt-0.5 flex items-start gap-1 text-[9px] text-accent-amber">
+                        <AlertTriangle size={9} className="mt-px shrink-0" />
+                        <span>{caveat}</span>
+                      </div>
+                    )}
                   </div>
 
                   <select
                     aria-label={`${meta.label} provider`}
                     value={pinnedProvider ?? ""}
                     onChange={(e) => handleProviderChange(taskClass, e.target.value)}
-                    className="bg-bg-elevated border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:border-accent-green truncate"
+                    className="truncate rounded border border-bg-border bg-bg-elevated px-2 py-1 text-[11px] text-text-primary focus:border-accent-green focus:outline-none"
                   >
                     <option value="">Auto (cheapest configured)</option>
                     {providers.map((p) => (
@@ -326,18 +348,14 @@ function AuxRoutingSection() {
                     value={mapping?.model ?? ""}
                     onChange={(e) => handleModelChange(taskClass, e.target.value)}
                     disabled={!pinnedProvider}
-                    className={`bg-bg-elevated border rounded px-2 py-1 text-[11px] focus:outline-none focus:border-accent-green truncate disabled:opacity-40 ${
+                    className={`truncate rounded border bg-bg-elevated px-2 py-1 text-[11px] focus:border-accent-green focus:outline-none disabled:opacity-40 ${
                       isOllamaPin && !mapping?.model
                         ? "border-accent-red/60 text-accent-red"
                         : "border-bg-border text-text-primary"
                     }`}
                   >
                     <option value="">
-                      {!pinnedProvider
-                        ? "—"
-                        : isOllamaPin
-                          ? "Pick a model…"
-                          : "Provider default"}
+                      {!pinnedProvider ? "—" : isOllamaPin ? "Pick a model…" : "Provider default"}
                     </option>
                     {models.map((m) => (
                       <option key={m.value} value={m.value}>
@@ -347,7 +365,7 @@ function AuxRoutingSection() {
                   </select>
 
                   <div
-                    className={`text-[10px] min-w-0 flex items-start gap-1 ${
+                    className={`flex min-w-0 items-start gap-1 text-[10px] ${
                       resolved.error ? "text-accent-red" : "text-text-secondary"
                     }`}
                   >
