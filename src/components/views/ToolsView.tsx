@@ -82,6 +82,20 @@ const GROUP_ICONS: Record<SettingsGroup, typeof Wrench> = {
   "security-diagnostics": ShieldCheck,
 };
 
+/**
+ * Consequence line for retiring an epic/label that issues still carry. The
+ * store detaches it from those issues, which the user cannot see from the chip
+ * they clicked — so the confirm says it out loud. No usage → no callout.
+ */
+function tagUsageWarning(count: number, entityLabel: string): string[] {
+  if (count === 0) return [];
+  const one = count === 1;
+  return [
+    `${count} ${one ? "issue has" : "issues have"} this ${entityLabel} — ` +
+      `it is removed from ${one ? "it" : "them"} too.`,
+  ];
+}
+
 export function ToolsView() {
   const initialTarget = useAppStore.getState().settingsTarget;
   const projectPath = useLayoutStore((s) => s.projectPath);
@@ -90,8 +104,14 @@ export function ToolsView() {
   const setTicketPrefix = useIssueStore((s) => s.setTicketPrefix);
   const addEpic = useIssueStore((s) => s.addEpic);
   const addLabel = useIssueStore((s) => s.addLabel);
+  const removeEpic = useIssueStore((s) => s.removeEpic);
+  const removeLabel = useIssueStore((s) => s.removeLabel);
   const epics = useIssueStore((s) => s.epics);
   const labels = useIssueStore((s) => s.labels);
+  // Removing an epic/label also rewrites the issues carrying it, so the confirm
+  // has to state how many. Read the issues here rather than teaching the
+  // generic TagListCard about the issue model.
+  const issues = useIssueStore((s) => s.issues);
   const [activeSection, setActiveSection] = useState<SettingsSection>(
     normalizeSettingsTarget(initialTarget),
   );
@@ -351,6 +371,11 @@ export function ToolsView() {
                 title="Epics"
                 items={epics}
                 onAdd={addEpic}
+                onRemove={removeEpic}
+                entityLabel="epic"
+                removeWarnings={(epic) =>
+                  tagUsageWarning(issues.filter((i) => i.epic === epic).length, "epic")
+                }
                 tagClassName="bg-accent-purple/15 text-accent-purple"
                 placeholder="New epic..."
               />
@@ -358,6 +383,11 @@ export function ToolsView() {
                 title="Labels"
                 items={labels}
                 onAdd={addLabel}
+                onRemove={removeLabel}
+                entityLabel="label"
+                removeWarnings={(label) =>
+                  tagUsageWarning(issues.filter((i) => i.labels.includes(label)).length, "label")
+                }
                 tagClassName="bg-bg-elevated text-text-muted"
                 placeholder="New label..."
               />

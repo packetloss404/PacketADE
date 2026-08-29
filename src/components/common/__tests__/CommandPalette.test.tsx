@@ -75,7 +75,7 @@ describe("CommandPalette route coverage", () => {
     ["Workspace", "workspace"],
     ["Issues Board", "issues"],
     ["Session History", "history"],
-    ["GitHub", "github"],
+    ["Git Hosts", "github"],
     ["Memory", "memory"],
     ["Settings", "tools"],
   ] as const)("keeps the pre-existing %s destination", (label, view) => {

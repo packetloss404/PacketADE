@@ -20,6 +20,7 @@ import {
   routePaletteLabel,
   routeStatusLabel,
 } from "@/lib/routeRegistry";
+import { settingsDefinitionForSection } from "@/lib/settingsNavigation";
 import { normalizeView, type CoreView } from "@/stores/appStore";
 import { moduleRegistry } from "@/modules/registry";
 
@@ -120,9 +121,18 @@ describe("Left Rail placement", () => {
 
   it("labels the rail entries as shipped", () => {
     expect(ROUTE_REGISTRY.flights.label).toBe("Flight Deck");
-    // P2 rename target ("Git Hosts") lives in this one row.
-    expect(ROUTE_REGISTRY.github.label).toBe("GitHub");
+    // The rail row must keep agreeing with the pane heading in `GitHubView`
+    // and the Settings section label, all three of which say "Git Hosts".
+    expect(ROUTE_REGISTRY.github.label).toBe("Git Hosts");
     expect(ROUTE_REGISTRY.tools.label).toBe("Settings");
+  });
+
+  it("names the git-host route the same way Settings does", () => {
+    // The rail said "GitHub" while the pane heading and the Settings section
+    // both said "Git Hosts" — one product surface, two names. The route
+    // serves GitHub *and* self-hosted Gitea/Forgejo, so "Git Hosts" is the
+    // accurate one and this asserts the two tables cannot drift apart again.
+    expect(ROUTE_REGISTRY.github.label).toBe(settingsDefinitionForSection("github").label);
   });
 });
 

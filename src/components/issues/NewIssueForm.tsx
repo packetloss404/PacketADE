@@ -21,6 +21,7 @@ export function NewIssueForm({ defaultStatus, onClose }: NewIssueFormProps) {
   const issues = useIssueStore((s) => s.issues);
   const addBlockedBy = useIssueStore((s) => s.addBlockedBy);
   const addBlocks = useIssueStore((s) => s.addBlocks);
+  const statusOptions = useIssueStore((s) => s.getColumns());
 
   const flights = useFlightStore((s) => s.flights);
   const addIssueToFlight = useFlightStore((s) => s.addIssueToFlight);
@@ -179,17 +180,23 @@ export function NewIssueForm({ defaultStatus, onClose }: NewIssueFormProps) {
               <label className="block text-[10px] text-text-muted mb-1 uppercase tracking-wider">
                 Status
               </label>
+              {/* Options come from the store's own status table rather than a
+                  hand-written list. The list used to omit `backlog`, `up_next`
+                  and `in_review` — the three statuses v0.8.5 added — so opening
+                  this dialog from the Backlog, Up Next or In Review column
+                  handed a controlled <select> a value with no matching
+                  <option> and it rendered blank. Deriving the options means the
+                  picker can never drift from `IssueStatus` again. */}
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as IssueStatus)}
                 className="w-full bg-bg-primary border border-bg-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent-green"
               >
-                <option value="todo">To Do</option>
-                <option value="in_progress">In Progress</option>
-                <option value="qa">QA</option>
-                <option value="done">Done</option>
-                <option value="blocked">Blocked</option>
-                <option value="needs_human">Needs Human</option>
+                {statusOptions.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.label}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
