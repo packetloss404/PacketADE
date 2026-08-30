@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { MCP_CATALOG, materializeCatalogCommand } from "@/lib/mcpCatalog";
+import { mcpRootsEnforced } from "@/lib/mcpRoots";
 import { diagnoseMcpServer } from "@/lib/tauri";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useLayoutStore } from "@/stores/layoutStore";
@@ -20,6 +21,7 @@ import { defaultMcpTrustProfile, useMcpTrustStore } from "@/stores/mcpTrustStore
 import { useProvenanceAuditStore } from "@/stores/provenanceAuditStore";
 import { mcpServerId, type McpCatalogManifest, type McpServerEntry } from "@/types/mcp";
 import { McpProviderCard } from "./McpProviderCard";
+import { McpRootsEditor } from "./McpRootsEditor";
 import { McpServersCard } from "./McpServersCard";
 
 function catalogServerName(manifest: McpCatalogManifest): string {
@@ -384,10 +386,15 @@ export function McpHubCard() {
                       />
                     </div>
 
-                    <div className="mt-2 text-[9px] text-text-muted">
-                      Roots:{" "}
-                      {profile.allowedRoots.length > 0 ? profile.allowedRoots.join(", ") : "none"}
-                    </div>
+                    <McpRootsEditor
+                      serverLabel={server.name}
+                      roots={profile.allowedRoots}
+                      workspacePath={profile.workspacePath ?? projectPath}
+                      enforced={mcpRootsEnforced(profile.denialFloors)}
+                      onChange={(allowedRoots, detail) =>
+                        updateTrust(server, { allowedRoots }, detail)
+                      }
+                    />
                     {diagnostic?.tools.length ? (
                       <div className="mt-2 flex flex-wrap gap-1">
                         {diagnostic.tools.map((tool) => {
