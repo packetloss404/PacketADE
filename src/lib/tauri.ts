@@ -2465,14 +2465,41 @@ export type DeviceFlowStatus = "authorized" | "pending" | "slow_down" | "error";
 export interface DeviceFlowPoll {
   status: DeviceFlowStatus;
   message: string | null;
+  /**
+   * Opaque handle to the credential GitHub minted and Rust parked in memory —
+   * present only on `authorized`. It is NOT the token: a device-flow token
+   * never crosses into the frontend at all. Pass it to
+   * {@link githubDeviceFlowProbePending} to check it and
+   * {@link githubDeviceFlowCommit} to accept it.
+   */
+  pendingId: string | null;
 }
 
 export async function githubDeviceFlowStart(): Promise<DeviceFlowStart> {
   return invoke<DeviceFlowStart>("github_device_flow_start");
 }
 
+/**
+ * Poll for authorization. On `authorized` nothing has been saved yet — the
+ * credential is parked in Rust behind `pendingId` until it has been probed and
+ * committed, so a device-flow token gets the same validate-then-save ordering
+ * as a pasted one.
+ */
 export async function githubDeviceFlowPoll(deviceCode: string): Promise<DeviceFlowPoll> {
   return invoke<DeviceFlowPoll>("github_device_flow_poll", { deviceCode });
+}
+
+// The probe over a parked credential lives in `lib/gitHostProbe.ts` alongside
+// the pasted-token probe it shares a result type with.
+
+/** Accept a probed credential into the keyring. Refused if no probe passed. */
+export async function githubDeviceFlowCommit(pendingId: string): Promise<void> {
+  return invoke("github_device_flow_commit", { pendingId });
+}
+
+/** Drop a parked credential the user walked away from. Idempotent. */
+export async function githubDeviceFlowDiscard(pendingId: string): Promise<void> {
+  return invoke("github_device_flow_discard", { pendingId });
 }
 
 /** Whether an OAuth app client id is configured — gate the device-flow button on this. */

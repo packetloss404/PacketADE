@@ -13,7 +13,7 @@ use commands::api_agent::ApiAgentState;
 use commands::code_quality_autofix::CodeQualityAutoFixState;
 use commands::dictation::audio::create_dictation_state;
 use commands::dictation::whisper::WhisperState;
-use commands::github::create_github_auth_state;
+use commands::github::{create_device_auth_state, create_github_auth_state};
 use commands::pty::create_shared_pty_manager;
 use commands::quality_runner::QualityRunnerState;
 use tauri::Manager;
@@ -209,6 +209,7 @@ pub fn run() {
         // Restore the last window size/position on launch; saves on close.
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(create_github_auth_state())
+        .manage(create_device_auth_state())
         .manage(create_shared_pty_manager())
         .manage(create_dictation_state())
         .manage(WhisperState::default())
@@ -417,6 +418,9 @@ pub fn run() {
             commands::git_host_probe::git_host_probe_credential,
             commands::github::github_device_flow_start,
             commands::github::github_device_flow_poll,
+            commands::github::github_device_flow_probe_pending,
+            commands::github::github_device_flow_commit,
+            commands::github::github_device_flow_discard,
             commands::github::github_oauth_configured,
             commands::github::github_list_releases,
             commands::github::github_list_repos,

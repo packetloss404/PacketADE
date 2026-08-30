@@ -17,10 +17,23 @@
 // token is a parameter to `save` and to the probe request, and lives nowhere
 // else. See `gitHostProbe.ts` for the transport contract.
 
-import type { GitHostKind } from "@/lib/tauri";
-import { githubSetToken, gitHostAddConnection, gitHostAddGitea } from "@/lib/tauri";
+import type { DeviceFlowPoll, DeviceFlowStart, GitHostKind } from "@/lib/tauri";
+import {
+  githubDeviceFlowCommit,
+  githubDeviceFlowDiscard,
+  githubDeviceFlowPoll,
+  githubDeviceFlowStart,
+  githubOauthConfigured,
+  githubSetToken,
+  gitHostAddConnection,
+  gitHostAddGitea,
+} from "@/lib/tauri";
 import { GITHUB_CONNECTION_ID } from "@/lib/git-hosts";
-import type { GitHostProbeOutcome, GitHostProbeResult } from "@/lib/gitHostProbe";
+import {
+  probePendingDeviceCredential,
+  type GitHostProbeOutcome,
+  type GitHostProbeResult,
+} from "@/lib/gitHostProbe";
 
 // ---------------------------------------------------------------------------
 // Descriptor
@@ -60,6 +73,48 @@ export interface GitHostProbeSpec {
   loginFields: string[];
 }
 
+/**
+ * A second way to obtain a credential: authorise in a browser instead of
+ * creating and pasting a token.
+ *
+ * This is a descriptor capability, not a GitHub special case in the wizard.
+ * The wizard knows only "this host may have a browser flow"; every step of
+ * running one — availability, start, poll, probe, accept, abandon — is supplied
+ * here, exactly as `save` and `tokenCreateUrl` are for the paste path. Another
+ * forge with a device or OAuth flow adds one of these and gets the same UI.
+ *
+ * SECURITY: none of these functions returns a credential. The token a browser
+ * authorisation mints is held in Rust and named by an opaque `pendingId`; that
+ * is the only thing that crosses back, which is why this path can offer the
+ * same validate-before-save ordering as a pasted token without the frontend
+ * ever holding the secret.
+ */
+export interface GitHostDeviceAuthSpec {
+  /** The button. */
+  actionLabel: string;
+  /** One line under it, saying what is about to happen. */
+  blurb: string;
+  /** What the browser authorisation will ask the user to grant. */
+  requestedScopes: string[];
+  /**
+   * Whether THIS BUILD can run the flow at all. GitHub's needs an OAuth app
+   * client id baked in or set in the environment; without one, `start` can only
+   * fail, so the wizard must not offer the option. Never throws — a probe
+   * failure means "not available".
+   */
+  isAvailable: () => Promise<boolean>;
+  /** Begin; returns the user code and where to enter it. */
+  start: () => Promise<DeviceFlowStart>;
+  /** One poll tick. `authorized` carries the `pendingId`, never a token. */
+  poll: (deviceCode: string) => Promise<DeviceFlowPoll>;
+  /** Validate the parked credential — same probe, same result, same verdicts. */
+  probe: (pendingId: string, spec: GitHostProbeSpec) => Promise<GitHostProbeResult>;
+  /** Accept it into the keyring. Refused unless `probe` has passed. */
+  commit: (pendingId: string) => Promise<{ connectionId: string }>;
+  /** Throw it away — the user cancelled, went back, or closed the wizard. */
+  discard: (pendingId: string) => Promise<void>;
+}
+
 /** How a validated credential becomes a persisted connection. */
 export interface GitHostSaveInput {
   /** Normalised origin — empty string for hosts with a fixed base URL. */
@@ -92,6 +147,12 @@ export interface GitHostWizardDescriptor {
   tokenCreateHint: string;
   scopes: GitHostScopeRequirement[];
   probe: GitHostProbeSpec;
+  /**
+   * Present when this host can also be connected by authorising in a browser.
+   * Absent means "pasting a token is the only way", which is the shape every
+   * self-hosted forge here has.
+   */
+  deviceAuth?: GitHostDeviceAuthSpec;
   /**
    * Persist the validated credential. Runs only after a green probe. Must route
    * the token straight to an existing keyring-backed Tauri command.
@@ -129,6 +190,25 @@ const GITHUB_DESCRIPTOR: GitHostWizardDescriptor = {
     accept: "application/vnd.github+json",
     scopeHeader: "x-oauth-scopes",
     loginFields: ["login", "name"],
+  },
+  // GitHub's OAuth device flow. The scopes it asks for are the ones listed
+  // above, and because an OAuth token still reports its grants on
+  // `x-oauth-scopes`, the probe checks them exactly as it does for a pasted
+  // token — this path gets the same nine verdicts, not a thinner set.
+  deviceAuth: {
+    actionLabel: "Sign in with GitHub",
+    blurb: "Authorise in your browser — nothing to create, copy, or paste.",
+    // Mirrors GITHUB_DEVICE_SCOPES in commands/github.rs.
+    requestedScopes: ["repo", "read:org", "notifications"],
+    isAvailable: () => githubOauthConfigured().catch(() => false),
+    start: githubDeviceFlowStart,
+    poll: githubDeviceFlowPoll,
+    probe: probePendingDeviceCredential,
+    commit: async (pendingId) => {
+      await githubDeviceFlowCommit(pendingId);
+      return { connectionId: GITHUB_CONNECTION_ID };
+    },
+    discard: githubDeviceFlowDiscard,
   },
   save: async ({ token }) => {
     // The singleton GitHub connection: one keyring entry, fixed id.
@@ -294,14 +374,26 @@ const STEP_TITLES: Record<WizardStep, string> = {
  * The steps for a given descriptor. `null` (nothing picked yet) yields the
  * host-picker step alone, so the progress rail doesn't promise steps that may
  * not apply to whatever the user ends up choosing.
+ *
+ * `deviceAuthOffered` only renames the credential step: a host where the user
+ * can authorise in a browser is not "Access token", and calling it that is how
+ * the browser option went unnoticed in the first place. It is deliberately NOT
+ * an extra step — making the choice cost a click would tax the paste path to
+ * advertise the other one.
  */
-export function wizardSteps(descriptor: GitHostWizardDescriptor | null): WizardStepMeta[] {
+export function wizardSteps(
+  descriptor: GitHostWizardDescriptor | null,
+  options: { deviceAuthOffered?: boolean } = {},
+): WizardStepMeta[] {
   const ids: WizardStep[] = ["host"];
   if (descriptor) {
     if (descriptor.needsInstanceUrl) ids.push("instance");
     ids.push("token", "verify", "done");
   }
-  return ids.map((id) => ({ id, title: STEP_TITLES[id] }));
+  return ids.map((id) => ({
+    id,
+    title: id === "token" && options.deviceAuthOffered ? "Sign in" : STEP_TITLES[id],
+  }));
 }
 
 // ---------------------------------------------------------------------------

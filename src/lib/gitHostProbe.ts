@@ -14,6 +14,11 @@
 //
 // There is no fourth. The token is never returned by any of them, never placed
 // in a store, and never interpolated into a message.
+//
+// A credential obtained by browser authorisation (GitHub's device flow) never
+// enters the frontend at all: Rust parks it and hands back an opaque handle.
+// `probePendingDeviceCredential` below is the same probe over that handle, so
+// the two credential kinds reach the same `verdictFor` with the same evidence.
 
 import { invoke } from "@tauri-apps/api/core";
 import type { GitHostProbeSpec } from "@/lib/gitHostWizard";
@@ -68,5 +73,39 @@ export async function probeGitHostCredential(
       loginFields: spec.loginFields,
       token,
     },
+  });
+}
+
+/** The descriptor's probe block, wire-shaped. No credential in it. */
+export function probeSpecPayload(spec: GitHostProbeSpec) {
+  return {
+    apiPrefix: spec.apiPrefix,
+    identityPath: spec.identityPath,
+    authScheme: spec.authScheme,
+    accept: spec.accept ?? null,
+    scopeHeader: spec.scopeHeader ?? null,
+    scopePath: spec.scopePath ?? null,
+    scopeField: spec.scopeField ?? null,
+    loginFields: spec.loginFields,
+  };
+}
+
+/**
+ * Validate a credential a browser authorisation just minted, which this
+ * frontend has never seen and never will: Rust holds it, and `pendingId` is an
+ * opaque handle to it. Same command family, same result type, same verdicts —
+ * the only difference from {@link probeGitHostCredential} is who is holding the
+ * secret, which is the whole point.
+ *
+ * The origin is NOT a parameter: Rust pins it to the host that minted the
+ * credential, so nothing here can redirect it elsewhere.
+ */
+export async function probePendingDeviceCredential(
+  pendingId: string,
+  spec: GitHostProbeSpec,
+): Promise<GitHostProbeResult> {
+  return invoke<GitHostProbeResult>("github_device_flow_probe_pending", {
+    pendingId,
+    probe: probeSpecPayload(spec),
   });
 }

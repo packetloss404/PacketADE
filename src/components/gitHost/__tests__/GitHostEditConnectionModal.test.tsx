@@ -22,6 +22,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/gitHostProbe", () => ({
   probeGitHostCredential: (...args: unknown[]) => mocks.probe(...args),
+  // The descriptor module imports this for the browser-authorisation path.
+  // Rotation never uses it; it must exist for the module to load.
+  probePendingDeviceCredential: vi.fn(),
 }));
 
 const GITLAB: GitHostConnectionInfo = {
