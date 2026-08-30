@@ -116,6 +116,48 @@ fn pinned_cli_binary(command: &str) -> Option<String> {
     pinned_cli_binary_in(&dirs::home_dir()?, command)
 }
 
+/// An allowlisted CLI at one of its product's documented off-`PATH` install
+/// locations. Only `packetcode` has any: it is the one agent whose installer
+/// deliberately does not mutate `PATH` (`install.ps1` says so in as many
+/// words), so its stable destination has to be part of normal discovery.
+///
+/// FAULT this exists to fix: the install directory was already searched by the
+/// two surfaces that decide whether packetcode is PRESENT —
+/// [`crate::core::agent::resolve_catalog_path`], which sets the agent
+/// catalog's `installed` flag, and [`crate::acp::install_dir_candidates`],
+/// which resolves the ACP engine — but NOT by the PTY resolver that actually
+/// launches the pane. A packetcode installed exactly where its own installer
+/// puts it was therefore reported as installed, offered in the Workspace agent
+/// list, and then died the instant the user opened a pane, because `where
+/// packetcode` finds nothing and the spawn fell through to the bare name.
+/// Detection and launch have to agree on where the binary is; anything else is
+/// an affordance that only ever fails.
+///
+/// Deliberately the LAST tier on both platforms: an app pin is an explicit
+/// override and a `PATH` hit is the user's own environment, and neither should
+/// lose to a directory nobody named.
+fn installed_cli_binary(command: &str) -> Option<String> {
+    installed_cli_binary_among(command, crate::core::agent::packetcode_fallback_candidates)
+}
+
+/// [`installed_cli_binary`]'s rule as a pure function of its candidate list, so
+/// the which-command and first-hit-wins halves are testable without depending
+/// on what happens to be installed on the machine running the tests.
+fn installed_cli_binary_among(
+    command: &str,
+    candidates: impl FnOnce() -> Vec<std::path::PathBuf>,
+) -> Option<String> {
+    if command_program_name(command) != "packetcode" {
+        return None;
+    }
+    let hit = candidates()
+        .into_iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .find(|path| crate::core::agent::is_executable_file(path))?;
+    info!(command, resolved = %hit, "Using CLI binary from its documented install directory");
+    Some(hit)
+}
+
 /// Resolve a CLI agent command to an absolute executable path.
 ///
 /// 1. An app pin (`~/.packetbench/<command>-bin` containing an absolute path) wins
@@ -127,7 +169,11 @@ fn pinned_cli_binary(command: &str) -> Option<String> {
 ///    directory in the cwd (e.g. a stray `~/claude` dir while cwd is the home
 ///    dir) would shadow the real CLI and make `exec` fail (EACCES on a dir →
 ///    "[Session ended]"). Returning an absolute path avoids that entirely.
-/// 3. If it can't be resolved, return the name unchanged and let it fail loudly.
+/// 3. Then the product's documented install directories — see
+///    [`installed_cli_binary`], which is what keeps launch in step with the
+///    detection that put the agent on screen.
+/// 4. If it still can't be resolved, return the name unchanged and let it fail
+///    loudly.
 #[cfg(not(windows))]
 fn resolve_pinned_cli_binary(command: &str) -> String {
     if let Some(pinned) = pinned_cli_binary(command) {
@@ -150,6 +196,10 @@ fn resolve_pinned_cli_binary(command: &str) -> String {
                 }
             }
         }
+    }
+
+    if let Some(installed) = installed_cli_binary(command) {
+        return installed;
     }
 
     command.to_string()
@@ -270,6 +320,14 @@ fn resolve_windows_command(command: &str) -> String {
                 return "codex.cmd".to_string();
             }
         }
+    }
+
+    // `where` found nothing spawnable. Before giving up, look where the
+    // product's own installer puts the binary — the tier that keeps this
+    // resolver in step with the detection that decided the agent was
+    // installed. See `installed_cli_binary`.
+    if let Some(installed) = installed_cli_binary(command) {
+        return installed;
     }
 
     windows_command_lookup_fallback(command)
@@ -1620,6 +1678,71 @@ mod tests {
         )
         .expect("pin");
         assert_eq!(pinned_cli_binary_in(home.path(), "claude"), None);
+    }
+
+    #[test]
+    fn install_dir_tier_covers_packetcode_and_nothing_else() {
+        // packetcode is the only allowlisted CLI whose installer declines to
+        // touch PATH, so it is the only one with an install-directory tier.
+        // Widening this to another agent would start launching binaries from
+        // directories that agent's installer never claimed.
+        for command in ALLOWED_COMMANDS.iter().filter(|c| **c != "packetcode") {
+            assert_eq!(
+                installed_cli_binary(command),
+                None,
+                "{command} must not resolve through packetcode's install directories"
+            );
+        }
+    }
+
+    #[test]
+    fn install_dir_tier_takes_the_first_candidate_that_exists() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let missing = dir.path().join("missing").join("packetcode");
+        let present = dir.path().join("packetcode");
+        std::fs::write(&present, b"#!/bin/sh\n").expect("binary");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&present, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod");
+        }
+
+        // A candidate that isn't there is skipped rather than handed back — the
+        // whole point is to return something spawnable, not merely documented.
+        let candidates = vec![missing, present.clone()];
+        assert_eq!(
+            installed_cli_binary_among("packetcode", || candidates),
+            Some(present.to_string_lossy().into_owned())
+        );
+    }
+
+    #[test]
+    fn install_dir_tier_yields_nothing_when_no_candidate_exists() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let candidates = vec![dir.path().join("nope")];
+        // Falling through is what lets the caller return the bare name and fail
+        // loudly, instead of handing the PTY a path that cannot spawn.
+        assert_eq!(installed_cli_binary_among("packetcode", || candidates), None);
+    }
+
+    #[test]
+    fn install_detection_and_the_pty_tier_search_the_same_places() {
+        // The invariant the tier exists for: the PTY launcher's install
+        // directories must be the ones `core::agent::resolve_catalog_path`
+        // searches to set the catalog's `installed` flag. If the two lists
+        // could differ, the agent list could offer a pane the launcher cannot
+        // open — which is precisely the fault this tier fixes.
+        let candidates = crate::core::agent::packetcode_fallback_candidates();
+        assert!(!candidates.is_empty(), "packetcode must have install candidates");
+        for candidate in &candidates {
+            assert_eq!(
+                candidate.file_stem().and_then(|s| s.to_str()),
+                Some("packetcode"),
+                "{} is not a packetcode binary",
+                candidate.display()
+            );
+        }
     }
 
     #[test]

@@ -389,6 +389,8 @@ describe("Composer (chat variant) — ACP engine surfaces", () => {
         sessionsRename: true,
         sessionsUsage: true,
         modelsList: true,
+        commandsList: null,
+        projectFiles: null,
         mcpList: true,
         mcpDefaults: true,
         permissionModes: ["ask", "read-only"],

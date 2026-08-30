@@ -89,6 +89,8 @@ function engineCaps(
       sessionsRename: true,
       sessionsUsage: true,
       modelsList: false,
+      commandsList: null,
+      projectFiles: null,
       mcpList: true,
       mcpDefaults: true,
       permissionModes: ["ask", "read-only"],

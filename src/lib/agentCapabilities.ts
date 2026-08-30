@@ -381,19 +381,21 @@ export function capabilitiesFor(
 
     // FileMentionPopover is gated on having a project path to scan — and, on
     // ACP, on the engine being able to answer `_packetcode/project/files`.
-    fileMentions: !!conversation.projectPath && (engine ? engineAdvertised : true),
+    fileMentions:
+      !!conversation.projectPath && (engine ? (engine.packetcode.projectFiles ?? engineAdvertised) : true),
     // Builtin + project + template slash commands are offered to every chat
     // session — except an ACP session whose engine cannot serve
     // `_packetcode/commands/list`.
     //
-    // Neither extension has a flag of its own in the vendor block, so
-    // `advertised` is the gate: it is the only signal that separates a
-    // packetcode engine (which serves the whole `_packetcode/*` family) from
-    // an older one or a third-party ACP agent (where both calls answer
-    // method-not-found and the backend degrades them to an EMPTY list). An
-    // affordance that can only ever open an empty menu is exactly the silent
-    // no-op the pane's governing rule says to hide.
-    slashCommands: engine ? engineAdvertised : true,
+    // Each extension now has a flag of its own in the vendor block
+    // (`projectFiles` / `commandsList`), and a flag that was actually sent is
+    // the authoritative answer. `advertised` remains the fallback for the two
+    // engines that send neither: one that predates the flags, and a
+    // third-party ACP agent with no `_packetcode` block at all (where both
+    // calls answer method-not-found and the backend degrades them to an EMPTY
+    // list). An affordance that can only ever open an empty menu is exactly
+    // the silent no-op the pane's governing rule says to hide.
+    slashCommands: engine ? (engine.packetcode.commandsList ?? engineAdvertised) : true,
     // Attachment staging (paste/drop) is variant-agnostic in the composer.
     imageAttachments: true,
 

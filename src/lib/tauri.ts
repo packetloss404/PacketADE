@@ -3973,6 +3973,20 @@ export interface AcpPacketcodeCapabilities {
   sessionsUsage: boolean;
   /** Gates `acpListModels`. */
   modelsList: boolean;
+  /**
+   * Gates `acpListCommands` — the composer's "/" menu.
+   *
+   * Three-state, because this flag arrived after the vendor block itself:
+   * `null` means the engine did not say (it advertised `_packetcode` but
+   * predates the flag), and the caller must fall back to `advertised` rather
+   * than hide a menu that works. `false` is the engine disowning the method.
+   */
+  commandsList: boolean | null;
+  /**
+   * Gates `acpSearchFiles` — the composer's "@" menu. Same three-state rule
+   * as `commandsList`.
+   */
+  projectFiles: boolean | null;
   /** Gates the CONFIGURED half of `acpListMcpServers` — the disclosure list. */
   mcpList: boolean;
   /** Whether this engine reads an omitted `mcpServers` as "use your own". */

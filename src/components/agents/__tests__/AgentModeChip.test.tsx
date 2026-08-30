@@ -181,6 +181,8 @@ describe("AgentModeChip", () => {
             sessionsRename: true,
             sessionsUsage: true,
             modelsList: true,
+            commandsList: null,
+            projectFiles: null,
             mcpList: true,
             mcpDefaults: true,
             // What the live engine actually advertises: `plan` and `manual`
