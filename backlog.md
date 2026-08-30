@@ -90,7 +90,7 @@ These are the only current product decisions blocking implementation.
    shipped but the first served update deferred to 1.1, and an explicit "1.0 is
    NOT" list (macOS/Linux, Remote Agents, Global Undo, hosted CI, the
    environment-gated proof matrices). The owner **rejected** that definition on
-   2026-08-16; PacketBench continues the 0.x cadence (now 0.12.1) with no 1.0
+   2026-08-16; PacketBench continues the 0.x cadence (now 0.13.0) with no 1.0
    milestone. See
    [`docs/reports/fable5-review-2026-08-05.md`](./docs/reports/fable5-review-2026-08-05.md).
 
@@ -184,9 +184,9 @@ environment or packaged matrix has actually run.
   is rewritten automatically. **Not done:** remote `.agents/memory` notes, which
   need an SSH note transport, and `InvestigationPanel` still stamps a plain path
   because GitHub always works against a checked-out local repo.
-- **P2 - Packaged acceptance sections 2-5 at 0.12.1.** Section 0 (build) and
+- **P2 - Packaged acceptance sections 2-5 at 0.13.0.** Section 0 (build) and
   section 1 (migration) of
-  [`dev/acceptance-0.12.1.md`](./dev/acceptance-0.12.1.md) have run; section 1
+  [`dev/acceptance-0.13.0.md`](./dev/acceptance-0.13.0.md) have run; section 1
   found two defects, one fixed and one filed above. **Launch and lifecycle,
   dictation on real hardware, dictation analytics, and the two-display Monitor
   matrix have not run** and cannot be run from source — they need a person at
@@ -225,7 +225,7 @@ environment or packaged matrix has actually run.
 - **P1 - Packaged application acceptance.** Run the launch, lifecycle,
   accessibility, denial, credential, and real-host matrices. Build success is
   not interactive acceptance. The ordered checklist is
-  [`dev/acceptance-0.12.1.md`](./dev/acceptance-0.12.1.md), which supersedes the
+  [`dev/acceptance-0.13.0.md`](./dev/acceptance-0.13.0.md), which supersedes the
   prose scattered through
   [`dev/release-v0.10.3.md`](./dev/release-v0.10.3.md); the standard of evidence
   is [`dev/proof-audit-2026-08-01.md`](./dev/proof-audit-2026-08-01.md).

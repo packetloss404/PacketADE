@@ -7,6 +7,155 @@ For current direction, use [`ROADMAP.md`](./ROADMAP.md). For planning briefs and
 runbooks, use [`dev/README.md`](./dev/README.md). This file is history, not a
 task list.
 
+## [0.13.0] - 2026-08-30
+
+Windows artifacts, built 2026-08-30 from `49583b5a`, **unsigned**:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `PacketBench_0.13.0_x64-setup.exe` (NSIS, 85.4 MiB) | `5cb2f0554e1c34a5feb286af60d783854c2543f6743e6cec250432e48235cf1e` |
+| `PacketBench_0.13.0_x64_en-US.msi` (133.2 MiB) | `d94badc981bf00a6cb382616f9ebdbcf47ca68b6a1d2222ce53473c650be7f55` |
+
+> **Built, not accepted.** Sections 2–5 of the acceptance matrix — launch and
+> lifecycle, dictation on real hardware, analytics, and the two-display Monitor
+> matrix — have still never run. Section 1 has been executed from source and
+> against a copy of a real legacy data dir, and the 0.12.1 package was installed
+> once to confirm it registers and launches; that is the extent of it. The
+> artifacts live in `C:/Users/ianwalmsley/packetbench-build/release/bundle/`, not
+> in the repo, alongside the 0.11.0, 0.12.0 and 0.12.1 pairs — **check the
+> version in the filename before installing.**
+
+Gates at `49583b5a`: `cargo check` clean, 976 Rust lib tests (2 ignored) + 31
+`acp_stream` passing, `tsc --noEmit` 0 errors, `pnpm lint` 0 errors, `vitest run`
+2764/2764 across 286 files, `check:tauri-schema` clean.
+
+### Security — four guarantees the code did not actually make
+
+**The git-host guards were a deny-list that failed open.** Every guard read
+`if kind == Gitea { refuse }`, so any host kind they had not been told about
+sailed through to a hardcoded `api.github.com` carrying that host's repo ids and
+the configured token. `github_reply_to_pr_review_comment` had no guard at all —
+on a Gitea workspace it sent your token to GitHub. Replaced with `HostCapability`,
+an exhaustive per-capability allow-list where an unrecognised kind defaults to
+denied, so adding GitLab could not silently reintroduce the leak. Four more
+credential-selection faults went with it, including two sites hand-rolling their
+own client with the primary connection's token, and a notification URL hardcoded
+to `https://github.com` that would have linked a self-hosted user to a stranger's
+repository.
+
+**GitHub device flow wrote to the keyring before any scope check.** The poll
+persisted the credential the instant GitHub said `authorized`. The token now
+parks in process memory behind an opaque handle, `Zeroizing`, and the commit
+step refuses in Rust any handle no probe vouched for — fail-closed in the
+backend, not merely behind a disabled button.
+
+**An MCP `allowedRoots` entry of `.` or `""` was a universal allow.** Under the
+in-process runtime it reduces to an empty path, and every path starts with the
+empty path; under the sidecar it means that process's working directory. The
+value that reads like a restriction granted the machine. Refused outright by the
+new editor, with the reason stated.
+
+**MCP `allowedTools` was dead config.** It persisted and read as a restriction
+while only `port` and `allowWrites` ever reached the server. Now enforced through
+`ToolRouter::disable_route`, which hides a tool from `tools/list` *and* rejects
+it in `tools/call`, so later tools are gated by construction.
+
+### Added — GitLab, and a seam that can hold it
+
+GitLab CE/EE joins GitHub and Gitea/Forgejo. This was not a fourth constructor:
+GitHub and Gitea share a path grammar and differ only by base URL, which is why
+the seam was 205 lines. GitLab does not — `/api/v4`, projects addressed as a
+single URL-encoded `owner%2Frepo` path, merge requests, project-scoped `iid`.
+The seam split in two: outbound, a host-neutral `RepoRef` and named methods on
+`GitHost` so no caller formats a path; inbound, GitHub's wire shape stays
+canonical and GitLab payloads are projected in Rust, so no React component
+learns a third vocabulary.
+
+Repos, issues, merge requests, notes, labels, milestones, branches, releases,
+diffs, merge, pagination and subgroup paths work. Check-runs, reviews,
+notifications and AI-assist are **refused with a host-named message** rather than
+misbehaving — including `merge_method: "rebase"`, which GitLab has no parameter
+for and which would otherwise have quietly produced a merge commit.
+
+> **Note:** No request has been sent to a real GitLab server. Every path and body
+> is unit-tested; three-level subgroup encoding, `/raw_diffs` content
+> negotiation, and renamed-project redirects are unverified.
+
+### Added — guided git-host setup, editing, and browser sign-in
+
+A wizard that validates before it saves, driven by per-host descriptors rather
+than per-host branches, with nine distinct verdicts — `tls_error` separated from
+`unreachable` for the self-hosted private-CA case, `not_a_host` for a 2xx whose
+body is not an identity, and `scopes_unknown` meaning "the host did not say"
+rather than "no scopes". GitLab reports scopes at
+`/personal_access_tokens/self` rather than on a header, so the probe takes an
+optional second request — best-effort, degrading to unknown rather than to a
+rejection, because a token can be valid for the API and still unable to read its
+own metadata.
+
+Connections can now be **edited and rotated in place**. Rotation validates the
+new credential before replacing the old one and leaves the existing token
+untouched on any doubt; previously the only path was remove-and-re-add, and
+re-running the wizard minted a second connection instead of rotating. Browser
+sign-in folded into the wizard as a descriptor capability, so it and token paste
+are reachable from one place and both get scope checking.
+
+### Added — reachable features that previously were not
+
+- **Codebase scan.** `scan_codebase_memory` had no caller while Settings shipped
+  a provider picker for it. Now a Memory-pane action storing its result as an
+  ordinary note — searchable and distillable into patterns, never silently
+  injected into a launch brief. A partial walk is labelled partial rather than
+  presented as complete.
+- **A settable ACP engine path**, in Settings → Providers & Models → Provider
+  Endpoints. The engine's own installer does not touch `PATH`, so "works but is
+  invisible to the app" was the default outcome for anyone building from source.
+  The CLI Clients pin looked like the fix and is not — it feeds PTY launches
+  only, and now says so.
+- **Whisper model deletion.** The UI downloaded up to 3 GB with no way to reclaim
+  the disk. Sizes shown are real on-disk bytes, not the advertised figures.
+- **MCP allowed-roots editing**, and **dictation history removal**.
+
+### Fixed — Agents tab told you the wrong thing about your engine
+
+A `doctor --json` timeout — engine present, ran, reported no version — rendered
+as "packetcode unknown is older than the required 0.8.0". A false claim about
+the user's build, sending them to fix the wrong problem. It now has its own
+state. Separately, a packetcode installed exactly where its own installer puts
+it was reported installed, offered in the Workspace agent list, and died the
+instant a pane opened: PTY resolution had no install-directory tier.
+
+Verified end to end against a real `packetcode v0.5.1-90-g1377d4f` over stdio —
+initialize, session/new, a billed turn, session/load, session/close, and the
+negative paths. **Zero protocol divergence.**
+
+### Fixed — settings that did not do what they said
+
+- **"Hard stop at %" was ignored on the only path that blocks a launch.** The
+  status path honoured it; the enforcement path hardcoded `>= limitUsd`. One
+  control, two halves, and the half that enforces was the half ignoring the
+  setting.
+- **The memory brief's real limit was invisible.** `DEFAULT_MEMORY_BRIEF_MAX_CHARS`
+  sat behind an override no caller passed, so raising any source cap above what
+  1800 characters held did nothing. Now `briefMaxChars`. `MAX_CONTEXT_PROJECT_NOTES`
+  likewise becomes `contextMaxNotes`, joining its three sibling caps.
+- **GitLab connections were unreachable in Settings** — the card filtered for
+  Gitea under a Gitea heading, so a GitLab connection saved by the card's own
+  wizard was invisible and its keyring token had no reachable control.
+- **Editing an MCP server's scope copied instead of moving it**, leaving the same
+  name defined in two files.
+- Three auxiliary-routing rows configure nothing, and two of them falsified the
+  section's claim that these features never use a subscription login. Each now
+  carries a note, with a Rust drift-guard that fails when the surface migrates.
+
+### Changed — dead surface removed
+
+Four thin command wrappers and the 123-line checkpoints module, whose own code
+said `forkAndResend` subsumes it. Checkpoint *data* is deliberately left alone:
+the feature shipped a working button in 0.5.0 through 0.9.4, and the data-dir
+migration carries the tree forward on every rename, so upgraded users still have
+those files. The reprice pass's exclusion and its test stay.
+
 ## [0.12.1] - 2026-08-28
 
 Windows artifacts, built 2026-08-28 23:08 from `f83fad64`, **unsigned**:

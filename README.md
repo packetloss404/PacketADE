@@ -4,10 +4,10 @@
 
 PacketBench is a Tauri v2 desktop app that brings AI coding agents, planning, issue tracking, memory, and workspace management into a single native environment. It is built for running real development workflows across multiple agent CLIs without leaving the app.
 
-Source is at **0.12.1**. `v0.10.3` (2026-08-02, commit `61e0669`) remains the
+Source is at **0.13.0**. `v0.10.3` (2026-08-02, commit `61e0669`) remains the
 newest annotated tag, but `main` has advanced well past it — see
 [`CHANGELOG.md`](./CHANGELOG.md). Unsigned Windows NSIS and MSI artifacts have
-been built locally at 0.11.0, 0.12.0 and 0.12.1 but **none has been published**;
+been built locally at 0.11.0 through 0.13.0 but **none has been published**;
 the newest build on GitHub Releases is `v0.5.0` from May 2026, still carrying the
 previous `PacketADE` product name. Nothing is code signed, and no packaged
 install has completed the acceptance matrix. For the v0.10.3 record, see
@@ -35,9 +35,9 @@ deployed as its own container; edit the Markdown, not the HTML.
 - [`backlog.md`](./backlog.md) — master ledger for outstanding work.
 - [`dev/release-v0.10.3.md`](./dev/release-v0.10.3.md) — immutable tagged-source,
   gate, artifact, and hash record for `v0.10.3`. Still the newest annotated tag,
-  but no longer current source; `CHANGELOG.md` records 0.11.0, 0.12.0 and 0.12.1
+  but no longer current source; `CHANGELOG.md` records 0.11.0 through 0.13.0
   after it.
-- [`dev/acceptance-0.12.1.md`](./dev/acceptance-0.12.1.md) — the packaged
+- [`dev/acceptance-0.13.0.md`](./dev/acceptance-0.13.0.md) — the packaged
   acceptance checklist. Sections 0 and 1 have run; 2–5 have not.
 - [`dev/README.md`](./dev/README.md) — planning index, active implementation briefs, runbooks, and archive.
 - [`dev/remoteagents/README.md`](./dev/remoteagents/README.md) — canonical Remote Agents plan.
@@ -517,7 +517,7 @@ PacketBench is developed on Windows but is designed to ship on macOS and Linux a
 **Nothing current is published.** The newest build on GitHub Releases is
 `v0.5.0` from May 2026, and its installers still carry the previous `PacketADE`
 product name. Unsigned Windows NSIS and MSI artifacts exist locally for 0.11.0,
-0.12.0 and 0.12.1 but have not been uploaded, and no packaged install has
+0.12.0, 0.12.1 and 0.13.0 but have not been uploaded, and no packaged install has
 completed the acceptance matrix. Building from source is the only way to run
 current PacketBench.
 

@@ -343,10 +343,14 @@ sidecar&quot; — the implementation does not.</p>
 </tbody></table>
 <p>Gitea and Forgejo share the same <code>/api/v1</code> surface and are one host kind.</p>
 <h3 id="connecting">Connecting<a class="anchor" href="#connecting" aria-label="Link to this section">#</a></h3>
-<p><strong>GitHub</strong> — the connect screen asks for a personal access token
-(<em>&quot;Enter a personal access token with repo scope to browse repositories and
-issues.&quot;</em>, placeholder <code>ghp_xxxxxxxxxxxx</code>). An OAuth device flow also exists,
-requesting the scopes <code>repo read:org notifications</code>.</p>
+<p><strong>GitHub</strong> — the connect screen opens the guided setup wizard, which offers
+both credential kinds on one step: <strong>Sign in with GitHub</strong> (the OAuth device
+flow, requesting <code>repo read:org notifications</code>) and a pasted personal access
+token. The browser option only appears when the build has an OAuth app client
+id configured (baked in, or <code>PACKETBENCH_GITHUB_CLIENT_ID</code>); otherwise the step
+is the token field alone. Either way the credential is checked against GitHub —
+identity plus the scopes it reports on <code>x-oauth-scopes</code> — before anything is
+written to the keyring.</p>
 <p><strong>Gitea / Forgejo</strong> — added from Settings with a base URL, a label and a token.
 The token hint reads <em>&quot;Settings → Applications → Generate New Token (scope: repo,
 issue)&quot;</em>. The URL must start with <code>http://</code> or <code>https://</code>; a pasted <code>…/api/v1</code>

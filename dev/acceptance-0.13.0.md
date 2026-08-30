@@ -1,34 +1,38 @@
-# PacketBench 0.12.1 — Packaged Acceptance Matrix
+# PacketBench 0.13.0 — Packaged Acceptance Matrix
 
-Created 2026-08-28 for 0.11.0; retargeted the same day to 0.12.0 and then to
-0.12.1, each time after section 0 was re-executed against a fresh build. The
-0.12.0 bundles were superseded because four memory workstreams landed after they
-were built — they do not contain that work. This is a runnable checklist, not a
-status report. Tick rows as you go and record the evidence each one asks for.
+Created 2026-08-28 for 0.11.0, then retargeted to 0.12.0, 0.12.1 and now
+0.13.0 — each time after section 0 was re-executed against a fresh build,
+because an earlier build does not contain the work that landed after it. This is
+a runnable checklist, not a status report. Tick rows as you go and record the
+evidence each one asks for.
 
 Sections 2–5 have still never run. `dev/proof-audit-2026-08-01.md` says why that
 matters: *"fresh binaries prove compilation and bundling only."* Every green tick
-in `CHANGELOG.md` for those sections today describes source tests. **No installed
-upgrade of any `PacketBench` package has been performed.**
+in `CHANGELOG.md` for those sections today describes source tests. The 0.12.1
+package **was installed once** (2026-08-29, silently, per-user) to confirm it
+registers and launches — that is the only packaged install anyone has performed,
+and it proved exactly two rows: it appears once in Add/Remove Programs, and it
+starts.
 
 ---
 
-## 0. Build the thing you are actually testing — DONE 2026-08-28
+## 0. Build the thing you are actually testing — DONE 2026-08-30
 
-Built from `f83fad64`, **unsigned**:
+Built from `49583b5a`, **unsigned**:
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `PacketBench_0.12.1_x64-setup.exe` (NSIS, 85.3 MiB) | `5ebd455d7b2d2736179f43a4e51cee1154346db3ef03a71d94264b771bd1f28d` |
-| `PacketBench_0.12.1_x64_en-US.msi` (133.0 MiB) | `6dc6764a168f49cb18223b2af6d9ba2ff91fc731a53a9c18c0f6deda63c86ec0` |
+| `PacketBench_0.13.0_x64-setup.exe` (NSIS, 85.4 MiB) | `5cb2f0554e1c34a5feb286af60d783854c2543f6743e6cec250432e48235cf1e` |
+| `PacketBench_0.13.0_x64_en-US.msi` (133.2 MiB) | `d94badc981bf00a6cb382616f9ebdbcf47ca68b6a1d2222ce53473c650be7f55` |
 
-The 0.11.0 and 0.12.0 bundles remain on disk and are **not** what this matrix
-accepts. Check the version in the filename before installing.
+The 0.11.0, 0.12.0 and 0.12.1 bundles remain on disk and are **not** what this
+matrix accepts. Check the version in the filename before installing.
 
 They live in `C:/Users/ianwalmsley/packetbench-build/release/bundle/`, not in the
-repo. An earlier 0.12.0 pair built at 21:00 was **deleted**: that build spanned a
-source edit and could not be tied to a commit, and an installer you cannot
-attribute is worse than none.
+repo. Every build here is made from a committed tree with a clean working
+directory, so each artifact maps to exactly one commit — an earlier 0.12.0 pair
+that spanned a source edit was deleted for failing that rule, because an
+installer you cannot attribute is worse than none.
 
 ```bash
 export PATH="/c/Users/ianwalmsley/.rustup/toolchains/stable-x86_64-pc-windows-msvc/bin:$PATH" && cd /d/projects/PacketBench && pnpm tauri build
@@ -37,7 +41,7 @@ export PATH="/c/Users/ianwalmsley/.rustup/toolchains/stable-x86_64-pc-windows-ms
 Afterwards run `pnpm sidecar:install` — `prebundle` strips the sidecar's
 devDependencies. (Done for this build.)
 
-- [x] Version bumped — 0.12.0 → **0.12.1** in `package.json`,
+- [x] Version bumped — 0.12.1 → **0.13.0** in `package.json`,
       `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` (+ `Cargo.lock`)
 - [x] Rebuilt; commit, both filenames and both SHA-256s recorded in `CHANGELOG.md`
 
