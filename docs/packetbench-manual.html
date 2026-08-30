@@ -428,7 +428,7 @@ pnpm tauri build    # production build (also fetches Node + builds the sidecar)<
   <li><strong>SmartScreen / Gatekeeper blocks the installer.</strong> Builds are unsigned until code-signing certificates land; "Run anyway" / right-click-Open is currently the expected path.</li>
   <li><strong>A flight launch is blocked on an SSH server.</strong> The server has no pinned host fingerprint — re-run its connection test.</li>
   <li><strong>Dictation global shortcuts don't fire.</strong> They're an explicit opt-in toggle in Dictation settings; also check the shortcut hasn't been claimed by another app.</li>
-  <li><strong>Data from an old PacketCode install.</strong> On first boot PacketBench migrates <code>~/.packetcode</code> &rarr; <code>~/.packetbench</code>, legacy keyring entries, and <code>packetcode:*</code> localStorage keys automatically.</li>
+  <li><strong>Data from an old PacketADE install.</strong> On first boot PacketBench migrates <code>~/.packetade</code> &rarr; <code>~/.packetbench</code> and legacy <code>packetade</code> keyring entries automatically. The earlier <code>packetcode</code> migration already ran on existing installs and is no longer carried. <code>packetade:*</code> localStorage keys are copied only on a <em>source</em> build: a packaged upgrade changed the app&rsquo;s bundle identifier, so the webview starts on a fresh profile and UI preferences do not carry over.</li>
   <li><strong>Old view shortcuts changed?</strong> The number-row chords map by shifted character (<kbd>Shift</kbd>+<kbd>1</kbd> = <code>!</code>), so non-US keyboard layouts can shift which number triggers which view. This is a known caveat.</li>
 </ul>
 </section>
