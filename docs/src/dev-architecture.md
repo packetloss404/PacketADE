@@ -5,7 +5,7 @@ onto a single event contract. This page explains the process model, where state
 actually lives, and what happens between pressing Enter in the composer and text
 appearing in the transcript.
 
-Everything here is read off the source at v0.12.1. Where a doc and the code
+Everything here is read off the source at v0.13.1. Where a doc and the code
 disagree, the code wins and the disagreement is called out.
 
 ## The process model

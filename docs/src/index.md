@@ -8,7 +8,7 @@ and the project memory all sit in a single window and share state.
 It is a Tauri v2 application: a Rust backend, a React 19 frontend, and a Node
 sidecar for the two provider SDKs that need one.
 
-> **Note:** This documentation is written against source **v0.12.1**. Where
+> **Note:** This documentation is written against source **v0.13.1**. Where
 > behaviour depends on a version, the version is named. Anything not yet proven
 > on a packaged install is marked as such rather than described as if it were.
 

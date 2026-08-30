@@ -18,7 +18,7 @@ A Tauri v2 desktop application. Rust backend, React 19 + TypeScript frontend
 `portable-pty` for terminals, plus a separate Node package
 (`agent-sidecar/`) that hosts two provider SDKs and is bundled into installers.
 
-Version 0.12.1. Package manager pnpm 9.15.4. There is **no CI** — local gates
+Version 0.13.1. Package manager pnpm 9.15.4. There is **no CI** — local gates
 are the source of truth (`dev/local-quality-gates.md`).
 
 The product was renamed twice: PacketCode → PacketADE → **PacketBench**

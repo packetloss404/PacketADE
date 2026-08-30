@@ -47,13 +47,17 @@
   <main id="main" class="content">
     <article class="prose"><h1 id="install-amp-first-run">Install &amp; first run<a class="anchor" href="#install-amp-first-run" aria-label="Link to this section">#</a></h1>
 <p>PacketBench is not yet distributed the way a finished desktop app is. The
-source tree is at <strong>v0.12.1</strong>, Windows installers exist but have never been
-published, and the newest thing on GitHub Releases is four months older than
-the current code and still carries the product&#39;s previous name. Building from
-source is the honest primary path, and this page treats it as such.</p>
-<div class="callout important"><div class="callout-title">Important</div><p>Nothing here is code signed, there is no auto-updater, and no
-packaged install of PacketBench has ever been upgraded over an earlier one.
-If you want the current app, build it.</p>
+source tree is at <strong>v0.13.1</strong>, Windows installers exist but have never been
+published, and the newest thing on GitHub Releases is nearly four months older
+than the current code and still carries the product&#39;s previous name. Building
+from source is the honest primary path, and this page treats it as such.</p>
+<div class="callout important"><div class="callout-title">Important</div><p>Nothing here is code signed and there is no auto-updater. If
+you want the current app, build it.</p>
+<p>Packaged upgrades do now work, on Windows, tested twice: 0.12.1 → 0.13.0 and
+0.13.0 → 0.13.1, both silent per-user installs that exited 0, left exactly
+one entry in Add/Remove Programs, and preserved <code>~/.packetbench</code> byte for
+byte. That is the extent of what has been proven — see the caveat under
+<a href="#upgrading-a-packaged-install">Upgrading a packaged install</a>.</p>
 </div>
 <h2 id="the-state-of-distribution">The state of distribution<a class="anchor" href="#the-state-of-distribution" aria-label="Link to this section">#</a></h2>
 <p>Three separate things are easy to confuse, so they are separated here.</p>
@@ -67,12 +71,12 @@ If you want the current app, build it.</p>
 </thead>
 <tbody><tr>
 <td><strong>Source</strong></td>
-<td>v0.12.1 — <code>package.json</code>, <code>src-tauri/Cargo.toml</code> and <code>src-tauri/tauri.conf.json</code> all agree</td>
+<td>v0.13.1 — <code>package.json</code>, <code>src-tauri/Cargo.toml</code> and <code>src-tauri/tauri.conf.json</code> all agree</td>
 <td>This repository</td>
 </tr>
 <tr>
 <td><strong>Local Windows builds</strong></td>
-<td>Unsigned NSIS + MSI for 0.11.0, 0.12.0 and 0.12.1, all built 2026-08-28</td>
+<td>Unsigned NSIS + MSI for 0.11.0, 0.12.0 and 0.12.1 (built 2026-08-28), plus 0.13.0 and 0.13.1 (built 2026-08-30)</td>
 <td>The maintainer&#39;s build machine, under <code>packetbench-build/release/bundle/</code> — <strong>not</strong> in the repo, <strong>not</strong> uploaded anywhere</td>
 </tr>
 <tr>
@@ -92,7 +96,7 @@ product was still called <em>PacketADE</em> at the time. It was renamed to
 <li>predates the rename, and installs an app called PacketADE;</li>
 <li>predates the Flight Deck rework, the nine-row agent picker as it now stands,
 the sidecar protocol v6–v11 additions, project memory, dictation analytics,
-and everything else in <code>CHANGELOG.md</code> between 0.6.0 and 0.12.1;</li>
+and everything else in <code>CHANGELOG.md</code> between 0.6.0 and 0.13.1;</li>
 <li>is not an upgrade path to the current code — there is no updater to carry
 you forward from it.</li>
 </ul>
@@ -123,6 +127,49 @@ open in the usual way.</p>
 <code>tauri-plugin-updater</code> dependency, no updater plugin initialisation, and no
 <code>plugins.updater</code> block in the Tauri config. New versions are installed
 manually — or, on the path this page recommends, by pulling and rebuilding.</p>
+<h3 id="upgrading-a-packaged-install">Upgrading a packaged install<a class="anchor" href="#upgrading-a-packaged-install" aria-label="Link to this section">#</a></h3>
+<p>Installing a newer package over an older one works on Windows. It has been done
+twice, both silent per-user installs:</p>
+<div class="code-block" data-lang="powershell">
+<button class="copy" type="button" aria-label="Copy code">Copy</button>
+<pre><code>Start-Process .\PacketBench_0.13.1_x64-setup.exe -ArgumentList '/S','/CURRENTUSER' -Wait</code></pre>
+</div>
+<table>
+<thead>
+<tr>
+<th>Upgrade</th>
+<th>Date</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0.12.1 → 0.13.0</td>
+<td>2026-08-30</td>
+<td>exit 0; one Add/Remove entry; data dir preserved</td>
+</tr>
+<tr>
+<td>0.13.0 → 0.13.1</td>
+<td>2026-08-30</td>
+<td>exit 0; one Add/Remove entry; data dir byte-identical</td>
+</tr>
+</tbody></table>
+<p>Check the installer&#39;s SHA-256 against the table in <code>CHANGELOG.md</code> before
+running it — every build there is made from a committed tree with a clean
+working directory, so each artifact maps to exactly one commit.</p>
+<p>Two limits on what those runs proved:</p>
+<ul>
+<li><strong><code>localStorage</code> does not survive a <em>pre-rename</em> upgrade.</strong> WebView2 keys its
+profile by bundle identifier, and the 2026-08-26 rename moved it from
+<code>com.packetade.desktop</code> to <code>com.packetbench.desktop</code>. A package upgraded from
+a <code>PacketADE</code> build therefore gets an empty profile: twelve keys, including
+unsent composer drafts, are stranded (not deleted — the old profile stays on
+disk). This is an accepted consequence of the rename, not a bug to be fixed.
+Upgrades between two PacketBench versions are unaffected.</li>
+<li><strong>The pre-rename data-dir migration is still unproven on a real installed
+upgrade.</strong> <code>~/.packetbench</code> already exists on the machine that has been
+testing this, so the migrator correctly returns early. Proving it needs a
+host with <code>~/.packetade</code> and no <code>~/.packetbench</code>.</li>
+</ul>
 <h3 id="macos-and-linux">macOS and Linux<a class="anchor" href="#macos-and-linux" aria-label="Link to this section">#</a></h3>
 <p>Build-from-source only. No macOS or Linux artifact has ever been published.
 The per-platform prerequisites, target triples and bundle formats are in
@@ -330,15 +377,20 @@ key is present.</p>
 Claude.ai or ChatGPT subscription login for API agents — see
 <a href="agents.html">Agents &amp; conversations</a> for why.</em></p>
 <h2 id="known-limits-of-the-current-builds">Known limits of the current builds<a class="anchor" href="#known-limits-of-the-current-builds" aria-label="Link to this section">#</a></h2>
-<p>Being specific is more useful than a general disclaimer. As of 0.12.1:</p>
+<p>Being specific is more useful than a general disclaimer. As of 0.13.1:</p>
 <ul>
 <li>Sections 2–5 of the acceptance matrix — launch and lifecycle, dictation on
 real hardware, dictation analytics, and the two-display Monitor matrix —
-have <strong>never been run</strong>. They need a person at the keyboard with a headset
-attached.</li>
+are <strong>substantially unrun</strong>. They need a person at the keyboard with a
+headset attached. What has been confirmed on an installed package is narrow:
+it launches and stays up with its sidecar, and the Agents and PacketCode
+routes mount and navigate. Everything else in those sections is open.</li>
 <li>Section 1 (the migration path) has been run only from source, against a copy
-of a real legacy data directory.</li>
-<li>No installed upgrade of any PacketBench package has ever been performed.</li>
+of a real legacy data directory. The <strong>pre-rename</strong> leg — a packaged
+installer landing on a machine that has <code>~/.packetade</code> and no
+<code>~/.packetbench</code> — remains unproven.</li>
+<li>Packaged upgrades between two PacketBench versions have been performed twice
+and behaved (see <a href="#upgrading-a-packaged-install">Upgrading a packaged install</a>).</li>
 </ul>
 <p>That is why this page describes building from source rather than pointing you
 at a download.</p>
@@ -355,6 +407,7 @@ at a download.</p>
 <li class="d3"><a href="#what-the-published-download-actually-is">What the published download actually is</a></li>
 <li class="d3"><a href="#code-signing-and-smartscreen">Code signing and SmartScreen</a></li>
 <li class="d3"><a href="#no-auto-updater">No auto-updater</a></li>
+<li class="d3"><a href="#upgrading-a-packaged-install">Upgrading a packaged install</a></li>
 <li class="d3"><a href="#macos-and-linux">macOS and Linux</a></li>
 <li class="d2"><a href="#building-from-source">Building from source</a></li>
 <li class="d3"><a href="#prerequisites">Prerequisites</a></li>
