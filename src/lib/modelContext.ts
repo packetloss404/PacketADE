@@ -10,15 +10,20 @@
  * directional rather than collapsing.
  */
 const MODEL_CONTEXT_TOKENS: Record<string, number> = {
-  // Anthropic (Claude 4.x)
+  // Anthropic (Claude 5)
+  "claude-fable-5": 1_000_000,
+  "claude-opus-5": 1_000_000,
+  "claude-sonnet-5": 1_000_000,
+  // Anthropic (Claude 4.x). Opus 4.6 and Sonnet 4.6 are 1M, not the 200_000
+  // they carried here — that undersized their gauges by 5x, the same class of
+  // error this module was created to end.
   "claude-opus-4-8": 1_000_000,
   "claude-opus-4-8-1m": 1_000_000,
   "claude-opus-4-7": 1_000_000,
   "claude-opus-4-7-1m": 1_000_000,
-  "claude-opus-4-6": 200_000,
-  "claude-sonnet-4-6": 200_000,
+  "claude-opus-4-6": 1_000_000,
+  "claude-sonnet-4-6": 1_000_000,
   "claude-haiku-4-5": 200_000,
-  "claude-haiku-4-5-20251001": 200_000,
   // MiniMax — M3 supports up to 1M context; M2 family is 200k (per MiniMax docs)
   "MiniMax-M3": 1_000_000,
   "MiniMax-M2.5": 200_000,

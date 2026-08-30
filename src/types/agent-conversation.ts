@@ -127,7 +127,7 @@ export interface AgentConversation {
   mode: AgentMode;
   /** API provider (e.g., "anthropic", "openai"). Only set for API mode. */
   provider?: string;
-  /** Model identifier (e.g., "claude-sonnet-4-6-20250414"). Only set for API mode. */
+  /** Model identifier (e.g., "claude-opus-5"). Only set for API mode. */
   model?: string;
   /** Optional system prompt override. Only set for API mode. */
   systemPromptOverride?: string | null;

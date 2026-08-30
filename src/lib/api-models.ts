@@ -58,7 +58,13 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     agentCli: "api-claude-oauth",
     name: "Claude Agent SDK (API)",
     needsKey: true,
+    // Ids are the exact published strings, never date-suffixed — Anthropic's
+    // current ids are complete as written, and appending a snapshot date
+    // produces a model that does not exist. `models[0]` is the row's default
+    // for NEW conversations; persisted ones keep whatever id they stored.
     models: [
+      { label: "Claude Opus 5", value: "claude-opus-5" },
+      { label: "Claude Sonnet 5", value: "claude-sonnet-5" },
       { label: "Claude Opus 4.8", value: "claude-opus-4-8" },
       { label: "Claude Opus 4.7", value: "claude-opus-4-7" },
       { label: "Claude Sonnet 4.6", value: "claude-sonnet-4-6" },
@@ -70,12 +76,18 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     agentCli: "api-claude",
     name: "Claude (API)",
     needsKey: true,
+    // Three ids here carried a snapshot date (`claude-opus-4-6-20250415`,
+    // `claude-sonnet-4-6-20250414`, `claude-haiku-4-5-20251001`). Anthropic's
+    // published ids are complete without one, so those three named models that
+    // do not exist and would have 404'd on first use. Never append a date.
     models: [
+      { label: "Claude Opus 5", value: "claude-opus-5" },
+      { label: "Claude Sonnet 5", value: "claude-sonnet-5" },
       { label: "Claude Opus 4.8", value: "claude-opus-4-8" },
       { label: "Claude Opus 4.7", value: "claude-opus-4-7" },
-      { label: "Claude Opus 4.6", value: "claude-opus-4-6-20250415" },
-      { label: "Claude Sonnet 4.6", value: "claude-sonnet-4-6-20250414" },
-      { label: "Claude Haiku 4.5", value: "claude-haiku-4-5-20251001" },
+      { label: "Claude Opus 4.6", value: "claude-opus-4-6" },
+      { label: "Claude Sonnet 4.6", value: "claude-sonnet-4-6" },
+      { label: "Claude Haiku 4.5", value: "claude-haiku-4-5" },
     ],
   },
   // REMOVED 2026-07: `openai-codex` / `api-openai-codex`, the
