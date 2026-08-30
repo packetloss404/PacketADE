@@ -916,16 +916,19 @@ pub async fn run_probe(state: &AcpState) -> Result<EngineProbe, String> {
 /// to hand.
 pub async fn probe_engine() -> Result<EngineProbe, String> {
     let bin = resolve_engine_binary();
-    let output = timeout(
-        PROBE_TIMEOUT,
-        Command::new(&bin)
-            .args(["doctor", "--json"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output(),
-    )
-    .await;
+    let mut command = Command::new(&bin);
+    command
+        .args(["doctor", "--json"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    // Windows: without CREATE_NO_WINDOW this flashes a console window on every
+    // probe — and this probe runs on mount of BOTH agent views (the Agents
+    // view's per-provider auth badge reaches it through
+    // `acp::routing::auth_status`, and PacketCodeEngineGate probes on mount).
+    // The `taskkill` and installer spawns in this module already hide theirs.
+    crate::commands::shared::hide_window_async(&mut command);
+    let output = timeout(PROBE_TIMEOUT, command.output()).await;
 
     let output = match output {
         Err(_) => {
@@ -1041,6 +1044,10 @@ pub async fn start_engine(
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+    // Windows: the engine is a long-lived child, so without CREATE_NO_WINDOW
+    // its console window stays on screen for the whole session rather than
+    // merely flashing.
+    crate::commands::shared::hide_window_async(&mut command);
     // The engine starts one MCP subprocess per configured server per session.
     // Giving it its own process group is what makes those grandchildren
     // reapable on Unix: `kill_process_tree` signals `-pid`, which is the group

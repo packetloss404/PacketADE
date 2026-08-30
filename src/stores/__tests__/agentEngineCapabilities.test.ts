@@ -191,7 +191,7 @@ describe("agentTaskStore — ACP engine capability stamping", () => {
     });
   });
 
-  it("keeps the seeded catalog when the model query fails", async () => {
+  it("leaves engineModels unset — not empty — when the model query fails", async () => {
     acpListModelsMock.mockRejectedValue(new Error("-32603 internal"));
 
     const id = await startAcpConversation();
@@ -199,12 +199,20 @@ describe("agentTaskStore — ACP engine capability stamping", () => {
       expect((await conversationById(id))?.engineCapabilities).toBeDefined();
     });
 
-    // Capabilities landed; models did not, so the picker keeps the seeded
-    // `API_PROVIDERS` rows rather than emptying out.
+    // Capabilities landed; models did not. The distinction that matters is
+    // `undefined` vs `[]`: a FAILED query must not stamp a list at all, so a
+    // later successful stamp can still fill it. An engine that genuinely
+    // reports zero models does stamp `[]`, and that case is covered above.
+    //
+    // This used to assert `capabilitiesFor(...).models.length > 0`, which only
+    // held because the ACP catalog row carried three seeded ids. Those were a
+    // guess at the user's engine config and are gone, so the assertion now
+    // names the invariant directly instead of reaching through a fallback that
+    // is deliberately empty.
     const conversation = await conversationById(id);
     expect(conversation?.engineModels).toBeUndefined();
     const { capabilitiesFor } = await import("@/lib/agentCapabilities");
-    expect(capabilitiesFor(conversation!).models.length).toBeGreaterThan(0);
+    expect(capabilitiesFor(conversation!).models).toEqual([]);
   });
 
   it("does not query models the engine never advertised", async () => {

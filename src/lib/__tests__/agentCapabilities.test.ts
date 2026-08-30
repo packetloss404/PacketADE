@@ -386,9 +386,16 @@ describe("capabilitiesFor — engine capabilities (ACP)", () => {
     expect(capabilitiesFor(acpConv({}, { engineModels: [] })).models).toEqual([]);
   });
 
-  it("keeps the seeded catalog when the engine cannot enumerate models", () => {
+  it("falls back to the (empty) catalog when the engine cannot enumerate models", () => {
+    // The ACP row carries NO static models on purpose: which models exist is
+    // decided by the user's `~/.packetcode/config.toml`, so any id we hardcode
+    // is a guess at another program's configuration. A wrong guess used to be
+    // sent verbatim and come back as a 404 from whichever provider the engine
+    // resolved it to. Empty is the honest fallback — the engine then uses its
+    // own default. Asserted, not merely observed, so re-seeding this row has
+    // to be a deliberate act that fails here first.
     const seeded = getProviderForAgent("api-packetcode")?.models ?? [];
-    expect(seeded.length).toBeGreaterThan(0);
+    expect(seeded).toEqual([]);
     // Flag off: never asked.
     expect(capabilitiesFor(acpConv({ modelsList: false })).models).toEqual(seeded);
     // Flag on but the query failed, so nothing was stamped.

@@ -28,7 +28,6 @@
  * selected happens not to be installed. When the engine is ready the gate
  * renders `AgentsView` directly, with no wrapper element of its own.
  */
-import { API_PROVIDERS } from "@/lib/api-models";
 import { AgentsView } from "@/components/views/AgentsView";
 import { PacketCodeEngineGate } from "@/components/agents/PacketCodeEngineGate";
 import type { AgentCli } from "@/stores/agentTaskStore";
@@ -37,12 +36,22 @@ import type { AgentCli } from "@/stores/agentTaskStore";
 const PACKETCODE_AGENT: AgentCli = "api-packetcode";
 
 /**
- * Seeded default model, read from the catalog rather than duplicated — the ACP
- * engine enumerates its live models over `_packetcode/models/list`, so the
- * catalog row is only ever a first-render seed.
+ * No seeded model, deliberately.
+ *
+ * This used to be `catalog.models[0].value`, which seeded whatever id happened
+ * to sit first in the ACP catalog row. That row's ids were a guess at the
+ * user's `~/.packetcode/config.toml`, and on an engine with no Anthropic
+ * provider the seed went to OpenAI and returned `-32603 ... status 404: The
+ * model claude-opus-4-8 does not exist`. The row now carries no models at all
+ * (see `api-models.ts`), so this lookup would yield `""` regardless — it is
+ * dropped rather than left looking load-bearing.
+ *
+ * An empty model is the correct request: `acp::routing` maps it to `None` and
+ * the engine uses its own configured default, which is the only model we can
+ * be sure exists. `stampEngineCapabilities` then replaces the picker's rows
+ * with the engine's real list from `_packetcode/models/list`.
  */
-const PACKETCODE_MODEL =
-  API_PROVIDERS.find((provider) => provider.agentCli === PACKETCODE_AGENT)?.models[0]?.value ?? "";
+const PACKETCODE_MODEL = "";
 
 export function PacketCodeView() {
   return (

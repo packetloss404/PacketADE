@@ -23,10 +23,18 @@ describe("agent-catalog merged registry", () => {
     expect(faces).toContain("Custom endpoint");
     for (const c of CHAT_AGENTS) {
       expect(c.section).toBe("chat");
-      // LM2: `api-custom`'s models are a runtime-managed manual list
-      // (Settings → Provider Endpoints), so its STATIC catalog row is
-      // legitimately model-less. Every other row must carry models.
-      if (c.agentCli === "api-custom") continue;
+      // Two rows are legitimately model-less because their model list is
+      // owned by something outside this catalog:
+      //   `api-custom`     — a runtime-managed manual list (LM2, Settings →
+      //                      Provider Endpoints).
+      //   `api-packetcode` — the ACP engine enumerates its own models over
+      //                      `_packetcode/models/list`, and which ones exist
+      //                      depends on the user's `~/.packetcode/config.toml`.
+      //                      Seeding ids here guesses at another program's
+      //                      configuration; a wrong guess reached the engine
+      //                      and 404'd on whichever provider it resolved to.
+      // Every other row must carry models.
+      if (c.agentCli === "api-custom" || c.agentCli === "api-packetcode") continue;
       expect(c.defaultModel.length).toBeGreaterThan(0);
       expect(c.models.length).toBeGreaterThan(0);
     }

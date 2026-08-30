@@ -162,22 +162,31 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     // round-trip (`session/request_permission`), so every PermissionMode the
     // mode pickers offer is genuinely enforceable here.
     //
-    // The model list is SEEDED, not authoritative: the engine enumerates its
-    // live models over `_packetcode/models/list` at session time. These three
-    // exist so the picker renders something before the engine has been asked,
-    // mirroring how the Ollama row seeds common local tags ahead of
-    // `list_ollama_models`. All three ids resolve in shared/model-pricing.json
-    // and modelContext.ts, so cost/context surfaces stay honest.
+    // NO static models — the same rule as Ollama's live list and `api-custom`.
+    //
+    // This row used to seed three ids (`claude-opus-4-8`, `claude-sonnet-4-6`,
+    // `gpt-5.5`) "so the picker renders something before the engine has been
+    // asked". That seed was a GUESS AT ANOTHER PROGRAM'S CONFIGURATION, and a
+    // wrong guess is worse than an empty picker: the engine owns its own
+    // provider credentials, so which models exist is decided by the user's
+    // `~/.packetcode/config.toml`, not by us. A development machine here has
+    // providers `openai` / `codex` / `ollama` and default model `gpt-5.6-sol`
+    // — no Anthropic provider at all — so seeding `claude-opus-4-8` sent that
+    // id to OpenAI and came back as
+    // `-32603 chat completion: status 404: The model claude-opus-4-8 does not
+    // exist or you do not have access to it`.
+    //
+    // The engine enumerates its real models over `_packetcode/models/list`
+    // (`stampEngineCapabilities` fetches them; `ModelSelector` already prefers
+    // them over the catalog). Until that answer arrives we send NO model, and
+    // `acp::routing` maps an empty model to `None`, which makes the engine use
+    // its own configured default — the only correct choice available to us.
     id: "packetcode-acp",
     agentCli: "api-packetcode",
     name: "PacketCode (ACP)",
     needsKey: false,
     supportsApprovals: true,
-    models: [
-      { label: "Claude Opus 4.8", value: "claude-opus-4-8" },
-      { label: "Claude Sonnet 4.6", value: "claude-sonnet-4-6" },
-      { label: "GPT-5.5", value: "gpt-5.5" },
-    ],
+    models: [],
   },
   {
     // LM2 — user-supplied OpenAI-compatible endpoint (vLLM, LM Studio,

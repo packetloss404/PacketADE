@@ -120,6 +120,10 @@ export function ModelSelector({
 
   const isOllama = selectedAgent === "api-ollama";
   const isCustom = selectedAgent === "api-custom";
+  // The ACP engine enumerates its own models over `_packetcode/models/list`,
+  // so — like Ollama and the custom endpoint — the static catalog carries none
+  // and an empty list must not unmount the picker.
+  const isAcp = selectedAgent === "api-packetcode";
   // LM2: the custom endpoint models are a runtime-managed manual list, so
   // (like Ollama live list) the static catalog carries none.
   const { customModels, refresh: refreshCustomModels } =
@@ -135,7 +139,7 @@ export function ModelSelector({
   const modelRows = models && models.length > 0 ? models : catalogModels;
   // Ollama draws its rows from the live daemon probe, so an empty catalog is
   // expected there and must not unmount the picker.
-  if (!isOllama && !isCustom && modelRows.length === 0) return null;
+  if (!isOllama && !isCustom && !isAcp && modelRows.length === 0) return null;
 
   // Trigger label. In Ollama mode the label is the live-fetched model name
   // (just the `name` string; Ollama installs have no separate display label).
@@ -152,6 +156,12 @@ export function ModelSelector({
     }
   } else if (isCustom) {
     triggerLabel = selectedModel || "Select model";
+  } else if (isAcp && modelRows.length === 0) {
+    // No model chosen and the engine has not answered yet. Say what will
+    // actually happen — we send no model and the engine uses its configured
+    // default — rather than "Select model", which implies a choice we do not
+    // have and would invite picking a stale catalog id.
+    triggerLabel = selectedModel || "Engine default";
   } else {
     const currentModel =
       modelRows.find((m) => m.value === selectedModel) ?? modelRows[0];
@@ -315,6 +325,13 @@ export function ModelSelector({
         </span>
       ),
     });
+  } else if (isAcp && modelRows.length === 0) {
+    notice = (
+      <div className="px-3 py-1.5 text-meta text-text-muted">
+        The packetcode engine has not reported its models yet. Turns use the
+        engine&apos;s configured default until it does.
+      </div>
+    );
   } else {
     for (const m of modelRows) {
       const ctx = formatContextWindow(m.contextWindow);

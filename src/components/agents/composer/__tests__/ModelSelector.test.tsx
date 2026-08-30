@@ -58,12 +58,21 @@ describe("ModelSelector — engine models vs the seeded catalog", () => {
     expect(options).toHaveLength(2);
     expect(options[0]).toContain("glm-4.7");
     expect(options[1]).toContain("kimi-k2.5");
-    // The seeded ACP catalog row names Claude/GPT models; none may leak in.
+    // The ACP catalog row carries no static models at all, so there is nothing
+    // that COULD leak in — that emptiness is the fix, and it is asserted here
+    // so re-seeding the row fails this test rather than silently reinstating
+    // ids the user's engine may have no provider for.
     const seeded = catalogFor("api-packetcode").map((m) => m.label);
-    expect(seeded.length).toBeGreaterThan(0);
-    for (const label of seeded) {
-      expect(screen.queryByRole("option", { name: label })).toBeNull();
-    }
+    expect(seeded).toEqual([]);
+  });
+
+  it("keeps the picker mounted and names the engine default before the engine answers", () => {
+    // Regression: the ACP row's empty catalog must not unmount the picker the
+    // way an empty catalog does for a keyed provider, and the trigger must not
+    // say "Select model" — there is no choice to make yet, and offering one
+    // invites picking a stale id.
+    renderSelector({ selectedModel: "", models: [] });
+    expect(screen.getByText("Engine default")).toBeTruthy();
   });
 
   it("labels the trigger from the engine's list", () => {
