@@ -546,15 +546,20 @@ export function Composer(props: ComposerProps) {
   const launchReady = selectedAuthStatus === "ready";
   const launchLabel =
     selectedAuthStatus === "coming_soon" ? "Coming soon" : "Launch";
-  // No API-agent row uses an interactive subscription login any more. Every
-  // provider in the picker authenticates with an API key from Settings → API
-  // Keys, so a not-ready badge resolves to "missing_key" and the hint already
-  // points at the right place. The old inline "Log in" button (which fired
-  // `packetbench:open-claude-login` / `packetbench:open-codex-login`) is gone
-  // from this surface.
+  // No API-agent row uses an interactive subscription login any more, so the
+  // old inline "Log in" button (which fired `packetbench:open-claude-login` /
+  // `packetbench:open-codex-login`) is gone from this surface. Interactive
+  // `claude login` / `codex login` still exists in Settings → Subscriptions
+  // for PTY CLI sessions, which are unaffected.
   //
-  // Interactive `claude login` / `codex login` still exists in Settings →
-  // Subscriptions for PTY CLI sessions, which are unaffected.
+  // A not-ready badge is NOT always a missing API key: three rows are keyless
+  // and fail for reasons of their own — Ollama with `service_down` when
+  // localhost:11434 is not answering, the custom endpoint with `missing_key`
+  // when no base URL is set, and PacketCode (ACP) with `missing_key` when the
+  // engine binary cannot be found or `service_down` when it will not run. Each
+  // one's backend hint names its own remedy, which is why the disabled Launch
+  // button's tooltip is the hint verbatim rather than a fixed "add a key"
+  // sentence.
 
   // ─── Submit ───────────────────────────────────────────────────────────
   // Single-flight guard (launch): onLaunch returns synchronously while async

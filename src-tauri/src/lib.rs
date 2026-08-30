@@ -538,6 +538,8 @@ pub fn run() {
             commands::ollama::get_ollama_runtime_options,
             commands::ollama::set_ollama_runtime_options,
             // LM2 — custom OpenAI-compatible endpoint
+            commands::acp_engine_path::get_acp_engine_path,
+            commands::acp_engine_path::set_acp_engine_path,
             commands::custom_compat::get_custom_compat_base_url,
             commands::custom_compat::set_custom_compat_base_url,
             commands::custom_compat::get_custom_compat_models,

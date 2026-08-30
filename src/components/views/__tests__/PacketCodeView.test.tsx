@@ -16,18 +16,26 @@ vi.setConfig({ testTimeout: 20_000 });
 const harness = vi.hoisted(() => ({
   acpProbe: vi.fn(),
   acpInstallEngine: vi.fn(),
+  // The gate's "point at an existing binary" field reads the pinned path on
+  // every non-ready render, so this route's stub has to answer it too.
+  getAcpEnginePath: vi.fn(),
+  setAcpEnginePath: vi.fn(),
   agentsView: vi.fn(),
 }));
 
 vi.mock("@/lib/tauri", () => ({
   acpProbe: harness.acpProbe,
   acpInstallEngine: harness.acpInstallEngine,
+  getAcpEnginePath: harness.getAcpEnginePath,
+  setAcpEnginePath: harness.setAcpEnginePath,
   ACP_INSTALL_OUTPUT_EVENT: "acp:install-output",
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn().mockResolvedValue(() => {}),
 }));
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
 vi.mock("@/components/views/AgentsView", () => ({
   AgentsView: (props: { pinnedAgent?: string; pinnedModel?: string }) => {
@@ -59,6 +67,9 @@ beforeEach(() => {
   resetEngineProbeCache();
   harness.acpProbe.mockReset();
   harness.acpInstallEngine.mockReset();
+  harness.getAcpEnginePath.mockReset();
+  harness.getAcpEnginePath.mockResolvedValue(null);
+  harness.setAcpEnginePath.mockReset();
   harness.agentsView.mockReset();
 });
 

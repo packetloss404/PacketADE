@@ -42,7 +42,16 @@ describe("Settings navigation", () => {
   it("finds settings through user-facing synonyms", () => {
     expect(searchSettings("forgejo").map(({ section }) => section.key)).toEqual(["github"]);
     expect(searchSettings("microphone").map(({ section }) => section.key)).toEqual(["dictation"]);
-    expect(searchSettings("packetcode").map(({ section }) => section.key)).toEqual(["cli-clients"]);
+    // "packetcode" is genuinely two settings, and a search that returned only
+    // one of them would strand whichever user wanted the other. CLI Clients
+    // configures the PTY `packetcode` binary; Providers & Models configures
+    // the ACP engine binary the `api-packetcode` conversation row drives.
+    // These are separate paths with separate overrides — pinning one does not
+    // move the other.
+    expect(searchSettings("packetcode").map(({ section }) => section.key)).toEqual([
+      "cli-clients",
+      "providers",
+    ]);
   });
 
   /**

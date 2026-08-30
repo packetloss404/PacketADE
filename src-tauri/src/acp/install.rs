@@ -85,9 +85,14 @@ const INSTALL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const DRAIN_GRACE: Duration = Duration::from_secs(5);
 
 /// What to tell a user PacketBench cannot install for.
+///
+/// The in-app remedy leads, because it is the one that works without leaving
+/// the app; the environment variable is kept as the last resort it has always
+/// been rather than the headline it used to be.
 pub const MANUAL_INSTALL_HINT: &str =
     "PacketBench cannot install the packetcode engine on this platform. Install it yourself \
-     (see the packetcode README), then make sure `packetcode` is on PATH or set \
+     (see the packetcode README), then either point PacketBench at the binary in the field \
+     below (or Settings \u{2192} Provider Endpoints), put `packetcode` on PATH, or set \
      PACKETBENCH_ACP_ENGINE to its full path.";
 
 /// Whether [`acp_install_engine`] can run here. Windows, macOS, and Linux are

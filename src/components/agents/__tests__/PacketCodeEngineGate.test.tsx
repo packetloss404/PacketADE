@@ -20,6 +20,9 @@ vi.setConfig({ testTimeout: 20_000 });
 const harness = vi.hoisted(() => ({
   acpProbe: vi.fn(),
   acpInstallEngine: vi.fn(),
+  getAcpEnginePath: vi.fn(),
+  setAcpEnginePath: vi.fn(),
+  openFileDialog: vi.fn(),
   listen: vi.fn(),
   unlisten: vi.fn(),
   /** Handlers currently registered for the install-output event. */
@@ -31,11 +34,17 @@ const harness = vi.hoisted(() => ({
 vi.mock("@/lib/tauri", () => ({
   acpProbe: harness.acpProbe,
   acpInstallEngine: harness.acpInstallEngine,
+  getAcpEnginePath: harness.getAcpEnginePath,
+  setAcpEnginePath: harness.setAcpEnginePath,
   ACP_INSTALL_OUTPUT_EVENT: "acp:install-output",
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: harness.listen,
+}));
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: harness.openFileDialog,
 }));
 
 import { PacketCodeEngineGate } from "@/components/agents/PacketCodeEngineGate";
@@ -73,9 +82,29 @@ const TOO_OLD: AcpEngineProbe = {
   installSupported: true,
 };
 
+/**
+ * A binary that exists and ran, but never said what version it is — what the
+ * backend produces when `doctor --json` times out, and what it would produce
+ * for a doctor report with no version field.
+ *
+ * `compatible: false` here is the backend declining to vouch for a version it
+ * never saw. Reading that as "too old" would send the user to update a binary
+ * that may be perfectly current, or not the engine at all.
+ */
+const UNRESPONSIVE: AcpEngineProbe = {
+  found: true,
+  path: "D:\\projects\\packetcode\\packetcode.exe",
+  minimumVersion: "0.8.0",
+  compatible: false,
+  installSupported: true,
+  detail: "doctor --json timed out",
+};
+
+/** Verbatim copy of `acp::install::MANUAL_INSTALL_HINT`. */
 const MANUAL_HINT =
   "PacketBench cannot install the packetcode engine on this platform. Install it yourself " +
-  "(see the packetcode README), then make sure `packetcode` is on PATH or set " +
+  "(see the packetcode README), then either point PacketBench at the binary in the field " +
+  "below (or Settings → Provider Endpoints), put `packetcode` on PATH, or set " +
   "PACKETBENCH_ACP_ENGINE to its full path.";
 
 const UNSUPPORTED: AcpEngineProbe = {
@@ -106,6 +135,10 @@ beforeEach(() => {
   harness.outputHandlers = [];
   harness.acpProbe.mockReset();
   harness.acpInstallEngine.mockReset();
+  harness.getAcpEnginePath.mockReset();
+  harness.getAcpEnginePath.mockResolvedValue(null);
+  harness.setAcpEnginePath.mockReset();
+  harness.openFileDialog.mockReset();
   harness.unlisten.mockReset();
   harness.listen.mockReset();
   harness.listen.mockImplementation(
@@ -128,6 +161,16 @@ describe("engineGateState", () => {
     // `compatible` is meaningless without `found` — a backend that ever sent
     // both must still read as missing, not as ready.
     expect(engineGateState({ ...MISSING, compatible: true })).toBe("missing");
+  });
+
+  it("refuses to call a version-less engine 'too old'", () => {
+    // The distinction the whole state exists for: `compatible: false` with no
+    // version is the backend saying "I could not check", not "it is old".
+    expect(engineGateState(UNRESPONSIVE)).toBe("unresponsive");
+    expect(engineGateState({ ...UNRESPONSIVE, version: "" })).toBe("unresponsive");
+    expect(engineGateState({ ...UNRESPONSIVE, version: "   " })).toBe("unresponsive");
+    // A real version is what licenses the "too old" claim.
+    expect(engineGateState({ ...UNRESPONSIVE, version: "0.6.1" })).toBe("incompatible");
   });
 });
 
@@ -204,6 +247,24 @@ describe("state 3 — engine too old", () => {
   });
 });
 
+describe("state 3b — engine found but silent", () => {
+  it("says it did not answer, and never claims it is out of date", async () => {
+    harness.acpProbe.mockResolvedValue(UNRESPONSIVE);
+    render(<PacketCodeEngineGate>{child()}</PacketCodeEngineGate>);
+
+    await screen.findByText(/packetcode did not answer/i);
+    // The lie this state exists to prevent.
+    expect(screen.queryByText(/too old/i)).toBeNull();
+    expect(screen.queryByText(/0\.8\.0/)).toBeNull();
+    expect(screen.getByText(/did not report a version/i)).toBeInTheDocument();
+    // The path that failed is named, because that is the thing to check.
+    expect(screen.getByText("D:\\projects\\packetcode\\packetcode.exe")).toBeInTheDocument();
+    // "Update" would be the wrong verb for a binary of unknown vintage.
+    expect(screen.queryByRole("button", { name: /update packetcode/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /reinstall packetcode/i })).toBeEnabled();
+  });
+});
+
 describe("state 4 — install unsupported", () => {
   it("shows the probe's manual instructions and no install button", async () => {
     harness.acpProbe.mockResolvedValue(UNSUPPORTED);
@@ -215,6 +276,122 @@ describe("state 4 — install unsupported", () => {
     expect(screen.queryByRole("button", { name: /update packetcode/i })).toBeNull();
     // The only control left is the manual re-check.
     expect(screen.getByRole("button", { name: /check again/i })).toBeEnabled();
+  });
+});
+
+/**
+ * The remedy for the most common failure, which is NOT "the engine is
+ * missing" — it is "the engine is installed somewhere nothing searches".
+ * packetcode's own installers do not add it to PATH, and a build from source
+ * is not on PATH either, so the gate has to offer something other than
+ * downloading a second copy.
+ */
+describe("pointing at an existing binary", () => {
+  const PINNED = "D:\\projects\\packetcode\\packetcode.exe";
+
+  it("offers the path field on every non-ready state, including where install is unsupported", async () => {
+    for (const probe of [MISSING, TOO_OLD, UNRESPONSIVE, UNSUPPORTED]) {
+      harness.acpProbe.mockResolvedValue(probe);
+      const view = render(<PacketCodeEngineGate>{child()}</PacketCodeEngineGate>);
+      expect(await screen.findByLabelText(/packetcode engine binary/i)).toBeInTheDocument();
+      view.unmount();
+      resetEngineProbeCache();
+    }
+  });
+
+  it("pins a browsed path and drops through to the route on a ready probe", async () => {
+    harness.acpProbe.mockResolvedValue(MISSING);
+    harness.openFileDialog.mockResolvedValue(PINNED);
+    harness.setAcpEnginePath.mockResolvedValue({ ...READY, path: PINNED, version: "0.5.1" });
+
+    render(<PacketCodeEngineGate>{child()}</PacketCodeEngineGate>);
+    await screen.findByText(/packetcode is not installed/i);
+
+    fireEvent.click(screen.getByTitle(/browse for the packetcode binary/i));
+    await waitFor(() =>
+      expect(screen.getByLabelText(/packetcode engine binary/i)).toHaveValue(PINNED),
+    );
+
+    fireEvent.click(screen.getByTitle(/use this binary/i));
+
+    await screen.findByTestId("agents-view");
+    expect(harness.setAcpEnginePath).toHaveBeenCalledWith(PINNED);
+    // Adopting the returned probe means no second probe and no install.
+    expect(harness.acpProbe).toHaveBeenCalledTimes(1);
+    expect(harness.acpInstallEngine).not.toHaveBeenCalled();
+  });
+
+  it("shows the backend's rejection and keeps the gate up when the path is bad", async () => {
+    harness.acpProbe.mockResolvedValue(MISSING);
+    harness.setAcpEnginePath.mockRejectedValue(
+      "Cannot read D:\\nope\\packetcode.exe: The system cannot find the path specified.",
+    );
+
+    render(<PacketCodeEngineGate>{child()}</PacketCodeEngineGate>);
+    await screen.findByText(/packetcode is not installed/i);
+
+    const field = screen.getByLabelText(/packetcode engine binary/i);
+    fireEvent.change(field, { target: { value: "D:\\nope\\packetcode.exe" } });
+    fireEvent.click(screen.getByTitle(/use this binary/i));
+
+    await screen.findByText(/cannot find the path specified/i);
+    // Nothing was saved, so the gate is still the gate.
+    expect(screen.getByText(/packetcode is not installed/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("agents-view")).toBeNull();
+  });
+
+  it("reports a file that saved but is not a usable engine instead of claiming success", async () => {
+    harness.acpProbe.mockResolvedValue(MISSING);
+    harness.setAcpEnginePath.mockResolvedValue(UNRESPONSIVE);
+
+    render(<PacketCodeEngineGate>{child()}</PacketCodeEngineGate>);
+    await screen.findByText(/packetcode is not installed/i);
+
+    fireEvent.change(screen.getByLabelText(/packetcode engine binary/i), {
+      target: { value: PINNED },
+    });
+    fireEvent.click(screen.getByTitle(/use this binary/i));
+
+    // The save succeeded; the engine did not. Saying "Saved" and stopping
+    // there would be the same over-claim the gate exists to remove. (Two
+    // matches: the field's own verdict, and the gate re-rendered onto the
+    // adopted probe.)
+    await screen.findByText(
+      /that file ran but did not report a version, so it may not be a packetcode engine/i,
+    );
+    await screen.findByText(/packetcode did not answer/i);
+    expect(screen.queryByTestId("agents-view")).toBeNull();
+  });
+
+  it("shows the resolved version, which is the only proof it picked the engine", async () => {
+    harness.acpProbe.mockResolvedValue(UNSUPPORTED);
+    harness.setAcpEnginePath.mockResolvedValue({ ...READY, path: PINNED, version: "0.5.1" });
+
+    render(<PacketCodeEngineGate>{child()}</PacketCodeEngineGate>);
+    await screen.findByText(/packetcode is not installed/i);
+
+    fireEvent.change(screen.getByLabelText(/packetcode engine binary/i), {
+      target: { value: PINNED },
+    });
+    fireEvent.click(screen.getByTitle(/use this binary/i));
+
+    await screen.findByTestId("agents-view");
+    expect(harness.setAcpEnginePath).toHaveBeenCalledWith(PINNED);
+  });
+
+  it("loads an already-pinned path so the user can see and clear it", async () => {
+    harness.acpProbe.mockResolvedValue(UNRESPONSIVE);
+    harness.getAcpEnginePath.mockResolvedValue(PINNED);
+    harness.setAcpEnginePath.mockResolvedValue(MISSING);
+
+    render(<PacketCodeEngineGate>{child()}</PacketCodeEngineGate>);
+    const field = await screen.findByLabelText(/packetcode engine binary/i);
+    await waitFor(() => expect(field).toHaveValue(PINNED));
+    expect(screen.getByText(/^Pinned$/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle(/clear the pinned path/i));
+    await waitFor(() => expect(harness.setAcpEnginePath).toHaveBeenCalledWith(null));
+    await waitFor(() => expect(field).toHaveValue(""));
   });
 });
 
