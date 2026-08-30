@@ -86,9 +86,19 @@
 //! trip early on a flight whose spend predates CE2.
 //!
 //! Also untouched: `localStorage["packetbench:cost-guardrails"]` (those dollars
-//! are user-authored *limits*, not recorded spend) and the dormant
-//! `conversations/<id>/checkpoints/*.json` snapshots (no live writer or reader
-//! anywhere in the app).
+//! are user-authored *limits*, not recorded spend) and the orphaned
+//! `conversations/<id>/checkpoints/*.json` snapshots.
+//!
+//! Those snapshots are stale code's leftovers but real user data. The
+//! CheckpointPanel's "Save now" button shipped from **0.5.0** (2026-05-04)
+//! through **0.9.4** and wrote one file per click; 0.10.0 replaced the panel
+//! with inline Restore (`0c4de9c0`), and `commands/checkpoints.rs` — the last
+//! code that could read one back — was deleted on 2026-08-29 (`e8aa573c`). So
+//! there is no live writer or reader *now*, but `migration::migrate_data_dir`
+//! renames the whole tree forward on each rebrand, which means an install that
+//! ran any of those releases still carries its snapshots under
+//! `~/.packetbench` today. Repricing them would rewrite user data that no
+//! reader will ever consult again, so they are left byte-for-byte as they are.
 
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
@@ -439,8 +449,12 @@ fn reprice_ledger(path: &Path, now_iso: &str, today: &str) -> Result<RepriceStat
 /// reprices every turn at the latest model — the same assumption the live
 /// estimator and `aggregateConversationCost` already make.
 ///
-/// Only top-level `*.json` files are considered. `conversations/<id>/` holds
-/// checkpoint subdirectories, which `load_conversations` also skips.
+/// Only top-level `*.json` files are considered — the same single-level,
+/// files-only shape `load_conversations` reads, so the pass sees exactly the
+/// documents the app itself sees. Subdirectories are skipped structurally
+/// rather than by name; the only thing that ever created one was the retired
+/// checkpoint writer, whose snapshots are deliberately out of scope (see the
+/// module header).
 fn reprice_conversations(dir: &Path, now_iso: &str, today: &str) -> Result<RepriceStats, String> {
     let mut stats = RepriceStats::default();
     if !dir.exists() {
@@ -1249,8 +1263,19 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// Checkpoint snapshots live in `conversations/<id>/checkpoints/`. The pass
-    /// must not descend into them (they are dormant and out of scope).
+    /// The walk is top-level and file-only, so it must never descend into
+    /// `conversations/<id>/`. The only thing that ever put a subdirectory
+    /// there was the checkpoint writer retired in 0.10.0, and installs that
+    /// ran 0.5.0–0.9.4 still carry those snapshots (see the module header) —
+    /// so this fences a future recursive walk out of real user data, not out
+    /// of a hypothetical.
+    ///
+    /// The fixture carries a top-level `model`, which the real writer never
+    /// wrote (its payload was `{createdAt, messageCount, messages}`), on
+    /// purpose: a faithful payload would be skipped as unpriceable even by a
+    /// recursive walk, leaving the file byte-identical for the wrong reason.
+    /// This one is maximally repriceable, so a walk that reached it would
+    /// rewrite it and fail loudly.
     #[test]
     fn ignores_checkpoint_subdirectories() {
         let dir = tmpdir("conv-checkpoints");

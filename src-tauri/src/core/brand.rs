@@ -9,7 +9,9 @@ pub const APP_NAME: &str = "PacketBench";
 pub const APP_NAME_LOWER: &str = "packetbench";
 
 /// Hidden directory under the user's home for persistent app data
-/// (conversations, checkpoints, slash commands, usage logs, dictation, etc.).
+/// (conversations, slash commands, usage logs, dictation, etc.). Upgraded
+/// installs may also hold `conversations/<id>/checkpoints/` left by the
+/// checkpoint panel retired in 0.10.0; nothing reads or writes those now.
 pub const DATA_DIR_NAME: &str = ".packetbench";
 
 /// Legacy data dir name — used only for one-shot migration on startup.

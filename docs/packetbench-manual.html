@@ -545,10 +545,10 @@ tool-output-extended · turn-summary · mcp-sources · done · error</code></pre
 
 <h3 class="section-title" id="ch5-data">Data locations</h3>
 <dl class="def-list">
-  <dt>~/.packetbench</dt><dd>Persistent app data: conversations, checkpoints, slash commands, usage logs, dictation history, and more. A legacy <code>~/.packetcode</code> directory is migrated once on startup.</dd>
-  <dt>OS keyring</dt><dd>Service <code>packetbench</code>: provider API keys and SSH passwords (<code>ssh-&lt;serverId&gt;</code> entries). Legacy <code>packetcode</code> entries are read and migrated.</dd>
+  <dt>~/.packetbench</dt><dd>Persistent app data: conversations, slash commands, usage logs, dictation history, and more. A legacy <code>~/.packetade</code> directory is migrated once on startup. Installs upgraded from 0.5.0&ndash;0.9.4 may still hold <code>conversations/&lt;id&gt;/checkpoints/</code> snapshots from the checkpoint panel retired in 0.10.0; they are inert and safe to delete.</dd>
+  <dt>OS keyring</dt><dd>Service <code>packetbench</code>: provider API keys and SSH passwords (<code>ssh-&lt;serverId&gt;</code> entries). Legacy <code>packetade</code> entries are read and migrated.</dd>
   <dt>Log directory</dt><dd><code>%APPDATA%\PacketBench</code> on Windows; <code>~/Library/Application Support/PacketBench</code> on macOS.</dd>
-  <dt>localStorage</dt><dd>UI store persistence under the <code>packetbench:*</code> prefix (legacy <code>packetcode:*</code> keys read only for migration).</dd>
+  <dt>localStorage</dt><dd>UI store persistence under the <code>packetbench:*</code> prefix (legacy <code>packetade:*</code> keys read only for migration).</dd>
   <dt>~/.claude, ~/.codex</dt><dd>Subscription credentials owned by the Claude Code / Codex CLIs, used by terminal panes only. PacketBench watches them but never writes them. API agents do not read them.</dd>
   <dt>Git-host token</dt><dd>Backend memory only — not persisted; reconnect after each app restart.</dd>
 </dl>
