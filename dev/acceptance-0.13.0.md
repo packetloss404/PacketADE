@@ -78,9 +78,21 @@ Run the remaining rows on a machine (or VM snapshot) carrying pre-rename
 - [x] Keyring migration reviewed — per-key, read-through, write-new-then-delete-legacy,
       with tests covering partial failure. No analogous flaw. **Still needs a
       packaged run to confirm end to end.**
-- [ ] Data dir migrates on a real installed upgrade; flights, issues, workspaces, and history all survive
+- [x] **The new bundle identifier does not install alongside the old app.**
+      Verified 2026-08-30: after installing 0.13.0 over 0.12.1, Add/Remove
+      Programs holds exactly one `PacketBench` entry, now reading 0.13.0.
+- [x] **A same-identifier upgrade preserves the data dir.** 0.12.1 → 0.13.0,
+      silent per-user install, exit 0. Workspaces and agents came through
+      unchanged and the app wrote state normally afterwards (`state.v1.json`
+      advanced 69 → 78). The installer's SHA-256 was checked against
+      `CHANGELOG.md` before running it.
+- [ ] **Data dir migrates from PRE-RENAME state on a real installed upgrade** —
+      still open, and this machine cannot prove it: `~/.packetbench` already
+      exists, so `migrate_data_dir_in` correctly returns early and the legacy
+      `~/.packetade` (version 1471, 14 issues, 3 workspaces) is left untouched,
+      exactly as designed. Proving this row needs a machine or VM snapshot that
+      has `~/.packetade` and **no** `~/.packetbench`.
 - [ ] Keyring secrets migrate — API keys and git host tokens still work without re-entry
-- [ ] The new bundle identifier does **not** install alongside the old app as a second entry in Add/Remove Programs
 - [ ] Launch a second time — migrators are one-shot and must not re-run or double-apply
 - [ ] A **clean-machine** install (no prior state) also launches correctly
 
@@ -90,7 +102,10 @@ machine carried.
 ---
 ## 2. Launch, lifecycle, and shell
 
-- [ ] Cold start to usable window
+- [x] **Cold start to usable window** — 2026-08-30, installed 0.13.0 launched
+      and stayed up with its Node sidecar alongside it. This proves the process
+      starts and persists state; it does not prove the window renders correctly,
+      which still needs eyes on it.
 - [ ] Window state and active view restore across restart
 - [ ] Close with live work running — confirmation appears and is honest about what is lost
 - [ ] After exit, no orphaned `claude` / `codex` / `node` processes remain (Task Manager)

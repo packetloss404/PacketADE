@@ -16,11 +16,14 @@ Windows artifacts, built 2026-08-30 from `49583b5a`, **unsigned**:
 | `PacketBench_0.13.0_x64-setup.exe` (NSIS, 85.4 MiB) | `5cb2f0554e1c34a5feb286af60d783854c2543f6743e6cec250432e48235cf1e` |
 | `PacketBench_0.13.0_x64_en-US.msi` (133.2 MiB) | `d94badc981bf00a6cb382616f9ebdbcf47ca68b6a1d2222ce53473c650be7f55` |
 
-> **Built, not accepted.** Sections 2–5 of the acceptance matrix — launch and
-> lifecycle, dictation on real hardware, analytics, and the two-display Monitor
-> matrix — have still never run. Section 1 has been executed from source and
-> against a copy of a real legacy data dir, and the 0.12.1 package was installed
-> once to confirm it registers and launches; that is the extent of it. The
+> **Installed, not accepted.** 0.13.0 was installed over 0.12.1 on 2026-08-30
+> (silent, per-user, exit 0, installer hash checked first). That proved three
+> things and no more: one Add/Remove Programs entry rather than two, a
+> same-identifier upgrade preserves the data dir, and the app starts. Sections
+> 2–5 — lifecycle, dictation on real hardware, analytics, and the two-display
+> Monitor matrix — have still never run, and the pre-rename migration row still
+> cannot be proved on this machine, because `~/.packetbench` already exists so
+> the migrator correctly declines to run. The
 > artifacts live in `C:/Users/ianwalmsley/packetbench-build/release/bundle/`, not
 > in the repo, alongside the 0.11.0, 0.12.0 and 0.12.1 pairs — **check the
 > version in the filename before installing.**
