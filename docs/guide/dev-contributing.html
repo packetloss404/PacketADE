@@ -19,7 +19,7 @@
   </div>
   <nav class="topbar-links">
     <a href="../index.html">Site</a>
-    <a href="https://github.com/packetloss404/PacketADE" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/packetloss404/PacketBench" target="_blank" rel="noopener">GitHub</a>
     <button class="theme-toggle" type="button" aria-label="Toggle theme">◐</button>
   </nav>
 </header>
@@ -106,9 +106,12 @@ earlier <code>packetcode</code> migration has already run.</p>
 <p>Expect lingering references to both old names in historical files (mostly
 <code>dev/archive/</code> and <code>docs/reports/</code>), in comments, and in one-shot migration
 code. All <strong>new</strong> code uses PacketBench.</p>
-<div class="callout note"><div class="callout-title">Note</div><p>The GitHub remote is still <code>git@github.com:packetloss404/PacketADE.git</code>.
-GitHub redirects it, so fetch and push work, but the repository itself has not
-been renamed. &quot;PacketCode&quot; now belongs to the sibling TUI project at
+<div class="callout note"><div class="callout-title">Note</div><p>The GitHub repository has been renamed to
+<code>git@github.com:packetloss404/PacketBench.git</code>. The old <code>PacketADE</code> URL still
+redirects, so an existing clone keeps working, but it prints a &quot;This
+repository moved&quot; notice on every push — run
+<code>git remote set-url origin git@github.com:packetloss404/PacketBench.git</code> to
+clear it. &quot;PacketCode&quot; now belongs to the sibling TUI project at
 <code>D:\projects\packetcode</code>; do not create a junction or symlink back to either
 old path.</p>
 </div>

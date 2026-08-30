@@ -19,7 +19,7 @@
   </div>
   <nav class="topbar-links">
     <a href="../index.html">Site</a>
-    <a href="https://github.com/packetloss404/PacketADE" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/packetloss404/PacketBench" target="_blank" rel="noopener">GitHub</a>
     <button class="theme-toggle" type="button" aria-label="Toggle theme">◐</button>
   </nav>
 </header>
@@ -78,7 +78,7 @@ If you want the current app, build it.</p>
 <tr>
 <td><strong>Published download</strong></td>
 <td><code>v0.5.0</code>, published 2026-05-04</td>
-<td><a href="https://github.com/packetloss404/PacketADE/releases">GitHub Releases</a></td>
+<td><a href="https://github.com/packetloss404/PacketBench/releases">GitHub Releases</a></td>
 </tr>
 </tbody></table>
 <h3 id="what-the-published-download-actually-is">What the published download actually is<a class="anchor" href="#what-the-published-download-actually-is" aria-label="Link to this section">#</a></h3>
@@ -96,10 +96,14 @@ and everything else in <code>CHANGELOG.md</code> between 0.6.0 and 0.12.1;</li>
 <li>is not an upgrade path to the current code — there is no updater to carry
 you forward from it.</li>
 </ul>
-<div class="callout warning"><div class="callout-title">Warning</div><p>The repository has not been renamed on GitHub. The remote is
-still <code>git@github.com:packetloss404/PacketADE.git</code>. A URL built from the new
-product name (<code>github.com/packetloss404/PacketBench</code>) does not resolve —
-use the <code>PacketADE</code> URL.</p>
+<div class="callout note"><div class="callout-title">Note</div><p>The repository was renamed on GitHub to
+<code>git@github.com:packetloss404/PacketBench.git</code>, matching the product name.
+The old <code>PacketADE</code> URL still works — GitHub redirects it — but it prints a
+&quot;This repository moved&quot; notice on every push, so update any existing clone:</p>
+<div class="code-block" data-lang="bash">
+<button class="copy" type="button" aria-label="Copy code">Copy</button>
+<pre><code>git remote set-url origin git@github.com:packetloss404/PacketBench.git</code></pre>
+</div>
 </div>
 <h3 id="code-signing-and-smartscreen">Code signing and SmartScreen<a class="anchor" href="#code-signing-and-smartscreen" aria-label="Link to this section">#</a></h3>
 <p>No Windows Authenticode certificate and no Apple Developer ID are configured.
@@ -122,7 +126,7 @@ manually — or, on the path this page recommends, by pulling and rebuilding.</p
 <h3 id="macos-and-linux">macOS and Linux<a class="anchor" href="#macos-and-linux" aria-label="Link to this section">#</a></h3>
 <p>Build-from-source only. No macOS or Linux artifact has ever been published.
 The per-platform prerequisites, target triples and bundle formats are in
-<a href="https://github.com/packetloss404/PacketADE/blob/main/dev/multi-platform-build.md"><code>dev/multi-platform-build.md</code></a>;
+<a href="https://github.com/packetloss404/PacketBench/blob/main/dev/multi-platform-build.md"><code>dev/multi-platform-build.md</code></a>;
 <a href="dev-build.html">Build &amp; release</a> covers the same ground for contributors.</p>
 <div class="callout note"><div class="callout-title">Note</div><p>On macOS, <code>brew install cmake</code> is mandatory, not optional — the
 dictation module&#39;s <code>whisper-rs-sys</code> build-depends on CMake, which does not
@@ -146,7 +150,7 @@ them.</li>
 <h3 id="clone-and-install">Clone and install<a class="anchor" href="#clone-and-install" aria-label="Link to this section">#</a></h3>
 <div class="code-block" data-lang="bash">
 <button class="copy" type="button" aria-label="Copy code">Copy</button>
-<pre><code>git clone git@github.com:packetloss404/PacketADE.git packetbench
+<pre><code>git clone git@github.com:packetloss404/PacketBench.git packetbench
 cd packetbench
 pnpm install</code></pre>
 </div>

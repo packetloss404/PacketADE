@@ -533,7 +533,7 @@ function ReleaseTrustCard() {
           Release Trust
         </h3>
         <a
-          href="https://github.com/packetloss404/PacketADE/releases"
+          href="https://github.com/packetloss404/PacketBench/releases"
           target="_blank"
           rel="noreferrer"
           className="hover:bg-accent-green/10 flex shrink-0 items-center gap-1 rounded px-2 py-1 text-[10px] text-accent-green transition-colors"

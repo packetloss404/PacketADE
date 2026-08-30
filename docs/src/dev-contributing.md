@@ -49,9 +49,12 @@ Expect lingering references to both old names in historical files (mostly
 `dev/archive/` and `docs/reports/`), in comments, and in one-shot migration
 code. All **new** code uses PacketBench.
 
-> **Note:** The GitHub remote is still `git@github.com:packetloss404/PacketADE.git`.
-> GitHub redirects it, so fetch and push work, but the repository itself has not
-> been renamed. "PacketCode" now belongs to the sibling TUI project at
+> **Note:** The GitHub repository has been renamed to
+> `git@github.com:packetloss404/PacketBench.git`. The old `PacketADE` URL still
+> redirects, so an existing clone keeps working, but it prints a "This
+> repository moved" notice on every push — run
+> `git remote set-url origin git@github.com:packetloss404/PacketBench.git` to
+> clear it. "PacketCode" now belongs to the sibling TUI project at
 > `D:\projects\packetcode`; do not create a junction or symlink back to either
 > old path.
 

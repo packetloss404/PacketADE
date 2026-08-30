@@ -24,7 +24,7 @@ const OUT = join(ROOT, "docs", "guide");
 const SITE = {
   name: "PacketBench",
   tagline: "Local-first desktop Agent Development Environment",
-  repo: "https://github.com/packetloss404/PacketADE",
+  repo: "https://github.com/packetloss404/PacketBench",
 };
 
 // ---------------------------------------------------------------- navigation

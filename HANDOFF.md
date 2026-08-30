@@ -15,9 +15,11 @@ in `CHANGELOG.md`, the State report, and Git rather than being duplicated here.
   handoff mentioned (`codex/syndicate-integration-toggle`,
   `chore/rename-to-packetbench`, the ACP and LM feature branches) is merged
   and deleted.
-- Working directory is `D:\projects\PacketBench`. The GitHub remote is still
-  `git@github.com:packetloss404/PacketADE.git` — GitHub redirects it so
-  fetch/push work, but the repo has not been renamed. See Next item 2.
+- Working directory is `D:\projects\PacketBench`. The GitHub repo has now been
+  renamed to `git@github.com:packetloss404/PacketBench.git`, and the local
+  remote was updated to match on 2026-08-30. The old `PacketADE` URL still
+  redirects, so any clone that still points at it works but prints a "This
+  repository moved" notice on push.
 
 ## Latest Windows build
 

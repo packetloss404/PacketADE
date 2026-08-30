@@ -18,7 +18,7 @@ Three separate things are easy to confuse, so they are separated here.
 | --- | --- | --- |
 | **Source** | v0.12.1 — `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json` all agree | This repository |
 | **Local Windows builds** | Unsigned NSIS + MSI for 0.11.0, 0.12.0 and 0.12.1, all built 2026-08-28 | The maintainer's build machine, under `packetbench-build/release/bundle/` — **not** in the repo, **not** uploaded anywhere |
-| **Published download** | `v0.5.0`, published 2026-05-04 | [GitHub Releases](https://github.com/packetloss404/PacketADE/releases) |
+| **Published download** | `v0.5.0`, published 2026-05-04 | [GitHub Releases](https://github.com/packetloss404/PacketBench/releases) |
 
 ### What the published download actually is
 
@@ -37,10 +37,14 @@ So the published installer:
 - is not an upgrade path to the current code — there is no updater to carry
   you forward from it.
 
-> **Warning:** The repository has not been renamed on GitHub. The remote is
-> still `git@github.com:packetloss404/PacketADE.git`. A URL built from the new
-> product name (`github.com/packetloss404/PacketBench`) does not resolve —
-> use the `PacketADE` URL.
+> **Note:** The repository was renamed on GitHub to
+> `git@github.com:packetloss404/PacketBench.git`, matching the product name.
+> The old `PacketADE` URL still works — GitHub redirects it — but it prints a
+> "This repository moved" notice on every push, so update any existing clone:
+>
+> ```bash
+> git remote set-url origin git@github.com:packetloss404/PacketBench.git
+> ```
 
 ### Code signing and SmartScreen
 
@@ -70,7 +74,7 @@ manually — or, on the path this page recommends, by pulling and rebuilding.
 
 Build-from-source only. No macOS or Linux artifact has ever been published.
 The per-platform prerequisites, target triples and bundle formats are in
-[`dev/multi-platform-build.md`](https://github.com/packetloss404/PacketADE/blob/main/dev/multi-platform-build.md);
+[`dev/multi-platform-build.md`](https://github.com/packetloss404/PacketBench/blob/main/dev/multi-platform-build.md);
 [Build & release](dev-build.html) covers the same ground for contributors.
 
 > **Note:** On macOS, `brew install cmake` is mandatory, not optional — the
@@ -98,7 +102,7 @@ This is the supported way to run current PacketBench.
 ### Clone and install
 
 ```bash
-git clone git@github.com:packetloss404/PacketADE.git packetbench
+git clone git@github.com:packetloss404/PacketBench.git packetbench
 cd packetbench
 pnpm install
 ```
