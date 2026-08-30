@@ -1,32 +1,36 @@
-# PacketBench 0.13.0 — Packaged Acceptance Matrix
+# PacketBench 0.13.1 — Packaged Acceptance Matrix
 
-Created 2026-08-28 for 0.11.0, then retargeted to 0.12.0, 0.12.1 and now
-0.13.0 — each time after section 0 was re-executed against a fresh build,
+Created 2026-08-28 for 0.11.0, then retargeted to 0.12.0, 0.12.1, 0.13.0 and now
+0.13.1 — each time after section 0 was re-executed against a fresh build,
 because an earlier build does not contain the work that landed after it. This is
 a runnable checklist, not a status report. Tick rows as you go and record the
 evidence each one asks for.
 
-Sections 2–5 have still never run. `dev/proof-audit-2026-08-01.md` says why that
-matters: *"fresh binaries prove compilation and bundling only."* Every green tick
-in `CHANGELOG.md` for those sections today describes source tests. The 0.12.1
-package **was installed once** (2026-08-29, silently, per-user) to confirm it
-registers and launches — that is the only packaged install anyone has performed,
-and it proved exactly two rows: it appears once in Add/Remove Programs, and it
-starts.
+Sections 2–5 remain **substantially** unrun. `dev/proof-audit-2026-08-01.md`
+says why that matters: *"fresh binaries prove compilation and bundling only."*
+Most green ticks in `CHANGELOG.md` for those sections still describe source
+tests.
+
+Three packaged installs have now happened, all silent and per-user: 0.12.1
+(2026-08-29), then 0.13.0 and 0.13.1 (both 2026-08-30). Between them they have
+closed the two upgrade rows in section 1 and the first row of section 2, and
+nothing else. In particular, 0.13.1 is the first build whose UI anyone has
+actually looked at — see the note on that row before trusting it further than
+it goes.
 
 ---
 
 ## 0. Build the thing you are actually testing — DONE 2026-08-30
 
-Built from `49583b5a`, **unsigned**:
+Built from `8dc13780`, **unsigned**:
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `PacketBench_0.13.0_x64-setup.exe` (NSIS, 85.4 MiB) | `5cb2f0554e1c34a5feb286af60d783854c2543f6743e6cec250432e48235cf1e` |
-| `PacketBench_0.13.0_x64_en-US.msi` (133.2 MiB) | `d94badc981bf00a6cb382616f9ebdbcf47ca68b6a1d2222ce53473c650be7f55` |
+| `PacketBench_0.13.1_x64-setup.exe` (NSIS, 85.4 MiB) | `10814779d13001ea4517c706eaf62adc55c21701abe6ed37821d3994a58c8a4e` |
+| `PacketBench_0.13.1_x64_en-US.msi` (133.2 MiB) | `d0caf91b45d3903ae42eda1bd28754b3600e9d9336f50fbb82cf2d2b66c11f68` |
 
-The 0.11.0, 0.12.0 and 0.12.1 bundles remain on disk and are **not** what this
-matrix accepts. Check the version in the filename before installing.
+The 0.11.0, 0.12.0, 0.12.1 and 0.13.0 bundles remain on disk and are **not**
+what this matrix accepts. Check the version in the filename before installing.
 
 They live in `C:/Users/ianwalmsley/packetbench-build/release/bundle/`, not in the
 repo. Every build here is made from a committed tree with a clean working
@@ -41,7 +45,7 @@ export PATH="/c/Users/ianwalmsley/.rustup/toolchains/stable-x86_64-pc-windows-ms
 Afterwards run `pnpm sidecar:install` — `prebundle` strips the sidecar's
 devDependencies. (Done for this build.)
 
-- [x] Version bumped — 0.12.1 → **0.13.0** in `package.json`,
+- [x] Version bumped — 0.13.0 → **0.13.1** in `package.json`,
       `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` (+ `Cargo.lock`)
 - [x] Rebuilt; commit, both filenames and both SHA-256s recorded in `CHANGELOG.md`
 
@@ -79,13 +83,23 @@ Run the remaining rows on a machine (or VM snapshot) carrying pre-rename
       with tests covering partial failure. No analogous flaw. **Still needs a
       packaged run to confirm end to end.**
 - [x] **The new bundle identifier does not install alongside the old app.**
-      Verified 2026-08-30: after installing 0.13.0 over 0.12.1, Add/Remove
-      Programs holds exactly one `PacketBench` entry, now reading 0.13.0.
-- [x] **A same-identifier upgrade preserves the data dir.** 0.12.1 → 0.13.0,
-      silent per-user install, exit 0. Workspaces and agents came through
-      unchanged and the app wrote state normally afterwards (`state.v1.json`
-      advanced 69 → 78). The installer's SHA-256 was checked against
-      `CHANGELOG.md` before running it.
+      Verified 2026-08-30 twice: after installing 0.13.0 over 0.12.1, and again
+      after 0.13.1 over 0.13.0, Add/Remove Programs holds exactly one
+      `PacketBench` entry, reading the version just installed.
+- [x] **A same-identifier upgrade preserves the data dir.** Run twice, both
+      silent per-user installs, both exit 0, both with the installer's SHA-256
+      checked against `CHANGELOG.md` first.
+      - 0.12.1 → 0.13.0: workspaces and agents came through unchanged;
+        `state.v1.json` advanced 69 → 78 afterwards.
+      - 0.13.0 → 0.13.1: data dir **byte-identical** across the install — 14
+        files, 408,164 bytes, `state.v1.json` v90, 1 workspace, measured before
+        and after. After launching and using the app it advanced to v99 and
+        408,200 bytes, so the upgrade preserved state *and* left it writable.
+      The installed `packetbench.exe` reports file version 0.13.1. Note it is
+      **not** byte-identical to `release/packetbench.exe`: the bundler patches
+      that file in place with bundle-type information for each target, so the
+      build artifact left on disk is not what got packaged. The version
+      resource is the check that means something.
 - [ ] **Data dir migrates from PRE-RENAME state on a real installed upgrade** —
       still open, and this machine cannot prove it: `~/.packetbench` already
       exists, so `migrate_data_dir_in` correctly returns early and the legacy
@@ -102,10 +116,30 @@ machine carried.
 ---
 ## 2. Launch, lifecycle, and shell
 
-- [x] **Cold start to usable window** — 2026-08-30, installed 0.13.0 launched
-      and stayed up with its Node sidecar alongside it. This proves the process
-      starts and persists state; it does not prove the window renders correctly,
-      which still needs eyes on it.
+- [x] **Cold start to usable window** — 2026-08-30. Installed 0.13.1 launched,
+      stayed up with its Node sidecar, and **the window was looked at**: it
+      renders correctly, and the Agents and PacketCode routes both mount and
+      navigate (four switches via the command palette). This closes the "needs
+      eyes on it" caveat that stood against 0.13.0.
+
+      Two things this row does **not** cover. The window opened on a secondary
+      monitor with its left edge clipped, so the Left Rail was off-screen and
+      navigation was driven through the command palette rather than the rail
+      buttons — the rail itself is still unexercised on a packaged build. And
+      the only screens examined were the two agent routes; every other view is
+      unlooked-at.
+- [x] **No console window on agent-route mount** (regression check for the fix
+      in 0.13.1). Four Agents ↔ PacketCode switches, screenshotted at 1s and 4s
+      each: no console window at any point. The meaningful half of this is that
+      a `packetcode` process *was* running with an empty `MainWindowTitle`, so
+      the engine spawned and was hidden — "no window" is not merely "nothing
+      ran". Before the fix the `doctor --json` probe and the engine spawn in
+      `acp/mod.rs` set no `CREATE_NO_WINDOW`, and both agent routes probe on
+      mount.
+- [x] **The ACP model picker offers no invented ids** (regression check for the
+      other 0.13.1 fix). The picker reads "Engine default" and its dropdown
+      says the engine has not reported models yet — no `claude-opus-4-8`, which
+      on an engine with no Anthropic provider went to OpenAI and 404'd.
 - [ ] Window state and active view restore across restart
 - [ ] Close with live work running — confirmation appears and is honest about what is lost
 - [ ] After exit, no orphaned `claude` / `codex` / `node` processes remain (Task Manager)
