@@ -5,24 +5,36 @@
  * engine. Without this gate a missing engine surfaced only as a failed session
  * start, several clicks deep, with a backend error string for an explanation.
  *
- * Four states, all derived from one {@link AcpEngineProbe}:
+ * The states, all derived from one {@link AcpEngineProbe}:
  *
- * | probe                          | state             |
- * |--------------------------------|-------------------|
- * | `found && compatible`          | ready — no chrome |
- * | `!found`                       | missing           |
- * | `found && !compatible`         | too old           |
+ * | probe                                 | state             |
+ * |---------------------------------------|-------------------|
+ * | `found && compatible`                 | ready — no chrome |
+ * | `!found`                              | missing           |
+ * | `found && !compatible`, no version    | did not respond   |
+ * | `found && !compatible`, has version   | too old           |
  * | any of the above, `!installSupported` | manual steps only |
  *
- * `installSupported` is not a fifth state: it is a modifier on the two
- * actionable ones that replaces the install button with the probe's own
- * `detail` text. A dead button is worse than no button.
+ * "did not respond" is split out of "too old" on purpose — see
+ * {@link engineGateState}. Only the version-bearing case can honestly tell the
+ * user their engine is out of date.
+ *
+ * `installSupported` is not another state: it is a modifier on the actionable
+ * ones that replaces the install button with the probe's own `detail` text. A
+ * dead button is worse than no button.
  *
  * **Installing is always an explicit click.** `acp_install_engine` downloads
  * and runs packetcode's published install script; that is remote code
  * execution, and the backend refuses to take a URL parameter precisely so the
  * only thing that can trigger it is a user pressing a button that says so.
  * Nothing here installs on mount, on retry, or on a re-probe.
+ *
+ * **Installing is not the only remedy, and often not the right one.** The
+ * common reason PacketBench cannot find the engine is not that the engine is
+ * absent — it is that packetcode's own installers do not put it on `PATH`, and
+ * a build from source lands somewhere nothing searches. Downloading a second
+ * copy is the wrong answer for that user, so every non-ready state also offers
+ * {@link AcpEnginePathField} to point at the binary they already have.
  *
  * The happy path pays nothing: when the engine is ready this renders
  * `children` directly, with no wrapper element.
@@ -45,6 +57,7 @@ import {
   writeCachedProbe,
   type InstallFailure,
 } from "@/components/agents/engineGateState";
+import { AcpEnginePathField } from "@/components/agents/AcpEnginePathField";
 
 /** How many installer lines to keep. The script is chatty on a slow link. */
 const MAX_LOG_LINES = 400;
@@ -239,28 +252,52 @@ export function PacketCodeEngineGate({ children }: PacketCodeEngineGateProps) {
     );
   }
 
-  // From here `probe` is non-null and is one of the two gate states.
+  // From here `probe` is non-null and is one of the non-ready gate states.
   const current = probe as AcpEngineProbe;
   const state = engineGateState(current);
   const canInstall = current.installSupported;
 
-  const title = state === "missing" ? "packetcode is not installed" : "packetcode is too old";
+  const title =
+    state === "missing"
+      ? "packetcode is not installed"
+      : state === "unresponsive"
+        ? "packetcode did not answer"
+        : "packetcode is too old";
   const icon =
     state === "missing" ? (
       <PackageX size={14} className="text-accent-green" />
     ) : (
       <AlertTriangle size={14} className="text-accent-amber" />
     );
-  const actionLabel = state === "missing" ? "Install packetcode" : "Update packetcode";
+  const actionLabel =
+    state === "missing"
+      ? "Install packetcode"
+      : state === "unresponsive"
+        ? "Reinstall packetcode"
+        : "Update packetcode";
 
   return (
     <GateShell icon={icon} title={title}>
       <p className="text-ui leading-relaxed text-text-secondary">
         PacketCode is a separate coding engine that PacketBench drives over the Agent Client
-        Protocol. It ships as its own binary and is not bundled with PacketBench, so it has to be
-        installed once before this route can start a session. Every other agent provider keeps
+        Protocol. It ships as its own binary, is not bundled with PacketBench, and holds its own
+        provider credentials — there is no API key to add for it. Every other agent provider keeps
         working without it.
       </p>
+
+      {state === "unresponsive" ? (
+        <p className="mt-3 text-ui leading-relaxed text-text-secondary">
+          A file was found and run{current.path ? " at the path below" : ""}, but it did not report
+          a version. That usually means it is not the packetcode engine, or that it hung instead of
+          answering — not that it is out of date.
+        </p>
+      ) : null}
+
+      {state === "unresponsive" && current.path ? (
+        <p className="selectable mt-3 break-all rounded border border-bg-border bg-bg-tertiary p-2 font-mono text-meta text-text-muted">
+          {current.path}
+        </p>
+      ) : null}
 
       {state === "incompatible" ? (
         <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded border border-bg-border bg-bg-tertiary p-2 text-meta">
@@ -284,7 +321,9 @@ export function PacketCodeEngineGate({ children }: PacketCodeEngineGateProps) {
           <p className="mt-3 text-ui leading-relaxed text-text-muted">
             {state === "missing"
               ? "Installing downloads and runs packetcode's official install script."
-              : "Updating downloads and runs packetcode's official install script, which upgrades in place."}{" "}
+              : state === "unresponsive"
+                ? "Reinstalling downloads and runs packetcode's official install script, which replaces the binary in place."
+                : "Updating downloads and runs packetcode's official install script, which upgrades in place."}{" "}
             This can take several minutes on a slow connection, and is cancelled automatically
             after 10 minutes.
           </p>
@@ -354,8 +393,30 @@ export function PacketCodeEngineGate({ children }: PacketCodeEngineGateProps) {
 
       {failure ? <InstallFailureNotice failure={failure} /> : null}
 
+      {/* The other half of the remedy, and for a great many users the right
+          half: they already have the binary, it is simply not on PATH.
+          Adopting the returned probe means a successful pin drops straight
+          through to the route without a second round trip. */}
+      <div className="mt-4 border-t border-bg-border pt-3">
+        <p className="mb-2 text-ui leading-relaxed text-text-muted">
+          Already have it? packetcode&apos;s own installers do not add it to{" "}
+          <span className="font-mono text-text-secondary">PATH</span>, and a build from source is
+          not on it either. Point PacketBench at the binary instead of downloading another copy.
+        </p>
+        <AcpEnginePathField
+          onProbe={(next) => {
+            writeCachedProbe(next);
+            if (!aliveRef.current) return;
+            setProbe(next);
+            setProbeError(null);
+            if (engineGateState(next) === "ready") setFailure(null);
+          }}
+        />
+      </div>
+
       {/* The probe's own diagnostic — on an unsupported platform this is the
-          manual install instructions, which is the whole content of state 4. */}
+          manual install instructions, which is the whole content of that
+          state. */}
       {current.detail ? <ProbeDetail detail={current.detail} /> : null}
     </GateShell>
   );

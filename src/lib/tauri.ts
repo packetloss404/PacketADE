@@ -4069,6 +4069,33 @@ export async function acpProbe(): Promise<AcpEngineProbe> {
   return invoke<AcpEngineProbe>("acp_probe");
 }
 
+/**
+ * The engine path pinned in Settings → Provider Endpoints, or `null` when
+ * nothing is pinned.
+ *
+ * This is the SAVED setting, not the resolved binary. `null` does not mean no
+ * engine will be found — resolution then falls through to
+ * `PACKETBENCH_ACP_ENGINE`, `PATH`, and the documented install directories.
+ * Ask {@link acpProbe} for what actually resolved.
+ */
+export async function getAcpEnginePath(): Promise<string | null> {
+  return invoke<string | null>("get_acp_engine_path");
+}
+
+/**
+ * Pin (or clear, with `null`) the engine binary, then re-probe.
+ *
+ * Rejects with a human-readable sentence when the path is not absolute, does
+ * not exist, is not a file, or is not executable — and in that case NOTHING is
+ * saved, so a bad path can never outrank a working engine already on `PATH`.
+ *
+ * Resolves with a fresh probe of whatever now resolves. Show its `version`:
+ * that is the only proof the file picked is really a packetcode engine.
+ */
+export async function setAcpEnginePath(path: string | null): Promise<AcpEngineProbe> {
+  return invoke<AcpEngineProbe>("set_acp_engine_path", { path });
+}
+
 /** Start the engine and complete the ACP handshake. No-op when already up. */
 export async function acpStart(): Promise<void> {
   return invoke("acp_start");

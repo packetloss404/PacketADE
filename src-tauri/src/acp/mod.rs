@@ -612,7 +612,8 @@ const ENGINE_BINARY_STEM: &str = "packetcode";
 
 /// Resolves the engine binary. **Precedence, highest first:**
 ///
-/// 1. **Environment override** — [`ENGINE_PATH_ENV`], then
+/// 1. **Explicit user override** — the path pinned in Settings → Provider
+///    Endpoints, then [`ENGINE_PATH_ENV`], then
 ///    [`LEGACY_ENGINE_PATH_ENV`]. Read the same way on every platform, and
 ///    taken verbatim: it is the escape hatch for a custom install, so it is
 ///    deliberately not filtered by an existence or executable-bit check — a
@@ -663,10 +664,21 @@ fn resolve_from(
     ENGINE_BINARY_STEM.to_string()
 }
 
-/// The engine-path environment override, on every platform. Blank and
-/// whitespace-only values are treated as unset, so an empty export cannot make
-/// the app try to spawn `""`.
+/// The user's explicit engine-path override: the path pinned in Settings →
+/// Provider Endpoints first, then the environment variables.
+///
+/// Saved-before-environment matches `resolve_custom_compat_base_url`, and for
+/// the same reason: a value the user just typed into the app must not be
+/// silently outranked by an ambient export they may not even remember making.
+/// The env vars remain the dev/CI escape hatch, and are the only override on
+/// an install where nothing has been pinned.
+///
+/// Blank and whitespace-only values are treated as unset in both tiers, so an
+/// empty export cannot make the app try to spawn `""`.
 fn engine_path_override() -> Option<String> {
+    if let Some(saved) = crate::core::storage::load_saved_acp_engine_path() {
+        return Some(saved);
+    }
     for var in [ENGINE_PATH_ENV, LEGACY_ENGINE_PATH_ENV] {
         if let Ok(exe) = std::env::var(var) {
             let exe = exe.trim();

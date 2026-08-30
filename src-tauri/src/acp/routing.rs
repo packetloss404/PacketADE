@@ -480,6 +480,16 @@ pub async fn close_session(state: &AcpState, conversation_id: &str) -> Result<()
 /// the engine binary is present and new enough, which is what the badge should
 /// reflect: an unmatched provider id is a hard `Err` that breaks the AuthBadge
 /// outright, so this arm must always answer something.
+///
+/// Every hint here names a remedy the user can reach from inside the app.
+/// Pointing at an environment variable was the old answer and it is not one: a
+/// desktop user cannot be asked to export a variable before launching, and
+/// every OTHER provider's not-ready hint points at Settings.
+///
+/// The three not-ready outcomes are kept apart on purpose. In particular a
+/// binary that ran but never reported a version is NOT "too old" — that is
+/// what a `doctor --json` timeout looks like, and telling the user to update a
+/// binary of unknown vintage is a guess presented as a diagnosis.
 pub async fn auth_status() -> (String, String) {
     let probe = match super::probe_engine().await {
         Ok(probe) => probe,
@@ -493,21 +503,28 @@ pub async fn auth_status() -> (String, String) {
     if !probe.found {
         return (
             "missing_key".to_string(),
-            format!(
-                "packetcode engine not found. Install it and put it on PATH, or set {}.",
-                super::ENGINE_PATH_ENV
-            ),
+            "packetcode engine not found. Set its path in Settings \u{2192} Provider Endpoints, \
+             or install it from the PacketCode view."
+                .to_string(),
         );
     }
     if !probe.compatible {
-        return (
-            "service_down".to_string(),
-            format!(
-                "packetcode {} is older than the required {}",
-                probe.version.as_deref().unwrap_or("unknown"),
-                probe.minimum_version
+        return match probe.version.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+            Some(version) => (
+                "service_down".to_string(),
+                format!(
+                    "packetcode {} is older than the required {} \u{2014} update it from the \
+                     PacketCode view.",
+                    version, probe.minimum_version
+                ),
             ),
-        );
+            None => (
+                "service_down".to_string(),
+                "packetcode ran but did not report a version, so it may not be the engine. \
+                 Check the path in Settings \u{2192} Provider Endpoints."
+                    .to_string(),
+            ),
+        };
     }
     ("ready".to_string(), String::new())
 }

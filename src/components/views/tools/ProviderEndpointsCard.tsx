@@ -13,6 +13,7 @@ import {
   setOllamaRuntimeOptions,
   type OllamaRuntimeOptions,
 } from "@/lib/tauri";
+import { AcpEnginePathField } from "@/components/agents/AcpEnginePathField";
 
 type EndpointRowProps = {
   id: string;
@@ -432,6 +433,13 @@ export function ProviderEndpointsCard() {
         />
 
         <CustomCompatRow />
+
+        {/* The PacketCode ACP row's equivalent of a base URL. It is keyless
+            like Ollama and the custom endpoint, so "where is it" is the whole
+            of its configuration — and unlike those two it has no default that
+            works out of the box, because packetcode's installers do not put it
+            on PATH. */}
+        <AcpEnginePathField />
       </div>
     </div>
   );

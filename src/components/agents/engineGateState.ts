@@ -2,27 +2,40 @@
  * The decisions behind {@link PacketCodeEngineGate}, kept out of the component
  * so they can be read, tested, and reasoned about without a renderer.
  *
- * Everything here is about being honest with the user: which of the four gate
- * states a probe actually implies, and which install failures have a remedy
- * worth naming instead of a backend sentence worth echoing.
+ * Everything here is about being honest with the user: which gate state a
+ * probe actually implies (and, just as importantly, which one it does NOT
+ * license claiming), and which install failures have a remedy worth naming
+ * instead of a backend sentence worth echoing.
  */
 import type { AcpEngineProbe } from "@/lib/tauri";
 
 /** Which gate (if any) a probe result calls for. */
-export type EngineGateState = "ready" | "missing" | "incompatible";
+export type EngineGateState = "ready" | "missing" | "unresponsive" | "incompatible";
 
 /**
  * The single place the gate states are decided. `compatible` is only
  * meaningful when `found` is true, so the order matters: a probe claiming both
  * `found: false` and `compatible: true` must still read as missing.
  *
+ * **`unresponsive` is not the same as `incompatible`.** The backend sets
+ * `compatible: false` whenever it cannot satisfy itself that the version is new
+ * enough — including when the binary exists but never reported a version at
+ * all, which is what a `doctor --json` timeout and a doctor report with no
+ * version field both look like. Calling that "too old" is a guess dressed as a
+ * diagnosis, and it sends the user to update a binary that may be perfectly
+ * current and merely wedged (or not the engine at all). A missing `version` is
+ * therefore its own state, and `incompatible` — the only one that quotes a
+ * version number at the user — is reached only when there is a version to
+ * quote.
+ *
  * `installSupported` is deliberately not a state here. It modifies what the
- * missing/incompatible gates *offer* (a button, or the probe's manual steps),
- * not which gate is shown.
+ * non-ready gates *offer* (a button, or the probe's manual steps), not which
+ * gate is shown.
  */
 export function engineGateState(probe: AcpEngineProbe): EngineGateState {
   if (!probe.found) return "missing";
-  return probe.compatible ? "ready" : "incompatible";
+  if (probe.compatible) return "ready";
+  return probe.version?.trim() ? "incompatible" : "unresponsive";
 }
 
 /**

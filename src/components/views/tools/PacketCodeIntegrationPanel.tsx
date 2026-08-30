@@ -125,13 +125,25 @@ export function PacketCodeIntegrationPanel({
 
       <div className="mt-3 grid gap-2">
         <label className="grid gap-1">
-          <span className="text-[10px] text-text-muted">Resolved executable</span>
+          <span className="text-[10px] text-text-muted">
+            Resolved executable — terminal sessions only
+          </span>
           <input
             value={executable}
             readOnly
             placeholder="Not detected"
             className="rounded border border-bg-border bg-bg-secondary px-2 py-1 font-mono text-[10px] text-text-secondary"
           />
+          {/* Two different `packetcode` paths exist and they are NOT the same
+              setting. This one (and the Browse / "Use build" pins above it)
+              drives PTY terminal sessions. The ACP engine behind the
+              "PacketCode (ACP)" conversation row resolves separately, so a
+              user who pins here and then finds that row still red has been
+              misled unless we say so. */}
+          <span className="text-[9px] text-text-muted">
+            The PacketCode (ACP) conversation row uses its own engine path — set that in Settings →
+            Providers &amp; Models → Provider Endpoints.
+          </span>
         </label>
 
         <label className="grid gap-1">

@@ -166,7 +166,23 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
         label: "Providers & Models",
         description: "API credentials, subscription accounts, endpoints, and available models.",
         scopes: ["App", "New conversations"],
-        keywords: ["api keys", "anthropic", "openai", "minimax", "openrouter", "ollama", "models"],
+        keywords: [
+          "api keys",
+          "anthropic",
+          "openai",
+          "minimax",
+          "openrouter",
+          "ollama",
+          "models",
+          // The keyless rows are configured here too, and a user hunting for
+          // "where do I tell it about my packetcode binary" searches for the
+          // engine, not for a credential.
+          "packetcode",
+          "acp",
+          "engine",
+          "binary",
+          "endpoint",
+        ],
       },
     ],
   },
