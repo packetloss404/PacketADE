@@ -1,8 +1,15 @@
 // Entry points for the guided git-host setup wizard.
 //
-// The card is the place users go when they want to connect a host, so both of
-// its "connect something" affordances must reach the wizard — and the
-// self-hosted one must land on the right host without the user re-picking it.
+// The card is the place users go when they want to connect a host, so every
+// "connect something" affordance must reach the wizard — and the self-hosted
+// one must land on the right host without the user re-picking it.
+//
+// It must also reach the wizard and NOTHING ELSE. This card used to own a
+// second connect path: a token field, with a device-flow link that only
+// appeared once that field was open. The two paths had different powers (the
+// wizard validated and checked scopes but could not do browser sign-in; the
+// inline form could do browser sign-in but validated nothing), so whichever a
+// user found, they lost something. Both now live in the wizard.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -11,11 +18,8 @@ const mocks = vi.hoisted(() => ({
   storeState: {} as Record<string, unknown>,
 }));
 
-vi.mock("@/lib/tauri", () => ({
-  githubDeviceFlowStart: vi.fn(),
-  githubDeviceFlowPoll: vi.fn(),
-  githubOauthConfigured: vi.fn().mockResolvedValue(false),
-}));
+// Deliberately empty: the card no longer calls a backend command of its own.
+vi.mock("@/lib/tauri", () => ({}));
 
 vi.mock("@/components/gitHost/GitHostSetupWizard", () => ({
   GitHostSetupWizard: ({ initialDescriptorId }: { initialDescriptorId?: string }) => (
@@ -66,8 +70,31 @@ describe("Git Hosts settings card → setup wizard", () => {
   it("offers a guided path from the not-connected state", () => {
     render(<GitHubSettingsCard />);
     expect(screen.queryByTestId("wizard")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Guided setup/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Connect$/i }));
     expect(screen.getByTestId("wizard")).toHaveTextContent("wizard:github");
+  });
+
+  it("sends an already-connected user to the same wizard to reconnect or rotate", () => {
+    // Rotation used to be a second, unvalidated code path on this card. The
+    // wizard's GitHub save writes the singleton keyring entry, so re-running it
+    // replaces the credential in place — after checking it.
+    mocks.storeState.isConnected = true;
+    mocks.storeState.authenticatedUser = { login: "octocat" };
+    render(<GitHubSettingsCard />);
+    fireEvent.click(screen.getByRole("button", { name: /Reconnect/i }));
+    expect(screen.getByTestId("wizard")).toHaveTextContent("wizard:github");
+  });
+
+  it("keeps no connect affordance of its own", () => {
+    mocks.storeState.isConnected = true;
+    mocks.storeState.authenticatedUser = { login: "octocat" };
+    render(<GitHubSettingsCard />);
+    // No token field to open...
+    expect(screen.queryByPlaceholderText(/ghp_/i)).not.toBeInTheDocument();
+    // ...and therefore no device-flow link hiding inside one.
+    expect(document.body.textContent).not.toMatch(/device flow/i);
+    // The one thing that is not the wizard stays: dropping the credential.
+    expect(screen.getByRole("button", { name: /Disconnect/i })).toBeInTheDocument();
   });
 
   it("opens 'Add host' on the wizard's host picker, not pre-pinned to Gitea", () => {

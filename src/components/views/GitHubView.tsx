@@ -88,7 +88,6 @@ export function GitHubView() {
     isPrLoading,
     lastSyncAt,
     initializeAuth,
-    connect,
     disconnect,
     fetchRepos,
     selectRepo,
@@ -135,7 +134,6 @@ export function GitHubView() {
     : true;
   const activeProjectLocalPath = activeProjectWorkspace?.projectPath ?? "";
 
-  const [tokenInput, setTokenInput] = useState("");
   const [showSetupWizard, setShowSetupWizard] = useState(false);
   const [tab, setTab] = useState<TabKey>("issues");
   const [selectedIssueNum, setSelectedIssueNum] = useState<number | null>(null);
@@ -327,13 +325,6 @@ export function GitHubView() {
     }
   }
 
-  async function handleConnect() {
-    if (tokenInput.trim()) {
-      await connect(tokenInput.trim());
-      setTokenInput("");
-    }
-  }
-
   function handleImportIssue(issue: GitHubIssue) {
     addIssue({
       title: `[GH-${issue.number}] ${issue.title}`,
@@ -373,15 +364,16 @@ export function GitHubView() {
             <p className="mb-4 text-[11px] text-text-muted">
               {activeHostKind === "gitea"
                 ? "This host has no usable token. Update or recreate the connection in Settings."
-                : "Enter a personal access token with repo scope to browse repositories and issues."}
+                : "Sign in with GitHub, or add a token with repo scope, to browse repositories and issues."}
             </p>
             {isInitializing && (
               <p className="mb-3 text-[11px] text-text-muted">Checking auth state...</p>
             )}
-            {/* Primary path: the guided wizard validates the URL, the scopes,
-                and the credential before anything reaches the keyring. The
-                paste-a-PAT field below stays for users who already know what
-                they are doing. */}
+            {/* The one connect path. This screen used to carry its own bare
+                paste-a-PAT field beside this button — a third way in, and the
+                one that checked nothing. The wizard offers browser sign-in and
+                token paste, and validates whichever you use, so there is
+                nothing left for a raw field to add. */}
             <button
               type="button"
               onClick={() => setShowSetupWizard(true)}
@@ -390,7 +382,7 @@ export function GitHubView() {
               <Wand2 size={12} />
               Set up a git host
             </button>
-            {activeHostKind === "gitea" ? (
+            {activeHostKind === "gitea" && (
               <button
                 type="button"
                 onClick={() => openSettings({ section: "github" })}
@@ -398,24 +390,6 @@ export function GitHubView() {
               >
                 Open Settings
               </button>
-            ) : (
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={tokenInput}
-                  onChange={(e) => setTokenInput(e.target.value)}
-                  placeholder="ghp_xxxxxxxxxxxx"
-                  className="flex-1 rounded border border-bg-border bg-bg-primary px-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:border-accent-green focus:outline-none"
-                  onKeyDown={(e) => e.key === "Enter" && handleConnect()}
-                />
-                <button
-                  onClick={handleConnect}
-                  disabled={isLoading || isInitializing}
-                  className="bg-accent-green/15 border-accent-green/30 hover:bg-accent-green/25 rounded border px-4 py-1.5 text-xs font-medium text-accent-green transition-colors"
-                >
-                  Connect
-                </button>
-              </div>
             )}
             {error && <p className="mt-3 text-[11px] text-accent-red">{error}</p>}
           </div>

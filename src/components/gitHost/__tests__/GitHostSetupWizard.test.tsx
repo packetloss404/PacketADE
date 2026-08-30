@@ -11,22 +11,36 @@ const SECRET = "ghp_CANARY_must_never_leak_0000";
 
 const mocks = vi.hoisted(() => ({
   probe: vi.fn(),
+  probePending: vi.fn(),
   githubSetToken: vi.fn(),
   gitHostAddGitea: vi.fn(),
   loadConnections: vi.fn(),
   setActiveConnection: vi.fn(),
   initializeAuth: vi.fn(),
+  oauthConfigured: vi.fn(),
+  deviceStart: vi.fn(),
+  devicePoll: vi.fn(),
+  deviceCommit: vi.fn(),
+  deviceDiscard: vi.fn(),
 }));
 
 vi.mock("@/lib/gitHostProbe", () => ({
   probeGitHostCredential: (...args: unknown[]) => mocks.probe(...args),
+  probePendingDeviceCredential: (...args: unknown[]) => mocks.probePending(...args),
 }));
 
 // The wizard's descriptors call these directly — they are the ONLY sanctioned
-// persistence path (each writes to the OS keyring in Rust).
+// persistence path (each writes to the OS keyring in Rust). The device-flow
+// four are the browser-authorisation half of the same contract; note that
+// none of them ever carries a credential in either direction.
 vi.mock("@/lib/tauri", () => ({
   githubSetToken: (...args: unknown[]) => mocks.githubSetToken(...args),
   gitHostAddGitea: (...args: unknown[]) => mocks.gitHostAddGitea(...args),
+  githubOauthConfigured: (...args: unknown[]) => mocks.oauthConfigured(...args),
+  githubDeviceFlowStart: (...args: unknown[]) => mocks.deviceStart(...args),
+  githubDeviceFlowPoll: (...args: unknown[]) => mocks.devicePoll(...args),
+  githubDeviceFlowCommit: (...args: unknown[]) => mocks.deviceCommit(...args),
+  githubDeviceFlowDiscard: (...args: unknown[]) => mocks.deviceDiscard(...args),
 }));
 
 vi.mock("@/stores/githubStore", () => ({
@@ -79,6 +93,13 @@ beforeEach(() => {
   mocks.githubSetToken.mockResolvedValue(undefined);
   mocks.gitHostAddGitea.mockResolvedValue("gitea-git-example-com");
   mocks.probe.mockResolvedValue(probeResult());
+  mocks.probePending.mockResolvedValue(probeResult());
+  // Default: no OAuth app id in this build, so the browser option is absent
+  // and the wizard is the plain paste-a-token flow the rest of these tests
+  // describe. The `browser authorisation` block below turns it on.
+  mocks.oauthConfigured.mockResolvedValue(false);
+  mocks.deviceCommit.mockResolvedValue(undefined);
+  mocks.deviceDiscard.mockResolvedValue(undefined);
 });
 
 describe("host picker", () => {
@@ -304,6 +325,152 @@ describe("saving", () => {
     expect(
       screen.getByText(/previously active connection is unchanged/i),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * Browser authorisation, folded into the same wizard.
+ *
+ * Before this, GitHub's device flow lived only in a Settings inline form: it
+ * was invisible until you opened a token field you did not intend to use, and
+ * nothing checked what the resulting credential could actually do. The wizard
+ * checked scopes but had never heard of it. These tests pin the consolidation:
+ * one surface, both credential kinds, the same verdicts, and the same refusal
+ * to save anything that has not been checked.
+ */
+describe("browser authorisation", () => {
+  /** GitHub's device-flow start payload. The user code is not a secret. */
+  const START = {
+    deviceCode: "device-code-abc",
+    userCode: "WDJB-MJHT",
+    verificationUri: "https://github.com/login/device",
+    interval: 0,
+    expiresIn: 900,
+  };
+
+  function enableDeviceFlow() {
+    mocks.oauthConfigured.mockResolvedValue(true);
+    mocks.deviceStart.mockResolvedValue(START);
+  }
+
+  /** Poll once with `pending`, then land on the given terminal answer. */
+  function pollsTo(final: {
+    status: string;
+    message?: string | null;
+    pendingId?: string | null;
+  }) {
+    mocks.devicePoll
+      .mockResolvedValueOnce({ status: "pending", message: null, pendingId: null })
+      .mockResolvedValue({ message: null, pendingId: null, ...final });
+  }
+
+  async function authorize() {
+    fireEvent.click(await screen.findByRole("button", { name: /Sign in with GitHub/i }));
+  }
+
+  it("is hidden when this build has no OAuth app configured", async () => {
+    // A button that can only ever error is worse than no button: the flow
+    // degrades to the token step it has always been, with nothing missing.
+    render(<GitHostSetupWizard onClose={() => {}} initialDescriptorId="github" />);
+    await waitFor(() => expect(mocks.oauthConfigured).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: /Sign in with GitHub/i })).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/personal access token/i)).toBeInTheDocument();
+  });
+
+  it("offers both credential kinds on one step when it is available", async () => {
+    enableDeviceFlow();
+    render(<GitHostSetupWizard onClose={() => {}} initialDescriptorId="github" />);
+    // Neither is buried behind the other, and neither costs an extra step.
+    expect(await screen.findByRole("button", { name: /Sign in with GitHub/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/personal access token/i)).toBeInTheDocument();
+  });
+
+  it("shows the code to type, then lands on the same verdict a token gets", async () => {
+    enableDeviceFlow();
+    pollsTo({ status: "authorized", pendingId: "pending-1" });
+    render(<GitHostSetupWizard onClose={() => {}} initialDescriptorId="github" />);
+    await authorize();
+
+    expect(await screen.findByText("WDJB-MJHT")).toBeInTheDocument();
+    await screen.findByText(/Connected as octocat/, undefined, { timeout: 5000 });
+    // Checked by handle against the SAME descriptor probe spec the paste path
+    // uses — so the two kinds cannot drift into different verdict quality.
+    expect(mocks.probePending).toHaveBeenCalledWith(
+      "pending-1",
+      expect.objectContaining({ identityPath: "/user", scopeHeader: "x-oauth-scopes" }),
+    );
+    expect(screen.getByRole("button", { name: "Save connection" })).toBeEnabled();
+  });
+
+  it("refuses to save a browser credential whose granted scopes fall short", async () => {
+    // The whole reason this path needed folding in: an org-restricted grant
+    // used to be written to the keyring unexamined.
+    enableDeviceFlow();
+    pollsTo({ status: "authorized", pendingId: "pending-2" });
+    mocks.probePending.mockResolvedValue(probeResult({ scopes: ["read:org"] }));
+    render(<GitHostSetupWizard onClose={() => {}} initialDescriptorId="github" />);
+    await authorize();
+
+    const alert = await screen.findByRole("alert", undefined, { timeout: 5000 });
+    expect(alert).toHaveAttribute("data-verdict", "insufficient_scopes");
+    expect(alert).toHaveTextContent("repo");
+    expect(screen.getByRole("button", { name: "Save connection" })).toBeDisabled();
+    expect(mocks.deviceCommit).not.toHaveBeenCalled();
+  });
+
+  it("saves by handle — no credential passes through the frontend at all", async () => {
+    enableDeviceFlow();
+    pollsTo({ status: "authorized", pendingId: "pending-3" });
+    render(<GitHostSetupWizard onClose={() => {}} initialDescriptorId="github" />);
+    await authorize();
+    await screen.findByText(/Connected as octocat/, undefined, { timeout: 5000 });
+    fireEvent.click(screen.getByRole("button", { name: "Save connection" }));
+
+    await waitFor(() => expect(mocks.deviceCommit).toHaveBeenCalledWith("pending-3"));
+    // The paste path's keyring command is untouched: there was no token here.
+    expect(mocks.githubSetToken).not.toHaveBeenCalled();
+    await screen.findByText(/GitHub connected/);
+    expect(screen.getByText(/Browser sign-in, stored in the OS keyring/)).toBeInTheDocument();
+    await waitFor(() => expect(mocks.setActiveConnection).toHaveBeenCalledWith("github", true));
+  });
+
+  it("tells the backend to drop the credential when the user backs out", async () => {
+    enableDeviceFlow();
+    pollsTo({ status: "authorized", pendingId: "pending-4" });
+    render(<GitHostSetupWizard onClose={() => {}} initialDescriptorId="github" />);
+    await authorize();
+    await screen.findByText(/Connected as octocat/, undefined, { timeout: 5000 });
+
+    fireEvent.click(screen.getByRole("button", { name: /Back/ }));
+    // Forgetting the handle would leave a live token parked in the backend
+    // until its TTL; the wizard has to say so out loud.
+    await waitFor(() => expect(mocks.deviceDiscard).toHaveBeenCalledWith("pending-4"));
+    expect(screen.getByLabelText(/personal access token/i)).toHaveValue("");
+  });
+
+  it("drops the credential when the wizard is closed mid-flow", async () => {
+    enableDeviceFlow();
+    pollsTo({ status: "authorized", pendingId: "pending-5" });
+    const { unmount } = render(
+      <GitHostSetupWizard onClose={() => {}} initialDescriptorId="github" />,
+    );
+    await authorize();
+    await screen.findByText(/Connected as octocat/, undefined, { timeout: 5000 });
+    unmount();
+    await waitFor(() => expect(mocks.deviceDiscard).toHaveBeenCalledWith("pending-5"));
+  });
+
+  it("reports a refused authorisation and saves nothing", async () => {
+    enableDeviceFlow();
+    pollsTo({ status: "error", message: "access_denied" });
+    render(<GitHostSetupWizard onClose={() => {}} initialDescriptorId="github" />);
+    await authorize();
+
+    expect(await screen.findByText("access_denied", undefined, { timeout: 5000 })).toBeInTheDocument();
+    expect(mocks.deviceCommit).not.toHaveBeenCalled();
+    expect(mocks.githubSetToken).not.toHaveBeenCalled();
+    // Still on the credential step, with the paste path intact.
+    expect(screen.getByLabelText(/personal access token/i)).toBeInTheDocument();
   });
 });
 

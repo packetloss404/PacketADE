@@ -1,19 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  Check,
-  Eye,
-  EyeOff,
   Github,
   GitMerge,
   LogOut,
   Pencil,
   Plus,
-  RefreshCw,
   Server,
   ShieldAlert,
   Trash2,
   Wand2,
-  X,
 } from "lucide-react";
 import {
   useGitHubStore,
@@ -25,20 +20,22 @@ import { hostLabel } from "@/lib/git-hosts";
 import { GitHostSetupWizard } from "@/components/gitHost/GitHostSetupWizard";
 import { GitHostEditConnectionModal } from "@/components/gitHost/GitHostEditConnectionModal";
 import type { GitHostConnectionInfo } from "@/lib/tauri";
-import {
-  githubDeviceFlowStart,
-  githubDeviceFlowPoll,
-  githubOauthConfigured,
-} from "@/lib/tauri";
-import { deviceFlowNextDelayMs, deviceFlowIsTerminal } from "@/lib/deviceFlow";
 
 /**
  * v0.8: Settings → GitHub card.
  *
- * Centralises the GitHub-related toggles that used to be hardcoded or
+ * Connecting a host is NOT done here. This card used to carry its own inline
+ * form — a token field, plus a "or authorize with GitHub (device flow)" link
+ * that only appeared once you had opened that field. That made two connect
+ * paths with different powers: the guided wizard validated the credential and
+ * checked its scopes but only accepted a pasted token, while the inline form
+ * was the only route to browser authorisation and checked nothing. Whichever
+ * one a user found, they gave something up. Both credential kinds now live in
+ * `GitHostSetupWizard`, and this card links to it.
+ *
+ * What remains here are the GitHub-related toggles that used to be hardcoded or
  * sprinkled across other surfaces:
- *  - PAT rotation / disconnect (mirrors the inline flow in `GitHubView`'s
- *    connect screen, so users don't have to log out to swap tokens).
+ *  - Disconnect, and the entry point to connect/reconnect.
  *  - Default merge strategy (was hardcoded `"squash"` in `PRActionBar`).
  *  - "Require confirmation" gate for destructive PR actions in
  *    `PRActionBar` (merge / close / convert-to-draft).
@@ -51,9 +48,7 @@ export function GitHubSettingsCard() {
   const authenticatedUser = useGitHubStore((s) => s.authenticatedUser);
   const isLoading = useGitHubStore((s) => s.isLoading);
   const error = useGitHubStore((s) => s.error);
-  const connect = useGitHubStore((s) => s.connect);
   const disconnect = useGitHubStore((s) => s.disconnect);
-  const clearError = useGitHubStore((s) => s.clearError);
 
   const defaultMergeStrategy = useGitHubStore((s) => s.defaultMergeStrategy);
   const requireMergeConfirmation = useGitHubStore(
@@ -73,10 +68,6 @@ export function GitHubSettingsCard() {
   const setDefaultPublishAttemptsAsPrs = useGitHubStore(
     (s) => s.setDefaultPublishAttemptsAsPrs,
   );
-
-  const [showTokenInput, setShowTokenInput] = useState(false);
-  const [tokenInput, setTokenInput] = useState("");
-  const [showToken, setShowToken] = useState(false);
 
   // Every git-host connection other than the built-in GitHub singleton.
   //
@@ -117,93 +108,8 @@ export function GitHubSettingsCard() {
     void loadConnections();
   }, [loadConnections]);
 
-  async function handleSaveToken() {
-    const trimmed = tokenInput.trim();
-    if (!trimmed) return;
-    await connect(trimmed);
-    setTokenInput("");
-    setShowToken(false);
-    setShowTokenInput(false);
-  }
-
-  function handleCancelToken() {
-    setTokenInput("");
-    setShowToken(false);
-    setShowTokenInput(false);
-    clearError();
-  }
-
   async function handleDisconnect() {
     await disconnect();
-  }
-
-  // GP3: GitHub OAuth device-flow. Falls back gracefully (a clear error) when no
-  // OAuth app client id is configured — PAT paste still works.
-  const initializeAuth = useGitHubStore((s) => s.initializeAuth);
-  const [deviceInfo, setDeviceInfo] = useState<{ userCode: string; verificationUri: string } | null>(
-    null,
-  );
-  const [deviceBusy, setDeviceBusy] = useState(false);
-  const [deviceError, setDeviceError] = useState<string | null>(null);
-  // Only expose the device-flow button when an OAuth app client id is baked/env
-  // configured — otherwise start() always errors and the button is dead on arrival.
-  const [deviceFlowAvailable, setDeviceFlowAvailable] = useState(false);
-  // Guards the hand-rolled poll loop: flips false on unmount so we stop polling
-  // GitHub (up to ~15 min) and never setState on an unmounted component.
-  const deviceMountedRef = useRef(true);
-
-  useEffect(() => {
-    deviceMountedRef.current = true;
-    void githubOauthConfigured()
-      .then((ok) => {
-        if (deviceMountedRef.current) setDeviceFlowAvailable(ok);
-      })
-      .catch(() => {
-        /* leave button hidden on probe failure */
-      });
-    return () => {
-      deviceMountedRef.current = false;
-    };
-  }, []);
-
-  async function handleDeviceAuth() {
-    setDeviceBusy(true);
-    setDeviceError(null);
-    try {
-      const start = await githubDeviceFlowStart();
-      if (!deviceMountedRef.current) return;
-      setDeviceInfo({ userCode: start.userCode, verificationUri: start.verificationUri });
-      let delay = Math.max(start.interval, 1) * 1000;
-      const deadline = Date.now() + start.expiresIn * 1000;
-      while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, delay));
-        if (!deviceMountedRef.current) return; // unmounted mid-wait → stop polling
-        const poll = await githubDeviceFlowPoll(start.deviceCode);
-        if (!deviceMountedRef.current) return;
-        delay = deviceFlowNextDelayMs(poll.status, delay);
-        if (poll.status === "authorized") {
-          await initializeAuth();
-          if (!deviceMountedRef.current) return;
-          setDeviceInfo(null);
-          setShowTokenInput(false);
-          return;
-        }
-        if (deviceFlowIsTerminal(poll.status)) {
-          setDeviceError(poll.message ?? "Authorization failed");
-          setDeviceInfo(null);
-          return;
-        }
-      }
-      setDeviceError("Device code expired — try again.");
-      setDeviceInfo(null);
-    } catch (e) {
-      if (deviceMountedRef.current) {
-        setDeviceError(e instanceof Error ? e.message : String(e));
-        setDeviceInfo(null);
-      }
-    } finally {
-      if (deviceMountedRef.current) setDeviceBusy(false);
-    }
   }
 
   return (
@@ -228,7 +134,7 @@ export function GitHubSettingsCard() {
                   Connected to {authenticatedUser?.login ?? "user"}
                 </div>
                 <div className="text-[10px] text-text-muted">
-                  Personal access token (stored in OS keyring)
+                  Credential stored in the OS keyring
                 </div>
               </>
             ) : (
@@ -237,136 +143,42 @@ export function GitHubSettingsCard() {
                   Not connected
                 </div>
                 <div className="text-[10px] text-text-muted">
-                  Add a GitHub PAT with repo scope to enable Issues, PRs, and
-                  AI review.
+                  Sign in with GitHub, or add a token with repo scope, to enable
+                  Issues, PRs, and AI review.
                 </div>
               </>
             )}
           </div>
         </div>
 
-        {!showTokenInput && (
-          <div className="flex items-center gap-1.5 flex-shrink-0">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* One button, one flow. It offers browser sign-in and token paste,
+              checks whichever you use, and replaces the credential in place —
+              so it is the reconnect/rotate route as well as the first-time one. */}
+          <button
+            type="button"
+            onClick={() => setWizard({ descriptorId: "github" })}
+            disabled={isLoading}
+            className="inline-flex items-center gap-1 px-2 py-1 text-[10px] text-accent-green hover:bg-accent-green/10 rounded transition-colors disabled:opacity-50"
+          >
+            <Wand2 size={10} />
+            {isConnected ? "Reconnect" : "Connect"}
+          </button>
+          {isConnected && (
             <button
               type="button"
-              onClick={() => setWizard({ descriptorId: "github" })}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] text-accent-green hover:bg-accent-green/10 rounded transition-colors"
-            >
-              <Wand2 size={10} />
-              Guided setup
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowTokenInput(true);
-                setTokenInput("");
-                setShowToken(false);
-                clearError();
-              }}
+              onClick={handleDisconnect}
               disabled={isLoading}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] text-accent-green hover:bg-accent-green/10 rounded transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] text-text-muted hover:text-accent-red hover:bg-accent-red/10 rounded transition-colors disabled:opacity-50"
             >
-              <RefreshCw size={10} />
-              {isConnected ? "Rotate" : "Connect"}
+              <LogOut size={10} />
+              Disconnect
             </button>
-            {isConnected && (
-              <button
-                type="button"
-                onClick={handleDisconnect}
-                disabled={isLoading}
-                className="inline-flex items-center gap-1 px-2 py-1 text-[10px] text-text-muted hover:text-accent-red hover:bg-accent-red/10 rounded transition-colors disabled:opacity-50"
-              >
-                <LogOut size={10} />
-                Disconnect
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {showTokenInput && (
-        <div className="mb-4">
-          <div className="flex items-center gap-1.5">
-            <div className="relative flex-1">
-              <input
-                type={showToken ? "text" : "password"}
-                value={tokenInput}
-                onChange={(e) => setTokenInput(e.target.value)}
-                placeholder="ghp_xxxxxxxxxxxx"
-                className="w-full bg-bg-primary border border-bg-border rounded px-2 py-1 pr-7 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void handleSaveToken();
-                  if (e.key === "Escape") handleCancelToken();
-                }}
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={() => setShowToken((v) => !v)}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary"
-              >
-                {showToken ? <EyeOff size={10} /> : <Eye size={10} />}
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => void handleSaveToken()}
-              disabled={isLoading || !tokenInput.trim()}
-              className="p-1 text-accent-green hover:bg-accent-green/10 rounded disabled:opacity-50"
-            >
-              <Check size={11} />
-            </button>
-            <button
-              type="button"
-              onClick={handleCancelToken}
-              className="p-1 text-text-muted hover:text-text-primary"
-            >
-              <X size={11} />
-            </button>
-          </div>
-          {error && (
-            <p className="text-[10px] text-accent-red mt-1.5">{error}</p>
-          )}
-
-          {/* GP3: device-flow alternative to pasting a PAT (only when an OAuth
-              app client id is configured — otherwise it would always error) */}
-          {deviceFlowAvailable && (
-          <div className="mt-2 border-t border-bg-border pt-2">
-            {deviceInfo ? (
-              <div className="text-[10px] text-text-secondary">
-                Enter code{" "}
-                <span className="font-mono font-semibold text-text-primary">
-                  {deviceInfo.userCode}
-                </span>{" "}
-                at{" "}
-                <a
-                  href={deviceInfo.verificationUri}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-accent-green underline"
-                >
-                  {deviceInfo.verificationUri}
-                </a>
-                <span className="ml-1.5 text-text-muted">· waiting for authorization…</span>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void handleDeviceAuth()}
-                disabled={deviceBusy}
-                className="inline-flex items-center gap-1 text-[10px] text-accent-green hover:text-accent-green/80 disabled:opacity-50"
-              >
-                <Github size={10} />
-                {deviceBusy ? "Starting…" : "Or authorize with GitHub (device flow)"}
-              </button>
-            )}
-            {deviceError && (
-              <p className="text-[10px] text-accent-red mt-1">{deviceError}</p>
-            )}
-          </div>
           )}
         </div>
-      )}
+      </div>
+
+      {error && <p className="text-[10px] text-accent-red mb-4 -mt-2">{error}</p>}
 
       <div className="space-y-4">
         {/* Default merge strategy */}

@@ -469,7 +469,7 @@ event cursors.
 
 | Control | Default | Effect |
 | --- | --- | --- |
-| GitHub connection | Disconnected | Connect with a personal access token, or the GitHub device flow when OAuth is configured in the build. Rotate or disconnect here without logging out elsewhere. |
+| GitHub connection | Disconnected | **Connect** / **Reconnect** opens the guided setup wizard, which offers browser sign-in (the GitHub device flow, when the build has an OAuth client id) and token paste on one step, validates whichever you use, and replaces the stored credential in place. **Disconnect** drops it. |
 | Default merge strategy | **Squash** | Merge / Squash / Rebase — the preselected strategy in the PR action bar. |
 | Require confirmation for destructive actions | **On** | Gates merge, close, and convert-to-draft. |
 | Default new PRs to draft | **Off** | Pre-checks "Open as draft" in the PR modal. |

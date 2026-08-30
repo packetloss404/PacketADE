@@ -217,10 +217,14 @@ Gitea and Forgejo share the same `/api/v1` surface and are one host kind.
 
 ### Connecting
 
-**GitHub** — the connect screen asks for a personal access token
-(*"Enter a personal access token with repo scope to browse repositories and
-issues."*, placeholder `ghp_xxxxxxxxxxxx`). An OAuth device flow also exists,
-requesting the scopes `repo read:org notifications`.
+**GitHub** — the connect screen opens the guided setup wizard, which offers
+both credential kinds on one step: **Sign in with GitHub** (the OAuth device
+flow, requesting `repo read:org notifications`) and a pasted personal access
+token. The browser option only appears when the build has an OAuth app client
+id configured (baked in, or `PACKETBENCH_GITHUB_CLIENT_ID`); otherwise the step
+is the token field alone. Either way the credential is checked against GitHub —
+identity plus the scopes it reports on `x-oauth-scopes` — before anything is
+written to the keyring.
 
 **Gitea / Forgejo** — added from Settings with a base URL, a label and a token.
 The token hint reads *"Settings → Applications → Generate New Token (scope: repo,

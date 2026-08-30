@@ -122,12 +122,17 @@ pub struct GitHostConnection {
     pub label: String,
 }
 
+/// The one origin a github.com credential may ever be sent to. Device-flow
+/// tokens are minted by github.com, so the probe that validates one is pinned
+/// here rather than taking an origin from the caller.
+const GITHUB_API_BASE: &str = "https://api.github.com";
+
 impl GitHostConnection {
     fn github() -> Self {
         Self {
             id: GITHUB_CONNECTION_ID.to_string(),
             kind: GitHostKind::GitHub,
-            base_url: "https://api.github.com".to_string(),
+            base_url: GITHUB_API_BASE.to_string(),
             label: "GitHub".to_string(),
         }
     }
@@ -612,19 +617,139 @@ pub fn github_oauth_configured() -> bool {
     github_oauth_client_id().is_some()
 }
 
+// ---- The parked (un-accepted) device-flow credential ----------------------
+//
+// GitHub minting a token is not PacketBench accepting it. This flow used to
+// write the token to the keyring the instant GitHub said "authorized", which
+// is the exact inversion the setup wizard exists to undo: a credential whose
+// org-restricted grants make it useless would land in the keyring, and the
+// user would find out only when a repo action failed.
+//
+// So a freshly minted token is parked HERE, in process memory, and reaches the
+// keyring only after passing the very same probe that gates a pasted token.
+// It never leaves Rust: `github_device_flow_poll` hands back an opaque handle,
+// and the probe/commit/discard commands take that handle, never a credential.
+
+/// How long a parked credential stays usable. Comfortably longer than the
+/// authorise-then-verify round trip, short enough that an abandoned wizard does
+/// not leave a live token in memory for the life of the process.
+const PENDING_DEVICE_AUTH_TTL_SECS: u64 = 20 * 60;
+
+struct PendingDeviceAuth {
+    id: String,
+    token: Zeroizing<String>,
+    minted: std::time::Instant,
+    /// Set by `github_device_flow_probe_pending` on a clean probe, and cleared
+    /// again by anything less. `commit` refuses without it, so there is no path
+    /// from "GitHub authorised it" to "it is in the keyring" that skips
+    /// validation — the frontend cannot opt out by not asking.
+    verified: bool,
+}
+
+/// Holds at most one un-committed device-flow credential.
+#[derive(Default)]
+pub struct DeviceAuthState {
+    pending: std::sync::Mutex<Option<PendingDeviceAuth>>,
+}
+
+const PENDING_UNKNOWN: &str =
+    "That sign-in is no longer in progress — start the browser authorisation again.";
+const PENDING_EXPIRED: &str =
+    "That sign-in took too long and was discarded — start the browser authorisation again.";
+const PENDING_UNVERIFIED: &str =
+    "This credential has not been checked against GitHub yet, so it was not saved.";
+
+impl DeviceAuthState {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<PendingDeviceAuth>> {
+        // A panic in another holder must not wedge sign-in permanently; the
+        // slot is a single owned value, so there is no torn state to inherit.
+        self.pending.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Park a freshly minted token, dropping (and zeroizing) any previous one.
+    fn stash(&self, token: String) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        *self.lock() = Some(PendingDeviceAuth {
+            id: id.clone(),
+            token: Zeroizing::new(token),
+            minted: std::time::Instant::now(),
+            verified: false,
+        });
+        id
+    }
+
+    /// The parked credential for `id`, if it is still the current one and has
+    /// not aged out. An aged-out entry is dropped on the way past.
+    fn token_for(&self, id: &str) -> Result<String, String> {
+        let mut slot = self.lock();
+        match slot.as_ref() {
+            Some(p) if p.id != id => Err(PENDING_UNKNOWN.to_string()),
+            Some(p) if p.minted.elapsed().as_secs() > PENDING_DEVICE_AUTH_TTL_SECS => {
+                *slot = None;
+                Err(PENDING_EXPIRED.to_string())
+            }
+            Some(p) => Ok(p.token.to_string()),
+            None => Err(PENDING_UNKNOWN.to_string()),
+        }
+    }
+
+    /// Record the outcome of a probe against the parked credential.
+    fn set_verified(&self, id: &str, verified: bool) {
+        if let Some(p) = self.lock().as_mut() {
+            if p.id == id {
+                p.verified = verified;
+            }
+        }
+    }
+
+    /// Hand over the parked credential for persistence, but only if a probe has
+    /// vouched for it. Consumes the slot either way it succeeds.
+    fn take_verified(&self, id: &str) -> Result<Zeroizing<String>, String> {
+        let mut slot = self.lock();
+        match slot.as_ref() {
+            Some(p) if p.id != id => return Err(PENDING_UNKNOWN.to_string()),
+            Some(p) if p.minted.elapsed().as_secs() > PENDING_DEVICE_AUTH_TTL_SECS => {
+                *slot = None;
+                return Err(PENDING_EXPIRED.to_string());
+            }
+            Some(p) if !p.verified => return Err(PENDING_UNVERIFIED.to_string()),
+            Some(_) => {}
+            None => return Err(PENDING_UNKNOWN.to_string()),
+        }
+        Ok(slot.take().expect("checked above").token)
+    }
+
+    /// Drop the parked credential. Idempotent, and a no-op for a stale handle.
+    fn discard(&self, id: &str) {
+        let mut slot = self.lock();
+        if slot.as_ref().is_some_and(|p| p.id == id) {
+            *slot = None;
+        }
+    }
+}
+
+pub fn create_device_auth_state() -> DeviceAuthState {
+    DeviceAuthState::default()
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceFlowPoll {
     /// `authorized` | `pending` | `slow_down` | `error`.
     pub status: String,
     pub message: Option<String>,
+    /// Opaque handle to the credential GitHub just minted and this process
+    /// parked. Present only on `authorized`. **Not** the token.
+    pub pending_id: Option<String>,
 }
 
-/// Poll for the device-flow token. On `authorized`, persists the token to the
-/// keyring exactly like a pasted PAT.
+/// Poll for the device-flow token. On `authorized` the token is parked in
+/// memory and an opaque handle is returned; nothing is written to the keyring
+/// until [`github_device_flow_commit`], and that refuses a handle no probe has
+/// vouched for.
 #[tauri::command]
 pub async fn github_device_flow_poll(
-    auth: State<'_, GitHubAuthState>,
+    device: State<'_, DeviceAuthState>,
     device_code: String,
 ) -> Result<DeviceFlowPoll, String> {
     let client_id =
@@ -650,15 +775,12 @@ pub async fn github_device_flow_poll(
         .map_err(|e| format!("Failed to parse token response: {}", e))?;
 
     if let Some(token) = v["access_token"].as_str() {
-        save_host_token(GITHUB_CONNECTION_ID, token)?;
-        auth.tokens
-            .write()
-            .await
-            .insert(GITHUB_CONNECTION_ID.to_string(), token.to_string());
-        info!("GitHub device-flow authorized; token persisted to keyring");
+        let pending_id = device.stash(token.to_string());
+        info!("GitHub device-flow authorized; credential held pending verification");
         return Ok(DeviceFlowPoll {
             status: "authorized".to_string(),
             message: None,
+            pending_id: Some(pending_id),
         });
     }
 
@@ -681,7 +803,56 @@ pub async fn github_device_flow_poll(
     Ok(DeviceFlowPoll {
         status: status.to_string(),
         message,
+        pending_id: None,
     })
+}
+
+/// Check the parked device-flow credential against GitHub — the same
+/// non-persisting probe that gates a pasted token, so both credential kinds
+/// produce the same verdict (identity, and the scopes GitHub reports on
+/// `x-oauth-scopes`) rather than one of them getting a free pass.
+///
+/// The origin is pinned to `api.github.com`: this credential was minted by
+/// github.com and there is no other address it could legitimately be sent to.
+/// Only the descriptor's paths/headers come from the caller.
+#[tauri::command]
+pub async fn github_device_flow_probe_pending(
+    device: State<'_, DeviceAuthState>,
+    pending_id: String,
+    probe: GitHostProbeSpec,
+) -> Result<GitHostProbeResult, String> {
+    let token = device.token_for(&pending_id)?;
+    let result = crate::commands::git_host_probe::probe_credential(
+        probe.into_request(GITHUB_API_BASE.to_string(), token),
+    )
+    .await?;
+    device.set_verified(&pending_id, result.outcome == GitHostProbeOutcome::Ok);
+    Ok(result)
+}
+
+/// Accept a probed device-flow credential: keyring first, then the in-memory
+/// map, exactly as a rotation does. Refuses a handle that no probe has vouched
+/// for, so "GitHub authorised it" is never on its own enough to be stored.
+#[tauri::command]
+pub async fn github_device_flow_commit(
+    auth: State<'_, GitHubAuthState>,
+    device: State<'_, DeviceAuthState>,
+    pending_id: String,
+) -> Result<(), String> {
+    let token = device.take_verified(&pending_id)?;
+    save_host_token(GITHUB_CONNECTION_ID, &token)?;
+    auth.tokens
+        .write()
+        .await
+        .insert(GITHUB_CONNECTION_ID.to_string(), token.to_string());
+    info!("GitHub device-flow credential verified and persisted to keyring");
+    Ok(())
+}
+
+/// Drop a parked credential the user walked away from. Idempotent.
+#[tauri::command]
+pub fn github_device_flow_discard(device: State<'_, DeviceAuthState>, pending_id: String) {
+    device.discard(&pending_id);
 }
 
 // ---- G2: multi-connection commands (GitHub + Gitea) ----
@@ -4129,6 +4300,20 @@ pub async fn github_mark_notification_read(
 }
 
 #[cfg(test)]
+impl DeviceAuthState {
+    /// Rewind the parked credential's mint time so TTL behaviour is testable
+    /// without sleeping for twenty minutes.
+    fn age_by(&self, secs: u64) {
+        if let Some(p) = self.lock().as_mut() {
+            p.minted = p
+                .minted
+                .checked_sub(std::time::Duration::from_secs(secs))
+                .expect("test clock underflow");
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -4979,6 +5164,106 @@ mod tests {
             let message = rotation_refusal(outcome);
             assert!(message.contains("existing credential is unchanged"));
             assert!(!message.contains("glpat"));
+        }
+    }
+
+    // ---- Device-flow: the parked credential ------------------------------
+    //
+    // The property under test is the ordering the wizard depends on: GitHub
+    // minting a token is not enough to put it in the keyring. Only a probe
+    // that came back clean can, and only once.
+
+    #[test]
+    fn a_parked_device_credential_is_not_committable_until_a_probe_vouches_for_it() {
+        let state = DeviceAuthState::default();
+        let id = state.stash("gho_parked".to_string());
+
+        // FAULT this pins: the old poll wrote to the keyring the instant
+        // GitHub said "authorized", so an under-scoped or unusable credential
+        // was persisted before anything had looked at it.
+        let refused = state.take_verified(&id).unwrap_err();
+        assert!(refused.contains("not been checked"));
+
+        state.set_verified(&id, true);
+        assert_eq!(state.take_verified(&id).unwrap().as_str(), "gho_parked");
+        // Consumed: a second commit has nothing to write.
+        assert!(state.take_verified(&id).is_err());
+    }
+
+    #[test]
+    fn a_failed_probe_revokes_a_previous_pass() {
+        let state = DeviceAuthState::default();
+        let id = state.stash("gho_parked".to_string());
+        state.set_verified(&id, true);
+        // "Verify again" landing on a red verdict must not leave the earlier
+        // green one standing as the thing commit checks.
+        state.set_verified(&id, false);
+        assert!(state.take_verified(&id).is_err());
+    }
+
+    #[test]
+    fn a_stale_handle_reaches_neither_the_token_nor_the_commit() {
+        let state = DeviceAuthState::default();
+        let first = state.stash("gho_first".to_string());
+        state.set_verified(&first, true);
+        // Starting a second sign-in replaces the parked credential; the first
+        // handle must not still be able to commit the second one's token.
+        let second = state.stash("gho_second".to_string());
+        assert!(state.token_for(&first).is_err());
+        assert!(state.take_verified(&first).is_err());
+        state.set_verified(&second, true);
+        assert_eq!(state.take_verified(&second).unwrap().as_str(), "gho_second");
+    }
+
+    #[test]
+    fn set_verified_ignores_a_handle_that_is_not_the_parked_one() {
+        let state = DeviceAuthState::default();
+        state.stash("gho_current".to_string());
+        state.set_verified("some-other-handle", true);
+        // The current entry stays unverified: a stale handle cannot vouch for it.
+        let id = {
+            let slot = state.lock();
+            slot.as_ref().expect("parked").id.clone()
+        };
+        assert!(state.take_verified(&id).is_err());
+    }
+
+    #[test]
+    fn an_abandoned_sign_in_ages_out_instead_of_lingering() {
+        let state = DeviceAuthState::default();
+        let id = state.stash("gho_abandoned".to_string());
+        state.set_verified(&id, true);
+        state.age_by(PENDING_DEVICE_AUTH_TTL_SECS + 1);
+
+        let expired = state.token_for(&id).unwrap_err();
+        assert!(expired.contains("took too long"));
+        // And the read dropped it, so the credential is gone from memory too.
+        assert!(state.lock().is_none());
+    }
+
+    #[test]
+    fn discard_drops_the_credential_and_is_safe_to_repeat() {
+        let state = DeviceAuthState::default();
+        let id = state.stash("gho_walked_away".to_string());
+        state.discard(&id);
+        assert!(state.lock().is_none());
+        state.discard(&id);
+        state.discard("never-existed");
+    }
+
+    #[test]
+    fn no_device_flow_message_can_carry_the_credential() {
+        let state = DeviceAuthState::default();
+        let id = state.stash("gho_SECRET_CANARY".to_string());
+        state.age_by(PENDING_DEVICE_AUTH_TTL_SECS + 1);
+        for message in [
+            state.token_for(&id).unwrap_err(),
+            state.take_verified("bogus").unwrap_err(),
+            PENDING_UNKNOWN.to_string(),
+            PENDING_EXPIRED.to_string(),
+            PENDING_UNVERIFIED.to_string(),
+        ] {
+            assert!(!message.contains("gho_"), "leaked in: {}", message);
         }
     }
 }

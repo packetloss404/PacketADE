@@ -110,6 +110,44 @@ describe("descriptor-driven step flow", () => {
       "done",
     ]);
   });
+
+  it("names the credential step for what it offers, without adding a step", () => {
+    const plain = wizardSteps(descriptor("github"));
+    const withBrowser = wizardSteps(descriptor("github"), { deviceAuthOffered: true });
+    // Browser authorisation must not cost the paste path an extra click, so
+    // the step LIST is identical — only the label changes, because calling the
+    // step "Access token" is how the browser option went unnoticed before.
+    expect(withBrowser.map((s) => s.id)).toEqual(plain.map((s) => s.id));
+    expect(plain.find((s) => s.id === "token")?.title).toBe("Access token");
+    expect(withBrowser.find((s) => s.id === "token")?.title).toBe("Sign in");
+  });
+});
+
+describe("browser authorisation is a descriptor capability", () => {
+  it("is declared by the host that has one, and absent from the ones that do not", () => {
+    // The point of putting it on the descriptor: the wizard has no GitHub arm.
+    expect(descriptor("github").deviceAuth).toBeTruthy();
+    expect(descriptor("gitea").deviceAuth).toBeUndefined();
+    expect(descriptor("gitlab").deviceAuth).toBeUndefined();
+  });
+
+  it("asks for at least the scopes the same descriptor calls required", () => {
+    // Otherwise a browser sign-in would land on "missing scopes" every time
+    // and the user would have no way to fix it — the grant is not theirs to
+    // edit, it is whatever we asked for.
+    const github = descriptor("github");
+    const requested = new Set(github.deviceAuth?.requestedScopes ?? []);
+    for (const scope of github.scopes.filter((s) => !s.optional)) {
+      expect(requested.has(scope.id), `device flow must request ${scope.id}`).toBe(true);
+    }
+  });
+
+  it("supplies every step of the flow, so the component needs no host knowledge", () => {
+    const spec = descriptor("github").deviceAuth;
+    for (const fn of ["isAvailable", "start", "poll", "probe", "commit", "discard"] as const) {
+      expect(typeof spec?.[fn], `deviceAuth.${fn}`).toBe("function");
+    }
+  });
 });
 
 describe("instance URL normalisation", () => {
