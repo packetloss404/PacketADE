@@ -54,6 +54,11 @@ function engineCaps(
       sessionsRename: true,
       sessionsUsage: true,
       modelsList: true,
+      // `null` is the base state on purpose: it is what an engine that
+      // advertised the vendor block before these flags existed sends, so the
+      // fixture exercises the `?? advertised` fallback unless a case opts in.
+      commandsList: null,
+      projectFiles: null,
       mcpList: true,
       mcpDefaults: true,
       permissionModes: ["ask", "accept-edits", "auto", "read-only", "bypass"],
@@ -407,6 +412,25 @@ describe("capabilitiesFor — engine capabilities (ACP)", () => {
     const bare = capabilitiesFor(acpConv({ advertised: false }));
     expect(bare.slashCommands).toBe(false);
     expect(bare.fileMentions).toBe(false);
+  });
+
+  it("prefers each extension's own flag over the vendor-block proxy", () => {
+    // The engine grew dedicated flags. When it sends them they are the answer,
+    // in BOTH directions — including the case the proxy cannot express: a
+    // packetcode that advertises the block but does not serve one of the two
+    // methods. The proxy would leave a menu on screen that can only ever be
+    // empty.
+    const disowned = capabilitiesFor(acpConv({ commandsList: false, projectFiles: false }));
+    expect(disowned.slashCommands).toBe(false);
+    expect(disowned.fileMentions).toBe(false);
+
+    // And an engine that says yes while advertising nothing else is still a
+    // yes: the flag outranks the proxy it replaced.
+    const claimed = capabilitiesFor(
+      acpConv({ advertised: false, commandsList: true, projectFiles: true }),
+    );
+    expect(claimed.slashCommands).toBe(true);
+    expect(claimed.fileMentions).toBe(true);
   });
 
   it("still requires a project path for file mentions", () => {

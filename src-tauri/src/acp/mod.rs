@@ -40,6 +40,16 @@ use tracing::warn;
 
 /// Oldest engine this client is tested against.
 pub const MINIMUM_ENGINE_VERSION: &str = "0.1.0";
+/// The ACP protocol version this client speaks, sent in `initialize` and
+/// compared against what the engine answers.
+///
+/// A single constant rather than a literal in the handshake frame because the
+/// value sent and the value checked have to be the same thing: they were two
+/// unrelated numbers before, one hardcoded in the `json!` and one merely
+/// recorded from the reply and never looked at. An engine that answered a
+/// different version was accepted in complete silence — which is the failure
+/// mode a version field exists to prevent.
+pub const CLIENT_PROTOCOL_VERSION: u64 = 1;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(15);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// The engine's own budget for starting a session's MCP fleet:
@@ -143,6 +153,19 @@ pub struct PacketcodeCapabilities {
     pub sessions_usage: bool,
     /// Gates `_packetcode/models/list`.
     pub models_list: bool,
+    /// Gates `_packetcode/commands/list`, which backs the composer's "/" menu.
+    ///
+    /// `Option` rather than `bool` because this flag arrived AFTER the vendor
+    /// block itself: an engine that advertised `_packetcode` but predates the
+    /// flag sends nothing, and reading that absence as `false` would hide a
+    /// menu that works. `None` therefore means "the engine did not say", and
+    /// the caller falls back to [`Self::advertised`] exactly as before;
+    /// `Some(false)` is the engine disowning the method, which is new
+    /// information and must be honoured.
+    pub commands_list: Option<bool>,
+    /// Gates `_packetcode/project/files`, which backs the composer's "@" menu.
+    /// Same three-state rule as [`Self::commands_list`].
+    pub project_files: Option<bool>,
     /// Gates the CONFIGURED half of `_packetcode/mcp/list` — the query with no
     /// session id, which reports the `[mcp.<name>]` servers the engine would
     /// start for a session that inherits them. That list is what the consent
@@ -174,6 +197,8 @@ impl Default for PacketcodeCapabilities {
             sessions_rename: false,
             sessions_usage: false,
             models_list: false,
+            commands_list: None,
+            project_files: None,
             mcp_list: false,
             mcp_defaults: false,
             permission_modes: PERMISSION_MODES.iter().map(|m| m.to_string()).collect(),
@@ -210,11 +235,20 @@ fn parse_capabilities(result: &Value) -> EngineCapabilities {
     let ext = agent
         .and_then(|a| a.get("_packetcode"))
         .filter(|v| v.is_object());
+    // Two-state: absent means the engine did not advertise the feature, and
+    // for these flags that is indistinguishable from "no" by design — the
+    // whole block being absent is what `advertised` already reports.
     let flag = |name: &str| {
         ext.and_then(|e| e.get(name))
             .and_then(Value::as_bool)
             .unwrap_or(false)
     };
+    // Three-state, for flags added after the vendor block shipped: `None`
+    // ("the engine did not say") must stay distinguishable from `Some(false)`
+    // ("the engine says it does not serve this"), or an engine that predates
+    // the flag would have a working menu hidden. Only a real boolean counts;
+    // a string or number is not the engine saying anything.
+    let opt_flag = |name: &str| ext.and_then(|e| e.get(name)).and_then(Value::as_bool);
 
     // An absent, non-array, or empty list means "the engine did not say":
     // keep all five so pre-capability engines behave exactly as before.
@@ -268,6 +302,8 @@ fn parse_capabilities(result: &Value) -> EngineCapabilities {
             sessions_rename: flag("sessionsRename"),
             sessions_usage: flag("sessionsUsage"),
             models_list: flag("modelsList"),
+            commands_list: opt_flag("commandsList"),
+            project_files: opt_flag("projectFiles"),
             mcp_list: flag("mcpList"),
             mcp_defaults: flag("mcpDefaults"),
             permission_modes,
@@ -1013,7 +1049,7 @@ pub async fn start_engine(
         .request(
             "initialize",
             json!({
-                "protocolVersion": 1,
+                "protocolVersion": CLIENT_PROTOCOL_VERSION,
                 "clientCapabilities": { "fs": { "readTextFile": false, "writeTextFile": false } },
                 // Brand-derived, never hardcoded: see core::brand.
                 "clientInfo": {
@@ -1027,7 +1063,21 @@ pub async fn start_engine(
     // Keep what the engine advertised: the UI offers only the permission modes
     // and extensions this engine will actually accept, instead of discovering
     // them from -32601/-32602 errors at call time.
-    *state.capabilities.lock().await = Some(parse_capabilities(&handshake));
+    let capabilities = parse_capabilities(&handshake);
+    // Warn, never refuse. ACP is additive within a major version and every
+    // optional method here already degrades on -32601, so a client that
+    // hard-failed on an unfamiliar number would break pairings that work.
+    // Silence is the thing to avoid: without this line a version mismatch
+    // surfaces only as unexplained downstream parse failures.
+    if capabilities.protocol_version != CLIENT_PROTOCOL_VERSION {
+        warn!(
+            engine = capabilities.protocol_version,
+            client = CLIENT_PROTOCOL_VERSION,
+            "ACP engine speaks a different protocol version; continuing, but frame shapes may \
+             have changed"
+        );
+    }
+    *state.capabilities.lock().await = Some(capabilities);
     *guard = Some(Engine { child, bridge });
     Ok(())
 }
@@ -1942,7 +1992,8 @@ mod tests {
         engine_path_override, install_dir_candidates, is_executable_file, load_session_params,
         new_session_params, parse_capabilities, resolve_from, should_ask_engine_for_sessions,
         strip_verbatim_prefix, version_at_least, AcpMcpPosture, AcpMcpServer,
-        PacketcodeCapabilities, ENGINE_BINARY_STEM, ENGINE_MCP_STARTUP_CEILING, ENGINE_PATH_ENV,
+        PacketcodeCapabilities, CLIENT_PROTOCOL_VERSION, ENGINE_BINARY_STEM,
+        ENGINE_MCP_STARTUP_CEILING, ENGINE_PATH_ENV,
         GROUP_TERM_GRACE, KILL_GRACE, LEGACY_ENGINE_PATH_ENV, LOAD_TIMEOUT, NEW_SESSION_TIMEOUT,
         PERMISSION_MODES, REQUEST_TIMEOUT, SHUTDOWN_GRACE,
     };
@@ -2132,6 +2183,8 @@ mod tests {
                     "sessionsRename": true,
                     "sessionsUsage": true,
                     "modelsList": false,
+                    "commandsList": true,
+                    "projectFiles": false,
                     "mcpList": true,
                     "mcpDefaults": true,
                     "permissionModes": ["ask", "read-only"],
@@ -2150,6 +2203,10 @@ mod tests {
         assert!(caps.packetcode.sessions_rename);
         assert!(caps.packetcode.sessions_usage);
         assert!(!caps.packetcode.models_list);
+        // Said yes and said no are both the engine SAYING something, and must
+        // arrive as such rather than collapsing into the `advertised` proxy.
+        assert_eq!(caps.packetcode.commands_list, Some(true));
+        assert_eq!(caps.packetcode.project_files, Some(false));
         assert!(caps.packetcode.mcp_list);
         assert!(caps.packetcode.mcp_defaults);
         assert_eq!(caps.packetcode.permission_modes, modes(&["ask", "read-only"]));
@@ -2157,6 +2214,76 @@ mod tests {
             caps.packetcode.default_permission_mode.as_deref(),
             Some("read-only")
         );
+    }
+
+    /// The verbatim `initialize` result of packetcode v0.5.1-90-g1377d4f,
+    /// captured from the real engine over stdio. A fixture rather than a
+    /// hand-written approximation: the point is to fail if this client ever
+    /// stops reading what the shipping engine actually sends.
+    #[test]
+    fn capabilities_from_the_real_engine_handshake() {
+        let caps = parse_capabilities(&json!({
+            "agentCapabilities": {
+                "_packetcode": {
+                    "commandsList": true,
+                    "defaultPermissionMode": "ask",
+                    "mcpDefaults": true,
+                    "mcpList": true,
+                    "modelsList": true,
+                    "permissionModes": ["ask", "read-only"],
+                    "projectFiles": true,
+                    "sessionsList": true,
+                    "sessionsRename": true,
+                    "sessionsUsage": true
+                },
+                "loadSession": true,
+                "mcpCapabilities": { "http": false, "sse": false },
+                "promptCapabilities": { "audio": false, "embeddedContext": false, "image": false },
+                "sessionCapabilities": { "close": {} }
+            },
+            "agentInfo": {
+                "name": "packetcode",
+                "title": "PacketCode",
+                "version": "v0.5.1-90-g1377d4f"
+            },
+            "authMethods": [],
+            "protocolVersion": 1
+        }));
+
+        assert_eq!(caps.protocol_version, CLIENT_PROTOCOL_VERSION);
+        assert!(caps.load_session);
+        assert!(caps.session_close);
+        assert!(caps.packetcode.advertised);
+        assert!(caps.packetcode.sessions_list);
+        assert!(caps.packetcode.sessions_rename);
+        assert!(caps.packetcode.sessions_usage);
+        assert!(caps.packetcode.models_list);
+        assert!(caps.packetcode.mcp_list);
+        assert!(caps.packetcode.mcp_defaults);
+        assert_eq!(caps.packetcode.commands_list, Some(true));
+        assert_eq!(caps.packetcode.project_files, Some(true));
+        // The operator's ceiling, NOT the five-mode fallback: this engine
+        // answers -32602 for anything above "ask", so `resolve_permission_mode`
+        // has to see exactly these two.
+        assert_eq!(caps.packetcode.permission_modes, modes(&["ask", "read-only"]));
+        assert_eq!(caps.packetcode.default_permission_mode.as_deref(), Some("ask"));
+    }
+
+    #[test]
+    fn flags_added_after_the_vendor_block_stay_unknown_when_unsent() {
+        // An engine that advertised `_packetcode` before `commandsList` and
+        // `projectFiles` existed. Absent must read as "did not say" so the
+        // caller keeps using `advertised` as the proxy — reading it as "no"
+        // would hide a "/" and "@" menu that work perfectly well.
+        let caps = parse_capabilities(&json!({
+            "protocolVersion": 1,
+            "agentCapabilities": {
+                "_packetcode": { "sessionsList": true, "modelsList": true }
+            }
+        }));
+        assert!(caps.packetcode.advertised);
+        assert_eq!(caps.packetcode.commands_list, None);
+        assert_eq!(caps.packetcode.project_files, None);
     }
 
     #[test]
