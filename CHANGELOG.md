@@ -7,6 +7,76 @@ For current direction, use [`ROADMAP.md`](./ROADMAP.md). For planning briefs and
 runbooks, use [`dev/README.md`](./dev/README.md). This file is history, not a
 task list.
 
+## [0.13.1] - 2026-08-30
+
+Windows artifacts, built 2026-08-30 from `8dc13780`, **unsigned**:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `PacketBench_0.13.1_x64-setup.exe` (NSIS, 85.4 MiB) | `10814779d13001ea4517c706eaf62adc55c21701abe6ed37821d3994a58c8a4e` |
+| `PacketBench_0.13.1_x64_en-US.msi` (133.2 MiB) | `d0caf91b45d3903ae42eda1bd28754b3600e9d9336f50fbb82cf2d2b66c11f68` |
+
+A patch release for three defects found by using 0.13.0 rather than by testing
+it. The acceptance-matrix position is unchanged from 0.13.0: sections 2–5 have
+still never run.
+
+Gates at `8dc13780`: `cargo check` clean, 976 Rust lib tests (2 ignored),
+`tsc --noEmit` 0 errors, `pnpm lint` 0 errors (9 pre-existing warnings),
+`vitest run` 2765/2765 across 286 files.
+
+### Fixed — a console window on every visit to either agent route
+
+`acp/mod.rs` has four spawn sites. The `taskkill` and installer spawns both
+called `hide_window_async`; the two that matter — the `doctor --json` probe and
+the engine itself — never set `CREATE_NO_WINDOW`. Both agent routes probe on
+mount (the Agents view through each provider's auth badge via
+`acp::routing::auth_status`, the PacketCode view through
+`PacketCodeEngineGate`), so a console window appeared on **every navigation**.
+The engine spawn was worse than a flash: it is long-lived, so its window stayed
+on screen for the whole session.
+
+### Fixed — the ACP row guessed at the engine's models, and 404'd
+
+The PacketCode (ACP) catalog row seeded three model ids so the picker would
+"render something before the engine has been asked". Those ids were a guess at
+another program's configuration. The engine owns its own provider credentials,
+so which models exist is decided by the user's `~/.packetcode/config.toml` — and
+on a machine whose engine has providers `openai` / `codex` / `ollama` and default
+model `gpt-5.6-sol`, with **no Anthropic provider at all**, the seeded Claude id
+went to OpenAI and came back as:
+
+```
+-32603 chat completion: status 404: The model claude-opus-4-8 does not exist
+or you do not have access to it
+```
+
+The row now carries no models, the rule already applied to Ollama's live list
+and `api-custom`. Nothing else needed changing: the engine enumerates its real
+models over `_packetcode/models/list`, `stampEngineCapabilities` already fetches
+them, and `ModelSelector` already prefers them over the catalog. Until that
+answer arrives PacketBench sends **no** model, and `acp::routing` maps an empty
+model to `None` — so the engine uses its own configured default, the only model
+we can be sure exists. The picker stays mounted and reads "Engine default".
+
+### Fixed — three model ids that named models which do not exist
+
+`claude-opus-4-6-20250415`, `claude-sonnet-4-6-20250414` and
+`claude-haiku-4-5-20251001` all carried a snapshot date. Anthropic's published
+ids are complete without one, so each would have 404'd the first time it was
+picked. The rest of the codebase already knew this — `findProviderCatalog` and
+both pricing engines strip a trailing `-YYYYMMDD` before matching, and
+`modelContext` keys on the bare ids — so the catalog was the only place treating
+a dated id as canonical.
+
+Claude Opus 5 and Claude Sonnet 5 join both Anthropic rows, with Opus 5 first so
+it is the default for **new** conversations; persisted ones resume on their own
+stored id. No pricing change was needed — `shared/model-pricing.json` already
+carried `claude-opus-5`, `claude-sonnet-5` and `claude-fable-5`.
+
+Separately, the context table listed Opus 4.6 and Sonnet 4.6 at 200K tokens.
+Both are 1M, so every context gauge for those two undersized by 5× — the same
+class of error that module's header says it exists to end.
+
 ## [0.13.0] - 2026-08-30
 
 Windows artifacts, built 2026-08-30 from `49583b5a`, **unsigned**:
