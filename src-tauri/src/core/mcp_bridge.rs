@@ -712,6 +712,100 @@ mod tests {
         .is_err());
     }
 
+    /// An EMPTY root list is the strictest state, not the open one.
+    ///
+    /// The MCP Hub's roots editor lets a user delete their last root, which is
+    /// only safe because of this: with no roots, every path-like argument is
+    /// refused. If this ever inverted to "empty means unrestricted", deleting
+    /// the last row in that editor would silently remove all protection.
+    #[test]
+    fn empty_allowed_roots_denies_every_path_argument() {
+        let mut snapshot = snapshot();
+        snapshot.allowed_roots.clear();
+        let snapshots = [snapshot];
+        for path in ["/workspace/src/main.rs", "/etc/shadow", "relative.txt"] {
+            assert!(
+                enforce_tool_trust(
+                    Some(&snapshots),
+                    "test",
+                    "read_file",
+                    &serde_json::json!({ "path": path }),
+                    Some(true),
+                )
+                .is_err(),
+                "empty root list admitted '{path}'"
+            );
+        }
+        // A call with no path-like argument is unaffected: roots constrain
+        // path arguments, they are not a second read gate.
+        assert!(enforce_tool_trust(
+            Some(&snapshots),
+            "test",
+            "read_file",
+            &serde_json::json!({ "query": "anything" }),
+            Some(true),
+        )
+        .is_ok());
+    }
+
+    /// Roots that LOOK restrictive but match everything.
+    ///
+    /// `normalize_lexical` drops `CurDir`, so a root of "." or "" reduces to an
+    /// empty path, and `Path::starts_with("")` is true for every path on the
+    /// machine. Read as an allowlist entry, `.` looks like "the current
+    /// directory"; it is in fact "the whole filesystem", and the Node sidecar
+    /// reads the same value as its own working directory instead.
+    ///
+    /// This is pinned rather than fixed here on purpose: `path_inside_root` is
+    /// a checker and must keep failing closed on whatever it is handed. The
+    /// defence is that nothing may STORE such a value —
+    /// `normalizeMcpRoot` in `src/lib/mcpRoots.ts` refuses "", ".", "./" and
+    /// any `.`/`..` segment, and is the only writer the Hub offers. If this
+    /// test ever starts failing because the checker was tightened, delete it;
+    /// if it starts failing because the checker was loosened, do not.
+    #[test]
+    fn degenerate_roots_match_everything_and_must_never_be_stored() {
+        for root in ["", ".", "./"] {
+            assert!(
+                path_inside_root("/etc/shadow", root),
+                "expected the known-degenerate root {root:?} to match everything"
+            );
+        }
+        // The values the editor stores instead do not have this property.
+        assert!(!path_inside_root("/etc/shadow", "/workspace"));
+    }
+
+    /// Containment is component-wise, so a sibling directory whose name merely
+    /// starts with the root's name is outside it.
+    #[test]
+    fn sibling_directory_with_a_shared_name_prefix_is_outside_the_root() {
+        assert!(!path_inside_root("/workspace-evil/a.txt", "/workspace"));
+        assert!(path_inside_root("/workspace/a.txt", "/workspace"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_root_matching_is_case_sensitive_except_for_the_drive_letter() {
+        // The drive letter is normalised by std; every other segment is not.
+        assert!(path_inside_root("c:\\repo\\src\\a.txt", "C:\\repo"));
+        assert!(!path_inside_root("C:\\REPO\\src\\a.txt", "C:\\repo"));
+        // Separator spelling does not matter on Windows.
+        assert!(path_inside_root("C:/repo/src/a.txt", "C:\\repo"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_verbatim_and_drive_relative_roots_are_unusable() {
+        // A verbatim prefix never compares equal to an ordinary path, in
+        // either direction: such a root would silently match nothing.
+        assert!(!path_inside_root("C:\\repo\\a.txt", "\\\\?\\C:\\repo"));
+        assert!(!path_inside_root("\\\\?\\C:\\repo\\a.txt", "C:\\repo"));
+        // A drive-relative root is read here as the WHOLE drive, while the
+        // sidecar reads it as that drive's current directory. Refused by the
+        // editor for exactly this disagreement.
+        assert!(path_inside_root("C:\\Windows\\System32\\config\\SAM", "C:"));
+    }
+
     /// F6 — the exact names the 2026-08-05 review drove through the old
     /// 19-word substring denylist and out the other side as "non-mutating".
     /// Every one of them executed in a session the user had set read-only.
