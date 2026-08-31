@@ -1,6 +1,6 @@
 # PacketBench Backlog
 
-Last reconciled: 2026-08-27
+Last reconciled: 2026-08-31
 
 This is the single task register for work that has not shipped or has not yet
 earned its required real/package proof. Completed implementation history belongs
@@ -375,6 +375,36 @@ environment or packaged matrix has actually run.
   release matrix demands them. macOS `x86_64-apple-darwin` is a fast-follow to
   the v1.1 arm64 DMG only if a user asks; it cross-compiles on an Apple Silicon
   Mac and needs no new machinery. Linux packaging is still unproven.
+
+- **P2 - Live model discovery, real-endpoint proof.** `list_provider_models`
+  (`src-tauri/src/commands/provider_models.rs`) parses six wire shapes and is
+  covered by 23 tests, but every fixture in that module is hand-authored - the
+  parsers are verified against our belief about each response, not against the
+  providers. **OpenRouter is now genuinely proven:** 395 live entries fetched
+  2026-08-31 match the parser's assumptions exactly, including the nullable
+  `top_provider.context_length` / `max_completion_tokens` (6 of 395 null) and
+  `pricing.prompt` / `completion` always arriving as strings. Two things only
+  live data could settle: **10 models price at the sentinel `-1`** for
+  variable/unknown cost, caught by the `per_token < 0.0 -> None` guard at
+  `provider_models.rs:526` - without it they would surface as -$1,000,000/Mtok
+  and sail straight past any zero-cost check - and **42 price at exactly `"0"`**,
+  so the free row has real occupants for `expectedStatus` to assert on. Still
+  unproven: Anthropic, OpenAI, MiniMax, and the other keyed providers, all of
+  which need credentials the development environment does not hold (only
+  `ANTHROPIC_BASE_URL` is set). Close this with an `#[ignore]`d live-capture
+  test that hits the real endpoints when keys are in the environment, run by
+  hand rather than in CI, so the proof is repeatable instead of expiring at
+  every release.
+- **P2 - Anthropic pagination is unreachable, not merely untested.**
+  `list_anthropic_models` requests `limit=1000` (`provider_models.rs:335`) and
+  Anthropic publishes a few dozen models, so `has_more` is false on the first
+  page and the loop at `provider_models.rs:330` will never take a second
+  iteration in production. Shipping a build and clicking refresh does not
+  exercise it: the cursor handling, the empty-cursor guard at
+  `provider_models.rs:346`, and the `MAX_ANTHROPIC_PAGES` cap are dead paths
+  until Anthropic crosses 1000 models. The live-capture test above should force
+  `limit=1` for this provider specifically - the only way the loop genuinely
+  runs twice against a real endpoint.
 
 ## Bounded source work
 
@@ -948,6 +978,19 @@ from the original report, which still lists them as findings.
   keeps growing between reconciliations. Split along
   session-lifecycle/event-intake seams. (Folded from `docs/deferred-work.md`,
   count re-measured.)
+
+- **P2 - Pure logic hidden behind the `@/lib/tauri` transport mock.**
+  `src/lib/tauri.ts` is both the IPC surface and a grab-bag of pure helpers, so
+  a suite that stubs the transport also stubs the reasoning. Measured
+  2026-08-31: **103 test files mock that module and 92 replace it wholesale**,
+  so any pure function living there is untested in roughly 90% of the suite.
+  Wiring the live-model error classifier surfaced this as nine unhandled
+  rejections that vitest flags as possible false positives; the fix was to move
+  the classifier out to `src/lib/liveModelErrors.ts`, where no transport mock
+  can reach it. `parsePtyExitPayload` (`src/lib/tauri.ts:227`) hit the identical
+  trap earlier and is tracked separately under *Main shell and daily-driver
+  polish*. Patching 92 files is the wrong fix: sweep `tauri.ts` for the
+  remaining pure helpers and relocate them beside the two that already escaped.
 
 ### Flight, Git host, and runtime debt
 
