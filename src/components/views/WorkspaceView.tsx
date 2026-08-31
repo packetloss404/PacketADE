@@ -10,8 +10,9 @@ import { RightDock, type RightDockPanel } from "@/components/layout/RightDock";
 import { isPanelVisible, useRightDockStore } from "@/stores/rightDockStore";
 import { REMOTE_UNSUPPORTED_TOOLTIP } from "@/lib/remoteConversation";
 import { isOnboardingComplete } from "@/lib/onboarding";
+import { pathIsDir } from "@/lib/tauri";
 import { useEffect, useState } from "react";
-import { Bot, LayoutGrid, GitBranch, FileText, Plus, Zap } from "lucide-react";
+import { Bot, LayoutGrid, GitBranch, FileText, FolderX, Plus, Zap } from "lucide-react";
 import { GitDashboard } from "@/components/workspace/GitDashboard";
 import { getAgentColor } from "@/lib/agentColors";
 import { AccountDot } from "@/components/session/AccountChip";
@@ -76,6 +77,37 @@ export function WorkspaceView({ surfaceActive = true }: WorkspaceViewProps) {
   const workspaceStatuses = useWorkspaceStatuses();
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
+
+  // Does the selected workspace's project directory still exist?
+  //
+  // `null` = not checked yet (or not applicable). A workspace whose folder has
+  // been moved or deleted used to open to an empty mosaic with the reason
+  // stated ONLY inside the sidebar's FILES subtree — which is collapsed by
+  // default, so the click looked like it did nothing at all. Remote
+  // workspaces are skipped: their path lives on the remote host and
+  // `path_is_dir` would answer about the wrong machine.
+  const [projectPathMissing, setProjectPathMissing] = useState<string | null>(null);
+  const activeProjectPath = activeWorkspace?.projectPath;
+  const activeIsLocal = activeWorkspace ? isLocalWorkspace(activeWorkspace) : false;
+  useEffect(() => {
+    if (!activeProjectPath || !activeIsLocal) {
+      setProjectPathMissing(null);
+      return;
+    }
+    let cancelled = false;
+    void pathIsDir(activeProjectPath)
+      .then((ok) => {
+        if (!cancelled) setProjectPathMissing(ok ? null : activeProjectPath);
+      })
+      // A failed probe is not proof the path is gone — say nothing rather than
+      // accuse the directory of being missing on the strength of an IPC error.
+      .catch(() => {
+        if (!cancelled) setProjectPathMissing(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectPath, activeIsLocal]);
   const activeNonArchived = workspaces.filter((w) => w.status === "active");
   const recordVisibleConversations = useWorkspaceAgentsDogfoodStore(
     (state) => state.recordVisibleConversations,
@@ -316,6 +348,25 @@ export function WorkspaceView({ surfaceActive = true }: WorkspaceViewProps) {
                           variant="inline"
                           onOpenTemplates={() => setShowCreate(true)}
                         />
+                      </div>
+                    ) : projectPathMissing && ws.id === activeWorkspaceId ? (
+                      // Say it where the user clicked. The sidebar's FILES
+                      // subtree also reports this, but it is collapsed by
+                      // default, so without this the workspace opened to a
+                      // blank mosaic and the click read as a no-op.
+                      <div className="flex flex-1 select-none flex-col items-center justify-center px-6 text-center text-text-muted">
+                        <FolderX size={28} className="mb-3 text-accent-red opacity-70" />
+                        <p className="text-xs text-text-secondary">
+                          This workspace&apos;s project folder is missing
+                        </p>
+                        <p className="mt-1 max-w-lg break-all font-mono text-[11px] text-accent-red">
+                          {projectPathMissing}
+                        </p>
+                        <p className="mt-3 max-w-md text-[11px]">
+                          Its sessions are still saved and nothing has been deleted. Restore
+                          the folder at that path, or create a new workspace pointing
+                          somewhere that exists.
+                        </p>
                       </div>
                     ) : (
                       <WorkspaceMosaicContainer

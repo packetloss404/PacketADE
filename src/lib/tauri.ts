@@ -242,6 +242,24 @@ export function parsePtyExitPayload(payload: unknown): PtyExitPayload {
   };
 }
 
+/**
+ * Did the child exit cleanly?
+ *
+ * `false` only when the backend reported a **non-zero** code and the session
+ * was not deliberately terminated. Two cases deliberately count as success:
+ * `terminated` (an orchestrator or the user killed it — not the CLI's fault),
+ * and a `null` code, because "we could not read the status" is an absence of
+ * evidence, not evidence of failure.
+ *
+ * Shared so the terminal pane and the transient-PTY runner cannot drift on
+ * what counts as a failure.
+ */
+export function ptyExitSucceeded(payload: unknown): boolean {
+  const { exitCode, terminated } = parsePtyExitPayload(payload);
+  if (terminated) return true;
+  return exitCode === null || exitCode === 0;
+}
+
 // Code quality
 export interface CrashEntry {
   timestamp: string;

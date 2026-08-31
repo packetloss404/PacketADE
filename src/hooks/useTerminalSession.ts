@@ -6,8 +6,10 @@ import {
   createPtySession,
   killPty,
   listPtySessions,
+  parsePtyExitPayload,
   readPtyTranscript,
   writePty,
+  type PtyExitPayload,
 } from "@/lib/tauri";
 import { logSwallowed } from "@/lib/logSwallowed";
 import { ptyExitEvent, ptyOutputEvent } from "@/lib/events";
@@ -295,11 +297,17 @@ export function useTerminalSession({
       let buffering = true;
       const buffered: PtyOutputPayload[] = [];
       let exitWhileBuffering = false;
+      // The exit payload that arrived while output was still buffering, so a
+      // deferred `finishSession()` reports the real outcome instead of losing
+      // it. Without this the buffering path would silently downgrade every
+      // crash to a clean exit — the same bug one layer down.
+      let bufferedExit: PtyExitPayload | null = null;
       let sessionFinished = false;
-      const finishSession = () => {
+      const finishSession = (exit: PtyExitPayload | null = null) => {
         if (sessionFinished) return;
         if (buffering) {
           exitWhileBuffering = true;
+          bufferedExit = exit;
           return;
         }
         sessionFinished = true;
@@ -313,14 +321,31 @@ export function useTerminalSession({
         unlistenersRef.current = [];
 
         const wasRequested = exitRequestedRef.current;
+        // A non-zero exit code means the CLI died rather than finished. It is
+        // NOT a failure when the user asked for the exit (Kill/Restart/close)
+        // or when an orchestrator terminated the session — both of those are
+        // deliberate, and `terminated` marks the second.
+        const failed =
+          !wasRequested &&
+          exit !== null &&
+          !exit.terminated &&
+          exit.exitCode !== null &&
+          exit.exitCode !== 0;
         setAlive(false);
         setShowApproval(false);
         setCurrentSessionId(null);
         sessionIdRef.current = null;
         useLayoutStore.getState().setPaneSession(paneId, null);
         emitSessionEnded(sessionId);
-        term.write("\r\n\x1b[90m[Session ended]\x1b[0m\r\n");
-        useTabStore.getState().updateTabStatus(tabId, "done");
+        // Say which it was. Previously every ending printed "[Session ended]"
+        // in grey, so a CLI that access-violated on startup was visually
+        // identical to one that did its job and returned 0.
+        term.write(
+          failed
+            ? `\r\n\x1b[31m[Session ended — exit code ${exit?.exitCode}]\x1b[0m\r\n`
+            : "\r\n\x1b[90m[Session ended]\x1b[0m\r\n",
+        );
+        useTabStore.getState().updateTabStatus(tabId, failed ? "error" : "done");
         stopDurationTimer();
 
         const tab = useTabStore.getState().getTab(tabId);
@@ -343,7 +368,7 @@ export function useTerminalSession({
               cliCommand,
               memoryScopeForWorkspace(workspaceId, projectPath),
               tab.durationMs,
-              wasRequested ? "killed" : "done",
+              wasRequested ? "killed" : failed ? "error" : "done",
             );
         }
       };
@@ -357,8 +382,8 @@ export function useTerminalSession({
         }
       });
 
-      const exitUnlisten = await listen<unknown>(ptyExitEvent(sessionId), () => {
-        finishSession();
+      const exitUnlisten = await listen<unknown>(ptyExitEvent(sessionId), (event) => {
+        finishSession(parsePtyExitPayload(event.payload));
       });
 
       unlistenersRef.current = [outputUnlisten, exitUnlisten];
@@ -385,7 +410,7 @@ export function useTerminalSession({
       const bufferedRemainder = bufferedPtyRemainder(replayed, transcript?.sequence, buffered);
       if (bufferedRemainder) term.write(bufferedRemainder);
       buffering = false;
-      if (exitWhileBuffering) finishSession();
+      if (exitWhileBuffering) finishSession(bufferedExit);
 
       const sessions = await listPtySessions().catch(() => null);
       const liveSession = sessions?.find((s) => s.id === sessionId);

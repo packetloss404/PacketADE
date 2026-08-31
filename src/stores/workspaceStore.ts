@@ -204,6 +204,49 @@ interface WorkspaceStore {
 
 const DEFAULT_BYPASS_KEY = "packetbench:workspace-default-bypass";
 const AUTO_BIND_GITHUB_KEY = "packetbench:workspace-auto-bind-github";
+const ACTIVE_WORKSPACE_KEY = "packetbench:workspace-active-id";
+
+/**
+ * Remember which workspace was open.
+ *
+ * Restart used to drop the selection: the workspace list and every session in
+ * it came back, the app returned to the Workspace view, and then showed
+ * "Select a workspace from the sidebar" — so the last thing you were working
+ * in had to be re-picked by hand every launch.
+ *
+ * Only the id is stored. It is validated against the hydrated list on read, so
+ * a workspace deleted (or removed on another machine) since the last run
+ * resolves to `null` rather than pointing the view at a ghost.
+ */
+function readActiveWorkspaceId(workspaces: Workspace[]): string | null {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(ACTIVE_WORKSPACE_KEY);
+    if (!raw) return null;
+    return workspaces.some((w) => w.id === raw && w.status !== "archived") ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Test seam for {@link readActiveWorkspaceId}. The real call happens once at
+ * module init, which a test cannot re-trigger without re-importing the whole
+ * store, so the validation rules are exercised through this instead.
+ */
+export function readActiveWorkspaceIdForTest(workspaces: Workspace[]): string | null {
+  return readActiveWorkspaceId(workspaces);
+}
+
+function writeActiveWorkspaceId(id: string | null) {
+  if (typeof localStorage === "undefined") return;
+  try {
+    if (id) localStorage.setItem(ACTIVE_WORKSPACE_KEY, id);
+    else localStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+  } catch {
+    // Best-effort — the selection still applies for this session.
+  }
+}
 
 function readBooleanFlag(key: string, fallback: boolean): boolean {
   if (typeof localStorage === "undefined") return fallback;
@@ -439,13 +482,21 @@ function commitWorkspaces(
     if (next.workspaces) {
       syncToBackend(next.workspaces);
     }
+    // One choke point for the four mutators that also move the selection
+    // (create, archive, restore, delete). `setActiveWorkspace` does not go
+    // through here and persists on its own.
+    if ("activeWorkspaceId" in next) {
+      writeActiveWorkspaceId(next.activeWorkspaceId ?? null);
+    }
     return next;
   };
 }
 
+const cachedWorkspaces = loadCachedWorkspaces();
+
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
-  workspaces: loadCachedWorkspaces(),
-  activeWorkspaceId: null,
+  workspaces: cachedWorkspaces,
+  activeWorkspaceId: readActiveWorkspaceId(cachedWorkspaces),
   focusPaneRequest: null,
   defaultBypassPermissions: readBooleanFlag(DEFAULT_BYPASS_KEY, false),
   autoBindGithubRepo: readBooleanFlag(AUTO_BIND_GITHUB_KEY, true),
@@ -605,6 +656,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   setActiveWorkspace: (id) => {
     set({ activeWorkspaceId: id });
+    writeActiveWorkspaceId(id);
     if (id) {
       const workspace = get().workspaces.find((w) => w.id === id);
       // Only sync `layoutStore.projectPath` for local workspaces — for
