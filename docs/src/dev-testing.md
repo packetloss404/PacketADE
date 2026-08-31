@@ -28,7 +28,7 @@ pnpm release:readiness   executes those nine, plus the distribution report
 
 ## What was green at the last release
 
-Recorded in `CHANGELOG.md` for 0.13.1 at commit `8dc13780`:
+Recorded in `CHANGELOG.md` for 0.13.2 at commit `5b534517`:
 
 | Gate | Result |
 | --- | --- |
@@ -37,7 +37,7 @@ Recorded in `CHANGELOG.md` for 0.13.1 at commit `8dc13780`:
 | `acp_stream` integration | 31 passing |
 | `tsc --noEmit` | 0 errors |
 | `pnpm lint` | 0 errors (9 warnings, all pre-existing) |
-| `vitest run` | 2765 / 2765 across 286 files |
+| `vitest run` | 2774 / 2774 across 287 files |
 | `check:tauri-schema` | clean |
 
 > **Tip:** A static count of Rust test attributes comes out a little higher

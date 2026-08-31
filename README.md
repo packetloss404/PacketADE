@@ -35,10 +35,10 @@ deployed as its own container; edit the Markdown, not the HTML.
 - [`backlog.md`](./backlog.md) — master ledger for outstanding work.
 - [`dev/release-v0.10.3.md`](./dev/release-v0.10.3.md) — immutable tagged-source,
   gate, artifact, and hash record for `v0.10.3`. Still the newest annotated tag,
-  but no longer current source; `CHANGELOG.md` records 0.11.0 through 0.13.1
+  but no longer current source; `CHANGELOG.md` records 0.11.0 through 0.13.2
   after it.
 - [`dev/acceptance.md`](./dev/acceptance.md) — the packaged
-  acceptance checklist. Sections 0, 1 and 2 have run against installed 0.13.1;
+  acceptance checklist. Sections 0, 1 and 2 have run against installed 0.13.2;
   sections 3–5 (dictation, analytics, Monitor) have not.
 - [`dev/README.md`](./dev/README.md) — planning index, active implementation briefs, runbooks, and archive.
 - [`dev/remoteagents/README.md`](./dev/remoteagents/README.md) — canonical Remote Agents plan.

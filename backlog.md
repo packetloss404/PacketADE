@@ -184,10 +184,10 @@ environment or packaged matrix has actually run.
   is rewritten automatically. **Not done:** remote `.agents/memory` notes, which
   need an SSH note transport, and `InvestigationPanel` still stamps a plain path
   because GitHub always works against a checked-out local repo.
-- **P2 - Packaged acceptance sections 3-5 at 0.13.1.** Sections 0 (build),
+- **P2 - Packaged acceptance sections 3-5 at 0.13.2.** Sections 0 (build),
   1 (migration) and **2 (launch, lifecycle and shell)** of
   [`dev/acceptance.md`](./dev/acceptance.md) have run against the installed
-  0.13.1 package. Section 1 found two defects, one fixed and one filed above;
+  0.13.2 package. Section 1 found two defects, one fixed and one filed above;
   section 2 left two partial rows, one blocked row, and one confirmed-still-
   broken finding (filed below). **Dictation on real hardware, dictation
   analytics, and the two-display Monitor matrix have not run** and cannot be
@@ -195,26 +195,25 @@ environment or packaged matrix has actually run.
   attached. The dictation section is the highest-yield: those fixes were
   written for Bluetooth failure paths that only a real headset can provoke.
 
-- **P2 - A crashing CLI is indistinguishable from a clean exit.** Confirmed
-  still present in 0.13.1 while running section 2. Rust emits a real payload
-  (`src-tauri/src/commands/pty.rs:538` — `exitCode`, `terminated`) and
-  `parsePtyExitPayload` (`src/lib/tauri.ts:227`) exists to read it, but **it
-  has zero non-test callers**: `useTerminalSession.ts:360`,
-  `useTransientPty.ts:150` and `:276` all take no parameter and drop the
-  payload. A CLI that dies on startup therefore renders exactly like a
-  successful exit. The historical repro (`codex` 0.147.0 access-violating) is
-  gone — codex is now 0.150.1 and starts cleanly — so this must be fixed
-  against the source, not against a crash.
+- **DONE 0.13.2 - the three section-2 findings.** A crashing CLI reading as a
+  clean exit (every `pty:exit` listener discarded the payload), a workspace with
+  a missing project folder clicking through to nothing, and the selected
+  workspace not surviving a restart. All fixed in `a5b5507c`; the restart one is
+  verified in the installed package, the other two by tests and code path. See
+  `dev/acceptance.md` section 2 and the 0.13.2 CHANGELOG entry.
 
-- **P3 - Clicking a workspace whose project path is missing does nothing
-  visible.** The sidebar states the cause in red ("Project path is not a
-  directory: …"), but the main pane stays on "Select a workspace from the
-  sidebar or create a new one" with no explanation at the point of the click.
-  Found running section 2 against 0.13.1.
-
-- **P3 - The selected workspace is not restored across a restart.** The
-  workspace list and every session in it persist, and the active *view*
-  restores, but no workspace is selected on relaunch. Found running section 2.
+- **P2 - The PTY pane and ACP resolve DIFFERENT packetcode binaries.** Measured
+  2026-08-30 on installed 0.13.2: the Workspace PTY pane launched
+  `C:\Users\ianwalmsley\Desktop\PacketBench-0.11.0-portable\packetcode.exe`
+  (`v0.5.1-70-g5c0adf8`) while ACP resolved via `PATH` to
+  `C:\Users\ianwalmsley\bin\packetcode.exe` (`v0.5.1-96-gf52d7c5`) - twenty-six
+  commits of skew, silently, across the two surfaces of the same product. There
+  is no pin file at `~/.packetbench/packetcode-bin`, so the PTY side is almost
+  certainly honouring the CLI Clients "PacketCode integration" override
+  (`cliOverrideStore`), which by design feeds PTY launches only. Unifying the
+  two resolvers was already an open item; this is the first measured instance of
+  it biting, and the skew is invisible in the UI - each surface reports its own
+  version and neither mentions the other.
 - **P1 - Distribution trust and hosted gates.** Add hosted CI; acquire Windows
   Authenticode and Apple Developer ID credentials; wire Tauri updater
   signing/configuration and hosted `latest.json`. Current Windows artifacts are

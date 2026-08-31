@@ -1,7 +1,7 @@
 # Install & first run
 
 PacketBench is not yet distributed the way a finished desktop app is. The
-source tree is at **v0.13.1**, Windows installers exist but have never been
+source tree is at **v0.13.2**, Windows installers exist but have never been
 published, and the newest thing on GitHub Releases is nearly four months older
 than the current code and still carries the product's previous name. Building
 from source is the honest primary path, and this page treats it as such.
@@ -9,10 +9,10 @@ from source is the honest primary path, and this page treats it as such.
 > **Important:** Nothing here is code signed and there is no auto-updater. If
 > you want the current app, build it.
 >
-> Packaged upgrades do now work, on Windows, tested twice: 0.12.1 → 0.13.0 and
-> 0.13.0 → 0.13.1, both silent per-user installs that exited 0, left exactly
-> one entry in Add/Remove Programs, and preserved `~/.packetbench` byte for
-> byte. That is the extent of what has been proven — see the caveat under
+> Packaged upgrades do now work, on Windows, tested three times: 0.12.1 →
+> 0.13.0, 0.13.0 → 0.13.1 and 0.13.1 → 0.13.2 — all silent per-user installs
+> that exited 0, left exactly one entry in Add/Remove Programs, and preserved
+> `~/.packetbench` byte for byte. That is the extent of what has been proven — see the caveat under
 > [Upgrading a packaged install](#upgrading-a-packaged-install).
 
 ## The state of distribution
@@ -21,8 +21,8 @@ Three separate things are easy to confuse, so they are separated here.
 
 | | What exists | Where |
 | --- | --- | --- |
-| **Source** | v0.13.1 — `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json` all agree | This repository |
-| **Local Windows builds** | Unsigned NSIS + MSI for 0.11.0, 0.12.0 and 0.12.1 (built 2026-08-28), plus 0.13.0 and 0.13.1 (built 2026-08-30) | The maintainer's build machine, under `packetbench-build/release/bundle/` — **not** in the repo, **not** uploaded anywhere |
+| **Source** | v0.13.2 — `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json` all agree | This repository |
+| **Local Windows builds** | Unsigned NSIS + MSI for 0.11.0, 0.12.0 and 0.12.1 (built 2026-08-28), plus 0.13.0, 0.13.1 and 0.13.2 (built 2026-08-30) | The maintainer's build machine, under `packetbench-build/release/bundle/` — **not** in the repo, **not** uploaded anywhere |
 | **Published download** | `v0.5.0`, published 2026-05-04 | [GitHub Releases](https://github.com/packetloss404/PacketBench/releases) |
 
 ### What the published download actually is
@@ -38,7 +38,7 @@ So the published installer:
 - predates the rename, and installs an app called PacketADE;
 - predates the Flight Deck rework, the nine-row agent picker as it now stands,
   the sidecar protocol v6–v11 additions, project memory, dictation analytics,
-  and everything else in `CHANGELOG.md` between 0.6.0 and 0.13.1;
+  and everything else in `CHANGELOG.md` between 0.6.0 and 0.13.2;
 - is not an upgrade path to the current code — there is no updater to carry
   you forward from it.
 
@@ -78,16 +78,17 @@ manually — or, on the path this page recommends, by pulling and rebuilding.
 ### Upgrading a packaged install
 
 Installing a newer package over an older one works on Windows. It has been done
-twice, both silent per-user installs:
+three times, all silent per-user installs:
 
 ```powershell
-Start-Process .\PacketBench_0.13.1_x64-setup.exe -ArgumentList '/S','/CURRENTUSER' -Wait
+Start-Process .\PacketBench_0.13.2_x64-setup.exe -ArgumentList '/S','/CURRENTUSER' -Wait
 ```
 
 | Upgrade | Date | Result |
 | --- | --- | --- |
 | 0.12.1 → 0.13.0 | 2026-08-30 | exit 0; one Add/Remove entry; data dir preserved |
 | 0.13.0 → 0.13.1 | 2026-08-30 | exit 0; one Add/Remove entry; data dir byte-identical |
+| 0.13.1 → 0.13.2 | 2026-08-30 | exit 0; one Add/Remove entry; data dir byte-identical |
 
 Check the installer's SHA-256 against the table in `CHANGELOG.md` before
 running it — every build there is made from a committed tree with a clean
@@ -323,7 +324,7 @@ Claude.ai or ChatGPT subscription login for API agents — see
 
 ## Known limits of the current builds
 
-Being specific is more useful than a general disclaimer. As of 0.13.1:
+Being specific is more useful than a general disclaimer. As of 0.13.2:
 
 - Sections 2–5 of the acceptance matrix — launch and lifecycle, dictation on
   real hardware, dictation analytics, and the two-display Monitor matrix —

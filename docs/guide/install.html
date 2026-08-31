@@ -47,16 +47,16 @@
   <main id="main" class="content">
     <article class="prose"><h1 id="install-amp-first-run">Install &amp; first run<a class="anchor" href="#install-amp-first-run" aria-label="Link to this section">#</a></h1>
 <p>PacketBench is not yet distributed the way a finished desktop app is. The
-source tree is at <strong>v0.13.1</strong>, Windows installers exist but have never been
+source tree is at <strong>v0.13.2</strong>, Windows installers exist but have never been
 published, and the newest thing on GitHub Releases is nearly four months older
 than the current code and still carries the product&#39;s previous name. Building
 from source is the honest primary path, and this page treats it as such.</p>
 <div class="callout important"><div class="callout-title">Important</div><p>Nothing here is code signed and there is no auto-updater. If
 you want the current app, build it.</p>
-<p>Packaged upgrades do now work, on Windows, tested twice: 0.12.1 → 0.13.0 and
-0.13.0 → 0.13.1, both silent per-user installs that exited 0, left exactly
-one entry in Add/Remove Programs, and preserved <code>~/.packetbench</code> byte for
-byte. That is the extent of what has been proven — see the caveat under
+<p>Packaged upgrades do now work, on Windows, tested three times: 0.12.1 →
+0.13.0, 0.13.0 → 0.13.1 and 0.13.1 → 0.13.2 — all silent per-user installs
+that exited 0, left exactly one entry in Add/Remove Programs, and preserved
+<code>~/.packetbench</code> byte for byte. That is the extent of what has been proven — see the caveat under
 <a href="#upgrading-a-packaged-install">Upgrading a packaged install</a>.</p>
 </div>
 <h2 id="the-state-of-distribution">The state of distribution<a class="anchor" href="#the-state-of-distribution" aria-label="Link to this section">#</a></h2>
@@ -71,12 +71,12 @@ byte. That is the extent of what has been proven — see the caveat under
 </thead>
 <tbody><tr>
 <td><strong>Source</strong></td>
-<td>v0.13.1 — <code>package.json</code>, <code>src-tauri/Cargo.toml</code> and <code>src-tauri/tauri.conf.json</code> all agree</td>
+<td>v0.13.2 — <code>package.json</code>, <code>src-tauri/Cargo.toml</code> and <code>src-tauri/tauri.conf.json</code> all agree</td>
 <td>This repository</td>
 </tr>
 <tr>
 <td><strong>Local Windows builds</strong></td>
-<td>Unsigned NSIS + MSI for 0.11.0, 0.12.0 and 0.12.1 (built 2026-08-28), plus 0.13.0 and 0.13.1 (built 2026-08-30)</td>
+<td>Unsigned NSIS + MSI for 0.11.0, 0.12.0 and 0.12.1 (built 2026-08-28), plus 0.13.0, 0.13.1 and 0.13.2 (built 2026-08-30)</td>
 <td>The maintainer&#39;s build machine, under <code>packetbench-build/release/bundle/</code> — <strong>not</strong> in the repo, <strong>not</strong> uploaded anywhere</td>
 </tr>
 <tr>
@@ -96,7 +96,7 @@ product was still called <em>PacketADE</em> at the time. It was renamed to
 <li>predates the rename, and installs an app called PacketADE;</li>
 <li>predates the Flight Deck rework, the nine-row agent picker as it now stands,
 the sidecar protocol v6–v11 additions, project memory, dictation analytics,
-and everything else in <code>CHANGELOG.md</code> between 0.6.0 and 0.13.1;</li>
+and everything else in <code>CHANGELOG.md</code> between 0.6.0 and 0.13.2;</li>
 <li>is not an upgrade path to the current code — there is no updater to carry
 you forward from it.</li>
 </ul>
@@ -129,10 +129,10 @@ open in the usual way.</p>
 manually — or, on the path this page recommends, by pulling and rebuilding.</p>
 <h3 id="upgrading-a-packaged-install">Upgrading a packaged install<a class="anchor" href="#upgrading-a-packaged-install" aria-label="Link to this section">#</a></h3>
 <p>Installing a newer package over an older one works on Windows. It has been done
-twice, both silent per-user installs:</p>
+three times, all silent per-user installs:</p>
 <div class="code-block" data-lang="powershell">
 <button class="copy" type="button" aria-label="Copy code">Copy</button>
-<pre><code>Start-Process .\PacketBench_0.13.1_x64-setup.exe -ArgumentList '/S','/CURRENTUSER' -Wait</code></pre>
+<pre><code>Start-Process .\PacketBench_0.13.2_x64-setup.exe -ArgumentList '/S','/CURRENTUSER' -Wait</code></pre>
 </div>
 <table>
 <thead>
@@ -149,6 +149,11 @@ twice, both silent per-user installs:</p>
 </tr>
 <tr>
 <td>0.13.0 → 0.13.1</td>
+<td>2026-08-30</td>
+<td>exit 0; one Add/Remove entry; data dir byte-identical</td>
+</tr>
+<tr>
+<td>0.13.1 → 0.13.2</td>
 <td>2026-08-30</td>
 <td>exit 0; one Add/Remove entry; data dir byte-identical</td>
 </tr>
@@ -377,7 +382,7 @@ key is present.</p>
 Claude.ai or ChatGPT subscription login for API agents — see
 <a href="agents.html">Agents &amp; conversations</a> for why.</em></p>
 <h2 id="known-limits-of-the-current-builds">Known limits of the current builds<a class="anchor" href="#known-limits-of-the-current-builds" aria-label="Link to this section">#</a></h2>
-<p>Being specific is more useful than a general disclaimer. As of 0.13.1:</p>
+<p>Being specific is more useful than a general disclaimer. As of 0.13.2:</p>
 <ul>
 <li>Sections 2–5 of the acceptance matrix — launch and lifecycle, dictation on
 real hardware, dictation analytics, and the two-display Monitor matrix —
