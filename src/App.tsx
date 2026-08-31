@@ -59,9 +59,6 @@ const WorkspaceView = lazy(() =>
 const AgentsView = lazy(() =>
   import("@/components/views/AgentsView").then((m) => ({ default: m.AgentsView })),
 );
-const PacketCodeView = lazy(() =>
-  import("@/components/views/PacketCodeView").then((m) => ({ default: m.PacketCodeView })),
-);
 const FlightsView = lazy(() =>
   import("@/components/views/FlightsView").then((m) => ({ default: m.FlightsView })),
 );
@@ -330,8 +327,6 @@ function OtherViewContent({ activeView }: { activeView: AppView }) {
       return <MemoryView />;
     case "agents":
       return <AgentsView />;
-    case "packetcode":
-      return <PacketCodeView />;
     case "dictation":
       return <DictationView />;
     case "workspace":

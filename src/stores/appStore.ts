@@ -6,7 +6,6 @@ export type CoreView =
   | "welcome"
   | "workspace"
   | "agents"
-  | "packetcode"
   | "issues"
   | "flights"
   | "history"
@@ -33,6 +32,14 @@ export function normalizeView(view: AppView): AppView {
     const canonical = resolveModuleAlias(view.slice(4));
     if (canonical) return canonical;
   }
+  // RETIRED ROUTE. `packetcode` was a second Agents pane: the same
+  // `AgentsView`, wrapped in the engine gate and pinned to the ACP provider.
+  // Two rail entries rendering one component invited exactly the divergence
+  // this registry exists to prevent, so PacketCode is now a provider you
+  // select inside Agents — the gate and the engine-session directory follow
+  // the selection. Anyone whose persisted view, hotkey or palette entry still
+  // says `packetcode` lands on Agents rather than on a dead route.
+  if (view === ("packetcode" as AppView)) return "agents";
   return view;
 }
 

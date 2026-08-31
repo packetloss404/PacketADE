@@ -41,7 +41,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { AlertTriangle, Download, Loader2, PackageX, RefreshCw, Terminal } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Download, Loader2, PackageX, RefreshCw, Terminal } from "lucide-react";
 import {
   ACP_INSTALL_OUTPUT_EVENT,
   acpInstallEngine,
@@ -104,9 +104,23 @@ const SECONDARY_BUTTON = `${BUTTON_BASE} border border-bg-border bg-bg-tertiary 
 export interface PacketCodeEngineGateProps {
   /** Rendered as-is, with no wrapper, once the engine is ready. */
   children: ReactNode;
+  /**
+   * Escape hatch, required whenever this gate is rendered INSIDE a surface the
+   * user cannot otherwise leave.
+   *
+   * As a whole-route wrapper the gate had no need for one — the Left Rail was
+   * still there. Now that PacketCode is a provider selected inside the single
+   * Agents pane rather than a route of its own, the gate can replace the very
+   * composer that holds the provider picker. Without this the user would be
+   * pinned to a provider they cannot use and unable to pick another.
+   */
+  onUseAnotherProvider?: () => void;
 }
 
-export function PacketCodeEngineGate({ children }: PacketCodeEngineGateProps) {
+export function PacketCodeEngineGate({
+  children,
+  onUseAnotherProvider,
+}: PacketCodeEngineGateProps) {
   const [probe, setProbe] = useState<AcpEngineProbe | null>(readCachedProbe);
   const [probeError, setProbeError] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
@@ -418,6 +432,15 @@ export function PacketCodeEngineGate({ children }: PacketCodeEngineGateProps) {
           manual install instructions, which is the whole content of that
           state. */}
       {current.detail ? <ProbeDetail detail={current.detail} /> : null}
+
+      {onUseAnotherProvider ? (
+        <div className="mt-4 border-t border-bg-border pt-3">
+          <button type="button" className={SECONDARY_BUTTON} onClick={onUseAnotherProvider}>
+            <ArrowLeft size={12} />
+            Use a different provider
+          </button>
+        </div>
+      ) : null}
     </GateShell>
   );
 }
