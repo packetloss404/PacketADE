@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { API_PROVIDERS } from "@/lib/api-models";
 import { pickFailoverModel } from "@/lib/autoFailover";
 import { aggregateConversationCost, getModelRates } from "@/lib/conversationCost";
+import { pricingStatusForModel } from "@/lib/modelPricing";
 import type { AgentConversation } from "@/types/agent-conversation";
 
 const catalogValues = new Set(
@@ -58,6 +59,26 @@ describe("model metadata", () => {
       for (const model of provider.models) {
         if (model.pricing === undefined) continue;
         expect(model.pricing, model.value).toEqual(getModelRates(model.value));
+      }
+    }
+  });
+
+  // Only the local Ollama engine is genuinely free. Every other catalog row is
+  // a paid cloud route, so a "free" verdict there means a rate lookup fell
+  // through to the $0 `local` row — the failure mode that let bare `qwen` /
+  // `deepseek` / `codellama` prefixes swallow vendor-namespaced paid ids and
+  // report $0. Budget guardrails read this status, so a wrong "free" here
+  // means no guardrail ever fires. This gate matters most when the OpenRouter
+  // row stops being a hardcoded handful and is enumerated live.
+  it("marks no paid-provider catalog model as free", () => {
+    for (const provider of API_PROVIDERS) {
+      for (const model of provider.models) {
+        const status = pricingStatusForModel(model.value);
+        if (provider.id === "ollama") {
+          expect(status, model.value).toBe("free");
+        } else {
+          expect(status, `${provider.id}/${model.value}`).not.toBe("free");
+        }
       }
     }
   });
