@@ -239,7 +239,7 @@ Windows artifacts, built 2026-08-28 23:08 from `f83fad64`, **unsigned**:
 | `PacketBench_0.12.1_x64_en-US.msi` (133.0 MiB) | `6dc6764a168f49cb18223b2af6d9ba2ff91fc731a53a9c18c0f6deda63c86ec0` |
 
 > **Built, not accepted.** Sections 2–5 of
-> [`dev/acceptance-0.12.1.md`](./dev/acceptance-0.12.1.md) — launch and
+> [`dev/acceptance.md`](./dev/acceptance.md) — launch and
 > lifecycle, dictation on real hardware, analytics, and the two-display Monitor
 > matrix — have still never run, and **no installed upgrade of any PacketBench
 > package has ever been performed.** Section 1 has only been executed from
@@ -408,7 +408,7 @@ Windows artifacts, built 2026-08-28 21:13 from `544e4cc6`, **unsigned**:
 | `PacketBench_0.12.0_x64_en-US.msi` (133.0 MiB) | `cb12c50ee74f632311d3ddb152a71674ffe19d4c6f8b99c9f91dc6682d80348c` |
 
 > **Built, not accepted — and the acceptance matrix has still only partly run.**
-> Section 1 of `dev/acceptance-0.12.1.md` (the migration path) was executed
+> Section 1 of `dev/acceptance.md` (the migration path) was executed
 > against source and a copy of a real legacy data dir; it found two defects, one
 > fixed below and one open. Sections 2–5 — launch and lifecycle, dictation on real
 > hardware, analytics, and the two-display Monitor matrix — have **not** run.

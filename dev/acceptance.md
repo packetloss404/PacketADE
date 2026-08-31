@@ -1,10 +1,25 @@
-# PacketBench 0.13.1 — Packaged Acceptance Matrix
+# Packaged Acceptance Matrix — currently targeting 0.13.1
+
+> **The filename carries no version, deliberately.** This is one evolving
+> checklist, not a per-release artifact. It used to be renamed on every
+> retarget (`acceptance-0.11.0.md` → `-0.12.0` → `-0.12.1` → `-0.13.0` →
+> `-0.13.1`), which permanently broke every link that pointed at it: the 0.12.0
+> and 0.12.1 entries in `CHANGELOG.md` had been citing a filename that had not
+> existed for two releases, and were repointed here when the name was fixed.
+> The name is now stable at `dev/acceptance.md`; the version it targets is
+> stated in the heading above and in section 0, where it can change without
+> invalidating a link.
 
 Created 2026-08-28 for 0.11.0, then retargeted to 0.12.0, 0.12.1, 0.13.0 and now
 0.13.1 — each time after section 0 was re-executed against a fresh build,
 because an earlier build does not contain the work that landed after it. This is
 a runnable checklist, not a status report. Tick rows as you go and record the
 evidence each one asks for.
+
+**When you retarget it:** rebuild, rewrite section 0 with the new commit,
+filenames and hashes, update the heading, and re-examine every ticked row —
+a tick earned against an older build is evidence about that build, not this
+one. Do not rename the file.
 
 Sections 2–5 remain **substantially** unrun. `dev/proof-audit-2026-08-01.md`
 says why that matters: *"fresh binaries prove compilation and bundling only."*
