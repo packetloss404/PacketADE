@@ -123,6 +123,58 @@ describe("capabilitiesFor — model & inference", () => {
     // ModelSelector rendered nothing in this case, so "no picker" is today's
     // behavior — the caller degrades to a read-only model name.
     expect(capabilitiesFor(conv({ agent: "claude-code", mode: "pty" })).models).toEqual([]);
+    // …and it is NOT an authoritative empty. Nobody was asked; there is simply
+    // no list. The two empties must stay distinguishable — collapsing them is
+    // what made a live list's failure mode invisible.
+    expect(
+      capabilitiesFor(conv({ agent: "claude-code", mode: "pty" })).modelsAreAuthoritative,
+    ).toBe(false);
+  });
+
+  it("prefers a live enumeration over the bundled catalog, for ANY provider", () => {
+    // The generalisation of the ACP-only mechanism: the descriptor no longer
+    // asks who the provider is, only whether something authoritative answered.
+    // Passed IN rather than read, because `capabilitiesFor` must stay pure.
+    const caps = capabilitiesFor(conv({ agent: "api-openai" }), {
+      status: "ready",
+      models: [{ label: "gpt-9", value: "gpt-9" }],
+    });
+    expect(caps.models.map((m) => m.value)).toEqual(["gpt-9"]);
+    expect(caps.modelsAreAuthoritative).toBe(true);
+  });
+
+  it("keeps the catalog when a live enumeration has not settled", () => {
+    // `undefined`/failed is "never asked or the ask failed" — the degradation
+    // rule that keeps a failed fetch from taking an affordance away.
+    for (const live of [
+      undefined,
+      { status: "loading" as const },
+      { status: "failed" as const, error: "boom" },
+      { status: "no-key" as const },
+    ]) {
+      const caps = capabilitiesFor(conv({ agent: "api-openai" }), live);
+      expect(caps.models).toEqual(getProviderForAgent("api-openai")?.models);
+      expect(caps.modelsAreAuthoritative).toBe(false);
+    }
+  });
+
+  it("lets a SETTLED empty live list override the catalog", () => {
+    const caps = capabilitiesFor(conv({ agent: "api-openai" }), {
+      status: "ready",
+      models: [],
+    });
+    expect(caps.models).toEqual([]);
+    expect(caps.modelsAreAuthoritative).toBe(true);
+  });
+
+  it("prefers the session's OWN engine list over a vendor-wide live one", () => {
+    // A conversation-scoped answer beats a provider-scoped one: the engine
+    // knows what THIS session can run.
+    const caps = capabilitiesFor(
+      acpConv({}, { engineModels: [{ provider: "p", model: "engine-model", default: true }] }),
+      { status: "ready", models: [{ label: "vendor-model", value: "vendor-model" }] },
+    );
+    expect(caps.models.map((m) => m.value)).toEqual(["engine-model"]);
   });
 
   it("advertises no effort levels — no adapter exposes one yet", () => {

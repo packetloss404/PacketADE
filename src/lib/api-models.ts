@@ -214,26 +214,88 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
   },
 ];
 
-// Populate context-window + pricing metadata for every known model, sourcing
-// context from the shared modelContext helper and price from
-// conversationCost.ts's getModelRates (→ shared/model-pricing.json) — both
-// imported, neither duplicated.
-// The zero-rate guard preserves prior behavior: Ollama/free models (rates of
-// 0/0) stay unpriced rather than showing "$0/$0".
-for (const provider of API_PROVIDERS) {
-  for (const model of provider.models) {
-    model.contextWindow = getModelContextWindow(model.value);
-    const rates = getModelRates(model.value);
-    if (rates && (rates.input > 0 || rates.output > 0)) model.pricing = rates;
-  }
+/**
+ * THE builder for a picker row. Every `ApiModel` that reaches a picker — the
+ * static rows below, an ACP engine's enumeration, a live provider list — is
+ * constructed here, so a row can never arrive without its ctx/price chips
+ * resolved.
+ *
+ * This used to be a one-shot `for` loop over `API_PROVIDERS` at module load.
+ * That decorated exactly the rows that existed at import time, which meant any
+ * row built later (an engine enumeration, a live fetch, a user-typed id)
+ * rendered with no context-window and no price and nothing said so — the
+ * chips just weren't there. Decoration belongs to row CONSTRUCTION, not to a
+ * module-load pass over one array, so it lives in a function now and the array
+ * below is frozen so nothing can push an undecorated row into it.
+ *
+ * Sources, both imported and neither duplicated: context from
+ * `modelContext.getModelContextWindow`, price from
+ * `conversationCost.getModelRates` (→ `shared/model-pricing.json`, shared with
+ * the Rust engine).
+ *
+ * Caller-supplied metadata wins where present: a provider enumerating its own
+ * models is the authority on them, and a brand-new id is exactly the case our
+ * bundled tables cannot answer. The zero-rate guard is preserved either way —
+ * a free/local model has a real 0/0 entry, and "$0.00" is a fiction rather
+ * than a price.
+ */
+export function buildApiModel(input: {
+  value: string;
+  label?: string;
+  /** Provider-reported window, when it reported one. */
+  contextWindow?: number;
+  /** Provider-reported USD per 1M tokens, when it reported them. */
+  pricing?: { input: number; output: number };
+}): ApiModel {
+  const reportedWindow =
+    typeof input.contextWindow === "number" && input.contextWindow > 0
+      ? input.contextWindow
+      : undefined;
+  const row: ApiModel = {
+    label: input.label || input.value,
+    value: input.value,
+    contextWindow: reportedWindow ?? getModelContextWindow(input.value),
+  };
+  const rates = input.pricing ?? getModelRates(input.value);
+  if (rates && (rates.input > 0 || rates.output > 0)) row.pricing = rates;
+  return row;
 }
+
+// Rebuild every static row through the shared builder, then freeze so a later
+// `push` of an undecorated row is a TypeError rather than a picker with
+// missing chips. Freezing is also what makes `agent-catalog.ts`'s aliased
+// `models: p.models` reference safe by construction.
+for (const provider of API_PROVIDERS) {
+  const rows = provider.models.map((model) =>
+    Object.freeze(buildApiModel({ value: model.value, label: model.label })),
+  );
+  provider.models = Object.freeze(rows) as unknown as ApiModel[];
+}
+Object.freeze(API_PROVIDERS);
 
 /** Get provider info by agent CLI identifier. */
 export function getProviderForAgent(agent: AgentCli): ApiProviderInfo | undefined {
   return API_PROVIDERS.find((p) => p.agentCli === agent);
 }
 
-/** Get the default model for a provider. */
+/**
+ * Get the default model for a provider — the FIRST BUNDLED row, or `""`.
+ *
+ * The empty string is load-bearing for exactly one row and a silent failure
+ * for the rest. `api-packetcode` carries no static models on purpose, and
+ * `acp::routing` maps an empty model to `None` so the engine uses its own
+ * configured default — the only honest answer when the engine owns its
+ * provider credentials. For every keyed provider an empty model is a request
+ * that goes out naming no model and comes back a 400.
+ *
+ * Callers that launch a turn must therefore check
+ * {@link liveModels.acceptsEmptyModel} rather than passing this through
+ * unexamined; `launchConversation` does. This function stays deliberately
+ * bundle-only and synchronous — it is called from render paths and from
+ * non-React stores, so it must never read a cache or issue IPC. Where a live
+ * list is available, resolve through `liveModels.resolveModelRows` and take
+ * `rows[0]` instead.
+ */
 export function getDefaultModel(agent: AgentCli): string {
   const provider = getProviderForAgent(agent);
   return provider?.models[0]?.value ?? "";

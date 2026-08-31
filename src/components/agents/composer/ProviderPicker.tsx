@@ -3,6 +3,8 @@ import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { AuthBadge, type AuthStatus } from "@/components/ui/AuthBadge";
 import type { AgentCli } from "@/stores/agentTaskStore";
 import { getProviderForAgent } from "@/lib/api-models";
+import { liveModelSource, resolveModelRows } from "@/lib/liveModels";
+import { useLiveModelStore } from "@/stores/liveModelStore";
 import { PROVIDER_GROUPS } from "./utils";
 import type { AuthEntry } from "../hooks/useProviderAuthStatus";
 
@@ -21,6 +23,9 @@ export function ProviderPicker({
   authStatus,
   refreshAuthStatuses,
 }: ProviderPickerProps) {
+  // Whatever the shared cache already holds. Read, never fetched from here:
+  // opening a provider list must not fan out one request per row.
+  const liveEntries = useLiveModelStore((s) => s.entries);
   const selectedAuth = authStatus[selectedAgent];
   const selectedAuthStatus: AuthStatus =
     selectedAuth === "loading" || !selectedAuth
@@ -84,7 +89,20 @@ export function ProviderPicker({
                   key={agent}
                   onClick={() => {
                     onAgentChange(agent);
-                    onModelChange(info.models[0]?.value ?? "");
+                    // Resolve through the seam rather than reading
+                    // `info.models[0]` — when this provider has enumerated its
+                    // own models, its FIRST REAL model is the honest default,
+                    // and the bundled row 0 may not even exist on the account.
+                    // The `""` fallback survives for the one row where it is
+                    // correct (the ACP engine picks its own default);
+                    // `launchConversation` refuses an empty model everywhere
+                    // else rather than sending a request that names none.
+                    const liveProvider = liveModelSource(agent)?.provider;
+                    const rows = resolveModelRows({
+                      agent,
+                      live: liveProvider ? liveEntries[liveProvider] : undefined,
+                    }).rows;
+                    onModelChange(rows[0]?.value ?? "");
                   }}
                 >
                   <span

@@ -9,6 +9,7 @@ import {
 import { MODE_ORDER, modesForApprovals } from "@/components/agents/agentModeChipUtils";
 import { getModelContextWindow } from "@/lib/modelContext";
 import { getModelRates } from "@/lib/conversationCost";
+import { liveModelRow, type LiveModelAnswer } from "@/lib/liveModels";
 import { isRemoteConversation } from "@/lib/remoteConversation";
 import type { AcpEngineCapabilities, AcpModelOption } from "@/lib/tauri";
 
@@ -67,8 +68,26 @@ export interface SessionCapabilities {
   canPlanMode: boolean;
 
   // ── model & inference ──────────────────────────────────────────────────
-  /** Catalog rows this session can switch between. Empty → read-only name. */
+  /**
+   * Rows this session can switch between.
+   *
+   * Empty does NOT mean "no picker" — read {@link modelsAreAuthoritative} to
+   * tell the two empties apart before deciding what to render.
+   */
   models: ApiModel[];
+  /**
+   * Did {@link models} come from the session's OWN backend (an ACP engine's
+   * enumeration, a live provider list) rather than the shipped catalog?
+   *
+   * This is the `[]` disambiguator, and it exists because the two empty lists
+   * mean opposite things. An authoritative `[]` is a backend that was asked and
+   * named nothing — the catalog must NOT stand in, because its ids are ones the
+   * backend may refuse. A non-authoritative `[]` is simply a row with no bundled
+   * models and no answer yet, where the catalog is the right fallback and the
+   * picker should still offer refresh / free-text entry. Collapsing them is the
+   * bug `lib/liveModels.ts` documents at length.
+   */
+  modelsAreAuthoritative: boolean;
   /** Reasoning-effort levels the adapter accepts; null → no effort control. */
   effortLevels: string[] | null;
   /** Turns can carry extended-thinking text. */
@@ -238,14 +257,10 @@ function engineDefaultModeLabel(engine: AcpEngineCapabilities | undefined): stri
  * "$0.00" is a fiction rather than a price.
  */
 function engineModelRow(option: AcpModelOption): ApiModel {
-  const rates = getModelRates(option.model);
-  const row: ApiModel = {
-    label: option.model,
-    value: option.model,
-    contextWindow: getModelContextWindow(option.model),
-  };
-  if (rates && (rates.input > 0 || rates.output > 0)) row.pricing = rates;
-  return row;
+  // Was three inline statements duplicating the catalog's decoration. It now
+  // delegates to THE shared builder, so the ACP producer and every other live
+  // producer stamp ctx/pricing identically and a new producer cannot forget.
+  return liveModelRow({ id: option.model });
 }
 
 /**
@@ -263,6 +278,40 @@ function engineModels(conversation: CapabilityConversation): ApiModel[] | undefi
   const listed = conversation.engineModels;
   if (!Array.isArray(listed)) return undefined;
   return listed.map(engineModelRow);
+}
+
+/**
+ * The AUTHORITATIVE model rows for this session, or `undefined` to keep the
+ * bundled catalog.
+ *
+ * The provider-agnostic generalisation of `engineModels`. ACP is now just the
+ * first producer: any transport that can name its own models feeds the same
+ * resolution, and the degradation rules that made the ACP version correct are
+ * preserved verbatim for all of them —
+ *
+ * - a FAILED or never-issued enumeration returns `undefined`, so the shipped
+ *   catalog stands and a capability fetch that never happened can never take
+ *   an affordance away;
+ * - a SETTLED enumeration returns its rows, empty included, because a backend
+ *   that was asked and named nothing has genuinely told us it serves none, and
+ *   offering bundled ids it may refuse is the silent no-op this module exists
+ *   to prevent.
+ *
+ * Purity is why `live` is a PARAMETER. `capabilitiesFor` may not read a store
+ * or issue IPC (see its docblock), so the caller subscribes to
+ * `stores/liveModelStore` and passes the answer down. The ACP producer instead
+ * writes onto the conversation record (`stampEngineCapabilities`), which is the
+ * other legitimate way live data reaches a pure function — and it wins here,
+ * because a session-specific answer beats a vendor-wide one.
+ */
+function authoritativeModels(
+  conversation: CapabilityConversation,
+  live: LiveModelAnswer | undefined,
+): ApiModel[] | undefined {
+  const fromRecord = engineModels(conversation);
+  if (fromRecord !== undefined) return fromRecord;
+  if (live?.status === "ready" && live.models !== undefined) return live.models;
+  return undefined;
 }
 
 /**
@@ -307,6 +356,14 @@ function hasMeaningfulRates(model: string | undefined): boolean {
  */
 export function capabilitiesFor(
   conversation: CapabilityConversation,
+  /**
+   * This provider's live model enumeration, when the caller has one.
+   *
+   * Passed in rather than read, so this function stays pure. Omitting it keeps
+   * the pre-seam answer exactly: the ACP record path still works (it rides on
+   * the conversation), and every other provider falls back to the catalog.
+   */
+  live?: LiveModelAnswer,
 ): SessionCapabilities {
   const agent = conversation.agent;
   const isApi = conversation.mode === "api";
@@ -329,6 +386,12 @@ export function capabilitiesFor(
    * fallbacks still decide — so they must never be read as "feature missing".
    */
   const engineAdvertised = engine?.packetcode.advertised === true;
+  /**
+   * Rows the session's own backend named, or `undefined` for "nobody has told
+   * us". Computed once — the two fields below must never disagree about which
+   * of the two empty lists this is.
+   */
+  const backendModels = authoritativeModels(conversation, live);
 
   return {
     // Source: api-models.providerSupportsApprovals (catalog `supportsApprovals`,
@@ -355,12 +418,18 @@ export function capabilitiesFor(
     canGateWrites: isApi,
     canPlanMode: isApi,
 
-    // Source: the engine's own `_packetcode/models/list` enumeration when it
-    // advertised `modelsList`, else api-models.API_PROVIDERS. ModelSelector
-    // already rendered nothing when the agent had no catalog row, so an empty
-    // list is today's "no picker" answer. The ACP catalog row is documented as
-    // SEEDED, not authoritative — the engine's answer supersedes it.
-    models: engineModels(conversation) ?? getProviderForAgent(agent)?.models ?? [],
+    // Source: whichever producer can speak for THIS session's backend (the ACP
+    // engine's `_packetcode/models/list`, or a live provider enumeration passed
+    // in by the caller), else api-models.API_PROVIDERS. A catalog row is a
+    // SEED, not an authority — the backend's own answer supersedes it.
+    //
+    // An empty `models` is NOT "no picker" any more. That equation is what made
+    // a live list's failure mode invisible: it collapsed "this provider serves
+    // nothing" into "this provider was never asked" and rendered both as a
+    // dead label. `modelsAreAuthoritative` tells them apart; consumers gate the
+    // picker on `providerEnumeratesLive` instead of on the length.
+    models: backendModels ?? getProviderForAgent(agent)?.models ?? [],
+    modelsAreAuthoritative: backendModels !== undefined,
     // No API-agent surface exposes a reasoning-effort control today (the
     // `--effort` flag is a PTY/CLI workspace concept). null = omit the control.
     effortLevels: null,

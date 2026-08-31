@@ -20,6 +20,7 @@ function renderSelector(
     selectedAgent?: AgentCli;
     selectedModel?: string;
     models?: ApiModel[];
+    modelsAreAuthoritative?: boolean;
   } = {},
 ) {
   const onModelChange = vi.fn();
@@ -30,6 +31,7 @@ function renderSelector(
       selectedModel={over.selectedModel ?? ""}
       onModelChange={onModelChange}
       models={over.models}
+      modelsAreAuthoritative={over.modelsAreAuthoritative}
       ollamaModels={[]}
       refreshOllamaModels={vi.fn()}
     />,
@@ -107,9 +109,45 @@ describe("ModelSelector — engine models vs the seeded catalog", () => {
     }
   });
 
-  it("falls back to the catalog for an EMPTY caps list too", () => {
+  it("falls back to the catalog for a NON-AUTHORITATIVE empty caps list", () => {
+    // The `[]` ruling, half one. An empty list that is not flagged
+    // authoritative is "nothing has answered yet" — the catalog stands, and a
+    // fetch that never landed cannot empty the picker.
     renderSelector({ selectedAgent: "api-claude" as AgentCli, models: [] });
     expect(openOptions()).toHaveLength(catalogFor("api-claude").length);
+  });
+
+  it("lets an AUTHORITATIVE empty caps list override the catalog", () => {
+    // The `[]` ruling, half two — and the disagreement this seam settled. This
+    // component used to read every `[]` as "use the catalog" while
+    // `agentCapabilities.ts` read it as "serves none"; the two are opposite
+    // answers to the same array, so the distinction now lives in a flag rather
+    // than in the length. A backend that was ASKED and named nothing must not
+    // have bundled ids it may refuse offered on its behalf.
+    renderSelector({
+      selectedAgent: "api-claude" as AgentCli,
+      models: [],
+      modelsAreAuthoritative: true,
+    });
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
+    // Crucially NOT unmounted: an empty list is a state the user can act on.
+    expect(screen.getByRole("listbox")).toBeTruthy();
+  });
+
+  it("always offers the typed id, so enumeration is a convenience not a gate", () => {
+    // A model published this morning is in no catalog — bundled or live — and
+    // without this row the picker would be the only way to change model and
+    // would silently refuse to name it.
+    const { onModelChange } = renderSelector({ selectedAgent: "api-claude" as AgentCli });
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
+    fireEvent.change(screen.getByPlaceholderText("Search models…"), {
+      target: { value: "claude-opus-9-preview" },
+    });
+    fireEvent.click(screen.getByText(/Use .claude-opus-9-preview./));
+    // Case preserved — a lower-cased matching needle would not round-trip an
+    // id like `MiniMax-M3`.
+    expect(onModelChange).toHaveBeenCalledWith("claude-opus-9-preview");
   });
 
   it("renders nothing when neither caps nor the catalog has a row", () => {

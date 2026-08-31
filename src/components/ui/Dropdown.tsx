@@ -14,6 +14,7 @@ import { ChevronDown } from "lucide-react";
 
 interface DropdownContextValue {
   close: () => void;
+  /** Lower-cased + trimmed, for case-insensitive item matching. */
   filter: string;
 }
 
@@ -32,6 +33,22 @@ interface DropdownProps {
    * menu (e.g. the `/model` slash command targeting the header model
    * dropdown). Leave undefined for purely click-driven dropdowns. */
   openSignal?: number;
+  /**
+   * Rendered after the items, and handed the search text AS TYPED (trimmed,
+   * case preserved — `MiniMax-M3` does not survive the lower-cased matching
+   * needle).
+   *
+   * Exists so a menu can offer an action over what the user typed rather than
+   * only over what it already lists: the model picker's free-text "Use …" row,
+   * which is what keeps a model published this morning reachable before any
+   * catalog — bundled or live — has heard of it. Return a `DropdownItem` and it
+   * closes the menu on click like any other row.
+   *
+   * A prop rather than an exported `useDropdownFilter` hook purely to keep this
+   * file's exports component-only; `react-refresh/only-export-components`
+   * already warns about `useDropdownClose` and a second one is not worth it.
+   */
+  footer?: (searchText: string) => ReactNode;
 }
 
 /**
@@ -66,6 +83,7 @@ export function Dropdown({
   searchable = false,
   searchPlaceholder = "Search…",
   openSignal,
+  footer,
 }: DropdownProps) {
   const [open, setOpen] = useState(false);
 
@@ -177,6 +195,7 @@ export function Dropdown({
                 No matches
               </div>
             )}
+            {footer?.(searchable ? filter.trim() : "")}
           </div>
         </DropdownContext.Provider>
       )}

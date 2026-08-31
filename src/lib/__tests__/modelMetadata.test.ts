@@ -27,6 +27,33 @@ function conversationWithModel(model: string): AgentConversation {
 }
 
 describe("model metadata", () => {
+  it("fails over within a LIVE list when the caller supplies one", () => {
+    // `findProviderCatalog` scanned `API_PROVIDERS` for a provider containing
+    // the current model and returned null when none did — so a session running
+    // a live-enumerated, user-typed, or newly-published id matched nothing and
+    // failover silently did not happen, at the one moment it exists for (a
+    // 429). Handing the session's real list in fixes exactly that: neither id
+    // below is in any bundled catalog.
+    expect(
+      pickFailoverModel("claude-opus-9-experimental", [
+        "claude-opus-9-experimental",
+        "claude-sonnet-9-experimental",
+      ]),
+    ).toBe("claude-sonnet-9-experimental");
+    // And it still declines honestly when the live list offers no lower tier,
+    // rather than inventing a bundled id the session cannot reach.
+    expect(pickFailoverModel("claude-opus-9-experimental", ["claude-opus-9-experimental"]))
+      .toBeNull();
+  });
+
+  it("falls back to the bundled catalog when no live list is available", () => {
+    // The pre-seam behaviour, unchanged for every caller that has nothing
+    // better to offer.
+    expect(pickFailoverModel("claude-opus-4-7", [])).toBe(
+      pickFailoverModel("claude-opus-4-7"),
+    );
+  });
+
   it("returns only catalog-backed failover models", () => {
     const fallbacks = [
       pickFailoverModel("claude-opus-4-7"),

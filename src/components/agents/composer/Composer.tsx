@@ -26,6 +26,8 @@ import { useVoiceTranscript } from "../hooks/useVoiceTranscript";
 import { AgentModeChip, type AgentMode as PermissionPosture } from "../AgentModeChip";
 import { addPaneControlListener, OPEN_MODEL_DROPDOWN_EVENT } from "../paneEvents";
 import { capabilitiesFor } from "@/lib/agentCapabilities";
+import { providerEnumeratesLive } from "@/lib/liveModels";
+import { useLiveModels } from "../hooks/useLiveModels";
 import {
   sessionUsageFor,
   shouldShowCost,
@@ -222,7 +224,19 @@ export function Composer(props: ComposerProps) {
 
   // ─── Capabilities — every control below renders from THIS, never from a
   //     provider id. See lib/agentCapabilities.ts. ────────────────────────
-  const caps = conversation ? capabilitiesFor(conversation) : null;
+  /**
+   * This provider's live model list, from the shared cache.
+   *
+   * `capabilitiesFor` is PURE — it may not read a store or issue IPC — so the
+   * live answer is subscribed HERE and passed in. The empty-string agent for a
+   * launch-mode composer resolves to no registry entry, so it subscribes to
+   * nothing and fetches nothing; the launch card's own ModelSelector does its
+   * own lookup from `launch.selectedAgent`.
+   */
+  const { answer: liveModelAnswer } = useLiveModels(
+    conversation?.agent ?? ("" as AgentCli),
+  );
+  const caps = conversation ? capabilitiesFor(conversation, liveModelAnswer) : null;
   /**
    * Is there an ACP engine standing behind this conversation?
    *
@@ -880,29 +894,42 @@ export function Composer(props: ComposerProps) {
               <div className="ml-auto flex min-w-0 items-center gap-1.5">
                 {voiceButton}
 
-                {caps.models.length > 0 ? (
-                  <ModelSelector
-                    dropUp
-                    selectedAgent={conversation.agent}
-                    selectedModel={conversation.model ?? ""}
-                    onModelChange={props.onChangeModel}
-                    // Capability first: on an engine session this is the
-                    // engine's own enumeration, not the seeded catalog row.
-                    models={caps.models}
-                    ollamaModels={ollamaModels}
-                    refreshOllamaModels={refreshOllamaModels}
-                    openSignal={modelOpenSignal}
-                    requiresTools
-                  />
-                ) : (
+                {/* NOT gated on `caps.models.length > 0` any more.
+                    That gate degraded an empty list to a dead read-only label
+                    — no picker, no refresh, no way to type an id — and it fired
+                    for a live provider whose fetch had merely not landed yet,
+                    which is the most common case and the least recoverable one.
+                    Worse, it made ModelSelector's own empty-list handling
+                    unreachable from an active conversation: the component knew
+                    how to render "no models, here's Refresh and Settings" and
+                    was never mounted to do it. ModelSelector now decides for
+                    itself (`providerEnumeratesLive`), and this fallback is left
+                    for the case it genuinely covers — a PTY/unknown agent with
+                    no model list of any kind. */}
+                <ModelSelector
+                  dropUp
+                  selectedAgent={conversation.agent}
+                  selectedModel={conversation.model ?? ""}
+                  onModelChange={props.onChangeModel}
+                  // Capability first: on an engine session this is the
+                  // engine's own enumeration, not the seeded catalog row.
+                  models={caps.models}
+                  modelsAreAuthoritative={caps.modelsAreAuthoritative}
+                  ollamaModels={ollamaModels}
+                  refreshOllamaModels={refreshOllamaModels}
+                  openSignal={modelOpenSignal}
+                  requiresTools
+                />
+                {!providerEnumeratesLive(conversation.agent) &&
+                  caps.models.length === 0 &&
                   conversation.model && (
-                    // No catalog to pick FROM, but the session still knows what
-                    // it runs ON — read-only rather than hidden.
+                    // Nothing to pick FROM and nothing that could ever arrive,
+                    // but the session still knows what it runs ON — read-only
+                    // rather than hidden.
                     <span className="truncate text-chip text-text-muted">
                       {conversation.model}
                     </span>
-                  )
-                )}
+                  )}
 
                 {/* Effort segments — omitted while no adapter advertises them. */}
                 {caps.effortLevels && caps.effortLevels.length > 0 && (
