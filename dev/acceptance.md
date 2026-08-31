@@ -27,11 +27,15 @@ Most green ticks in `CHANGELOG.md` for those sections still describe source
 tests.
 
 Three packaged installs have now happened, all silent and per-user: 0.12.1
-(2026-08-29), then 0.13.0 and 0.13.1 (both 2026-08-30). Between them they have
-closed the two upgrade rows in section 1 and the first row of section 2, and
-nothing else. In particular, 0.13.1 is the first build whose UI anyone has
-actually looked at — see the note on that row before trusting it further than
-it goes.
+(2026-08-29), then 0.13.0 and 0.13.1 (both 2026-08-30). 0.13.1 is the first
+build whose UI anyone has actually driven.
+
+**Section 2 was run against 0.13.1 on 2026-08-30** and is now largely closed:
+six of its eleven rows pass outright, two are partial, one is blocked for want
+of a host missing a shell, and one is a confirmed-still-broken finding. Sections
+**3–5 remain entirely unrun** — they need a person at the keyboard with the
+headset attached. Read each row's own note; several passes are narrower than a
+tick suggests.
 
 ---
 
@@ -137,12 +141,16 @@ machine carried.
       navigate (four switches via the command palette). This closes the "needs
       eyes on it" caveat that stood against 0.13.0.
 
-      Two things this row does **not** cover. The window opened on a secondary
-      monitor with its left edge clipped, so the Left Rail was off-screen and
-      navigation was driven through the command palette rather than the rail
-      buttons — the rail itself is still unexercised on a packaged build. And
-      the only screens examined were the two agent routes; every other view is
-      unlooked-at.
+      **Extended 2026-08-30 (same session).** The Left Rail is now exercised
+      too: all seven rail routes were clicked and each rendered, confirmed by
+      the status strip naming the active view — Workspace, Agents, PacketCode,
+      Flight Deck, Issues, Memory, Git Hosts. Memory shows a proper explanatory
+      empty state rather than empty frames, and Git Hosts shows its "Set up a
+      git host" entry. The earlier caveat that the rail was unexercised is
+      retired.
+
+      Still not covered: Flight Deck, Issues and the Tools/Settings surfaces
+      were only seen empty, and nothing was driven inside them.
 - [x] **No console window on agent-route mount** (regression check for the fix
       in 0.13.1). Four Agents ↔ PacketCode switches, screenshotted at 1s and 4s
       each: no console window at any point. The meaningful half of this is that
@@ -155,14 +163,94 @@ machine carried.
       other 0.13.1 fix). The picker reads "Engine default" and its dropdown
       says the engine has not reported models yet — no `claude-opus-4-8`, which
       on an engine with no Anthropic provider went to OpenAI and 404'd.
-- [ ] Window state and active view restore across restart
-- [ ] Close with live work running — confirmation appears and is honest about what is lost
-- [ ] After exit, no orphaned `claude` / `codex` / `node` processes remain (Task Manager)
-- [ ] Terminal shells: Auto, PowerShell 7, Windows PowerShell, Command Prompt, Git Bash, WSL
-- [ ] Unavailable-profile recovery — pick a shell that is not installed; the failure is stated, not silent
-- [ ] Pane, workspace, and app-level persistence and hydration of terminal sessions
-- [ ] Claude statusline self-bootstraps. **A pane launched by an older binary must be restarted** — collector injection happens at session launch (`dev/release-v0.10.3.md`)
-- [ ] A CLI that crashes on startup reports something. Known live case: `codex` 0.147.0 access-violates (`0xC0000005`). Backlog records that every `pty:exit` listener discards the payload, so this currently renders as a clean exit — confirm whether that is still true in the package
+- [~] **Window state and active view restore across restart** — PARTIAL,
+      2026-08-30, and one half of it is my fault.
+      - **Active view restores.** Closed on Workspace, reopened on Workspace.
+      - **Active workspace does NOT restore.** Workspace 2 was the selected tab
+        with six panes showing; after restart both tabs are present but neither
+        is selected and the main pane reads "Select a workspace from the sidebar
+        or create a new one". The workspace and its sessions persist — you just
+        have to click it again.
+      - **Window position is untested, not passed.** I moved the window with
+        `SetWindowPos` rather than dragging it, and an external move may not
+        fire what the app persists. It reopened at its pre-move position. Redo
+        this by dragging the window by hand before trusting either answer.
+- [x] **Close with live work running — confirmation appears and is honest.**
+      Six terminals running; the dialog says "Closing now terminates work that
+      is still running. Nothing is resumed on restart." and lists "6 terminal
+      sessions will be killed". The count is exact — it matched both the six
+      panes and the six shell processes parented to `packetbench`. It names the
+      consequence, states that nothing resumes, and quantifies the loss.
+- [x] **After exit, no orphaned processes.** Measured, not eyeballed. All six
+      shell PIDs recorded before the close (bash 29336, cmd 52924, powershell
+      46972 + 33804, pwsh 19308, wsl 29088) were gone afterwards;
+      `packetbench` at 0 processes; no `node` / `claude` / `codex` process left
+      with a dead parent; no `node` whose command line mentions the sidecar.
+      One `cmd.exe` (4076) does have a dead parent — it was already orphaned
+      before this test began and is not PacketBench's.
+- [x] **Terminal shells: all six launch and are usable.** Each was selected from
+      the Terminal row's profile dropdown, launched, and its banner/prompt read.
+      | Profile | Result |
+      | --- | --- |
+      | Auto-detect | resolves to Windows PowerShell; pane is honestly labelled "Windows PowerShell (Auto)" |
+      | PowerShell 7 | `PowerShell 7.6.5`, `PS D:\projects\PacketBench>` |
+      | Windows PowerShell | banner + `PS D:\projects\PacketBench>` |
+      | Command Prompt | `Microsoft Windows [Version 10.0.26200.9168]`, `D:\projects\PacketBench>` |
+      | Git Bash | `MINGW64 /d/projects/PacketBench (main)` — git-aware |
+      | WSL | `ianwalmsley@POINT9:/mnt/d/projects/PacketBench$`; **translates the Windows project path to the WSL mount**; `whoami` returned `ianwalmsley` |
+
+      Corroborated at the OS level: exactly six shell processes parented to
+      `packetbench`, one per pane, and the two `powershell.exe` children confirm
+      Auto-detect landed on Windows PowerShell rather than pwsh.
+
+      Note for whoever reads this next: the native profile dropdown photographs
+      **blank** under screenshot capture. That is a capture artifact of the OS
+      popup, not a rendering defect — the values read correctly in the closed
+      control. Do not file it as a bug.
+- [ ] **Unavailable-profile recovery — BLOCKED, not failed.** Every one of the
+      six profiles the picker offers is installed on this machine, so there is
+      no unavailable shell to select. Making one unavailable means modifying the
+      user's system, which is not a thing to do for a test. Needs a host missing
+      at least one profile.
+
+      Adjacent evidence that the failure path does speak up: the pre-existing
+      workspace points at `D:\projects\PacketBench-0.11.0-portable`, which does
+      not exist, and the sidebar states exactly that in red — "Project path is
+      not a directory: …". **But clicking that workspace does nothing visible**:
+      the main pane stays on "Select a workspace from the sidebar or create a
+      new one" with no explanation. The failure is stated, but not where the
+      user's click was.
+- [x] **Pane, workspace, and app-level persistence and hydration.** Verified at
+      all three levels across a real close/relaunch.
+      - Workspace 2 and all six sessions persisted (`Terminal x6`).
+      - **Hydration is dormant, as documented:** zero shell children at app
+        start. Nothing is launched until a workspace is opened.
+      - Opening the workspace launched six shells with **new PIDs** (13004,
+        7660, 47860, 46920, 47824, 52624) — fresh sessions, not resumptions,
+        which is what the close dialog promised. The WSL pane no longer carries
+        the `whoami` I ran before the close.
+- [~] **Claude statusline self-bootstraps — PARTIAL.** The statusline appears on
+      launch and polls ("Claude Code — Collecting session status…"), so the
+      collector is injected at session launch as designed. It never populates,
+      because Claude Code stops at its folder-trust prompt and I did not answer
+      a security prompt on the user's behalf. Finish this row by launching a
+      Claude pane, accepting the trust prompt yourself, and confirming the
+      statusline fills in.
+- [x] **A CLI that crashes on startup reports something — CONFIRMED STILL
+      BROKEN, by source rather than by the crash.** The named case is gone:
+      `codex` is now **0.150.1**, not 0.147.0; `codex --version` returns
+      cleanly and a Codex pane launches to its own trust prompt with no access
+      violation. So the runtime reproduction is no longer available on this
+      machine.
+
+      The underlying defect is nonetheless still present in 0.13.1, and this is
+      checkable without a crash. Rust emits a real payload
+      (`commands/pty.rs:538` — `exitCode`, `terminated`), and
+      `parsePtyExitPayload` (`src/lib/tauri.ts:227`) exists to read it. **It has
+      zero non-test callers.** All three listeners take no parameter and discard
+      the payload: `useTerminalSession.ts:360`, `useTransientPty.ts:150` and
+      `:276`. The exit code therefore never crosses the event boundary, and a
+      CLI that dies on startup still renders identically to a clean exit.
 
 ---
 

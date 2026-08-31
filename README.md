@@ -38,8 +38,8 @@ deployed as its own container; edit the Markdown, not the HTML.
   but no longer current source; `CHANGELOG.md` records 0.11.0 through 0.13.1
   after it.
 - [`dev/acceptance.md`](./dev/acceptance.md) — the packaged
-  acceptance checklist. Sections 0 and 1 have run, as has section 2's
-  cold-start row; the rest of 2–5 have not.
+  acceptance checklist. Sections 0, 1 and 2 have run against installed 0.13.1;
+  sections 3–5 (dictation, analytics, Monitor) have not.
 - [`dev/README.md`](./dev/README.md) — planning index, active implementation briefs, runbooks, and archive.
 - [`dev/remoteagents/README.md`](./dev/remoteagents/README.md) — canonical Remote Agents plan.
 - [`CHANGELOG.md`](./CHANGELOG.md) — shipped history only.
