@@ -73,8 +73,32 @@ export function isAccountLevelExhaustion(message: string): boolean {
  * endpoint, re-derived tool schema); until that exists, the honest fix for a
  * shared-quota wall is to decline the retry — see `isAccountLevelExhaustion`.
  */
-export function pickFailoverModel(currentModel: string): string | null {
-  const providerModels = findProviderCatalog(currentModel);
+export function pickFailoverModel(
+  currentModel: string,
+  /**
+   * The models actually available to the live session, when the caller knows
+   * them (`capabilitiesFor(conversation).models` — an ACP engine's
+   * enumeration, or a live provider list from `stores/liveModelStore`).
+   *
+   * Why this is a parameter and not a catalog read: `findProviderCatalog`
+   * scanned `API_PROVIDERS` for a provider CONTAINING the current model and
+   * returned `null` when none did. Every dynamic list breaks that. A session
+   * running a model the bundle has never heard of — a live-enumerated id, a
+   * user-typed id, an OpenRouter route added last week — matched no provider,
+   * so failover returned `null` and the 429 surfaced raw. The user saw a rate
+   * limit and no retry, with nothing anywhere saying failover had been skipped
+   * rather than attempted. Handing the real list in makes the ladder work on
+   * exactly the models the session can reach.
+   *
+   * Omitted keeps the bundled-catalog lookup, which is the pre-seam behaviour
+   * for every caller that has no better answer.
+   */
+  availableModels?: string[],
+): string | null {
+  const providerModels =
+    availableModels && availableModels.length > 0
+      ? availableModels
+      : findProviderCatalog(currentModel);
   if (!providerModels) return null;
 
   const m = currentModel.toLowerCase();

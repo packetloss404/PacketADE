@@ -8,6 +8,7 @@ import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { useServerStore } from "@/stores/serverStore";
 import { LAUNCH_DRAFT_KEY, useAgentDraftStore } from "@/stores/agentDraftStore";
 import { getDefaultModel } from "@/lib/api-models";
+import { acceptsEmptyModel } from "@/lib/liveModels";
 import {
   createConversationWorktree,
   getGitBranch,
@@ -115,6 +116,21 @@ export function launchConversation({
     profile?.pinnedModel ||
     selectedModel ||
     getDefaultModel(selectedAgent);
+
+  // `getDefaultModel` answers `""` for any row with no bundled models, and that
+  // empty string used to travel all the way to the backend. For `api-packetcode`
+  // that is CORRECT — `acp::routing` maps it to `None` and the engine uses its
+  // own configured default. For every other provider it is a request that names
+  // no model, and the vendor's 400 mentions nothing the user did. With model
+  // lists now arriving asynchronously this stopped being a corner case: a
+  // launch fired before the first enumeration lands hits it directly. Fail
+  // loudly through the launcher's own error channel instead.
+  if (!model && !acceptsEmptyModel(selectedAgent)) {
+    setLaunchError(
+      "No model selected for this provider yet — pick one (or type a model id) in the model picker.",
+    );
+    return false;
+  }
 
   // Mode -> planMode + launch-time permission posture (mode overrides profile).
   // When the caller supplies an explicit `postureOverride` (draft tile), it

@@ -41,6 +41,8 @@ import type {
 } from "@/types/flight";
 import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
 import { useOllamaModels } from "@/components/agents/hooks/useOllamaModels";
+import { useLiveModels } from "@/components/agents/hooks/useLiveModels";
+import { resolveModelRows } from "@/lib/liveModels";
 import { pathWithinAllowedRoots, validateAutonomyPolicy } from "@/lib/autonomyPolicy";
 
 interface LaunchAsyncFlightModalProps {
@@ -172,9 +174,16 @@ export function LaunchAsyncFlightModal({
   const { ollamaModels: reviewerOllamaModels } = useOllamaModels(
     reviewerEnabled ? reviewerAgent : "",
   );
+  // Every non-Ollama provider's list comes from the shared cache, resolved by
+  // the one precedence function. Cached rows render immediately; a refresh runs
+  // behind the modal and never delays opening it.
+  const { answer: reviewerLiveModels } = useLiveModels(reviewerAgent);
   const reviewerModelOptions = useMemo<
     { value: string; label: string; disabled: boolean }[]
   >(() => {
+    // Ollama keeps its own producer: the daemon reports a tools template per
+    // model, and the reviewer runs a tool-carrying loop, so "installed" is not
+    // the same question as "usable here".
     if (
       reviewerAgent === "api-ollama" &&
       Array.isArray(reviewerOllamaModels) &&
@@ -186,12 +195,13 @@ export function LaunchAsyncFlightModal({
         disabled: m.supportsTools === false,
       }));
     }
-    return (reviewerProvider?.models ?? []).map((m) => ({
-      value: m.value,
-      label: m.label,
-      disabled: false,
-    }));
-  }, [reviewerAgent, reviewerOllamaModels, reviewerProvider]);
+    // This used to read `reviewerProvider.models` directly — one of three
+    // ad-hoc live/static precedence rules that had drifted apart. All three
+    // now go through `resolveModelRows`.
+    return resolveModelRows({ agent: reviewerAgent, live: reviewerLiveModels }).rows.map(
+      (m) => ({ value: m.value, label: m.label, disabled: false }),
+    );
+  }, [reviewerAgent, reviewerOllamaModels, reviewerLiveModels]);
 
   const parsedAcceptanceCriteria = useMemo(
     () =>

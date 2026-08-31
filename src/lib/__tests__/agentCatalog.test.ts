@@ -4,6 +4,7 @@ import {
   TERMINAL_AGENTS,
   getChatAgent,
 } from "@/lib/agent-catalog";
+import { liveModelSource, providerEnumeratesLive } from "@/lib/liveModels";
 
 /**
  * Merged agent catalog (P3-S4). The registry is a thin read-layer join of
@@ -23,20 +24,46 @@ describe("agent-catalog merged registry", () => {
     expect(faces).toContain("Custom endpoint");
     for (const c of CHAT_AGENTS) {
       expect(c.section).toBe("chat");
-      // Two rows are legitimately model-less because their model list is
-      // owned by something outside this catalog:
-      //   `api-custom`     — a runtime-managed manual list (LM2, Settings →
-      //                      Provider Endpoints).
-      //   `api-packetcode` — the ACP engine enumerates its own models over
-      //                      `_packetcode/models/list`, and which ones exist
-      //                      depends on the user's `~/.packetcode/config.toml`.
-      //                      Seeding ids here guesses at another program's
-      //                      configuration; a wrong guess reached the engine
-      //                      and 404'd on whichever provider it resolved to.
-      // Every other row must carry models.
-      if (c.agentCli === "api-custom" || c.agentCli === "api-packetcode") continue;
-      expect(c.defaultModel.length).toBeGreaterThan(0);
-      expect(c.models.length).toBeGreaterThan(0);
+      // A row must be usable — but "usable" is no longer the same as "ships
+      // with models".
+      //
+      // This assertion used to be "every row except `api-custom` and
+      // `api-packetcode` carries static models", with those two exempted by
+      // name. That list was one of four hardcoded exemption lists that had
+      // drifted apart, and it encoded the wrong rule: what makes a model-less
+      // row legitimate is not its identity, it is that SOMETHING ELSE owns its
+      // list and can produce one at runtime. `api-custom`'s list is a manual
+      // one in Settings; `api-packetcode`'s comes from the engine's own
+      // `_packetcode/models/list`, since which models exist depends on the
+      // user's `~/.packetcode/config.toml` and seeding ids here would be a
+      // guess at another program's configuration (a wrong guess reached the
+      // engine and 404'd on whichever provider it resolved to).
+      //
+      // Re-expressed against the registry. Note that "is registered as
+      // live-enumerating" alone is NOT enough to excuse an empty row — every
+      // catalog row is registered now, so that reading would make this
+      // assertion vacuous. The rule that actually holds is about WHO owns the
+      // list:
+      //
+      //   needsKey  → PacketBench holds the credential and knows the vendor's
+      //               public catalog. It MUST ship those rows: they are what a
+      //               user with no API key yet, or a first launch before any
+      //               enumeration has landed, sees. An empty picker there is
+      //               the exact failure the live seam exists to prevent.
+      //   !needsKey → the list is a property of the user's own environment
+      //               (their Ollama daemon, their custom endpoint's config,
+      //               their `~/.packetcode/config.toml`). We cannot know it,
+      //               and guessing is worse than empty.
+      const source = liveModelSource(c.agentCli);
+      expect(providerEnumeratesLive(c.agentCli), c.agentCli).toBe(true);
+      if (!source?.needsKey) continue;
+      expect(c.defaultModel.length, c.agentCli).toBeGreaterThan(0);
+      expect(c.models.length, c.agentCli).toBeGreaterThan(0);
+    }
+    // Named explicitly so a future edit cannot satisfy the loop above by
+    // flipping a keyed row to `needsKey: false` and emptying it.
+    for (const agentCli of ["api-claude", "api-claude-oauth", "api-openai", "api-openrouter"] as const) {
+      expect(getChatAgent(agentCli)?.models.length, agentCli).toBeGreaterThan(0);
     }
   });
 

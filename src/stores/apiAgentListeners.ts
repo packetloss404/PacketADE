@@ -39,6 +39,8 @@ import {
   looksLikeRateLimit,
   pickFailoverModel,
 } from "@/lib/autoFailover";
+import { capabilitiesFor } from "@/lib/agentCapabilities";
+import { useLiveModelStore } from "@/stores/liveModelStore";
 import {
   notifySessionComplete,
   notifySessionError,
@@ -446,7 +448,17 @@ export async function installApiAgentListeners(conversationId: string): Promise<
       // and show a "retrying on X" notice for a retry that cannot succeed.
       !isAccountLevelExhaustion(event.payload.message)
     ) {
-      const fallback = pickFailoverModel(conv.model);
+      // Hand the failover ladder the models this session can ACTUALLY reach —
+      // an engine's own enumeration or a live provider list — instead of
+      // letting it scan the bundled catalog for a row containing `conv.model`.
+      // That scan returned null for any model the bundle had never heard of,
+      // which silently disabled failover at the one moment it exists for.
+      // Reading the store here is fine: this is an event handler, not render.
+      const sessionModels = capabilitiesFor(
+        conv,
+        useLiveModelStore.getState().answerFor(conv.agent),
+      ).models.map((m) => m.value);
+      const fallback = pickFailoverModel(conv.model, sessionModels);
       if (fallback && fallback !== conv.model) {
         failoverGuard.add(id);
         const noticeMsg: AgentMessage = {
