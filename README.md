@@ -20,15 +20,20 @@ _An actual native PacketBench capture: PacketCode and Claude Code running their 
 
 ## Documentation Map
 
-**Start here: [the documentation site](https://packetbench-docs-production.up.railway.app/guide/)** — 20 pages
-covering every surface, a settings reference, a deep developer section, and an
-orientation briefing written for coding agents working in this repository. It is
-generated from Markdown in [`docs/src/`](./docs/src) by `pnpm docs:build` and
-deployed as its own container; edit the Markdown, not the HTML.
+**Start here: [docs.ianlan.dev/packetbench](https://docs.ianlan.dev/packetbench/)** — 30 pages
+covering every surface, a settings reference, an operations section, a deep
+developer section, and an orientation briefing written for coding agents working
+in this repository.
 
-- [`docs/reports/state-of-the-ade-2026-07-30.md`](./docs/reports/state-of-the-ade-2026-07-30.md) — primary AI-readable State of the ADE living record; Section 0 is the current 2026-08-03 authority.
-- [`docs/reports/state-of-the-ade-2026-07-30.pdf`](./docs/reports/state-of-the-ade-2026-07-30.pdf) — identical paginated human edition.
-- [`docs/reports/fable5-review-2026-08-05.md`](./docs/reports/fable5-review-2026-08-05.md) — the 2026-08-05 seven-team deep review and v1.0.0 plan (`.html` sibling is the human edition with screenshots).
+The documentation lives in its own repository,
+[packetloss404/ianlan-docs](https://github.com/packetloss404/ianlan-docs), which
+also serves the reports below. It moved out of this repo so that an unrelated
+app commit no longer triggers a docs deploy. Edit the Markdown under `src/packetbench/`
+there — not here, and never the generated HTML.
+
+- [State of the ADE](https://docs.ianlan.dev/reports/state-of-the-ade-2026-07-30.md) — primary AI-readable living record; Section 0 is the current 2026-08-03 authority.
+- [State of the ADE (PDF)](https://docs.ianlan.dev/reports/state-of-the-ade-2026-07-30.pdf) — identical paginated human edition.
+- [Fable 5 review](https://docs.ianlan.dev/reports/fable5-review-2026-08-05.md) — the 2026-08-05 seven-team deep review and v1.0.0 plan (`.html` sibling is the human edition with screenshots).
 - [`HANDOFF.md`](./HANDOFF.md) — exact restart point, completed decisions,
   current owner questions, build evidence, and guardrails.
 - [`ROADMAP.md`](./ROADMAP.md) — current product direction and release path.
@@ -559,14 +564,9 @@ pnpm check           # preflight + e2e + sidecar:check + Tauri schema + Rust che
 pnpm sidecar:check   # 14 chained sidecar build/protocol/provider smoke gates
 ```
 
-The documentation site has its own build, which is not part of those ladders:
-
-```bash
-pnpm docs:build      # renders docs/src/*.md into docs/guide/
-```
-
-It fails if a page declared in `docs/src/nav.json` has no Markdown, so a broken
-nav surfaces as a failed build rather than a 404 in production.
+The documentation site is no longer built from this repository. It lives in
+[packetloss404/ianlan-docs](https://github.com/packetloss404/ianlan-docs) and
+deploys itself.
 
 Individual rungs are also available directly:
 
@@ -636,13 +636,9 @@ PacketBench/
   agent-sidecar/               # Node sidecar for API-key-backed Agent SDK providers
   scripts/                     # Build, sidecar, schema-check, and bundling scripts
   e2e/                         # Playwright tests
-  docs/
-    src/                       # Documentation site SOURCE — Markdown + nav.json; edit these
-    guide/                     # Generated site output (pnpm docs:build); do not hand-edit
-    Dockerfile, Caddyfile      # Container that rebuilds and serves the site
-    index.html, *.html         # Hand-authored landing page, manual and roadmap
-    assets/, screenshots/      # Extracted page CSS/JS and screenshot assets
   public/                      # Static frontend assets
+
+  (documentation now lives in packetloss404/ianlan-docs)
 ```
 
 ## Contributor Notes

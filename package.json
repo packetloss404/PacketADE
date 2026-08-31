@@ -51,8 +51,7 @@
     "rust:test": "cd src-tauri && cargo test",
     "release:readiness": "node scripts/release-readiness.mjs",
     "release:readiness:report": "node scripts/release-readiness.mjs --report-only",
-    "check": "pnpm run preflight && pnpm run e2e && pnpm run sidecar:check && pnpm run check:tauri-schema && pnpm run rust:check && pnpm run rust:test",
-    "docs:build": "node scripts/build-docs.mjs"
+    "check": "pnpm run preflight && pnpm run e2e && pnpm run sidecar:check && pnpm run check:tauri-schema && pnpm run rust:check && pnpm run rust:test"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
