@@ -43,6 +43,7 @@ const AGENT_LABELS: Record<string, string> = {
   codex: "Codex",
   opencode: "OpenCode",
   packetcode: "PacketCode",
+  // Retired transport; kept so a stored conversation on the id still has a name.
   "api-packetcode": "PacketCode (ACP)",
 };
 

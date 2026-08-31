@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot, X } from "lucide-react";
 import {
-  ACP_PROVIDER_ID,
-  apiAgentProvider,
   authProbeProvider,
   useAgentTaskStore,
   type AgentCli,
@@ -70,21 +68,6 @@ export function AgentsView({ pinnedAgent, pinnedModel }: AgentsViewProps = {}) {
   const recordVisibleConversations = useWorkspaceAgentsDogfoodStore(
     (state) => state.recordVisibleConversations,
   );
-
-  /**
-   * Whether the ACP transport is currently selected — it is the one with an
-   * engine-side session directory to show. A TRANSPORT question, not an
-   * affordance one: what the directory then lets you do is still resolved from
-   * `capabilitiesFor()` inside the sidebar.
-   *
-   * This keys off the LIVE selection, not a route-level pin. It used to read
-   * `pinnedAgent`, because the engine directory belonged to the separate
-   * `PacketCodeView` route. That route is gone — PacketCode is a provider you
-   * select inside this one pane — so the directory follows the selection
-   * instead. Pick PacketCode and it appears; pick anything else and a list of
-   * packetcode-engine sessions would be noise, so it does not.
-   */
-  const showEngineSessions = apiAgentProvider(selectedAgent) === ACP_PROVIDER_ID;
 
   useEffect(() => {
     recordVisibleConversations(selectedConversationId ? 1 : 0);
@@ -178,7 +161,6 @@ export function AgentsView({ pinnedAgent, pinnedModel }: AgentsViewProps = {}) {
         selectedId={selectedConversationId}
         onSelect={selectConversation}
         onNewAgent={handleNewAgent}
-        showEngineSessions={showEngineSessions}
       />
 
       {selectedConversationId ? (

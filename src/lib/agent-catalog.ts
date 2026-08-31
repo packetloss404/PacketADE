@@ -66,24 +66,11 @@ const CHAT_FACE: Partial<Record<AgentCli, string>> = {
   "api-minimax": "MiniMax",
   "api-openrouter": "OpenRouter",
   "api-ollama": "Ollama",
-  // Disambiguated from the `packetcode` TERMINAL face ("PacketCode", the PTY
-  // TUI slot) the same way "Claude API" is disambiguated from "Claude Code":
-  // both sections legitimately carry the vendor, so the face names the runtime.
-  "api-packetcode": "PacketCode ACP",
   "api-custom": "Custom endpoint",
 };
 
-/**
- * Local-only chat runtimes cannot inherit an SSH execution context.
- *
- * `api-packetcode` joins Ollama here because the ACP engine is a local child
- * process spawned by the Rust side, not an HTTP endpoint the remote sidecar
- * could reach.
- */
-const CHAT_LOCAL_ONLY: ReadonlySet<AgentCli> = new Set<AgentCli>([
-  "api-ollama",
-  "api-packetcode",
-]);
+/** Local-only chat runtimes cannot inherit an SSH execution context. */
+const CHAT_LOCAL_ONLY: ReadonlySet<AgentCli> = new Set<AgentCli>(["api-ollama"]);
 
 /**
  * The Chat-agent section: every API provider from `api-models.ts`, projected

@@ -111,18 +111,6 @@ function isRestrictedModeSet(
   return offered.length < modesForApprovals(supportsApprovals).length;
 }
 
-/**
- * Render a backend's own mode name as a chip label: `"accept-edits"` →
- * `"Accept edits"`. Separators become spaces and only the first letter is
- * capitalised, so the engine's vocabulary stays recognisable without being
- * dressed up as one of PacketBench's five postures.
- */
-function formatProviderModeLabel(raw: string): string {
-  const words = raw.trim().replace(/[-_]+/g, " ").replace(/\s+/g, " ");
-  if (!words) return PROVIDER_DEFAULT_LABEL;
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
-
 interface AgentModeChipProps {
   conversation: AgentConversation;
   onCycle: () => void;
@@ -179,13 +167,11 @@ export function AgentModeChip({
   //
   //  (a) the derived posture IS offered — label it, exactly as before.
   //  (b) it is NOT — PacketBench's override was dropped by the backend and the
-  //      session is running on the PROVIDER's own default. Name that, using
-  //      the provider's word when it gave one.
-  //  (c) neither is knowable — "Provider default", neutral tone, no icon that
-  //      implies an escalation level. `src-tauri/src/acp/mod.rs` is explicit
-  //      that the UI must not guess a mode here, and "Default" is a PacketBench
-  //      posture with a specific meaning (full tools, no prompts), so falling
-  //      back to it would be exactly that guess.
+  //      session is running on the PROVIDER's own default — "Provider
+  //      default", neutral tone, no icon that implies an escalation level.
+  //      The UI must not guess a mode here: "Default" is a PacketBench posture
+  //      with a specific meaning (full tools, no prompts), so falling back to
+  //      it would be exactly that guess.
   //
   // A restricted set is a CONFIGURATION, never a warning: no red, no
   // AlertTriangle, no Lock. Neutral is the absence of a claim.
@@ -195,13 +181,10 @@ export function AgentModeChip({
   // derived posture there rather than claiming a provider default nobody
   // advertised. Composer only mounts the chip on a non-empty set anyway.
   const postureOffered = order.length === 0 || order.includes(mode);
-  const providerDefault = caps.providerDefaultModeLabel;
   const meta = postureOffered
     ? MODE_META[mode]
     : {
-        label: providerDefault
-          ? formatProviderModeLabel(providerDefault)
-          : PROVIDER_DEFAULT_LABEL,
+        label: PROVIDER_DEFAULT_LABEL,
         icon: Bot,
         color: "text-text-secondary bg-bg-tertiary",
         border: "border-bg-border",
@@ -254,7 +237,6 @@ export function AgentModeChip({
           ) : (
             <span>
               {PROVIDER_DEFAULT_LABEL}
-              {providerDefault ? `: ${formatProviderModeLabel(providerDefault)}` : ""}
               <br />
               PacketBench did not set a posture — the provider chose this one.
               {approveWrites && (

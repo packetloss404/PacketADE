@@ -168,7 +168,6 @@ export function ModelSelector({
 
   const isOllama = selectedAgent === "api-ollama";
   const isCustom = selectedAgent === "api-custom";
-  const isAcp = liveModelSource(selectedAgent)?.producer === "acp";
   // LM2: the custom endpoint models are a runtime-managed manual list, so
   // (like Ollama live list) the static catalog carries none.
   const { customModels, refresh: refreshCustomModels } =
@@ -216,12 +215,6 @@ export function ModelSelector({
     }
   } else if (isCustom) {
     triggerLabel = selectedModel || "Select model";
-  } else if (isAcp && modelRows.length === 0) {
-    // No model chosen and the engine has not answered yet. Say what will
-    // actually happen — we send no model and the engine uses its configured
-    // default — rather than "Select model", which implies a choice we do not
-    // have and would invite picking a stale catalog id.
-    triggerLabel = selectedModel || "Engine default";
   } else {
     const currentModel =
       modelRows.find((m) => m.value === selectedModel) ?? modelRows[0];
@@ -396,7 +389,7 @@ export function ModelSelector({
     });
   } else {
     // Every remaining provider renders the same way — bundled catalog rows, an
-    // ACP engine's enumeration, and a live provider list are all just rows.
+    // and a live provider list are all just rows.
     // What differs is the HEADER (is a refresh possible?) and the NOTICE (are
     // these really this provider's models?), and both come from the seam
     // rather than from a per-provider branch.
@@ -435,13 +428,6 @@ export function ModelSelector({
       // about.
       notice = (
         <div className="px-3 py-1.5 text-meta text-text-muted">{resolution.notice}</div>
-      );
-    } else if (isAcp && modelRows.length === 0) {
-      notice = (
-        <div className="px-3 py-1.5 text-meta text-text-muted">
-          The packetcode engine has not reported its models yet. Turns use the
-          engine&apos;s configured default until it does.
-        </div>
       );
     }
     for (const m of modelRows) {

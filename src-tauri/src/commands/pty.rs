@@ -122,10 +122,9 @@ fn pinned_cli_binary(command: &str) -> Option<String> {
 /// words), so its stable destination has to be part of normal discovery.
 ///
 /// FAULT this exists to fix: the install directory was already searched by the
-/// two surfaces that decide whether packetcode is PRESENT —
+/// surface that decides whether packetcode is PRESENT —
 /// [`crate::core::agent::resolve_catalog_path`], which sets the agent
-/// catalog's `installed` flag, and [`crate::acp::install_dir_candidates`],
-/// which resolves the ACP engine — but NOT by the PTY resolver that actually
+/// catalog's `installed` flag — but NOT by the PTY resolver that actually
 /// launches the pane. A packetcode installed exactly where its own installer
 /// puts it was therefore reported as installed, offered in the Workspace agent
 /// list, and then died the instant the user opened a pane, because `where

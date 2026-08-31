@@ -164,43 +164,6 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     ],
   },
   {
-    // The sibling PacketCode TUI, driven over Agent Client Protocol as a local
-    // subprocess. `needsKey: false` for the same reason as Ollama: the engine
-    // owns its own provider credentials (its config + keyring), so PacketBench
-    // never holds an API key for this row and the auth badge reflects engine
-    // reachability rather than a keyring slot.
-    //
-    // `supportsApprovals: true` — ACP carries a real per-tool permission
-    // round-trip (`session/request_permission`), so every PermissionMode the
-    // mode pickers offer is genuinely enforceable here.
-    //
-    // NO static models — the same rule as Ollama's live list and `api-custom`.
-    //
-    // This row used to seed three ids (`claude-opus-4-8`, `claude-sonnet-4-6`,
-    // `gpt-5.5`) "so the picker renders something before the engine has been
-    // asked". That seed was a GUESS AT ANOTHER PROGRAM'S CONFIGURATION, and a
-    // wrong guess is worse than an empty picker: the engine owns its own
-    // provider credentials, so which models exist is decided by the user's
-    // `~/.packetcode/config.toml`, not by us. A development machine here has
-    // providers `openai` / `codex` / `ollama` and default model `gpt-5.6-sol`
-    // — no Anthropic provider at all — so seeding `claude-opus-4-8` sent that
-    // id to OpenAI and came back as
-    // `-32603 chat completion: status 404: The model claude-opus-4-8 does not
-    // exist or you do not have access to it`.
-    //
-    // The engine enumerates its real models over `_packetcode/models/list`
-    // (`stampEngineCapabilities` fetches them; `ModelSelector` already prefers
-    // them over the catalog). Until that answer arrives we send NO model, and
-    // `acp::routing` maps an empty model to `None`, which makes the engine use
-    // its own configured default — the only correct choice available to us.
-    id: "packetcode-acp",
-    agentCli: "api-packetcode",
-    name: "PacketCode (ACP)",
-    needsKey: false,
-    supportsApprovals: true,
-    models: [],
-  },
-  {
     // LM2 — user-supplied OpenAI-compatible endpoint (vLLM, LM Studio,
     // LiteLLM, Together, …). Models are a runtime-managed manual list (see
     // `useCustomModels`) exactly like Ollama's live list, so the static
@@ -216,7 +179,7 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
 
 /**
  * THE builder for a picker row. Every `ApiModel` that reaches a picker — the
- * static rows below, an ACP engine's enumeration, a live provider list — is
+ * static rows below, a live provider list — is
  * constructed here, so a row can never arrive without its ctx/price chips
  * resolved.
  *
@@ -281,16 +244,12 @@ export function getProviderForAgent(agent: AgentCli): ApiProviderInfo | undefine
 /**
  * Get the default model for a provider — the FIRST BUNDLED row, or `""`.
  *
- * The empty string is load-bearing for exactly one row and a silent failure
- * for the rest. `api-packetcode` carries no static models on purpose, and
- * `acp::routing` maps an empty model to `None` so the engine uses its own
- * configured default — the only honest answer when the engine owns its
- * provider credentials. For every keyed provider an empty model is a request
- * that goes out naming no model and comes back a 400.
- *
- * Callers that launch a turn must therefore check
- * {@link liveModels.acceptsEmptyModel} rather than passing this through
- * unexamined; `launchConversation` does. This function stays deliberately
+ * The empty string is a silent failure everywhere: the request goes out naming
+ * no model and comes back a 400. Rows whose models arrive live (`api-custom`,
+ * and `api-ollama` beyond its bundled seeds) answer `""` until their first
+ * enumeration lands, so callers that launch a turn must reject an empty model
+ * rather than passing it through unexamined; `launchConversation` does. This
+ * function stays deliberately
  * bundle-only and synchronous — it is called from render paths and from
  * non-React stores, so it must never read a cache or issue IPC. Where a live
  * list is available, resolve through `liveModels.resolveModelRows` and take

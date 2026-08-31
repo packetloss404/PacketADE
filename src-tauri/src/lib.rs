@@ -1,7 +1,3 @@
-/// ACP (Agent Client Protocol) transport — the third agent backend alongside
-/// PTY sessions and the Node sidecar. `pub` so the integration suite in
-/// `tests/acp_stream.rs` can drive the real bridge against a mock engine.
-pub mod acp;
 pub mod api;
 mod claude;
 mod commands;
@@ -226,10 +222,6 @@ pub fn run() {
         // until the frontend routing store pushes; an empty map means
         // "auto (cheapest configured API key)", never a subscription login.
         .manage(core::aux_llm::AuxRoutingState::default())
-        // ACP transport. Holds no process until a `packetcode-acp`
-        // conversation starts (or `acp_start` is invoked), so managing it is
-        // free on installs that never use the engine.
-        .manage(acp::AcpState::default())
         // PH6 — registry of live PacketAgent SSE consumer tasks.
         .manage(commands::packet_agent_stream::PacketAgentStreamState::default())
         .setup(|app| {
@@ -544,8 +536,6 @@ pub fn run() {
             // Live per-provider model catalogs
             commands::provider_models::list_provider_models,
             // LM2 — custom OpenAI-compatible endpoint
-            commands::acp_engine_path::get_acp_engine_path,
-            commands::acp_engine_path::set_acp_engine_path,
             commands::custom_compat::get_custom_compat_base_url,
             commands::custom_compat::set_custom_compat_base_url,
             commands::custom_compat::get_custom_compat_models,
@@ -563,24 +553,6 @@ pub fn run() {
             commands::api_agent::respond_edit,
             commands::api_agent::retry_last_turn,
             commands::api_agent::cancel_pending_tools,
-            // ACP transport (packetcode engine). Conversation flow — start /
-            // send / cancel / permissions — routes through the api-agent
-            // commands above; these are the engine-lifecycle and catalog
-            // queries that have no api-agent equivalent.
-            acp::acp_probe,
-            acp::install::acp_install_engine,
-            acp::acp_start,
-            acp::acp_stop,
-            acp::acp_capabilities,
-            acp::acp_list_sessions,
-            acp::acp_load_session,
-            acp::acp_list_models,
-            acp::acp_list_mcp_servers,
-            acp::acp_mcp_plan,
-            acp::acp_list_commands,
-            acp::acp_search_files,
-            acp::acp_session_usage,
-            acp::acp_rename_session,
             // Agent conversation persistence
             commands::conversations::save_conversation,
             commands::conversations::load_conversations,
@@ -615,16 +587,6 @@ pub fn run() {
                 }
                 if let Some(manager) = app_handle.try_state::<std::sync::Arc<SidecarManager>>() {
                     manager.shutdown();
-                }
-                // ACP engine last, and tolerantly: `try_state` because an app
-                // that failed before `.manage()` must still exit. Closing the
-                // engine's stdin is the only way it gets to run its own
-                // shutdown and release every session runtime plus the MCP
-                // children those sessions spawned; `stop_on` is bounded
-                // (grace + two kill steps) so a wedged engine cannot hold the
-                // window open.
-                if let Some(acp_state) = app_handle.try_state::<acp::AcpState>() {
-                    let _ = tauri::async_runtime::block_on(acp::stop_on(&acp_state));
                 }
             }
         });

@@ -4,7 +4,7 @@ import {
   templatesToSlashDefs,
   TEMPLATE_SOURCE_TAG,
 } from "../slashCommandSource";
-import type { AcpSlashCommand, SkillDef, SlashCommandDef } from "@/lib/tauri";
+import type { SkillDef, SlashCommandDef } from "@/lib/tauri";
 import type { PromptTemplate } from "@/types/prompt";
 
 const customCmd = (name: string): SlashCommandDef => ({
@@ -84,117 +84,8 @@ describe("buildSlashItems — the single slash-command source of truth", () => {
       } else if (item.selection.kind === "skill") {
         expect(item.key).toBe(`skill:${item.selection.def.name}`);
         expect(item.selection.def.body).toBe("verify skill body");
-      } else {
-        // No engine commands were passed to this call — an engine row here
-        // would mean the merge invented one.
-        throw new Error(`unexpected engine row: ${item.key}`);
       }
     }
-  });
-});
-
-/**
- * ACP engine commands merged into the SAME menu. The engine owns commands
- * PacketBench has never heard of, but PacketBench owns `/model` and `/permissions`
- * — those open the composer's own pickers via `paneEvents`, so a same-named
- * engine command must not be able to take them over.
- */
-describe("buildSlashItems — ACP engine commands", () => {
-  const engineCmd = (
-    name: string,
-    over: Partial<AcpSlashCommand> = {},
-  ): AcpSlashCommand => ({
-    name,
-    description: `${name} from engine`,
-    source: "builtin",
-    ...over,
-  });
-
-  it("merges engine commands after the builtins and before custom/skills", () => {
-    const items = buildSlashItems("", {
-      includeBuiltins: true,
-      customCommands: [customCmd("deploy")],
-      userSkills: [skill("verify")],
-      engineCommands: [engineCmd("cost")],
-    });
-    const kinds = items.map((i) => i.selection.kind);
-    expect(kinds.indexOf("engine")).toBeGreaterThan(kinds.lastIndexOf("builtin"));
-    expect(kinds.indexOf("engine")).toBeLessThan(kinds.indexOf("custom"));
-    expect(kinds.indexOf("custom")).toBeLessThan(kinds.indexOf("skill"));
-  });
-
-  it("surfaces the engine's argument hint on the row and tags its source", () => {
-    const [item] = buildSlashItems("cost", {
-      includeBuiltins: false,
-      customCommands: [],
-      userSkills: [],
-      engineCommands: [
-        engineCmd("cost", { argumentHint: "[days]", source: "project" }),
-      ],
-    });
-    expect(item.label).toBe("/cost [days]");
-    expect(item.description).toBe("cost from engine (project)");
-    expect(item.key).toBe("engine:cost");
-    expect(item.selection).toEqual({
-      kind: "engine",
-      def: expect.objectContaining({ name: "cost" }),
-    });
-  });
-
-  it("omits the hint from the label when the command takes no arguments", () => {
-    const [item] = buildSlashItems("cost", {
-      includeBuiltins: false,
-      customCommands: [],
-      userSkills: [],
-      engineCommands: [engineCmd("cost")],
-    });
-    expect(item.label).toBe("/cost");
-  });
-
-  it("lets a builtin shadow a same-named engine command", () => {
-    // `/model` opens the composer's model picker (OPEN_MODEL_DROPDOWN_EVENT).
-    // Handing the name to the engine would silently delete that control.
-    const items = buildSlashItems("model", {
-      includeBuiltins: true,
-      customCommands: [],
-      userSkills: [],
-      engineCommands: [engineCmd("model"), engineCmd("models")],
-    });
-    expect(items.map((i) => i.key)).toEqual(["builtin:model", "engine:models"]);
-  });
-
-  it("keeps an engine command whose name only collides in the launch variant", () => {
-    // No builtins offered there, so nothing shadows.
-    const items = buildSlashItems("model", {
-      includeBuiltins: false,
-      customCommands: [],
-      userSkills: [],
-      engineCommands: [engineCmd("model")],
-    });
-    expect(items.map((i) => i.key)).toEqual(["engine:model"]);
-  });
-
-  it("filters engine commands with the same case-insensitive prefix rule", () => {
-    const items = buildSlashItems("CO", {
-      includeBuiltins: false,
-      customCommands: [],
-      userSkills: [],
-      engineCommands: [engineCmd("cost"), engineCmd("context"), engineCmd("undo")],
-    });
-    expect(items.map((i) => i.label)).toEqual(["/cost", "/context"]);
-  });
-
-  it("is byte-identical to the pre-engine menu when the engine gave nothing", () => {
-    const sources = {
-      includeBuiltins: true,
-      customCommands: [customCmd("deploy")],
-      userSkills: [skill("verify")],
-    };
-    const withoutField = buildSlashItems("", sources).map((i) => i.key);
-    const withEmpty = buildSlashItems("", { ...sources, engineCommands: [] }).map(
-      (i) => i.key,
-    );
-    expect(withEmpty).toEqual(withoutField);
   });
 });
 

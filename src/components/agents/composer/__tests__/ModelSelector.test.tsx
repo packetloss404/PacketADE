@@ -2,12 +2,11 @@
  * ModelSelector — capability first, catalog second.
  *
  * The picker used to key entirely off `API_PROVIDERS.find(p => p.agentCli ===
- * selectedAgent)` and render NOTHING when that lookup missed, which meant an
- * ACP session's real choices (enumerated by the engine over
- * `_packetcode/models/list` and carried on `caps.models`) were ignored in
- * favour of a hard-coded seed. These assertions pin both halves: the engine's
- * list wins when there is one, and every non-engine caller — which passes no
- * `models` at all — behaves exactly as it did before.
+ * selectedAgent)` and render NOTHING when that lookup missed, which meant a
+ * session's real choices (carried on `caps.models`) were ignored in favour of
+ * the shipped catalog. These assertions pin both halves: an authoritative list
+ * wins when there is one, and every caller that passes no `models` at all
+ * behaves exactly as it did before.
  */
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -27,7 +26,7 @@ function renderSelector(
   render(
     <ModelSelector
       dropUp
-      selectedAgent={over.selectedAgent ?? ("api-packetcode" as AgentCli)}
+      selectedAgent={over.selectedAgent ?? ("api-claude" as AgentCli)}
       selectedModel={over.selectedModel ?? ""}
       onModelChange={onModelChange}
       models={over.models}
@@ -48,36 +47,26 @@ function openOptions(): string[] {
 const catalogFor = (agent: string): ApiModel[] =>
   API_PROVIDERS.find((p) => p.agentCli === agent)?.models ?? [];
 
-describe("ModelSelector — engine models vs the seeded catalog", () => {
-  it("offers the engine's list, not the catalog seed, when caps supplies one", () => {
-    const engineRows: ApiModel[] = [
+describe("ModelSelector — authoritative models vs the seeded catalog", () => {
+  it("offers the authoritative list, not the catalog seed, when caps supplies one", () => {
+    const liveRows: ApiModel[] = [
       { label: "glm-4.7", value: "glm-4.7" },
       { label: "kimi-k2.5", value: "kimi-k2.5" },
     ];
-    renderSelector({ selectedModel: "glm-4.7", models: engineRows });
+    renderSelector({ selectedModel: "glm-4.7", models: liveRows });
 
     const options = openOptions();
     expect(options).toHaveLength(2);
     expect(options[0]).toContain("glm-4.7");
     expect(options[1]).toContain("kimi-k2.5");
-    // The ACP catalog row carries no static models at all, so there is nothing
-    // that COULD leak in — that emptiness is the fix, and it is asserted here
-    // so re-seeding the row fails this test rather than silently reinstating
-    // ids the user's engine may have no provider for.
-    const seeded = catalogFor("api-packetcode").map((m) => m.label);
-    expect(seeded).toEqual([]);
+    // The shipped catalog rows must not leak in alongside them.
+    const seeded = catalogFor("api-claude").map((m) => m.label);
+    expect(options.some((option) => seeded.some((label) => option.includes(label)))).toBe(
+      false,
+    );
   });
 
-  it("keeps the picker mounted and names the engine default before the engine answers", () => {
-    // Regression: the ACP row's empty catalog must not unmount the picker the
-    // way an empty catalog does for a keyed provider, and the trigger must not
-    // say "Select model" — there is no choice to make yet, and offering one
-    // invites picking a stale id.
-    renderSelector({ selectedModel: "", models: [] });
-    expect(screen.getByText("Engine default")).toBeTruthy();
-  });
-
-  it("labels the trigger from the engine's list", () => {
+  it("labels the trigger from the authoritative list", () => {
     renderSelector({
       selectedModel: "kimi-k2.5",
       models: [
@@ -88,7 +77,7 @@ describe("ModelSelector — engine models vs the seeded catalog", () => {
     expect(screen.getByText("kimi-k2.5")).toBeTruthy();
   });
 
-  it("selects an engine model by its own id", () => {
+  it("selects an authoritative model by its own id", () => {
     const { onModelChange } = renderSelector({
       models: [{ label: "glm-4.7", value: "glm-4.7" }],
     });
@@ -98,7 +87,7 @@ describe("ModelSelector — engine models vs the seeded catalog", () => {
   });
 
   it("falls back to the catalog when caps carries nothing", () => {
-    // `undefined` is "never asked / the ask failed" — the pre-engine answer.
+    // `undefined` is "never asked / the ask failed" — the catalog answer.
     renderSelector({ selectedAgent: "api-claude" as AgentCli });
     const options = openOptions();
     const catalog = catalogFor("api-claude");

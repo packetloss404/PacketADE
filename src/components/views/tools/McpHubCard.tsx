@@ -435,22 +435,6 @@ export function McpHubCard() {
                       Credential, outside-workspace, and protected publish operations remain
                       blocked. Start or reconnect a session to apply changes.
                     </div>
-                    {/* The controls above are enforced per tool call by the
-                        Rust in-process runtime and by the Node sidecar. They
-                        are NOT enforced on the packetcode (ACP) transport: that
-                        engine owns the MCP client and dispatches every tool call
-                        itself, so PacketBench's only lever there is whether the
-                        server runs at all. Saying so here — next to the controls
-                        that imply otherwise — is the point. */}
-                    <div className="mt-1 flex items-start gap-1 text-[9px] text-accent-amber">
-                      <TriangleAlert size={9} className="mt-0.5 shrink-0" />
-                      <span>
-                        <span className="font-medium">packetcode (ACP) sessions apply only</span>{" "}
-                        the allow/deny decision for the whole server — the per-tool, root and
-                        denial-floor settings above do not reach it. Its MCP pane lists what
-                        lapses before a session starts.
-                      </span>
-                    </div>
                   </div>
                 );
               })}

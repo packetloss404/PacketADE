@@ -77,7 +77,7 @@ export function pickFailoverModel(
   currentModel: string,
   /**
    * The models actually available to the live session, when the caller knows
-   * them (`capabilitiesFor(conversation).models` — an ACP engine's
+   * them (`capabilitiesFor(conversation).models` — a backend's
    * enumeration, or a live provider list from `stores/liveModelStore`).
    *
    * Why this is a parameter and not a catalog read: `findProviderCatalog`

@@ -52,9 +52,9 @@ function agentFamily(agentId: string): AgentFamily {
   if (id === "codex" || id.startsWith("api-openai")) return "codex";
   // Ollama (local) shares OpenCode's slot color in the legacy sidebar map.
   if (id === "opencode" || id === "api-ollama") return "opencode";
-  // Both PacketCode faces — the PTY TUI slot and the ACP chat provider — share
+  // The PacketCode PTY TUI slot.
   // the one PacketCode identity color; they are the same engine, two transports.
-  if (id === "packetcode" || id === "api-packetcode") return "packetcode";
+  if (id === "packetcode") return "packetcode";
   // OpenRouter is a blue meta-provider alongside MiniMax in the legacy map.
   if (id.startsWith("api-minimax") || id === "api-openrouter") return "minimax";
   return "neutral";

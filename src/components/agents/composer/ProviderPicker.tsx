@@ -94,7 +94,6 @@ export function ProviderPicker({
                     // own models, its FIRST REAL model is the honest default,
                     // and the bundled row 0 may not even exist on the account.
                     // The `""` fallback survives for the one row where it is
-                    // correct (the ACP engine picks its own default);
                     // `launchConversation` refuses an empty model everywhere
                     // else rather than sending a request that names none.
                     const liveProvider = liveModelSource(agent)?.provider;

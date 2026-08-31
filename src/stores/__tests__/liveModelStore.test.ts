@@ -7,9 +7,9 @@
  * 1. It never makes a caller wait. `ensureFresh` returns immediately and the
  *    picker renders whatever is cached, so a cold or slow network degrades to
  *    "last week's list" rather than to a spinner or an empty menu.
- * 2. A FAILED refresh does not clear a list that once landed. This is the ACP
- *    producer's degradation rule, generalised: the catalog (or the last good
- *    answer) must stand, because the alternative is a picker that empties
+ * 2. A FAILED refresh does not clear a list that once landed: the catalog (or
+ *    the last good answer) must stand, because the alternative is a picker
+ *    that empties
  *    itself the first time the network hiccups.
  * 3. A SETTLED answer replaces the previous one even when it is empty. That is
  *    the only case where emptiness is allowed to win.
@@ -125,12 +125,11 @@ describe("liveModelStore", () => {
   });
 
   it("does not fetch for providers with their own producer", async () => {
-    // Ollama, the custom endpoint and the ACP engine converge on the seam's row
-    // builder and precedence, not on this cache — their producers carry
-    // metadata the generic DTO cannot express.
+    // Ollama and the custom endpoint converge on the seam's row builder and
+    // precedence, not on this cache — their producers carry metadata the
+    // generic DTO cannot express.
     useLiveModelStore.getState().ensureFresh("api-ollama");
     useLiveModelStore.getState().ensureFresh("api-custom");
-    useLiveModelStore.getState().ensureFresh("api-packetcode");
     // …and neither for a PTY agent, which has no provider at all.
     useLiveModelStore.getState().ensureFresh("claude-code");
     await settle();
