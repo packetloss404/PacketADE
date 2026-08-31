@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot, X } from "lucide-react";
 import {
   ACP_PROVIDER_ID,
@@ -16,7 +16,6 @@ import { AgentSidebar } from "@/components/agents/AgentSidebar";
 import { AgentChatPane } from "@/components/agents/AgentChatPane";
 import { AgentInspectorPane } from "@/components/agents/AgentInspectorPane";
 import { AgentsOnboarding } from "@/components/agents/AgentsOnboarding";
-import { PacketCodeEngineGate } from "@/components/agents/PacketCodeEngineGate";
 import { Composer } from "@/components/agents/composer/Composer";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import type { AgentMode, ComposerMode } from "@/components/agents/composer/utils";
@@ -85,8 +84,7 @@ export function AgentsView({ pinnedAgent, pinnedModel }: AgentsViewProps = {}) {
    * instead. Pick PacketCode and it appears; pick anything else and a list of
    * packetcode-engine sessions would be noise, so it does not.
    */
-  const acpSelected = apiAgentProvider(selectedAgent) === ACP_PROVIDER_ID;
-  const showEngineSessions = acpSelected;
+  const showEngineSessions = apiAgentProvider(selectedAgent) === ACP_PROVIDER_ID;
 
   useEffect(() => {
     recordVisibleConversations(selectedConversationId ? 1 : 0);
@@ -209,10 +207,6 @@ export function AgentsView({ pinnedAgent, pinnedModel }: AgentsViewProps = {}) {
               </span>
             </div>
           </div>
-          <LaunchGate
-            acpSelected={acpSelected}
-            onUseAnotherProvider={() => setSelectedAgent(DEFAULT_AGENT)}
-          >
           <Composer
             variant="launch"
             textareaRef={textareaRef}
@@ -228,7 +222,6 @@ export function AgentsView({ pinnedAgent, pinnedModel }: AgentsViewProps = {}) {
             composerMode={composerMode}
             onComposerModeChange={setComposerMode}
           />
-          </LaunchGate>
         </div>
       )}
 
@@ -248,38 +241,5 @@ export function AgentsView({ pinnedAgent, pinnedModel }: AgentsViewProps = {}) {
 
       <AgentsOnboarding />
     </div>
-  );
-}
-
-
-/**
- * Wraps the launch composer in the packetcode engine gate, but only while the
- * ACP provider is the selected one.
- *
- * The gate used to wrap the whole `PacketCodeView` route. With that route gone
- * it has to be scoped to the selection instead — gating the entire Agents pane
- * because one of nine providers is unavailable would be absurd, and gating
- * nothing would let a launch fail with the engine's raw error instead of the
- * gate's install/pin remedies.
- *
- * Rendering it around the composer means it can replace the very control that
- * holds the provider picker, which is why `onUseAnotherProvider` is passed:
- * without an escape hatch the user would be stuck on a provider they cannot
- * use. Every other provider keeps working while this one is not installed.
- */
-function LaunchGate({
-  acpSelected,
-  onUseAnotherProvider,
-  children,
-}: {
-  acpSelected: boolean;
-  onUseAnotherProvider: () => void;
-  children: ReactNode;
-}) {
-  if (!acpSelected) return <>{children}</>;
-  return (
-    <PacketCodeEngineGate onUseAnotherProvider={onUseAnotherProvider}>
-      {children}
-    </PacketCodeEngineGate>
   );
 }
