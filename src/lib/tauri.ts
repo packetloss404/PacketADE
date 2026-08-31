@@ -3437,6 +3437,115 @@ export async function listOllamaModels(): Promise<OllamaModel[]> {
   return invoke("list_ollama_models");
 }
 
+// Live per-provider model discovery — asks the provider itself what it will
+// serve right now, so pickers need not ship a hardcoded catalog.
+//
+// Every field but `id` is optional because no two provider catalogs publish the
+// same thing. `null` means "the provider did not say" and MUST fall back to the
+// local table — never render it as a zero. Coverage as of the Rust
+// implementation (`src-tauri/src/commands/provider_models.rs`):
+//
+//   anthropic   id, displayName, contextWindow, maxOutput      (no pricing)
+//   openai      id only                                        (noisy list, filtered)
+//   openrouter  id, displayName, contextWindow, maxOutput, pricing
+//   minimax     id only
+//   ollama      id, contextWindow (newer daemons only)
+//   custom      id only
+export type LiveModel = {
+  /** The exact string to send as `model`. */
+  id: string;
+  displayName: string | null;
+  /** Input context window in tokens. */
+  contextWindow: number | null;
+  /** Maximum output tokens per response. */
+  maxOutput: number | null;
+  /** USD per 1M input tokens. Only OpenRouter publishes this live. */
+  inputPerMTok: number | null;
+  /** USD per 1M output tokens. Only OpenRouter publishes this live. */
+  outputPerMTok: number | null;
+};
+
+/**
+ * Failure classes from {@link listProviderModels}, which the UI should render
+ * differently:
+ *
+ * - `no-key` / `not-configured` — the user has not connected this provider
+ *   yet. Expected and benign; prompt to configure, do not show an error state.
+ * - `unauthorized` — a key WAS sent and the provider rejected it. This is the
+ *   earliest cheap signal that a stored keyring secret went stale; surface it
+ *   loudly and point at Settings > API Keys.
+ * - `network` — connect failure, timeout, other non-2xx, or an unparseable
+ *   body. Transient; offer a retry.
+ * - `credential-store` — the OS keyring itself failed, distinct from "no key".
+ * - `unsupported` — the provider has no live catalog (e.g. `api-packetcode`).
+ */
+export type LiveModelErrorKind =
+  | "no-key"
+  | "not-configured"
+  | "unauthorized"
+  | "network"
+  | "credential-store"
+  | "unsupported";
+
+export type LiveModelError = {
+  kind: LiveModelErrorKind;
+  /** Human-readable text, already free of the machine tag. */
+  message: string;
+};
+
+const LIVE_MODEL_ERROR_KINDS: readonly LiveModelErrorKind[] = [
+  "no-key",
+  "not-configured",
+  "unauthorized",
+  "network",
+  "credential-store",
+  "unsupported",
+];
+
+/**
+ * Split the `"<kind>: <message>"` string the Rust command rejects with into its
+ * two halves. Anything unrecognised (a panic string, a Tauri transport error)
+ * degrades to `network`, which is the retryable class.
+ */
+export function parseLiveModelError(error: unknown): LiveModelError {
+  const raw =
+    typeof error === "string"
+      ? error
+      : error instanceof Error
+        ? error.message
+        : String(error);
+  const separator = raw.indexOf(": ");
+  if (separator > 0) {
+    const tag = raw.slice(0, separator);
+    const match = LIVE_MODEL_ERROR_KINDS.find((kind) => kind === tag);
+    if (match) {
+      return { kind: match, message: raw.slice(separator + 2) };
+    }
+  }
+  return { kind: "network", message: raw };
+}
+
+/** True for the "not connected yet" classes, which are not failures. */
+export function isLiveModelSetupError(error: LiveModelError): boolean {
+  return error.kind === "no-key" || error.kind === "not-configured";
+}
+
+/**
+ * List the models `provider` will serve right now.
+ *
+ * Accepts either the keyring provider name (`anthropic`, `openai`,
+ * `openrouter`, `minimax`, `minimax-api`, `ollama`, `custom`) or the `AgentCli`
+ * id (`api-claude`, `api-claude-oauth`, `api-openai`, `api-openai-agents`,
+ * `api-openrouter`, `api-minimax`, `api-ollama`, `api-custom`).
+ *
+ * Rejects with a tagged string; run it through {@link parseLiveModelError}.
+ */
+export async function listProviderModels(
+  provider: string,
+): Promise<LiveModel[]> {
+  return invoke("list_provider_models", { provider });
+}
+
 // LM2 — custom OpenAI-compatible endpoint (vLLM / LM Studio / LiteLLM /
 // Together, …). The base URL is stored INCLUDING its `/v1`-style path prefix
 // and used verbatim as `{base}/chat/completions`; `null` means unconfigured
