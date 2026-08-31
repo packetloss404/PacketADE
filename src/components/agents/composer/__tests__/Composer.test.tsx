@@ -4,8 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Composer } from "@/components/agents/composer/Composer";
 import { LAUNCH_DRAFT_KEY, useAgentDraftStore } from "@/stores/agentDraftStore";
 import type { AgentConversation } from "@/types/agent-conversation";
-import type { AcpEngineCapabilities } from "@/lib/tauri";
-import { clearEngineCommandCache } from "@/components/agents/hooks/useEngineSlashCommands";
 
 const mocks = vi.hoisted(() => ({
   agentTaskState: {
@@ -22,9 +20,6 @@ const mocks = vi.hoisted(() => ({
   },
   createObjectURL: vi.fn(),
   revokeObjectURL: vi.fn(),
-  acpListCommands: vi.fn(),
-  acpSearchFiles: vi.fn(),
-  acpSessionUsage: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -153,12 +148,6 @@ vi.mock("@/lib/tauri", () => ({
   // The composer's context strip owns the git poll now (it moved off the
   // deleted SessionMetaLine band), so this export has to resolve here.
   gitSafetyCheck: vi.fn(() => Promise.resolve(null)),
-  // ACP engine queries. Only reachable for a conversation carrying an
-  // `engineCapabilities` record — every other test here leaves them untouched,
-  // which is itself the assertion that a non-engine session pays no round trip.
-  acpListCommands: (...args: unknown[]) => mocks.acpListCommands(...args),
-  acpSearchFiles: (...args: unknown[]) => mocks.acpSearchFiles(...args),
-  acpSessionUsage: (...args: unknown[]) => mocks.acpSessionUsage(...args),
 }));
 
 function renderLaunch(onLaunch: (text: string, attachments: unknown[]) => boolean) {
@@ -235,10 +224,6 @@ beforeEach(() => {
   // into view the moment the `/` or `@` menu has rows. Without this shim the
   // effect throws and takes the whole render down.
   Element.prototype.scrollIntoView = vi.fn();
-  clearEngineCommandCache();
-  mocks.acpListCommands.mockResolvedValue([]);
-  mocks.acpSearchFiles.mockResolvedValue([]);
-  mocks.acpSessionUsage.mockResolvedValue(null);
   let counter = 0;
   mocks.createObjectURL.mockImplementation(() => `blob:preview-${++counter}`);
   Object.defineProperty(URL, "createObjectURL", {
@@ -364,132 +349,5 @@ describe("Composer (chat variant) — per-conversation drafts + send (protected)
     expect(stopIcon).toHaveClass("animate-pulse");
     fireEvent.click(stopButton!);
     expect(mocks.agentTaskState.cancelActiveConversation).not.toHaveBeenCalled();
-  });
-});
-
-/**
- * ACP engine wiring. The engine is reachable ONLY through a conversation that
- * carries an `engineCapabilities` record, and every affordance below still
- * renders from `capabilitiesFor` — the record gates the CALL, not the control.
- * Each case therefore has a twin: what the engine adds, and what happens when
- * it is absent or broken.
- */
-describe("Composer (chat variant) — ACP engine surfaces", () => {
-  // Same literal `makeConversation` uses — escaped, so it is a real Windows path.
-  const PROJECT_PATH = "D:\\projects\\PacketBench";
-
-  function engineCaps(): AcpEngineCapabilities {
-    return {
-      protocolVersion: 1,
-      loadSession: true,
-      sessionClose: true,
-      packetcode: {
-        advertised: true,
-        sessionsList: true,
-        sessionsRename: true,
-        sessionsUsage: true,
-        modelsList: true,
-        commandsList: null,
-        projectFiles: null,
-        mcpList: true,
-        mcpDefaults: true,
-        permissionModes: ["ask", "read-only"],
-        defaultPermissionMode: "read-only",
-      },
-    };
-  }
-
-  function makeEngineConversation(id: string): AgentConversation {
-    const conv = makeConversation(id);
-    conv.agent = "api-packetcode" as AgentConversation["agent"];
-    conv.model = "claude-opus-4-8";
-    conv.engineCapabilities = engineCaps();
-    return conv;
-  }
-
-  function typeInto(value: string) {
-    const textarea = screen.getByPlaceholderText(/do anything/i);
-    fireEvent.change(textarea, { target: { value } });
-    return textarea;
-  }
-
-  it("merges the engine's commands into the / menu, hint and all", async () => {
-    mocks.acpListCommands.mockResolvedValue([
-      {
-        name: "cost",
-        description: "Session spend so far",
-        source: "builtin",
-        argumentHint: "[days]",
-      },
-    ]);
-    renderChat(makeEngineConversation("conv-engine-cmds"));
-    await waitFor(() =>
-      expect(mocks.acpListCommands).toHaveBeenCalledWith(PROJECT_PATH),
-    );
-
-    typeInto("/");
-    // The argument hint rides on the row, next to the name it belongs to.
-    expect(await screen.findByText("/cost [days]")).toBeInTheDocument();
-    // PacketBench's own builtins are still there — the engine ADDS to the menu.
-    expect(screen.getByText("/permissions")).toBeInTheDocument();
-  });
-
-  it("costs a non-engine session no round trip at all", async () => {
-    renderChat(makeConversation("conv-plain"));
-    typeInto("/");
-    expect(await screen.findByText("/permissions")).toBeInTheDocument();
-    expect(mocks.acpListCommands).not.toHaveBeenCalled();
-  });
-
-  it("keeps the pre-engine menu when the engine cannot list commands", async () => {
-    mocks.acpListCommands.mockRejectedValue(new Error("engine not started"));
-    renderChat(makeEngineConversation("conv-engine-cmds-fail"));
-    await waitFor(() => expect(mocks.acpListCommands).toHaveBeenCalled());
-
-    typeInto("/");
-    // Builtins survive; nothing throws into render.
-    expect(await screen.findByText("/permissions")).toBeInTheDocument();
-    expect(screen.queryByText("/cost")).toBeNull();
-  });
-
-  it("serves @ mentions from the engine's project search", async () => {
-    mocks.acpSearchFiles.mockResolvedValue(["src/lib/tauri.ts"]);
-    renderChat(makeEngineConversation("conv-engine-files"));
-
-    typeInto("@tau");
-    expect(await screen.findByText("src/lib/tauri.ts")).toBeInTheDocument();
-    expect(mocks.acpSearchFiles).toHaveBeenCalledWith(PROJECT_PATH, "tau");
-  });
-
-  it("renders engine-reported usage in the statusline", async () => {
-    // The ACP transport emits no per-turn summary, so the message roll-up has
-    // nothing to add up — the numbers can only come from the query.
-    mocks.acpSessionUsage.mockResolvedValue({
-      contextTokens: 41_200,
-      totalInput: 82_000,
-      totalOutput: 12_000,
-      costUsd: 1.84,
-    });
-    renderChat(makeEngineConversation("conv-engine-usage"));
-
-    expect(
-      await screen.findByText("ctx 41.2k tok · in 82k · out 12k"),
-    ).toBeInTheDocument();
-    expect(mocks.acpSessionUsage).toHaveBeenCalledWith("conv-engine-usage");
-  });
-
-  it("does not query usage while a turn is still running", async () => {
-    const conv = makeEngineConversation("conv-engine-active");
-    conv.status = "active";
-    renderChat(conv);
-    await waitFor(() => expect(mocks.acpListCommands).toHaveBeenCalled());
-    expect(mocks.acpSessionUsage).not.toHaveBeenCalled();
-  });
-
-  it("shows no statusline when the usage query fails", async () => {
-    mocks.acpSessionUsage.mockRejectedValue(new Error("engine not started"));
-    renderChat(makeEngineConversation("conv-engine-usage-fail"));
-    await waitFor(() => expect(mocks.acpSessionUsage).toHaveBeenCalled());
-    expect(screen.queryByText(/^ctx /)).toBeNull();
   });
 });

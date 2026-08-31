@@ -100,8 +100,7 @@ describe("attemptRouting", () => {
  * which is precisely why `api-claude` — the DEFAULT — shipped broken: it
  * yielded `"claude"`, which `get_provider` rejects and `load_api_key` reports
  * as a missing key for a provider that does not exist. `"anthropic"` is the
- * only correct answer. `api-packetcode` diverges for the same class of reason
- * (`packetcode` is the PTY CLI slot, not the ACP provider).
+ * only correct answer.
  */
 const EXPECTED_PROVIDER_IDS: ReadonlyArray<[AgentCli, string]> = [
   ["api-claude-oauth", "claude-oauth"],
@@ -111,9 +110,6 @@ const EXPECTED_PROVIDER_IDS: ReadonlyArray<[AgentCli, string]> = [
   ["api-minimax", "minimax"],
   ["api-openrouter", "openrouter"],
   ["api-ollama", "ollama"],
-  // Diverges from the naive prefix-strip too: the backend provider is
-  // `packetcode-acp`, not `packetcode` (which names the PTY CLI slot).
-  ["api-packetcode", "packetcode-acp"],
   // LM2 — user-supplied OpenAI-compatible endpoint. The prefix-strip happens
   // to round-trip here, but the map stays the single authority.
   ["api-custom", "custom"],
@@ -148,12 +144,8 @@ describe("attemptProviderFor", () => {
 
     // If this ever grows, the naive derivation is broken for more executors,
     // not fewer — never "fix" it by re-deriving.
-    expect(divergent).toEqual(["api-claude", "api-packetcode"]);
+    expect(divergent).toEqual(["api-claude"]);
     expect(attemptProviderFor("api-claude")).not.toBe(stripped("api-claude"));
-    // `api-packetcode` → `packetcode-acp`, NOT `packetcode`: the bare id names
-    // the PTY CLI slot, and handing it to the ACP router would resolve the
-    // wrong transport.
-    expect(attemptProviderFor("api-packetcode")).not.toBe(stripped("api-packetcode"));
   });
 
   it("resolves the retired identity-duplicate agent id through its alias", () => {

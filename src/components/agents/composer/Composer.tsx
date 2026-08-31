@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, ChevronUp, FileText, Mic, Square, X } from "lucide-react";
+import { ArrowUp, ChevronUp, Mic, Square, X } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
@@ -12,16 +12,13 @@ import type { ImageAttachment } from "@/lib/tauri";
 import type { AuthStatus } from "@/components/ui/AuthBadge";
 import { isSshUri } from "@/lib/ssh-uri";
 import { FileMentionPopover } from "../FileMentionPopover";
-import { InputPopover, type InputPopoverItem } from "../InputPopover";
+import { InputPopover } from "../InputPopover";
 import { CancelPendingButton } from "../chat/CancelPendingButton";
 import { usePrefixMatcher } from "../hooks/usePrefixMatcher";
 import { useAttachmentStaging } from "../hooks/useAttachmentStaging";
 import { useProviderAuthStatus } from "../hooks/useProviderAuthStatus";
 import { useOllamaModels } from "../hooks/useOllamaModels";
 import { useProjectSlashCommands } from "../hooks/useProjectSlashCommands";
-import { useEngineSlashCommands } from "../hooks/useEngineSlashCommands";
-import { useEngineFileSearch } from "../hooks/useEngineFileSearch";
-import { useEngineSessionUsage } from "../hooks/useEngineSessionUsage";
 import { useVoiceTranscript } from "../hooks/useVoiceTranscript";
 import { AgentModeChip, type AgentMode as PermissionPosture } from "../AgentModeChip";
 import { addPaneControlListener, OPEN_MODEL_DROPDOWN_EVENT } from "../paneEvents";
@@ -237,17 +234,6 @@ export function Composer(props: ComposerProps) {
     conversation?.agent ?? ("" as AgentCli),
   );
   const caps = conversation ? capabilitiesFor(conversation, liveModelAnswer) : null;
-  /**
-   * Is there an ACP engine standing behind this conversation?
-   *
-   * NOT a provider-identity test: `engineCapabilities` is the engine's own
-   * `initialize` advertisement, stamped onto the record at session start. Its
-   * presence is what makes the `acp*` bindings answerable at all, so it gates
-   * the CALLS — every affordance those calls feed is still gated on `caps`.
-   * `undefined` (any other transport, or a capability fetch that failed) keeps
-   * each affordance on its pre-engine source.
-   */
-  const engineBacked = !!conversation?.engineCapabilities;
 
   // ─── Prefix-trigger pickers (@ mentions, / slash-commands) ───────────
   const mention = usePrefixMatcher("@");
@@ -277,15 +263,6 @@ export function Composer(props: ComposerProps) {
     [customSlashCommands, templateDefs],
   );
 
-  // The ENGINE's own commands for this project. Cached per cwd inside the
-  // hook — the `/` query changes on every keystroke and this is a subprocess
-  // round trip. Empty (so: today's menu) for every non-engine session, and for
-  // an engine that could not answer.
-  const engineCommands = useEngineSlashCommands(
-    mentionProjectPath,
-    engineBacked && (caps?.slashCommands ?? false),
-  );
-
   // Whether `/` opens a menu at all. The pane's rule is to omit an affordance
   // a session cannot serve rather than open an empty one; the placeholder
   // already degrades to match (composerPlaceholder).
@@ -296,19 +273,6 @@ export function Composer(props: ComposerProps) {
       // exactly as before.
       !!mentionProjectPath;
 
-  // `@` search served by the ENGINE, which owns the project's ignore rules.
-  // Debounced inside the hook (one subprocess round trip per pause, not per
-  // keystroke) and capped at the backend's FILE_MENTION_LIMIT. On failure the
-  // hook latches `failed` and the composer falls straight back to the local
-  // directory scan below — an engine that cannot answer must degrade the menu
-  // to its pre-engine source, never to an empty "no files in this project".
-  const engineFiles = useEngineFileSearch(
-    mentionProjectPath,
-    mention.state.query,
-    engineBacked && mentionsEnabled && mention.state.active,
-  );
-  const engineFileSearch = engineBacked && mentionsEnabled && !engineFiles.failed;
-
   // THE slash list — rendered by the popover and resolved by the keyboard
   // handler, so the two can never disagree.
   const slashItems = useMemo<SlashItem[]>(
@@ -318,7 +282,6 @@ export function Composer(props: ComposerProps) {
             includeBuiltins: isChat,
             customCommands: allCustomSlashCommands,
             userSkills,
-            engineCommands,
           })
         : [],
     [
@@ -328,7 +291,6 @@ export function Composer(props: ComposerProps) {
       isChat,
       allCustomSlashCommands,
       userSkills,
-      engineCommands,
     ],
   );
   const clampSlashHighlight = slash.clampHighlight;
@@ -407,24 +369,6 @@ export function Composer(props: ComposerProps) {
     [mention],
   );
 
-  // The engine path has no popover component pushing results up, so feed the
-  // same ref/clamp channel `FileMentionPopover` uses — the keyboard handler
-  // reads it synchronously for ArrowUp/Down/Enter.
-  //
-  // Deliberately NOT `handleMentionItemsChange`: that callback closes over
-  // `mention`, which usePrefixMatcher rebuilds every render, so depending on it
-  // would re-run this effect on every render — and `clampHighlight` can return
-  // a fresh state object, which renders again. That is an unbounded loop.
-  // `mention.clampHighlight` is itself a `useCallback([])`, so it is stable and
-  // the effect fires only when the engine's answer actually changes.
-  const engineFilePaths = engineFiles.paths;
-  const clampMentionHighlight = mention.clampHighlight;
-  useEffect(() => {
-    if (!engineFileSearch) return;
-    mentionItemsRef.current = engineFilePaths;
-    clampMentionHighlight(engineFilePaths.length);
-  }, [engineFileSearch, engineFilePaths, clampMentionHighlight]);
-
   const insertMentionPath = useCallback(
     (path: string) => {
       const atIndex = mention.state.prefixIndex;
@@ -480,26 +424,6 @@ export function Composer(props: ComposerProps) {
             });
           }
         }
-        return;
-      }
-
-      if (sel.kind === "engine") {
-        // The ENGINE expands `/name` itself when the turn arrives, so the
-        // invocation is spliced in literally (keeping its slash) rather than
-        // replaced by a body PacketBench does not have. The trailing space lets
-        // the user type arguments straight after — that's what argumentHint
-        // is advertising.
-        const invocation = `/${sel.def.name} `;
-        const nextText = `${before}${invocation}${after}`;
-        setInput(nextText);
-        const caretAfter = before.length + invocation.length;
-        requestAnimationFrame(() => {
-          const el = textareaRef.current;
-          if (el) {
-            el.focus();
-            el.setSelectionRange(caretAfter, caretAfter);
-          }
-        });
         return;
       }
 
@@ -566,11 +490,10 @@ export function Composer(props: ComposerProps) {
   // `claude login` / `codex login` still exists in Settings → Subscriptions
   // for PTY CLI sessions, which are unaffected.
   //
-  // A not-ready badge is NOT always a missing API key: three rows are keyless
+  // A not-ready badge is NOT always a missing API key: two rows are keyless
   // and fail for reasons of their own — Ollama with `service_down` when
-  // localhost:11434 is not answering, the custom endpoint with `missing_key`
-  // when no base URL is set, and PacketCode (ACP) with `missing_key` when the
-  // engine binary cannot be found or `service_down` when it will not run. Each
+  // localhost:11434 is not answering, and the custom endpoint with
+  // `missing_key` when no base URL is set. Each
   // one's backend hint names its own remedy, which is why the disabled Launch
   // button's tooltip is the hint verbatim rather than a fixed "add a key"
   // sentence.
@@ -596,23 +519,6 @@ export function Composer(props: ComposerProps) {
   }, [launch, launchReady, staged, input, clearStaged]);
 
   const isActive = conversation?.status === "active";
-
-  /**
-   * Engine-queried usage for the statusline.
-   *
-   * The ACP transport emits no per-turn `turn-summary` — its usage totals are
-   * session-cumulative, so stamping them per turn would double-count in the
-   * cost ledger — which means `sessionUsageFor` (a roll-up of per-message
-   * token counts) has nothing to add up for an engine session. The numbers
-   * therefore have to be ASKED for, once per turn end. `null` for every other
-   * transport and for a query that failed, so the roll-up below stays the
-   * source of truth everywhere it already was.
-   */
-  const engineUsage = useEngineSessionUsage(
-    conversationId,
-    engineBacked && (caps?.reportsUsage ?? false),
-    !!isActive,
-  );
 
   const submitChat = useCallback(() => {
     if (!isChat || !conversation) return;
@@ -683,36 +589,16 @@ export function Composer(props: ComposerProps) {
   }, [isChat, input, textareaRef]);
 
   // ─── Shared pieces ────────────────────────────────────────────────────
-  const engineFileItems: InputPopoverItem[] = engineFilePaths.map((path) => ({
-    key: path,
-    label: path,
-    icon: <FileText size={12} />,
-  }));
-
   const popovers = (
     <div className="relative">
-      {engineFileSearch ? (
-        // Engine-served `@` menu. Same rows, same keyboard channel; the list
-        // just comes from the engine's project index instead of the local
-        // directory scan.
-        <InputPopover
-          visible={mention.state.active && mentionsEnabled}
-          items={engineFileItems}
-          loading={engineFiles.loading && engineFileItems.length === 0}
-          highlightedIndex={mention.state.highlightedIndex}
-          onSelect={(item) => insertMentionPath(item.key)}
-          emptyLabel="No files found"
-        />
-      ) : (
-        <FileMentionPopover
-          visible={mention.state.active && mentionsEnabled && !!mentionProjectPath}
-          projectPath={mentionProjectPath}
-          query={mention.state.query}
-          highlightedIndex={mention.state.highlightedIndex}
-          onSelect={insertMentionPath}
-          onItemsChange={handleMentionItemsChange}
-        />
-      )}
+      <FileMentionPopover
+        visible={mention.state.active && mentionsEnabled && !!mentionProjectPath}
+        projectPath={mentionProjectPath}
+        query={mention.state.query}
+        highlightedIndex={mention.state.highlightedIndex}
+        onSelect={insertMentionPath}
+        onItemsChange={handleMentionItemsChange}
+      />
       <InputPopover
         visible={slash.state.active && slashEnabled}
         items={slashItems}
@@ -808,11 +694,7 @@ export function Composer(props: ComposerProps) {
 
   // ─── Chat variant shell — the floating Codex-style composer card ──────
   if (isChat && conversation && caps) {
-    // Pushed per-turn totals first (every non-ACP transport); the engine's
-    // queried answer fills the gap where no turn-summary is ever emitted.
-    const usage = caps.reportsUsage
-      ? (sessionUsageFor(conversation) ?? engineUsage)
-      : null;
+    const usage = caps.reportsUsage ? sessionUsageFor(conversation) : null;
     const statusline = usageStatusline(
       usage,
       shouldShowCost(caps.reportsCost, conversation, usage),
@@ -911,8 +793,6 @@ export function Composer(props: ComposerProps) {
                   selectedAgent={conversation.agent}
                   selectedModel={conversation.model ?? ""}
                   onModelChange={props.onChangeModel}
-                  // Capability first: on an engine session this is the
-                  // engine's own enumeration, not the seeded catalog row.
                   models={caps.models}
                   modelsAreAuthoritative={caps.modelsAreAuthoritative}
                   ollamaModels={ollamaModels}

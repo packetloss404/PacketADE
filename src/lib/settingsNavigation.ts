@@ -174,13 +174,7 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
           "openrouter",
           "ollama",
           "models",
-          // The keyless rows are configured here too, and a user hunting for
-          // "where do I tell it about my packetcode binary" searches for the
-          // engine, not for a credential.
-          "packetcode",
-          "acp",
-          "engine",
-          "binary",
+          // The keyless rows are configured here too.
           "endpoint",
         ],
       },

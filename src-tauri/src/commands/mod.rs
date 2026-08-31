@@ -24,7 +24,6 @@ pub mod github;
 pub mod history;
 pub mod insights;
 // LM2 — custom OpenAI-compatible endpoint configuration.
-pub mod acp_engine_path;
 pub mod custom_compat;
 // v0.8.5 — issues spec import.
 pub mod flight_cost;

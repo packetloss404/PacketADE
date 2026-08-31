@@ -6,12 +6,11 @@ import {
   providerSupportsApprovals,
   type ApiModel,
 } from "@/lib/api-models";
-import { MODE_ORDER, modesForApprovals } from "@/components/agents/agentModeChipUtils";
+import { modesForApprovals } from "@/components/agents/agentModeChipUtils";
 import { getModelContextWindow } from "@/lib/modelContext";
 import { getModelRates } from "@/lib/conversationCost";
-import { liveModelRow, type LiveModelAnswer } from "@/lib/liveModels";
+import { type LiveModelAnswer } from "@/lib/liveModels";
 import { isRemoteConversation } from "@/lib/remoteConversation";
-import type { AcpEngineCapabilities, AcpModelOption } from "@/lib/tauri";
 
 /**
  * THE capability descriptor for an agent session.
@@ -44,24 +43,6 @@ export interface SessionCapabilities {
   permissionModes: AgentMode[];
   /** Which wording the postures are labelled with. */
   permissionVocabulary: "approval" | "sandbox";
-  /**
-   * The backend's OWN name for the posture a session lands on when PacketBench
-   * sends no override — set only when that posture has no 1:1 PacketBench
-   * equivalent, and `null` everywhere else (including every non-ACP session).
-   *
-   * This exists because ACP's ladder is not a bijection onto PacketBench's five
-   * postures. The live engine defaults to `read-only`, which BOTH `plan` and
-   * `deny` map onto, so no single posture can honestly be shown as "what this
-   * session is currently doing". `src-tauri/src/acp/mod.rs` is explicit that
-   * the UI must not guess — so this carries the engine's vocabulary verbatim
-   * (e.g. `"read-only"`) and a chip renders it as a provider-default state
-   * rather than pretending it is one of ours.
-   *
-   * `null` means either "the backend did not say" or "it said something that
-   * IS one of our postures", and in both cases the chip names the posture
-   * itself exactly as it does today.
-   */
-  providerDefaultModeLabel: string | null;
   /** The "Approve writes" fine flag is meaningful for this session. */
   canGateWrites: boolean;
   /** Read-only plan mode can be entered. */
@@ -76,8 +57,8 @@ export interface SessionCapabilities {
    */
   models: ApiModel[];
   /**
-   * Did {@link models} come from the session's OWN backend (an ACP engine's
-   * enumeration, a live provider list) rather than the shipped catalog?
+   * Did {@link models} come from the session's OWN backend (a live provider
+   * enumeration) rather than the shipped catalog?
    *
    * This is the `[]` disambiguator, and it exists because the two empty lists
    * mean opposite things. An authoritative `[]` is a backend that was asked and
@@ -149,145 +130,14 @@ export type CapabilityConversation = Pick<
   | "projectPath"
   | "sshTarget"
   | "mcpSources"
-  | "engineCapabilities"
-  | "engineModels"
 >;
-
-/**
- * PacketBench posture → ACP permission mode.
- *
- * MIRRORS `to_acp_permission_mode` in `src-tauri/src/acp/routing.rs`, which is
- * the authority — that function is what actually decides which ACP mode a
- * session/new carries, so a disagreement here would offer the user a posture
- * the engine then silently downgrades. Postures reach Rust as a
- * `(planMode, permissionMode)` pair rather than by name, hence the two-step:
- *
- * | posture   | what Rust receives                  | ACP mode      |
- * |-----------|-------------------------------------|---------------|
- * | `default` | `permissionMode = "auto"`           | `auto`        |
- * | `plan`    | `planMode = true`                   | `read-only`   |
- * | `manual`  | `permissionMode = "ask_for_risky"`  | `ask`         |
- * | `deny`    | `permissionMode = "deny_all"`       | `read-only`   |
- * | `yolo`    | `permissionMode = "allow_all"`      | `bypass`      |
- *
- * `accept-edits` has no posture of its own — it is the ACP mode the orthogonal
- * `approveWrites` fine flag maps to — so it never appears here and never
- * keeps or drops a posture on its own.
- */
-const ACP_MODE_FOR_POSTURE: Record<AgentMode, string> = {
-  default: "auto",
-  plan: "read-only",
-  manual: "ask",
-  deny: "read-only",
-  yolo: "bypass",
-};
-
-/**
- * Narrow PacketBench's postures to the ones this engine will actually accept.
- *
- * The engine trims its `permissionModes` to the operator's configured ceiling
- * and answers `-32602` for anything above it; Rust's `resolve_permission_mode`
- * then drops the override entirely and the session lands on the engine's own
- * default. So a posture outside the advertised set is not merely risky to
- * offer — picking it does nothing at all, which is precisely the silent no-op
- * this descriptor exists to prevent.
- *
- * Three rules, each of which is a bug if you get it wrong:
- *
- * 1. **Unknown is not restricted.** No engine record (non-ACP transport, or an
- *    ACP session whose capability fetch is still in flight or failed) returns
- *    `postures` untouched. Narrowing on absent data would make the chip flip
- *    from five postures to two on every session start.
- * 2. **Colliding postures collapse to one.** ACP's ladder is not a bijection
- *    onto PacketBench's five: `plan` and `deny` BOTH map to `read-only`. Keeping
- *    both would offer two rows that produce byte-identical engine behavior —
- *    and `deny`'s PacketBench meaning ("every risky tool is auto-refused, the
- *    agent keeps going and sees the denials") is not what `read-only` does
- *    (the engine withholds the mutating tools outright). The earliest posture
- *    in the session's own cycle order wins, which keeps `plan` — the honest
- *    reading of `read-only` — and drops `deny`.
- * 3. **An empty intersection is never returned.** `Composer` mounts the mode
- *    chip on `permissionModes.length > 0`, so an empty array does not restrict
- *    the safety control, it DELETES it. An engine whose advertised set covers
- *    none of our postures has told us something we cannot represent, which is
- *    the unknown case again — fall back to the full set.
- */
-function restrictToEngineModes(
-  postures: AgentMode[],
-  engine: AcpEngineCapabilities | undefined,
-): AgentMode[] {
-  const advertised = engine?.packetcode.permissionModes;
-  if (!Array.isArray(advertised) || advertised.length === 0) return postures;
-  const claimed = new Set<string>();
-  const offered = postures.filter((posture) => {
-    const mode = ACP_MODE_FOR_POSTURE[posture];
-    if (!advertised.includes(mode) || claimed.has(mode)) return false;
-    claimed.add(mode);
-    return true;
-  });
-  return offered.length > 0 ? offered : postures;
-}
-
-/**
- * The engine's own name for its default posture, when we cannot honestly show
- * it as one of ours. See `SessionCapabilities.providerDefaultModeLabel`.
- *
- * "Cannot honestly show" is decided by the reverse of `ACP_MODE_FOR_POSTURE`:
- * an ACP mode reachable from exactly ONE posture names that posture, so the
- * chip labels it normally and this stays `null`. `read-only` (reachable from
- * `plan` and `deny`) and `accept-edits` (reachable from no posture at all)
- * are ambiguous, and guessing one is exactly what the Rust DTO forbids.
- */
-function engineDefaultModeLabel(engine: AcpEngineCapabilities | undefined): string | null {
-  const advertisedDefault = engine?.packetcode.defaultPermissionMode?.trim();
-  if (!advertisedDefault) return null;
-  const matches = MODE_ORDER.filter(
-    (posture) => ACP_MODE_FOR_POSTURE[posture] === advertisedDefault,
-  );
-  return matches.length === 1 ? null : advertisedDefault;
-}
-
-/**
- * One engine-enumerated model as a picker row. The engine reports a
- * `(provider, model)` pair; PacketBench picks a MODEL and lets the engine
- * resolve the provider that serves it (see `routing.rs::start_session`, which
- * always sends `provider: None`), so the model id is both the label and the
- * value. Context/pricing come from the same shared helpers `api-models.ts`
- * uses, with its zero-rate guard — a free/local model has a 0/0 entry, and
- * "$0.00" is a fiction rather than a price.
- */
-function engineModelRow(option: AcpModelOption): ApiModel {
-  // Was three inline statements duplicating the catalog's decoration. It now
-  // delegates to THE shared builder, so the ACP producer and every other live
-  // producer stamp ctx/pricing identically and a new producer cannot forget.
-  return liveModelRow({ id: option.model });
-}
-
-/**
- * The engine's model list, or `undefined` to keep the seeded catalog.
- *
- * Gated on the ADVERTISED `modelsList` flag, not on the list being non-empty:
- * an engine that says it enumerates models and then names none has genuinely
- * told us it serves none, and offering the seeded `API_PROVIDERS` rows anyway
- * would put ids in the picker that the engine may refuse. `undefined` (never
- * asked, or the ask failed) is the only case that falls back.
- */
-function engineModels(conversation: CapabilityConversation): ApiModel[] | undefined {
-  const packetcode = conversation.engineCapabilities?.packetcode;
-  if (!packetcode?.advertised || !packetcode.modelsList) return undefined;
-  const listed = conversation.engineModels;
-  if (!Array.isArray(listed)) return undefined;
-  return listed.map(engineModelRow);
-}
 
 /**
  * The AUTHORITATIVE model rows for this session, or `undefined` to keep the
  * bundled catalog.
  *
- * The provider-agnostic generalisation of `engineModels`. ACP is now just the
- * first producer: any transport that can name its own models feeds the same
- * resolution, and the degradation rules that made the ACP version correct are
- * preserved verbatim for all of them —
+ * Any transport that can name its own models feeds this resolution, under two
+ * degradation rules —
  *
  * - a FAILED or never-issued enumeration returns `undefined`, so the shipped
  *   catalog stands and a capability fetch that never happened can never take
@@ -299,17 +149,11 @@ function engineModels(conversation: CapabilityConversation): ApiModel[] | undefi
  *
  * Purity is why `live` is a PARAMETER. `capabilitiesFor` may not read a store
  * or issue IPC (see its docblock), so the caller subscribes to
- * `stores/liveModelStore` and passes the answer down. The ACP producer instead
- * writes onto the conversation record (`stampEngineCapabilities`), which is the
- * other legitimate way live data reaches a pure function — and it wins here,
- * because a session-specific answer beats a vendor-wide one.
+ * `stores/liveModelStore` and passes the answer down.
  */
 function authoritativeModels(
-  conversation: CapabilityConversation,
   live: LiveModelAnswer | undefined,
 ): ApiModel[] | undefined {
-  const fromRecord = engineModels(conversation);
-  if (fromRecord !== undefined) return fromRecord;
   if (live?.status === "ready" && live.models !== undefined) return live.models;
   return undefined;
 }
@@ -360,8 +204,7 @@ export function capabilitiesFor(
    * This provider's live model enumeration, when the caller has one.
    *
    * Passed in rather than read, so this function stays pure. Omitting it keeps
-   * the pre-seam answer exactly: the ACP record path still works (it rides on
-   * the conversation), and every other provider falls back to the catalog.
+   * the pre-seam answer exactly: the provider falls back to the catalog.
    */
   live?: LiveModelAnswer,
 ): SessionCapabilities {
@@ -370,57 +213,27 @@ export function capabilitiesFor(
   const canApprovePerTool = providerSupportsApprovals(agent);
   const mcpSources = conversation.mcpSources;
   /**
-   * What the ACP engine advertised for THIS conversation, or `undefined` for
-   * every other transport (sidecar, in-process, PTY) — and for an ACP session
-   * whose capability fetch failed.
-   *
-   * `undefined` is the load-bearing case: every field below must fall through
-   * to its pre-ACP answer bit-for-bit when there is no engine record, so a
-   * capability fetch that never happened can never take an affordance away.
-   */
-  const engine = conversation.engineCapabilities;
-  /**
-   * The engine is a packetcode that sent the `_packetcode` vendor block, so
-   * its flags are authoritative. When it advertised nothing, the flags are all
-   * `false` and mean NOTHING — the backend's call-time method-not-found
-   * fallbacks still decide — so they must never be read as "feature missing".
-   */
-  const engineAdvertised = engine?.packetcode.advertised === true;
-  /**
    * Rows the session's own backend named, or `undefined` for "nobody has told
    * us". Computed once — the two fields below must never disagree about which
    * of the two empty lists this is.
    */
-  const backendModels = authoritativeModels(conversation, live);
+  const backendModels = authoritativeModels(live);
 
   return {
     // Source: api-models.providerSupportsApprovals (catalog `supportsApprovals`,
     // defaulting to true) — exactly what AgentModeChip asked for itself.
     canApprovePerTool,
-    // Source: agentModeChipUtils.modesForApprovals, INTERSECTED with what the
-    // engine said it accepts. The mode chip only ever mounted for
-    // `mode === "api"` conversations, so PTY still gets an empty set; every
-    // non-ACP transport carries no engine record and so keeps the full
-    // `modesForApprovals` answer untouched. The real engine advertises only
-    // ["ask", "read-only"], which keeps `plan`/`manual`/`deny` and drops
-    // `default`/`yolo` — the two whose ACP modes (`auto`, `bypass`) it would
-    // refuse. How a chip PRESENTS a restricted set is a separate design
-    // question; this field's only job is to be truthful about it.
-    permissionModes: isApi
-      ? restrictToEngineModes(modesForApprovals(canApprovePerTool), engine)
-      : [],
+    // Source: agentModeChipUtils.modesForApprovals. The mode chip only ever
+    // mounted for `mode === "api"` conversations, so PTY gets an empty set.
+    permissionModes: isApi ? modesForApprovals(canApprovePerTool) : [],
     permissionVocabulary: canApprovePerTool ? "approval" : "sandbox",
-    // Source: the engine's advertised `defaultPermissionMode`. `null` for
-    // every non-ACP session, so no existing surface changes.
-    providerDefaultModeLabel: engineDefaultModeLabel(engine),
     // The "Approve writes" row lives in the mode chip's popover, which mounts
     // on the same `mode === "api"` condition.
     canGateWrites: isApi,
     canPlanMode: isApi,
 
-    // Source: whichever producer can speak for THIS session's backend (the ACP
-    // engine's `_packetcode/models/list`, or a live provider enumeration passed
-    // in by the caller), else api-models.API_PROVIDERS. A catalog row is a
+    // Source: a live provider enumeration passed in by the caller, else
+    // api-models.API_PROVIDERS. A catalog row is a
     // SEED, not an authority — the backend's own answer supersedes it.
     //
     // An empty `models` is NOT "no picker" any more. That equation is what made
@@ -448,23 +261,11 @@ export function capabilitiesFor(
     // conversation kind.
     canQueueWhileStreaming: true,
 
-    // FileMentionPopover is gated on having a project path to scan — and, on
-    // ACP, on the engine being able to answer `_packetcode/project/files`.
-    fileMentions:
-      !!conversation.projectPath && (engine ? (engine.packetcode.projectFiles ?? engineAdvertised) : true),
+    // FileMentionPopover is gated on having a project path to scan.
+    fileMentions: !!conversation.projectPath,
     // Builtin + project + template slash commands are offered to every chat
-    // session — except an ACP session whose engine cannot serve
-    // `_packetcode/commands/list`.
-    //
-    // Each extension now has a flag of its own in the vendor block
-    // (`projectFiles` / `commandsList`), and a flag that was actually sent is
-    // the authoritative answer. `advertised` remains the fallback for the two
-    // engines that send neither: one that predates the flags, and a
-    // third-party ACP agent with no `_packetcode` block at all (where both
-    // calls answer method-not-found and the backend degrades them to an EMPTY
-    // list). An affordance that can only ever open an empty menu is exactly
-    // the silent no-op the pane's governing rule says to hide.
-    slashCommands: engine ? (engine.packetcode.commandsList ?? engineAdvertised) : true,
+    // session.
+    slashCommands: true,
     // Attachment staging (paste/drop) is variant-agnostic in the composer.
     imageAttachments: true,
 
@@ -473,10 +274,8 @@ export function capabilitiesFor(
     // is non-null today. Kept nullable so an adapter that genuinely cannot
     // report a window can omit the ring instead of inventing one.
     contextWindow: getModelContextWindow(conversation.model),
-    // Api sessions report usage — unless the engine says it does not serve
-    // `_packetcode/sessions/usage`, in which case the statusline's ctx/in/out
-    // would sit empty forever.
-    reportsUsage: isApi && (engine ? engine.packetcode.sessionsUsage : true),
+    // Api sessions report usage.
+    reportsUsage: isApi,
     // Source: conversationCost.getModelRates → shared/model-pricing.json,
     // with the SAME zero-rate guard api-models.ts applies when populating the
     // picker's price labels: a free/local model has an entry at 0/0, and
@@ -486,22 +285,13 @@ export function capabilitiesFor(
     // Source: remoteConversation.isRemoteConversation.
     remote: isRemoteConversation(conversation),
     // Source: the `mcp_sources` event persisted on the conversation (same
-    // condition SessionMetaLine used for its pill), OR — on ACP, where that
-    // event never fires — the engine's own advertisement. `mcpList` is what
-    // makes the configured-server disclosure readable at all; `mcpDefaults` is
-    // the promise that a session could inherit those servers, which is itself
-    // a thing worth disclosing. Additive, so no non-ACP conversation changes.
+    // condition SessionMetaLine used for its pill).
     mcp:
-      (!!mcpSources &&
-        (mcpSources.sources.length > 0 || mcpSources.readErrors.length > 0)) ||
-      (!!engine && (engine.packetcode.mcpList || engine.packetcode.mcpDefaults)),
+      !!mcpSources &&
+      (mcpSources.sources.length > 0 || mcpSources.readErrors.length > 0),
     // Every conversation record is renamable; the sidebar has simply never
     // offered the affordance. Busy-state gating stays the caller's job.
-    //
-    // ACP is the exception: an engine session's name lives in the ENGINE's
-    // store, so a rename that cannot reach `_packetcode/sessions/rename` would
-    // be reverted by the next listing. Gated on `sessionsRename` accordingly.
-    canRename: engine ? engine.packetcode.sessionsRename : true,
+    canRename: true,
     // MessageList offers edit/restore on every user turn regardless of mode.
     canFork: true,
     usesProviderCredential: isApiAgentId(agent),

@@ -536,17 +536,6 @@ pub async fn get_provider_auth_status(provider: String) -> Result<ProviderAuthSt
         }
         "claude-oauth" => Ok(probe_claude_oauth()),
         "openai-codex" => Ok(probe_codex_oauth()),
-        // ACP transport. The packetcode engine owns its own credentials (its
-        // `config.toml` provider blocks), so PacketBench holds no keyring slot
-        // for it and `api_keys::VALID_PROVIDERS` has no entry. What the badge
-        // can honestly report is whether the engine binary is installed and
-        // new enough — and it MUST report something: an unmatched provider id
-        // falls through to the `Err` arm below, which breaks the AuthBadge
-        // outright rather than showing a degraded state.
-        crate::acp::routing::PROVIDER_ID => {
-            let (status, hint) = crate::acp::routing::auth_status().await;
-            Ok(ProviderAuthStatus { status, hint })
-        }
         other => Err(format!("Unknown provider '{}'", other)),
     }
 }

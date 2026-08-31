@@ -146,23 +146,6 @@ struct ProviderRuntimeSettings {
     /// maintains the list in Settings.
     #[serde(default)]
     custom_compat_models: Option<Vec<String>>,
-    /// Absolute path to the PacketCode ACP engine binary, as pinned from
-    /// Settings → Provider Endpoints.
-    ///
-    /// The engine is a separately-installed program, and neither of its own
-    /// installers puts it on `PATH` (`install.ps1` says so explicitly). Anyone
-    /// who builds it from source lands in the same place. Before this field
-    /// the only way to point PacketBench at such a binary was the
-    /// `PACKETBENCH_ACP_ENGINE` environment variable — which a desktop app's
-    /// users cannot reasonably be asked to set, and which is invisible from
-    /// the UI once set.
-    ///
-    /// Validated on save (absolute, exists, executable) and stored verbatim.
-    /// It is deliberately NOT re-validated on read: a binary that has moved
-    /// must fail loudly at spawn rather than silently fall through to some
-    /// other engine on `PATH` that the user did not choose.
-    #[serde(default)]
-    acp_engine_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, Default)]
@@ -990,65 +973,6 @@ pub fn resolve_custom_compat_base_url() -> Option<String> {
     std::env::var("PACKETBENCH_CUSTOM_COMPAT_URL")
         .ok()
         .and_then(|url| normalize_custom_compat_base_url(&url).ok())
-}
-
-/// Validate a user-supplied path to the PacketCode ACP engine binary.
-///
-/// Three requirements, each of which exists because failing it produces a
-/// confusing failure much later:
-///
-/// * **Absolute** — the engine is spawned with the *conversation's* working
-///   directory, not PacketBench's, so a relative path would resolve
-///   differently per session.
-/// * **Exists and is a file** — typos and directory picks are the common
-///   mistakes, and both otherwise surface as a bare OS error at spawn time.
-/// * **Executable** — on Unix an entry named `packetcode` that merely exists
-///   is not the engine; the executable bit is what distinguishes them. Windows
-///   has no such bit, so there the file check is the whole test.
-///
-/// Returns the trimmed path on success.
-pub fn normalize_acp_engine_path(raw: &str) -> Result<String, String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Err("Engine path cannot be empty.".to_string());
-    }
-    let path = std::path::Path::new(trimmed);
-    if !path.is_absolute() {
-        return Err("Enter the full path to the packetcode binary, not a relative one.".to_string());
-    }
-    let meta = std::fs::metadata(path)
-        .map_err(|e| format!("Cannot read {}: {}.", path.display(), e))?;
-    if !meta.is_file() {
-        return Err(format!("{} is not a file.", path.display()));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        // Any of user/group/other: which bit applies depends on ownership, and
-        // a binary placed by `install -m 0755` carries all three.
-        if meta.permissions().mode() & 0o111 == 0 {
-            return Err(format!("{} is not executable.", path.display()));
-        }
-    }
-    Ok(trimmed.to_string())
-}
-
-/// The pinned engine path, or `None` when the user has not set one.
-///
-/// Read-only and unvalidated on purpose — see [`normalize_acp_engine_path`].
-pub fn load_saved_acp_engine_path() -> Option<String> {
-    load_provider_runtime_settings()
-        .acp_engine_path
-        .map(|p| p.trim().to_string())
-        .filter(|p| !p.is_empty())
-}
-
-/// Pin (or clear, with `None`) the engine path. The caller validates.
-pub fn save_acp_engine_path(path: Option<String>) -> Result<(), String> {
-    let _lock = lock_provider_settings_mutex();
-    let mut settings = load_provider_runtime_settings();
-    settings.acp_engine_path = path;
-    save_provider_runtime_settings(&settings)
 }
 
 /// Normalise the manual model list: trim, drop empties, dedupe preserving

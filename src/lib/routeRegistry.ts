@@ -119,7 +119,7 @@ export const ROUTE_REGISTRY: Record<CoreView, RouteMeta> = {
       description: "View active workspace panes",
       icon: MessageSquare,
       iconColor: "text-accent-green",
-      keywords: ["sessions", "claude", "codex", "terminal", "pane"],
+      keywords: ["sessions", "claude", "codex", "terminal", "pane", "packetcode"],
     },
     hotkey: { code: "KeyW", legacyKey: "W", display: "Ctrl+Shift+W" },
   },
@@ -132,11 +132,7 @@ export const ROUTE_REGISTRY: Record<CoreView, RouteMeta> = {
       visible: true,
       description: "Agent conversations and inspector",
       iconColor: "text-accent-green",
-      // `packetcode` / `acp` are kept here on purpose: the separate
-      // PacketCode route was retired into this one, and someone who
-      // still searches the palette for it must land on Agents rather
-      // than on nothing.
-      keywords: ["agent", "conversation", "chat", "inspector", "api", "packetcode", "acp", "engine"],
+      keywords: ["agent", "conversation", "chat", "inspector", "api"],
     },
     hotkey: { code: "Digit1", legacyKey: "!", display: "Ctrl+Shift+1" },
   },

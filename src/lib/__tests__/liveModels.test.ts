@@ -12,7 +12,6 @@
 import { describe, expect, it } from "vitest";
 import { API_PROVIDERS, type ApiModel } from "@/lib/api-models";
 import {
-  acceptsEmptyModel,
   classifyLiveModelError,
   liveModelRow,
   providerEnumeratesLive,
@@ -26,9 +25,9 @@ const catalogFor = (agent: AgentCli): ApiModel[] =>
 
 describe("liveModels — the registry", () => {
   it("registers every API provider row, and nothing else", () => {
-    // The registry replaced a hardcoded three-agent exemption in
-    // `ModelSelector` (`api-ollama | api-custom | api-packetcode`) that had
-    // already drifted from the set of providers that actually enumerate. Every
+    // The registry replaced a hardcoded exemption list in `ModelSelector`
+    // that had already drifted from the set of providers that actually
+    // enumerate. Every
     // catalog row is live-capable; nothing outside the catalog is.
     for (const provider of API_PROVIDERS) {
       expect(providerEnumeratesLive(provider.agentCli), provider.agentCli).toBe(true);
@@ -55,17 +54,6 @@ describe("liveModels — the registry", () => {
     const ollama = LIVE_MODEL_PROVIDERS["api-ollama"]!;
     const anthropic = LIVE_MODEL_PROVIDERS["api-claude"]!;
     expect(ollama.ttlMs).toBeLessThan(anthropic.ttlMs);
-  });
-
-  it("lets ONLY the ACP row launch with no model id", () => {
-    // `getDefaultModel` answers "" for any row with no bundled models. For the
-    // engine that is correct (`acp::routing` maps it to `None` and the engine
-    // picks its own default); for a keyed provider it is a request that names
-    // no model, which `launchConversation` now refuses.
-    expect(acceptsEmptyModel("api-packetcode")).toBe(true);
-    expect(acceptsEmptyModel("api-claude")).toBe(false);
-    expect(acceptsEmptyModel("api-custom")).toBe(false);
-    expect(acceptsEmptyModel("api-ollama")).toBe(false);
   });
 });
 
@@ -136,8 +124,7 @@ describe("liveModels — precedence, and the `[]` ruling", () => {
     expect(
       resolveModelRows({ agent: "api-claude", live: { status: "ready", models: [] } }).rows,
     ).toEqual([]);
-    // A failure that never landed a list falls back — the degradation rule the
-    // ACP producer established, applied to every producer.
+    // A failure that never landed a list falls back.
     expect(
       resolveModelRows({ agent: "api-claude", live: { status: "failed", error: "boom" } }).rows,
     ).toEqual(catalogFor("api-claude"));
@@ -175,15 +162,6 @@ describe("liveModels — precedence, and the `[]` ruling", () => {
     expect(resolved.source).toBe("none");
     // The one case where a caller may legitimately unmount the picker.
     expect(resolved.enumeratesLive).toBe(false);
-  });
-
-  it("keeps the ACP row's empty catalog as its fallback", () => {
-    // Asserted, not merely observed: re-seeding that row has to fail a test
-    // first. Guessing at another program's configuration is what sent
-    // `claude-opus-4-8` to an OpenAI-only engine and came back a 404.
-    const resolved = resolveModelRows({ agent: "api-packetcode" });
-    expect(resolved.rows).toEqual([]);
-    expect(resolved.enumeratesLive).toBe(true);
   });
 });
 

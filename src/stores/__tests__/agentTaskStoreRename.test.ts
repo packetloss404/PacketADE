@@ -66,7 +66,7 @@ function seedConversation(overrides: Record<string, unknown> = {}) {
   return {
     id: CONV_ID,
     title: "Original title",
-    agent: "api-packetcode",
+    agent: "api-claude",
     projectPath: "/repo",
     status: "idle",
     messages: [],

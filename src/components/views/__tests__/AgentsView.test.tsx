@@ -10,11 +10,6 @@ const agentState = vi.hoisted(() => ({
 const launchConversation = vi.hoisted(() => vi.fn((_params: unknown) => true));
 const setComposerMode = vi.hoisted(() => vi.fn());
 
-// `ACP_PROVIDER_ID` is a plain constant, not store state, so it comes from the
-// real module. AgentsView now asks `apiAgentProvider(selectedAgent) ===
-// ACP_PROVIDER_ID` on every render to decide whether the packetcode engine
-// gate and the engine-session directory apply; that lookup used to be guarded
-// by a route-level pin and short-circuited when there wasn't one.
 vi.mock("@/stores/agentTaskStore", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/stores/agentTaskStore")>()),
   apiAgentProvider: (agent: AgentCli) => agent,

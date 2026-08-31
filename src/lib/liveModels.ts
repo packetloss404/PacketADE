@@ -3,13 +3,9 @@
  *
  * ## What this generalises
  *
- * The ACP row already asked its backend "which models do you actually serve?"
- * and preferred that answer over the shipped catalog. That mechanism was right
- * and is now the mechanism for EVERY provider: `agentCapabilities.engineModels`
- * was ACP-shaped in three ways (it gated on `engineCapabilities.packetcode`,
- * carried `AcpModelOption[]`, and its producer short-circuited on
- * `provider !== ACP_PROVIDER_ID`). Here the same three concerns are expressed
- * once, without naming a vendor:
+ * Asking a backend "which models do you actually serve?" and preferring that
+ * answer over the shipped catalog is the mechanism for EVERY provider. The
+ * three concerns are expressed once, without naming a vendor:
  *
  * - {@link LIVE_MODEL_PROVIDERS} — WHO enumerates, and by which producer.
  * - {@link liveModelRow} — HOW one enumerated id becomes a picker row.
@@ -83,14 +79,13 @@ export type { LiveModel } from "@/lib/tauri";
  * Where a provider's live list comes from.
  *
  * Only `ipc` rows go through {@link fetchLiveModels} and the shared cache. The
- * other three already have working, provider-specific producers that carry
+ * other two already have working, provider-specific producers that carry
  * metadata the generic `LiveModel` DTO cannot express — Ollama's per-model
- * tools template, the ACP engine's `(provider, model)` pairing — so they keep
- * their producers and converge on this module's ROW BUILDER and PRECEDENCE
- * instead. That is the whole point: one answer to "which list wins", many
+ * tools template — so they keep their producers and converge on this module's
+ * ROW BUILDER and PRECEDENCE instead. That is the whole point: one answer to "which list wins", many
  * transports, exactly as the `api-agent:*` event contract does for streaming.
  */
-export type LiveModelProducer = "ipc" | "ollama" | "custom" | "acp";
+export type LiveModelProducer = "ipc" | "ollama" | "custom";
 
 export interface LiveModelSource {
   /**
@@ -123,7 +118,7 @@ export const LOCAL_MODEL_TTL_MS = 30 * 1000;
  * THE registry of live-enumerating providers.
  *
  * This replaces three hardcoded lists that had drifted apart: ModelSelector's
- * `isOllama || isCustom || isAcp` mount exemption, `LaunchAsyncFlightModal`'s
+ * `isOllama || isCustom` mount exemption, `LaunchAsyncFlightModal`'s
  * Ollama-only live branch, and `ProviderRoutingCard`'s `provider === "ollama"`
  * branch. Adding a provider here is now the whole change.
  */
@@ -183,22 +178,13 @@ export const LIVE_MODEL_PROVIDERS: Partial<Record<AgentCli, LiveModelSource>> = 
     ttlMs: LOCAL_MODEL_TTL_MS,
     needsKey: false,
   },
-  // The engine owns its own provider credentials, so which models exist is
-  // decided by the user's `~/.packetcode/config.toml`. Producer is
-  // `stampEngineCapabilities`, which writes onto the conversation record.
-  "api-packetcode": {
-    provider: "packetcode-acp",
-    producer: "acp",
-    ttlMs: LOCAL_MODEL_TTL_MS,
-    needsKey: false,
-  },
 };
 
 /**
  * Does this agent's provider enumerate its own models?
  *
  * The predicate that replaces `ModelSelector`'s hardcoded
- * `api-ollama | api-custom | api-packetcode` exemption. Its consequence is
+ * `api-ollama | api-custom` exemption. Its consequence is
  * load-bearing: a live-enumerating provider's picker MUST mount even with zero
  * rows, because zero rows is a state the user can act on (refresh, type an id,
  * open Settings) and unmounting turns it into a dead read-only label.
@@ -210,22 +196,6 @@ export function providerEnumeratesLive(agent: AgentCli): boolean {
 /** The registry entry for an agent, or `undefined` for a static/PTY row. */
 export function liveModelSource(agent: AgentCli): LiveModelSource | undefined {
   return LIVE_MODEL_PROVIDERS[agent];
-}
-
-/**
- * May this agent legitimately start a turn with NO model id?
- *
- * `getDefaultModel` returns `""` for any row whose catalog carries no models,
- * and that empty string is passed straight through to the backend by
- * `launchConversation`, `attemptRouting`, `promptStore` and the flight
- * surfaces. For ACP that is CORRECT and deliberate — `acp::routing` maps an
- * empty model to `None` and the engine uses its own configured default, which
- * is the only honest choice when we do not know its catalog. For a keyed
- * provider it is a silent failure: the request goes out with no model and the
- * vendor answers with a 400 that names nothing the user did.
- */
-export function acceptsEmptyModel(agent: AgentCli): boolean {
-  return liveModelSource(agent)?.producer === "acp";
 }
 
 /**
@@ -298,7 +268,7 @@ export interface LiveModelAnswer {
 
 /** Which list a resolution ended up serving. */
 export type ModelRowSource =
-  /** The session's own backend answered (ACP engine, live enumeration). */
+  /** The session's own backend answered (live enumeration). */
   | "live"
   /** The shipped `API_PROVIDERS` rows. */
   | "bundled"
@@ -323,9 +293,8 @@ export interface ModelRowResolution {
 export interface ResolveModelRowsInput {
   agent: AgentCli;
   /**
-   * Rows the caller already knows are authoritative for THIS session — today,
-   * `capabilitiesFor(conversation).models` when an ACP engine enumerated them
-   * onto the conversation record.
+   * Rows the caller already knows are authoritative for THIS session, from a
+   * backend that enumerated them onto the conversation record.
    *
    * `undefined` means "no opinion". A defined value WINS, empty included: a
    * backend that was asked and named nothing has told us something, and

@@ -27,17 +27,11 @@ describe("agent-catalog merged registry", () => {
       // A row must be usable — but "usable" is no longer the same as "ships
       // with models".
       //
-      // This assertion used to be "every row except `api-custom` and
-      // `api-packetcode` carries static models", with those two exempted by
-      // name. That list was one of four hardcoded exemption lists that had
-      // drifted apart, and it encoded the wrong rule: what makes a model-less
-      // row legitimate is not its identity, it is that SOMETHING ELSE owns its
-      // list and can produce one at runtime. `api-custom`'s list is a manual
-      // one in Settings; `api-packetcode`'s comes from the engine's own
-      // `_packetcode/models/list`, since which models exist depends on the
-      // user's `~/.packetcode/config.toml` and seeding ids here would be a
-      // guess at another program's configuration (a wrong guess reached the
-      // engine and 404'd on whichever provider it resolved to).
+      // This assertion used to exempt the model-less rows BY NAME. That list
+      // was one of four hardcoded exemption lists that had drifted apart, and
+      // it encoded the wrong rule: what makes a model-less row legitimate is
+      // not its identity, it is that SOMETHING ELSE owns its list and can
+      // produce one at runtime — `api-custom`'s is a manual list in Settings.
       //
       // Re-expressed against the registry. Note that "is registered as
       // live-enumerating" alone is NOT enough to excuse an empty row — every
@@ -51,9 +45,8 @@ describe("agent-catalog merged registry", () => {
       //               enumeration has landed, sees. An empty picker there is
       //               the exact failure the live seam exists to prevent.
       //   !needsKey → the list is a property of the user's own environment
-      //               (their Ollama daemon, their custom endpoint's config,
-      //               their `~/.packetcode/config.toml`). We cannot know it,
-      //               and guessing is worse than empty.
+      //               (their Ollama daemon, their custom endpoint's config).
+      //               We cannot know it, and guessing is worse than empty.
       const source = liveModelSource(c.agentCli);
       expect(providerEnumeratesLive(c.agentCli), c.agentCli).toBe(true);
       if (!source?.needsKey) continue;
@@ -79,11 +72,8 @@ describe("agent-catalog merged registry", () => {
     }
   });
 
-  it("marks local-only runtimes (Ollama, PacketCode ACP) as SSH-incapable", () => {
+  it("marks local-only runtimes (Ollama) as SSH-incapable", () => {
     expect(getChatAgent("api-ollama")?.supportsSsh).toBe(false);
-    // The ACP engine is a local child process, not an endpoint the remote
-    // sidecar could reach.
-    expect(getChatAgent("api-packetcode")?.supportsSsh).toBe(false);
     expect(getChatAgent("api-claude")?.supportsSsh).toBe(true);
   });
 
@@ -92,7 +82,7 @@ describe("agent-catalog merged registry", () => {
     // sidecar runs on the host). Only the locally-spawned runtimes are
     // local-only — a regression here would silently hide a provider from
     // remote workspaces.
-    const LOCAL_ONLY = new Set(["api-ollama", "api-packetcode"]);
+    const LOCAL_ONLY = new Set(["api-ollama"]);
     expect(getChatAgent("api-claude-oauth")?.supportsSsh).toBe(true);
     expect(getChatAgent("api-openai-agents")?.supportsSsh).toBe(true);
     for (const c of CHAT_AGENTS) {

@@ -54,7 +54,7 @@ interface LiveModelState {
    * from the store, never from this call's result.
    *
    * Only `producer: "ipc"` providers are fetched here — Ollama, the custom
-   * endpoint and the ACP engine have their own producers and converge on the
+   * endpoint has its own producer and converges on the
    * seam's row builder and precedence instead.
    */
   ensureFresh: (agent: AgentCli, options?: { force?: boolean }) => void;
@@ -159,7 +159,7 @@ export const useLiveModelStore = create<LiveModelState>((set, get) => ({
                 status,
                 error: message,
                 // A FAILED fetch must never clear a list that once landed —
-                // the same degradation rule the ACP producer follows, where
+                // the same degradation rule every producer follows, where
                 // leaving the field untouched keeps the catalog standing
                 // rather than emptying the picker.
                 models: previous?.models,

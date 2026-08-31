@@ -524,6 +524,7 @@ function agentDisplayName(agent: string): string {
     codex: "Codex",
     opencode: "OpenCode",
     packetcode: "PacketCode",
+    // Retired transport; kept so a stored conversation on the id still reads.
     "api-packetcode": "PacketCode (ACP)",
   };
   return labels[agent] ?? agent;

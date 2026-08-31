@@ -383,7 +383,9 @@ export function providerSourceForAgentProvider(provider: string): string {
     openrouter: "api-openrouter",
     "api-ollama": "api-ollama",
     ollama: "api-ollama",
-    // PacketCode over ACP. Both directions are registered: the frontend
+    // PacketCode over ACP — a RETIRED transport. Both keys stay registered so
+    // ledger rows written before its removal still resolve to a scope rather
+    // than falling through. The frontend
     // agentCli and the bare backend provider id the Rust engine stamps onto
     // analytics rows must collapse onto ONE guardrail source, or a budget set
     // in the UI would silently miss half the spend it was set against.

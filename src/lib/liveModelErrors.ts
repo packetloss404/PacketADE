@@ -22,7 +22,7 @@
  * - `network` — connect failure, timeout, other non-2xx, or an unparseable
  *   body. Transient; offer a retry.
  * - `credential-store` — the OS keyring itself failed, distinct from "no key".
- * - `unsupported` — the provider has no live catalog (e.g. `api-packetcode`).
+ * - `unsupported` — the provider has no live catalog.
  */
 export type LiveModelErrorKind =
   | "no-key"

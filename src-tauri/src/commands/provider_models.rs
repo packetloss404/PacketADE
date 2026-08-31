@@ -127,9 +127,6 @@ impl LiveModel {
 /// `AgentCli` (`api-claude`, `api-openrouter`, …) while the keyring and
 /// `load_api_key` speak the short names (`anthropic`, `openrouter`, …).
 ///
-/// `api-packetcode` is deliberately absent: the ACP engine owns its own
-/// provider credentials and exposes no catalog over the protocol.
-///
 /// `minimax-api` stays distinct from `minimax` because — exactly as in
 /// [`crate::core::llm_provider::get_provider`] — the two hit the same endpoint
 /// but read different keyring slots (Token Plan vs pay-as-you-go).
@@ -1157,8 +1154,6 @@ mod tests {
         assert_eq!(canonical_provider("minimax-api"), Some("minimax-api"));
         assert_eq!(canonical_provider(" API-OpenRouter "), Some("openrouter"));
         assert_eq!(canonical_provider("api-custom"), Some("custom"));
-        // The ACP engine owns its own credentials and publishes no catalog.
-        assert_eq!(canonical_provider("api-packetcode"), None);
         assert_eq!(canonical_provider(""), None);
     }
 

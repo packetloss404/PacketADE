@@ -156,9 +156,6 @@ describe("agent/workspace store decoupling", () => {
       null,
       undefined,
       undefined,
-      // ACP extras. `null` on every other transport: the packetcode engine is
-      // the only backend with a branch that reads them.
-      null,
     );
   });
 
@@ -226,9 +223,6 @@ describe("agent/workspace store decoupling", () => {
       null,
       undefined,
       undefined,
-      // ACP extras. `null` on every other transport: the packetcode engine is
-      // the only backend with a branch that reads them.
-      null,
     );
   });
 
@@ -368,9 +362,6 @@ describe("agent/workspace store decoupling", () => {
       null,
       undefined,
       undefined,
-      // ACP extras. `null` on every other transport: the packetcode engine is
-      // the only backend with a branch that reads them.
-      null,
     );
   });
 
