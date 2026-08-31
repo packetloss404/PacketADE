@@ -21,6 +21,8 @@ interface GoldenCase {
     cacheWrite1h?: number;
   };
   expectedUsd: number;
+  /** `priced` | `free` | `unknown`. Mandatory when `expectedUsd` is 0. */
+  expectedStatus?: string;
 }
 
 const goldenCases = (cases as { cases: GoldenCase[] }).cases;
@@ -36,6 +38,21 @@ describe("shared pricing table — cross-language golden cases", () => {
   it.each(goldenCases)("$name", (testCase) => {
     const got = calculateCostUsd(testCase.model, testCase.tokens, testCase.at);
     expect(got).toBeCloseTo(testCase.expectedUsd, 9);
+    if (testCase.expectedStatus !== undefined) {
+      expect(pricingStatusForModel(testCase.model), testCase.model).toBe(testCase.expectedStatus);
+    }
+  });
+
+  // A $0 cost is ambiguous on its own: it means `free` when a zero-rated row
+  // matched and `unknown` when nothing did. Conflating the two is what let
+  // vendor-namespaced paid routes be billed at $0 and labelled "free".
+  it("makes every zero-cost case declare free vs unknown", () => {
+    for (const testCase of goldenCases) {
+      expect(
+        testCase.expectedUsd !== 0 || testCase.expectedStatus !== undefined,
+        `${testCase.name}: expectedUsd is 0 and must declare expectedStatus`,
+      ).toBe(true);
+    }
   });
 });
 
@@ -188,6 +205,48 @@ describe("matching", () => {
     expect(pricingStatusForModel("llama3.3:70b")).toBe("free");
     expect(pricingStatusForModel("ollama/qwen3:32b")).toBe("free");
     expect(pricingStatusForModel("totally-unknown-model-xyz")).toBe("unknown");
+  });
+
+  it("keeps vendor-namespaced cloud routes out of the free local row", () => {
+    // The bug this guards: the free `local` row's bare `qwen` / `deepseek` /
+    // `codellama` prefixes matched straight through the `/`, so a PAID
+    // namespaced route resolved to $0 and reported "free". Enumerating
+    // OpenRouter live would have zero-rated hundreds of paid models, and the
+    // reprice path could not rescue them — it only revisits models with NO
+    // entry. `match.excludeNamespaced` on that row is what makes these unknown.
+    for (const id of [
+      "qwen/qwen3-max",
+      "qwen/qwen3-coder",
+      "deepseek/deepseek-r1",
+      "deepseek/deepseek-chat",
+      "codellama/CodeLlama-70b-Instruct-hf",
+      "meta-llama/llama-3.3-70b-instruct",
+    ]) {
+      expect(ratesForModel(id), id).toBeNull();
+      expect(pricingStatusForModel(id), id).toBe("unknown");
+    }
+  });
+
+  it("still resolves genuinely local ids to free", () => {
+    for (const id of [
+      "llama3.3:70b",
+      "qwen2.5-coder:7b",
+      "deepseek-coder-v2",
+      "codellama:34b",
+      "ollama/qwen3:32b",
+      "ollama:deepseek-r1:14b",
+      "local/codellama:34b",
+      "Llama3.3:70B",
+    ]) {
+      expect(pricingStatusForModel(id), id).toBe("free");
+    }
+  });
+
+  it("still bills namespaced routes that have a row of their own", () => {
+    expect(pricingStatusForModel("meta-llama/llama-4-maverick")).toBe("priced");
+    expect(ratesForModel("anthropic/claude-sonnet-4-6")!.input).toBe(3);
+    expect(ratesForModel("openai/gpt-5.5")!.input).toBe(5);
+    expect(ratesForModel("google/gemini-2.5-pro")!.output).toBe(10);
   });
 
   it("returns null (not $0.00) for unknown models so callers can hide cost", () => {

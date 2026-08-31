@@ -39,6 +39,7 @@ pub mod packet_agent_stream;
 pub mod pricing;
 pub mod project_memory;
 pub mod provider_auth;
+pub mod provider_models;
 pub mod provider_stats;
 pub mod pty;
 pub mod quality_runner;

@@ -36,7 +36,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{oneshot, Mutex};
 use tokio::time::{timeout, Duration};
-use tracing::warn;
+use tracing::{debug, warn};
 
 /// Oldest engine this client is tested against.
 pub const MINIMUM_ENGINE_VERSION: &str = "0.1.0";
@@ -1430,6 +1430,51 @@ pub async fn cancel_on(state: &AcpState, session_id: &str) -> Result<(), String>
 /// client's copy of the transcript, and the stale engine-side runtime is
 /// superseded the next time the session is loaded. `session/close` on an
 /// engine that has it is idempotent, so a doubled or racing eviction is fine.
+/// How many engine sessions may stay resident at once.
+///
+/// Salvaged from the retired `packetcode-gui` repository, which carried this
+/// policy before it was archived — see `backlog.md`. Five is its number, and
+/// the point is bounding engine-side growth, not tuning: each resident session
+/// holds a context manager, its whole transcript, and one MCP child process
+/// per configured server alive inside the engine.
+pub const MAX_IDLE_RESIDENT: usize = 5;
+
+/// Closes least-recently-used engine sessions until at most
+/// [`MAX_IDLE_RESIDENT`] remain resident.
+///
+/// Nothing is lost. The frontend holds each conversation's engine session id
+/// and passes it back as `resume`, so re-selecting an evicted conversation
+/// simply loads it again via `session/load`. Dropping the in-memory binding is
+/// therefore the whole of the client-side eviction.
+///
+/// Best-effort by design: a failed close is logged and the binding is still
+/// dropped. The alternative — keeping a conversation bound to a session we
+/// could not close — leaks on both sides at once.
+pub async fn evict_idle_sessions(state: &AcpState) {
+    for (conversation_id, engine_session) in
+        state.sessions.idle_eviction_candidates(MAX_IDLE_RESIDENT)
+    {
+        // Re-check under the current lock: a turn may have started on this
+        // conversation between building the candidate list and getting here.
+        if state.sessions.is_engaged(&conversation_id) {
+            continue;
+        }
+        if let Err(error) = close_session_on(state, &engine_session).await {
+            warn!(
+                conversation_id = %conversation_id,
+                engine_session = %engine_session,
+                error = %error,
+                "ACP idle eviction: session/close failed; dropping the binding anyway"
+            );
+        }
+        state.sessions.forget(&conversation_id);
+        debug!(
+            conversation_id = %conversation_id,
+            "ACP idle eviction: session closed and unbound; re-selecting will session/load it"
+        );
+    }
+}
+
 pub async fn close_session_on(state: &AcpState, session_id: &str) -> Result<(), String> {
     let response = bridge_of(state)
         .await?

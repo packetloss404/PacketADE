@@ -3,6 +3,14 @@
 use crate::core::brand::{KEYRING_SERVICE, LEGACY_KEYRING_SERVICE};
 use tracing::{info, warn};
 
+/// Leading text of the "nothing is stored" error from [`load_api_key`].
+///
+/// Callers that must tell "the user has not connected this provider yet" apart
+/// from "the credential store itself failed" match on this prefix rather than
+/// re-walking the keyring (which would skip the legacy-service migration).
+/// [`load_api_key`] interpolates this constant, so the two cannot drift.
+pub const NO_API_KEY_PREFIX: &str = "No API key configured for";
+
 const VALID_PROVIDERS: &[&str] = &[
     "anthropic",
     "openai",
@@ -139,8 +147,8 @@ pub fn load_api_key(provider: &str) -> Result<String, String> {
                 return Ok(String::new());
             }
             Err(format!(
-                "No API key configured for {}. Set one in Settings > API Keys.",
-                provider
+                "{} {}. Set one in Settings > API Keys.",
+                NO_API_KEY_PREFIX, provider
             ))
         }
         Err(e) => Err(format!("Failed to read API key for {}: {}", provider, e)),

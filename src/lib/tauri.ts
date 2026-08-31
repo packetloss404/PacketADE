@@ -242,6 +242,24 @@ export function parsePtyExitPayload(payload: unknown): PtyExitPayload {
   };
 }
 
+/**
+ * Did the child exit cleanly?
+ *
+ * `false` only when the backend reported a **non-zero** code and the session
+ * was not deliberately terminated. Two cases deliberately count as success:
+ * `terminated` (an orchestrator or the user killed it — not the CLI's fault),
+ * and a `null` code, because "we could not read the status" is an absence of
+ * evidence, not evidence of failure.
+ *
+ * Shared so the terminal pane and the transient-PTY runner cannot drift on
+ * what counts as a failure.
+ */
+export function ptyExitSucceeded(payload: unknown): boolean {
+  const { exitCode, terminated } = parsePtyExitPayload(payload);
+  if (terminated) return true;
+  return exitCode === null || exitCode === 0;
+}
+
 // Code quality
 export interface CrashEntry {
   timestamp: string;
@@ -3417,6 +3435,65 @@ export async function setOllamaBaseUrl(baseUrl: string | null): Promise<string> 
 
 export async function listOllamaModels(): Promise<OllamaModel[]> {
   return invoke("list_ollama_models");
+}
+
+// Live per-provider model discovery — asks the provider itself what it will
+// serve right now, so pickers need not ship a hardcoded catalog.
+//
+// Every field but `id` is optional because no two provider catalogs publish the
+// same thing. `null` means "the provider did not say" and MUST fall back to the
+// local table — never render it as a zero. Coverage as of the Rust
+// implementation (`src-tauri/src/commands/provider_models.rs`):
+//
+//   anthropic   id, displayName, contextWindow, maxOutput      (no pricing)
+//   openai      id only                                        (noisy list, filtered)
+//   openrouter  id, displayName, contextWindow, maxOutput, pricing
+//   minimax     id only
+//   ollama      id, contextWindow (newer daemons only)
+//   custom      id only
+// Optional AND nullable, deliberately. Serde emits every key, so the wire
+// always carries `null` rather than omitting the field — but callers that
+// CONSTRUCT a LiveModel (tests, fixtures, a future non-IPC producer) should not
+// have to spell out five nulls to say "unknown". `?: T | null` accepts both,
+// and every reader already treats the two identically.
+export type LiveModel = {
+  /** The exact string to send as `model`. */
+  id: string;
+  displayName?: string | null;
+  /** Input context window in tokens. */
+  contextWindow?: number | null;
+  /** Maximum output tokens per response. */
+  maxOutput?: number | null;
+  /** USD per 1M input tokens. Only OpenRouter publishes this live. */
+  inputPerMTok?: number | null;
+  /** USD per 1M output tokens. Only OpenRouter publishes this live. */
+  outputPerMTok?: number | null;
+};
+
+// Live-model error classification is pure, so it lives in its own module —
+// see the note at the top of `lib/liveModelErrors.ts`. Re-exported here so the
+// command and the way you read its failures stay discoverable together.
+export {
+  parseLiveModelError,
+  isLiveModelSetupError,
+  type LiveModelError,
+  type LiveModelErrorKind,
+} from "@/lib/liveModelErrors";
+
+/**
+ * List the models `provider` will serve right now.
+ *
+ * Accepts either the keyring provider name (`anthropic`, `openai`,
+ * `openrouter`, `minimax`, `minimax-api`, `ollama`, `custom`) or the `AgentCli`
+ * id (`api-claude`, `api-claude-oauth`, `api-openai`, `api-openai-agents`,
+ * `api-openrouter`, `api-minimax`, `api-ollama`, `api-custom`).
+ *
+ * Rejects with a tagged string; run it through {@link parseLiveModelError}.
+ */
+export async function listProviderModels(
+  provider: string,
+): Promise<LiveModel[]> {
+  return invoke("list_provider_models", { provider });
 }
 
 // LM2 — custom OpenAI-compatible endpoint (vLLM / LM Studio / LiteLLM /

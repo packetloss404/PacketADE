@@ -1,4 +1,4 @@
-# Packaged Acceptance Matrix — currently targeting 0.13.1
+# Packaged Acceptance Matrix — currently targeting 0.13.2
 
 > **The filename carries no version, deliberately.** This is one evolving
 > checklist, not a per-release artifact. It used to be renamed on every
@@ -10,8 +10,8 @@
 > stated in the heading above and in section 0, where it can change without
 > invalidating a link.
 
-Created 2026-08-28 for 0.11.0, then retargeted to 0.12.0, 0.12.1, 0.13.0 and now
-0.13.1 — each time after section 0 was re-executed against a fresh build,
+Created 2026-08-28 for 0.11.0, then retargeted to 0.12.0, 0.12.1, 0.13.0, 0.13.1
+and now 0.13.2 — each time after section 0 was re-executed against a fresh build,
 because an earlier build does not contain the work that landed after it. This is
 a runnable checklist, not a status report. Tick rows as you go and record the
 evidence each one asks for.
@@ -26,26 +26,29 @@ says why that matters: *"fresh binaries prove compilation and bundling only."*
 Most green ticks in `CHANGELOG.md` for those sections still describe source
 tests.
 
-Three packaged installs have now happened, all silent and per-user: 0.12.1
-(2026-08-29), then 0.13.0 and 0.13.1 (both 2026-08-30). Between them they have
-closed the two upgrade rows in section 1 and the first row of section 2, and
-nothing else. In particular, 0.13.1 is the first build whose UI anyone has
-actually looked at — see the note on that row before trusting it further than
-it goes.
+Four packaged installs have now happened, all silent and per-user: 0.12.1
+(2026-08-29), then 0.13.0, 0.13.1 and 0.13.2 (all 2026-08-30).
+
+**Section 2 was run against 0.13.1 on 2026-08-30, and its three findings were
+fixed and shipped as 0.13.2.** Seven of its twelve rows pass outright, two are
+partial, one is blocked for want of a host missing a shell, and one records a
+defect that is now fixed. Sections **3-5 remain entirely unrun** - they need a
+person at the keyboard with the headset attached. Read each row's own note;
+several passes are narrower than a tick suggests.
 
 ---
 
 ## 0. Build the thing you are actually testing — DONE 2026-08-30
 
-Built from `8dc13780`, **unsigned**:
+Built from `5b534517`, **unsigned**:
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `PacketBench_0.13.1_x64-setup.exe` (NSIS, 85.4 MiB) | `10814779d13001ea4517c706eaf62adc55c21701abe6ed37821d3994a58c8a4e` |
-| `PacketBench_0.13.1_x64_en-US.msi` (133.2 MiB) | `d0caf91b45d3903ae42eda1bd28754b3600e9d9336f50fbb82cf2d2b66c11f68` |
+| `PacketBench_0.13.2_x64-setup.exe` (NSIS, 85.4 MiB) | `3c7a3f55374f5baee36fdf335d5a990093a4e280627d96337edd63da81fde563` |
+| `PacketBench_0.13.2_x64_en-US.msi` (133.2 MiB) | `c116a1642bdb7a66977e360f8f09c31f97fe0f0718d722bccd78a2b8c5cedacc` |
 
-The 0.11.0, 0.12.0, 0.12.1 and 0.13.0 bundles remain on disk and are **not**
-what this matrix accepts. Check the version in the filename before installing.
+The 0.11.0 through 0.13.1 bundles remain on disk and are **not** what this
+matrix accepts. Check the version in the filename before installing.
 
 They live in `C:/Users/ianwalmsley/packetbench-build/release/bundle/`, not in the
 repo. Every build here is made from a committed tree with a clean working
@@ -60,7 +63,7 @@ export PATH="/c/Users/ianwalmsley/.rustup/toolchains/stable-x86_64-pc-windows-ms
 Afterwards run `pnpm sidecar:install` — `prebundle` strips the sidecar's
 devDependencies. (Done for this build.)
 
-- [x] Version bumped — 0.13.0 → **0.13.1** in `package.json`,
+- [x] Version bumped — 0.13.1 → **0.13.2** in `package.json`,
       `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` (+ `Cargo.lock`)
 - [x] Rebuilt; commit, both filenames and both SHA-256s recorded in `CHANGELOG.md`
 
@@ -137,12 +140,16 @@ machine carried.
       navigate (four switches via the command palette). This closes the "needs
       eyes on it" caveat that stood against 0.13.0.
 
-      Two things this row does **not** cover. The window opened on a secondary
-      monitor with its left edge clipped, so the Left Rail was off-screen and
-      navigation was driven through the command palette rather than the rail
-      buttons — the rail itself is still unexercised on a packaged build. And
-      the only screens examined were the two agent routes; every other view is
-      unlooked-at.
+      **Extended 2026-08-30 (same session).** The Left Rail is now exercised
+      too: all seven rail routes were clicked and each rendered, confirmed by
+      the status strip naming the active view — Workspace, Agents, PacketCode,
+      Flight Deck, Issues, Memory, Git Hosts. Memory shows a proper explanatory
+      empty state rather than empty frames, and Git Hosts shows its "Set up a
+      git host" entry. The earlier caveat that the rail was unexercised is
+      retired.
+
+      Still not covered: Flight Deck, Issues and the Tools/Settings surfaces
+      were only seen empty, and nothing was driven inside them.
 - [x] **No console window on agent-route mount** (regression check for the fix
       in 0.13.1). Four Agents ↔ PacketCode switches, screenshotted at 1s and 4s
       each: no console window at any point. The meaningful half of this is that
@@ -155,14 +162,135 @@ machine carried.
       other 0.13.1 fix). The picker reads "Engine default" and its dropdown
       says the engine has not reported models yet — no `claude-opus-4-8`, which
       on an engine with no Anthropic provider went to OpenAI and 404'd.
-- [ ] Window state and active view restore across restart
-- [ ] Close with live work running — confirmation appears and is honest about what is lost
-- [ ] After exit, no orphaned `claude` / `codex` / `node` processes remain (Task Manager)
-- [ ] Terminal shells: Auto, PowerShell 7, Windows PowerShell, Command Prompt, Git Bash, WSL
-- [ ] Unavailable-profile recovery — pick a shell that is not installed; the failure is stated, not silent
-- [ ] Pane, workspace, and app-level persistence and hydration of terminal sessions
-- [ ] Claude statusline self-bootstraps. **A pane launched by an older binary must be restarted** — collector injection happens at session launch (`dev/release-v0.10.3.md`)
-- [ ] A CLI that crashes on startup reports something. Known live case: `codex` 0.147.0 access-violates (`0xC0000005`). Backlog records that every `pty:exit` listener discards the payload, so this currently renders as a clean exit — confirm whether that is still true in the package
+- [~] **Window state and active view restore across restart** — PARTIAL,
+      2026-08-30, and one half of it is my fault.
+      - **Active view restores.** Closed on Workspace, reopened on Workspace.
+      - **Active workspace did NOT restore — FIXED IN 0.13.2 AND VERIFIED IN
+        THE PACKAGE.** On 0.13.1 both tabs came back but neither was selected
+        and the main pane read "Select a workspace from the sidebar". On
+        installed 0.13.2, closing with Workspace 3 open and relaunching brought
+        it back **selected, with both panes relaunched**. The id is stored under
+        `packetbench:workspace-active-id` and validated against the hydrated
+        list, so a deleted or archived workspace resolves to null rather than
+        pointing the view at a ghost.
+      - **Window position is untested, not passed.** I moved the window with
+        `SetWindowPos` rather than dragging it, and an external move may not
+        fire what the app persists. It reopened at its pre-move position. Redo
+        this by dragging the window by hand before trusting either answer.
+- [x] **Close with live work running — confirmation appears and is honest.**
+      Six terminals running; the dialog says "Closing now terminates work that
+      is still running. Nothing is resumed on restart." and lists "6 terminal
+      sessions will be killed". The count is exact — it matched both the six
+      panes and the six shell processes parented to `packetbench`. It names the
+      consequence, states that nothing resumes, and quantifies the loss.
+- [x] **After exit, no orphaned processes.** Measured, not eyeballed. All six
+      shell PIDs recorded before the close (bash 29336, cmd 52924, powershell
+      46972 + 33804, pwsh 19308, wsl 29088) were gone afterwards;
+      `packetbench` at 0 processes; no `node` / `claude` / `codex` process left
+      with a dead parent; no `node` whose command line mentions the sidecar.
+      One `cmd.exe` (4076) does have a dead parent — it was already orphaned
+      before this test began and is not PacketBench's.
+- [x] **Terminal shells: all six launch and are usable.** Each was selected from
+      the Terminal row's profile dropdown, launched, and its banner/prompt read.
+      | Profile | Result |
+      | --- | --- |
+      | Auto-detect | resolves to Windows PowerShell; pane is honestly labelled "Windows PowerShell (Auto)" |
+      | PowerShell 7 | `PowerShell 7.6.5`, `PS D:\projects\PacketBench>` |
+      | Windows PowerShell | banner + `PS D:\projects\PacketBench>` |
+      | Command Prompt | `Microsoft Windows [Version 10.0.26200.9168]`, `D:\projects\PacketBench>` |
+      | Git Bash | `MINGW64 /d/projects/PacketBench (main)` — git-aware |
+      | WSL | `ianwalmsley@POINT9:/mnt/d/projects/PacketBench$`; **translates the Windows project path to the WSL mount**; `whoami` returned `ianwalmsley` |
+
+      Corroborated at the OS level: exactly six shell processes parented to
+      `packetbench`, one per pane, and the two `powershell.exe` children confirm
+      Auto-detect landed on Windows PowerShell rather than pwsh.
+
+      Note for whoever reads this next: the native profile dropdown photographs
+      **blank** under screenshot capture. That is a capture artifact of the OS
+      popup, not a rendering defect — the values read correctly in the closed
+      control. Do not file it as a bug.
+- [x] **All four agent CLI panes launch.** Verified against installed 0.13.2 on
+      2026-08-30. `Claude Code` and `Codex CLI` were covered in the 0.13.1 run;
+      `PacketCode` and `OpenCode` are covered here, closing the CLI half of
+      this section.
+
+      | Pane | Result |
+      | --- | --- |
+      | PacketCode | full TUI, `v0.5.1-70-g5c0adf8`, status line `[OpenAI-gpt-5.6-sol] / PacketBench / main / $7.60` |
+      | OpenCode | full TUI, `1.15.3`, footer `D:\projects\PacketBench:main`, own "OpenCode running" statusline |
+      | Claude Code | launches; stops at its folder-trust prompt (0.13.1 run) |
+      | Codex CLI | launches to its own trust prompt, **no access violation** - codex is 0.150.1 now (0.13.1 run) |
+
+      PacketCode's status line independently corroborates the 0.13.1 model fix:
+      the engine really is on `gpt-5.6-sol` via OpenAI, which is exactly why a
+      seeded `claude-opus-4-8` 404'd.
+- [x] **FINDING - the PTY pane and ACP run DIFFERENT packetcode binaries on this
+      machine.** Not a regression; a live instance of the "two separate knobs,
+      one binary" hazard `CLAUDE.md` warns about.
+      - PTY pane launched `C:\Users\ianwalmsley\Desktop\PacketBench-0.11.0-portable\packetcode.exe`
+        -> `v0.5.1-70-g5c0adf8`
+      - ACP resolves via `PATH` to `C:\Users\ianwalmsley\bin\packetcode.exe`
+        -> `v0.5.1-96-gf52d7c5`
+      - There is **no** pin file at `~/.packetbench/packetcode-bin`, so the PTY
+        side is almost certainly honouring the CLI Clients "PacketCode
+        integration" override (`cliOverrideStore`), which by design feeds PTY
+        launches only.
+
+      Twenty-six commits of skew between the two surfaces, silently. Filed in
+      `backlog.md` - unifying the two resolvers was already an open item; this
+      is the first measured instance of it biting.
+- [ ] **Unavailable-profile recovery — BLOCKED, not failed.** Every one of the
+      six profiles the picker offers is installed on this machine, so there is
+      no unavailable shell to select. Making one unavailable means modifying the
+      user's system, which is not a thing to do for a test. Needs a host missing
+      at least one profile.
+
+      Adjacent evidence that the failure path does speak up: the pre-existing
+      workspace points at `D:\projects\PacketBench-0.11.0-portable`, which does
+      not exist, and the sidebar states exactly that in red — "Project path is
+      not a directory: …". On 0.13.1 **clicking that workspace did nothing
+      visible** — the main pane stayed on "Select a workspace from the sidebar"
+      with no explanation. **Fixed in 0.13.2:** `WorkspaceView` probes with
+      `path_is_dir` and renders the reason, the path, and the fact that nothing
+      has been deleted, in the pane the user was looking at. Not re-observed on
+      screen in the package — covered by the code path, not by a screenshot.
+- [x] **Pane, workspace, and app-level persistence and hydration.** Verified at
+      all three levels across a real close/relaunch.
+      - Workspace 2 and all six sessions persisted (`Terminal x6`).
+      - **Hydration is dormant, as documented:** zero shell children at app
+        start. Nothing is launched until a workspace is opened.
+      - Opening the workspace launched six shells with **new PIDs** (13004,
+        7660, 47860, 46920, 47824, 52624) — fresh sessions, not resumptions,
+        which is what the close dialog promised. The WSL pane no longer carries
+        the `whoami` I ran before the close.
+- [~] **Claude statusline self-bootstraps — PARTIAL.** The statusline appears on
+      launch and polls ("Claude Code — Collecting session status…"), so the
+      collector is injected at session launch as designed. It never populates,
+      because Claude Code stops at its folder-trust prompt and I did not answer
+      a security prompt on the user's behalf. Finish this row by launching a
+      Claude pane, accepting the trust prompt yourself, and confirming the
+      statusline fills in.
+- [x] **A CLI that crashes on startup reports something — WAS BROKEN, FIXED IN
+      0.13.2.** Found by source rather than by a crash.** The named case is gone:
+      `codex` is now **0.150.1**, not 0.147.0; `codex --version` returns
+      cleanly and a Codex pane launches to its own trust prompt with no access
+      violation. So the runtime reproduction is no longer available on this
+      machine.
+
+      The defect was nonetheless checkable without a crash. Rust emits a real
+      payload (`commands/pty.rs:538` — `exitCode`, `terminated`), and
+      `parsePtyExitPayload` (`src/lib/tauri.ts:227`) exists to read it. **It had
+      zero non-test callers.** All three listeners took no parameter and
+      discarded the payload: `useTerminalSession.ts:360`,
+      `useTransientPty.ts:150` and `:276`, so the exit code never crossed the
+      event boundary and a CLI that died on startup rendered identically to a
+      clean exit.
+
+      **Fixed in 0.13.2:** both hooks consume the payload through one shared
+      `ptyExitSucceeded`; a non-zero code prints in red with the code and sets
+      the tab to `error`; `terminated` and an unknown code stay successes.
+      Covered by tests including the Windows access-violation code — **not**
+      re-verified against a real crashing CLI, because none is available here.
 
 ---
 

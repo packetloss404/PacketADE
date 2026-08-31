@@ -1,16 +1,30 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Loader2, AlertCircle, ChevronDown, RefreshCw, Settings2 } from "lucide-react";
+
+import {
+  Loader2,
+  AlertCircle,
+  ChevronDown,
+  CornerDownLeft,
+  RefreshCw,
+  Settings2,
+} from "lucide-react";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import type { AgentCli } from "@/stores/agentTaskStore";
 import { useAppStore } from "@/stores/appStore";
 import {
-  API_PROVIDERS,
+  buildApiModel,
   getModelSpeed,
   MODEL_SPEED_LABEL,
   type ApiModel,
 } from "@/lib/api-models";
+import {
+  providerEnumeratesLive,
+  resolveModelRows,
+  liveModelSource,
+} from "@/lib/liveModels";
 import type { OllamaModelsState } from "../hooks/useOllamaModels";
 import { useCustomModels } from "../hooks/useCustomModels";
+import { useLiveModels } from "../hooks/useLiveModels";
 
 /** Compact context-window label, e.g. 200_000 -> "200K ctx", 1_000_000 -> "1M ctx". */
 function formatContextWindow(tokens: number | undefined): string | null {
@@ -30,6 +44,32 @@ function formatPricing(
   return `$${pricing.input}/$${pricing.output}`;
 }
 
+/**
+ * "Use ‹what you typed›" — the escape hatch that keeps enumeration a
+ * CONVENIENCE rather than a gate.
+ *
+ * A model published this morning is in no bundled catalog and may not yet be in
+ * the provider's own listing either; without this row the picker would be the
+ * only way to change model and would silently refuse to name it. Offered in
+ * both popover directions and for every provider, including the ones whose
+ * lists are empty — an empty picker with a search box you can type into is
+ * still a working control.
+ */
+function freeTextRow(
+  typed: string,
+  onSelect: (model: string) => void,
+): ReactNode {
+  if (!typed) return null;
+  return (
+    <DropdownItem onClick={() => onSelect(typed)}>
+      <span className="flex items-center gap-1.5 text-text-secondary">
+        <CornerDownLeft size={10} />
+        Use &ldquo;{typed}&rdquo;
+      </span>
+    </DropdownItem>
+  );
+}
+
 /** One selectable model row, rendered identically by both popover directions. */
 interface ModelRow {
   key: string;
@@ -47,19 +87,26 @@ interface ModelSelectorProps {
   selectedModel: string;
   onModelChange: (model: string) => void;
   /**
-   * THE rows to offer, from `capabilitiesFor(conversation).models`.
+   * Rows from `capabilitiesFor(conversation).models`.
    *
-   * The catalog is only a SEED for engine-backed sessions: an ACP session's
-   * real choices come from the engine's `_packetcode/models/list`, and the
-   * descriptor already prefers that list when the engine advertised it. Pass
-   * it and the picker offers exactly what the session can actually run.
+   * Whether these OVERRIDE the bundled catalog is decided by
+   * {@link modelsAreAuthoritative}, never by their length — see the `[]`
+   * ruling in `lib/liveModels.ts`. This component used to make that call
+   * itself with `models.length > 0 ? models : catalog`, which disagreed with
+   * `agentCapabilities.ts` about what an empty list means; both now resolve
+   * through `resolveModelRows`.
    *
-   * Omitted (or empty) falls back to the `API_PROVIDERS` row for
-   * `selectedAgent`, which is what this component did unconditionally before
-   * — so every non-engine caller behaves identically to today. Ollama is
-   * unaffected either way: its rows are live-fetched via `ollamaModels`.
+   * Omitted entirely = "no opinion", the pre-seam behaviour: the picker falls
+   * back to this agent's live enumeration, then to the bundled catalog.
    */
   models?: ApiModel[];
+  /**
+   * Did `models` come from the session's own backend? Pass
+   * `caps.modelsAreAuthoritative` alongside `caps.models`. When true, an EMPTY
+   * `models` means "this backend serves none" and the catalog must not stand
+   * in; when false or absent, an empty `models` is simply no answer yet.
+   */
+  modelsAreAuthoritative?: boolean;
   ollamaModels: OllamaModelsState;
   refreshOllamaModels: () => void;
   /** Imperative "open now" channel, e.g. so the `/model` slash command can
@@ -84,6 +131,7 @@ export function ModelSelector({
   selectedModel,
   onModelChange,
   models,
+  modelsAreAuthoritative = false,
   ollamaModels,
   refreshOllamaModels,
   openSignal,
@@ -120,26 +168,38 @@ export function ModelSelector({
 
   const isOllama = selectedAgent === "api-ollama";
   const isCustom = selectedAgent === "api-custom";
-  // The ACP engine enumerates its own models over `_packetcode/models/list`,
-  // so — like Ollama and the custom endpoint — the static catalog carries none
-  // and an empty list must not unmount the picker.
-  const isAcp = selectedAgent === "api-packetcode";
+  const isAcp = liveModelSource(selectedAgent)?.producer === "acp";
   // LM2: the custom endpoint models are a runtime-managed manual list, so
   // (like Ollama live list) the static catalog carries none.
   const { customModels, refresh: refreshCustomModels } =
     useCustomModels(selectedAgent);
+  // Every other live-enumerating provider goes through the shared cache. It
+  // serves whatever it has immediately and refreshes behind the picker, so
+  // opening this menu never waits on the network.
+  const { answer: liveAnswer, refresh: refreshLiveModels } = useLiveModels(selectedAgent);
   const openSettings = useAppStore((s) => s.openSettings);
 
-  // Capability first, catalog second. The catalog lookup is what used to gate
-  // this whole component (`if (!provider) return null`), which meant a session
-  // whose real model list came from somewhere other than `API_PROVIDERS` got
-  // no picker at all — and an engine that advertised models had them ignored.
-  const catalogModels =
-    API_PROVIDERS.find((p) => p.agentCli === selectedAgent)?.models ?? [];
-  const modelRows = models && models.length > 0 ? models : catalogModels;
-  // Ollama draws its rows from the live daemon probe, so an empty catalog is
-  // expected there and must not unmount the picker.
-  if (!isOllama && !isCustom && !isAcp && modelRows.length === 0) return null;
+  // ONE precedence decision, in ONE place. This component used to make its own
+  // (`models.length > 0 ? models : catalog`) and `agentCapabilities.ts` made a
+  // contradictory one; `LaunchAsyncFlightModal` and `ProviderRoutingCard` made
+  // two more. They all resolve through `resolveModelRows` now.
+  const resolution = resolveModelRows({
+    agent: selectedAgent,
+    authoritative: modelsAreAuthoritative ? models : undefined,
+    live: liveAnswer,
+  });
+  // An explicitly-passed NON-EMPTY list is the caller's rows either way; the
+  // `authoritative` flag only ever decides whether an EMPTY one may override
+  // the bundled catalog. Same shape as the old expression, correct meaning.
+  const modelRows = models && models.length > 0 ? models : resolution.rows;
+
+  // A live-enumerating provider ALWAYS gets a picker, even at zero rows: zero
+  // rows is a state the user can act on (refresh, type an id, open Settings),
+  // and unmounting turns it into a dead read-only label with no way out. This
+  // replaces a hardcoded three-agent exemption that had already drifted from
+  // the set of providers that actually enumerate.
+  const enumeratesLive = providerEnumeratesLive(selectedAgent);
+  if (!enumeratesLive && modelRows.length === 0) return null;
 
   // Trigger label. In Ollama mode the label is the live-fetched model name
   // (just the `name` string; Ollama installs have no separate display label).
@@ -238,6 +298,16 @@ export function ModelSelector({
     } else {
       for (const m of ollamaModels) {
         const toolless = requiresTools && m.supportsTools === false;
+        // The daemon reports a trained context window and this picker threw it
+        // away, so every Ollama row rendered with no ctx chip while every cloud
+        // row had one. Through the shared builder the daemon's number wins and
+        // `getModelContextWindow` fills the gap for an older daemon.
+        const ctx = formatContextWindow(
+          buildApiModel({
+            value: m.name,
+            contextWindow: m.contextLength ?? undefined,
+          }).contextWindow,
+        );
         rows.push({
           key: m.name,
           searchText: m.name,
@@ -253,15 +323,14 @@ export function ModelSelector({
               }
             >
               <span className="truncate">{m.name}</span>
-              {toolless ? (
-                <span className="shrink-0 text-meta text-text-muted">no tools</span>
-              ) : (
-                typeof m.size === "number" && (
-                  <span className="shrink-0 text-meta text-text-muted">
-                    {(m.size / 1e9).toFixed(1)} GB
-                  </span>
-                )
-              )}
+              <span className="flex shrink-0 items-center gap-2 text-meta tabular-nums text-text-muted">
+                {ctx && <span>{ctx}</span>}
+                {toolless ? (
+                  <span>no tools</span>
+                ) : (
+                  typeof m.size === "number" && <span>{(m.size / 1e9).toFixed(1)} GB</span>
+                )}
+              </span>
             </span>
           ),
         });
@@ -325,14 +394,56 @@ export function ModelSelector({
         </span>
       ),
     });
-  } else if (isAcp && modelRows.length === 0) {
-    notice = (
-      <div className="px-3 py-1.5 text-meta text-text-muted">
-        The packetcode engine has not reported its models yet. Turns use the
-        engine&apos;s configured default until it does.
-      </div>
-    );
   } else {
+    // Every remaining provider renders the same way — bundled catalog rows, an
+    // ACP engine's enumeration, and a live provider list are all just rows.
+    // What differs is the HEADER (is a refresh possible?) and the NOTICE (are
+    // these really this provider's models?), and both come from the seam
+    // rather than from a per-provider branch.
+    if (enumeratesLive) {
+      const refreshable = liveModelSource(selectedAgent)?.producer === "ipc";
+      header = (
+        <div className="flex items-center justify-between px-3 py-1 text-meta uppercase tracking-wide text-text-muted">
+          <span>
+            {resolution.source === "live"
+              ? "Available models"
+              : resolution.source === "bundled"
+                ? "Built-in models"
+                : "Models"}
+            {resolution.stale ? " · stale" : ""}
+          </span>
+          {refreshable && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                refreshLiveModels();
+              }}
+              className="rounded p-0.5 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
+              title="Re-fetch this provider's model list"
+            >
+              <RefreshCw size={10} />
+            </button>
+          )}
+        </div>
+      );
+    }
+    if (resolution.notice) {
+      // A bundled fallback is BADGED, never passed off as the provider's real
+      // catalog — "no key yet" and "the provider rejected your key" are
+      // different problems and the user can only fix the one they are told
+      // about.
+      notice = (
+        <div className="px-3 py-1.5 text-meta text-text-muted">{resolution.notice}</div>
+      );
+    } else if (isAcp && modelRows.length === 0) {
+      notice = (
+        <div className="px-3 py-1.5 text-meta text-text-muted">
+          The packetcode engine has not reported its models yet. Turns use the
+          engine&apos;s configured default until it does.
+        </div>
+      );
+    }
     for (const m of modelRows) {
       const ctx = formatContextWindow(m.contextWindow);
       const price = formatPricing(m.pricing);
@@ -375,6 +486,7 @@ export function ModelSelector({
         searchPlaceholder="Search models…"
         openSignal={openSignal}
         trigger={trigger}
+        footer={(typed) => freeTextRow(typed, onModelChange)}
       >
         {header}
         {notice}
@@ -453,8 +565,28 @@ export function ModelSelector({
               {r.body}
             </button>
           ))}
+          {/* Enumeration is a convenience, not a gate — see FreeTextModelRow.
+              The upward popover owns its own search box, so it offers the same
+              escape hatch directly rather than through the Dropdown context. */}
+          {filter.trim() !== "" && (
+            <button
+              type="button"
+              onClick={() => {
+                onModelChange(filter.trim());
+                setOpen(false);
+              }}
+              className="w-full px-3 py-1.5 text-left text-ui text-text-primary transition-colors hover:bg-bg-hover"
+            >
+              <span className="flex items-center gap-1.5 text-text-secondary">
+                <CornerDownLeft size={10} />
+                Use &ldquo;{filter.trim()}&rdquo;
+              </span>
+            </button>
+          )}
           {needle !== "" && visible.length === 0 && (
-            <div className="px-2 py-1 text-ui text-text-muted">No matches</div>
+            <div className="px-2 py-1 text-meta text-text-muted">
+              No matches in this provider&apos;s list.
+            </div>
           )}
         </div>
       )}

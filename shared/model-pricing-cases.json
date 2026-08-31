@@ -12,7 +12,14 @@
     "in one language fails the other language's test.",
     "",
     "`tokens` are DISJOINT buckets (Anthropic semantics): `input` excludes",
-    "cacheRead and cacheWrite. `at` is the date of the priced turn (YYYY-MM-DD)."
+    "cacheRead and cacheWrite. `at` is the date of the priced turn (YYYY-MM-DD).",
+    "",
+    "`expectedStatus` (optional) additionally asserts pricingStatusForModel /",
+    "pricing_status_for. It is REQUIRED for any case whose expectedUsd is 0.0,",
+    "because cost alone cannot tell `free` (a $0 local row matched) from",
+    "`unknown` (no row matched) — the exact confusion that let vendor-namespaced",
+    "paid routes be billed at $0. Status is evaluated at TODAY, not at `at`, so",
+    "only set it on rows whose free/priced/unknown answer is date-invariant."
   ],
   "cases": [
     {
@@ -188,28 +195,120 @@
       "model": "meta-llama/llama-4-maverick",
       "at": "2026-07-31",
       "tokens": { "input": 1000000, "output": 1000000 },
-      "expectedUsd": 0.8
+      "expectedUsd": 0.8,
+      "expectedStatus": "priced"
     },
     {
       "name": "local ollama model is free",
       "model": "llama3.3:70b",
       "at": "2026-07-31",
       "tokens": { "input": 5000000, "output": 5000000 },
-      "expectedUsd": 0.0
+      "expectedUsd": 0.0,
+      "expectedStatus": "free"
+    },
+    {
+      "name": "bare local qwen tag is free",
+      "model": "qwen2.5-coder:7b",
+      "at": "2026-07-31",
+      "tokens": { "input": 5000000, "output": 5000000 },
+      "expectedUsd": 0.0,
+      "expectedStatus": "free"
+    },
+    {
+      "name": "bare local deepseek tag is free",
+      "model": "deepseek-coder-v2",
+      "at": "2026-07-31",
+      "tokens": { "input": 5000000, "output": 5000000 },
+      "expectedUsd": 0.0,
+      "expectedStatus": "free"
+    },
+    {
+      "name": "bare local codellama tag is free",
+      "model": "codellama:34b",
+      "at": "2026-07-31",
+      "tokens": { "input": 5000000, "output": 5000000 },
+      "expectedUsd": 0.0,
+      "expectedStatus": "free"
     },
     {
       "name": "ollama route prefix is stripped before the local match",
       "model": "ollama/qwen3:32b",
       "at": "2026-07-31",
       "tokens": { "input": 5000000, "output": 5000000 },
-      "expectedUsd": 0.0
+      "expectedUsd": 0.0,
+      "expectedStatus": "free"
+    },
+    {
+      "name": "ollama: route prefix is stripped before the local match",
+      "model": "ollama:deepseek-r1:14b",
+      "at": "2026-07-31",
+      "tokens": { "input": 5000000, "output": 5000000 },
+      "expectedUsd": 0.0,
+      "expectedStatus": "free"
+    },
+    {
+      "name": "local/ route prefix is stripped before the local match",
+      "model": "local/codellama:34b",
+      "at": "2026-07-31",
+      "tokens": { "input": 5000000, "output": 5000000 },
+      "expectedUsd": 0.0,
+      "expectedStatus": "free"
+    },
+    {
+      "name": "namespaced qwen cloud route is NOT free (excludeNamespaced)",
+      "model": "qwen/qwen3-max",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 0.0,
+      "expectedStatus": "unknown"
+    },
+    {
+      "name": "namespaced deepseek cloud route is NOT free (excludeNamespaced)",
+      "model": "deepseek/deepseek-r1",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 0.0,
+      "expectedStatus": "unknown"
+    },
+    {
+      "name": "namespaced qwen coder route is NOT free (excludeNamespaced)",
+      "model": "qwen/qwen3-coder",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 0.0,
+      "expectedStatus": "unknown"
+    },
+    {
+      "name": "namespaced codellama route is NOT free (excludeNamespaced)",
+      "model": "codellama/CodeLlama-70b-Instruct-hf",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 0.0,
+      "expectedStatus": "unknown"
+    },
+    {
+      "name": "namespaced llama cloud route with no row is unknown, not free",
+      "model": "meta-llama/llama-3.3-70b-instruct",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 0.0,
+      "expectedStatus": "unknown"
+    },
+    {
+      "name": "excludeNamespaced does not disturb stripped cloud routes",
+      "model": "anthropic/claude-sonnet-4-6",
+      "at": "2026-07-31",
+      "tokens": { "input": 1000000, "output": 1000000 },
+      "expectedUsd": 18.0,
+      "expectedStatus": "priced"
     },
     {
       "name": "unknown model prices at zero (PricingStatus::Unknown)",
       "model": "totally-unknown-model-xyz",
       "at": "2026-07-31",
       "tokens": { "input": 1000000, "output": 1000000 },
-      "expectedUsd": 0.0
+      "expectedUsd": 0.0,
+      "expectedStatus": "unknown"
     }
   ]
 }

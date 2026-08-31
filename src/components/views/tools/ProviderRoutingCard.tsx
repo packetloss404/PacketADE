@@ -20,6 +20,8 @@ import {
 import { logSwallowed } from "@/lib/logSwallowed";
 import { getModelsForAgent, type ModelOption } from "@/lib/models";
 import { API_PROVIDERS } from "@/lib/api-models";
+import { liveModelSource, resolveModelRows } from "@/lib/liveModels";
+import { useLiveModelStore } from "@/stores/liveModelStore";
 import { SUBSCRIPTION_OAUTH_AGENTS } from "@/lib/attemptRouting";
 import type { TaskType } from "@/types/flight";
 
@@ -207,6 +209,22 @@ function AuxRoutingSection() {
       .catch(() => setOllamaModels([]));
   }, [anyOllama, ollamaModels]);
 
+  // Live model lists for the pinned cloud providers, from the shared cache.
+  // Subscribing to the whole map (rather than one entry) is deliberate: which
+  // providers this card cares about changes as the user pins them.
+  const liveEntries = useLiveModelStore((s) => s.entries);
+  const ensureFreshModels = useLiveModelStore((s) => s.ensureFresh);
+  const ensureModelListener = useLiveModelStore((s) => s.ensureListener);
+  const pinnedProviders = auxMappings.map((m) => m.provider ?? "").join(",");
+  useEffect(() => {
+    ensureModelListener();
+    for (const provider of pinnedProviders.split(",")) {
+      if (!provider) continue;
+      const agent = API_PROVIDERS.find((p) => p.id === provider)?.agentCli;
+      if (agent) ensureFreshModels(agent);
+    }
+  }, [pinnedProviders, ensureFreshModels, ensureModelListener]);
+
   // Re-read after every settings change so the resolved route stays honest —
   // the backend, not this component, decides what "Auto" means.
   useEffect(() => {
@@ -226,16 +244,31 @@ function AuxRoutingSection() {
     setAuxMapping(taskClass, mapping.provider, value === "" ? null : value);
   }
 
-  /** Model choices for a pinned provider. Keyed cloud providers list their
-   * catalog models; Ollama lists what is actually installed. Aux task
-   * classes are tool-less single shots today, so no supportsTools filter is
-   * applied — add one per-class if a tool-carrying aux class ever lands. */
+  /** Model choices for a pinned provider. Every provider now lists what it
+   * actually serves where it can say so, with the bundled catalog behind it;
+   * Ollama keeps its own producer because it also reports install size and a
+   * tools template. Aux task classes are tool-less single shots today, so no
+   * supportsTools filter is applied — add one per-class if a tool-carrying aux
+   * class ever lands.
+   *
+   * This function used to read `API_PROVIDERS.find(...).models` directly, which
+   * was the third of three ad-hoc live/static precedence rules in the codebase
+   * (with `ModelSelector` and `LaunchAsyncFlightModal`) and the only one that
+   * gave a live list to Ollama alone. All three resolve through
+   * `resolveModelRows` now. */
   function modelOptionsFor(provider: string): { value: string; label: string }[] {
     if (provider === "ollama") {
       return (ollamaModels ?? []).map((m) => ({ value: m.name, label: m.name }));
     }
-    const catalog = API_PROVIDERS.find((p) => p.id === provider);
-    return (catalog?.models ?? []).map((m) => ({ value: m.value, label: m.label }));
+    // Aux mappings are keyed by the catalog's provider id (`anthropic`,
+    // `openai`, …); the live seam is keyed by agent, so map across.
+    const agent = API_PROVIDERS.find((p) => p.id === provider)?.agentCli;
+    if (!agent) return [];
+    const liveProvider = liveModelSource(agent)?.provider;
+    return resolveModelRows({
+      agent,
+      live: liveProvider ? liveEntries[liveProvider] : undefined,
+    }).rows.map((m) => ({ value: m.value, label: m.label }));
   }
 
   function describeResolution(taskClass: AuxTaskClass): {

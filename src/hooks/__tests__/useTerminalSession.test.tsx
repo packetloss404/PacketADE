@@ -53,6 +53,7 @@ import {
   killPty,
   listPtySessions,
   parsePtyExitPayload,
+  ptyExitSucceeded,
   writePty,
 } from "@/lib/tauri";
 
@@ -254,6 +255,22 @@ describe("useTerminalSession", () => {
     });
   });
 
+  it("scores a PTY exit as success or failure", () => {
+    // The distinction the terminal pane and the transient runner both hang
+    // their "done" vs "error" state on.
+    expect(ptyExitSucceeded({ sessionId: "s", exitCode: 0, terminated: false })).toBe(true);
+    expect(ptyExitSucceeded({ sessionId: "s", exitCode: 1, terminated: false })).toBe(false);
+    expect(ptyExitSucceeded({ sessionId: "s", exitCode: 3221225477, terminated: false })).toBe(
+      false,
+    );
+    // A deliberate kill is not the CLI failing.
+    expect(ptyExitSucceeded({ sessionId: "s", exitCode: 137, terminated: true })).toBe(true);
+    // Unknown status is an absence of evidence, not evidence of failure —
+    // this is also the legacy bare-string payload's shape.
+    expect(ptyExitSucceeded({ sessionId: "s", exitCode: null, terminated: false })).toBe(true);
+    expect(ptyExitSucceeded("sess-1")).toBe(true);
+  });
+
   it("marks the session as no longer alive when the PTY exits naturally", async () => {
     const { result, unmount } = await startHook();
     expect(result.current.alive).toBe(true);
@@ -265,6 +282,40 @@ describe("useTerminalSession", () => {
     });
 
     expect(result.current.alive).toBe(false);
+
+    unmount();
+  });
+
+  it("marks a non-zero PTY exit as an error, not a clean finish", async () => {
+    // The defect this covers: every `pty:exit` listener used to take no
+    // parameter, so a CLI that access-violated on startup produced the same
+    // grey "[Session ended]" and the same `done` status as one that worked.
+    const { result, unmount } = await startHook();
+    expect(result.current.alive).toBe(true);
+
+    await act(async () => {
+      listeners[ptyExitEvent("sess-1")]?.({
+        payload: { sessionId: "sess-1", exitCode: 3221225477, terminated: false },
+      });
+    });
+
+    expect(result.current.alive).toBe(false);
+    expect(useTabStore.getState().tabs[0]?.status).toBe("error");
+
+    unmount();
+  });
+
+  it("does not score an orchestrator-terminated session as an error", async () => {
+    const { result, unmount } = await startHook();
+
+    await act(async () => {
+      listeners[ptyExitEvent("sess-1")]?.({
+        payload: { sessionId: "sess-1", exitCode: 137, terminated: true },
+      });
+    });
+
+    expect(result.current.alive).toBe(false);
+    expect(useTabStore.getState().tabs[0]?.status).toBe("done");
 
     unmount();
   });

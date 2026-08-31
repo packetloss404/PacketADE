@@ -72,14 +72,19 @@ export function AgentsView({ pinnedAgent, pinnedModel }: AgentsViewProps = {}) {
   );
 
   /**
-   * Whether this route is scoped to the ACP transport, which is the one that
-   * has an engine-side session directory to show. A TRANSPORT question, not an
+   * Whether the ACP transport is currently selected — it is the one with an
+   * engine-side session directory to show. A TRANSPORT question, not an
    * affordance one: what the directory then lets you do is still resolved from
-   * `capabilitiesFor()` inside the sidebar. On the general Agents route a list
-   * of packetcode-engine sessions would be noise; on `PacketCodeView` it is
-   * the reason the route exists.
+   * `capabilitiesFor()` inside the sidebar.
+   *
+   * This keys off the LIVE selection, not a route-level pin. It used to read
+   * `pinnedAgent`, because the engine directory belonged to the separate
+   * `PacketCodeView` route. That route is gone — PacketCode is a provider you
+   * select inside this one pane — so the directory follows the selection
+   * instead. Pick PacketCode and it appears; pick anything else and a list of
+   * packetcode-engine sessions would be noise, so it does not.
    */
-  const showEngineSessions = !!pinnedAgent && apiAgentProvider(pinnedAgent) === ACP_PROVIDER_ID;
+  const showEngineSessions = apiAgentProvider(selectedAgent) === ACP_PROVIDER_ID;
 
   useEffect(() => {
     recordVisibleConversations(selectedConversationId ? 1 : 0);

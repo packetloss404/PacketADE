@@ -15,7 +15,12 @@ vi.mock("@tauri-apps/api/event", () => ({
   }),
 }));
 
-vi.mock("@/lib/tauri", () => ({
+// Only the IPC wrappers are mocked. `ptyExitSucceeded` / `parsePtyExitPayload`
+// are pure functions with no Tauri call behind them, so they are imported for
+// real — stubbing them would mean these tests no longer exercise how an exit
+// code becomes a success or a failure, which is the thing worth testing.
+vi.mock("@/lib/tauri", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/tauri")>()),
   createPtySession: vi.fn(),
   writePty: vi.fn(),
   killPty: vi.fn(),

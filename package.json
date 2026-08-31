@@ -1,7 +1,7 @@
 {
   "name": "packetbench",
   "private": true,
-  "version": "0.13.1",
+  "version": "0.13.2",
   "type": "module",
   "license": "Apache-2.0",
   "scripts": {
@@ -94,7 +94,6 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "jsdom": "^29.0.1",
-    "marked": "^18.0.11",
     "postcss": "^8.5.1",
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",

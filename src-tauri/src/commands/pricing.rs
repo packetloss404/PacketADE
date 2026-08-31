@@ -111,6 +111,11 @@ struct MatchRules {
     prefix: Vec<String>,
     #[serde(default)]
     contains: Vec<String>,
+    /// When true, candidates that still contain a `/` are ineligible for this
+    /// entry. Set on the free `local` row so a vendor-namespaced cloud route
+    /// (`qwen/qwen3-max`) cannot be zero-rated by a bare `qwen` prefix rule.
+    #[serde(default)]
+    exclude_namespaced: bool,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -153,9 +158,11 @@ fn table() -> &'static PricingTable {
 // Matching
 // ---------------------------------------------------------------------------
 
-/// Route prefixes stripped when building match candidates. `meta-llama/` is
-/// deliberately absent: it is a *cloud* route and must not collapse onto the
-/// free local `llama*` row.
+/// Route prefixes stripped when building match candidates. These are the ONLY
+/// namespaces treated as local/transparent routing. Cloud namespaces
+/// (`meta-llama/`, `qwen/`, `deepseek/`, …) are deliberately absent, and the
+/// free `local` row additionally sets `match.excludeNamespaced` so a surviving
+/// `vendor/model` candidate can never be zero-rated by a bare prefix rule.
 const ROUTE_PREFIXES: [&str; 7] = [
     "anthropic/",
     "openai/",
@@ -215,8 +222,18 @@ fn candidates(model: &str) -> Vec<String> {
     out
 }
 
+/// A candidate still carrying a `/` is a vendor-namespaced route whose
+/// namespace was NOT one of `ROUTE_PREFIXES` — i.e. a cloud route. Mirrors
+/// `isNamespaced` in `src/lib/modelPricing.ts`.
+fn is_namespaced(candidate: &str) -> bool {
+    candidate.contains('/')
+}
+
 fn entry_matches(entry: &ModelEntry, candidates: &[String]) -> bool {
     for c in candidates {
+        if entry.match_rules.exclude_namespaced && is_namespaced(c) {
+            continue;
+        }
         if entry.match_rules.equals.iter().any(|r| c == r) {
             return true;
         }
@@ -379,6 +396,10 @@ mod tests {
         tokens: GoldenTokens,
         #[serde(rename = "expectedUsd")]
         expected_usd: f64,
+        /// Optional `priced` / `free` / `unknown` assertion. Mandatory whenever
+        /// `expected_usd` is 0.0 — see `zero_cost_cases_declare_their_status`.
+        #[serde(rename = "expectedStatus", default)]
+        expected_status: Option<String>,
     }
 
     #[derive(Debug, Default, serde::Deserialize)]
@@ -421,7 +442,91 @@ mod tests {
                 case.expected_usd,
                 got
             );
+            if let Some(want) = &case.expected_status {
+                let want = match want.as_str() {
+                    "priced" => PricingStatus::Priced,
+                    "free" => PricingStatus::Free,
+                    "unknown" => PricingStatus::Unknown,
+                    other => panic!("{}: bad expectedStatus {:?}", case.name, other),
+                };
+                assert_eq!(
+                    pricing_status_for(&case.model),
+                    want,
+                    "{}: status mismatch",
+                    case.name
+                );
+            }
         }
+    }
+
+    /// A $0 cost is ambiguous on its own: it means *free* when a zero-rated row
+    /// matched and *unknown* when nothing matched. Conflating the two is what
+    /// let vendor-namespaced paid routes (`qwen/qwen3-max`) be billed at $0 and
+    /// labelled "free", which no budget guardrail would ever trip on. Every
+    /// zero-cost golden case must therefore say which one it is.
+    #[test]
+    fn zero_cost_cases_declare_their_status() {
+        let file: GoldenFile =
+            serde_json::from_str(CASES_JSON).expect("model-pricing-cases.json parses");
+        for case in &file.cases {
+            if case.expected_usd == 0.0 {
+                assert!(
+                    case.expected_status.is_some(),
+                    "{}: expectedUsd is 0.0 and must declare expectedStatus",
+                    case.name
+                );
+            }
+        }
+    }
+
+    /// The regression this file's `excludeNamespaced` rule exists to prevent.
+    ///
+    /// A vendor-namespaced id whose namespace is not one of `ROUTE_PREFIXES` is
+    /// a PAID cloud route. Before the fix, the free `local` row's bare `qwen` /
+    /// `deepseek` / `codellama` prefixes matched straight through the `/` and
+    /// zero-rated it. Enumerating OpenRouter live would have priced hundreds of
+    /// paid models at $0 — and the reprice path could not have rescued them,
+    /// because it only revisits models with NO entry.
+    #[test]
+    fn namespaced_cloud_routes_never_reach_the_free_local_row() {
+        for id in [
+            "qwen/qwen3-max",
+            "qwen/qwen3-coder",
+            "deepseek/deepseek-r1",
+            "deepseek/deepseek-chat",
+            "codellama/CodeLlama-70b-Instruct-hf",
+            "meta-llama/llama-3.3-70b-instruct",
+        ] {
+            assert!(
+                pricing_for(id).is_none(),
+                "{} must not resolve to a rate row",
+                id
+            );
+            assert_eq!(pricing_status_for(id), PricingStatus::Unknown, "{}", id);
+        }
+
+        // ...while genuinely local ids keep resolving to free.
+        for id in [
+            "llama3.3:70b",
+            "qwen2.5-coder:7b",
+            "deepseek-coder-v2",
+            "codellama:34b",
+            "ollama/qwen3:32b",
+            "ollama:deepseek-r1:14b",
+            "local/codellama:34b",
+        ] {
+            assert_eq!(pricing_status_for(id), PricingStatus::Free, "{}", id);
+        }
+
+        // ...and a namespaced route that DOES have a row is still billed.
+        assert_eq!(
+            pricing_status_for("meta-llama/llama-4-maverick"),
+            PricingStatus::Priced
+        );
+        assert_eq!(
+            pricing_status_for("anthropic/claude-sonnet-4-6"),
+            PricingStatus::Priced
+        );
     }
 
     /// The superset/disjoint distinction must come from the table, not from a

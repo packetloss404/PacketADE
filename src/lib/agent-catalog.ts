@@ -98,8 +98,25 @@ export const CHAT_AGENTS: ChatAgentEntry[] = API_PROVIDERS.map((p) => ({
   defaultModel: p.models[0]?.value ?? "",
   supportsApprovals: p.supportsApprovals ?? true,
   supportsSsh: !CHAT_LOCAL_ONLY.has(p.agentCli),
-  models: p.models,
+  // Copied, not aliased. `api-models.ts` freezes its arrays so an alias could
+  // not be mutated through anyway, but this module's own contract says it
+  // never touches either source, and a copy is what makes that true by
+  // construction rather than by the other file's continued good behaviour.
+  models: [...p.models],
 }));
+
+/**
+ * These rows are a MODULE-LOAD SNAPSHOT of the bundled catalog, and that is a
+ * deliberate limit, not an oversight.
+ *
+ * `CHAT_AGENTS` answers "what can this build launch?" — a static question with
+ * a static answer, asked by pickers that must render before any network call.
+ * It is NOT the place to ask "what models does this provider serve right now?":
+ * that answer arrives asynchronously, per-provider, and lands in
+ * `stores/liveModelStore`. A surface that shows a model list must resolve it
+ * through `lib/liveModels.resolveModelRows`, which prefers the live answer and
+ * falls back to these rows — never read `entry.models` as if it were current.
+ */
 
 /**
  * The five Terminal slots, in the historical WorkspaceView order. Faces come

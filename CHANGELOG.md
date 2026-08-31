@@ -7,6 +7,62 @@ For current direction, use [`ROADMAP.md`](./ROADMAP.md). For planning briefs and
 runbooks, use [`dev/README.md`](./dev/README.md). This file is history, not a
 task list.
 
+## [0.13.2] - 2026-08-30
+
+Windows artifacts, built 2026-08-30 from `5b534517`, **unsigned**:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `PacketBench_0.13.2_x64-setup.exe` (NSIS, 85.4 MiB) | `3c7a3f55374f5baee36fdf335d5a990093a4e280627d96337edd63da81fde563` |
+| `PacketBench_0.13.2_x64_en-US.msi` (133.2 MiB) | `c116a1642bdb7a66977e360f8f09c31f97fe0f0718d722bccd78a2b8c5cedacc` |
+
+Three defects, all found by **running section 2 of the acceptance matrix
+against the installed 0.13.1 package** rather than by reading the source. See
+`dev/acceptance.md` for what that run covered and what it did not.
+
+Gates at `5b534517`: `cargo check` clean, 976 Rust lib tests (2 ignored),
+`tsc --noEmit` 0 errors, `pnpm lint` 0 errors (9 pre-existing warnings),
+`vitest run` 2774/2774 across 287 files.
+
+### Fixed — a crashing CLI was indistinguishable from a clean exit
+
+Every part of the mechanism existed except the one that mattered. Rust emitted a
+real payload (`commands/pty.rs:538` — `exitCode`, `terminated`), and
+`parsePtyExitPayload` existed to read it. **Nothing called it.** All three
+`pty:exit` listeners took no parameter, so a CLI that access-violated on startup
+printed the same grey `[Session ended]` and set the same `done` status as one
+that finished its work.
+
+Both hooks now consume the payload through a single shared helper,
+`ptyExitSucceeded`, so the terminal pane and the transient runner cannot drift
+on what counts as a failure. A non-zero code prints in red with the code and
+sets the tab to `error`; the memory layer records `error` rather than `done`.
+Two cases stay successes deliberately: `terminated` — the user or an
+orchestrator killed it, which is not the CLI failing — and a `null` code,
+because "could not read the status" is an absence of evidence, not evidence of
+failure. Both hooks also carry the outcome across their buffering deferral;
+storing only the flag and re-calling `finish(true)` would have laundered a
+failure into a success one layer further down.
+
+### Fixed — a workspace whose folder is gone now says so where you clicked
+
+The reason was stated only inside the sidebar's FILES subtree, which is
+collapsed by default. The workspace opened to a blank mosaic and the click read
+as a no-op. `WorkspaceView` now probes with the existing `path_is_dir` command
+and renders the reason in the main pane, with the path and the fact that
+nothing has been deleted. Remote workspaces are skipped — their path is on the
+remote host and `path_is_dir` would answer about the wrong machine — and a
+failed probe stays silent rather than accusing the directory of being missing.
+
+### Fixed — the selected workspace is restored across a restart
+
+`activeWorkspaceId` was hardcoded to `null` at init and never persisted, so
+every launch landed on "Select a workspace from the sidebar" with the list and
+every session intact behind it. It is now stored under
+`packetbench:workspace-active-id` and **validated against the hydrated list on
+read**, so a workspace deleted or archived since the last run resolves to `null`
+instead of pointing the view at a ghost.
+
 ## [0.13.1] - 2026-08-30
 
 Windows artifacts, built 2026-08-30 from `8dc13780`, **unsigned**:

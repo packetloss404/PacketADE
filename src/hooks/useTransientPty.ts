@@ -4,6 +4,7 @@ import {
   createPtySession,
   killPty,
   listPtySessions,
+  ptyExitSucceeded,
   readPtyTranscript,
   writePty,
 } from "@/lib/tauri";
@@ -125,10 +126,15 @@ export function useTransientPty(opts: UseTransientPtyOptions): UseTransientPtyRe
         let buffering = true;
         const buffered: PtyOutputPayload[] = [];
         let exitWhileBuffering = false;
+        // Carry the outcome across the buffering deferral. Storing only the
+        // flag and re-calling `finish(true)` below would launder a failure
+        // into a success.
+        let bufferedExitSuccess = true;
         const finish = (success: boolean) => {
           if (finishedRef.current) return;
           if (buffering) {
             exitWhileBuffering = true;
+            bufferedExitSuccess = success;
             return;
           }
           finishedRef.current = true;
@@ -147,8 +153,8 @@ export function useTransientPty(opts: UseTransientPtyOptions): UseTransientPtyRe
               current.onOutput?.(output.data);
             }
           }),
-          listen<string>(ptyExitEvent(sid), () => {
-            finish(true);
+          listen<unknown>(ptyExitEvent(sid), (event) => {
+            finish(ptyExitSucceeded(event.payload));
           }),
         ]);
         unlistenersRef.current = [outputUnlisten, exitUnlisten];
@@ -169,7 +175,7 @@ export function useTransientPty(opts: UseTransientPtyOptions): UseTransientPtyRe
         const bufferedRemainder = bufferedPtyRemainder(replayed, transcript?.sequence, buffered);
         if (mountedRef.current && bufferedRemainder) current.onOutput?.(bufferedRemainder);
         buffering = false;
-        if (exitWhileBuffering) finish(true);
+        if (exitWhileBuffering) finish(bufferedExitSuccess);
 
         const sessions = await listPtySessions().catch(() => null);
         const liveSession = sessions?.find((s) => s.id === sid);
@@ -273,8 +279,8 @@ export async function runTransientPty(
         output += eventOutput.data;
       }
     }),
-    listen<string>(ptyExitEvent(sessionId), () => {
-      resolveExit(true);
+    listen<unknown>(ptyExitEvent(sessionId), (event) => {
+      resolveExit(ptyExitSucceeded(event.payload));
     }),
   ]);
 

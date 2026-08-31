@@ -541,6 +541,8 @@ pub fn run() {
             commands::ollama::list_ollama_models,
             commands::ollama::get_ollama_runtime_options,
             commands::ollama::set_ollama_runtime_options,
+            // Live per-provider model catalogs
+            commands::provider_models::list_provider_models,
             // LM2 — custom OpenAI-compatible endpoint
             commands::acp_engine_path::get_acp_engine_path,
             commands::acp_engine_path::set_acp_engine_path,
