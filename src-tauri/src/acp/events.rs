@@ -126,6 +126,15 @@ struct ConversationState {
     /// exactly once, when something other than a thought arrives).
     thinking: bool,
     tools: HashMap<String, ToolMeta>,
+    /// LRU stamp for idle eviction. A monotonic tick from [`Inner::tick`], not
+    /// a clock: answering "which was used least recently" needs an ordering,
+    /// not a time, and a counter keeps the tests deterministic.
+    last_used: u64,
+    /// Whether a prompt turn is in flight. Set when the turn is dispatched and
+    /// cleared when it settles, on BOTH the success and failure paths — a turn
+    /// that errored is over, and leaving this set would make the conversation
+    /// permanently unevictable.
+    turn_active: bool,
 }
 
 #[derive(Default)]
@@ -138,6 +147,8 @@ struct Inner {
     by_engine_session: HashMap<String, String>,
     /// Emitted permission id → the record needed to answer it.
     permissions: HashMap<String, PendingPermission>,
+    /// Monotonic source for [`ConversationState::last_used`].
+    tick: u64,
 }
 
 /// Conversation-level bookkeeping for the ACP transport. Guarded by a
@@ -293,6 +304,90 @@ impl AcpSessions {
     /// post-start `api_agent` command routes on.
     pub fn owns(&self, conversation_id: &str) -> bool {
         self.lock().conversations.contains_key(conversation_id)
+    }
+
+    /// Marks a conversation as most-recently-used. Called wherever the user
+    /// demonstrably touched it — creating, resuming, or prompting.
+    pub fn touch(&self, conversation_id: &str) {
+        let mut inner = self.lock();
+        inner.tick += 1;
+        let tick = inner.tick;
+        if let Some(entry) = inner.conversations.get_mut(conversation_id) {
+            entry.last_used = tick;
+        }
+    }
+
+    /// Records whether a prompt turn is in flight for this conversation.
+    pub fn set_turn_active(&self, conversation_id: &str, active: bool) {
+        let mut inner = self.lock();
+        if let Some(entry) = inner.conversations.get_mut(conversation_id) {
+            entry.turn_active = active;
+        }
+    }
+
+    /// Whether this conversation is doing something that eviction must not
+    /// interrupt.
+    ///
+    /// Three ways to be engaged, and all three matter:
+    ///  - a prompt turn is in flight;
+    ///  - a `session/load` replay is in flight (`replaying`), during which the
+    ///    engine is actively streaming history at us;
+    ///  - an emitted permission request is still unanswered — evicting here
+    ///    would strand a user staring at an approval dialog whose session no
+    ///    longer exists.
+    pub fn is_engaged(&self, conversation_id: &str) -> bool {
+        let inner = self.lock();
+        let busy = inner
+            .conversations
+            .get(conversation_id)
+            .map(|c| c.turn_active || c.replaying)
+            .unwrap_or(false);
+        busy
+            || inner
+                .permissions
+                .values()
+                .any(|p| p.conversation_id == conversation_id)
+    }
+
+    /// Least-recently-used resident sessions beyond `max_resident`, oldest
+    /// first, as `(conversation_id, engine_session_id)`.
+    ///
+    /// Engaged conversations are filtered out BEFORE the cap is applied, so a
+    /// busy session is never evicted and never displaces an idle one from the
+    /// eviction list. That means the resident count can legitimately exceed
+    /// the cap while several turns are in flight; it settles as they finish.
+    pub fn idle_eviction_candidates(&self, max_resident: usize) -> Vec<(String, String)> {
+        let inner = self.lock();
+        let mut resident: Vec<(&String, &ConversationState)> = inner
+            .conversations
+            .iter()
+            .filter(|(_, c)| c.engine_session.is_some())
+            .collect();
+        // Newest first, so everything past `max_resident` is the idle tail.
+        resident.sort_by(|a, b| b.1.last_used.cmp(&a.1.last_used));
+
+        let mut kept = 0usize;
+        let mut out = Vec::new();
+        for (conversation_id, state) in resident {
+            let engaged = state.turn_active
+                || state.replaying
+                || inner
+                    .permissions
+                    .values()
+                    .any(|p| &p.conversation_id == conversation_id);
+            if engaged {
+                continue;
+            }
+            if kept < max_resident {
+                kept += 1;
+                continue;
+            }
+            if let Some(engine) = &state.engine_session {
+                out.push((conversation_id.clone(), engine.clone()));
+            }
+        }
+        out.reverse(); // oldest first
+        out
     }
 
     /// Drops a conversation and everything hanging off it, returning the
@@ -876,6 +971,127 @@ mod tests {
 
     fn update(body: Value) -> Value {
         json!({ "sessionId": "sess-1", "update": body })
+    }
+
+    /// Registers `n` sessions, touched in ascending order so `conv-0` is the
+    /// least recently used.
+    fn resident_sessions(n: usize) -> AcpSessions {
+        let sessions = AcpSessions::default();
+        for i in 0..n {
+            let conv = format!("conv-{i}");
+            sessions.register(&conv, &format!("engine-{i}"), "/tmp");
+            sessions.touch(&conv);
+        }
+        sessions
+    }
+
+    fn evicted_ids(sessions: &AcpSessions, cap: usize) -> Vec<String> {
+        sessions
+            .idle_eviction_candidates(cap)
+            .into_iter()
+            .map(|(conv, _)| conv)
+            .collect()
+    }
+
+    #[test]
+    fn nothing_is_evicted_below_the_cap() {
+        let sessions = resident_sessions(5);
+        assert!(sessions.idle_eviction_candidates(5).is_empty());
+    }
+
+    #[test]
+    fn evicts_least_recently_used_first_and_reports_the_engine_session() {
+        let sessions = resident_sessions(8);
+        let candidates = sessions.idle_eviction_candidates(5);
+        assert_eq!(
+            candidates,
+            vec![
+                ("conv-0".to_string(), "engine-0".to_string()),
+                ("conv-1".to_string(), "engine-1".to_string()),
+                ("conv-2".to_string(), "engine-2".to_string()),
+            ],
+            "oldest first, each paired with the engine session to close"
+        );
+    }
+
+    #[test]
+    fn touching_a_session_rescues_it_from_eviction() {
+        let sessions = resident_sessions(8);
+        sessions.touch("conv-0");
+        assert!(
+            !evicted_ids(&sessions, 5).contains(&"conv-0".to_string()),
+            "the oldest session was just used, so it is now the newest"
+        );
+    }
+
+    #[test]
+    fn a_running_turn_is_never_evicted() {
+        let sessions = resident_sessions(8);
+        sessions.set_turn_active("conv-0", true);
+        let evicted = evicted_ids(&sessions, 5);
+        assert!(!evicted.contains(&"conv-0".to_string()));
+        // Engaged sessions are filtered BEFORE the cap, so the busy one does
+        // not displace an idle session from the eviction list: five IDLE
+        // sessions stay resident (conv-3..conv-7) alongside the busy conv-0,
+        // leaving only two to evict. The resident count therefore exceeds the
+        // cap while a turn is in flight, and settles when it finishes.
+        assert_eq!(evicted, vec!["conv-1", "conv-2"]);
+    }
+
+    #[test]
+    fn a_finished_turn_becomes_evictable_again() {
+        let sessions = resident_sessions(8);
+        sessions.set_turn_active("conv-0", true);
+        sessions.set_turn_active("conv-0", false);
+        assert!(evicted_ids(&sessions, 5).contains(&"conv-0".to_string()));
+    }
+
+    #[test]
+    fn a_replaying_session_is_never_evicted() {
+        // `session/load` is in flight — the engine is streaming history at us.
+        let sessions = resident_sessions(8);
+        sessions.set_replaying("conv-0", true);
+        assert!(!evicted_ids(&sessions, 5).contains(&"conv-0".to_string()));
+    }
+
+    #[test]
+    fn a_session_holding_an_unanswered_permission_is_never_evicted() {
+        // Evicting here would strand the user at an approval dialog whose
+        // session no longer exists.
+        let sessions = resident_sessions(8);
+        let pending = PendingPermission {
+            id: "perm-1".to_string(),
+            raw_id: json!("perm-1"),
+            conversation_id: "conv-0".to_string(),
+            options: vec![],
+        };
+        sessions.lock().permissions.insert(pending.id.clone(), pending);
+        assert!(!evicted_ids(&sessions, 5).contains(&"conv-0".to_string()));
+    }
+
+    #[test]
+    fn a_conversation_with_no_engine_session_is_not_a_candidate() {
+        // Pending config exists before `session/new` returns; there is nothing
+        // resident to close.
+        let sessions = resident_sessions(6);
+        sessions.set_pending_config("conv-pending", "/tmp", None, None);
+        sessions.touch("conv-pending");
+        let evicted = evicted_ids(&sessions, 5);
+        assert!(!evicted.contains(&"conv-pending".to_string()));
+        assert_eq!(evicted, vec!["conv-0"]);
+    }
+
+    #[test]
+    fn is_engaged_covers_all_three_states() {
+        let sessions = resident_sessions(1);
+        assert!(!sessions.is_engaged("conv-0"));
+        sessions.set_turn_active("conv-0", true);
+        assert!(sessions.is_engaged("conv-0"));
+        sessions.set_turn_active("conv-0", false);
+        sessions.set_replaying("conv-0", true);
+        assert!(sessions.is_engaged("conv-0"));
+        sessions.set_replaying("conv-0", false);
+        assert!(!sessions.is_engaged("conv-0"));
     }
 
     fn translate(state: &mut ConversationState, body: Value) -> Vec<Emission> {

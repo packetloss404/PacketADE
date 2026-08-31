@@ -255,6 +255,13 @@ pub async fn start_session(
         }
     };
 
+    // This conversation is now the most recently used, and a new session just
+    // became resident — so this is the moment to bound engine-side growth.
+    // Eviction never touches an engaged conversation, and an evicted one is
+    // resumed transparently by `session/load` on re-selection.
+    state.sessions.touch(&conversation_id);
+    super::evict_idle_sessions(state).await;
+
     info!(
         conversation_id = %conversation_id,
         engine_session = %engine_session,
@@ -299,6 +306,11 @@ pub fn send_message(
     if state.sessions.engine_id(&conversation_id).is_none() {
         return Err(format!("No active ACP session: {conversation_id}"));
     }
+    // Most-recently-used, and busy: both must be recorded BEFORE the turn is
+    // spawned. Marking it after would leave a window in which idle eviction
+    // could close the session this turn is about to prompt.
+    state.sessions.touch(&conversation_id);
+    state.sessions.set_turn_active(&conversation_id, true);
     spawn_turn(app.clone(), conversation_id, message);
     Ok(())
 }
@@ -323,6 +335,10 @@ fn spawn_turn(app: AppHandle, conversation_id: String, text: String) {
         };
 
         let result = super::prompt_on(&state, &engine_session, &text).await;
+        // The turn is over on BOTH arms below. Cleared here, before either is
+        // taken, so no early return or future edit can leave the conversation
+        // permanently marked busy and therefore permanently unevictable.
+        state.sessions.set_turn_active(&conversation_id, false);
         // A turn that ends mid-thought or mid-tool must not leave the frontend
         // spinning, whatever route it ended by.
         events::finish_thinking(&app, &state.sessions, &conversation_id);
