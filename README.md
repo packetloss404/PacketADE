@@ -55,9 +55,12 @@ The main-shell/right-dock decisions, Workspace/Agents restructuring, and the
 six-group Settings information architecture are implemented. The local-shell
 feature is committed, packaged, and command-probed on Windows; remaining shell
 work is the explicit interactive packaged matrix, MS4 responsive proof, and the smaller residue in
-[`backlog.md`](./backlog.md); Remote Agents has selected the standalone Rust
-`packet-relay` service and remains paused on its two unresolved Sprint-0
-decisions: auth provider and the E2EE launch gate.
+[`backlog.md`](./backlog.md). Remote Agents resumed on 2026-08-27 and completed
+Sprint 0 on 2026-09-01 against the PacketBench-owned Rust `packet-relay`
+service. The feature remains disabled and fail-closed; Sprint 1 and product auth
+have not started. Auth direction is resolved in-house (passkey/magic-link on
+PostgreSQL), and encrypted agent, approval, and file payloads remain a hard gate
+before any external beta.
 
 ## What It Does
 

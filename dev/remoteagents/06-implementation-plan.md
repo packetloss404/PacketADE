@@ -10,7 +10,7 @@ PostgreSQL state, replay, audit, Web Push) is now wholly funded by this
 program rather than shared with another; re-cut the sprint plan if that
 changes the capacity available. See `10-pause-record.md` §1.3.
 
-## Sprint 0 - Foundations And Decisions
+## Sprint 0 - Foundations And Decisions — COMPLETE 2026-09-01
 
 Goal: lock protocol, repo layout, feature flag, and team contracts.
 
@@ -37,16 +37,27 @@ Deliverables:
   managed-PostgreSQL durability, region). Record the answers in
   `09-open-decisions.md`.
 
+Current state (2026-09-01): the shared protocol package, PWA skeleton, workspace
+build wiring, feature-gated relay route/protocol skeleton, isolated desktop
+feature flag, and six-agent ownership map exist. `pnpm remoteagents:check`, the
+three focused desktop flag tests, and PacketRelay's 57-test `remote-agents`
+feature suite pass. Railway-managed PostgreSQL is live over private
+`DATABASE_URL`; both services are in `us-west2`; the `/ready` health check uses
+a 30-second timeout; the final IaC plan is clean. Source deployment
+`471c18b3-dcc1-49d4-8629-facc7a02b73b` passed `/health`, `/ready`, and legacy
+WSS smoke while `/ws/host` remained feature-off (`404`). Sprint 0 is complete.
+Remote Agents remains disabled/fail-closed, and Sprint 1/auth has not started.
+
 Checkpoint:
 
-- Shared protocol package builds.
-- `packet-relay` starts locally with its existing protocols intact and the
+- [x] Shared protocol package builds.
+- [x] `packet-relay` starts locally with its existing protocols intact and the
   PacketBench routes feature-gated.
-- `packet-relay` deploys to Railway from `railway.json` and passes an
+- [x] `packet-relay` deploys to Railway from `.railway/railway.ts` and passes an
   HTTPS health check plus a real WSS upgrade.
-- PWA dev server starts.
-- Desktop compiles with remote feature flag off.
-- Six-agent ownership map is posted.
+- [x] PWA dev server starts.
+- [x] Desktop compiles with remote feature flag off.
+- [x] Six-agent ownership map is posted in `07-six-agent-runbook.md`.
 
 ## Sprint 1 - Relay And Host Presence
 
@@ -237,7 +248,7 @@ A user with PacketBench desktop running on Windows signs into Packet Cloud,
 enables Remote Agents, opens the PWA on iPhone, signs in, requests access,
 approves on desktop, starts an `api-openai-agents` or `api-claude-oauth`
 (historical id for the API-key-backed Claude Agent SDK row) conversation against
-`D:\projects\PacketADE`, receives streaming output, approves one risky tool,
+`D:\projects\PacketBench`, receives streaming output, approves one risky tool,
 cancels or completes the run, and then opens the same conversation on desktop.
 
 Pass criteria:

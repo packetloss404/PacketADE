@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://packetbench.app/schemas/remote-envelope-v1.schema.json",
+  "title": "PacketBench RemoteEnvelopeV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "envelopeId",
+    "traceId",
+    "accountId",
+    "hostId",
+    "channel",
+    "type",
+    "streamId",
+    "createdAt"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "envelopeId": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "traceId": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "accountId": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "hostId": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "deviceId": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "conversationId": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "channel": {
+      "enum": ["presence", "agent", "approval", "host", "control", "file", "push"]
+    },
+    "type": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "streamId": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "seq": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "ack": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "idempotencyKey": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|[+-](?:[01]\\d|2[0-3]):[0-5]\\d)$"
+    },
+    "ttlMs": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "keyId": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "ciphertext": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "signature": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "payload": {}
+  }
+}

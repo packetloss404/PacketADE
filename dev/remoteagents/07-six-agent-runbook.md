@@ -1,6 +1,8 @@
 # 07 - Six-Agent Runbook
 
-This is the kickoff plan for a six-agent team. Each agent owns a separate write area to reduce conflicts.
+This is the kickoff plan and posted Sprint 0 ownership map for a six-agent team.
+Each agent owns a separate write area to reduce conflicts. Its publication
+satisfies the ownership-map item in the Sprint 0 checkpoint.
 
 ## Ground Rules
 
@@ -198,17 +200,19 @@ Day 5:
 - Manual iOS/Android checks.
 - Docs/runbook updates.
 
-## Tomorrow's First 90 Minutes
+## Sprint 0 Kickoff Checklist
 
 1. Assign owners and branches.
-2. Pick the auth provider for v1 or explicitly choose dev auth for Sprint 1.
-3. Agree on the Railway service/project naming, the managed PostgreSQL
+2. Carry forward the resolved in-house auth direction: passkey/magic-link in
+   the Rust relay on PostgreSQL. A dev identity scaffold is acceptable for
+   internal smoke tests but is not the product auth implementation.
+3. Confirm the Railway service/project naming, the managed PostgreSQL
    instance, and domain placeholders (deployment target resolved 2026-08-27;
    see `02-architecture.md` § Deployment target).
 4. Freeze Sprint 1 protocol field names.
 5. Create the integration branch, recommended `codex/remote-agents-integration`.
 6. Create the `remoteProtocolVersion = 1` fixture package.
-7. Decide whether PWA lives in `remoteagents/pwa` or another workspace path.
+7. Use the resolved in-repository PWA location at `remoteagents/pwa`.
 8. Start with mocked crypto for smoke only while real E2EE test vectors are built.
 9. Create a fake desktop and fake PWA simulator so relay/PWA/desktop lanes can test independently.
 10. End the meeting with one visible target: "trusted PWA sees desktop host online."

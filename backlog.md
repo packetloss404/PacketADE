@@ -1,6 +1,6 @@
 # PacketBench Backlog
 
-Last reconciled: 2026-08-31
+Last reconciled: 2026-09-01
 
 This is the single task register for work that has not shipped or has not yet
 earned its required real/package proof. Completed implementation history belongs
@@ -137,6 +137,25 @@ Remote Agents relay architecture and code location are already decided: extend
 the standalone Rust service at `D:\projects\packetrelay`; keep shared schemas
 and the initial PWA under PacketBench's `remoteagents/` workspace. See
 [`dev/remoteagents/09-open-decisions.md`](./dev/remoteagents/09-open-decisions.md).
+
+## Remote Agents implementation
+
+- **CLOSED 2026-09-01 - Sprint 0 foundations.** Shared protocol/PWA/workspace
+  foundations, feature-gated PacketRelay skeleton, fail-off desktop flag,
+  ownership map, managed PostgreSQL, and the feature-off production deployment
+  are verified. Both services run in `us-west2`; live health and legacy WSS
+  smoke pass; the final IaC plan is clean.
+- **P1 - Sprint 1 relay and host presence. NOT STARTED.** First close the
+  replay/ACK recovery, ticket reserve/finalize, and endpoint-to-endpoint
+  hello/E2EE security gates in
+  the transport decision record. Then implement the approved dev-auth ticket
+  path, PostgreSQL trust state, host/device sockets, presence, heartbeat,
+  revocation, and reconnect behavior in
+  [`dev/remoteagents/06-implementation-plan.md`](./dev/remoteagents/06-implementation-plan.md).
+  Keep Remote Agents disabled/fail-closed until that slice earns its gates.
+  Product passkey/magic-link auth is also not started. Before external beta,
+  enable PostgreSQL PITR, schedule volume backups, and pass an offsite logical
+  dump restore drill.
 
 ## Release and real-environment proof
 

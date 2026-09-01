@@ -79,23 +79,36 @@ model. Public deployments expose only HTTPS/WSS.
 
 **Resolved 2026-08-27** (see `09-open-decisions.md` § Relay Deployment Target).
 The relay deploys to Railway, replacing the Google Cloud Run deployment it ran
-while it served Syndicate. `railway.json` in the relay repo already builds the
-root `Dockerfile`; the Cloud Run path (`cloudbuild.yaml`, `deploy.sh`) was
-deleted on 2026-08-28. This does not reopen the 2026-08-02 decision to use the
-Rust relay and reject Cloudflare — Railway answers only *where that relay runs*.
+while it served Syndicate. Its repository configuration migrated locally from
+deprecated `railway.json` to `.railway/railway.ts` on 2026-09-01; the generated
+service graph preserves the root `Dockerfile` build. The live production
+migration cleared the legacy Config File setting, added Railway-managed
+PostgreSQL, injected its private-network `DATABASE_URL` into `packet-relay`,
+placed both services in `us-west2`, and configured the relay health check as
+`/ready` with a 30-second timeout. The final IaC plan is clean. Railway
+canonicalizes default-equivalent restart fields out of the desired graph; the
+live manifest retains `ON_FAILURE` with ten retries. The Cloud Run path
+(`cloudbuild.yaml`, `deploy.sh`) was deleted on 2026-08-28. This does not reopen
+the 2026-08-02 decision to use the Rust relay and reject Cloudflare — Railway
+answers only *where that relay runs*.
 
 **DEPLOYED 2026-08-28.** The relay is live on Railway in workspace
-`FIFTY ELEVEN AI`, project `packet-relay`, environment `production`, built from
-`packetrelay@b2bcff5` (the commit that removed `/v1/product-route`):
+`FIFTY ELEVEN AI`, project `packet-relay`, environment `production`. The initial
+Railway deployment was built from `packetrelay@b2bcff5` (the commit that removed
+`/v1/product-route`):
 
     https://packet-relay-production.up.railway.app
 
-Verified on deploy: `/health` → `200 ok`, `/ready` → `200 ready`. A plain GET to
+The Sprint 0 source deployment succeeded as Railway deployment
+`471c18b3-dcc1-49d4-8629-facc7a02b73b`. Post-deploy verification returned
+`/health` → `200 ok` and `/ready` → `200 ready`; `/ws/host` returned `404` with
+the Remote Agents feature off, proving the new surface remains fail-closed. A
+live legacy WSS smoke reached `session_ready`, with Railway reporting
+`railway/us-west2`. A plain GET to
 `/v1/product-route` returns 502, which is the correct new behaviour — the path
 is no longer reserved, so it classifies as an ordinary legacy WebSocket target
-and a non-upgrade request fails. Nothing PacketBench-specific is served yet;
-Remote Agents has zero implementation and this is the deployment substrate for
-Sprint 0.
+and a non-upgrade request fails. The PacketBench-specific relay route/protocol
+skeleton remains feature-gated and is not a production Remote Agents surface.
 
 The Google Cloud Run service that previously ran this relay
 (`fiery-plate-504923-s1` / `us-central1`) is a separate teardown outside both
@@ -125,31 +138,23 @@ What must be configured, not assumed:
   replica and do not enable horizontal scaling before a coordination layer
   exists.
 
-Open verifications (Sprint 0 — record answers here and in
-`09-open-decisions.md`; do not design against a guess):
+Sprint 0 deployment verifications (answered 2026-09-01):
 
-1. **Edge WebSocket connection lifetime.** Cloud Run bounded every WebSocket
-   by its request timeout (3,600 s max), so periodic forced reconnects were
-   guaranteed and the relay's docs treat reconnect as normal even when
-   healthy. Railway's maximum connection lifetime and idle-timeout behavior
-   for WebSockets is **not established here** — verify before Sprint 1 sizes
-   heartbeat and resume intervals. Resume/replay remains mandatory either way
-   (mobile networks force reconnects regardless), so this changes tuning, not
-   architecture.
-2. **Deploy-time instance overlap.** Railway keeps a previous deployment
-   serving until the replacement is healthy, so two relay processes can be
-   live briefly across a deploy — the same best-effort singleton caveat that
-   Cloud Run's max-instances=1 had. Confirm the exact overlap semantics and
-   decide whether per-`{hostId, conversationId}` sequence assignment needs a
-   database-backed guard rather than a process-local counter.
-3. **Managed PostgreSQL durability.** Railway's managed PostgreSQL is the
-   intended provisioning path (same project, private networking,
-   `DATABASE_URL`). Whether its backup/point-in-time-recovery guarantees are
-   sufficient for the audit log and replay store before an external private
-   beta is unanswered — check before the Sprint 5 security baseline.
-4. **Region selection.** The Cloud Run deployment ran in `us-central1`. The
-   Railway region has not been chosen; pick it against expected client
-   locations and co-locate the database with the relay.
+1. **Edge WebSocket connection lifetime.** Railway documents WebSocket
+   connections as indefinite, including when idle; there is no platform request
+   timeout equivalent to Cloud Run's 3,600-second cap. The live legacy WSS smoke
+   passed. Heartbeats and resume/replay remain mandatory because mobile networks,
+   sleeping PWAs, and ordinary disconnects still break connections.
+2. **Deploy-time instance overlap.** Railway's default overlap is `0` and is
+   configurable. The current single-replica topology therefore does not overlap
+   application processes during a normal deploy. Durable relay validation and
+   storage of producer-assigned per-stream sequences is still required before
+   scaling or enabling overlap.
+3. **Managed PostgreSQL durability.** PostgreSQL is live on Railway's private
+   network, but the current single-node database has PITR disabled. It is **not
+   sufficient for an external beta** until PITR is enabled, scheduled volume
+   backups are configured, and an offsite logical-dump restore drill succeeds.
+4. **Region selection.** Both `packet-relay` and PostgreSQL run in `us-west2`.
 
 ### In-process host router
 
@@ -160,7 +165,8 @@ Responsibilities:
 
 - track one active desktop socket
 - track zero or more device sockets
-- assign per-session sequence numbers
+- validate and persist producer-assigned sequence numbers per
+  `{hostId, streamId}` without mutating authenticated envelopes
 - route commands to desktop
 - route events to devices
 - enforce host/device authorization
@@ -172,8 +178,9 @@ Responsibilities:
 The v1 deployment remains deliberately single-instance because live routing is
 process-local. A later scaling milestone may add a broker/coordination layer, but
 the protocol must not depend on one hosting provider. "Single instance" is
-best-effort on any platform that overlaps deployments — see open verification 2
-under Deployment target.
+best-effort on any platform that overlaps deployments. Railway currently uses
+the verified default overlap of `0`; revisit database-backed coordination before
+changing that setting or scaling beyond one replica.
 
 ### PostgreSQL
 
@@ -195,9 +202,11 @@ Relational metadata:
 
 PostgreSQL is the deployed system of record. Local development may use an
 isolated disposable database, but production behavior must be tested against
-PostgreSQL rather than a different persistence model. The deployed instance is
-Railway's managed PostgreSQL, co-located with the relay service; its durability
-guarantees are an open pre-beta verification (see Deployment target).
+PostgreSQL rather than a different persistence model. Railway-managed
+PostgreSQL is live beside the relay in `us-west2`, reached through its private
+`DATABASE_URL`. Its current single-node, PITR-off posture is an internal
+development substrate only; the backup/PITR/restore-drill gate above must close
+before external beta.
 
 ### S3-compatible object storage
 
@@ -435,7 +444,8 @@ Stores:
 
 - Desktop continues running.
 - The relay persists encrypted replay events in PostgreSQL.
-- PWA reconnects with `resume_after`.
+- PWA reconnects with bounded `{ streamId, afterSeq }` cursors in its signed
+  `connection.hello`.
 - If replay is too old, PWA requests a fresh conversation snapshot from desktop.
 
 ### Relay Restart

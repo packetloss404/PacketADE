@@ -122,7 +122,7 @@ Source: [OWASP API Security Top 10 2023](https://owasp.org/API-Security/editions
 
 Recommendation:
 
-- Treat every `desktopId`, `deviceId`, `conversationId`, and `sessionId` as hostile user input.
+- Treat every `hostId`, `deviceId`, `conversationId`, and `sessionId` as hostile user input.
 - Check owner/tenant and capability on each request.
 - Rate limit per account, per desktop, per device, per IP, and per action class.
 - Apply tighter limits to sign-in, access requests, push sends, and start-session.

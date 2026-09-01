@@ -1,13 +1,16 @@
 # PacketBench Remote Agents
 
-Status: **ACTIVE — resumed by owner decision 2026-08-27** (paused 2026-08-16
-to 2026-08-27) — read [`10-pause-record.md`](./10-pause-record.md) first; it
-is the entry point (state of record, staleness map, invariants, ordered
-resume runbook). Implementation is still zero: Sprint 0 is the next step, and
-**no blocking owner decision remains** — auth was resolved on 2026-08-28 in
-favour of building passkey/magic-link into the relay. The planning package
-below remains the design of record.
-Last updated: 2026-08-27
+Status: **ACTIVE — Sprint 0 completed 2026-09-01** (resumed by owner decision
+2026-08-27 after an eleven-day pause). Read
+[`10-pause-record.md`](./10-pause-record.md) for the historical pause and
+resumption record. **No blocking owner decision remains** — auth was resolved
+on 2026-08-28 in favour of building passkey/magic-link into the relay, and the
+E2EE pre-beta gate remains ratified. The shared protocol package, PWA skeleton,
+workspace build wiring, feature-gated relay route/protocol skeleton, isolated
+desktop feature flag, and Railway/PostgreSQL substrate satisfy the Sprint 0
+checkpoint. Remote Agents remains disabled and fail-closed in production;
+Sprint 1 host presence and product auth have not started.
+Last updated: 2026-09-01
 
 This directory is the canonical implementation brief for **PacketBench Remote Agents**: a cloud-relayed, PWA-first way to use PacketBench Agents from a phone while the desktop app keeps ownership of providers, models, secrets, workspaces, MCP config, permissions, and execution.
 
@@ -51,10 +54,11 @@ The remote feature should project that desktop capability to mobile without dupl
 - [04-security.md](./04-security.md) - auth, device trust, encryption, revocation, threat model
 - [05-pwa.md](./05-pwa.md) - PWA UX, screens, install, push, offline/reconnect behavior
 - [06-implementation-plan.md](./06-implementation-plan.md) - sprints, milestones, checkpoints, ownership
-- [07-six-agent-runbook.md](./07-six-agent-runbook.md) - tomorrow's six-agent execution split
+- [07-six-agent-runbook.md](./07-six-agent-runbook.md) - Sprint 0 six-agent ownership split and kickoff checklist
 - [08-testing.md](./08-testing.md) - unit, integration, security, load, PWA, manual iOS/Android checks
-- [09-open-decisions.md](./09-open-decisions.md) - unresolved choices and decision log
-- [10-pause-record.md](./10-pause-record.md) - pause/resumption record, state of record, staleness map, resume runbook
+- [09-open-decisions.md](./09-open-decisions.md) - live decision ledger and dated decision log
+- [10-pause-record.md](./10-pause-record.md) - historical pause/resumption record, invariants, and pickup context
+- [11-transport-contract-decisions.md](./11-transport-contract-decisions.md) - accepted identity/persistence boundaries and the replay/ACK/ticket/hello/E2EE security gates that must close before Sprint 1 transport implementation
 - [research-brief.md](./research-brief.md) - research synthesis and source index
 
 ## Critical Implementation Principle

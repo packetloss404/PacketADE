@@ -1,10 +1,9 @@
 # 10 - Pause and Resumption Record
 
-**Status: ACTIVE — resumed by owner decision, 2026-08-27** (paused 2026-08-16;
-the pause held for eleven days). This document remains the single entry point
-for the Remote Agents program. A session (human or agent) picking the program
-up should read this file first, then `09-open-decisions.md`, before touching
-anything else.
+**Status: HISTORICAL RECORD — program active; Sprint 0 completed 2026-09-01.**
+The owner resumed the program on 2026-08-27 after an eleven-day pause. For live
+status, start with `README.md` and `09-open-decisions.md`; use this document for
+the pause/resumption history, invariants, and pickup context.
 
 The pause is preserved below as history, not as noise: it was a deliberate
 sequencing decision made during a blocker review, not neglect, and the reasons
@@ -42,9 +41,14 @@ the same day:
   Cloud Run deployment the relay ran while it served Syndicate. It does not
   reopen the 2026-08-02 relay-architecture decision (Rust service, Cloudflare
   rejected); Railway is the answer to *where the chosen relay runs*, which
-  that decision never fixed. `railway.json` already exists in the relay repo
-  and builds the root `Dockerfile`; the Cloud Run path (`cloudbuild.yaml`,
-  `deploy.sh`, Artifact Registry) is the retired one.
+  that decision never fixed. The relay's repository configuration migrated
+  locally from deprecated `railway.json` to `.railway/railway.ts` on 2026-09-01
+  with a validated service graph; production cleared the legacy Config File
+  setting, added managed PostgreSQL, injected its private `DATABASE_URL`, and
+  placed both services in `us-west2`. The final IaC plan is clean. Railway
+  canonicalizes its default-equivalent restart fields out of the desired graph;
+  its live manifest retains `ON_FAILURE` with ten retries. The Cloud Run path
+  (`cloudbuild.yaml`, `deploy.sh`, Artifact Registry) is retired.
 
 ### 1.3 The premise that died, and what it costs
 
@@ -77,22 +81,23 @@ surface. That was recorded here as an open relay-repo question on the
 understanding that the route backed a live Syndicate deployment. **That
 understanding was wrong.** The owner confirmed on 2026-08-28 that the route is
 not serving live traffic, and the decision is to **cut it** — see
-`09-open-decisions.md` § Relay `/v1/product-route` disposition. The removal
-happens in the relay repo, ahead of the Railway migration.
+`09-open-decisions.md` § Relay `/v1/product-route` disposition. The removal was
+completed in the relay repo at `b2bcff5`, before the Railway deployment.
 
 ## 2. State of record
 
-### Implementation: zero
+### Implementation: Sprint 0 complete
 
-Verified absent again on 2026-08-27 (and originally on 2026-08-16): no root
-`remoteagents/` workspace, no `src-tauri/src/commands/remote_agents/`, no
-`src/stores/remoteAgentsStore.ts`, and zero `remote_agents` / `remoteAgents`
-references in `src`, `src-tauri/src`, or `agent-sidecar`. The program is 100%
-planning. Nothing was built during the pause and nothing has been built since.
+The implementation-zero statement was accurate through 2026-08-31. Sprint 0
+completed on 2026-09-01 with the shared protocol package, PWA skeleton,
+workspace build wiring, feature-gated PacketRelay route/protocol skeleton,
+isolated desktop feature flag, ownership map, and verified Railway/PostgreSQL
+substrate. These are foundations only: Remote Agents remains disabled and
+fail-closed, and Sprint 1/product auth has not started.
 
 ### Planning: complete
 
-Eleven markdown docs (01–09, README, research-brief) plus two HTML war-room
+Thirteen markdown docs (01–11, README, research-brief) plus two HTML war-room
 briefs (~110 KB). The implementation plan is seven sprints (0–6) sized for a
 six-agent team with separate write areas (Rust Relay/Data, Desktop Remote
 Gateway, Backend Conversation Service, PWA, Security/Auth, QA/Protocol/Docs/
@@ -115,7 +120,7 @@ envelope ceiling.
 | **Relay deployment target** | **Resolved 2026-08-27** — Railway (replaces Cloud Run). Does not reopen the 2026-08-02 architecture decision. |
 | Payload-encryption launch gate | **Resolved 2026-08-16** — plaintext (TLS-only) for local/internal dev only; encrypted agent/approval/file payloads are a hard gate before any external private beta. Unchanged by the resumption. |
 | **Auth provider** | **Resolved 2026-08-28** — build passkey/magic-link auth into the relay (Rust on PostgreSQL), fully owned. The owner accepted the ownership burden explicitly. No blocking owner decision remains. See §2 and `09-open-decisions.md` § Auth Provider. |
-| Railway deployment questions (edge WS connection lifetime, deploy-time instance overlap, managed-PostgreSQL durability, region) | **Open, Sprint-0 verification** — see `02-architecture.md` § Deployment target |
+| Railway deployment questions (edge WS connection lifetime, deploy-time instance overlap, managed-PostgreSQL durability, region) | **Verified 2026-09-01** — WSS indefinite even idle; overlap defaults to `0`; relay and PostgreSQL in `us-west2`; PostgreSQL is live privately but PITR-off single-node durability is internal-only until PITR, scheduled volume backups, and an offsite logical restore drill. See `02-architecture.md` |
 | Relay `/v1/product-route` disposition after the Syndicate separation | **Resolved and DONE 2026-08-28** — cut, executed in the relay repo as `b2bcff5`. Bridge/broadcast/room were explicitly *not* cut; they are a separate inherited lineage. |
 | Backend conversation persistence shape | Open, non-blocking (recommendation written: minimal Rust DTO for MVP) |
 | Native iOS strategy | Deferred until after PWA beta |
@@ -189,9 +194,9 @@ Read this table before trusting any doc.
 
 | Artifact | Trust at resume |
 | --- | --- |
-| `09-open-decisions.md` | **Authoritative** — the live decision ledger, updated 2026-08-27. |
+| `09-open-decisions.md` | **Authoritative** — the live decision ledger. |
 | `01-product-scope.md`, `04-security.md`, `05-pwa.md`, `06-implementation-plan.md`, `07-six-agent-runbook.md`, `08-testing.md` | Design of record; sound unless a resume step below invalidates a specific assumption. `06`'s sprint sizing predates the cost reweighting in §1.3. |
-| `02-architecture.md`, `03-protocol.md` | Design of record **but must be re-baselined once against `D:\projects\packetrelay` HEAD** — the plan's "extend with `/ws/host` + `/ws/device`" and single-instance-router assumptions were written before the relay's `/v1/product-route` surface existed. The relay is no longer moving under this program (§1.3), so this is a one-time reconciliation, not continuous drift management. `02` now carries the Railway deployment notes and their open questions. |
+| `02-architecture.md`, `03-protocol.md` | Design of record, re-baselined against `D:\projects\packetrelay` after `/v1/product-route` was removed at `b2bcff5`. `02` carries the answered Sprint 0 Railway deployment verifications and the remaining external-beta durability gate. |
 | `research-brief.md` | **Background only.** Dated 2026-05-26 — three months older than the rest and predates the Cloudflare→Rust reversal. Re-verify its platform facts before consuming: iOS PWA Web Push behavior, WebAuthn/passkey support matrices, WS connection limits, push-provider choices. |
 | The two HTML briefs | Presentation snapshots of the plan; never authoritative over the markdown. They never carried the pause status and they predate the 2026-08-27 decisions, so they say nothing about relay ownership or Railway. Regenerate them only if they are used for a kickoff. |
 | Market baseline | Refresh now. As of 2026-08-16 the first parties ship phone supervision (Claude Remote Control, Codex mobile QR pairing, GitHub mission control mobile); the "Ten Empty Lanes" strategy report (artifact, 2026-08-16) argues the differentiated version of this surface is **the attention-budget's remote endpoint, not a desktop mirror** — Lane 10: urgency-typed interruptions, decision windows, batched approvals, voice triage via Dictation. |
@@ -222,32 +227,25 @@ Do not violate these without an explicit new owner decision:
    the relay. No blocking owner decision remains. Carry the owned surface
    listed in `09-open-decisions.md` § Auth Provider into Sprint 0 sizing; the
    pre-beta security review is a gate alongside E2EE, not a nice-to-have.
-2. **Confirm the E2EE gate still stands** (one-line ratification check; it
-   was owner-ratified 2026-08-16 and is unchanged by the resumption).
-3. **Cut `/v1/product-route` in the relay repo, then re-baseline
+2. ~~**Confirm the E2EE gate still stands.**~~ **Confirmed:** it was
+   owner-ratified 2026-08-16 and remains unchanged.
+3. ~~**Cut `/v1/product-route` in the relay repo, then re-baseline
    `02-architecture.md` / `03-protocol.md` against `D:\projects\packetrelay`
-   HEAD, once.** This step is no longer about tracking Syndicate drift — that
-   premise is dead (§1.3). Two things remain, in order:
+   HEAD, once.**~~ **Done 2026-08-28** at `packetrelay@b2bcff5`. This step was
+   not about tracking Syndicate drift — that premise is dead (§1.3):
 
-   a. **Remove the inherited surface.** Resolved 2026-08-28: the route carries
-      no live traffic, so `/v1/product-route`, the bridge/broadcast/room
-      compatibility modes serving it, `PRODUCT_ROUTE_PROTOCOL.md`, and the
-      retired Cloud Run artifacts (`cloudbuild.yaml`, `deploy.sh`) come out.
-      Verify no client is connected and check the relay's access logs first —
-      the "live deployment" claim went unchallenged in these docs for a while,
-      so confirm the correction rather than inheriting a second assumption.
-      Do this before the Railway migration so a dead route is not ported into
-      a new deployment target.
-   b. **Then diff** the plan's assumed relay surface against what is actually
-      left, and record the answer in `09-open-decisions.md`. With the
-      inherited surface gone, extend-vs-separate largely collapses: the
-      PacketBench routes replace it rather than sitting alongside it.
-4. **Stand up the Railway deployment path** and answer the open deployment
-   questions in `02-architecture.md` § Deployment target (edge WebSocket
-   connection lifetime, deploy-time instance overlap, managed-PostgreSQL
-   durability, region). These are Sprint-0-sized verifications, not design
-   work, but Sprint 1's sequence-assignment and reconnect design depends on
-   the first two answers.
+   a. **The inherited surface was removed.** `/v1/product-route`, its dedicated
+      crypto/protocol modules and document, and the retired Cloud Run artifacts
+      came out. Bridge/broadcast/room remain as a separate lineage and were
+      explicitly outside the cut.
+   b. **The plan was re-baselined** against the remaining relay surface in
+      `02-architecture.md`, `03-protocol.md`, and `09-open-decisions.md`.
+4. ~~**Complete Railway deployment verification.**~~ **Done 2026-09-01.** The
+   IaC migration is applied with a clean final plan; managed PostgreSQL is live
+   over private `DATABASE_URL`; both services are in `us-west2`; WSS is
+   indefinite even idle and live legacy smoke passed; overlap defaults to `0`.
+   PostgreSQL durability remains an external-beta gate: enable PITR, schedule
+   volume backups, and pass an offsite logical-dump restore drill.
 5. **Refresh the research brief's platform facts** (30–60 min web sweep):
    iOS PWA push, passkey UX, WS limits, and the first-party competitor
    baseline (what Claude/Codex/GitHub mobile now ship).
@@ -261,18 +259,21 @@ Do not violate these without an explicit new owner decision:
    (`07-six-agent-runbook.md`) and was sized when relay work was shared with
    another program. If picking up with less capacity, re-cut the sprint plan
    before starting, don't improvise.
-8. **Verify prerequisites**: PostgreSQL for the relay's durable state (Railway
-   managed instance), a Web Push key strategy, and the contract-fixture
-   gating between the two repos described in `09-open-decisions.md` § Code
-   Location.
-9. **Then run Sprint 0** per `06-implementation-plan.md`.
+8. ~~**Verify Sprint 0 prerequisites.**~~ **Done 2026-09-01:** PostgreSQL is
+   live for durable state and the shared/relay contract fixtures gate the two
+   repositories as described in `09-open-decisions.md` § Code Location. Retain
+   the external-beta database durability gate above. Web Push key strategy is a
+   later push-implementation decision, not a reason to reopen Sprint 0.
+9. ~~**Run Sprint 0** per `06-implementation-plan.md`.~~ **Complete
+   2026-09-01.** Remote Agents remains disabled/fail-closed in production;
+   Sprint 1 and product auth have not started.
 
 ## 7. Pointers
 
-- Program docs: this directory (`dev/remoteagents/`), `01`–`09` + README.
+- Program docs: this directory (`dev/remoteagents/`), `01`–`11` + README.
 - Relay repo: `D:\projects\packetrelay` (crate `packet-relay`; Rust 1.83,
-  Dockerfile, `railway.json` — the live deployment path — plus the retired
-  Cloud Run artifacts `cloudbuild.yaml` and `deploy.sh`, and a CI workflow).
+  Dockerfile, `.railway/railway.ts` deployment configuration, and a CI
+  workflow; the Cloud Run artifacts were removed on 2026-08-28).
 - Task register: `backlog.md` § Owner decisions (the auth entry is resolved
   2026-08-28) and the Remote Agents rows in `ROADMAP.md`.
 - Strategy context: the "Ten Empty Lanes" artifact (2026-08-16, Lane 10 and

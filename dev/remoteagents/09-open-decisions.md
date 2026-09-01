@@ -57,10 +57,10 @@ it as a live Syndicate deployment and on that basis ruled the route untouchable
 by this program. With no consumer, there is nothing to preserve a compatibility
 contract for and nobody to hand it to.
 
-Scope of the cut: the `/v1/product-route` boundary and the bridge/broadcast/
-room compatibility modes that exist only to serve it. Remote Agents adds its
-own `/ws/host` and `/ws/device` routes; it does not need to be built alongside
-an inherited surface.
+Scope of the cut: the dedicated `/v1/product-route` boundary, crypto/protocol
+modules and document, routing classification, reserved connection pool, and
+product-only dependencies. Remote Agents adds its own `/ws/host` and
+`/ws/device` routes; it does not preserve the removed product route.
 
 **DONE 2026-08-28** — executed in the relay repo as `b2bcff5` on
 `packetrelay@main`. Removed: `src/product_route.rs`, `src/product_crypto.rs`,
@@ -70,10 +70,10 @@ an inherited surface.
 (`aes-gcm`, `ed25519-dalek`, `hkdf`, `x25519-dalek`, `zeroize_derive`). Relay
 tests 61 → 53, strict Clippy and `cargo fmt --check` clean.
 
-**Scope correction made during execution.** These documents said the cut also
+**Scope correction made during execution.** Earlier planning said the cut also
 covered "the bridge/broadcast/room compatibility modes that exist only to serve
-it." That was wrong. Bridge, broadcast, and room are a *separate inherited
-lineage* (`jarvis-room-hello-v1`, with external clients of its own), not part
+it." That was wrong. Bridge, broadcast, and room are a _separate inherited
+lineage_ (`jarvis-room-hello-v1`, with external clients of its own), not part
 of the product route. They were left untouched. Do not treat them as
 condemned by this decision.
 
@@ -84,19 +84,27 @@ section.
 ### Relay Deployment Target — RESOLVED 2026-08-27
 
 **Railway.** This replaces the Google Cloud Run deployment the relay ran while
-it served Syndicate. `railway.json` already exists in the relay repo and builds
-the root `Dockerfile`; `cloudbuild.yaml` and `deploy.sh` are the retired Cloud
-Run path.
+it served Syndicate. The relay's repository configuration migrated locally
+from deprecated `railway.json` to `.railway/railway.ts` on 2026-09-01; its
+validated service graph builds the root `Dockerfile`. Production cleared the
+legacy Config File setting, added Railway-managed PostgreSQL, injected its
+private `DATABASE_URL`, placed both services in `us-west2`, and configured
+`/ready` with a 30-second health-check timeout. The final IaC plan is clean.
+Railway canonicalizes default-equivalent restart fields out of the desired
+graph; the live manifest retains `ON_FAILURE` with ten retries.
+`cloudbuild.yaml` and `deploy.sh` are the retired Cloud Run path.
 
 This does **not** reopen the 2026-08-02 relay-architecture decision — the relay
 is still the Rust service and Cloudflare is still rejected. Railway answers
-*where the chosen relay runs*, which that decision never fixed.
+_where the chosen relay runs_, which that decision never fixed.
 
-Deployment-behavior questions that Railway raises are recorded as open
-verifications in `02-architecture.md` § Deployment target (edge WebSocket
-connection lifetime, deploy-time instance overlap, managed-PostgreSQL
-durability, region selection). They are Sprint-0 checks, not design work, but
-Sprint 1's sequence-assignment and reconnect design depends on the first two.
+Deployment-behavior questions were verified on 2026-09-01 and are recorded in
+`02-architecture.md` § Deployment target: Railway documents indefinite WSS
+connections even when idle; default deploy overlap is `0` and configurable;
+both services run in `us-west2`; and the current single-node PostgreSQL with
+PITR off is not sufficient for external beta until PITR, scheduled volume
+backups, and an offsite logical-dump restore drill are in place. The live legacy
+WSS smoke passed, and the final IaC plan is clean.
 
 ## Open Decisions
 
@@ -211,7 +219,6 @@ record that had made it untouchable on this program's authority. Executed in
 the relay repo, before the Railway migration. See § Relay `/v1/product-route`
 disposition.
 
-
 **Auth provider** — Resolved. Build passkey/magic-link auth in the Rust relay
 backed by PostgreSQL. Fully owned: WebAuthn ceremonies, session design,
 magic-link delivery, account recovery and device loss, rate limiting and
@@ -220,7 +227,8 @@ explicitly accepted that burden. Hosted SaaS and self-hosted OSS IdP remain the
 fallbacks if the cost lands worse than expected; re-survey vendors rather than
 reusing the 2026-06 comparison. See § Auth Provider.
 
-**Consequence** — No blocking owner decision remains. Sprint 0 can start.
+**Consequence** — No blocking owner decision remains. Sprint 0 started and
+completed on 2026-09-01; Sprint 1/product auth has not started.
 
 **Unchanged** — The E2EE launch gate (resolved 2026-08-16) is not softened by
 owning the auth code; TLS still terminates at Railway's edge.
@@ -271,7 +279,7 @@ entry above.
 **(a) Auth provider build-vs-buy for v1** — **Resolved 2026-08-28: build.**
 
 - See "Auth Provider" above for the decision, the owned surface it commits us to, and the retained menu.
-- Resolution / date: _pending_.
+- Resolution / date: build in-house passkey/magic-link auth, 2026-08-28.
 - Decision owner: Security/Auth agent.
 
 **(b) Payload-encryption launch gate** — Resolved 2026-08-16.
@@ -287,10 +295,10 @@ entry above.
 - PWA/shared schemas: PacketBench `remoteagents/` workspace initially.
 - Decision owner: implementation lead.
 
-Note: decision (a) remains BLOCKING (re-confirmed 2026-08-27 on resumption);
-(b) was resolved 2026-08-16. Decision (c) is closed and must not be reopened
-implicitly by creating a provider-specific relay scaffold — naming Railway as
-the deployment target on 2026-08-27 does not reopen it.
+Note: decision (a) remained BLOCKING through 2026-08-27 and was resolved on
+2026-08-28; (b) was resolved 2026-08-16. Decision (c) is closed and must not be
+reopened implicitly by creating a provider-specific relay scaffold — naming
+Railway as the deployment target on 2026-08-27 does not reopen it.
 
 ## Deferred Decisions
 

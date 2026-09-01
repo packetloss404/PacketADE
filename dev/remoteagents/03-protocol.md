@@ -22,14 +22,19 @@ The shared protocol schemas are authoritative across PacketBench Desktop, the
 PWA, and the Rust relay. The relay validates routing metadata and ciphertext
 shape but never imports PacketBench's Tauri command surface.
 
+`11-transport-contract-decisions.md` records the Sprint 0 vocabulary and
+persistence decisions plus the security work that remains before Sprint 1 can
+implement tickets or encrypted replay. Where an older draft example conflicts
+with that record, the decision record controls.
+
 The relay is PacketBench-owned as of 2026-08-27 and Remote Agents is its only
-consumer. Its inherited `/v1/product-route` boundary and the bridge/broadcast/
-room compatibility modes that serve it are **being removed** — resolved
-2026-08-28 once the owner confirmed the route carries no live traffic (see
-`09-open-decisions.md` § Relay `/v1/product-route` disposition). The
-PacketBench routes therefore replace that surface rather than being added
-alongside it, and `/ws/host` + `/ws/device` do not need to preserve
-compatibility with it.
+consumer. Its inherited `/v1/product-route` boundary was removed on 2026-08-28
+at `packetrelay@b2bcff5` after the owner confirmed it carried no live traffic
+(see `09-open-decisions.md` § Relay `/v1/product-route` disposition). The
+PacketBench routes replace that surface rather than being added alongside it,
+and `/ws/host` + `/ws/device` do not preserve compatibility with it. The
+bridge/broadcast/room lineage remains separate and is not part of the removed
+product-route boundary.
 
 ## Envelope
 
@@ -48,6 +53,7 @@ export type RemoteEnvelopeV1 = {
   type: string;
   streamId: string;
   seq?: number;
+  /** Reserved Sprint 0 field; do not use until the receiver-scoped ACK schema is accepted. */
   ack?: number;
   idempotencyKey?: string;
   createdAt: string;
@@ -90,13 +96,24 @@ export type RemotePayloadV1 =
 
 ## Sequence Rules
 
-- The Rust host router assigns monotonically increasing `seq` per `{hostId, conversationId}` for events traveling from desktop to devices and persists replay records before acknowledging them.
+- Each `streamId` has exactly one authenticated producer. That producer assigns
+  monotonically increasing `seq` within `{hostId, streamId}` **before** sealing
+  the authenticated envelope; the relay never mutates authenticated fields.
+- The relay persists with independent uniqueness constraints on
+  `{hostId, streamId, seq}` and `{hostId, envelopeId}`; either conflicting reuse
+  is rejected and audited.
 - Device commands include `idempotencyKey`.
 - Desktop keeps a short processed-command cache by idempotency key.
-- PWA stores last processed `seq` per conversation in IndexedDB.
+- PWA stores the highest contiguous processed `seq` per stream in IndexedDB.
 - Desktop stores last outbound event cursor where useful for replay diagnostics.
-- Reconnect request includes `resumeAfter`.
-- Replay is at-least-once. Clients dedupe by `id` and `seq`.
+- The signed `connection.hello` carries a bounded `resume` array of
+  `{ streamId, afterSeq }` cursors.
+- Replay is at-least-once. Clients dedupe by `envelopeId`; `seq` detects
+  duplicates and gaps. Already-processed duplicates are ignored, while a
+  forward gap requests replay or a fresh snapshot.
+- The Sprint 0 scalar `ack` field is reserved and non-authoritative. Sprint 1
+  must first replace it with an accepted receiver-scoped ACK control shape and
+  lock producer restart/high-water recovery; see the decision record.
 
 ## Channel Overview
 
@@ -185,9 +202,9 @@ export type HostCapabilities = {
 
 The WebSocket relay carries real-time frames. A small HTTPS control plane manages registration, access requests, revocation, push subscriptions, and short-lived WebSocket tickets.
 
-### Register Desktop
+### Register Host
 
-`POST /api/desktops/register`
+`POST /api/hosts/register`
 
 ```json
 {
@@ -202,22 +219,22 @@ Returns:
 
 ```json
 {
-  "desktopId": "desk_...",
+  "hostId": "host_...",
   "registeredAt": 1779811200000
 }
 ```
 
-### List Desktops
+### List Hosts
 
-`GET /api/desktops`
+`GET /api/hosts`
 
-Returns only desktops owned by the current account:
+Returns only hosts owned by the current account:
 
 ```json
 {
   "items": [
     {
-      "id": "desk_...",
+      "id": "host_...",
       "displayName": "Ian-PC",
       "online": true,
       "lastSeenAt": 1779811200000,
@@ -233,7 +250,7 @@ Returns only desktops owned by the current account:
 
 ```json
 {
-  "desktopId": "desk_...",
+  "hostId": "host_...",
   "deviceDisplayName": "Ian iPhone",
   "devicePublicKey": "base64...",
   "platform": "ios-pwa"
@@ -263,7 +280,7 @@ Desktop sends a signed decision:
 
 ```json
 {
-  "desktopId": "desk_...",
+  "hostId": "host_...",
   "deviceId": "dev_..."
 }
 ```
@@ -274,52 +291,92 @@ The relay service persists revocation, closes active relay sockets, and notifies
 
 `POST /api/ws-ticket`
 
+Host request:
+
 ```json
-{
-  "desktopId": "desk_...",
-  "deviceId": "dev_...",
-  "role": "device"
-}
+{ "role": "host", "hostId": "host_..." }
 ```
 
-Returns a 60-second, single-use ticket:
+Device request:
+
+```json
+{ "role": "device", "hostId": "host_...", "deviceId": "dev_..." }
+```
+
+Host response (native client):
 
 ```json
 {
   "ticket": "wst_...",
+  "ticketBinding": "bind_...",
+  "expiresAt": 1779811260000,
+  "relayUrl": "wss://relay.packetbench.app/ws/host"
+}
+```
+
+Device response (browser): the HTTPS response sets
+`__Secure-pb_ws_device=<opaque>` as a host-only cookie (no `Domain`) with
+`Secure; HttpOnly; SameSite=Strict; Path=/ws/device; Max-Age=60` and returns
+only non-secret metadata:
+
+```json
+{
+  "ticketBinding": "bind_...",
   "expiresAt": 1779811260000,
   "relayUrl": "wss://relay.packetbench.app/ws/device"
 }
 ```
 
-Tickets are bound to account, desktop, device, role, capabilities, and device public key.
+`ticketBinding` is a random, non-secret server-issued challenge associated with
+the stored ticket digest. Browser JavaScript can sign it without reading the
+HttpOnly bearer.
 
-Ticket state is stored in PostgreSQL and consumed atomically so a ticket cannot
-be replayed across Rust relay processes or after a restart.
+Tickets are bound to account, host, optional device, role, capabilities, the
+subject public-key fingerprint, allowed path, Origin policy, and binding
+challenge. The server
+derives these bindings from authenticated durable state.
+
+Only a digest of a ticket is stored. PostgreSQL atomically reserves it during
+the upgrade and finalizes consumption only after the signed hello is valid.
+Invalid hellos never gain routing authority; reservation expiry, bounded proof
+attempts, and rate limits prevent an invalid client from creating an unbounded
+ticket-burning path. Raw tickets are redacted from application, access, edge,
+and audit logs.
 
 ## WebSocket Paths
 
-- `GET /ws/host?ticket=...`
-- `GET /ws/device?ticket=...`
+- `GET /ws/host` with the short-lived host ticket in the upgrade
+  `Authorization` header.
+- `GET /ws/device` with the short-lived device ticket in a Secure, HttpOnly,
+  SameSite cookie scoped to the device WebSocket path.
 
 Handshake requirements:
 
 - WSS only.
 - `Origin` validation.
-- Single-use ticket with TTL <= 60 seconds.
+- Single-use ticket with TTL <= 60 seconds; never place it in a URL.
 - Role must match path.
-- First encrypted `hello` includes host/device signature.
+- First application frame is signed plaintext metadata named
+  `connection.hello`; it contains no user content.
+- The relay validates identity and authenticated peer-key metadata, but never
+  derives or receives content keys.
 - Close on auth expiry, revocation, protocol mismatch, or replay detection.
+
+The exact canonical hello bytes, algorithms, suite/downgrade binding, nonce
+rules, cursor bounds, endpoint-to-endpoint key agreement, multi-device key
+distribution, and replay-key retention remain a security-review gate in
+`11-transport-contract-decisions.md`. Sprint 1 must not implement the encrypted
+transport until shared Rust/browser schemas, golden vectors, and negative tests
+close that gate.
 
 Connection lifetime is a deployment property, not a protocol guarantee. The
 relay's earlier Cloud Run deployment bounded every WebSocket by the platform
 request timeout, making periodic reconnects routine even on a healthy relay;
-on Railway (the deployment target as of 2026-08-27) the equivalent edge limit
-is unverified — see `02-architecture.md` § Deployment target, open
-verification 1. Either way, both sides must treat disconnection as normal and
-resume from a cursor: mobile networks and backgrounded PWAs force reconnects
-independently of any platform limit. Do not tune heartbeat or resume windows
-against an assumed edge timeout until that verification is answered.
+on Railway (the deployment target as of 2026-08-27), WebSocket connections are
+documented to remain open indefinitely, including while idle, and the live
+legacy WSS smoke passed on 2026-09-01. Both sides must still treat disconnection
+as normal and resume from cursors: mobile networks and backgrounded PWAs force
+reconnects independently of any platform limit.
 
 ## Provider Snapshot
 

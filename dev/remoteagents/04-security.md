@@ -184,7 +184,9 @@ Model:
 1. Desktop host has a long-term host key pair.
 2. Trusted device has a device key pair.
 3. During desktop approval, desktop and device exchange public keys through the cloud and verify via the desktop approval UI.
-4. Each WebSocket session derives ephemeral content keys.
+4. Desktop and trusted device establish endpoint-to-endpoint content-key epochs;
+   the relay authenticates and forwards key-agreement metadata but never derives
+   or receives content keys.
 5. Payloads are encrypted with WebCrypto on PWA and Rust crypto on desktop.
 6. Relay buffers ciphertext only.
 
@@ -193,12 +195,15 @@ Use audited libraries. Preferred approaches:
 - HPKE using RFC 9180 suites
 - Noise-based session transport using a mature implementation
 
-Do not design custom crypto beyond protocol composition, nonce/sequence tracking, AAD, and envelope validation.
+Do not design custom crypto beyond protocol composition, nonce/sequence tracking, AAD, and envelope validation. Before Sprint 1 encrypted routing, an explicit security review must lock the audited HPKE/Noise composition, authenticated peer-key forwarding, multi-device distribution, and how a reconnecting endpoint can decrypt retained ciphertext across key rotation.
 
 Frame requirements:
 
-- include protocol version, host id, device id, stream id, sequence number, frame kind, and timestamp bucket in AAD
-- reject replayed or out-of-order sequence numbers
+- assign the sequence at the single authenticated stream producer before sealing,
+  and include protocol version, host id, device id, stream id, sequence number,
+  frame kind, and timestamp bucket in AAD
+- ignore authenticated duplicates already processed; reject or request replay for
+  forward gaps and other out-of-order sequence numbers
 - rotate session keys at reconnect and periodically by frame count or time
 - prefer X25519 where available, with P-256 fallback for browser compatibility
 - make suite negotiation explicit and downgrade-protected
