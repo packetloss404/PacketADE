@@ -19,7 +19,6 @@ const HANDOFF_ROWS: Array<{
     label: "Agents → Workspace project",
   },
   { event: "agent_attached_terminal", label: "Attach terminal" },
-  { event: "agent_packetcode_handoff", label: "PacketCode handoffs" },
   { event: "agent_opened_git_ending", label: "Git endings" },
   { event: "agent_linked_flight", label: "Agent → Flight" },
   {

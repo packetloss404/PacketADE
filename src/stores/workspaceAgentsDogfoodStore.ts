@@ -9,7 +9,6 @@ export type WorkspaceAgentsDogfoodEvent =
   // Schema-v1 history only. No production path records this after WA4.
   | "agent_opened_alongside_workspace"
   | "agent_attached_terminal"
-  | "agent_packetcode_handoff"
   | "agent_opened_git_ending"
   | "agent_linked_flight"
   | "flight_attempt_opened_workspace"
@@ -25,7 +24,6 @@ export const WORKSPACE_AGENTS_DOGFOOD_EVENTS: WorkspaceAgentsDogfoodEvent[] = [
   "agent_opened_workspace_project",
   "agent_opened_alongside_workspace",
   "agent_attached_terminal",
-  "agent_packetcode_handoff",
   "agent_opened_git_ending",
   "agent_linked_flight",
   "flight_attempt_opened_workspace",

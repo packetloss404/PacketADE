@@ -7,8 +7,22 @@ import { useAgentStore } from "@/stores/agentStore";
 import { CODEX_CONFIG } from "@/agents/codex";
 import { OPENCODE_CONFIG } from "@/agents/opencode";
 import { TERMINAL_CONFIG } from "@/agents/terminal";
+import { PACKETCODE_CONFIG } from "@/agents/packetcode";
 import { useTerminalSettingsStore } from "@/stores/terminalSettingsStore";
+import { usePacketCodeIntegrationStore } from "@/stores/packetCodeIntegrationStore";
+import { useCliOverrideStore } from "@/stores/cliOverrideStore";
 import type { Workspace } from "@/types/workspace";
+
+const probePacketCodeIntegration = vi.hoisted(() => vi.fn());
+
+// Spread the real module: the pane now also calls the pure exit-classification
+// helpers (`ptyExitPillLabel`, `describePtyExitOutcome`) while rendering its
+// header, and stubbing the module wholesale would leave those undefined.
+vi.mock("@/lib/tauri", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/tauri")>()),
+  writePty: vi.fn(),
+  probePacketCodeIntegration,
+}));
 
 // The tile header lives entirely inside WorkspacePane's `renderHeader`
 // callback passed to TerminalPane. Mounting the real TerminalPane would
@@ -21,6 +35,7 @@ let currentHeaderState: TerminalHeaderRenderState = {
   error: null,
   showApproval: false,
   cliCommand: "codex",
+  lastExit: null,
   onRestart: vi.fn(),
   onKill: vi.fn(),
 };
@@ -80,11 +95,20 @@ describe("WorkspacePane tile header", () => {
       error: null,
       showApproval: false,
       cliCommand: "codex",
+      lastExit: null,
       onRestart: vi.fn(),
       onKill: vi.fn(),
     };
     lastTerminalProps = {};
     useTerminalSettingsStore.setState({ defaultShell: { profile: "auto" } });
+    usePacketCodeIntegrationStore.setState({
+      localDataHome: "",
+      developerRepoPath: "",
+      releaseChannel: "stable",
+      remoteDataHomes: {},
+    });
+    useCliOverrideStore.setState({ overrides: {} });
+    probePacketCodeIntegration.mockReset();
   });
 
   it("renders a diet header: grip, dot, name, status, zoom, one overflow — no standalone accent/pin/prompt/model controls", () => {
@@ -187,5 +211,137 @@ describe("WorkspacePane tile header", () => {
     expect(lastTerminalProps.cliCommand).toBe("wsl");
     expect(lastTerminalProps.cliArgs).toEqual(["--distribution", "Ubuntu"]);
     expect(screen.getByText("Terminal · WSL · Ubuntu")).toBeInTheDocument();
+  });
+
+  it("launches PacketCode with the exact probed binary and visibly reports version and home", async () => {
+    const executablePath = "C:\\Users\\ian\\bin\\packetcode.exe";
+    const dataHome = "C:\\Users\\ian\\.packetcode-isolated";
+    probePacketCodeIntegration.mockResolvedValue({
+      healthy: true,
+      executablePath,
+      version: "packetcode v0.5.1-127-gd646094 (d646094)",
+      exitCode: 0,
+      schemaVersion: 1,
+      doctorStatus: "ok",
+      effectiveHome: dataHome,
+      homeSource: "environment",
+      providerSummary: { configured: 1, ready: 1, warning: 0, failed: 0 },
+      doctor: {},
+    });
+    usePacketCodeIntegrationStore.setState({ localDataHome: dataHome });
+    useCliOverrideStore.setState({
+      overrides: { packetcode: { manualPath: executablePath } },
+    });
+    useAgentStore.setState({
+      agents: [...useAgentStore.getState().agents, { ...PACKETCODE_CONFIG, installed: true }],
+    });
+    const workspace = useWorkspaceStore.getState().workspaces[0];
+    const pane = { id: "pane-packetcode", agentId: "packetcode" as const, sessionId: null };
+
+    const view = render(<WorkspacePane pane={pane} workspaceId={workspace.id} />);
+
+    await waitFor(() => expect(lastTerminalProps.cliCommand).toBe(executablePath));
+    expect(probePacketCodeIntegration).toHaveBeenCalledWith(executablePath, dataHome);
+    expect(screen.getByText("v0.5.1-127-gd646094 (d646094)")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle("More"));
+    expect(screen.getByText(`Binary: ${executablePath}`)).toBeInTheDocument();
+    expect(screen.getByText(`Home: ${dataHome}`)).toBeInTheDocument();
+
+    view.rerender(
+      <WorkspacePane pane={{ ...pane, sessionId: "pty-live" }} workspaceId={workspace.id} />,
+    );
+    usePacketCodeIntegrationStore.setState({ localDataHome: "C:\\changed-after-launch" });
+    await waitFor(() => expect(probePacketCodeIntegration).toHaveBeenCalledTimes(1));
+    expect(lastTerminalProps.cliCommand).toBe(executablePath);
+  });
+
+  function packetCodeIdentity(executablePath: string, effectiveHome: string) {
+    return {
+      healthy: true,
+      executablePath,
+      version: "packetcode v0.5.1 (abc123)",
+      exitCode: 0,
+      schemaVersion: 1,
+      doctorStatus: "ok",
+      effectiveHome,
+      homeSource: "environment",
+      providerSummary: { configured: 1, ready: 1, warning: 0, failed: 0 },
+      doctor: {},
+    };
+  }
+
+  function mountPacketCodePane(manualPath: string) {
+    useCliOverrideStore.setState({ overrides: { packetcode: { manualPath } } });
+    useAgentStore.setState({
+      agents: [...useAgentStore.getState().agents, { ...PACKETCODE_CONFIG, installed: true }],
+    });
+    const workspace = useWorkspaceStore.getState().workspaces[0];
+    const pane = { id: "pane-packetcode", agentId: "packetcode" as const, sessionId: null };
+    const view = render(<WorkspacePane pane={pane} workspaceId={workspace.id} />);
+    return { view, pane, workspaceId: workspace.id };
+  }
+
+  // REGRESSION: a session ending used to flip the pane back to "probing",
+  // which unmounted TerminalPane; the remount re-armed autoStart and
+  // relaunched PacketCode. A binary that exits at startup looped forever.
+  it("keeps the pane mounted and does not re-probe when a PacketCode session ends unchanged", async () => {
+    const executablePath = "C:\\Users\\ian\\bin\\packetcode.exe";
+    probePacketCodeIntegration.mockResolvedValue(packetCodeIdentity(executablePath, "C:\\home"));
+    const { view, pane, workspaceId } = mountPacketCodePane(executablePath);
+    await waitFor(() => expect(lastTerminalProps.cliCommand).toBe(executablePath));
+
+    view.rerender(<WorkspacePane pane={{ ...pane, sessionId: "pty-live" }} workspaceId={workspaceId} />);
+    lastTerminalProps = {};
+    view.rerender(<WorkspacePane pane={pane} workspaceId={workspaceId} />);
+
+    expect(probePacketCodeIntegration).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Resolving PacketCode")).toBeNull();
+    // TerminalPane re-rendered rather than unmounting, so it recorded props again.
+    expect(lastTerminalProps.cliCommand).toBe(executablePath);
+  });
+
+  it("applies Settings changed during a live session on the next launch without unmounting", async () => {
+    const firstPath = "C:\\Users\\ian\\bin\\packetcode.exe";
+    const secondPath = "D:\\tools\\packetcode.exe";
+    probePacketCodeIntegration.mockResolvedValueOnce(packetCodeIdentity(firstPath, "C:\\home"));
+    const { view, pane, workspaceId } = mountPacketCodePane(firstPath);
+    await waitFor(() => expect(lastTerminalProps.cliCommand).toBe(firstPath));
+
+    view.rerender(<WorkspacePane pane={{ ...pane, sessionId: "pty-live" }} workspaceId={workspaceId} />);
+    let resolveSecond: (value: unknown) => void = () => {};
+    probePacketCodeIntegration.mockImplementationOnce(
+      () => new Promise((resolve) => (resolveSecond = resolve)),
+    );
+    useCliOverrideStore.setState({ overrides: { packetcode: { manualPath: secondPath } } });
+    // Deferred while the session is alive.
+    expect(probePacketCodeIntegration).toHaveBeenCalledTimes(1);
+
+    lastTerminalProps = {};
+    view.rerender(<WorkspacePane pane={pane} workspaceId={workspaceId} />);
+    await waitFor(() => expect(probePacketCodeIntegration).toHaveBeenCalledTimes(2));
+    expect(probePacketCodeIntegration).toHaveBeenLastCalledWith(secondPath, null);
+    // In-flight re-probe keeps the ended pane (and its transcript) on screen.
+    expect(screen.queryByText("Resolving PacketCode")).toBeNull();
+    expect(lastTerminalProps.cliCommand).toBe(firstPath);
+
+    resolveSecond(packetCodeIdentity(secondPath, "C:\\home"));
+    await waitFor(() => expect(lastTerminalProps.cliCommand).toBe(secondPath));
+  });
+
+  it("blocks PacketCode launch when PACKETCODE_HOME is not absolute", async () => {
+    usePacketCodeIntegrationStore.setState({ localDataHome: "relative/home" });
+    useAgentStore.setState({
+      agents: [...useAgentStore.getState().agents, { ...PACKETCODE_CONFIG, installed: true }],
+    });
+    const workspace = useWorkspaceStore.getState().workspaces[0];
+    const pane = { id: "pane-packetcode", agentId: "packetcode" as const, sessionId: null };
+
+    render(<WorkspacePane pane={pane} workspaceId={workspace.id} />);
+
+    expect(await screen.findByText("PacketCode launch blocked")).toBeInTheDocument();
+    expect(screen.getByText(/PACKETCODE_HOME must be an absolute host path/)).toBeInTheDocument();
+    expect(lastTerminalProps).toEqual({});
+    expect(probePacketCodeIntegration).not.toHaveBeenCalled();
   });
 });

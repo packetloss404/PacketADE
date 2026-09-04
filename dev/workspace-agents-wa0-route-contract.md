@@ -219,27 +219,11 @@ or both.
 | ------------------------------------ | ---------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------- |
 | Workspace → Delegate to Agent        | Opens Agents                       | New agent conversation becomes its own owner  | Source project/selection is copied only through an explicit launch payload. |
 | Agents → Open project in Workspace   | Opens/focuses Workspace            | None                                          | Conversation keeps running and remains selected in Agents state.            |
-| Agents → Send/continue in PacketCode | Opens/focuses PacketCode           | Explicit handoff only                         | User sees the bounded payload and target project/worktree before send.      |
 | Agents → Attach terminal             | Opens PTY for project/worktree     | PTY owns only its terminal process            | Conversation and PTY remain separately addressable.                         |
 | Agents → Open Git ending             | Opens authoritative ending surface | None until user chooses merge/PR/discard/keep | One worktree state, never a copied Git flow.                                |
 | Agents → Add to Flight               | Opens/links Flight                 | Flight gains a reference, not a duplicate     | Bidirectional Flight/session links remain synchronized.                     |
 | Flight → Keep running in PacketAgent | PacketAgent status becomes visible | Explicit W9 deploy/activate handoff           | PacketAgent identity/evidence remains authoritative after activation.       |
 | Agent/Flight → Send to Monitor       | Opens read-only projection         | None                                          | Monitor cannot approve, edit, or persist interactive state.                 |
-
-### PacketCode handoff payload
-
-WA3 must freeze and test a bounded, user-visible payload before automatic send.
-At minimum it identifies:
-
-- source conversation and title;
-- local/SSH project plus worktree path;
-- user-selected objective or summary;
-- explicitly selected files/references;
-- requested next action;
-- provenance and permission posture.
-
-It must not silently include transcripts, secrets, hidden reasoning, arbitrary
-files, or broadened tool/MCP authority.
 
 ## Compatibility and migration rules
 
@@ -260,7 +244,6 @@ The historical WA4 observation recorded content-free local counters only:
 
 - conversation starts in Agents;
 - Agents ↔ Workspace handoffs;
-- PacketCode handoffs;
 - simultaneous visible conversations;
 - `needs_you` notification-to-open time;
 - single- versus multi-monitor usage;
@@ -326,7 +309,7 @@ Required evidence before interactivity:
 ### WA3 — handoffs
 
 - Implement each action in the handoff table with typed result/error states.
-- Freeze PacketCode and PacketAgent payload contracts.
+- Freeze the PacketAgent payload contract.
 - Add identity, authority, local/SSH, restart, and stale-target tests.
 
 ### WA4 — migration/owner decision

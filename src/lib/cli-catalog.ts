@@ -193,6 +193,33 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
   },
 ];
 
+// === Launch resolution tiers ===
+
+/**
+ * Human labels for `core::agent::CliLaunchSource`. Every CLI resolves through
+ * one shared ladder in Rust — Settings override, legacy app pin, PATH, the
+ * product's documented install directory, then the bare name — and the same
+ * ladder is what the PTY spawns. Naming the tier is the point: a user can
+ * otherwise see WHICH binary a pane will launch but never WHY.
+ *
+ * Kept here rather than in a component so the CLI Agents grid, the PacketCode
+ * panel, and the Workspace pane header cannot describe the same tier
+ * differently.
+ */
+export const CLI_LAUNCH_SOURCE_LABELS: Record<string, string> = {
+  settings: "Settings override",
+  legacyPin: "legacy PacketBench pin",
+  path: "PATH",
+  installerLocation: "official installer location",
+  bareName: "unresolved — the bare command name",
+};
+
+/** Label for a resolution tier, falling back to the raw tag. */
+export function cliLaunchSourceLabel(source: string | null | undefined): string {
+  if (!source) return "unknown";
+  return CLI_LAUNCH_SOURCE_LABELS[source] ?? source;
+}
+
 /** Look up a catalog entry by stable id. */
 export function getCliCatalogEntry(id: string): CliCatalogEntry | undefined {
   return CLI_CATALOG.find((entry) => entry.id === id);

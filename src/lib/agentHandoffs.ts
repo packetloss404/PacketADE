@@ -1,14 +1,11 @@
-import { useAgentStore } from "@/stores/agentStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useAppStore } from "@/stores/appStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useRightDockStore } from "@/stores/rightDockStore";
-import { useServerStore } from "@/stores/serverStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { makeSshUri } from "@/lib/ssh-uri";
 import { getPreferredWorkspaceCli } from "@/lib/workspaceCliDefaults";
-import type { AgentConversation, PermissionMode } from "@/types/agent-conversation";
-import type { McpTrustSnapshot } from "@/types/mcp";
+import type { AgentConversation } from "@/types/agent-conversation";
 import {
   isLocalWorkspace,
   type Workspace,
@@ -20,7 +17,6 @@ export type AgentHandoffErrorCode =
   | "conversation_not_found"
   | "workspace_not_found"
   | "flight_not_found"
-  | "packetcode_unavailable"
   | "unsupported_target";
 
 export type AgentHandoffResult<T extends object> =
@@ -37,33 +33,6 @@ export interface ConversationProjectTarget {
     worktreePath: string;
     branch: string;
   };
-}
-
-export interface PacketCodeHandoffPayload {
-  schemaVersion: 1;
-  source: {
-    kind: "agent_conversation";
-    conversationId: string;
-    title: string;
-    updatedAt: number;
-  };
-  target: ConversationProjectTarget;
-  objective: string;
-  references: string[];
-  requestedAction: "continue_in_packetcode";
-  sourcePermissionPosture: {
-    permissionMode: PermissionMode | null;
-    approveWrites: boolean;
-    enabledMcpServerIds: string[] | null;
-    mcpTrustSnapshot: McpTrustSnapshot[] | null;
-  };
-  constraints: {
-    transcriptIncluded: false;
-    secretsIncluded: false;
-    hiddenReasoningIncluded: false;
-    authorityTransfer: false;
-  };
-  createdAt: number;
 }
 
 function conversationById(conversationId: string): AgentConversation | null {
@@ -173,15 +142,6 @@ function focusWorkspacePane(workspaceId: string, paneId: string): void {
   useAppStore.getState().setActiveView("workspace");
 }
 
-function packetCodeAvailable(serverId?: string): boolean {
-  if (serverId) {
-    return (
-      useServerStore.getState().getServer(serverId)?.installedAgents.includes("packetcode") ?? false
-    );
-  }
-  return useAgentStore.getState().getAgent("packetcode")?.installed ?? false;
-}
-
 export function delegateWorkspaceToAgents(
   workspaceId: string,
 ): AgentHandoffResult<{ workspaceId: string; selectedRepo: string }> {
@@ -277,75 +237,6 @@ export function attachTerminalToConversationProject(conversationId: string): Age
   return { ok: true, conversationId, workspaceId, paneId };
 }
 
-export function openConversationInPacketCode(conversationId: string): AgentHandoffResult<{
-  conversationId: string;
-  workspaceId: string;
-  paneId: string;
-  createdWorkspace: boolean;
-  createdPane: boolean;
-}> {
-  const conversation = conversationById(conversationId);
-  if (!conversation) {
-    return {
-      ok: false,
-      code: "conversation_not_found",
-      message: "That agent conversation no longer exists.",
-    };
-  }
-
-  const target = getConversationProjectTarget(conversation);
-  if (!packetCodeAvailable(target.serverId)) {
-    return {
-      ok: false,
-      code: "packetcode_unavailable",
-      message:
-        target.kind === "ssh"
-          ? `PacketCode is not detected on ${target.serverName ?? "the selected server"}.`
-          : "PacketCode is not detected. Open Settings to install or locate it.",
-    };
-  }
-
-  let ensured: { workspaceId: string; created: boolean };
-  try {
-    ensured = ensureProjectWorkspace(conversation, "packetcode");
-  } catch (cause) {
-    return {
-      ok: false,
-      code: "workspace_not_found",
-      message: cause instanceof Error ? cause.message : "The PacketCode target is unavailable.",
-    };
-  }
-  const { workspaceId, created } = ensured;
-  const workspace = useWorkspaceStore
-    .getState()
-    .workspaces.find((candidate) => candidate.id === workspaceId);
-  const existingPane = workspace?.panes.find(
-    (pane) => pane.kind !== "conversation" && pane.agentId === "packetcode",
-  );
-  const paneId =
-    existingPane?.id ??
-    (created
-      ? workspace?.panes[0]?.id
-      : useWorkspaceStore.getState().addPane(workspaceId, "packetcode"));
-  if (!paneId) {
-    return {
-      ok: false,
-      code: "workspace_not_found",
-      message: "PacketCode could not be added to Workspace.",
-    };
-  }
-  focusWorkspacePane(workspaceId, paneId);
-  recordWorkspaceAgentsEvent("agent_packetcode_handoff");
-  return {
-    ok: true,
-    conversationId,
-    workspaceId,
-    paneId,
-    createdWorkspace: created,
-    createdPane: !existingPane && !created,
-  };
-}
-
 export function openConversationGitEnding(conversationId: string): AgentHandoffResult<{
   conversationId: string;
   workspaceId: string;
@@ -410,53 +301,4 @@ export function linkConversationToFlight(
   }
   recordWorkspaceAgentsEvent("agent_linked_flight");
   return { ok: true, conversationId, flightId, alreadyLinked };
-}
-
-export function buildPacketCodeHandoffPayload(input: {
-  conversation: AgentConversation;
-  objective: string;
-  references?: string[];
-  createdAt?: number;
-}): PacketCodeHandoffPayload {
-  const objective = input.objective.trim();
-  if (!objective) throw new Error("A PacketCode handoff objective is required.");
-  const references = Array.from(
-    new Set((input.references ?? []).map((item) => item.trim()).filter(Boolean)),
-  );
-  return {
-    schemaVersion: 1,
-    source: {
-      kind: "agent_conversation",
-      conversationId: input.conversation.id,
-      title: input.conversation.title,
-      updatedAt: input.conversation.updatedAt,
-    },
-    target: getConversationProjectTarget(input.conversation),
-    objective,
-    references,
-    requestedAction: "continue_in_packetcode",
-    sourcePermissionPosture: {
-      permissionMode: input.conversation.permissionMode ?? null,
-      approveWrites: input.conversation.approveWrites ?? false,
-      enabledMcpServerIds: input.conversation.enabledMcpServerIds ?? null,
-      mcpTrustSnapshot: input.conversation.mcpTrustSnapshot ?? null,
-    },
-    constraints: {
-      transcriptIncluded: false,
-      secretsIncluded: false,
-      hiddenReasoningIncluded: false,
-      authorityTransfer: false,
-    },
-    createdAt: input.createdAt ?? Date.now(),
-  };
-}
-
-export function formatPacketCodeHandoffPayload(payload: PacketCodeHandoffPayload): string {
-  return [
-    "packetbench-packetcode-handoff/v1",
-    JSON.stringify(payload, null, 2),
-    "",
-    "Continue this objective in the exact target above. Treat the listed permission posture as",
-    "provenance only; do not broaden tools, roots, MCP access, or credentials without approval.",
-  ].join("\n");
 }

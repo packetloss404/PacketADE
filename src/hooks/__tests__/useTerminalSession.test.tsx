@@ -53,7 +53,7 @@ import {
   killPty,
   listPtySessions,
   parsePtyExitPayload,
-  ptyExitSucceeded,
+  ptyExitOutcome,
   writePty,
 } from "@/lib/tauri";
 
@@ -255,20 +255,34 @@ describe("useTerminalSession", () => {
     });
   });
 
-  it("scores a PTY exit as success or failure", () => {
-    // The distinction the terminal pane and the transient runner both hang
-    // their "done" vs "error" state on.
-    expect(ptyExitSucceeded({ sessionId: "s", exitCode: 0, terminated: false })).toBe(true);
-    expect(ptyExitSucceeded({ sessionId: "s", exitCode: 1, terminated: false })).toBe(false);
-    expect(ptyExitSucceeded({ sessionId: "s", exitCode: 3221225477, terminated: false })).toBe(
-      false,
-    );
-    // A deliberate kill is not the CLI failing.
-    expect(ptyExitSucceeded({ sessionId: "s", exitCode: 137, terminated: true })).toBe(true);
-    // Unknown status is an absence of evidence, not evidence of failure —
-    // this is also the legacy bare-string payload's shape.
-    expect(ptyExitSucceeded({ sessionId: "s", exitCode: null, terminated: false })).toBe(true);
-    expect(ptyExitSucceeded("sess-1")).toBe(true);
+  it("classifies a PTY exit into four distinct outcomes", () => {
+    // REGRESSION: these four used to collapse into one boolean, which is why
+    // a CLI that died on startup rendered identically to a session the user
+    // closed on purpose. Each must stay separable.
+    expect(ptyExitOutcome({ sessionId: "s", exitCode: 0, terminated: false })).toEqual({
+      kind: "clean",
+    });
+    expect(ptyExitOutcome({ sessionId: "s", exitCode: 1, terminated: false })).toEqual({
+      kind: "failed",
+      exitCode: 1,
+    });
+    expect(ptyExitOutcome({ sessionId: "s", exitCode: 3221225477, terminated: false })).toEqual({
+      kind: "failed",
+      exitCode: 3221225477,
+    });
+    // A deliberate kill is not the CLI failing — but it is not a successful
+    // task completion either, so it must not read as `clean`.
+    expect(ptyExitOutcome({ sessionId: "s", exitCode: 137, terminated: true })).toEqual({
+      kind: "killed",
+      exitCode: 137,
+    });
+    // Absence of evidence. Never to be laundered into `clean`, which is
+    // exactly what the old boolean did.
+    expect(ptyExitOutcome({ sessionId: "s", exitCode: null, terminated: false })).toEqual({
+      kind: "unknown",
+    });
+    // The legacy bare-string payload carries no status at all.
+    expect(ptyExitOutcome("sess-1")).toEqual({ kind: "unknown" });
   });
 
   it("marks the session as no longer alive when the PTY exits naturally", async () => {

@@ -8,7 +8,11 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async () => () => {}),
 }));
 
-vi.mock("@/lib/tauri", () => ({
+// The exit-classification helpers are pure, so spread the real module rather
+// than restubbing them — a hand-written stub would let the hook's outcome
+// scoring drift away from the classifier it is supposed to share.
+vi.mock("@/lib/tauri", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/tauri")>()),
   createPtySession: vi.fn(),
   writePty: vi.fn(),
   killPty: vi.fn(),

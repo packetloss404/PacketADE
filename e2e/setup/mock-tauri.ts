@@ -95,6 +95,13 @@ export const mockTauriInitScript = `
     save_settings_slice: () => null,
     save_ui_slice: () => null,
     save_workspaces_slice: () => null,
+    // Durable localStorage mirror (see src/lib/storageMirror.ts). Playwright
+    // clears localStorage between tests and there is no Rust data dir here, so
+    // this is a per-page in-memory stand-in: the mirror boots, restores
+    // nothing, and its debounced flushes land somewhere harmless instead of
+    // rejecting as an unhandled invoke.
+    load_webview_storage_mirror: () => ({}),
+    save_webview_storage_mirror: () => null,
     // MCP config reads
     read_mcp_config: () => ({ servers: [] }),
     // Analytics / history / cost

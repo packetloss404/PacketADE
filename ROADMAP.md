@@ -21,10 +21,10 @@ only product direction and ordering.
 
 ## Current baseline
 
-- Source is at **0.13.0** (`package.json`, `src-tauri/tauri.conf.json`,
+- Source is at **0.13.2** (`package.json`, `src-tauri/tauri.conf.json`,
   `src-tauri/Cargo.toml`). `v0.10.3` — packaged for Windows from release source
   `61e0669` — is still the newest annotated tag, while `CHANGELOG.md` records
-  0.10.4 and 0.10.5 as released, and 0.11.0 through 0.13.0 as built but
+  0.10.4 and 0.10.5 as released, and 0.11.0 through 0.13.2 as built but
   unreleased.
 - **The renamed product has been packaged, but never installed.** Windows
   bundles exist at 0.11.0, 0.12.0, 0.12.1 and 0.13.0 (hashes in `CHANGELOG.md`); the 2026-08-26
@@ -111,8 +111,6 @@ After the immediately available proof gates:
 
 - Packet Control: deterministic, user-initiated local/SSH evidence capture
   using one contract shared with PacketAgent.
-- PacketBBS: bounded non-secret connection preset with safe external Web and
-  Telnet launch.
 - Monitor expansion: Approval/Cost routes, saved bounds, multiple windows, and
   PTY attachment only after ownership is safe.
 - Detachable interactive Agent windows after a single-writer state contract.

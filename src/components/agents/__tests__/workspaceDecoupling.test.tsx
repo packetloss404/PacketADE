@@ -99,7 +99,6 @@ describe("Agents pane workspace decoupling", () => {
     expect(screen.getByText("Open project in Workspace")).toBeInTheDocument();
     expect(screen.queryByText("Open alongside Workspace")).not.toBeInTheDocument();
     expect(screen.getByText("Attach terminal")).toBeInTheDocument();
-    expect(screen.getByText("Continue in PacketCode…")).toBeInTheDocument();
     expect(screen.getByText("Open Git ending")).toBeInTheDocument();
     expect(screen.getByText("Add to Flight…")).toBeInTheDocument();
     expect(screen.getByText("Continue in CLI")).toBeInTheDocument();

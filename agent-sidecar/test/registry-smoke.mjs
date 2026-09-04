@@ -34,7 +34,13 @@ import { existsSync } from "node:fs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const PER_SESSION_TIMEOUT_MS = 5000;
+// Headroom for a BUSY machine, not for a slow sidecar. Booting dist/index.js
+// (which eagerly imports the Anthropic, OpenAI and MCP SDKs) takes ~0.9s on an
+// idle box, so the old 3-5s budgets were fine in isolation — and failed anyway
+// when these smokes ran beside a cargo build using every core. These smokes
+// assert protocol behaviour, not latency, so the budget sits well clear of
+// contention rather than close to the measured best case.
+const PER_SESSION_TIMEOUT_MS = 20_000;
 
 const sidecarEntry = resolve(__dirname, "..", "dist", "index.js");
 

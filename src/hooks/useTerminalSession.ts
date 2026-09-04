@@ -4,11 +4,14 @@ import type { FitAddon } from "@xterm/addon-fit";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   createPtySession,
+  describePtyExitOutcome,
   killPty,
   listPtySessions,
   parsePtyExitPayload,
+  ptyExitOutcomeOf,
   readPtyTranscript,
   writePty,
+  type PtyExitOutcome,
   type PtyExitPayload,
 } from "@/lib/tauri";
 import { logSwallowed } from "@/lib/logSwallowed";
@@ -135,6 +138,10 @@ export function useTerminalSession({
     state: "idle",
   });
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  // How the last session in this pane ended. Survives the session itself so
+  // the header can keep saying "exit 3221225477" after the CLI is gone —
+  // previously the pane just stopped and said nothing at all.
+  const [lastExit, setLastExit] = useState<PtyExitOutcome | null>(null);
 
   const globalProjectPath = useLayoutStore((s) => s.projectPath);
   const projectPath = paneProjectPath ?? globalProjectPath;
@@ -234,6 +241,9 @@ export function useTerminalSession({
 
     setError(null);
     setShowApproval(false);
+    // A restart clears the previous run's verdict — the header must not keep
+    // showing "exit 127" over a session that is starting fresh.
+    setLastExit(null);
     setActivityInfo({ tool: null, file: null, state: "idle" });
     exitRequestedRef.current = false;
     term.reset();
@@ -321,16 +331,21 @@ export function useTerminalSession({
         unlistenersRef.current = [];
 
         const wasRequested = exitRequestedRef.current;
-        // A non-zero exit code means the CLI died rather than finished. It is
-        // NOT a failure when the user asked for the exit (Kill/Restart/close)
-        // or when an orchestrator terminated the session — both of those are
-        // deliberate, and `terminated` marks the second.
-        const failed =
-          !wasRequested &&
-          exit !== null &&
-          !exit.terminated &&
-          exit.exitCode !== null &&
-          exit.exitCode !== 0;
+        // The four-way outcome. `wasRequested` (Kill / Restart / pane close
+        // driven from this hook) downgrades whatever the child reported to
+        // `killed`: the backend flags those with `terminated` too, but the
+        // request is the authority on this side and a race where the exit
+        // event lands first must still not be read as a crash.
+        const observed = ptyExitOutcomeOf(exit);
+        const outcome: PtyExitOutcome =
+          wasRequested && observed.kind !== "killed"
+            ? { kind: "killed", exitCode: exit?.exitCode ?? null }
+            : observed;
+        // Only a genuinely observed non-zero code is a failure. A deliberate
+        // kill is a control action, and an unreadable status is an absence of
+        // evidence — neither is the CLI crashing.
+        const failed = outcome.kind === "failed";
+        setLastExit(outcome);
         setAlive(false);
         setShowApproval(false);
         setCurrentSessionId(null);
@@ -341,9 +356,13 @@ export function useTerminalSession({
         // in grey, so a CLI that access-violated on startup was visually
         // identical to one that did its job and returned 0.
         term.write(
-          failed
-            ? `\r\n\x1b[31m[Session ended — exit code ${exit?.exitCode}]\x1b[0m\r\n`
-            : "\r\n\x1b[90m[Session ended]\x1b[0m\r\n",
+          outcome.kind === "failed"
+            ? `\r\n\x1b[31m[${describePtyExitOutcome(outcome)}]\x1b[0m\r\n`
+            : outcome.kind === "unknown"
+              ? `\r\n\x1b[33m[${describePtyExitOutcome(outcome)}]\x1b[0m\r\n`
+              : outcome.kind === "killed"
+                ? "\r\n\x1b[90m[Session stopped]\x1b[0m\r\n"
+                : "\r\n\x1b[90m[Session ended]\x1b[0m\r\n",
         );
         useTabStore.getState().updateTabStatus(tabId, failed ? "error" : "done");
         stopDurationTimer();
@@ -360,6 +379,12 @@ export function useTerminalSession({
         // is recorded too — just stamped `killed` rather than `done`. Gating
         // on `!wasRequested` meant every ordinary way of ending a session
         // skipped capture, which is why the Memory pane stayed empty.
+        //
+        // `killed` covers BOTH a kill this hook asked for and one the backend
+        // reported via `terminated`, so a deliberate stop is never scored as a
+        // successful task completion. `unknown` still stamps `done`: the
+        // memory schema has no fourth state, and a long session whose exit
+        // status we could not read is not evidence of failure.
         if (tab && projectPath && tab.durationMs > MIN_MEMORY_CAPTURE_MS) {
           void useMemoryStore
             .getState()
@@ -368,7 +393,7 @@ export function useTerminalSession({
               cliCommand,
               memoryScopeForWorkspace(workspaceId, projectPath),
               tab.durationMs,
-              wasRequested ? "killed" : failed ? "error" : "done",
+              outcome.kind === "killed" ? "killed" : failed ? "error" : "done",
             );
         }
       };
@@ -614,6 +639,8 @@ export function useTerminalSession({
     sessionId: currentSessionId,
     alive,
     error,
+    /** How the last session ended, or `null` if none has ended yet. */
+    lastExit,
     showApproval,
     activityInfo,
     projectPath,

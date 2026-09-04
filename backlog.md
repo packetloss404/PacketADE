@@ -1076,10 +1076,6 @@ These are approved concepts, not current implementation commitments.
   image-capable tool results end-to-end (also fixes MCP image results being
   silently dropped today). See
   [`dev/computer-use-plan.md`](./dev/computer-use-plan.md).
-- **P3 - PacketBBS connection preset.** Add a non-secret endpoint, bounded
-  `/healthz` probe, safe external Web launch, and structured-argv Telnet pane
-  only after current release gates. Do not share credentials or databases. See
-  [`dev/features-packetbbs-terminal.md`](./dev/features-packetbbs-terminal.md).
 - **P3 - Dictation engine benchmark.** Benchmark Parakeet and optional Whisper
   acceleration only after the repaired CPU path has real packaged latency and
   quality measurements.

@@ -17,7 +17,6 @@ import { Tooltip } from "@/components/ui/Tooltip";
 import { ContinueInMenu } from "../ContinueInMenu";
 import { AddConversationToFlightModal } from "../AddConversationToFlightModal";
 import { PacketAgentDeployModal } from "../PacketAgentDeployModal";
-import { PacketCodeHandoffModal } from "../PacketCodeHandoffModal";
 import { exportConversationJson, copyTranscriptToClipboard } from "./handleExport";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useAgentSettingsStore, type TranscriptViewMode } from "@/stores/agentSettingsStore";
@@ -80,9 +79,7 @@ export function HeaderOverflowMenu({
   onArchive,
 }: HeaderOverflowMenuProps) {
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [handoffModal, setHandoffModal] = useState<
-    "packetcode" | "flight" | "packetagent" | null
-  >(null);
+  const [handoffModal, setHandoffModal] = useState<"flight" | "packetagent" | null>(null);
 
   function flashFeedback(msg: string) {
     setFeedback(msg);
@@ -112,18 +109,10 @@ export function HeaderOverflowMenu({
           onToggleInlineControls={onToggleInlineControls}
           onArchive={onArchive}
           flashFeedback={flashFeedback}
-          onRequestPacketCode={() => setHandoffModal("packetcode")}
           onRequestFlight={() => setHandoffModal("flight")}
           onRequestPacketAgent={() => setHandoffModal("packetagent")}
         />
       </Dropdown>
-      {handoffModal === "packetcode" && (
-        <PacketCodeHandoffModal
-          conversation={conversation}
-          onClose={() => setHandoffModal(null)}
-          onFeedback={flashFeedback}
-        />
-      )}
       {handoffModal === "flight" && (
         <AddConversationToFlightModal
           conversation={conversation}
@@ -150,7 +139,6 @@ export function HeaderOverflowMenu({
 interface OverflowMenuContentProps
   extends Omit<HeaderOverflowMenuProps, "openSignal"> {
   flashFeedback: (msg: string) => void;
-  onRequestPacketCode: () => void;
   onRequestFlight: () => void;
   onRequestPacketAgent: () => void;
 }
@@ -165,7 +153,6 @@ function OverflowMenuContent({
   onToggleInlineControls,
   onArchive,
   flashFeedback,
-  onRequestPacketCode,
   onRequestFlight,
   onRequestPacketAgent,
 }: OverflowMenuContentProps) {
@@ -397,7 +384,6 @@ function OverflowMenuContent({
           <ContinueInMenu
             conversation={conversation}
             onFeedback={flashFeedback}
-            onRequestPacketCode={onRequestPacketCode}
             onRequestFlight={onRequestFlight}
           />
 

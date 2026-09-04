@@ -51,12 +51,9 @@ vi.mock("@/lib/tauri", () => ({
 
 import {
   attachTerminalToConversationProject,
-  buildPacketCodeHandoffPayload,
   delegateWorkspaceToAgents,
-  formatPacketCodeHandoffPayload,
   linkConversationToFlight,
   openConversationGitEnding,
-  openConversationInPacketCode,
   openConversationProjectInWorkspace,
   openFlightAttemptInWorkspace,
 } from "@/lib/agentHandoffs";
@@ -212,23 +209,6 @@ describe("WA3 agent handoffs", () => {
     expect(workspace.panes[0].conversationId).toBeUndefined();
   });
 
-  it("focuses one PacketCode pane and never clones conversation state", () => {
-    const first = openConversationInPacketCode("conv-1");
-    const second = openConversationInPacketCode("conv-1");
-
-    expect(first.ok).toBe(true);
-    expect(second.ok).toBe(true);
-    const packetCodePanes = useWorkspaceStore
-      .getState()
-      .workspaces.flatMap((workspace) => workspace.panes)
-      .filter((pane) => pane.agentId === "packetcode");
-    expect(packetCodePanes).toHaveLength(1);
-    expect(useAgentTaskStore.getState().conversations).toHaveLength(1);
-    expect(
-      useWorkspaceAgentsDogfoodStore.getState().evidence.counters.agent_packetcode_handoff,
-    ).toBe(2);
-  });
-
   it("opens the authoritative Git ending in the project Workspace without attaching", () => {
     const result = openConversationGitEnding("conv-1");
 
@@ -265,57 +245,6 @@ describe("WA3 agent handoffs", () => {
     expect(
       useWorkspaceAgentsDogfoodStore.getState().evidence.counters.flight_attempt_opened_workspace,
     ).toBe(1);
-  });
-
-  it("refuses PacketCode when it is not detected instead of silently falling back", () => {
-    useAgentStore.setState((state) => ({
-      agents: state.agents.map((agent) => ({
-        ...agent,
-        installed: agent.id === "codex",
-      })),
-    }));
-
-    expect(openConversationInPacketCode("conv-1")).toMatchObject({
-      ok: false,
-      code: "packetcode_unavailable",
-    });
-    expect(useWorkspaceStore.getState().workspaces).toHaveLength(0);
-  });
-
-  it("freezes a visible PacketCode payload without transcript, secrets, or authority transfer", () => {
-    const payload = buildPacketCodeHandoffPayload({
-      conversation: conversation({
-        messages: [
-          {
-            id: "secret-message",
-            role: "user",
-            content: "API_TOKEN=do-not-copy",
-            timestamp: 1,
-          },
-        ],
-      }),
-      objective: "Run the focused checks",
-      references: ["src/app.ts", "src/app.ts", "issue:42"],
-      createdAt: 30,
-    });
-    const formatted = formatPacketCodeHandoffPayload(payload);
-
-    expect(payload.references).toEqual(["src/app.ts", "issue:42"]);
-    expect(payload.constraints).toEqual({
-      transcriptIncluded: false,
-      secretsIncluded: false,
-      hiddenReasoningIncluded: false,
-      authorityTransfer: false,
-    });
-    expect(payload.sourcePermissionPosture).toMatchObject({
-      permissionMode: "ask_for_risky",
-      approveWrites: true,
-      enabledMcpServerIds: ["trusted-local"],
-      mcpTrustSnapshot: null,
-    });
-    expect(formatted).toContain('"objective": "Run the focused checks"');
-    expect(formatted).not.toContain("API_TOKEN");
-    expect(formatted).toContain('"authorityTransfer": false');
   });
 
   it("delegates a remote Workspace to the Agents launcher with the same SSH target", () => {

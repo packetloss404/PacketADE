@@ -51,6 +51,7 @@ pub mod ssh_keys;
 pub mod state;
 pub mod statusline;
 pub mod usage;
+pub mod webview_storage_mirror;
 
 use std::path::Path;
 

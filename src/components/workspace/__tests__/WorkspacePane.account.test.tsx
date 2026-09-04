@@ -48,6 +48,7 @@ vi.mock("@/components/session/TerminalPane", () => ({
               error: null,
               showApproval: false,
               cliCommand: props.cliCommand,
+              lastExit: null,
               onRestart: vi.fn(),
               onKill: vi.fn(),
             })

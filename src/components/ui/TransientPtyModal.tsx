@@ -3,7 +3,12 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Modal } from "@/components/ui/Modal";
-import { writePty, resizePty } from "@/lib/tauri";
+import {
+  writePty,
+  resizePty,
+  describePtyExitOutcome,
+  type PtyExitOutcome,
+} from "@/lib/tauri";
 import { useTransientPty } from "@/hooks/useTransientPty";
 import "@xterm/xterm/css/xterm.css";
 
@@ -26,8 +31,17 @@ interface TransientPtyModalProps {
   /** If set, kill the PTY after this many ms. */
   timeoutMs?: number;
   onClose: () => void;
-  /** Auto-dismiss the modal this many ms after the PTY exits successfully.
-   *  0 = stay open until the user clicks Close. */
+  /**
+   * Reports the real PTY exit outcome before any optional auto-close.
+   *
+   * Callers that verify the effect of the command (an installer, a login)
+   * MUST distinguish `unknown` from `clean` and re-verify rather than trust a
+   * success this modal never observed.
+   */
+  onExit?: (outcome: PtyExitOutcome) => void;
+  /** Auto-dismiss the modal this many ms after the PTY exits cleanly.
+   *  0 = stay open until the user clicks Close. Only a genuinely observed
+   *  exit code 0 auto-closes — an unobserved status leaves the output up. */
   autoCloseOnSuccessMs?: number;
   runningMessage?: string;
   doneMessage?: string;
@@ -51,6 +65,7 @@ export function TransientPtyModal({
   interactive = true,
   timeoutMs,
   onClose,
+  onExit,
   autoCloseOnSuccessMs = 0,
   runningMessage = "Running…",
   doneMessage = "Completed.",
@@ -61,6 +76,7 @@ export function TransientPtyModal({
   const fitAddonRef = useRef<FitAddon | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const [exitState, setExitState] = useState<"running" | "done" | "error">("running");
+  const [exitOutcome, setExitOutcome] = useState<PtyExitOutcome | null>(null);
 
   const { start, kill, sessionId } = useTransientPty({
     command,
@@ -72,12 +88,17 @@ export function TransientPtyModal({
     onOutput: (chunk) => {
       xtermRef.current?.write(chunk);
     },
-    onExit: (success) => {
-      setExitState(success ? "done" : "error");
+    onExit: (outcome) => {
+      // Only an observed non-zero code is an error. `killed` is a deliberate
+      // control action and `unknown` is an absence of evidence — neither is
+      // the command failing, and neither is a success worth auto-closing on.
+      setExitState(outcome.kind === "failed" ? "error" : "done");
+      setExitOutcome(outcome);
+      onExit?.(outcome);
       xtermRef.current?.write(
-        `\r\n\x1b[90m[${success ? "Session ended" : "Session terminated"}]\x1b[0m\r\n`,
+        `\r\n\x1b[90m[${describePtyExitOutcome(outcome)}]\x1b[0m\r\n`,
       );
-      if (success && autoCloseOnSuccessMs > 0) {
+      if (outcome.kind === "clean" && autoCloseOnSuccessMs > 0) {
         setTimeout(onClose, autoCloseOnSuccessMs);
       }
     },
@@ -190,12 +211,17 @@ export function TransientPtyModal({
     onClose();
   };
 
+  // A finished run reports what actually happened. The caller's `doneMessage`
+  // is only honest for an observed clean exit; a killed or unobserved exit
+  // says so rather than borrowing the success wording.
   const statusText =
     exitState === "running"
       ? runningMessage
-      : exitState === "done"
-      ? doneMessage
-      : errorMessage;
+      : exitState === "error"
+        ? errorMessage
+        : exitOutcome && exitOutcome.kind !== "clean"
+          ? describePtyExitOutcome(exitOutcome)
+          : doneMessage;
 
   return (
     <Modal

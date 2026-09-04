@@ -303,7 +303,7 @@ surface redesign.
 - Make Workspace creation CLI-only by default.
 - Move GUI-agent creation to Agents.
 - Put PacketCode first in Workspace.
-- Add explicit cross-surface and PacketCode handoffs.
+- Add explicit cross-surface handoffs. The dedicated PacketCode handoff was later retired.
 - Stop creating wrapper workspaces for new conversation navigation.
 
 ### Phase 3 - compatibility migration

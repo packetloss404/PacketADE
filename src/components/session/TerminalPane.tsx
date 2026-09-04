@@ -1,5 +1,7 @@
 import { useRef } from "react";
+import { AlertTriangle } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { describePtyExitOutcome, type PtyExitOutcome } from "@/lib/tauri";
 import { useTerminalSession } from "@/hooks/useTerminalSession";
 import { useXterm } from "@/hooks/useXterm";
 import { useApprovalShortcuts } from "@/hooks/useApprovalShortcuts";
@@ -14,6 +16,12 @@ export interface TerminalHeaderRenderState {
   error: string | null;
   showApproval: boolean;
   cliCommand: string;
+  /**
+   * How the last PTY session in this pane ended, or `null` if none has. A
+   * custom header MUST distinguish `failed` from `clean`: without it a CLI
+   * that died on startup looks exactly like one the user closed.
+   */
+  lastExit: PtyExitOutcome | null;
   onRestart: () => void;
   onKill: () => void | Promise<void>;
 }
@@ -73,6 +81,7 @@ export function TerminalPane({
     sessionId,
     alive,
     error,
+    lastExit,
     showApproval,
     activityInfo,
     projectPath,
@@ -124,6 +133,7 @@ export function TerminalPane({
           error,
           showApproval,
           cliCommand,
+          lastExit,
           onRestart: handleRestart,
           onKill: handleKill,
         })
@@ -133,6 +143,7 @@ export function TerminalPane({
           error={error}
           showApproval={showApproval}
           cliCommand={cliCommand}
+          lastExit={lastExit}
           accountId={accountId}
           onRestart={handleRestart}
           onKill={handleKill}
@@ -158,6 +169,31 @@ export function TerminalPane({
 
       {alive && activityInfo.state === "thinking" && !activityInfo.tool && (
         <ActivityStrip state="thinking" tool={null} file={null} />
+      )}
+
+      {/* The pane used to simply stop when a CLI crashed: no error, no exit
+          code, nothing to act on. A failed or unreadable exit now leaves a
+          persistent bar with the code, what it usually means, and a restart. */}
+      {!alive && (lastExit?.kind === "failed" || lastExit?.kind === "unknown") && (
+        <div
+          className={`flex items-center gap-2 border-t px-3 py-1.5 text-[11px] ${
+            lastExit.kind === "failed"
+              ? "border-accent-red/30 bg-accent-red/5 text-accent-red"
+              : "border-accent-amber/30 bg-accent-amber/5 text-accent-amber"
+          }`}
+        >
+          <AlertTriangle size={12} className="shrink-0" />
+          <span className="truncate" title={describePtyExitOutcome(lastExit)}>
+            {describePtyExitOutcome(lastExit)}
+          </span>
+          <div className="flex-1" />
+          <button
+            onClick={handleRestart}
+            className="shrink-0 rounded border border-current px-1.5 py-0.5 text-[10px] opacity-80 hover:opacity-100"
+          >
+            Restart
+          </button>
+        </div>
       )}
 
       <SessionStatusBar cliCommand={cliCommand} alive={alive} projectPath={projectPath} />

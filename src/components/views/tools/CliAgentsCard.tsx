@@ -37,16 +37,27 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import {
   brandClasses,
   CLI_CATALOG,
+  cliLaunchSourceLabel,
   type CliCatalogEntry,
   getCliBinaries,
   packetCodeInstallCommand,
 } from "@/lib/cli-catalog";
-import { detectCliCatalog, type DetectCatalogResult } from "@/lib/tauri";
+import {
+  cliLaunchDiagnostics,
+  detectCliCatalog,
+  inspectPacketCodeInstallation,
+  type DetectCatalogResult,
+  type PacketCodeInstallationInspection,
+  type PtyExitOutcome,
+} from "@/lib/tauri";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import type { AgentConfig } from "@/types/agent";
 import { TransientPtyModal } from "@/components/ui/TransientPtyModal";
 import { CliCatalogHeader } from "./CliCatalogHeader";
-import { PacketCodeIntegrationPanel } from "./PacketCodeIntegrationPanel";
+import {
+  PacketCodeIntegrationPanel,
+  type PacketCodeInstallReport,
+} from "./PacketCodeIntegrationPanel";
 import { usePacketCodeIntegrationStore } from "@/stores/packetCodeIntegrationStore";
 
 // Static map from catalog iconName -> lucide component. Catalog uses string
@@ -98,6 +109,12 @@ function isWindowsHost(): boolean {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent || navigator.platform || "";
   return /windows/i.test(ua) || /win32|win64/i.test(ua);
+}
+
+function oneShotInstallInput(command: string, windows: boolean): string {
+  return windows
+    ? `${command} & exit /b`
+    : `${command}; packetbench_install_status=$?; exit $packetbench_install_status`;
 }
 
 function basename(p: string): string {
@@ -294,6 +311,30 @@ function CliCatalogCard({
         </div>
       </div>
 
+      {/* Launch identity. The resolver that produced this is the SAME one the
+          PTY spawns through, so this line is a promise, not a guess — and the
+          tier answers "why THIS binary?", which used to be unanswerable for
+          every CLI except PacketCode. */}
+      {result?.path && (
+        <div className="flex flex-col gap-0.5 text-[10px] leading-tight">
+          <span
+            className="truncate font-mono text-text-faint"
+            title={result.path}
+          >
+            {result.path}
+          </span>
+          <span
+            className={
+              result.source === "settings" || result.source === "legacyPin"
+                ? "text-accent-amber"
+                : "text-text-muted"
+            }
+          >
+            via {cliLaunchSourceLabel(result.source)}
+          </span>
+        </div>
+      )}
+
       {/* Manual-path override tag — visible whenever the user has pinned a
           path AND detection succeeded. The X clears the override and
           re-runs detection so the card flips back to PATH-based resolution. */}
@@ -453,7 +494,12 @@ export function CliAgentsCard({ focusedCliId = null }: CliAgentsCardProps) {
     name: string;
     command: string;
     projectPath: string | undefined;
+    packetCodeChannel?: "stable" | "preview";
   } | null>(null);
+  const [packetCodeInspection, setPacketCodeInspection] =
+    useState<PacketCodeInstallationInspection | null>(null);
+  const [packetCodeInstallReport, setPacketCodeInstallReport] =
+    useState<PacketCodeInstallReport | null>(null);
 
   useEffect(() => {
     if (
@@ -595,13 +641,19 @@ export function CliAgentsCard({ focusedCliId = null }: CliAgentsCardProps) {
       if (!result.installed) {
         return {
           ok: false,
-          output: `${selectedEntry.binary} not found on PATH.`,
+          output: result.path
+            ? `${selectedEntry.binary} resolved to ${result.path} via ${cliLaunchSourceLabel(result.source)}, but it did not respond.`
+            : `${selectedEntry.binary} was not found in any launch tier (Settings override, legacy pin, PATH, install directory).`,
         };
       }
       const versionLine = result.version
         ? `${selectedEntry.binary} ${result.version}`
-        : `${selectedEntry.binary} responds on PATH (no version string)`;
-      const pathLine = result.path ? `\n${result.path}` : "";
+        : `${selectedEntry.binary} responds (no version string)`;
+      // Name the tier: this is the binary a Workspace pane will spawn, and the
+      // tier is the only thing that explains why it and not another copy.
+      const pathLine = result.path
+        ? `\n${result.path}\nvia ${cliLaunchSourceLabel(result.source)}`
+        : "";
       return { ok: true, output: `${versionLine}${pathLine}` };
     } catch (err) {
       return {
@@ -610,6 +662,14 @@ export function CliAgentsCard({ focusedCliId = null }: CliAgentsCardProps) {
       };
     }
   }
+
+  /** Build the redacted launch-resolution report for a bug report. The Rust
+   *  side does the work so the text is produced by the same resolver the panes
+   *  use, and so the home directory can be abbreviated to `~`. */
+  const handleCopyDiagnostics = useCallback(
+    () => cliLaunchDiagnostics(buildDetectItems()),
+    [buildDetectItems],
+  );
 
   // === v0.8.7 actions ===
 
@@ -630,12 +690,30 @@ export function CliAgentsCard({ focusedCliId = null }: CliAgentsCardProps) {
           setResults((prev) => ({ ...prev, [entry.id]: result }));
         }
         syncAgentFromResult(entry, result, manualPath);
+        return result ?? null;
       } catch (err) {
         console.warn("[cli-catalog] single-entry detect failed:", err);
+        return null;
       }
     },
     [syncAgentFromResult],
   );
+
+  const refreshPacketCodeInspection = useCallback(async (manualPath: string | null) => {
+    try {
+      const inspection = await inspectPacketCodeInstallation(manualPath);
+      setPacketCodeInspection(inspection);
+      return inspection;
+    } catch (error) {
+      console.warn("[packetcode] installation inspection failed:", error);
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedEntry?.id !== "packetcode") return;
+    void refreshPacketCodeInspection(overrides.packetcode?.manualPath ?? null);
+  }, [overrides.packetcode?.manualPath, refreshPacketCodeInspection, selectedEntry?.id]);
 
   /** Open a file picker scoped to the host OS so the user can pin a binary
    *  on disk. On selection, persist the override + immediately re-probe the
@@ -683,7 +761,7 @@ export function CliAgentsCard({ focusedCliId = null }: CliAgentsCardProps) {
    *  the install process exits, the modal stays open with the final output
    *  for the user to review, then auto-cleans the PTY on close. */
   const handleInstall = useCallback(
-    (entry: CliCatalogEntry) => {
+    async (entry: CliCatalogEntry) => {
       const cmd =
         entry.id === "packetcode"
           ? packetCodeInstallCommand(packetCodeReleaseChannel, isWindowsHost())
@@ -698,14 +776,87 @@ export function CliAgentsCard({ focusedCliId = null }: CliAgentsCardProps) {
         next.add(entry.id);
         return next;
       });
+      const packetCodeChannel =
+        entry.id === "packetcode" ? packetCodeReleaseChannel : undefined;
+      if (packetCodeChannel) {
+        const before = await refreshPacketCodeInspection(
+          overrides.packetcode?.manualPath ?? null,
+        );
+        setPacketCodeInstallReport({
+          status: "running",
+          channel: packetCodeChannel,
+          before,
+          after: null,
+        });
+      }
       setInstallTarget({
         entryId: entry.id,
         name: entry.name,
         command: cmd,
         projectPath,
+        packetCodeChannel,
       });
     },
-    [packetCodeReleaseChannel],
+    [overrides.packetcode?.manualPath, packetCodeReleaseChannel, refreshPacketCodeInspection],
+  );
+
+  /**
+   * Score an installer run from its REAL exit outcome.
+   *
+   * The distinction that matters here is `unknown` vs `clean`. The transient
+   * runner reports `unknown` when it never observed an exit status at all —
+   * previously that was laundered into success, so an installer that died
+   * could still report "install verified". Now an unobserved exit is not
+   * trusted on its own: the binary probe below is the sole authority, and if
+   * it cannot confirm a version the run is reported as failed, naming the
+   * fact that the exit was never observed.
+   */
+  const handleInstallExit = useCallback(
+    (outcome: PtyExitOutcome) => {
+      const current = installTarget;
+      if (!current?.packetCodeChannel) return;
+      if (outcome.kind === "failed" || outcome.kind === "killed") {
+        setPacketCodeInstallReport((report) =>
+          report
+            ? {
+                ...report,
+                status: "error",
+                message:
+                  outcome.kind === "killed"
+                    ? "Installation was cancelled before it finished."
+                    : `Installer exited with code ${outcome.exitCode}.`,
+              }
+            : report,
+        );
+        return;
+      }
+
+      setPacketCodeInstallReport((report) =>
+        report ? { ...report, status: "verifying" } : report,
+      );
+      void (async () => {
+        const manualPath = useCliOverrideStore.getState().overrides.packetcode?.manualPath ?? null;
+        const entry = CLI_CATALOG.find((candidate) => candidate.id === "packetcode");
+        if (entry) await redetectOne(entry, manualPath);
+        const after = await refreshPacketCodeInspection(manualPath);
+        const verified = !!after?.installerVersion;
+        setPacketCodeInstallReport((report) =>
+          report
+            ? {
+                ...report,
+                status: verified ? "success" : "error",
+                after,
+                message: verified
+                  ? undefined
+                  : outcome.kind === "unknown"
+                    ? "The installer's exit status was never observed and the installed binary failed verification."
+                    : "Installer exited successfully, but the installed binary failed verification.",
+              }
+            : report,
+        );
+      })();
+    },
+    [installTarget, redetectOne, refreshPacketCodeInspection],
   );
 
   const pinExecutable = useCallback(
@@ -714,13 +865,24 @@ export function CliAgentsCard({ focusedCliId = null }: CliAgentsCardProps) {
       if (!entry) return;
       setManualPath(entry.id, path);
       await redetectOne(entry, path);
+      const inspection = await refreshPacketCodeInspection(path);
+      setPacketCodeInstallReport((report) =>
+        report && inspection ? { ...report, after: inspection } : report,
+      );
     },
-    [redetectOne, setManualPath],
+    [redetectOne, refreshPacketCodeInspection, setManualPath],
   );
 
   const clearInstallTarget = useCallback(() => {
     const current = installTarget;
     if (current) {
+      if (current.entryId === "packetcode") {
+        setPacketCodeInstallReport((report) =>
+          report?.status === "running"
+            ? { ...report, status: "error", message: "Installation was cancelled." }
+            : report,
+        );
+      }
       setInstallingIds((cur) => {
         if (!cur.has(current.entryId)) return cur;
         const next = new Set(cur);
@@ -803,6 +965,7 @@ export function CliAgentsCard({ focusedCliId = null }: CliAgentsCardProps) {
         isRescanning={detecting}
         onRescan={rescan}
         onTest={handleTest}
+        onCopyDiagnostics={handleCopyDiagnostics}
       />
 
 
@@ -830,8 +993,10 @@ export function CliAgentsCard({ focusedCliId = null }: CliAgentsCardProps) {
           detection={results.packetcode}
           manualPath={overrides.packetcode?.manualPath ?? null}
           installing={installingIds.has("packetcode")}
+          inspection={packetCodeInspection}
+          installReport={packetCodeInstallReport}
           onPinExecutable={pinExecutable}
-          onInstall={() => handleInstall(selectedEntry)}
+          onInstall={() => void handleInstall(selectedEntry)}
         />
       )}
 
@@ -1054,11 +1219,12 @@ export function CliAgentsCard({ focusedCliId = null }: CliAgentsCardProps) {
           // line that's about to run before output streams in.
           command={isWindowsHost() ? "cmd" : "bash"}
           projectPath={installTarget.projectPath}
-          initialInput={installTarget.command}
+          initialInput={oneShotInstallInput(installTarget.command, isWindowsHost())}
           interactive
           onClose={clearInstallTarget}
+          onExit={handleInstallExit}
           runningMessage={`Installing ${installTarget.name}…`}
-          doneMessage="Install completed — close to refresh status."
+          doneMessage="Installer exited successfully — close to view the verified result."
           errorMessage="Install ended with an error."
         />
       )}

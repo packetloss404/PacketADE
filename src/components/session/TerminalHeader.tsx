@@ -1,12 +1,20 @@
 import { X, RotateCcw, Plus } from "lucide-react";
 import { getAgentColor } from "@/lib/agentColors";
 import { AccountChip } from "@/components/session/AccountChip";
+import {
+  describePtyExitOutcome,
+  ptyExitPillLabel,
+  type PtyExitOutcome,
+} from "@/lib/tauri";
 
 interface TerminalHeaderProps {
   alive: boolean;
   error: string | null;
   showApproval: boolean;
   cliCommand: string;
+  /** How the last session ended. Rendered as a chip so a crashed CLI does not
+   *  look identical to one the user closed. */
+  lastExit?: PtyExitOutcome | null;
   /** Multi-account: the CLI account this session is bound to. Undefined =
    *  ambient login, and nothing extra is rendered. */
   accountId?: string | null;
@@ -21,6 +29,7 @@ export function TerminalHeader({
   error,
   showApproval,
   cliCommand,
+  lastExit = null,
   accountId,
   onRestart,
   onKill,
@@ -28,6 +37,13 @@ export function TerminalHeader({
   showCloseButton,
 }: TerminalHeaderProps) {
   const c = getAgentColor(cliCommand);
+  const exitLabel = alive ? null : ptyExitPillLabel(lastExit);
+  const exitToneClass =
+    lastExit?.kind === "failed"
+      ? "border-accent-red/40 bg-accent-red/5 text-accent-red"
+      : lastExit?.kind === "unknown"
+        ? "border-accent-amber/40 bg-accent-amber/5 text-accent-amber"
+        : "border-bg-border bg-bg-elevated text-text-muted";
   return (
     <div className="flex items-center justify-between border-b border-bg-border bg-bg-secondary px-3 py-1">
       <div className="flex items-center gap-2">
@@ -37,7 +53,7 @@ export function TerminalHeader({
               ? "animate-pulse bg-accent-amber"
               : alive
                 ? "animate-pulse bg-accent-green"
-                : error
+                : error || lastExit?.kind === "failed"
                   ? "bg-accent-red"
                   : "bg-text-muted"
           }`}
@@ -56,6 +72,14 @@ export function TerminalHeader({
         {/* Sits immediately beside the agent identity so "which CLI" and
             "which login" read as one unit. Renders nothing when ambient. */}
         <AccountChip accountId={accountId} className="max-w-[140px]" />
+        {exitLabel && lastExit && (
+          <span
+            className={`rounded-full border px-2 py-0.5 font-mono text-[10px] ${exitToneClass}`}
+            title={describePtyExitOutcome(lastExit)}
+          >
+            {exitLabel}
+          </span>
+        )}
       </div>
       <div className="flex items-center gap-1">
         {!alive && (

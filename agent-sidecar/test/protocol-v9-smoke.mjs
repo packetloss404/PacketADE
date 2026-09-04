@@ -52,9 +52,15 @@ const __dirname = dirname(__filename);
 
 const SESSION_ID = "protocol-v9-smoke";
 const EXPECTED_PROTOCOL_VERSION = 11;
-const STEP_TIMEOUT_MS = 3000;
-const START_TIMEOUT_MS = 3000;
-const READY_TIMEOUT_MS = 3000;
+// Headroom for a BUSY machine, not for a slow sidecar. Booting dist/index.js
+// (which eagerly imports the Anthropic, OpenAI and MCP SDKs) takes ~0.9s on an
+// idle box, so the old 3-5s budgets were fine in isolation — and failed anyway
+// when these smokes ran beside a cargo build using every core. These smokes
+// assert protocol behaviour, not latency, so the budget sits well clear of
+// contention rather than close to the measured best case.
+const STEP_TIMEOUT_MS = 20_000;
+const START_TIMEOUT_MS = 20_000;
+const READY_TIMEOUT_MS = 20_000;
 
 const sidecarEntry = resolve(__dirname, "..", "dist", "index.js");
 

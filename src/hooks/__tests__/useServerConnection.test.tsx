@@ -19,7 +19,10 @@ vi.mock("@tauri-apps/api/event", () => ({
   }),
 }));
 
-vi.mock("@/lib/tauri", () => ({
+// Spread the real module so the pure PTY exit-classification helpers stay
+// real; only the IPC seams are stubbed.
+vi.mock("@/lib/tauri", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/tauri")>()),
   createPtySession: vi.fn(),
   killPty: vi.fn(),
   listPtySessions: vi.fn(),

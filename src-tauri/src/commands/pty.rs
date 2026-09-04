@@ -78,130 +78,67 @@ fn command_program_name(command: &str) -> String {
 /// FAULT this exists to fix: the pin used to be read inside the `cfg(not(windows))`
 /// resolver only, so on Windows — the primary platform — the documented escape
 /// hatch did nothing at all and gave no hint that it had been ignored. The read
-/// is platform-neutral now and both resolvers consult it first.
+/// is platform-neutral now and both resolvers consult it after any explicit
+/// Settings-selected path.
 ///
 /// Takes `home` explicitly so the behaviour is testable without touching the
 /// developer's real home directory.
+#[cfg(test)]
 fn pinned_cli_binary_in(home: &std::path::Path, command: &str) -> Option<String> {
-    // A command may already arrive as a path (a manual override); the pin is
-    // keyed on the bare program name, so strip any directory/extension first.
-    let key = command_program_name(command);
-    let pin = home
-        .join(crate::core::brand::DATA_DIR_NAME)
-        .join(format!("{key}-bin"));
-    let contents = std::fs::read_to_string(&pin).ok()?;
-    let path = contents.trim();
-    if path.is_empty() {
-        warn!(command, pin = %pin.display(), "App pin file is empty; ignoring");
-        return None;
-    }
-    if !std::path::Path::new(path).exists() {
-        // Loud on purpose: a pin that points at a moved/deleted binary is a
-        // configuration the user believes is in force. Falling through to PATH
-        // without a word is how the pin became invisible in the first place.
-        warn!(
-            command,
-            pin = %pin.display(),
-            pinned = path,
-            "App-pinned CLI binary does not exist; falling back to PATH resolution"
-        );
-        return None;
-    }
-    info!(command, pinned = path, "Using app-pinned CLI binary");
-    Some(path.to_string())
+    crate::core::agent::app_pinned_cli_binary_in(home, command)
 }
 
-/// `pinned_cli_binary_in` against the real home directory.
-fn pinned_cli_binary(command: &str) -> Option<String> {
-    pinned_cli_binary_in(&dirs::home_dir()?, command)
-}
-
-/// An allowlisted CLI at one of its product's documented off-`PATH` install
-/// locations. Only `packetcode` has any: it is the one agent whose installer
-/// deliberately does not mutate `PATH` (`install.ps1` says so in as many
-/// words), so its stable destination has to be part of normal discovery.
+/// Resolve the exact binary a PTY pane will spawn, and the tier that chose it.
 ///
-/// FAULT this exists to fix: the install directory was already searched by the
-/// surface that decides whether packetcode is PRESENT —
-/// [`crate::core::agent::resolve_catalog_path`], which sets the agent
-/// catalog's `installed` flag — but NOT by the PTY resolver that actually
-/// launches the pane. A packetcode installed exactly where its own installer
-/// puts it was therefore reported as installed, offered in the Workspace agent
-/// list, and then died the instant the user opened a pane, because `where
+/// This delegates to [`crate::core::agent::resolve_cli_launch_sync`] — the SAME
+/// tier order every reporting surface calls (`detect_cli_catalog`,
+/// `inspect_cli_launch`, `inspect_packetcode_installation`). There used to be
+/// two implementations of the ladder, one here and one in `core::agent`, and
+/// two implementations of the same order drift: a readout that disagrees with
+/// what actually spawns is worse than no readout at all.
+///
+/// FAULT the shared install-directory tier exists to fix: the install
+/// directory was searched by the surface that decides whether an agent is
+/// PRESENT (which sets the catalog's `installed` flag) but NOT by the PTY
+/// resolver that launches the pane. A packetcode installed exactly where its
+/// own installer puts it was reported as installed, offered in the Workspace
+/// agent list, and then died the instant a pane opened, because `where
 /// packetcode` finds nothing and the spawn fell through to the bare name.
-/// Detection and launch have to agree on where the binary is; anything else is
-/// an affordance that only ever fails.
 ///
-/// Deliberately the LAST tier on both platforms: an app pin is an explicit
-/// override and a `PATH` hit is the user's own environment, and neither should
-/// lose to a directory nobody named.
-fn installed_cli_binary(command: &str) -> Option<String> {
-    installed_cli_binary_among(command, crate::core::agent::packetcode_fallback_candidates)
-}
+/// The ONE thing that stays here is Git Bash. `bash` is a terminal shell, not
+/// a CLI agent, and `where bash` can resolve the legacy WSL launcher in
+/// System32, so Git for Windows' documented install directories are consulted
+/// AHEAD of `PATH` for it. That precedence is long-standing and deliberately
+/// unchanged — folding it into the agent tier order (where install directories
+/// come last) would change which `bash` launches.
+fn resolve_pty_launch(command: &str) -> crate::core::agent::ResolvedCliLaunch {
+    let spec = crate::core::agent::CliLaunchSpec::from_command(command);
 
-/// [`installed_cli_binary`]'s rule as a pure function of its candidate list, so
-/// the which-command and first-hit-wins halves are testable without depending
-/// on what happens to be installed on the machine running the tests.
-fn installed_cli_binary_among(
-    command: &str,
-    candidates: impl FnOnce() -> Vec<std::path::PathBuf>,
-) -> Option<String> {
-    if command_program_name(command) != "packetcode" {
-        return None;
-    }
-    let hit = candidates()
-        .into_iter()
-        .map(|path| path.to_string_lossy().into_owned())
-        .find(|path| crate::core::agent::is_executable_file(path))?;
-    info!(command, resolved = %hit, "Using CLI binary from its documented install directory");
-    Some(hit)
-}
+    #[cfg(windows)]
+    if command_program_name(command) == "bash" {
+        use crate::core::agent::{CliLaunchSource, ResolvedCliLaunch};
 
-/// Resolve a CLI agent command to an absolute executable path.
-///
-/// 1. An app pin (`~/.packetbench/<command>-bin` containing an absolute path) wins
-///    if present — an escape hatch to force a specific binary (e.g. when a CLI
-///    release crashes in our PTY).
-/// 2. Otherwise, resolve a bare command name against PATH to an absolute path.
-///    This is important: we always spawn with the pane's cwd, and our PTY layer
-///    resolves a *relative* program against cwd FIRST — so a same-named file or
-///    directory in the cwd (e.g. a stray `~/claude` dir while cwd is the home
-///    dir) would shadow the real CLI and make `exec` fail (EACCES on a dir →
-///    "[Session ended]"). Returning an absolute path avoids that entirely.
-/// 3. Then the product's documented install directories — see
-///    [`installed_cli_binary`], which is what keeps launch in step with the
-///    detection that put the agent on screen.
-/// 4. If it still can't be resolved, return the name unchanged and let it fail
-///    loudly.
-#[cfg(not(windows))]
-fn resolve_pinned_cli_binary(command: &str) -> String {
-    if let Some(pinned) = pinned_cli_binary(command) {
-        return pinned;
-    }
-
-    // Already an explicit path — use as-is.
-    if command.contains('/') {
-        return command.to_string();
-    }
-
-    // Resolve the bare name against PATH to an absolute executable file.
-    if let Some(path) = std::env::var_os("PATH") {
-        use std::os::unix::fs::PermissionsExt;
-        for dir in std::env::split_paths(&path) {
-            let candidate = dir.join(command);
-            if let Ok(meta) = std::fs::metadata(&candidate) {
-                if meta.is_file() && meta.permissions().mode() & 0o111 != 0 {
-                    return candidate.to_string_lossy().into_owned();
-                }
-            }
+        // Settings and the app pin still outrank Git for Windows.
+        let before_path = crate::core::agent::resolve_cli_launch_with(&spec, |_| None);
+        if matches!(
+            before_path.source,
+            CliLaunchSource::Settings | CliLaunchSource::LegacyPin
+        ) {
+            return before_path;
+        }
+        if let Some(git_bash) = crate::core::agent::git_bash_fallback_candidates()
+            .into_iter()
+            .find(|candidate| candidate.is_file())
+        {
+            return ResolvedCliLaunch {
+                path: git_bash.to_string_lossy().into_owned(),
+                source: CliLaunchSource::InstallerLocation,
+                rejected_settings_path: before_path.rejected_settings_path,
+            };
         }
     }
 
-    if let Some(installed) = installed_cli_binary(command) {
-        return installed;
-    }
-
-    command.to_string()
+    crate::core::agent::resolve_cli_launch_sync(&spec)
 }
 
 /// A neutral, empty working directory for panes opened without a project.
@@ -214,129 +151,6 @@ fn neutral_scratch_cwd() -> Option<String> {
         .join("scratch");
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir.to_string_lossy().into_owned())
-}
-
-/// Select a spawnable Windows command candidate from `where.exe` output.
-///
-/// Codex is the exceptional case: installing the Codex desktop app adds a
-/// WindowsApps `Codex.exe` ahead of (or alongside) the npm CLI's `codex.cmd`.
-/// That packaged GUI executable is not a PTY CLI and cannot be spawned through
-/// this process (`Access is denied`). Prefer the npm wrapper for bare `codex`;
-/// a non-Store native `codex.exe` remains a valid fallback.
-#[cfg(windows)]
-fn select_windows_command_candidate(command: &str, lines: &[&str]) -> Option<String> {
-    let requested = command.to_ascii_lowercase();
-    let is_codex = std::path::Path::new(&requested)
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        == Some("codex");
-    let lower = |line: &&str| line.to_ascii_lowercase();
-
-    if is_codex {
-        if let Some(cmd_file) = lines.iter().find(|line| lower(line).ends_with(".cmd")) {
-            return Some((*cmd_file).to_string());
-        }
-        if let Some(exe) = lines.iter().find(|line| {
-            let candidate = lower(line);
-            candidate.ends_with(".exe") && !candidate.contains("\\windowsapps\\openai.codex_")
-        }) {
-            return Some((*exe).to_string());
-        }
-        return None;
-    }
-
-    if let Some(exe) = lines.iter().find(|line| lower(line).ends_with(".exe")) {
-        return Some((*exe).to_string());
-    }
-    if let Some(cmd_file) = lines.iter().find(|line| lower(line).ends_with(".cmd")) {
-        return Some((*cmd_file).to_string());
-    }
-    lines
-        .iter()
-        .find(|line| {
-            line.rsplit('\\')
-                .next()
-                .map(|file| file.contains('.'))
-                .unwrap_or(false)
-        })
-        .or_else(|| lines.first())
-        .map(|line| (*line).to_string())
-}
-
-/// Resolve a command name to its actual path on Windows.
-/// Uses `where` to find a spawnable CLI binary or wrapper.
-#[cfg(windows)]
-fn resolve_windows_command(command: &str) -> String {
-    use super::shared::hide_window;
-
-    // Same first step as the POSIX resolver: the app pin outranks PATH. It is
-    // read here rather than only in `resolve_pinned_cli_binary` because that
-    // function is `cfg(not(windows))` — which is what made the documented
-    // override a silent no-op on the platform most users are on.
-    if let Some(pinned) = pinned_cli_binary(command) {
-        return pinned;
-    }
-
-    // A manually-pinned binary arrives as an explicit path (absolute, or
-    // containing a separator). `where` doesn't resolve full paths, so use it
-    // directly when it points at a real file.
-    let as_path = std::path::Path::new(command);
-    if (as_path.is_absolute() || command.contains('\\') || command.contains('/'))
-        && as_path.is_file()
-    {
-        return command.to_string();
-    }
-
-    if command.eq_ignore_ascii_case("bash") {
-        if let Some(path) = crate::core::agent::git_bash_fallback_candidates()
-            .into_iter()
-            .find(|candidate| candidate.is_file())
-        {
-            return path.to_string_lossy().into_owned();
-        }
-    }
-
-    let mut where_cmd = std::process::Command::new("where");
-    where_cmd.arg(command);
-    hide_window(&mut where_cmd);
-
-    if let Ok(output) = where_cmd.output() {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let lines: Vec<&str> = stdout
-                .lines()
-                .map(|l| l.trim())
-                .filter(|l| !l.is_empty())
-                .collect();
-
-            if let Some(candidate) = select_windows_command_candidate(command, &lines) {
-                return candidate;
-            }
-            if command.eq_ignore_ascii_case("codex") {
-                warn!(
-                    "Ignoring Windows Store Codex desktop executable; Codex CLI wrapper not found"
-                );
-                return "codex.cmd".to_string();
-            }
-        }
-    }
-
-    // `where` found nothing spawnable. Before giving up, look where the
-    // product's own installer puts the binary — the tier that keeps this
-    // resolver in step with the detection that decided the agent was
-    // installed. See `installed_cli_binary`.
-    if let Some(installed) = installed_cli_binary(command) {
-        return installed;
-    }
-
-    windows_command_lookup_fallback(command)
-}
-
-/// Preserve the requested command when `where` cannot resolve it. Appending a
-/// fabricated extension hides the real executable name and turns the eventual
-/// spawn failure into a misleading "*.cmd not found" error.
-fn windows_command_lookup_fallback(command: &str) -> String {
-    command.to_string()
 }
 
 /// Info about a running PTY session
@@ -553,11 +367,18 @@ pub struct PtyExitPayload {
     /// Child process exit code, when it could be captured. `None` when the
     /// child status couldn't be read (e.g. it was force-killed and reaped
     /// elsewhere). `0` means success; non-zero means the agent failed.
-    pub exit_code: Option<i32>,
-    /// Whether the session was terminated by a backend action rather than
-    /// exiting on its own. Currently always `false` — the orchestrator
-    /// flight-kill path was removed with the legacy task scheduler — but kept
-    /// in the payload so the frontend `pty:exit` contract is unchanged.
+    ///
+    /// Widened from `i32` to `i64` so a Windows NTSTATUS exit (`0xC0000005`
+    /// access violation, `0xC0000135` missing DLL — the common "this CLI
+    /// binary is broken" cases) reaches the UI as the unsigned value the OS
+    /// actually reported instead of a sign-wrapped negative number nobody can
+    /// look up.
+    pub exit_code: Option<i64>,
+    /// Whether the session was terminated by PacketBench rather than exiting
+    /// on its own — i.e. `kill_pty` ran (Kill, Restart, pane close, or any
+    /// programmatic stop). A deliberate control action, so the frontend must
+    /// render it distinctly from a crash AND must not score it as a
+    /// successful task completion.
     pub terminated: bool,
 }
 
@@ -868,9 +689,18 @@ pub fn create_pty_session(
     // which is not always the resolved CLI: a `.cmd` wrapper runs under
     // `cmd.exe`. The orphan registry matches on it, so it must name the real
     // child image.
+    let launch = resolve_pty_launch(&command);
+    info!(
+        command = %command,
+        resolved = %launch.path,
+        source = launch.source.as_str(),
+        rejected_settings_path = ?launch.rejected_settings_path,
+        "Resolved PTY launch binary"
+    );
+    let resolved = launch.path;
+
     #[cfg(windows)]
     let (mut cmd, spawned_program) = {
-        let resolved = resolve_windows_command(&command);
         if resolved.to_ascii_lowercase().ends_with(".cmd") {
             // .cmd batch scripts must go through cmd.exe /c
             let mut c = CommandBuilder::new("cmd.exe");
@@ -883,10 +713,7 @@ pub fn create_pty_session(
         }
     };
     #[cfg(not(windows))]
-    let (mut cmd, spawned_program) = {
-        let resolved = resolve_pinned_cli_binary(&command);
-        (CommandBuilder::new(&resolved), resolved)
-    };
+    let (mut cmd, spawned_program) = (CommandBuilder::new(&resolved), resolved);
     cmd.cwd(&project_path);
 
     // Append any extra arguments (e.g. --model)
@@ -1037,7 +864,7 @@ pub fn create_pty_session(
         // which case `wait()` errors and we report `None`.
         let exit_code = match exit_child.lock() {
             Ok(mut child) => match child.wait() {
-                Ok(status) => Some(status.exit_code() as i32),
+                Ok(status) => Some(status.exit_code() as i64),
                 Err(e) => {
                     warn!(session_id = %sid, error = %e, "Failed to read PTY child exit status");
                     None
@@ -1045,9 +872,14 @@ pub fn create_pty_session(
             },
             Err(_) => None,
         };
-        // No backend "orchestrator kill" path exists anymore; every exit here
-        // is either a natural process exit or a user-initiated `kill_pty`.
-        let terminated = false;
+        // `kill_flag` is set by `kill_pty_process_tree` BEFORE any signal goes
+        // out, so reading it here tells us whether this exit was a deliberate
+        // stop (Kill, Restart, pane close) or the child dying on its own.
+        // Reporting it honestly is what lets the frontend distinguish "the
+        // user closed this" from "the CLI crashed" — previously this was
+        // hardcoded `false` and every kill looked like a natural exit whose
+        // code (1 on Windows, 137 on Unix) then read as a crash.
+        let terminated = kill_flag.load(std::sync::atomic::Ordering::Relaxed);
 
         info!(session_id = %sid, exit_code = ?exit_code, terminated, "PTY session exited");
         let payload = PtyExitPayload {
@@ -1604,6 +1436,10 @@ mod tests {
     use super::*;
     use portable_pty::ExitStatus;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    // The Windows candidate selector moved next to the tier order in
+    // `core::agent` so the launcher and the reporting sweep apply one rule.
+    #[cfg(windows)]
+    use crate::core::agent::select_windows_command_candidate;
 
     #[test]
     fn wsl_utf16_console_output_decodes_without_nul_bytes() {
@@ -1680,60 +1516,58 @@ mod tests {
     }
 
     #[test]
-    fn install_dir_tier_covers_packetcode_and_nothing_else() {
-        // packetcode is the only allowlisted CLI whose installer declines to
-        // touch PATH, so it is the only one with an install-directory tier.
-        // Widening this to another agent would start launching binaries from
-        // directories that agent's installer never claimed.
-        for command in ALLOWED_COMMANDS.iter().filter(|c| **c != "packetcode") {
-            assert_eq!(
-                installed_cli_binary(command),
-                None,
-                "{command} must not resolve through packetcode's install directories"
+    fn no_cli_resolves_through_another_products_install_directories() {
+        // The install-directory tier exists because an installer that does not
+        // touch PATH otherwise leaves a CLI detected-but-unlaunchable. Four
+        // agents now have one, each evidence-backed: packetcode's installer
+        // says outright that it skips PATH, Claude Code's native installer
+        // targets `~/.local/bin`, and codex/opencode are npm packages whose
+        // global bin is npm's documented default prefix.
+        //
+        // The rule that has to hold as that list grows is ISOLATION: every
+        // candidate must be named for the CLI that asked. A tier that hands
+        // back another product's binary is worse than no tier at all.
+        for command in ALLOWED_COMMANDS.iter() {
+            for candidate in crate::core::agent::install_dir_candidates(command) {
+                assert_eq!(
+                    candidate.file_stem().and_then(|name| name.to_str()),
+                    Some(*command),
+                    "{command} must not resolve through another product's install directories \
+                     (got {})",
+                    candidate.display()
+                );
+            }
+        }
+
+        // Shells are not agents and get no tier here: Git for Windows'
+        // directories are consulted by `resolve_pty_launch` ahead of PATH,
+        // deliberately, because `where bash` finds the WSL launcher first.
+        for shell in ALLOWED_SHELL_COMMANDS.iter() {
+            assert!(
+                crate::core::agent::install_dir_candidates(shell).is_empty(),
+                "{shell} is a shell profile, not an agent with an installer"
             );
         }
     }
 
     #[test]
-    fn install_dir_tier_takes_the_first_candidate_that_exists() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let missing = dir.path().join("missing").join("packetcode");
-        let present = dir.path().join("packetcode");
-        std::fs::write(&present, b"#!/bin/sh\n").expect("binary");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&present, std::fs::Permissions::from_mode(0o755))
-                .expect("chmod");
-        }
-
-        // A candidate that isn't there is skipped rather than handed back — the
-        // whole point is to return something spawnable, not merely documented.
-        let candidates = vec![missing, present.clone()];
-        assert_eq!(
-            installed_cli_binary_among("packetcode", || candidates),
-            Some(present.to_string_lossy().into_owned())
-        );
-    }
-
-    #[test]
-    fn install_dir_tier_yields_nothing_when_no_candidate_exists() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let candidates = vec![dir.path().join("nope")];
-        // Falling through is what lets the caller return the bare name and fail
-        // loudly, instead of handing the PTY a path that cannot spawn.
-        assert_eq!(installed_cli_binary_among("packetcode", || candidates), None);
-    }
-
-    #[test]
     fn install_detection_and_the_pty_tier_search_the_same_places() {
-        // The invariant the tier exists for: the PTY launcher's install
-        // directories must be the ones `core::agent::resolve_catalog_path`
-        // searches to set the catalog's `installed` flag. If the two lists
-        // could differ, the agent list could offer a pane the launcher cannot
-        // open — which is precisely the fault this tier fixes.
-        let candidates = crate::core::agent::packetcode_fallback_candidates();
-        assert!(!candidates.is_empty(), "packetcode must have install candidates");
+        // The invariant the tier exists for: the binary the PTY launcher
+        // spawns must be the one the reporting surfaces name. That is no
+        // longer two lists that have to be kept in step — both call
+        // `core::agent::resolve_cli_launch*`, which reads its install
+        // directories from one place. This pins that wiring down so a future
+        // edit cannot quietly reintroduce a second ladder.
+        let candidates = crate::core::agent::install_dir_candidates("packetcode");
+        assert_eq!(
+            candidates,
+            crate::core::agent::packetcode_fallback_candidates(),
+            "the shared resolver must search packetcode's citation-backed list"
+        );
+        assert!(
+            !candidates.is_empty(),
+            "packetcode must have install candidates"
+        );
         for candidate in &candidates {
             assert_eq!(
                 candidate.file_stem().and_then(|s| s.to_str()),
@@ -1742,6 +1576,15 @@ mod tests {
                 candidate.display()
             );
         }
+
+        // And the launcher really does go through that shared resolver: for a
+        // CLI with no pin and no settings path, the PTY's own entry point and
+        // the reporting entry point agree exactly.
+        let spec = crate::core::agent::CliLaunchSpec::from_command("packetcode");
+        assert_eq!(
+            resolve_pty_launch("packetcode"),
+            crate::core::agent::resolve_cli_launch_sync(&spec)
+        );
     }
 
     #[test]
@@ -1785,6 +1628,69 @@ mod tests {
             [r"C:\Program Files\WindowsApps\OpenAI.Codex_1.0_x64__id\app\resources\codex.exe"];
 
         assert_eq!(select_windows_command_candidate("codex", &lines), None);
+    }
+
+    /// REGRESSION: this is the shape `where` actually prints for a Store
+    /// install — the app-execution alias, not the package payload. The old
+    /// filter matched only `\windowsapps\openai.codex_`, so this path sailed
+    /// through as a valid `.exe` and the pane died with `Access is denied`.
+    #[cfg(windows)]
+    #[test]
+    fn codex_resolution_rejects_the_app_execution_alias_form() {
+        let lines = [r"C:\Users\ian\AppData\Local\Microsoft\WindowsApps\codex.exe"];
+
+        assert_eq!(select_windows_command_candidate("codex", &lines), None);
+    }
+
+    /// The npm layout on a real machine: `where` lists the extensionless shell
+    /// shim FIRST and only `.cmd` is spawnable by Windows.
+    #[cfg(windows)]
+    #[test]
+    fn codex_resolution_skips_the_extensionless_npm_shim() {
+        let lines = [
+            r"C:\Users\ian\AppData\Roaming\npm\codex",
+            r"C:\Users\ian\AppData\Roaming\npm\codex.cmd",
+        ];
+
+        assert_eq!(
+            select_windows_command_candidate("codex", &lines).as_deref(),
+            Some(r"C:\Users\ian\AppData\Roaming\npm\codex.cmd"),
+        );
+    }
+
+    /// The alias problem is not Codex-specific. This machine has a
+    /// `WindowsApps\bash.exe` WSL alias, and `bash` is on the PTY allowlist.
+    #[cfg(windows)]
+    #[test]
+    fn packaged_app_aliases_are_rejected_for_every_command_not_just_codex() {
+        let alias = [r"C:\Users\ian\AppData\Local\Microsoft\WindowsApps\bash.exe"];
+        assert_eq!(select_windows_command_candidate("bash", &alias), None);
+
+        // A real executable still wins when both are present.
+        let both = [
+            r"C:\Users\ian\AppData\Local\Microsoft\WindowsApps\bash.exe",
+            r"C:\Program Files\Git\bin\bash.exe",
+        ];
+        assert_eq!(
+            select_windows_command_candidate("bash", &both).as_deref(),
+            Some(r"C:\Program Files\Git\bin\bash.exe"),
+        );
+    }
+
+    /// A CLI that is installed but NOT on `PATH` must still launch. Before the
+    /// install-directory tier covered them, `codex` and `claude` had no rescue
+    /// after a `PATH` miss and fell straight through to the bare name.
+    #[test]
+    fn npm_and_native_installed_clis_have_a_documented_install_tier() {
+        for program in ["codex", "opencode", "claude", "packetcode"] {
+            assert!(
+                !crate::core::agent::install_dir_candidates(program).is_empty(),
+                "{program} should have a documented install-directory tier"
+            );
+        }
+        // Still empty for a CLI with no documented off-PATH location, so the
+        // tier stays evidence-backed rather than a guess for everything.
+        assert!(crate::core::agent::install_dir_candidates("gh-copilot").is_empty());
     }
 
     #[derive(Debug)]
@@ -1870,6 +1776,22 @@ mod tests {
         assert_eq!(value["sessionId"], "session-1");
         assert_eq!(value["exitCode"], 42);
         assert_eq!(value["terminated"], true);
+    }
+
+    /// A Windows NTSTATUS crash code must survive the wire as the value the
+    /// OS reported. With the old `i32` field `0xC0000005` serialized as
+    /// `-1073741819`, which no user can look up and no decoder recognised.
+    #[test]
+    fn pty_exit_payload_preserves_ntstatus_exit_codes() {
+        let payload = PtyExitPayload {
+            session_id: "session-1".to_string(),
+            exit_code: Some(u32::from_str_radix("C0000005", 16).unwrap() as i64),
+            terminated: false,
+        };
+
+        let value = serde_json::to_value(payload).expect("serialize payload");
+
+        assert_eq!(value["exitCode"], 3_221_225_477i64);
     }
 
     #[test]
@@ -1994,11 +1916,18 @@ mod tests {
     }
 
     #[test]
-    fn windows_command_lookup_fallback_preserves_requested_name() {
+    fn unresolvable_command_preserves_the_requested_name() {
+        // Appending a fabricated extension would hide the real executable name
+        // and turn the eventual spawn failure into a misleading
+        // "*.cmd not found".
+        let home = tempfile::tempdir().expect("tempdir");
+        let spec = crate::core::agent::CliLaunchSpec::new("packetbench-missing-cli", None)
+            .with_home(Some(home.path().to_path_buf()));
+        let resolved = crate::core::agent::resolve_cli_launch_sync(&spec);
+        assert_eq!(resolved.path, "packetbench-missing-cli");
         assert_eq!(
-            windows_command_lookup_fallback("missing-cli"),
-            "missing-cli"
+            resolved.source,
+            crate::core::agent::CliLaunchSource::BareName
         );
-        assert_eq!(windows_command_lookup_fallback("custom.exe"), "custom.exe");
     }
 }

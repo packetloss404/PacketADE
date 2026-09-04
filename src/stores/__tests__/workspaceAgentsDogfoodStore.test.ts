@@ -75,15 +75,14 @@ describe("Workspace/Agents content-free dogfood evidence", () => {
   });
 
   it("reset removes every accumulated decision signal", () => {
-    recordWorkspaceAgentsEvent("agent_packetcode_handoff");
+    recordWorkspaceAgentsEvent("agent_attached_terminal");
     useWorkspaceAgentsDogfoodStore.getState().recordVisibleConversations(2);
 
     useWorkspaceAgentsDogfoodStore.getState().reset();
 
-    expect(
-      useWorkspaceAgentsDogfoodStore.getState().evidence.counters
-        .agent_packetcode_handoff,
-    ).toBe(0);
+    expect(useWorkspaceAgentsDogfoodStore.getState().evidence.counters.agent_attached_terminal).toBe(
+      0,
+    );
     expect(
       useWorkspaceAgentsDogfoodStore.getState().evidence.visibility
         .maxSimultaneousConversations,

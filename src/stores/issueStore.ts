@@ -893,8 +893,8 @@ async function registerIssueWatcher() {
   }
 }
 
-// Read-only Monitor windows evaluate this module too (main.tsx statically
-// imports the whole App graph), but their issueStore snapshot is frozen at
+// Read-only Monitor windows evaluate this module too (main.tsx imports the
+// whole App graph either way), but their issueStore snapshot is frozen at
 // window boot and this handler whole-slice-saves the issues slice —
 // registering here would let a stale monitor copy clobber the shared
 // localStorage. The main window owns the close-loop. (Inline check instead

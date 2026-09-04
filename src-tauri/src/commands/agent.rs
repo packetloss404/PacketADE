@@ -1,11 +1,18 @@
 //! Tauri command wrappers for CLI agent detection.
 //!
-//! Two commands are exposed:
+//! The command surface includes:
 //! - [`detect_agent`] — legacy boolean probe (kept for back-compat).
-//! - [`detect_cli_catalog`] — bulk probe that also captures version + path.
+//! - [`detect_cli_catalog`] — bulk probe that captures version, path AND the
+//!   resolution tier for every catalog entry.
+//! - [`inspect_cli_launch`] — the same answer for a single command.
+//! - [`cli_launch_diagnostics`] — a redacted, pasteable summary of all of it.
+//! - [`inspect_packetcode_installation`] — compares the official installer
+//!   target with the exact binary selected for new Workspace panes.
 //!
-//! The boolean command is implemented in terms of the catalog command so
-//! the two can never drift.
+//! Every one of these resolves through `core::agent::resolve_cli_launch`, the
+//! same tier order `commands::pty` uses to spawn a pane. That is deliberate:
+//! two implementations of one ladder drift, and a readout that disagrees with
+//! what actually launches is worse than no readout at all.
 
 use std::path::Path;
 use std::process::Stdio;
@@ -37,6 +44,12 @@ pub struct DetectCatalogItem {
 }
 
 /// Result for a single catalog entry.
+///
+/// `source` is the resolution tier that chose `path` — the same tier the PTY
+/// launcher used, because both go through `core::agent::resolve_cli_launch*`.
+/// Reporting it is the point: without it a user can see WHICH binary a pane
+/// will spawn but never WHY, and cannot tell a Settings override from a PATH
+/// hit from a binary found in a product's own install directory.
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DetectCatalogResult {
@@ -44,6 +57,23 @@ pub struct DetectCatalogResult {
     pub installed: bool,
     pub version: Option<String>,
     pub path: Option<String>,
+    pub source: Option<String>,
+}
+
+/// Launch resolution for a single command, for surfaces that ask about one CLI
+/// (a Workspace pane header) rather than sweeping the catalog.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CliLaunchInspection {
+    pub command: String,
+    pub path: String,
+    pub source: String,
+    /// False when resolution fell through to the bare command name — i.e.
+    /// nothing spawnable was found and the pane will fail loudly.
+    pub resolved: bool,
+    pub version: Option<String>,
+    /// A configured Settings path that is missing or not executable.
+    pub rejected_settings_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -79,6 +109,32 @@ pub struct PacketCodeIntegrationProbe {
     pub doctor: serde_json::Value,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PacketCodeInstallationInspection {
+    pub installer_executable_path: String,
+    pub installer_version: Option<String>,
+    pub active_executable_path: Option<String>,
+    pub active_version: Option<String>,
+    pub active_source: Option<String>,
+    pub workspace_uses_installer: bool,
+}
+
+fn same_executable_path(left: &Path, right: &Path) -> bool {
+    let left = std::fs::canonicalize(left).unwrap_or_else(|_| left.to_path_buf());
+    let right = std::fs::canonicalize(right).unwrap_or_else(|_| right.to_path_buf());
+    #[cfg(target_os = "windows")]
+    {
+        left.to_string_lossy()
+            .replace('/', "\\")
+            .eq_ignore_ascii_case(&right.to_string_lossy().replace('/', "\\"))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        left == right
+    }
+}
+
 /// Legacy boolean detection. Skips the version probe (back-compat callers
 /// only care about the boolean) so it stays as cheap as the original
 /// `where`/`which` check — never blocks on a hung `--version`.
@@ -95,69 +151,207 @@ pub fn detect_agent(command: String) -> Result<bool, String> {
 pub async fn detect_cli_catalog(
     items: Vec<DetectCatalogItem>,
 ) -> Result<Vec<DetectCatalogResult>, String> {
-    let futures = items.into_iter().map(|item| async move {
-        // Manual-override branch: user has explicitly pointed us at a binary.
-        // Skip PATH resolution and probe that exact path. If the path is
-        // missing or not executable, surface `installed: false` with the
-        // user-supplied path retained so the UI can highlight the bad value.
-        if let Some(manual) = item.manual_path.as_deref() {
-            if !agent::is_executable_file(manual) {
-                return DetectCatalogResult {
-                    id: item.id,
-                    installed: false,
-                    version: None,
-                    path: Some(manual.to_string()),
-                };
-            }
-            let version = agent::probe_version_at(manual).await;
-            let installed = if item.id == "packetcode" {
-                version.as_deref().is_some_and(agent::is_packetcode_version)
-            } else {
-                version.is_some()
-            };
-            return DetectCatalogResult {
-                id: item.id,
-                installed,
-                version,
-                path: Some(manual.to_string()),
-            };
-        }
-
-        match agent::resolve_catalog_path(&item.id, &item.binary).await {
-            Some(path) => {
-                // Probe the *resolved* absolute path rather than the bare
-                // binary name. On Windows, `resolve_path` returns the full
-                // `.cmd` wrapper (e.g.
-                // `C:\Users\…\AppData\Roaming\npm\claude.cmd`), but
-                // `probe_version` would re-invoke just `claude`, which
-                // `TokioCommand::new` resolves differently than the shell
-                // would — yielding `None` and a card that reads
-                // "installed, no version". Going through
-                // `probe_version_at` ensures the same `.cmd` we resolved
-                // is the one we ask `--version`. On POSIX it's a no-op
-                // difference (the resolved path is fully executable).
-                let version = agent::probe_version_at(&path).await;
-                let installed = if item.id == "packetcode" {
-                    version.as_deref().is_some_and(agent::is_packetcode_version)
-                } else {
-                    true
-                };
-                DetectCatalogResult {
-                    id: item.id,
-                    installed,
-                    version,
-                    path: Some(path),
-                }
-            }
-            None => DetectCatalogResult {
-                id: item.id,
-                installed: false,
-                version: None,
-                path: None,
-            },
-        }
-    });
+    let futures = items.into_iter().map(|item| async move { detect_one(item).await });
     Ok(futures::future::join_all(futures).await)
+}
+
+/// Detect one catalog entry through the SHARED launch resolver, so the card's
+/// path is the path a Workspace pane would spawn.
+async fn detect_one(item: DetectCatalogItem) -> DetectCatalogResult {
+    // `git-bash` is a terminal SHELL profile (see `useTerminalShellDetection`),
+    // not a CLI agent, and its discovery genuinely differs: `where bash` can
+    // resolve the legacy WSL launcher in System32, so the profile must prefer
+    // Git for Windows' own install directories. Running it through the agent
+    // ladder — where install directories come LAST — would flip the Git Bash
+    // profile to "available" while pointing at WSL. `commands::pty` mirrors
+    // this same exception on the launch side.
+    if item.id == "git-bash" {
+        let path = agent::resolve_catalog_path(&item.id, &item.binary).await;
+        let version = match path.as_deref() {
+            Some(path) => agent::probe_version_at(path).await,
+            None => None,
+        };
+        return DetectCatalogResult {
+            id: item.id,
+            installed: path.is_some(),
+            version,
+            // No tier reported: this resolution did not come from the shared
+            // ladder, and inventing a tier name for it would be exactly the
+            // dishonest readout this work exists to remove. The Terminal Shell
+            // settings surface does not render tiers.
+            source: None,
+            path,
+        };
+    }
+
+    let spec = agent::CliLaunchSpec::new(&item.binary, item.manual_path.as_deref());
+    let resolved = agent::resolve_cli_launch(&spec).await;
+
+    // A Browse-pinned path that isn't there is reported back verbatim with
+    // `installed: false` so the card can highlight the bad value, rather than
+    // silently showing whatever PATH would have produced instead.
+    if let Some(rejected) = resolved.rejected_settings_path {
+        return DetectCatalogResult {
+            id: item.id,
+            installed: false,
+            version: None,
+            path: Some(rejected),
+            source: Some(agent::CliLaunchSource::Settings.as_str().to_string()),
+        };
+    }
+
+    if !resolved.is_resolved() {
+        return DetectCatalogResult {
+            id: item.id,
+            installed: false,
+            version: None,
+            path: None,
+            source: None,
+        };
+    }
+
+    // Probe the *resolved* absolute path rather than the bare binary name. On
+    // Windows the resolver returns the full `.cmd` wrapper (e.g.
+    // `C:\Users\…\AppData\Roaming\npm\claude.cmd`), but `probe_version` would
+    // re-invoke just `claude`, which `TokioCommand::new` resolves differently
+    // than the shell would — yielding `None` and a card that reads
+    // "installed, no version". On POSIX it is a no-op difference.
+    let version = agent::probe_version_at(&resolved.path).await;
+    let installed = if item.id == "packetcode" {
+        // PacketCode's version contract is deliberately stricter: a binary is
+        // not PacketCode merely because it prints something for `--version`.
+        version.as_deref().is_some_and(agent::is_packetcode_version)
+    } else if resolved.source == agent::CliLaunchSource::Settings {
+        // A user-pinned binary has to actually respond; nothing else vouched
+        // for it.
+        version.is_some()
+    } else {
+        true
+    };
+
+    DetectCatalogResult {
+        id: item.id,
+        installed,
+        version,
+        path: Some(resolved.path),
+        source: Some(resolved.source.as_str().to_string()),
+    }
+}
+
+/// Resolve one CLI command the way a PTY pane would, and report the tier that
+/// chose it. Backs the Workspace pane's launch-binary readout.
+#[tauri::command]
+pub async fn inspect_cli_launch(
+    command: String,
+    manual_path: Option<String>,
+) -> Result<CliLaunchInspection, String> {
+    let spec = agent::CliLaunchSpec::new(&command, manual_path.as_deref());
+    let resolved = agent::resolve_cli_launch(&spec).await;
+    let version = if resolved.is_resolved() {
+        agent::probe_version_at(&resolved.path).await
+    } else {
+        None
+    };
+    Ok(CliLaunchInspection {
+        command,
+        source: resolved.source.as_str().to_string(),
+        resolved: resolved.is_resolved(),
+        path: resolved.path,
+        version,
+        rejected_settings_path: resolved.rejected_settings_path,
+    })
+}
+
+/// Build a redacted, copy-to-clipboard diagnostics block naming, per CLI, the
+/// binary a pane would launch and the tier that chose it.
+///
+/// Safe to paste into an issue **by construction**: the only values that reach
+/// the output are the catalog id, the resolved path, the resolution tier and
+/// the `--version` line. No API keys, no tokens, no environment dump — nothing
+/// is read from the process environment except the host OS name, which is
+/// needed to read the paths at all. Home directories are abbreviated to `~`
+/// because they carry the user's real name and the tier already says where the
+/// binary came from; the rest of every path is kept verbatim, since a custom
+/// install directory is exactly what a bug report needs.
+#[tauri::command]
+pub async fn cli_launch_diagnostics(items: Vec<DetectCatalogItem>) -> Result<String, String> {
+    let home = dirs::home_dir();
+    let results = detect_cli_catalog(items).await?;
+    Ok(render_cli_diagnostics(
+        std::env::consts::OS,
+        &results,
+        home.as_deref(),
+    ))
+}
+
+/// [`cli_launch_diagnostics`]'s formatting as a pure function, so the redaction
+/// and the "nothing but these four fields" guarantee are testable.
+fn render_cli_diagnostics(
+    platform: &str,
+    results: &[DetectCatalogResult],
+    home: Option<&Path>,
+) -> String {
+    let mut out = String::from("PacketBench CLI launch resolution\n");
+    out.push_str(&format!("platform: {platform}\n\n"));
+    for result in results {
+        let path = result
+            .path
+            .as_deref()
+            .map(|path| agent::redact_home_in_path(path, home))
+            .unwrap_or_else(|| "(not found)".to_string());
+        out.push_str(&format!(
+            "{} | {} | tier={} | version={}\n",
+            result.id,
+            path,
+            result.source.as_deref().unwrap_or("unresolved"),
+            result.version.as_deref().unwrap_or("unknown"),
+        ));
+    }
+    out
+}
+
+/// Inspect both sides of an install/update transaction: the official
+/// installer's deterministic destination and the resolver-selected binary a
+/// new local Workspace pane would launch. They can differ when a Settings
+/// override, legacy pin, or earlier PATH entry takes precedence.
+#[tauri::command]
+pub async fn inspect_packetcode_installation(
+    manual_path: Option<String>,
+) -> Result<PacketCodeInstallationInspection, String> {
+    let installer_path = agent::packetcode_installer_target().ok_or_else(|| {
+        "PacketCode's official installer destination is unavailable on this host".to_string()
+    })?;
+    let installer_path_string = installer_path.to_string_lossy().to_string();
+    let installer_version = if agent::is_executable_file(&installer_path_string) {
+        agent::probe_version_at(&installer_path_string)
+            .await
+            .filter(|version| agent::is_packetcode_version(version))
+    } else {
+        None
+    };
+
+    let active = agent::resolve_packetcode_launch(manual_path.as_deref()).await.ok();
+    let workspace_uses_installer = active.as_ref().is_some_and(|resolved| {
+        same_executable_path(Path::new(&resolved.path), &installer_path)
+    });
+    let active_version = if workspace_uses_installer {
+        installer_version.clone()
+    } else if let Some(resolved) = active.as_ref() {
+        agent::probe_version_at(&resolved.path)
+            .await
+            .filter(|version| agent::is_packetcode_version(version))
+    } else {
+        None
+    };
+
+    Ok(PacketCodeInstallationInspection {
+        installer_executable_path: installer_path_string,
+        installer_version,
+        active_executable_path: active.as_ref().map(|resolved| resolved.path.clone()),
+        active_version,
+        active_source: active.map(|resolved| resolved.source.as_str().to_string()),
+        workspace_uses_installer,
+    })
 }
 
 /// Verify the complete PacketBench ↔ PacketCode integration contract:
@@ -169,25 +363,7 @@ pub async fn probe_packetcode_integration(
     manual_path: Option<String>,
     data_home: Option<String>,
 ) -> Result<PacketCodeIntegrationProbe, String> {
-    let executable_path = if let Some(manual) = manual_path
-        .as_deref()
-        .map(str::trim)
-        .filter(|path| !path.is_empty())
-    {
-        if !agent::is_executable_file(manual) {
-            return Err(format!(
-                "PacketCode executable is missing or not executable: {}",
-                manual
-            ));
-        }
-        manual.to_string()
-    } else {
-        agent::resolve_catalog_path("packetcode", "packetcode")
-            .await
-            .ok_or_else(|| {
-                "PacketCode was not found on PATH or in a documented install location".to_string()
-            })?
-    };
+    let executable_path = agent::resolve_packetcode_launch_path(manual_path.as_deref()).await?;
 
     let version = agent::probe_version_at(&executable_path)
         .await
@@ -296,5 +472,96 @@ mod tests {
         .expect("doctor contract");
         assert_eq!(report.schema_version, 1);
         assert_eq!(report.provider_summary.ready, 1);
+    }
+
+    fn result(id: &str, path: Option<&str>, source: Option<&str>) -> DetectCatalogResult {
+        DetectCatalogResult {
+            id: id.to_string(),
+            installed: path.is_some(),
+            version: Some("1.2.3".to_string()),
+            path: path.map(str::to_string),
+            source: source.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn diagnostics_report_the_tier_and_abbreviate_the_home_directory() {
+        let home = std::path::Path::new(if cfg!(windows) {
+            r"C:\Users\ian"
+        } else {
+            "/home/ian"
+        });
+        let claude = if cfg!(windows) {
+            r"C:\Users\ian\AppData\Roaming\npm\claude.cmd"
+        } else {
+            "/home/ian/.local/bin/claude"
+        };
+        let rendered = render_cli_diagnostics(
+            "testos",
+            &[
+                result("claude-code", Some(claude), Some("path")),
+                result("codex", None, None),
+            ],
+            Some(home),
+        );
+
+        assert!(rendered.contains("platform: testos"));
+        assert!(rendered.contains("tier=path"));
+        assert!(rendered.contains("version=1.2.3"));
+        assert!(rendered.contains("codex | (not found) | tier=unresolved"));
+        // The home directory carries the user's name; the tier already says
+        // where the binary came from.
+        assert!(!rendered.contains("ian"), "{rendered}");
+        assert!(rendered.contains("~"));
+    }
+
+    /// The export is safe to paste by construction: nothing but id, path, tier
+    /// and version can reach it. This pins the shape so a later "just add the
+    /// env for context" edit has to argue with a test.
+    #[test]
+    fn diagnostics_carry_no_fields_beyond_the_documented_four() {
+        let rendered = render_cli_diagnostics(
+            "testos",
+            &[result("claude-code", Some("/opt/claude"), Some("settings"))],
+            None,
+        );
+        let line = rendered
+            .lines()
+            .find(|line| line.starts_with("claude-code"))
+            .expect("entry line");
+        let fields: Vec<&str> = line.split(" | ").collect();
+        assert_eq!(
+            fields,
+            vec!["claude-code", "/opt/claude", "tier=settings", "version=1.2.3"]
+        );
+    }
+
+    /// The reporting command and the PTY launcher must name the same binary.
+    /// `detect_one` is what feeds the Tools card; `resolve_cli_launch_sync` is
+    /// what `commands::pty` spawns.
+    #[tokio::test]
+    async fn catalog_detection_names_the_binary_the_pty_would_spawn() {
+        for binary in ["claude", "codex", "opencode", "packetcode"] {
+            let reported = detect_one(DetectCatalogItem {
+                id: binary.to_string(),
+                binary: binary.to_string(),
+                manual_path: None,
+            })
+            .await;
+            let launched =
+                agent::resolve_cli_launch_sync(&agent::CliLaunchSpec::from_command(binary));
+
+            match reported.path {
+                Some(path) => {
+                    assert_eq!(path, launched.path, "{binary}");
+                    assert_eq!(reported.source.as_deref(), Some(launched.source.as_str()));
+                }
+                None => assert!(
+                    !launched.is_resolved(),
+                    "{binary} reported as unresolved but the launcher picked {}",
+                    launched.path
+                ),
+            }
+        }
     }
 }

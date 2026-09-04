@@ -4,7 +4,7 @@
 
 PacketBench is a Tauri v2 desktop app that brings AI coding agents, planning, issue tracking, memory, and workspace management into a single native environment. It is built for running real development workflows across multiple agent CLIs without leaving the app.
 
-Source is at **0.13.0**. `v0.10.3` (2026-08-02, commit `61e0669`) remains the
+Source is at **0.13.2**. `v0.10.3` (2026-08-02, commit `61e0669`) remains the
 newest annotated tag, but `main` has advanced well past it — see
 [`CHANGELOG.md`](./CHANGELOG.md). Unsigned Windows NSIS and MSI artifacts have
 been built locally at 0.11.0 through 0.13.0 but **none has been published**;
@@ -191,9 +191,8 @@ handoffs, and deep links never materialize wrapper Workspaces.
 - **Side Chat overlay**: a floating ask-a-side-question panel that streams an answer without disturbing the main thread
 - **Explicit handoffs**: open the project folder in the OS, open the same
   **project** in Workspace (never the conversation), attach a separate
-  terminal, review a bounded PacketCode payload before copying it, open the
-  authoritative Git ending, link one durable conversation reference to a
-  Flight, or continue in an external editor/CLI
+  terminal, open the authoritative Git ending, link one durable conversation
+  reference to a Flight, or continue in an external editor/CLI
 - **Send to Monitor**: route a conversation to a separate Rust-restricted
   read-only operations window without duplicating its session or exposing
   composer/approval controls
@@ -242,7 +241,11 @@ The Claude Agent SDK and OpenAI Agents SDK providers run in a Node sidecar that 
 - Per-pane model and effort overrides, bypass-permissions toggles
 - PacketCode integration with strict version detection, bounded `doctor --json`
   health, separate executable/developer-checkout/data-home settings, explicit
-  stable/preview install actions, and isolated local/SSH `PACKETCODE_HOME`
+  stable/preview install actions, and isolated local/SSH `PACKETCODE_HOME`.
+  Local Workspace panes resolve one launch identity before spawning, show the
+  exact binary/version/effective home, and block invalid data-home overrides.
+  Install/update actions verify the official target afterward and report both
+  the version change and whether Workspace will launch that exact file.
 - Pane layout presets (1×1, 1×2, 2×1, 2×2, 2×3, 3×2) live in the main toolbar when a workspace is active
 - **Delegate** opens the Agents launcher on the exact local or SSH project;
   explicit Agent handoffs can return to the same target without cloning a

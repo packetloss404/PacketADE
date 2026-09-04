@@ -16,10 +16,29 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // Capped deliberately. Every worker shares ONE Vite dev server, and each new
+  // browser context makes it transform the module graph on demand; the two
+  // visual-audit specs alone take ~50s apiece. Left at the default (half the
+  // cores — 8 here) the workers starve each other and the settings spec times
+  // out waiting 15s for a dialog, which reads as a product bug rather than
+  // what it is. At 2 workers the whole suite passes; the run is slower in wall
+  // clock but it is the difference between a red gate and a green one.
+  workers: process.env.CI ? 1 : 2,
   reporter: process.env.CI ? "github" : "list",
-  timeout: 30_000,
-  expect: { timeout: 5_000 },
+  timeout: 60_000,
+  // `page.goto` resolves on `load`, and `load` no longer covers the React tree.
+  // `main.tsx` must repair `localStorage` from the durable mirror BEFORE any
+  // store module evaluates, so `App` is imported dynamically after that boot
+  // step (see `src/lib/storage-boot.ts`). That import is therefore not part of
+  // the entry's static graph, and against the Vite DEV server it costs several
+  // seconds of on-demand transform — measured at 4-6s after `load` on this
+  // machine, against a 5s budget.
+  //
+  // The app itself did not get slower: time from navigation to a rendered
+  // heading measured ~10s both before and after the change. What moved is which
+  // side of `goto` that cost lands on. So the budget here has to cover a cold
+  // dev-server module graph, not a production bundle.
+  expect: { timeout: 20_000 },
   use: {
     baseURL,
     trace: "retain-on-failure",

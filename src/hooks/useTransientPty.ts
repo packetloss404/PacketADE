@@ -4,9 +4,11 @@ import {
   createPtySession,
   killPty,
   listPtySessions,
-  ptyExitSucceeded,
+  ptyExitOutcome,
+  PTY_EXIT_UNKNOWN,
   readPtyTranscript,
   writePty,
+  type PtyExitOutcome,
 } from "@/lib/tauri";
 import { ptyExitEvent, ptyOutputEvent } from "@/lib/events";
 import {
@@ -37,7 +39,12 @@ export interface UseTransientPtyOptions {
   timeoutMs?: number;
   onSpawn?: (sessionId: string) => void;
   onOutput?: (chunk: string) => void;
-  onExit?: (success: boolean) => void;
+  /**
+   * The real exit outcome. Callers that verify an install MUST distinguish
+   * `unknown` from `clean`: the hook only reports `clean` when it actually
+   * observed exit code 0.
+   */
+  onExit?: (outcome: PtyExitOutcome) => void;
   onError?: (err: unknown) => void;
 }
 
@@ -126,22 +133,25 @@ export function useTransientPty(opts: UseTransientPtyOptions): UseTransientPtyRe
         let buffering = true;
         const buffered: PtyOutputPayload[] = [];
         let exitWhileBuffering = false;
-        // Carry the outcome across the buffering deferral. Storing only the
-        // flag and re-calling `finish(true)` below would launder a failure
+        // Carry the outcome across the buffering deferral. Storing only a flag
+        // and re-calling `finish` with a literal below would launder a failure
         // into a success.
-        let bufferedExitSuccess = true;
-        const finish = (success: boolean) => {
+        let bufferedExitOutcome: PtyExitOutcome = PTY_EXIT_UNKNOWN;
+        const finish = (outcome: PtyExitOutcome) => {
           if (finishedRef.current) return;
           if (buffering) {
             exitWhileBuffering = true;
-            bufferedExitSuccess = success;
+            bufferedExitOutcome = outcome;
             return;
           }
           finishedRef.current = true;
           cleanup();
           if (!mountedRef.current) return;
-          setStatus(success ? "done" : "error");
-          current.onExit?.(success);
+          // `unknown` is not an error — we simply never saw a status. The
+          // caller is told which it was and can re-verify instead of trusting
+          // a success this hook never observed.
+          setStatus(outcome.kind === "failed" ? "error" : "done");
+          current.onExit?.(outcome);
         };
 
         const [outputUnlisten, exitUnlisten] = await Promise.all([
@@ -154,7 +164,7 @@ export function useTransientPty(opts: UseTransientPtyOptions): UseTransientPtyRe
             }
           }),
           listen<unknown>(ptyExitEvent(sid), (event) => {
-            finish(ptyExitSucceeded(event.payload));
+            finish(ptyExitOutcome(event.payload));
           }),
         ]);
         unlistenersRef.current = [outputUnlisten, exitUnlisten];
@@ -175,18 +185,24 @@ export function useTransientPty(opts: UseTransientPtyOptions): UseTransientPtyRe
         const bufferedRemainder = bufferedPtyRemainder(replayed, transcript?.sequence, buffered);
         if (mountedRef.current && bufferedRemainder) current.onOutput?.(bufferedRemainder);
         buffering = false;
-        if (exitWhileBuffering) finish(bufferedExitSuccess);
+        if (exitWhileBuffering) finish(bufferedExitOutcome);
 
+        // The process is already gone and no exit event reached us, so its
+        // status is genuinely unobserved. This used to report SUCCESS purely
+        // because the session was missing from the list — inventing a clean
+        // exit it never saw, and telling the install verifier that an
+        // installer which may well have died had worked.
         const sessions = await listPtySessions().catch(() => null);
         const liveSession = sessions?.find((s) => s.id === sid);
-        if (sessions && (!liveSession || !liveSession.alive)) finish(true);
+        if (sessions && (!liveSession || !liveSession.alive)) finish(PTY_EXIT_UNKNOWN);
         if (finishedRef.current) return;
 
         if (current.timeoutMs && current.timeoutMs > 0) {
           timeoutRef.current = setTimeout(() => {
             // Best-effort kill — PTY may have just exited.
             void killPty(sid).catch(() => {});
-            finish(false);
+            // We killed it on the timeout: a deliberate stop, not a CLI crash.
+            finish({ kind: "killed", exitCode: null });
           }, current.timeoutMs);
         }
 
@@ -248,6 +264,12 @@ export interface RunTransientPtyResult {
   output: string;
   /** True when the PTY exited on its own; false on timeout or spawn failure. */
   completed: boolean;
+  /**
+   * The real exit outcome. `unknown` when the process was already gone before
+   * a `pty:exit` event could be observed, and when the timeout fired — the
+   * runner never fabricates a `clean` it did not see.
+   */
+  outcome: PtyExitOutcome;
 }
 
 export async function runTransientPty(
@@ -263,8 +285,9 @@ export async function runTransientPty(
   );
 
   let output = "";
-  let resolveExit: (value: boolean) => void = () => {};
-  const exitPromise = new Promise<boolean>((resolve) => {
+  let resolveExit: (value: PtyExitOutcome | null) => void = () => {};
+  // `null` = the wait ended without an observed exit (the timeout won).
+  const exitPromise = new Promise<PtyExitOutcome | null>((resolve) => {
     resolveExit = resolve;
   });
 
@@ -280,7 +303,7 @@ export async function runTransientPty(
       }
     }),
     listen<unknown>(ptyExitEvent(sessionId), (event) => {
-      resolveExit(ptyExitSucceeded(event.payload));
+      resolveExit(ptyExitOutcome(event.payload));
     }),
   ]);
 
@@ -290,11 +313,17 @@ export async function runTransientPty(
   output += bufferedPtyRemainder(replayed, transcript?.sequence, buffered);
   buffering = false;
 
+  // Already gone with no exit event: the process really did finish (so this
+  // is `completed`, not a timeout), but its status was never observed —
+  // `unknown`, not the invented success this used to report.
   const sessions = await listPtySessions().catch(() => null);
   const liveSession = sessions?.find((s) => s.id === sessionId);
-  if (sessions && (!liveSession || !liveSession.alive)) resolveExit(true);
+  if (sessions && (!liveSession || !liveSession.alive)) resolveExit(PTY_EXIT_UNKNOWN);
 
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  // Assigned by both branches below before any read; a `null` initializer here
+  // is dead and lint flags it.
+  let outcome: PtyExitOutcome | null;
   let completed = false;
   try {
     if (opts.initialInput) {
@@ -304,13 +333,14 @@ export async function runTransientPty(
     }
     const timeoutMs = opts.timeoutMs;
     if (timeoutMs && timeoutMs > 0) {
-      const timeoutPromise = new Promise<boolean>((resolve) => {
-        timeoutId = setTimeout(() => resolve(false), timeoutMs);
+      const timeoutPromise = new Promise<PtyExitOutcome | null>((resolve) => {
+        timeoutId = setTimeout(() => resolve(null), timeoutMs);
       });
-      completed = await Promise.race([exitPromise, timeoutPromise]);
+      outcome = await Promise.race([exitPromise, timeoutPromise]);
     } else {
-      completed = await exitPromise;
+      outcome = await exitPromise;
     }
+    completed = outcome !== null;
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
     outputUnlisten();
@@ -321,5 +351,5 @@ export async function runTransientPty(
     }
   }
 
-  return { output, completed };
+  return { output, completed, outcome: outcome ?? PTY_EXIT_UNKNOWN };
 }

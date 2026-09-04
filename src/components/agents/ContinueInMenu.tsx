@@ -1,5 +1,4 @@
 import {
-  Bot,
   FolderOpen,
   Terminal,
   Code2,
@@ -68,7 +67,6 @@ interface ContinueInMenuProps {
   /** Flash a transient confirmation/error message in the caller's shared
    * feedback slot (e.g. the overflow menu's toast). */
   onFeedback: (msg: string) => void;
-  onRequestPacketCode?: () => void;
   onRequestFlight?: () => void;
 }
 
@@ -115,7 +113,6 @@ function quoteShellArg(value: string): string {
 export function ContinueInMenu({
   conversation,
   onFeedback,
-  onRequestPacketCode = () => {},
   onRequestFlight = () => {},
 }: ContinueInMenuProps) {
   const projectPath = conversation.projectPath;
@@ -199,12 +196,6 @@ export function ContinueInMenu({
             "Terminal attached in Workspace",
           )
         }
-      />
-      <MenuItem
-        icon={<Bot size={12} />}
-        label="Continue in PacketCode…"
-        subtitle="Review a bounded payload, then open PacketCode"
-        onClick={onRequestPacketCode}
       />
       <MenuItem
         icon={<GitMerge size={12} />}

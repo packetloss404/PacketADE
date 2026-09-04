@@ -93,8 +93,8 @@ saved three-Workspace state:
 - Closing PacketBench terminated the exact test process and both child CLIs.
 
 This completed goal remains the canonical product contract for Workspace and
-Agents. Remote Agents remains planned and paused at its existing Sprint-0
-decision gate until the owner resumes it.
+Agents. Remote Agents resumed with Sprint 0 on 2026-09-01; its isolated
+feature-flagged work must preserve this completed local Workspace contract.
 
 ## The decision in one sentence
 
@@ -107,14 +107,14 @@ equal default tile in every Workspace.
 
 ## Product responsibility map
 
-| Product or surface  | Primary responsibility                                                       |
-| ------------------- | ---------------------------------------------------------------------------- |
-| PacketCode          | Fast terminal-native coding-agent inner loop                                 |
+| Product or surface    | Primary responsibility                                                       |
+| --------------------- | ---------------------------------------------------------------------------- |
+| PacketCode            | Fast terminal-native coding-agent inner loop                                 |
 | PacketBench Workspace | High-density CLI/PTY workroom for active, hands-on work                      |
 | PacketBench Agents    | Delegated AI work, attention, approvals, plans, diffs, and review            |
-| Flight Deck         | Structured delivery across plans, tasks, attempts, reviewers, and publishing |
-| Monitor             | Read-only operational awareness on another display                           |
-| PacketAgent         | Durable bounded execution after PacketBench closes                             |
+| Flight Deck           | Structured delivery across plans, tasks, attempts, reviewers, and publishing |
+| Monitor               | Read-only operational awareness on another display                           |
+| PacketAgent           | Durable bounded execution after PacketBench closes                           |
 
 These are different presentations over connected projects, conversations,
 worktrees, reviews, and execution state. They must not become isolated products
@@ -170,7 +170,6 @@ Required contracts:
 
 - **Workspace → Delegate to Agent**
 - **Agents → Open project in Workspace**
-- **Agents → Send/continue in PacketCode**
 - **Agents → Attach terminal**
 - **Agents → Open Git ending**
 - **Agents → Add to Flight**

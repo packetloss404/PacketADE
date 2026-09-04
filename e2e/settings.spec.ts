@@ -38,7 +38,12 @@ test.describe("Settings information architecture", () => {
     await expect(page.getByLabel("Setting scopes")).toContainText("New sessions");
 
     await page.getByRole("searchbox", { name: "Search settings" }).fill("forgejo");
-    await page.getByRole("button", { name: /Git Hosts/ }).click();
+    // Match the full accessible name of the search RESULT. A bare /Git Hosts/
+    // also matches the main toolbar's icon button (`title="Git Hosts"`), which
+    // sits behind the open dialog and made this a strict-mode violation rather
+    // than a click. Naming the group as well is stricter on purpose: a result
+    // is supposed to carry its group, which is part of what this test asserts.
+    await page.getByRole("button", { name: "Integrations & Data Git Hosts", exact: true }).click();
 
     await expect(
       page.getByRole("heading", { name: "Integrations & Data", exact: true }),

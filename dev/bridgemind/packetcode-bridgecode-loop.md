@@ -84,7 +84,7 @@ Status values: `queued` → `in-progress` → `gated` → `closed`.
 | **PC7** | PacketBench | Correct launch environment | PacketCode panes launch the resolved executable in the intended project with only the configured `PACKETCODE_HOME` override. Local, SSH, spaces, `.exe`/`.cmd`, restart, and invalid-path cases behave predictably. | PTY argument/env integration tests and smoke fixtures | PC4, PC6 | closed |
 | **PC8** | PacketCode | BridgeCode feature-truth audit | Exercise every BridgeCode-comparable claim and PacketCode differentiator through code inspection, focused tests, and release-like smoke runs. Mark present/partial/missing/broken with evidence. | Versioned truth matrix; no README-only “shipped” claims | PC1 | closed |
 | **PC9** | PacketCode | Hardening loops from audit | Convert every partial/broken high-value workflow into bounded dependency-ordered loops, then run them through provider, permissions, session, agent, MCP, TUI, and release gates. | Per-loop acceptance tests plus full Go/PTY gates | PC8 | closed for local source — PCH1–PCH5 closed; PCH6–PCH8 remain `external-gate` |
-| **PC10** | Both | Suite handoff and end-to-end proof | PacketBench can install/detect/configure/launch PacketCode; PacketCode can receive scoped project/task context; durable continuation routes to PacketAgent rather than pretending a TUI survives closure. | Cross-repo smoke run and version-compatibility fixtures | PC7, PC9 | gated |
+| **PC10** | Both | Suite launch and end-to-end proof | PacketBench can install/detect/configure/launch PacketCode in the selected project; durable continuation routes to PacketAgent rather than pretending a TUI survives closure. | Cross-repo smoke run and version-compatibility fixtures | PC7, PC9 | gated |
 
 ## Sequencing
 

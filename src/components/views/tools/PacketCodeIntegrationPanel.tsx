@@ -4,20 +4,32 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   probePacketCodeIntegration,
   type DetectCatalogResult,
+  type PacketCodeInstallationInspection,
   type PacketCodeIntegrationProbe,
 } from "@/lib/tauri";
 import {
   isAbsolutePacketCodePath,
   usePacketCodeIntegrationStore,
 } from "@/stores/packetCodeIntegrationStore";
+import { cliLaunchSourceLabel } from "@/lib/cli-catalog";
 import { useServerStore } from "@/stores/serverStore";
 
 interface PacketCodeIntegrationPanelProps {
   detection: DetectCatalogResult | undefined;
   manualPath: string | null;
   installing: boolean;
+  inspection: PacketCodeInstallationInspection | null;
+  installReport: PacketCodeInstallReport | null;
   onPinExecutable: (path: string) => Promise<void>;
   onInstall: () => void;
+}
+
+export interface PacketCodeInstallReport {
+  status: "running" | "verifying" | "success" | "error";
+  channel: "stable" | "preview";
+  before: PacketCodeInstallationInspection | null;
+  after: PacketCodeInstallationInspection | null;
+  message?: string;
 }
 
 function isWindowsHost(): boolean {
@@ -34,6 +46,8 @@ export function PacketCodeIntegrationPanel({
   detection,
   manualPath,
   installing,
+  inspection,
+  installReport,
   onPinExecutable,
   onInstall,
 }: PacketCodeIntegrationPanelProps) {
@@ -54,7 +68,8 @@ export function PacketCodeIntegrationPanel({
   const [probe, setProbe] = useState<PacketCodeIntegrationProbe | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
 
-  const executable = manualPath || detection?.path || "";
+  const executable = inspection?.activeExecutablePath || manualPath || detection?.path || "";
+  const executableVersion = inspection?.activeVersion || detection?.version || null;
   const localPlatform = isWindowsHost() ? "windows" : "posix";
   const invalidLocalHome =
     localDataHome.trim().length > 0 &&
@@ -123,10 +138,83 @@ export function PacketCodeIntegrationPanel({
         </button>
       </div>
 
+      {installReport && (
+        <div
+          className={`mt-3 rounded border px-2.5 py-2 text-[10px] ${
+            installReport.status === "success"
+              ? "border-accent-green/30 bg-accent-green/5"
+              : installReport.status === "error"
+                ? "border-accent-red/30 bg-accent-red/5"
+                : "border-accent-blue/30 bg-accent-blue/5"
+          }`}
+        >
+          <div className="flex items-center gap-1.5 font-medium text-text-primary">
+            {installReport.status === "running" || installReport.status === "verifying" ? (
+              <Loader2 size={11} className="animate-spin text-accent-blue" />
+            ) : installReport.status === "success" ? (
+              <CheckCircle2 size={11} className="text-accent-green" />
+            ) : (
+              <XCircle size={11} className="text-accent-red" />
+            )}
+            {installReport.status === "running"
+              ? `Installing ${installReport.channel}`
+              : installReport.status === "verifying"
+                ? "Verifying installed binary"
+                : installReport.status === "success"
+                  ? `${installReport.channel} install verified`
+                  : "Install verification failed"}
+          </div>
+
+          {installReport.status === "success" && installReport.after && (
+            <div className="mt-1.5 grid gap-1">
+              <div className="text-text-secondary">
+                Installer version: {installReport.before?.installerVersion ?? "not installed"} →{" "}
+                <span className="font-mono text-text-primary">
+                  {installReport.after.installerVersion}
+                </span>
+              </div>
+              <div
+                className="break-all font-mono text-text-secondary"
+                title={installReport.after.installerExecutablePath}
+              >
+                Installed: {installReport.after.installerExecutablePath}
+              </div>
+              {installReport.after.workspaceUsesInstaller ? (
+                <div className="flex items-center gap-1 text-accent-green">
+                  <CheckCircle2 size={10} /> Workspace will launch this exact binary.
+                </div>
+              ) : (
+                <div className="mt-0.5 rounded border border-accent-amber/30 bg-accent-amber/5 p-2">
+                  <div className="text-accent-amber">
+                    Workspace still launches {installReport.after.activeExecutablePath ?? "no binary"}
+                    {installReport.after.activeSource
+                      ? ` via ${cliLaunchSourceLabel(installReport.after.activeSource)}`
+                      : ""}
+                    .
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void onPinExecutable(installReport.after!.installerExecutablePath)
+                    }
+                    className="mt-1.5 rounded border border-accent-amber/40 px-2 py-1 text-[9px] text-accent-amber hover:bg-accent-amber/10"
+                  >
+                    Use installed binary in Workspace
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {installReport.message && (
+            <div className="mt-1 text-accent-red">{installReport.message}</div>
+          )}
+        </div>
+      )}
+
       <div className="mt-3 grid gap-2">
         <label className="grid gap-1">
           <span className="text-[10px] text-text-muted">
-            Resolved executable — terminal sessions only
+            Workspace launch binary
           </span>
           <input
             value={executable}
@@ -134,7 +222,37 @@ export function PacketCodeIntegrationPanel({
             placeholder="Not detected"
             className="rounded border border-bg-border bg-bg-secondary px-2 py-1 font-mono text-[10px] text-text-secondary"
           />
+          <span className="text-[9px] text-text-muted">
+            {executableVersion ?? "Version unavailable"}
+            {inspection?.activeSource
+              ? ` · selected via ${cliLaunchSourceLabel(inspection.activeSource)}`
+              : ""}
+          </span>
         </label>
+
+        {inspection && (
+          <div className="grid gap-1 rounded border border-bg-border bg-bg-secondary/40 px-2 py-1.5">
+            <span className="text-[9px] uppercase tracking-wide text-text-muted">
+              Official installer target
+            </span>
+            <span
+              className="break-all font-mono text-[9px] text-text-secondary"
+              title={inspection.installerExecutablePath}
+            >
+              {inspection.installerExecutablePath}
+            </span>
+            <span
+              className={
+                inspection.workspaceUsesInstaller ? "text-accent-green" : "text-accent-amber"
+              }
+            >
+              {inspection.installerVersion ?? "Not installed"} ·{" "}
+              {inspection.workspaceUsesInstaller
+                ? "active in Workspace"
+                : "not the active Workspace binary"}
+            </span>
+          </div>
+        )}
 
         <label className="grid gap-1">
           <span className="text-[10px] text-text-muted">Local data home</span>

@@ -119,9 +119,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         const results = await detectCliCatalog(
           agents.map((a) => {
             const manualPath = overrides[a.id]?.manualPath;
+            const binary = a.id === "packetcode" ? "packetcode" : a.command;
             return manualPath
-              ? { id: a.id, binary: a.command, manualPath }
-              : { id: a.id, binary: a.command };
+              ? { id: a.id, binary, manualPath }
+              : { id: a.id, binary };
           }),
         );
         updates = results.map((r) => ({

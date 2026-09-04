@@ -18,7 +18,13 @@ const __dirname = dirname(__filename);
 const SESSION_ID = "remote-project-path-smoke";
 const REMOTE_PROJECT_PATH = "/srv/Packet Bench/remote-app";
 const INITIAL_MESSAGE = "remote project path smoke";
-const TIMEOUT_MS = 5000;
+// Headroom for a BUSY machine, not for a slow sidecar. Booting dist/index.js
+// (which eagerly imports the Anthropic, OpenAI and MCP SDKs) takes ~0.9s on an
+// idle box, so the old 3-5s budgets were fine in isolation — and failed anyway
+// when these smokes ran beside a cargo build using every core. These smokes
+// assert protocol behaviour, not latency, so the budget sits well clear of
+// contention rather than close to the measured best case.
+const TIMEOUT_MS = 20_000;
 
 const sidecarEntry = resolve(__dirname, "..", "dist", "index.js");
 

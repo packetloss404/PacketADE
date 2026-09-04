@@ -219,6 +219,36 @@ export interface PtyExitPayload {
 }
 
 /**
+ * What actually happened to a PTY child — four mutually exclusive cases.
+ *
+ * This replaces the old `ptyExitSucceeded` boolean, which collapsed all four
+ * into "success"/"failure" and so made a crashed CLI indistinguishable from a
+ * session the user closed on purpose. Every consumer that renders or scores an
+ * exit needs the distinction:
+ *
+ * - `clean`   — exit code 0. The CLI did its job and returned.
+ * - `failed`  — a non-zero exit code we actually observed. The CLI died or
+ *   refused to run; `exitCode` is worth showing to the user.
+ * - `killed`  — PacketBench (or the user through it) terminated the session:
+ *   Kill, Restart, pane close, `kill_pty`. A deliberate control action, so it
+ *   is NOT a crash — but it is not a successful task completion either, and
+ *   consumers that score outcomes must not count it as one. `exitCode` is
+ *   whatever the OS reported for the kill and carries no meaning.
+ * - `unknown` — no exit status was observed at all: the backend could not read
+ *   the child's status, or the frontend only learned the session was gone by
+ *   its absence from `list_pty_sessions`. An absence of evidence, never to be
+ *   laundered into `clean`.
+ */
+export type PtyExitOutcome =
+  | { kind: "clean" }
+  | { kind: "failed"; exitCode: number }
+  | { kind: "killed"; exitCode: number | null }
+  | { kind: "unknown" };
+
+/** Shared singleton for the "we never saw a status" case. */
+export const PTY_EXIT_UNKNOWN: PtyExitOutcome = { kind: "unknown" };
+
+/**
  * Normalize a `pty:exit` event payload across the old (bare session-id
  * string) and new ({@link PtyExitPayload}) shapes. Callers that care about
  * the real outcome should use the returned `exitCode` / `terminated`;
@@ -233,8 +263,9 @@ export function parsePtyExitPayload(payload: unknown): PtyExitPayload {
       terminated: p.terminated === true,
     };
   }
-  // Legacy bare-string payload (session id) — outcome is unknown, treat as
-  // a clean exit so existing success heuristics are preserved.
+  // Legacy bare-string payload (session id). It carries no status at all, so
+  // the fields stay null/false and {@link ptyExitOutcome} classifies it as
+  // `unknown` — NOT as a clean exit.
   return {
     sessionId: typeof payload === "string" ? payload : "",
     exitCode: null,
@@ -242,22 +273,99 @@ export function parsePtyExitPayload(payload: unknown): PtyExitPayload {
   };
 }
 
+/** Classify an already-normalized {@link PtyExitPayload}. */
+export function ptyExitOutcomeOf(exit: PtyExitPayload | null): PtyExitOutcome {
+  if (!exit) return PTY_EXIT_UNKNOWN;
+  // A deliberate kill is scored first: the code the OS reports for a killed
+  // process (1 on Windows, 137 on Unix) says nothing about the CLI.
+  if (exit.terminated) return { kind: "killed", exitCode: exit.exitCode };
+  if (exit.exitCode === null) return PTY_EXIT_UNKNOWN;
+  if (exit.exitCode === 0) return { kind: "clean" };
+  return { kind: "failed", exitCode: exit.exitCode };
+}
+
 /**
- * Did the child exit cleanly?
+ * Classify a raw `pty:exit` event payload.
  *
- * `false` only when the backend reported a **non-zero** code and the session
- * was not deliberately terminated. Two cases deliberately count as success:
- * `terminated` (an orchestrator or the user killed it — not the CLI's fault),
- * and a `null` code, because "we could not read the status" is an absence of
- * evidence, not evidence of failure.
- *
- * Shared so the terminal pane and the transient-PTY runner cannot drift on
- * what counts as a failure.
+ * Shared so the terminal pane, the transient-PTY runner and the install
+ * verifier cannot drift on what counts as a failure. A legacy bare-string
+ * payload carries no status, so it classifies as `unknown` — honest, and
+ * distinct from the `clean` it used to be laundered into.
  */
-export function ptyExitSucceeded(payload: unknown): boolean {
-  const { exitCode, terminated } = parsePtyExitPayload(payload);
-  if (terminated) return true;
-  return exitCode === null || exitCode === 0;
+export function ptyExitOutcome(payload: unknown): PtyExitOutcome {
+  return ptyExitOutcomeOf(parsePtyExitPayload(payload));
+}
+
+/**
+ * Human-readable meaning for a non-zero PTY exit code, when we recognise it.
+ *
+ * The Windows NTSTATUS values are the ones that matter in practice: they are
+ * the "this CLI binary is broken, it is not your config" cases, and they are
+ * exactly what a `.cmd`-wrapped CLI dying milliseconds after `cmd.exe` started
+ * successfully looks like. Codes arrive as the unsigned 32-bit value the OS
+ * reported; the `>>> 0` normalization also accepts the sign-wrapped form in
+ * case anything upstream narrows to i32.
+ */
+export function describePtyExitCode(exitCode: number): string | null {
+  switch (exitCode >>> 0) {
+    case 0xc0000005:
+      return "access violation — the CLI crashed on startup";
+    case 0xc000007b:
+      return "bad image format — 32/64-bit or corrupt executable";
+    case 0xc0000135:
+      return "a required DLL was not found";
+    case 0xc0000139:
+      return "entry point not found — mismatched runtime";
+    case 0xc000013a:
+      return "terminated by Ctrl+C";
+    case 0xc0000409:
+      return "stack buffer overrun";
+    case 126:
+      return "command found but not executable";
+    case 127:
+      return "command not found";
+    case 130:
+      return "interrupted (SIGINT)";
+    case 137:
+      return "killed (SIGKILL)";
+    case 139:
+      return "segmentation fault";
+    default:
+      return null;
+  }
+}
+
+/** One-line description of an exit outcome, for tooltips and status lines. */
+export function describePtyExitOutcome(outcome: PtyExitOutcome): string {
+  switch (outcome.kind) {
+    case "clean":
+      return "Session ended (exit code 0)";
+    case "failed": {
+      const why = describePtyExitCode(outcome.exitCode);
+      return why
+        ? `Session ended — exit code ${outcome.exitCode}: ${why}`
+        : `Session ended — exit code ${outcome.exitCode}`;
+    }
+    case "killed":
+      return "Session stopped by PacketBench";
+    case "unknown":
+      return "Session ended — exit status could not be read";
+  }
+}
+
+/** Short status-pill text for an exit outcome (`null` = nothing to show). */
+export function ptyExitPillLabel(outcome: PtyExitOutcome | null): string | null {
+  if (!outcome) return null;
+  switch (outcome.kind) {
+    case "failed":
+      return `exit ${outcome.exitCode}`;
+    case "killed":
+      return "stopped";
+    case "unknown":
+      return "ended";
+    case "clean":
+      return null;
+  }
 }
 
 // Code quality
@@ -1412,17 +1520,63 @@ export interface DetectCatalogItem {
   manualPath?: string;
 }
 
+/**
+ * Which tier of the shared Rust launch resolver
+ * (`core::agent::CliLaunchSource`) chose a CLI's binary. The SAME resolver
+ * runs on the PTY spawn path, so a reported path is the path that launches.
+ */
+export type CliLaunchSource =
+  | "settings"
+  | "legacyPin"
+  | "path"
+  | "installerLocation"
+  | "bareName";
+
 export interface DetectCatalogResult {
   id: string;
   installed: boolean;
   version: string | null;
   path: string | null;
+  /** Resolution tier that chose `path`; null when nothing resolved. */
+  source: CliLaunchSource | null;
 }
 
 export async function detectCliCatalog(
   items: Array<DetectCatalogItem>,
 ): Promise<DetectCatalogResult[]> {
   return invoke<DetectCatalogResult[]>("detect_cli_catalog", { items });
+}
+
+export interface CliLaunchInspection {
+  command: string;
+  path: string;
+  source: CliLaunchSource;
+  /** False when resolution fell through to the bare command name. */
+  resolved: boolean;
+  version: string | null;
+  rejectedSettingsPath: string | null;
+}
+
+/** Resolve one CLI command exactly as a Workspace PTY pane would. */
+export async function inspectCliLaunch(
+  command: string,
+  manualPath?: string | null,
+): Promise<CliLaunchInspection> {
+  return invoke<CliLaunchInspection>("inspect_cli_launch", {
+    command,
+    manualPath: manualPath?.trim() || null,
+  });
+}
+
+/**
+ * Redacted, pasteable launch-resolution report: per CLI, its id, resolved
+ * path, tier and version — and nothing else. Home directories are abbreviated
+ * to `~`; no keys, tokens, or environment are included.
+ */
+export async function cliLaunchDiagnostics(
+  items: Array<DetectCatalogItem>,
+): Promise<string> {
+  return invoke<string>("cli_launch_diagnostics", { items });
 }
 
 export interface PacketCodeProviderSummary {
@@ -1443,6 +1597,26 @@ export interface PacketCodeIntegrationProbe {
   homeSource: "default" | "environment" | null;
   providerSummary: PacketCodeProviderSummary;
   doctor: Record<string, unknown>;
+}
+
+/** @deprecated PacketCode is no longer special — use {@link CliLaunchSource}. */
+export type PacketCodeLaunchSource = CliLaunchSource;
+
+export interface PacketCodeInstallationInspection {
+  installerExecutablePath: string;
+  installerVersion: string | null;
+  activeExecutablePath: string | null;
+  activeVersion: string | null;
+  activeSource: CliLaunchSource | null;
+  workspaceUsesInstaller: boolean;
+}
+
+export async function inspectPacketCodeInstallation(
+  manualPath?: string | null,
+): Promise<PacketCodeInstallationInspection> {
+  return invoke<PacketCodeInstallationInspection>("inspect_packetcode_installation", {
+    manualPath: manualPath?.trim() || null,
+  });
 }
 
 export async function probePacketCodeIntegration(
@@ -3975,4 +4149,31 @@ export async function codeQualityAiSummarize(
     checkExitCodes: checkExitCodes ?? null,
     sessionIdOverride: sessionIdOverride ?? null,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Durable localStorage mirror
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the durable copy of the webview's `packetbench:*` keyspace from the app
+ * data dir. Returns `{}` when there is no mirror, or when the file on disk was
+ * unreadable or corrupt — "nothing to restore" either way.
+ *
+ * See `src/lib/storageMirror.ts` for why this exists: `localStorage` is scoped
+ * to the bundle identifier, so an identifier change starts the app against an
+ * empty store.
+ */
+export async function loadWebviewStorageMirror(): Promise<Record<string, string>> {
+  return invoke<Record<string, string>>("load_webview_storage_mirror");
+}
+
+/**
+ * Replace the durable mirror with a complete snapshot of the `packetbench:*`
+ * keyspace. Whole-snapshot, not a delta, so deletions propagate.
+ */
+export async function saveWebviewStorageMirror(
+  entries: Record<string, string>,
+): Promise<void> {
+  return invoke<void>("save_webview_storage_mirror", { entries });
 }

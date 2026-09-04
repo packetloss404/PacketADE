@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, RotateCcw, X } from "lucide-react";
+import { Check, ClipboardCopy, RotateCcw, X } from "lucide-react";
 
 interface CliCatalogHeaderProps {
   installedCount: number;
@@ -11,6 +11,12 @@ interface CliCatalogHeaderProps {
   onRescan: () => void | Promise<void>;
   /** Called when the user clicks Test. Returns the test result string for inline rendering. */
   onTest: () => Promise<{ ok: boolean; output: string }>;
+  /**
+   * Build the redacted launch-resolution report. Resolved text is copied to
+   * the clipboard AND shown inline, so the user can read exactly what they are
+   * about to paste into an issue before it leaves the app.
+   */
+  onCopyDiagnostics: () => Promise<string>;
 }
 
 interface TestOutput {
@@ -26,8 +32,10 @@ export function CliCatalogHeader({
   isRescanning,
   onRescan,
   onTest,
+  onCopyDiagnostics,
 }: CliCatalogHeaderProps) {
   const [busy, setBusy] = useState(false);
+  const [copying, setCopying] = useState(false);
   const [output, setOutput] = useState<TestOutput | null>(null);
   const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
@@ -89,6 +97,39 @@ export function CliCatalogHeader({
     void onRescan();
   };
 
+  const handleCopyDiagnostics = async () => {
+    if (copying) return;
+    cancelClearTimer();
+    setOutput(null);
+    setCopying(true);
+    try {
+      const report = await onCopyDiagnostics();
+      // Show the report either way. A clipboard write can be refused by the
+      // webview; the user still needs to be able to read and select the text.
+      let copied = true;
+      try {
+        await navigator.clipboard.writeText(report);
+      } catch {
+        copied = false;
+      }
+      if (!mountedRef.current) return;
+      setOutput({
+        ok: copied,
+        text: copied
+          ? `Copied to clipboard.\n\n${report}`
+          : `Clipboard unavailable — select and copy manually.\n\n${report}`,
+      });
+      // Deliberately NOT auto-cleared: the user is mid-way through pasting it
+      // somewhere, and having it vanish after 8s would be hostile.
+    } catch (e) {
+      if (!mountedRef.current) return;
+      setOutput({ ok: false, text: e instanceof Error ? e.message : String(e) });
+      scheduleClear();
+    } finally {
+      if (mountedRef.current) setCopying(false);
+    }
+  };
+
   const testDisabled = !selectedEntry || busy;
   const testLabel = busy
     ? "Testing…"
@@ -117,6 +158,16 @@ export function CliCatalogHeader({
           </button>
           <button
             type="button"
+            onClick={() => void handleCopyDiagnostics()}
+            disabled={copying}
+            title="Copy a redacted launch-resolution report (id, path, tier, version) for a bug report"
+            className="px-2 py-1 text-[10px] rounded border border-bg-border bg-bg-secondary hover:bg-bg-elevated text-text-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+          >
+            <ClipboardCopy size={11} />
+            <span>{copying ? "Collecting…" : "Copy diagnostics"}</span>
+          </button>
+          <button
+            type="button"
             onClick={handleRescan}
             disabled={isRescanning}
             className="px-2 py-1 text-[10px] rounded border border-bg-border bg-bg-secondary hover:bg-bg-elevated text-text-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
@@ -128,7 +179,8 @@ export function CliCatalogHeader({
       </div>
 
       <p className="text-[10px] text-text-muted">
-        Detected by scanning your PATH. Pick the CLI you want generations to flow through.
+        Each CLI resolves through one ladder — Settings override, legacy pin, PATH, then the
+        product's own install directory — and that is the binary a Workspace pane launches.
       </p>
 
       {output && (

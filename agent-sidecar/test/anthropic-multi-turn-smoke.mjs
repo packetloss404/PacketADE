@@ -58,7 +58,13 @@ if (!ANTHROPIC_API_KEY) {
 
 const SESSION_ID = "anthropic-multi-turn-smoke";
 const TURN_TIMEOUT_MS = 60_000;
-const READY_TIMEOUT_MS = 5_000;
+// Headroom for a BUSY machine, not for a slow sidecar. Booting dist/index.js
+// (which eagerly imports the Anthropic, OpenAI and MCP SDKs) takes ~0.9s on an
+// idle box, so the old 3-5s budgets were fine in isolation — and failed anyway
+// when these smokes ran beside a cargo build that was using every core. The
+// smokes assert protocol behaviour, not latency, so the budget is set well
+// clear of contention rather than close to the measured best case.
+const READY_TIMEOUT_MS = 20_000;
 const MODEL = "claude-sonnet-4-6";
 
 const sidecarEntry = resolve(__dirname, "..", "dist", "index.js");

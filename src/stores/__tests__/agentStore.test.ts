@@ -84,4 +84,32 @@ describe("agentStore", () => {
       isBuiltin: false,
     });
   });
+
+  it("resolves PacketCode from its canonical binary instead of a stale persisted command", async () => {
+    const { useAgentStore } = await import("@/stores/agentStore");
+    const { useCliOverrideStore } = await import("@/stores/cliOverrideStore");
+    useCliOverrideStore.setState({ overrides: {} });
+    const packetCode = useAgentStore.getState().getAgent("packetcode");
+    expect(packetCode).toBeDefined();
+    useAgentStore.setState({
+      agents: [{ ...packetCode!, command: "C:\\old-portable\\packetcode.exe" }],
+    });
+    mocks.detectCliCatalog.mockResolvedValue([
+      {
+        id: "packetcode",
+        installed: true,
+        version: "packetcode v0.5.1",
+        path: "C:\\Users\\ian\\bin\\packetcode.exe",
+      },
+    ]);
+
+    await useAgentStore.getState().detectInstalled();
+
+    expect(mocks.detectCliCatalog).toHaveBeenCalledWith([
+      { id: "packetcode", binary: "packetcode" },
+    ]);
+    expect(useAgentStore.getState().getAgent("packetcode")?.command).toBe(
+      "C:\\Users\\ian\\bin\\packetcode.exe",
+    );
+  });
 });

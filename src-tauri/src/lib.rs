@@ -375,10 +375,16 @@ pub fn run() {
             commands::memory::toggle_pinned_pattern,
             commands::state::save_servers_slice,
             commands::state::save_cli_accounts_slice,
+            // Durable localStorage mirror — survives a bundle-identifier change
+            commands::webview_storage_mirror::load_webview_storage_mirror,
+            commands::webview_storage_mirror::save_webview_storage_mirror,
             // Agent detection
             commands::agent::detect_agent,
             // v0.8.3 cli detection
             commands::agent::detect_cli_catalog,
+            commands::agent::inspect_cli_launch,
+            commands::agent::cli_launch_diagnostics,
+            commands::agent::inspect_packetcode_installation,
             commands::agent::probe_packetcode_integration,
             // Status line
             commands::statusline::claude::read_statusline_states,

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   GripHorizontal,
+  Loader2,
   Plus,
   Play,
   X,
@@ -17,12 +18,22 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useServerStore } from "@/stores/serverStore";
 import { usePromptStore } from "@/stores/promptStore";
+import { useCliOverrideStore } from "@/stores/cliOverrideStore";
 import {
   isAbsolutePacketCodePath,
   usePacketCodeIntegrationStore,
 } from "@/stores/packetCodeIntegrationStore";
 import { buildSshArgs } from "@/lib/ssh";
-import { writePty } from "@/lib/tauri";
+import {
+  describePtyExitOutcome,
+  inspectCliLaunch,
+  probePacketCodeIntegration,
+  ptyExitPillLabel,
+  writePty,
+  type CliLaunchInspection,
+  type PacketCodeIntegrationProbe,
+} from "@/lib/tauri";
+import { cliLaunchSourceLabel } from "@/lib/cli-catalog";
 import { getModelsForAgent } from "@/lib/models";
 import { getAgentColor } from "@/lib/agentColors";
 import { accountEnvForSlot } from "@/lib/cliAccountEnv";
@@ -42,6 +53,19 @@ interface WorkspacePaneProps {
   /** Gate the pane's one-time automatic PTY launch. */
   autoStart?: boolean;
 }
+
+// `identity` is the last successfully resolved launch identity. It survives a
+// re-probe on purpose: an already-mounted TerminalPane keeps rendering with it
+// while the new inputs resolve, so the pane is only ever unmounted when there
+// is genuinely nothing to launch. Unmounting TerminalPane re-arms its
+// autoStart on remount, which is why a probe must never bounce a mounted pane.
+type PacketCodeRuntimeState =
+  | { status: "not-applicable"; identity: null }
+  | { status: "probing"; identity: PacketCodeIntegrationProbe | null }
+  | { status: "ready"; identity: PacketCodeIntegrationProbe }
+  | { status: "error"; identity: null; message: string };
+
+const NOT_APPLICABLE_RUNTIME: PacketCodeRuntimeState = { status: "not-applicable", identity: null };
 
 export function WorkspacePane({ pane, workspaceId, autoStart = true }: WorkspacePaneProps) {
   const agents = useAgentStore((s) => s.agents);
@@ -72,7 +96,26 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
   const promptTemplates = usePromptStore((s) => s.templates);
   const packetCodeLocalDataHome = usePacketCodeIntegrationStore((s) => s.localDataHome);
   const packetCodeRemoteDataHomes = usePacketCodeIntegrationStore((s) => s.remoteDataHomes);
+  const packetCodeManualPath = useCliOverrideStore(
+    (s) => s.overrides.packetcode?.manualPath ?? null,
+  );
   const defaultTerminalShell = useTerminalSettingsStore((s) => s.defaultShell);
+  const [packetCodeProbeNonce, setPacketCodeProbeNonce] = useState(0);
+  const [packetCodeRuntime, setPacketCodeRuntime] = useState<PacketCodeRuntimeState>(() =>
+    pane.agentId === "packetcode" ? { status: "probing", identity: null } : NOT_APPLICABLE_RUNTIME,
+  );
+  // Launch identity for the non-PacketCode CLIs. PacketCode has its own,
+  // richer runtime block (it also gates launch on a doctor probe); every other
+  // CLI simply could not tell you which binary its pane was about to spawn.
+  // Resolved through the SAME Rust ladder the PTY uses, so this is a promise
+  // rather than a guess — and probed only when the menu is opened, so no pane
+  // pays for a readout nobody looked at.
+  const [cliLaunch, setCliLaunch] = useState<CliLaunchInspection | null>(null);
+  const packetCodeRuntimeRef = useRef(packetCodeRuntime);
+  packetCodeRuntimeRef.current = packetCodeRuntime;
+  // The inputs the current identity was resolved from. A session ending with
+  // these unchanged must not trigger a fresh probe.
+  const packetCodeProbedKeyRef = useRef<string | null>(null);
 
   // Close the overflow menu on outside click; reset to the root view so it
   // doesn't reopen mid-drill-down next time.
@@ -188,6 +231,32 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
   // was never in play and there is nothing to report.
   const shellFallbackReason =
     pane.agentId === "terminal" && !isRemote ? terminalShellLaunch.fallbackReason : undefined;
+
+  // Resolve the pane's launch binary only when the user opens the overflow
+  // menu to look. `inspect_cli_launch` runs the exact ladder
+  // `create_pty_session` runs, so what this shows is what spawns.
+  useEffect(() => {
+    if (
+      !showOverflow ||
+      isRemote ||
+      pane.agentId === "terminal" ||
+      pane.agentId === "packetcode"
+    ) {
+      return;
+    }
+    let cancelled = false;
+    void inspectCliLaunch(command)
+      .then((info) => {
+        if (!cancelled) setCliLaunch(info);
+      })
+      .catch(() => {
+        // A failed probe must not replace a previously good readout with a
+        // wrong one; leave whatever is there and say nothing new.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [command, isRemote, pane.agentId, showOverflow]);
   const localPlatform =
     typeof navigator !== "undefined" &&
     /windows|win32|win64/i.test(navigator.userAgent || navigator.platform || "")
@@ -199,6 +268,86 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
         ? packetCodeRemoteDataHomes[server.id]?.trim()
         : packetCodeLocalDataHome.trim()
       : "";
+  const packetCodeHomeIsValid =
+    !packetCodeHome ||
+    isAbsolutePacketCodePath(packetCodeHome, isRemote ? "posix" : localPlatform);
+
+  // Resolve one immutable launch identity before a local PacketCode PTY is
+  // mounted. The same backend probe selects the executable, verifies its
+  // version contract, and asks PacketCode for its effective data home. While a
+  // session is alive, keep showing the identity that launched it even if the
+  // user edits Settings; the next restart resolves the new values.
+  //
+  // FAULT this guards against: an earlier version re-probed whenever
+  // `pane.sessionId` changed. A PacketCode session ending flipped the pane
+  // back to "probing", which unmounted TerminalPane; the remount re-armed
+  // autoStart and launched PacketCode again. A binary that exits at startup
+  // therefore relaunched in a tight loop. Now a probe only runs when the
+  // inputs it depends on actually change (or the user asks for a recheck), and
+  // a mounted pane keeps its previous identity while a re-probe is in flight.
+  const packetCodeProbeKey = `${packetCodeManualPath ?? ""} ${packetCodeHome} ${packetCodeProbeNonce}`;
+  useEffect(() => {
+    if (pane.agentId !== "packetcode" || isRemote) {
+      packetCodeProbedKeyRef.current = null;
+      setPacketCodeRuntime((prev) =>
+        prev.status === "not-applicable" ? prev : NOT_APPLICABLE_RUNTIME,
+      );
+      return;
+    }
+    // A live session keeps the identity it launched with; changed inputs are
+    // picked up once it ends.
+    if (pane.sessionId && packetCodeRuntimeRef.current.identity) return;
+    if (packetCodeProbedKeyRef.current === packetCodeProbeKey) return;
+    packetCodeProbedKeyRef.current = packetCodeProbeKey;
+
+    if (!packetCodeHomeIsValid) {
+      setPacketCodeRuntime({
+        status: "error",
+        identity: null,
+        message: "PACKETCODE_HOME must be an absolute host path before PacketCode can launch.",
+      });
+      return;
+    }
+
+    let cancelled = false;
+    let settled = false;
+    setPacketCodeRuntime((prev) => ({ status: "probing", identity: prev.identity }));
+    void probePacketCodeIntegration(packetCodeManualPath, packetCodeHome || null)
+      .then((identity) => {
+        settled = true;
+        if (!cancelled) setPacketCodeRuntime({ status: "ready", identity });
+      })
+      .catch((reason) => {
+        settled = true;
+        if (cancelled) return;
+        setPacketCodeRuntime({
+          status: "error",
+          identity: null,
+          message: reason instanceof Error ? reason.message : String(reason),
+        });
+      });
+    return () => {
+      cancelled = true;
+      // A probe cancelled mid-flight (StrictMode's mount/unmount/mount, or
+      // inputs changing again) must not leave its key marked as resolved, or
+      // the next run would skip the probe and the pane would sit on
+      // "resolving" forever.
+      if (!settled && packetCodeProbedKeyRef.current === packetCodeProbeKey) {
+        packetCodeProbedKeyRef.current = null;
+      }
+    };
+  }, [
+    isRemote,
+    packetCodeHome,
+    packetCodeHomeIsValid,
+    packetCodeManualPath,
+    packetCodeProbeKey,
+    pane.agentId,
+    pane.sessionId,
+  ]);
+
+  const packetCodeIdentity = packetCodeRuntime.identity;
+  const packetCodeVersionLabel = packetCodeIdentity?.version.replace(/^packetcode\s+/i, "");
   // Multi-account CLI binding. `pane.accountId` is absent for ambient panes,
   // in which case `accountEnvForSlot` returns `{}` and this whole feature is
   // inert — the env object below is byte-identical to what it was before.
@@ -246,7 +395,12 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
     Object.assign(merged, accountEnv);
     return Object.keys(merged).length > 0 ? merged : undefined;
   }, [isRemote, localPlatform, packetCodeHome, accountEnv]);
-  const localCommand = pane.agentId === "terminal" ? terminalShellLaunch.command : command;
+  const localCommand =
+    pane.agentId === "terminal"
+      ? terminalShellLaunch.command
+      : pane.agentId === "packetcode" && packetCodeIdentity
+        ? packetCodeIdentity.executablePath
+        : command;
   const localArgs =
     pane.agentId === "terminal"
       ? terminalShellLaunch.args.length > 0
@@ -287,8 +441,25 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
   const renderHeader = useCallback(
     (state: TerminalHeaderRenderState) => {
       const c = getAgentColor(state.cliCommand);
-      const notInstalled = !!agentConfig && !agentConfig.installed;
-      const statusLabel = notInstalled
+      const isLocalPacketCode = pane.agentId === "packetcode" && !isRemote;
+      const packetCodeResolving = isLocalPacketCode && packetCodeRuntime.status === "probing";
+      const packetCodeBlocked = isLocalPacketCode && packetCodeRuntime.status === "error";
+      const notInstalled = !isLocalPacketCode && !!agentConfig && !agentConfig.installed;
+      // How the last session ended, once nothing more urgent is being shown.
+      // A CLI that died with a code has to READ differently from a session the
+      // user closed — that was the whole defect: both rendered as "idle".
+      const exitLabel = state.alive ? null : ptyExitPillLabel(state.lastExit);
+      const exitPillClass =
+        state.lastExit?.kind === "failed"
+          ? "bg-bg-elevated text-accent-red"
+          : state.lastExit?.kind === "unknown"
+            ? "bg-bg-elevated text-accent-amber"
+            : "bg-bg-elevated text-text-muted";
+      const statusLabel = packetCodeResolving
+        ? "resolving"
+        : packetCodeBlocked
+          ? "blocked"
+          : notInstalled
         ? "not installed"
         : state.showApproval
           ? "approval"
@@ -296,8 +467,12 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
             ? "running"
             : state.error
               ? "error"
-              : "idle";
-      const statusPillClass = notInstalled
+              : (exitLabel ?? "idle");
+      const statusPillClass = packetCodeResolving
+        ? "bg-bg-elevated text-accent-blue"
+        : packetCodeBlocked
+          ? "bg-bg-elevated text-accent-red"
+          : notInstalled
         ? "bg-bg-elevated text-accent-amber"
         : state.showApproval
           ? "bg-accent-soft text-accent-amber"
@@ -305,7 +480,11 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
             ? "bg-accent-soft text-accent-green"
             : state.error
               ? "bg-bg-elevated text-accent-red"
-              : "bg-bg-elevated text-text-muted";
+              : exitLabel
+                ? exitPillClass
+                : "bg-bg-elevated text-text-muted";
+      const statusTitle =
+        state.error ?? (exitLabel && state.lastExit ? describePtyExitOutcome(state.lastExit) : statusLabel);
 
       const headerContent = (
         <div
@@ -319,6 +498,14 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
           <span className={`truncate text-ui font-semibold ${c.text}`} title={paneIdentity}>
             {paneIdentity}
           </span>
+          {packetCodeVersionLabel && (
+            <span
+              className="max-w-[150px] truncate rounded border border-accent-amber/30 bg-accent-amber/5 px-1.5 py-0.5 font-mono text-meta text-accent-amber"
+              title={`Binary: ${packetCodeIdentity?.executablePath}\nVersion: ${packetCodeIdentity?.version}\nData home: ${packetCodeIdentity?.effectiveHome ?? "Unknown"}`}
+            >
+              {packetCodeVersionLabel}
+            </span>
+          )}
           {/* FAULT: an unhonourable custom-shell selection fell back to
               auto-detect with no signal at all — the header simply named a
               shell the user had not chosen. */}
@@ -339,7 +526,7 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
           <div className="flex-1" />
           <span
             className={`shrink-0 rounded-full px-1.5 py-0.5 font-mono text-meta ${statusPillClass}`}
-            title={state.error ?? statusLabel}
+            title={statusTitle}
           >
             {statusLabel}
           </span>
@@ -373,6 +560,59 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
               >
                 {overflowView === "root" && (
                   <div className="py-1">
+                    {packetCodeIdentity && (
+                      <div className="mb-1 space-y-1 border-b border-bg-border px-3 pb-2 pt-1">
+                        <div className="text-meta font-medium uppercase tracking-wide text-text-muted">
+                          PacketCode runtime
+                        </div>
+                        <div className="font-mono text-meta text-text-primary">
+                          {packetCodeIdentity.version}
+                        </div>
+                        <div
+                          className="break-all font-mono text-meta text-text-secondary"
+                          title={packetCodeIdentity.executablePath}
+                        >
+                          Binary: {packetCodeIdentity.executablePath}
+                        </div>
+                        <div
+                          className="break-all font-mono text-meta text-text-secondary"
+                          title={packetCodeIdentity.effectiveHome ?? ""}
+                        >
+                          Home: {packetCodeIdentity.effectiveHome ?? "Unknown"}
+                        </div>
+                      </div>
+                    )}
+                    {cliLaunch && (
+                      <div className="mb-1 space-y-1 border-b border-bg-border px-3 pb-2 pt-1">
+                        <div className="text-meta font-medium uppercase tracking-wide text-text-muted">
+                          Launch binary
+                        </div>
+                        {cliLaunch.version && (
+                          <div className="font-mono text-meta text-text-primary">
+                            {cliLaunch.version}
+                          </div>
+                        )}
+                        <div
+                          className={`break-all font-mono text-meta ${
+                            cliLaunch.resolved ? "text-text-secondary" : "text-accent-amber"
+                          }`}
+                          title={cliLaunch.path}
+                        >
+                          {cliLaunch.path}
+                        </div>
+                        <div className="text-meta text-text-muted">
+                          via {cliLaunchSourceLabel(cliLaunch.source)}
+                        </div>
+                        {cliLaunch.rejectedSettingsPath && (
+                          <div
+                            className="break-all text-meta text-accent-amber"
+                            title={cliLaunch.rejectedSettingsPath}
+                          >
+                            Ignored missing override: {cliLaunch.rejectedSettingsPath}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {hasModelOptions && (
                       <button
                         onClick={(e) => {
@@ -638,6 +878,11 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
     },
     [
       agentConfig,
+      cliLaunch,
+      isRemote,
+      packetCodeIdentity,
+      packetCodeRuntime,
+      packetCodeVersionLabel,
       paneIdentity,
       shellFallbackReason,
       mosaicWindowActions,
@@ -719,6 +964,9 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
             error: null,
             showApproval: false,
             cliCommand: effectiveCommand,
+            // No PTY was ever launched behind this gate, so there is no exit
+            // to report — `null`, not a fabricated clean one.
+            lastExit: null,
             // "Start session" in the overflow menu re-probes instead of spawning.
             onRestart: recheck,
             onKill: () => {},
@@ -749,6 +997,63 @@ export function WorkspacePane({ pane, workspaceId, autoStart = true }: Workspace
               }}
             />
           )}
+        </div>
+        {closeConfirmation}
+      </>
+    );
+  }
+
+  // Local: blocked only while there is no identity at all (first probe still
+  // running, or the last probe failed). A re-probe that still holds the previous
+  // identity keeps the mounted TerminalPane in place.
+  const packetCodeLaunchBlocked =
+    pane.agentId === "packetcode" &&
+    ((!isRemote && !packetCodeIdentity) || (isRemote && !packetCodeHomeIsValid));
+  if (packetCodeLaunchBlocked) {
+    const probing = !isRemote && packetCodeRuntime.status === "probing";
+    const message =
+      !isRemote && packetCodeRuntime.status === "error"
+        ? packetCodeRuntime.message
+        : !packetCodeHomeIsValid
+          ? "PACKETCODE_HOME must be an absolute path for this host."
+          : "Resolving the PacketCode runtime…";
+    return (
+      <>
+        <div
+          data-pane-zoomed={isZoomed || undefined}
+          className={`flex h-full flex-col overflow-hidden rounded-md ${wrapperBorderClass} ${flashClass}`}
+        >
+          {renderHeader({
+            alive: false,
+            error: probing ? null : message,
+            showApproval: false,
+            cliCommand: effectiveCommand,
+            lastExit: null,
+            onRestart: () => setPacketCodeProbeNonce((value) => value + 1),
+            onKill: () => {},
+          })}
+          <div className="flex flex-1 items-center justify-center p-6">
+            <div className="max-w-lg text-center">
+              {probing ? (
+                <Loader2 size={20} className="mx-auto animate-spin text-accent-blue" />
+              ) : (
+                <AlertTriangle size={20} className="mx-auto text-accent-red" />
+              )}
+              <div className="mt-2 text-xs font-medium text-text-primary">
+                {probing ? "Resolving PacketCode" : "PacketCode launch blocked"}
+              </div>
+              <div className="mt-1 text-[11px] leading-relaxed text-text-secondary">{message}</div>
+              {!probing && (
+                <button
+                  type="button"
+                  onClick={() => setPacketCodeProbeNonce((value) => value + 1)}
+                  className="mt-3 rounded border border-accent-blue/40 px-2.5 py-1.5 text-ui text-accent-blue hover:bg-accent-blue/10"
+                >
+                  Recheck runtime
+                </button>
+              )}
+            </div>
+          </div>
         </div>
         {closeConfirmation}
       </>
