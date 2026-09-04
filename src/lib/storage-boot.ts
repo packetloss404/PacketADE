@@ -28,7 +28,11 @@
  */
 
 import { MONITOR_WINDOW_QUERY_KEY } from "@/lib/brand";
-import { migrateIssuesMissionToFlight, migrateLegacyStorage } from "@/lib/storage-migration";
+import {
+  migrateIssuesMissionToFlight,
+  migrateLegacyStorage,
+  type LegacyMigrationOutcome,
+} from "@/lib/storage-migration";
 import { bootStorageMirror, type StorageMirrorBootResult } from "@/lib/storageMirror";
 
 /**
@@ -51,29 +55,67 @@ function isMonitorWindow(): boolean {
 }
 
 /**
+ * What this launch's storage boot did. Kept so a diagnostics surface can show
+ * it: `bootPersistedStorage` runs before React exists, so returning the result
+ * to `main.tsx` alone would put it out of reach of every consumer that wants
+ * it — the same "typed contract, no reader" shape that hid the PTY exit
+ * payload for months.
+ */
+export interface StorageBootRecord {
+  /** Epoch ms the boot sequence completed. */
+  at: number;
+  /** Durable-mirror restore outcome. */
+  mirror: StorageMirrorBootResult;
+  /** What the `packetade:*` migrator saw, this launch or a previous one. */
+  legacy: LegacyMigrationOutcome;
+  /** True in a Monitor window, which deliberately skips the mirror entirely. */
+  monitorWindow: boolean;
+}
+
+let lastBoot: StorageBootRecord | null = null;
+
+/**
+ * The most recent {@link bootPersistedStorage} result, or `null` if it has not
+ * run in this webview. Safe to call during render: `main.tsx` awaits the boot
+ * before it imports the React tree.
+ */
+export function getStorageBootRecord(): StorageBootRecord | null {
+  return lastBoot;
+}
+
+/** Test seam — clears the captured record. */
+export function resetStorageBootRecord(): void {
+  lastBoot = null;
+}
+
+/**
  * Run every pre-hydration storage step. Never rejects: a boot that cannot
  * repair storage must still start the app.
  */
-export async function bootPersistedStorage(): Promise<StorageMirrorBootResult> {
+export async function bootPersistedStorage(): Promise<StorageBootRecord> {
   let mirror: StorageMirrorBootResult = { active: false, restored: 0, reason: "no-tauri" };
+  const monitorWindow = isMonitorWindow();
 
   try {
     // A Monitor window shares the main window's origin, so its `localStorage`
     // is already populated and there is nothing to restore. Keeping the writer
     // out of it also avoids two windows flushing the same snapshot.
-    if (!isMonitorWindow()) {
+    if (!monitorWindow) {
       mirror = await bootStorageMirror();
     }
   } catch (e) {
     console.warn("[storage-boot] storage mirror boot failed", e);
   }
 
+  let legacy: LegacyMigrationOutcome;
   try {
-    migrateLegacyStorage();
+    legacy = migrateLegacyStorage();
     migrateIssuesMissionToFlight();
   } catch (e) {
     console.warn("[storage-boot] legacy storage migration failed", e);
+    legacy = { status: "failed", error: e instanceof Error ? e.message : String(e) };
   }
 
-  return mirror;
+  lastBoot = { at: Date.now(), mirror, legacy, monitorWindow };
+  return lastBoot;
 }

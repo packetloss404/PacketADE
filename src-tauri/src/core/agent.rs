@@ -5,7 +5,23 @@ use std::time::Duration;
 use tokio::process::Command as TokioCommand;
 use tokio::time::timeout;
 
-const PATH_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+/// Budget for one `where`/`which` probe.
+///
+/// It exists so a hung lookup cannot stall a whole catalog sweep, NOT to hurry
+/// a healthy one along — `where.exe` answers in milliseconds when the machine
+/// is idle. The old two-second value was tight enough to expire under ordinary
+/// load, and expiring is not harmless: the resolver treats "no PATH hit" as a
+/// fact and descends to a lower tier, so a busy machine could report a
+/// different launch tier — or a bare name against a real binary — than the one
+/// the PTY would actually spawn. Reporting and launch disagreeing is precisely
+/// what the shared resolver exists to prevent, so the budget is set well clear
+/// of contention.
+///
+/// Known limit: the synchronous launcher probe has no timeout at all, so the
+/// two paths still degrade differently in the pathological hung-`where` case.
+/// `catalog_detection_names_the_binary_the_pty_would_spawn` documents where
+/// that leaves the tier label ambiguous.
+const PATH_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 const VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 const VERSION_MAX_LEN: usize = 60;
 

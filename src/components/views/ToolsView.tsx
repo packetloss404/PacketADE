@@ -20,8 +20,11 @@ import {
   ChevronRight,
   Settings,
   Search,
+  Database,
+  History,
 } from "lucide-react";
 import { PacketAgentSettingsCard } from "./tools/PacketAgentSettingsCard";
+import { getStorageBootRecord } from "@/lib/storage-boot";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore } from "@/stores/appStore";
 import { useGitInfo } from "@/hooks/useGitInfo";
@@ -452,6 +455,7 @@ function AdvancedSection({ onOpenHistory }: { onOpenHistory: () => void }) {
   return (
     <div className="space-y-4">
       <ReleaseTrustCard />
+      <StorageDurabilityCard />
       <TrustProvenanceCard />
       <CrashViewerCard />
 
@@ -493,6 +497,125 @@ function AdvancedSection({ onOpenHistory }: { onOpenHistory: () => void }) {
         </div>
       )}
       {inlineView === "prompts" && <PromptTemplatesCard />}
+    </div>
+  );
+}
+
+/**
+ * What this launch's storage boot actually did.
+ *
+ * Exists because of a specific failure: the `packetade:` → `packetbench:`
+ * migrator ran against a brand-new WebView2 profile after the bundle
+ * identifier changed, found nothing, wrote its guard key and completed. It
+ * reported success by silence, and roughly 159 KiB of user state was gone with
+ * nothing on screen to say so (`backlog.md`). This card is the "record a fact
+ * rather than an absence" follow-up from that entry.
+ *
+ * It reads the in-memory boot record rather than re-running anything: the
+ * sequence happens before React mounts and must never be triggered twice.
+ */
+function StorageDurabilityCard() {
+  const boot = getStorageBootRecord();
+
+  const mirrorStatus = (() => {
+    if (!boot) return { text: "Not recorded for this launch", tone: "text-text-muted" };
+    if (boot.monitorWindow) {
+      return { text: "Skipped — Monitor window shares the main origin", tone: "text-text-muted" };
+    }
+    if (boot.mirror.active) {
+      return { text: "Active — writes are mirrored to the app data dir", tone: "text-accent-green" };
+    }
+    const why: Record<string, string> = {
+      "no-tauri": "Inactive — not running under Tauri (web/dev mode)",
+      "no-storage": "Inactive — this webview exposes no localStorage",
+      "load-failed": "Inactive — the mirror could not be read, so writing is held back",
+      "intercept-failed": "Inactive — storage writes could not be intercepted",
+    };
+    const text = why[boot.mirror.reason ?? ""] ?? "Inactive";
+    // `load-failed` is the one worth alarming about: it means a real Tauri
+    // session is running unprotected.
+    const tone = boot.mirror.reason === "load-failed" ? "text-accent-red" : "text-text-muted";
+    return { text, tone };
+  })();
+
+  const legacyStatus = (() => {
+    if (!boot) return { text: "Not recorded for this launch", tone: "text-text-muted" };
+    const { legacy } = boot;
+    if (legacy.status === "failed") {
+      return { text: `Failed — ${legacy.error}`, tone: "text-accent-red" };
+    }
+    const record = legacy.record;
+    if (!record) {
+      return {
+        text:
+          legacy.status === "already-ran"
+            ? "Ran on an earlier launch, before the outcome was recorded — count unknown"
+            : "No record",
+        tone: "text-accent-amber",
+      };
+    }
+    const when = legacy.status === "ran" ? "This launch" : "Earlier launch";
+    if (record.legacyKeysFound === 0) {
+      return {
+        text: `${when}: found 0 packetade:* keys in this origin — nothing to migrate`,
+        tone: "text-text-muted",
+      };
+    }
+    return {
+      text: `${when}: found ${record.legacyKeysFound} packetade:* key(s), copied ${record.migrated}`,
+      tone: "text-accent-green",
+    };
+  })();
+
+  const rows = [
+    { label: "Durable mirror", status: mirrorStatus.text, tone: mirrorStatus.tone, icon: Database },
+    {
+      label: "Restored this launch",
+      status: boot
+        ? boot.mirror.restored > 0
+          ? `${boot.mirror.restored} key(s) recovered into an empty or partial store`
+          : "0 keys — localStorage already had what it needed"
+        : "Not recorded",
+      tone: boot && boot.mirror.restored > 0 ? "text-accent-green" : "text-text-muted",
+      icon: RefreshCw,
+    },
+    { label: "packetade: migration", status: legacyStatus.text, tone: legacyStatus.tone, icon: History },
+  ];
+
+  return (
+    <div className="rounded-lg border border-bg-border bg-bg-secondary p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="flex items-center gap-2 text-xs font-semibold text-text-primary">
+          <Database size={12} className="text-accent-blue" />
+          Storage durability
+        </h3>
+      </div>
+      <p className="mb-3 text-[10px] leading-relaxed text-text-muted">
+        Webview <code>localStorage</code> is scoped to the app&apos;s bundle identifier, so changing
+        it starts the app against an empty store. Settings under the{" "}
+        <code>packetbench:</code> prefix are mirrored to{" "}
+        <code>~/.packetbench/webview-storage-mirror.json</code> and restored before anything
+        hydrates, so the next identifier change cannot empty the app.
+      </p>
+      <div className="space-y-1.5">
+        {rows.map((row) => (
+          <div
+            key={row.label}
+            className="flex items-start justify-between gap-3 rounded border border-bg-border bg-bg-primary px-2.5 py-1.5"
+          >
+            <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-text-secondary">
+              <row.icon size={11} className="text-text-muted" />
+              {row.label}
+            </span>
+            <span className={`text-right text-[10px] ${row.tone}`}>{row.status}</span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-[9px] leading-relaxed text-text-muted">
+        The mirror protects data written from this version onward. Keys stranded in the older{" "}
+        <code>com.packetade.desktop</code> profile are not read back — that loss was accepted
+        separately and is recorded in <code>backlog.md</code>.
+      </p>
     </div>
   );
 }

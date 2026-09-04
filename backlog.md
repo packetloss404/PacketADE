@@ -191,7 +191,22 @@ environment or packaged matrix has actually run.
   Follow-up that is NOT this item: the migrator currently writes its guard key
   and reports success on a profile it could never have read. That silence is
   what made this hard to find. Consider having it record that it found nothing,
-  so the next person sees a fact rather than an absence. **Still open.**
+  so the next person sees a fact rather than an absence.
+  **DONE 2026-09-04.** `migrateLegacyStorage()` now returns what it saw and
+  writes it to `packetbench:storage-migration-record` — `legacyKeysFound: 0` is
+  stated rather than implied, and the zero case logs why an empty origin is
+  expected on a packaged upgrade. `bootPersistedStorage()` keeps the whole boot
+  outcome (`getStorageBootRecord()`), and **Settings → Security & Diagnostics →
+  Storage durability** renders it: mirror active/inactive with the reason, keys
+  restored this launch, and the migration count. The record lives under the
+  mirrored prefix, so the fact survives the next origin change. "Found zero"
+  and "migrated before this was recorded" are deliberately distinct states — an
+  install that upgraded before the record existed reports *unknown* rather than
+  claiming zero.
+
+  Worth noting the shape: `bootPersistedStorage()` already returned a typed
+  result and `main.tsx` dropped it, so nothing could read it — the same
+  typed-contract-with-no-consumer pattern as the PTY exit payload above.
 
   **RECURRENCE PREVENTED 2026-09-04 — the accepted loss above still stands.**
   `src/lib/storageMirror.ts` now mirrors every `packetbench:*` write to

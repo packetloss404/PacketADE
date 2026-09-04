@@ -145,7 +145,7 @@ pub fn detect_agent(command: String) -> Result<bool, String> {
 
 /// Bulk-detect a catalog of CLIs. Each entry's probe runs concurrently
 /// (PATH lookup + version probe both async, no blocking the runtime);
-/// version probes have a 3-second budget, PATH probes a 2-second budget,
+/// version probes have a 3-second budget, PATH probes a 10-second budget,
 /// so a hung binary cannot stall the whole sweep.
 #[tauri::command]
 pub async fn detect_cli_catalog(
@@ -553,8 +553,33 @@ mod tests {
 
             match reported.path {
                 Some(path) => {
+                    // The user-visible contract, and deterministic: whatever
+                    // the card names is what the pane spawns.
                     assert_eq!(path, launched.path, "{binary}");
-                    assert_eq!(reported.source.as_deref(), Some(launched.source.as_str()));
+
+                    // The TIER label is only deterministic when the resolved
+                    // file is reachable by exactly one tier.
+                    //
+                    // These two resolutions probe `where` differently on
+                    // purpose: the async reporting path bounds it at
+                    // PATH_PROBE_TIMEOUT so a hung `where` cannot stall the
+                    // catalog sweep, while the sync launcher path does not.
+                    // On a loaded machine the async probe can time out and
+                    // fall through to the install-directory tier while the
+                    // sync one still gets a PATH hit — landing on the SAME
+                    // file, because npm's global bin is both on PATH and the
+                    // documented install location. Asserting tier equality
+                    // there fails on machine load rather than on a defect.
+                    let reachable_two_ways = agent::install_dir_candidates(binary)
+                        .iter()
+                        .any(|candidate| same_executable_path(candidate, Path::new(&path)));
+                    if !reachable_two_ways {
+                        assert_eq!(
+                            reported.source.as_deref(),
+                            Some(launched.source.as_str()),
+                            "{binary} is reachable by one tier only, so the label must agree"
+                        );
+                    }
                 }
                 None => assert!(
                     !launched.is_resolved(),

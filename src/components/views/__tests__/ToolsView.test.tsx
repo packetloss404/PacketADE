@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
+import { bootPersistedStorage, resetStorageBootRecord } from "@/lib/storage-boot";
 import { ToolsView } from "@/components/views/ToolsView";
 import { useAppStore } from "@/stores/appStore";
 
@@ -83,6 +84,24 @@ describe("ToolsView six-group Settings IA", () => {
     expect(screen.getByRole("heading", { name: "Integrations & Data" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Git Hosts" })).toBeInTheDocument();
     expect(screen.getByText("Git hosts card")).toBeInTheDocument();
+  });
+
+  // The follow-up from backlog.md: the packetade migration used to report
+  // success by silence. A user must be able to SEE what the boot found.
+  it("surfaces the storage boot facts under Security & Diagnostics", async () => {
+    // Self-contained: another test in this file may already have tripped the
+    // one-shot migration guard, which would make this assert "count unknown".
+    localStorage.clear();
+    resetStorageBootRecord();
+    await bootPersistedStorage();
+    render(<ToolsView />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Security & Diagnostics" }));
+
+    expect(screen.getByText("Storage durability")).toBeInTheDocument();
+    // "found 0" has to be stated, not implied by the absence of a message.
+    expect(screen.getByText(/found 0 packetade:[*] keys/)).toBeInTheDocument();
+    expect(screen.getByText(/not running under Tauri/)).toBeInTheDocument();
   });
 
   it("keeps legacy CLI recovery deep links compatible", () => {
