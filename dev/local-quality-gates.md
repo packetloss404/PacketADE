@@ -2,7 +2,46 @@
 
 PacketBench intentionally has no GitHub CI workflows. Release confidence is built from local checks run before merging or shipping.
 
+## Runner: `pnpm gates`
+
+`scripts/quality-gates.mjs` schedules the same package scripts the ladder below
+describes, and is the recommended entry point for anything larger than a
+one-gate check.
+
+- `pnpm gates:fast` — format, lint, typecheck, Vitest.
+- `pnpm gates:full` — everything `pnpm check` covers, plus typecheck.
+- `pnpm gates:changed` — full tier, minus gates no changed file can affect.
+- `pnpm gates -- --dry-run` prints the schedule without running anything;
+  `--list` prints the catalog; `--json` emits a machine-readable summary.
+
+Two behaviours are the point of it:
+
+- **Nothing short-circuits.** The `&&` chains stop at the first failure, so a
+  Prettier nit hides whether the Rust side even compiles. The runner always
+  runs every selected gate and ends in a pass/fail/duration table.
+- **Contention is modelled, not hoped for.** Gates declare the resources they
+  touch — the cargo target-dir lock, `src/generated/tauri-schema.ts` (which the
+  schema gate overwrites while `tsc` and Vitest read it), the sidecar tree, the
+  fixed Vite port — and the scheduler serialises exactly those pairs.
+
+  There is also a `cpu` lock for machine capacity. Vitest, the sidecar smokes
+  and Playwright all assert on elapsed time, while cargo will use every core it
+  can get; run together they produce failures that look like product bugs. A
+  sidecar smoke timed out at twenty seconds doing work that takes ~0.9s on an
+  idle machine. Those three gates hold `cpu` exclusively and everything else
+  holds it shared, so the cargo chain still runs packed with the cheap gates.
+
+`--changed` is deliberately conservative: it runs a gate whenever it cannot
+prove the gate is unaffected, and disables itself entirely when its own
+definitions change. It will over-run; it must never under-run.
+
+An **opt-in** pre-push hook is available via `pnpm gates:install-hook`
+(`gates:uninstall-hook` removes it). It is never installed automatically.
+
 ## Quality Ladder
+
+The runner executes these scripts; it does not replace them. Run any of them
+directly when you want a single signal.
 
 1. **Preflight: fast local check**
    - Use the preflight command when you want a quick signal before handing work off.

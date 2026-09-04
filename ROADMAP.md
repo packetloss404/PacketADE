@@ -32,8 +32,14 @@ only product direction and ordering.
   `com.packetbench.desktop` along with the product name. Section 1 of the
   acceptance matrix ran from source on 2026-08-28 and found **two migration
   defects** — the data-dir veto (fixed in `544e4cc6`, verified against a copy of
-  a real legacy dir) and localStorage across a bundle-identifier change (open,
-  in `backlog.md`). An installed, upgraded `PacketBench` package remains the
+  a real legacy dir) and localStorage across a bundle-identifier change. The
+  second was **accepted on 2026-08-29** as a documented one-time consequence of
+  the rename rather than a defect to fix, and its **recurrence was prevented on
+  2026-09-04**: `packetbench:*` writes are now mirrored to `~/.packetbench/` and
+  restored before any store hydrates, so the next origin change cannot empty the
+  app. The packetade-era keys stranded in the old WebView2 profile are still
+  stranded — nothing reads that profile, by decision. Both entries are in
+  `backlog.md`. An installed, upgraded `PacketBench` package remains the
   sharpest untested path in the tree.
 - Workspace/Agents restructuring is complete: Workspaces are
   CLI/PacketCode-first; Agents owns first-class same-window GUI conversations;

@@ -1,6 +1,6 @@
 # PacketBench Handoff
 
-Last reconciled: 2026-08-27
+Last reconciled: 2026-09-04
 
 This is the restart document. It records the present state, the next decisions,
 and the guardrails that must survive. Historical implementation narratives live
@@ -8,9 +8,13 @@ in `CHANGELOG.md`, the State report, and Git rather than being duplicated here.
 
 ## Restart state
 
-- Branch: `main`, synchronized with `origin/main` at `b0f14891`.
-- Application version: `0.11.0`; sidecar protocol: `v11`.
-- Worktree clean. Nothing uncommitted, nothing unpushed.
+- Branch: `feat/quality-gates-pty-outcomes-durable-state`, one commit
+  (`f7200bfb`) ahead of `main` and not yet merged or pushed.
+- Application version: `0.13.2`; sidecar protocol: `v11`.
+- Worktree clean apart from that branch. `f7200bfb` carries the local
+  quality-gate runner, the four-way PTY exit outcome, the unified CLI launch
+  resolver, the durable `packetbench:*` storage mirror, and the Vitest
+  dom/node split. All eleven gates pass (`pnpm gates:full`).
 - `main` is the only branch, local or remote. Every branch the previous
   handoff mentioned (`codex/syndicate-integration-toggle`,
   `chore/rename-to-packetbench`, the ACP and LM feature branches) is merged
@@ -23,8 +27,11 @@ in `CHANGELOG.md`, the State report, and Git rather than being duplicated here.
 
 ## Latest Windows build
 
-**There is no current packaged build.** Nothing has been packaged since the
-product was renamed, so no installer of `0.11.0` exists.
+**Superseded — see `ROADMAP.md` and `CHANGELOG.md`, which are newer than the
+rest of this section.** Windows bundles for `0.13.2` were built 2026-08-30 from
+`5b534517` and their SHA-256 hashes are recorded in `CHANGELOG.md`. The
+paragraphs below describe the 0.11.0-era situation and are kept only as the
+record of why the earlier artifacts were never distributed.
 
 The 2026-08-15 development installers the previous handoff recorded are **gone
 from disk**. Build output is redirected by `src-tauri/.cargo/config.toml` (a
@@ -69,9 +76,12 @@ state file. The generic SSH/remote machinery is untouched. Five documents moved
 to `dev/archive/syndicate/`, which carries a README with two explicit do-nots.
 
 **3. ACP transport and the PacketCode engine surface landed** (`d4ffa233`,
-`af4e4400`). `api-packetcode` is a ninth provider row driven over Agent Client
-Protocol as a local subprocess (`src-tauri/src/acp/`), emitting the same
-`api-agent:*` events as the in-process and sidecar transports.
+`af4e4400`), then were **removed again** (`b4d00080`, 2026-09-01). For the
+period between those commits `api-packetcode` was a ninth provider row driven
+over Agent Client Protocol as a local subprocess. The `src-tauri/src/acp/` tree
+no longer exists, the provider picker is back to eight rows, and the id lives on
+only in `RETIRED_API_AGENTS` so old conversations stay readable. PacketCode is
+reached as a PTY CLI in a Workspace pane.
 
 **4. Local-model routing and the custom provider** — `api-custom`, a
 user-supplied OpenAI-compatible endpoint (`2bcba130`, `llm_custom_compat.rs`);

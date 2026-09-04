@@ -191,7 +191,24 @@ environment or packaged matrix has actually run.
   Follow-up that is NOT this item: the migrator currently writes its guard key
   and reports success on a profile it could never have read. That silence is
   what made this hard to find. Consider having it record that it found nothing,
-  so the next person sees a fact rather than an absence.
+  so the next person sees a fact rather than an absence. **Still open.**
+
+  **RECURRENCE PREVENTED 2026-09-04 — the accepted loss above still stands.**
+  `src/lib/storageMirror.ts` now mirrors every `packetbench:*` write to
+  `~/.packetbench/` (Rust side: `commands/webview_storage_mirror.rs`), and
+  `src/lib/storage-boot.ts` restores from it before any store hydrates. Because
+  that directory is in the user's home rather than inside the WebView2 profile,
+  the NEXT identifier change — or any other origin change — no longer empties
+  the app.
+
+  This does **not** reopen or undo the decision above. Nothing reads the old
+  `com.packetade.desktop` profile, so the twelve stranded packetade-era keys
+  remain exactly as stranded as they were; the rejected LevelDB reader stayed
+  rejected. The mirror only protects data written from this version onward.
+  Two further limits worth knowing: values over 512 KiB per key are dropped
+  (regenerable caches such as `packetbench:workspaces-cache`), and only the
+  `packetbench:` prefix is mirrored, so a future unprefixed key would be
+  missed.
 - **DONE 2026-08-28 - Memory capture for remote workspaces.** Records are
   stamped through a single write choke point, with the scope resolved from the
   workspace the work ran in rather than the active one. Scope keys render as
@@ -892,7 +909,8 @@ from the original report, which still lists them as findings.
 
 ### Main shell and daily-driver polish
 
-- **P1 - A crashed CLI is indistinguishable from a clean exit (2026-08-28).**
+- **DONE 2026-09-04 - A crashed CLI is indistinguishable from a clean exit
+  (found 2026-08-28).**
   Every production `pty:exit` listener discards the event payload, so a PTY
   session whose child died on startup renders exactly like one the user closed
   normally: the pane simply ends, with no error, no exit code, and nothing to
@@ -927,6 +945,24 @@ from the original report, which still lists them as findings.
   violation, `0xC0000135` missing DLL) which are the common "the CLI is broken,
   not your config" cases. Respect `terminated`: an orchestrator-killed session
   is not a crash and must not be reported as one.
+
+  **Shipped.** `PtyExitOutcome` in `src/lib/tauri.ts` replaces the boolean with
+  four mutually exclusive cases — `clean`, `failed` (with the code), `killed`,
+  `unknown` — and all three listeners now classify through it. The pane header
+  renders a distinct chip per outcome, and `describePtyExitCode` names the
+  NTSTATUS values this entry asked for, `0xC0000005` included.
+
+  Two things were worse than this entry recorded. `ptyExitSucceeded` treated a
+  **null** exit code as success, so "we could not read the status" was reported
+  as a clean run; and `useTransientPty` called `finish(true)` whenever the
+  session was merely absent from `list_pty_sessions`, inventing a success it
+  had never observed. That second one fed the PacketCode install verifier,
+  which could therefore report a verified install for an installer that died.
+  `unknown` is now a first-class outcome, and the verifier treats it as
+  unproven and lets the binary probe decide.
+
+  `terminated` is respected: a killed session is not a crash, but it is not
+  scored as a successful completion either.
 
 
 - **P2 - MS4 accessibility/responsiveness.** Align Git Hosts, Workspaces,
