@@ -4,7 +4,7 @@
 |---|---|
 | Repository | packetloss404/PacketBench |
 | Commit reviewed by the audit | 2f4a10c384508af75a792604fff91b55a16dee26 |
-| Commit this workbook was built from | f3421a4ba3a34e532a1df5963febb2f98e998e3a |
+| Commit this workbook was built from | 6abf250c8e335ab5bff9f609791874c687073f24 |
 | Date built | 2026-09-05 |
 | Run it locally (exact command) | pnpm install && pnpm tauri dev |
 | Then run the gates | pnpm gates:fast   (format, lint, typecheck, vitest)   and   cd src-tauri && cargo test --lib |
@@ -12,7 +12,7 @@
 | Exact URL in prod | none (desktop app; no hosted URL). Installed via the NSIS installer PacketBench_<version>_x64-setup.exe. The only HTTP endpoint is the loopback MCP server: http://127.0.0.1:<port>/health |
 | Log file | %LOCALAPPDATA%\PacketBench\logs\packetbench.log.<YYYY-MM-DD> |
 | Data dir | %USERPROFILE%\.packetbench |
-| Audit report | docs/audit-2026-09-04.md (findings F01-F20, patches P01-P12, unresolved U01-U07) |
+| Audit report | docs/audit-2026-09-04.md (findings F01-F21, patches P01-P13, unresolved U01-U07) |
 
 How to use: every checklist row has an empty checkbox cell (tick when done) and a P/F cell (write P or F). Failure signatures are the literal strings the app or the log prints. Where a browser cannot make the request, the literal curl is given with <TOKEN> as the placeholder for the bearer shown in Settings > MCP > MCP Provider.
 
@@ -384,6 +384,7 @@ There are no URLs: PacketBench is a desktop window. Each shot names the in-app l
 | P10 | Right-click a path in a conversation > Open in VS Code | VS Code opens the file | Adjacent: 'Show in Explorer' still fails with a console warn (known, H07) | grep plugins src-tauri/tauri.conf.json |  |  |
 | P11 | ls -la .dockerignore | file absent | Adjacent: nothing depends on it | git log --oneline -1 -- .dockerignore |  |  |
 | P12 | pnpm tauri build from a non-interactive shell | prune-sidecar prints 'pruned node_modules' and the build reaches the bundler | Adjacent: pnpm lint and pnpm build still work afterwards - root devDeps intact | grep -n ignore-workspace scripts/prune-sidecar.js |  |  |
+| P13 | pnpm run release:readiness --skip-gates | the pnpm run check line reads 'not evaluated because some were not executed', NOT 'cannot be derived' | Adjacent: bundle artifact detection still passes; summary still 0 fail | grep -n remoteagents:check scripts/release-readiness.mjs |  |  |
 
 # Unresolved experiments (audit section 7)
 

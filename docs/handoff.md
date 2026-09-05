@@ -75,6 +75,17 @@ fail, the change is wrong, not the test.
   except for the H1. Repo-wide sweeps skip them.
 - **`pnpm tauri build` destroys sidecar devDeps** (`scripts/prune-sidecar.js`);
   run `pnpm sidecar:install` afterwards.
+- **Never launch a pnpm install from `agent-sidecar/` without
+  `--ignore-workspace`.** It is not a member of `pnpm-workspace.yaml` (which
+  lists only `remoteagents/*`), so pnpm walks up, finds the workspace root and
+  installs **that** — it prints `Scope: all 3 workspace projects`. With
+  `--prod` that deletes the repo's own devDependencies (`vite`, `typescript`,
+  `vitest`, `@tauri-apps/cli`, `eslint`) and never creates
+  `agent-sidecar/node_modules`. This broke `pnpm tauri build` outright between
+  2026-09-01 (`d6238633`, which added the workspace file and fixed
+  `sidecar:install` but not `prune-sidecar.js`) and 2026-09-05 (`f3421a4b`,
+  audit F20/P12). Recovery is a plain `pnpm install`. Both call sites pass the
+  flag now; keep it that way.
 - **The trust list is a file, not a setting.** Until
   `~/.packetbench/trusted-projects.json` lists a repo, that repo's hooks,
   `.mcp.json`, and `.claude/agents` are ignored and the log says so
@@ -171,6 +182,11 @@ Do:
 
 Why: "Show in Explorer" in `src/components/common/PathContextMenu.tsx:31-35`
 calls `shell.open()` with a directory, which the plugin scope refuses.
+Confirmed live in the installed 0.13.2 build on 2026-09-05: the conversation
+menu's "Open project folder in OS" opened nothing (zero Explorer windows
+before and after), while "Open in VS Code" in the same menu launched VS Code.
+So the feature is dead, not flaky, and the fix is a real command — not a
+wider scope.
 
 Do:
 1. New command in `src-tauri/src/commands/fs.rs`:
@@ -203,6 +219,13 @@ export PATH="/c/Users/ianwalmsley/.rustup/toolchains/stable-x86_64-pc-windows-ms
 node smoke-test.mjs            # 5/5 in fallback mode; live mode with PACKETBENCH_MCP_URL/TOKEN
 pnpm gates:fast                # format, lint, typecheck, vitest
 cd src-tauri && cargo test --lib   # 983 passed, 2 ignored at 835e1d45
+```
+
+Before a release, also build once — it is the only thing that exercises
+`prune-sidecar.js`, and it is the step that silently rotted for four days:
+
+```bash
+pnpm tauri build && pnpm sidecar:install
 ```
 
 Then open the app, start a new API conversation in an untrusted repo, and

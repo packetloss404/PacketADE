@@ -39,6 +39,11 @@ const requiredQualityScripts = [
   ["check:tauri-schema", "pnpm run check:tauri-schema"],
   ["rust:check", "pnpm run rust:check"],
   ["rust:test", "pnpm run rust:test"],
+  // Added to `preflight` (and so to `check`) by d6238633 on 2026-09-01 but
+  // never listed here, which left the composite-gate derivation below
+  // permanently unresolvable: it reported `remoteagents:check` as an
+  // unexpected leaf and downgraded itself to a warning on every run.
+  ["remoteagents:check", "pnpm run remoteagents:check"],
 ];
 
 const compositeGate = ["check", "pnpm run check"];
