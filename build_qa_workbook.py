@@ -12,6 +12,7 @@ running header. No unicode glyphs: empty table cells serve as checkboxes.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -38,6 +39,10 @@ REPO = "packetloss404/PacketBench"
 AUDIT_COMMIT = "2f4a10c384508af75a792604fff91b55a16dee26"
 TODAY = date.today().isoformat()
 RUN_LOCALLY = "pnpm install && pnpm tauri dev"
+# Read from package.json so a version bump cannot leave a stale expectation
+# behind in the QA checklist (this line said 0.13.2 through the 0.14.0 bump).
+APP_VERSION = json.load(open("package.json", encoding="utf-8"))["version"]
+
 PROD_URL = "none (desktop app; no hosted URL). Installed via the NSIS installer PacketBench_<version>_x64-setup.exe. The only HTTP endpoint is the loopback MCP server: http://127.0.0.1:<port>/health"
 
 
@@ -330,7 +335,7 @@ h1("Test sheets")
 h2("MCP server (N001/N002) - every row is a literal curl; replace <port> and <TOKEN> from Settings > MCP > MCP Provider")
 INIT = "-H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"qa\",\"version\":\"0\"}}}'"
 mcp_cases = [
-    ("T-MCP-01", "Health", "curl -s -i http://127.0.0.1:<port>/health", "HTTP 200; body {\"ok\":true,\"app\":\"PacketBench\",\"version\":\"0.13.2\",\"service\":\"mcp\"}", "404 (P07 not applied) or connection refused (server not enabled)"),
+    ("T-MCP-01", "Health", "curl -s -i http://127.0.0.1:<port>/health", "HTTP 200; body {\"ok\":true,\"app\":\"PacketBench\",\"version\":\"" + APP_VERSION + "\",\"service\":\"mcp\"}", "404 (P07 not applied) or connection refused (server not enabled)"),
     ("T-MCP-02", "No token", f"curl -s -o /dev/null -w '%{{http_code}}' -X POST http://127.0.0.1:<port>/mcp {INIT}", "401", "200 = bearer layer missing; log has no 'MCP request rejected: bearer token missing or wrong'"),
     ("T-MCP-03", "Wrong token", f"curl -s -o /dev/null -w '%{{http_code}}' -X POST http://127.0.0.1:<port>/mcp -H 'authorization: Bearer nope' {INIT}", "401; log line outcome=bad_token", "200"),
     ("T-MCP-04", "Non-loopback Origin (webhook analogue)", f"curl -s -o /dev/null -w '%{{http_code}}' -X POST http://127.0.0.1:<port>/mcp -H 'origin: https://evil.example.com' -H 'authorization: Bearer <TOKEN>' {INIT}", "403; log line outcome=forbidden_origin", "200"),

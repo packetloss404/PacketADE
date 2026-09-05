@@ -7,25 +7,29 @@ For current direction, use [`ROADMAP.md`](./ROADMAP.md). For planning briefs and
 runbooks, use [`dev/README.md`](./dev/README.md). This file is history, not a
 task list.
 
-## [Unreleased]
+## [0.14.0] - 2026-09-05
 
 Security and correctness audit, 2026-09-04 to 2026-09-05. 25 findings, 17
 patches, each independently applicable and reverse-applicable
 (`docs/audit-2026-09-04.md`, `docs/audit/patches/`).
 
-Windows artifacts, rebuilt 2026-09-05 from `610f3975`, **unsigned**:
+**No 0.14.0 artifacts have been built yet.** Run `pnpm tauri build` and record
+the hashes here before this goes anywhere.
 
-| Artifact | SHA-256 |
+The audit's own verification ran against binaries built from `610f3975`, while
+the version still read 0.13.2. Those were **unsigned**, and are kept here as the
+record of what was actually installed and tested rather than as a release:
+
+| Pre-bump artifact (`610f3975`, version string 0.13.2) | SHA-256 |
 | --- | --- |
 | `PacketBench_0.13.2_x64-setup.exe` (NSIS, 85.2 MiB) | `222138d6b89238a23accc39b6a48b4637457f93a24518e88e6875a455f32be75` |
 | `PacketBench_0.13.2_x64_en-US.msi` (132.9 MiB) | `483014079f5a212e4f94873fdefec532d9d9bdd10f7fdce60e1156a8403cb9e7` |
 
-**These carry the same version string as the 2026-08-30 pair below and are not
-the same binaries.** No version was bumped, because the audit landed as patches
-on top of 0.13.2 rather than as a release. Nothing in the toolchain prevents
-this: `scripts/release-gate.mjs` checks that the three manifests agree with each
-other, not that a version string maps to one artifact. Bump the version before
-any of these reach anyone, or two different builds answer to `0.13.2`.
+The version was bumped precisely because those carried the same version string
+as the 2026-08-30 pair below while being different binaries — three distinct
+builds answered to `0.13.2`. Nothing in the toolchain objects to that:
+`scripts/release-gate.mjs` checks that the three manifests agree with each
+other, not that a version string maps to one artifact.
 
 Gates at `610f3975`: `pnpm gates:fast` all PASS (format, lint, typecheck, and
 the full vitest suite), `cargo test --lib` 983 passed / 0 failed / 2 ignored,

@@ -4,7 +4,7 @@
 |---|---|
 | Repository | packetloss404/PacketBench |
 | Commit reviewed by the audit | 2f4a10c384508af75a792604fff91b55a16dee26 |
-| Commit this workbook was built from | bf32f2b52d4b6682462a413ddebf4712f20fc605 |
+| Commit this workbook was built from | c7f10621e0695f337310f846aa7df78ca07aa98f |
 | Date built | 2026-09-05 |
 | Run it locally (exact command) | pnpm install && pnpm tauri dev |
 | Then run the gates | pnpm gates:fast   (format, lint, typecheck, vitest)   and   cd src-tauri && cargo test --lib |
@@ -320,7 +320,7 @@ There are no URLs: PacketBench is a desktop window. Each shot names the in-app l
 
 | ID | Case | Command | Expected | Failure signature | [ ] | P/F |
 |---|---|---|---|---|---|---|
-| T-MCP-01 | Health | `curl -s -i http://127.0.0.1:<port>/health` | HTTP 200; body {"ok":true,"app":"PacketBench","version":"0.13.2","service":"mcp"} | 404 (P07 not applied) or connection refused (server not enabled) |  |  |
+| T-MCP-01 | Health | `curl -s -i http://127.0.0.1:<port>/health` | HTTP 200; body {"ok":true,"app":"PacketBench","version":"0.14.0","service":"mcp"} | 404 (P07 not applied) or connection refused (server not enabled) |  |  |
 | T-MCP-02 | No token | `curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:<port>/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"qa","version":"0"}}}'` | 401 | 200 = bearer layer missing; log has no 'MCP request rejected: bearer token missing or wrong' |  |  |
 | T-MCP-03 | Wrong token | `curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:<port>/mcp -H 'authorization: Bearer nope' -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"qa","version":"0"}}}'` | 401; log line outcome=bad_token | 200 |  |  |
 | T-MCP-04 | Non-loopback Origin (webhook analogue) | `curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:<port>/mcp -H 'origin: https://evil.example.com' -H 'authorization: Bearer <TOKEN>' -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"qa","version":"0"}}}'` | 403; log line outcome=forbidden_origin | 200 |  |  |
