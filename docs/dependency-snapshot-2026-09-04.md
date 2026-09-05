@@ -50,12 +50,32 @@ None ship in the packaged app's webview bundle except `prismjs`, `diff`, and `uu
 
 ## npm advisories — `agent-sidecar/` (`pnpm audit` there)
 
-The sidecar's own lockfile reports **0 vulnerabilities**. The second audit run printed the
-root workspace's list because `pnpm` resolved the parent workspace; the sidecar-only
-resolution (`--ignore-workspace`, which is how `pnpm sidecar:install` runs it) is clean.
-Exact shipped versions: `@anthropic-ai/claude-agent-sdk@0.2.116`, `@anthropic-ai/sdk@0.81.0`,
-`@modelcontextprotocol/sdk@1.29.0`, `@openai/agents@0.11.4` (+ `agents-core`/`agents-openai` 0.11.4),
-`openai@6.37.0`, `zod@4.4.3`, `ws@8.20.1`, `express@5.2.1`, `hono@4.12.14`, `cross-spawn@7.0.6`.
+**Corrected 2026-09-05.** The original text here claimed the sidecar lockfile reported
+**0 vulnerabilities**. That was wrong: the first run had resolved the parent workspace instead
+of the sidecar. `pnpm --ignore-workspace audit` inside `agent-sidecar/` (the same flag
+`pnpm sidecar:install` uses) reports **37 advisories across 115 dependencies: 10 high,
+24 moderate, 3 low, 0 critical**. These ship: `agent-sidecar/node_modules` is bundled into the
+installer as a Tauri resource.
+
+Almost all of them sit in the HTTP **server** half of `@modelcontextprotocol/sdk` — `hono`,
+`express`, `body-parser`, `qs`, `ip-address`, `express-rate-limit`. PacketBench's sidecar uses
+MCP only as a **client** over stdio (`agent-sidecar/src/mcp-config.ts`, `mcp-capability.ts`),
+never starting an HTTP MCP server, so that code is present but not executed. Verify that
+assumption before dismissing a future advisory in this tree.
+
+| Severity | Package (installed) | Advisory | Reachable here? | Disposition |
+| --- | --- | --- | --- | --- |
+| high | `hono@4.12.14` | CVE-2026-54290 CORS middleware reflects any Origin with credentials, plus 11 more hono CVEs (body-limit bypass, JWT scheme, serve-static traversal, cookie injection) | No — pulled in by `@modelcontextprotocol/sdk`'s server transports, which the sidecar never starts | Clears on an MCP SDK bump; see below |
+| high | `ws@8.20.1` | CVE-2026-48779 memory exhaustion from tiny fragments | Only if the OpenAI Agents SDK opens a websocket (realtime API); PacketBench uses the non-realtime path | Clears on an `@openai/agents` bump (`>=8.21.0`) |
+| moderate | `@anthropic-ai/sdk@0.81.0` | CVE-2026-41686 insecure default file permissions in the local-filesystem memory tool | Only if that memory tool is used; PacketBench does not enable it | Clears on `>=0.91.1` |
+| moderate | `qs@6.15.1`, `body-parser@2.2.2`, `ip-address@10.1.0`, `express-rate-limit` | DoS / XSS in the express stack under the MCP SDK | No — server half, not started | Same bump |
+
+**Why this is not a one-line fix.** Every one of these is transitive under
+`@anthropic-ai/claude-agent-sdk@0.2.116`, `@modelcontextprotocol/sdk@1.29.0`, and
+`@openai/agents@0.11.4` — all three of which are on the do-not-upgrade list above because the
+sidecar smoke gates assert their observed behaviour. The correct sequence is: bump the three
+SDKs on a branch, run `pnpm sidecar:check` (thirteen smoke gates), then `pnpm gates:full`.
+Do not bump them blind during the dark period.
 
 ## Rust advisories — `src-tauri/Cargo.lock` (`cargo audit`, 9 vulnerabilities, 25 warnings)
 

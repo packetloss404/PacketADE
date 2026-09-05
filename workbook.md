@@ -4,7 +4,7 @@
 |---|---|
 | Repository | packetloss404/PacketBench |
 | Commit reviewed by the audit | 2f4a10c384508af75a792604fff91b55a16dee26 |
-| Commit this workbook was built from | 835e1d45094f45e12aa596fa71a408d66b379483 |
+| Commit this workbook was built from | 15965854c321d2a71d5e9033b735092716b579b5 |
 | Date built | 2026-09-05 |
 | Run it locally (exact command) | pnpm install && pnpm tauri dev |
 | Then run the gates | pnpm gates:fast   (format, lint, typecheck, vitest)   and   cd src-tauri && cargo test --lib |
@@ -389,10 +389,10 @@ There are no URLs: PacketBench is a desktop window. Each shot names the in-app l
 | ID | Question | Procedure (cold) | How to read the result | [ ] | P/F |
 |---|---|---|---|---|---|
 | U01 | Windows password-auth SSH | Settings > Servers > Add: Host <a linux host allowing password auth>, Authentication: password, Save, then Connect. Watch the 'Connecting via SSH...' step. | Connected within 8 s = stdin path works (F12 void). Timeout/'Permission denied' = stdin path dead -> handoff Task 3. |  |  |
-| U02 | xterm link handler | Terminal pane: `echo https://example.com`, click the link. | Browser opens = route through shell.open (P10 regex). Nothing = no action. |  |  |
-| U03 | Key inheritance by MCP stdio servers under the Agent SDK | Settings > MCP > MCP Hub: add global server 'envdump' command `cmd` args `/c set > %TEMP%\mcp-env.txt`; start one Claude Agent SDK (API) conversation; open the file; delete the server. | ANTHROPIC_API_KEY present = F11 confirmed (SDK limitation). Absent = downgrade F11 to info. |  |  |
-| U04 | Sidecar-only audit | cd agent-sidecar && pnpm --ignore-workspace audit --json | 0 vulnerabilities expected; otherwise add to the dependency snapshot. |  |  |
-| U05 | Packaged shell open scope | pnpm tauri build; install; right-click a path > Open in VS Code | VS Code opens. Failure: RUST_LOG=debug log shows 'open() command called but the plugin configuration denies calls from JavaScript'. |  |  |
+| U02 | xterm link handler | SETTLED 2026-09-05: window.open() returns null in this webview, so the addon logs 'Opening link blocked as opener could not be cleared' and does nothing when a terminal URL is clicked. | Settled - benign, no action. Re-check only if xterm or the webview is upgraded. |  |  |
+| U03 | Key inheritance by MCP stdio servers under the Agent SDK | SETTLED 2026-09-05: the MCP SDK spawns stdio servers with a fixed 12-name env allowlist that excludes ANTHROPIC_API_KEY; a probe child received 15 vars, none of them the key or a sentinel. | Settled - F11 refuted, no leak. Re-run after an MCP SDK bump. |  |  |
+| U04 | Sidecar-only audit | cd agent-sidecar && pnpm --ignore-workspace audit --json | SETTLED 2026-09-05: 37 advisories (10 high, 24 moderate, 3 low, 0 critical), almost all in the MCP SDK HTTP-server half the sidecar never starts. Recorded in the dependency snapshot. |  |  |
+| U05 | Packaged shell open scope | SETTLED 2026-09-05 in a dev build: the scope rejected a bare path and file:// quoting the P10 regex, and allowed vscode://file/ (VS Code opened) and https:// (Edge opened). Outstanding once: pnpm tauri build; install; right-click a path > Open in VS Code. | Dev verified. Packaged run outstanding; failure signature is the plugin log line denying calls from JavaScript under RUST_LOG=debug. |  |  |
 | U06 | Vitest stability | pnpm test twice on an idle machine | Both runs 2743 passed; any single non-reproducing failure is CPU contention. |  |  |
 | U07 | Real-hardware acceptance | dev/acceptance.md sections 3-5 with the headset | Rows ticked in that file. |  |  |
 
