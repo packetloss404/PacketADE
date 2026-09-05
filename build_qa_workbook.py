@@ -250,7 +250,7 @@ cover_rows = [
     ("Exact URL in prod", PROD_URL),
     ("Log file", r"%LOCALAPPDATA%\PacketBench\logs\packetbench.log.<YYYY-MM-DD>"),
     ("Data dir", r"%USERPROFILE%\.packetbench"),
-    ("Audit report", "docs/audit-2026-09-04.md (findings F01-F21, patches P01-P13, unresolved U01-U07)"),
+    ("Audit report", "docs/audit-2026-09-04.md (findings F01-F22, patches P01-P14, unresolved U01-U07)"),
 ]
 t = Table([[P(a, BASE), P(b, BASE)] for a, b in cover_rows], colWidths=[1.9 * inch, W - 1.9 * inch])
 t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.black), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EEEEEE"))]))
@@ -401,6 +401,7 @@ patches = [
     ("P11", "ls -la .dockerignore", "file absent", "Adjacent: nothing depends on it", "git log --oneline -1 -- .dockerignore"),
     ("P12", "pnpm tauri build from a non-interactive shell", "prune-sidecar prints 'pruned node_modules' and the build reaches the bundler", "Adjacent: pnpm lint and pnpm build still work afterwards - root devDeps intact", "grep -n ignore-workspace scripts/prune-sidecar.js"),
     ("P13", "pnpm run release:readiness --skip-gates", "the pnpm run check line reads 'not evaluated because some were not executed', NOT 'cannot be derived'", "Adjacent: bundle artifact detection still passes; summary still 0 fail", "grep -n remoteagents:check scripts/release-readiness.mjs"),
+    ("P14", "pnpm run remoteagents:build, then pnpm run lint:src", "exits 0 and lints 7 files under remoteagents/, none of them under a dist/ directory", "Adjacent: src and e2e still linted; eslint remoteagents alone still clean", "npx eslint remoteagents --format json | count the entries"),
 ]
 story.append(check_table(["Patch", "Manual test (real values)", "Expected", "Nothing adjacent broke", "Automated / log line"], patches, [0.42 * inch, 2.1 * inch, 1.7 * inch, 1.4 * inch, 1.18 * inch]))
 md_table(["Patch", "Manual test (real values)", "Expected", "Nothing adjacent broke", "Automated / log line"], patches)

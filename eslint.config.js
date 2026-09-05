@@ -14,6 +14,11 @@ export default tseslint.config(
       "src-tauri/**",
       "src/generated/**",
       "agent-sidecar/dist/**",
+      // Flat-config ignore globs are root-relative, so the "dist/**" entry
+      // above does NOT cover nested workspace build output. Without these,
+      // linting `remoteagents` pulls in the PWA's minified bundle and the
+      // shared package's emitted .js/.d.ts.
+      "remoteagents/*/dist/**",
       "agent-sidecar/node_modules/**",
       ".claude/**",
     ],

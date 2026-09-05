@@ -1,0 +1,29 @@
+diff --git a/eslint.config.js b/eslint.config.js
+index 559f0547..fd74d924 100644
+--- a/eslint.config.js
++++ b/eslint.config.js
+@@ -14,6 +14,11 @@ export default tseslint.config(
+       "src-tauri/**",
+       "src/generated/**",
+       "agent-sidecar/dist/**",
++      // Flat-config ignore globs are root-relative, so the "dist/**" entry
++      // above does NOT cover nested workspace build output. Without these,
++      // linting `remoteagents` pulls in the PWA's minified bundle and the
++      // shared package's emitted .js/.d.ts.
++      "remoteagents/*/dist/**",
+       "agent-sidecar/node_modules/**",
+       ".claude/**",
+     ],
+diff --git a/package.json b/package.json
+index c16822ab..4922114a 100644
+--- a/package.json
++++ b/package.json
+@@ -14,7 +14,7 @@
+     "preview": "vite preview",
+     "tauri": "tauri",
+     "lint": "pnpm run lint:src",
+-    "lint:src": "eslint src e2e",
++    "lint:src": "eslint src e2e remoteagents",
+     "lint:strict": "eslint src e2e --max-warnings=0",
+     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
+     "format:check": "prettier --check package.json eslint.config.js dev/local-quality-gates.md \"e2e/**/*.{ts,tsx}\"",
