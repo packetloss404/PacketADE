@@ -4,7 +4,7 @@
 |---|---|
 | Repository | packetloss404/PacketBench |
 | Commit reviewed by the audit | 2f4a10c384508af75a792604fff91b55a16dee26 |
-| Commit this workbook was built from | 29e6e635f9533d8b0a58f1ea302eb2498ed12300 |
+| Commit this workbook was built from | 16f84db7a7edb1ec98e94d0c2bf75e7ca40305e4 |
 | Date built | 2026-09-05 |
 | Run it locally (exact command) | pnpm install && pnpm tauri dev |
 | Then run the gates | pnpm gates:fast   (format, lint, typecheck, vitest)   and   cd src-tauri && cargo test --lib |
@@ -12,7 +12,7 @@
 | Exact URL in prod | none (desktop app; no hosted URL). Installed via the NSIS installer PacketBench_<version>_x64-setup.exe. The only HTTP endpoint is the loopback MCP server: http://127.0.0.1:<port>/health |
 | Log file | %LOCALAPPDATA%\PacketBench\logs\packetbench.log.<YYYY-MM-DD> |
 | Data dir | %USERPROFILE%\.packetbench |
-| Audit report | docs/audit-2026-09-04.md (findings F01-F22, patches P01-P14, unresolved U01-U07) |
+| Audit report | docs/audit-2026-09-04.md (findings F01-F23, patches P01-P15, unresolved U01-U07) |
 
 How to use: every checklist row has an empty checkbox cell (tick when done) and a P/F cell (write P or F). Failure signatures are the literal strings the app or the log prints. Where a browser cannot make the request, the literal curl is given with <TOKEN> as the placeholder for the bearer shown in Settings > MCP > MCP Provider.
 
@@ -386,6 +386,7 @@ There are no URLs: PacketBench is a desktop window. Each shot names the in-app l
 | P12 | pnpm tauri build from a non-interactive shell | prune-sidecar prints 'pruned node_modules' and the build reaches the bundler | Adjacent: pnpm lint and pnpm build still work afterwards - root devDeps intact | grep -n ignore-workspace scripts/prune-sidecar.js |  |  |
 | P13 | pnpm run release:readiness --skip-gates | the pnpm run check line reads 'not evaluated because some were not executed', NOT 'cannot be derived' | Adjacent: bundle artifact detection still passes; summary still 0 fail | grep -n remoteagents:check scripts/release-readiness.mjs |  |  |
 | P14 | pnpm run remoteagents:build, then pnpm run lint:src | exits 0 and lints 7 files under remoteagents/, none of them under a dist/ directory | Adjacent: src and e2e still linted; eslint remoteagents alone still clean | npx eslint remoteagents --format json \| count the entries |  |  |
+| P15 | Add a file under src/ that imports @/stores/remoteAgentsSettingsStore, then run pnpm run lint:src | no-restricted-imports error pointing at @/lib/remoteAgentsGate | Adjacent: re-add the workspaceStore import to agentTaskStore.ts - the tile-program store-isolation error must still fire | vitest src/lib/__tests__/remoteAgentsGate.test.ts |  |  |
 
 # Unresolved experiments (audit section 7)
 

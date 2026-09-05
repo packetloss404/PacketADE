@@ -112,6 +112,15 @@ fail, the change is wrong, not the test.
   runs at conversation launch (`agentTaskStore.ts:712`) and Flight launch
   (`asyncFlightStore.ts:1366`); mid-conversation turns and the auxiliary LLM
   features (side chat, GitHub AI, memory summaries) are not re-checked.
+- **Remote Agents is gated by `src/lib/remoteAgentsGate.ts`, not by the store.**
+  `remoteAgentsSettingsStore` holds user intent only and importing it anywhere
+  else is an eslint error. Ask `isRemoteAgentsEnabled()` (or the
+  `useRemoteAgentsEnabled()` hook), and call `assertRemoteAgentsEnabled(callSite)`
+  at any function that opens a socket, contacts the relay, registers a device, or
+  exposes desktop capability to a remote peer — it throws, so forgetting to
+  branch is not enough to get through. All eleven private-beta gates
+  (`dev/remoteagents/04-security.md:385-397`) are `met: false`; flip one only in
+  the same change that implements it (audit F23/P15).
 - **`HANDOFF.md` at the root is case-insensitive-equal to `handoff.md`**; this
   file lives under `docs/` to avoid the collision.
 

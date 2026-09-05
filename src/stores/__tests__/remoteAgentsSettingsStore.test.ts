@@ -12,12 +12,15 @@ describe("remoteAgentsSettingsStore", () => {
 
   it("defaults the unfinished feature off", async () => {
     const { useRemoteAgentsSettingsStore } = await loadStore();
-    expect(useRemoteAgentsSettingsStore.getState().remoteAgents).toEqual({ enabled: false });
+    expect(useRemoteAgentsSettingsStore.getState().requested).toEqual({ enabled: false });
   });
 
+  // The persisted JSON keeps its original `{ remoteAgents: { enabled } }` shape.
+  // Only the in-memory field was renamed to `requested`, so no migration is
+  // needed and an install written before the rename still loads.
   it("persists the remoteAgents.enabled contract", async () => {
     const { REMOTE_AGENTS_SETTINGS_KEY, useRemoteAgentsSettingsStore } = await loadStore();
-    useRemoteAgentsSettingsStore.getState().setEnabled(true);
+    useRemoteAgentsSettingsStore.getState().setRequestedEnabled(true);
 
     expect(JSON.parse(localStorage.getItem(REMOTE_AGENTS_SETTINGS_KEY) ?? "{}")).toEqual({
       remoteAgents: { enabled: true },
@@ -32,6 +35,6 @@ describe("remoteAgentsSettingsStore", () => {
     );
 
     const reloaded = await loadStore();
-    expect(reloaded.useRemoteAgentsSettingsStore.getState().remoteAgents.enabled).toBe(false);
+    expect(reloaded.useRemoteAgentsSettingsStore.getState().requested.enabled).toBe(false);
   });
 });
