@@ -82,7 +82,20 @@ Record the hash in `CHANGELOG.md` the way the 0.13.2 entry does.
 pnpm sidecar:install
 ```
 
-8. Install: run the NSIS `-setup.exe`. Builds are unsigned (signing deferred on
+8. If a build ever leaves the repo unable to run `pnpm lint`/`pnpm build`,
+   the prune step installed the wrong project. `agent-sidecar` is not a member
+   of `pnpm-workspace.yaml` (`packages: ["remoteagents/*"]`), so a pnpm install
+   launched from it without `--ignore-workspace` walks up, finds the workspace
+   root, and installs **that** instead — with `--prod`, which deletes the
+   repo's devDependencies. Both `sidecar:install` and
+   `scripts/prune-sidecar.js` pass `--ignore-workspace` for this reason; see
+   F20 in `docs/audit-2026-09-04.md`. Recovery:
+
+```bash
+pnpm install
+```
+
+9. Install: run the NSIS `-setup.exe`. Builds are unsigned (signing deferred on
    cost, `dev/beta-distribution-trust-runbook.md`), so SmartScreen shows
    "Windows protected your PC": click **More info → Run anyway**.
 

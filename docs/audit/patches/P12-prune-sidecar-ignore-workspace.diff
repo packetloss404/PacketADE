@@ -1,0 +1,34 @@
+diff --git a/scripts/prune-sidecar.js b/scripts/prune-sidecar.js
+index 064e776e..8b7a174f 100644
+--- a/scripts/prune-sidecar.js
++++ b/scripts/prune-sidecar.js
+@@ -223,12 +223,29 @@ function main() {
+   try {
+     writeFileSync(SIDECAR_PKG_JSON, `${JSON.stringify(sidecarPkg, null, 2)}\n`);
+     const pnpm = pnpmSpawn([
++      // `--ignore-workspace` is load-bearing and must come first, exactly as
++      // in the `sidecar:install` script. agent-sidecar is NOT a member of the
++      // root `pnpm-workspace.yaml` (`packages: ["remoteagents/*"]`), but pnpm
++      // still walks up from `-C agent-sidecar`, finds that file, and installs
++      // the ROOT WORKSPACE instead. With `--prod` that strips the repo's own
++      // devDependencies (vite, typescript, vitest, @tauri-apps/cli, eslint)
++      // and never creates agent-sidecar/node_modules at all.
++      "--ignore-workspace",
+       "-C",
+       SIDECAR_DIR,
+       "install",
+       "--prod",
+       "--ignore-scripts",
+       "--config.node-linker=hoisted",
++      // Step 2a just deleted `node_modules` on purpose, but pnpm still asks
++      // "The modules directories will be removed and reinstalled from
++      // scratch. Proceed? (Y/n)" before it will repopulate them. With
++      // `stdio: "inherit"` on a non-TTY (CI, a build script, an agent shell)
++      // that prompt cannot be answered: pnpm exits 0 without installing, and
++      // the existence check below then fails with "node_modules is missing
++      // after prune". Answering it up front makes `pnpm tauri build`
++      // reproducible off a terminal.
++      "--config.confirm-modules-purge=false",
+     ]);
+     const installResult = spawnSync(pnpm.command, pnpm.args, {
+       env: pnpm.env,

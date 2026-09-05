@@ -4,7 +4,7 @@
 |---|---|
 | Repository | packetloss404/PacketBench |
 | Commit reviewed by the audit | 2f4a10c384508af75a792604fff91b55a16dee26 |
-| Commit this workbook was built from | 15965854c321d2a71d5e9033b735092716b579b5 |
+| Commit this workbook was built from | 90cfad8fc5e6d814ae765c6e2bcb9d7463447e1d |
 | Date built | 2026-09-05 |
 | Run it locally (exact command) | pnpm install && pnpm tauri dev |
 | Then run the gates | pnpm gates:fast   (format, lint, typecheck, vitest)   and   cd src-tauri && cargo test --lib |
@@ -12,7 +12,7 @@
 | Exact URL in prod | none (desktop app; no hosted URL). Installed via the NSIS installer PacketBench_<version>_x64-setup.exe. The only HTTP endpoint is the loopback MCP server: http://127.0.0.1:<port>/health |
 | Log file | %LOCALAPPDATA%\PacketBench\logs\packetbench.log.<YYYY-MM-DD> |
 | Data dir | %USERPROFILE%\.packetbench |
-| Audit report | docs/audit-2026-09-04.md (findings F01-F19, patches P01-P11, unresolved U01-U07) |
+| Audit report | docs/audit-2026-09-04.md (findings F01-F20, patches P01-P12, unresolved U01-U07) |
 
 How to use: every checklist row has an empty checkbox cell (tick when done) and a P/F cell (write P or F). Failure signatures are the literal strings the app or the log prints. Where a browser cannot make the request, the literal curl is given with <TOKEN> as the placeholder for the bearer shown in Settings > MCP > MCP Provider.
 
@@ -383,6 +383,7 @@ There are no URLs: PacketBench is a desktop window. Each shot names the in-app l
 | P09 | Set $env:PACKETBENCH_SIDECAR_PTH='x' and launch | log 'PACKETBENCH_SIDECAR_PTH is set but is not a variable PacketBench reads (typo? ...)' and 'boot check done issues=1' | Adjacent: app starts normally | cargo test --lib -- boot_check |  |  |
 | P10 | Right-click a path in a conversation > Open in VS Code | VS Code opens the file | Adjacent: 'Show in Explorer' still fails with a console warn (known, H07) | grep plugins src-tauri/tauri.conf.json |  |  |
 | P11 | ls -la .dockerignore | file absent | Adjacent: nothing depends on it | git log --oneline -1 -- .dockerignore |  |  |
+| P12 | pnpm tauri build from a non-interactive shell | prune-sidecar prints 'pruned node_modules' and the build reaches the bundler | Adjacent: pnpm lint and pnpm build still work afterwards - root devDeps intact | grep -n ignore-workspace scripts/prune-sidecar.js |  |  |
 
 # Unresolved experiments (audit section 7)
 
@@ -392,7 +393,7 @@ There are no URLs: PacketBench is a desktop window. Each shot names the in-app l
 | U02 | xterm link handler | SETTLED 2026-09-05: window.open() returns null in this webview, so the addon logs 'Opening link blocked as opener could not be cleared' and does nothing when a terminal URL is clicked. | Settled - benign, no action. Re-check only if xterm or the webview is upgraded. |  |  |
 | U03 | Key inheritance by MCP stdio servers under the Agent SDK | SETTLED 2026-09-05: the MCP SDK spawns stdio servers with a fixed 12-name env allowlist that excludes ANTHROPIC_API_KEY; a probe child received 15 vars, none of them the key or a sentinel. | Settled - F11 refuted, no leak. Re-run after an MCP SDK bump. |  |  |
 | U04 | Sidecar-only audit | cd agent-sidecar && pnpm --ignore-workspace audit --json | SETTLED 2026-09-05: 37 advisories (10 high, 24 moderate, 3 low, 0 critical), almost all in the MCP SDK HTTP-server half the sidecar never starts. Recorded in the dependency snapshot. |  |  |
-| U05 | Packaged shell open scope | SETTLED 2026-09-05 in a dev build: the scope rejected a bare path and file:// quoting the P10 regex, and allowed vscode://file/ (VS Code opened) and https:// (Edge opened). Outstanding once: pnpm tauri build; install; right-click a path > Open in VS Code. | Dev verified. Packaged run outstanding; failure signature is the plugin log line denying calls from JavaScript under RUST_LOG=debug. |  |  |
+| U05 | Packaged shell open scope | SETTLED 2026-09-05. Dev build: the scope rejected a bare path and file:// quoting the P10 regex, and allowed vscode://file/ (VS Code opened) and https:// (Edge opened). Packaged build: the release exe contains the scope regex once, byte-identical to tauri.conf.json line 14; the 2026-08-30 release exe contains it zero times. | Settled. To re-check after a config change: strings the built exe for vscode://file/ before shipping. |  |  |
 | U06 | Vitest stability | pnpm test twice on an idle machine | Both runs 2743 passed; any single non-reproducing failure is CPU contention. |  |  |
 | U07 | Real-hardware acceptance | dev/acceptance.md sections 3-5 with the headset | Rows ticked in that file. |  |  |
 
