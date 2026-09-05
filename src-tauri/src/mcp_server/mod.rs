@@ -492,6 +492,44 @@ pub struct PacketBenchMcp {
     /// When false the server is strictly read-only — `append_handoff` is
     /// rejected. Opt-in so a user who wants read-only keeps that guarantee.
     allow_writes: bool,
+    /// The per-tool allowlist this session was built with, kept so the
+    /// RESOURCE surface honours the same restriction. `None` = unrestricted.
+    allowed_tools: Option<HashSet<String>>,
+}
+
+/// Which tool a resource route is equivalent to, for allowlist purposes. A
+/// route with no tool equivalent (`project`, `issues`, `reviews`,
+/// `packetcode/health` — the last one spawns a process) is served only when
+/// no allowlist is in force.
+///
+/// FAULT this fixes: the allowlist gated `tools/list` + `tools/call` but every
+/// `resources/read` still answered, so "serve no tools" still served project
+/// memory, review packets, and a process spawn to any bearer holder.
+fn resource_route_tool(route: &reads::ResourceRoute<'_>) -> Option<&'static str> {
+    use reads::ResourceRoute;
+    match route {
+        ResourceRoute::Flights | ResourceRoute::Flight(_) => Some("get_active_flight"),
+        ResourceRoute::FlightTasks(_) => Some("read_task_details"),
+        ResourceRoute::FlightInbox(_) => Some("read_coordination_inbox"),
+        ResourceRoute::MemoryPatterns => Some("read_memory_context"),
+        ResourceRoute::ProjectMemory(_) => Some("read_project_memory"),
+        ResourceRoute::Workspaces => Some("list_workspaces"),
+        ResourceRoute::Project
+        | ResourceRoute::Issues
+        | ResourceRoute::Reviews
+        | ResourceRoute::PacketCodeHealth
+        | ResourceRoute::Unknown => None,
+    }
+}
+
+fn resource_permitted(allowed: Option<&HashSet<String>>, uri: &str) -> bool {
+    let Some(allowed) = allowed else {
+        return true;
+    };
+    match resource_route_tool(&reads::parse_resource_uri(uri)) {
+        Some(tool) => allowed.contains(tool),
+        None => false,
+    }
 }
 
 #[tool_router]
@@ -536,6 +574,7 @@ impl PacketBenchMcp {
             tool_router,
             audit,
             allow_writes,
+            allowed_tools: allowed_tools.cloned(),
         }
     }
 
@@ -917,6 +956,8 @@ impl ServerHandler for PacketBenchMcp {
                 ));
             }
         }
+        // Advertise only what `read_resource` would actually serve.
+        resources.retain(|r| resource_permitted(self.allowed_tools.as_ref(), &r.uri));
         Ok(ListResourcesResult::with_all_items(resources))
     }
 
@@ -926,6 +967,13 @@ impl ServerHandler for PacketBenchMcp {
         _context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResult, McpError> {
         use reads::ResourceRoute;
+        if !resource_permitted(self.allowed_tools.as_ref(), &request.uri) {
+            self.audit.record("resource-denied", &request.uri);
+            return Err(McpError::invalid_request(
+                "resource is not permitted by this server's tool allowlist",
+                Some(serde_json::json!({ "uri": request.uri })),
+            ));
+        }
         self.audit.record("resource", &request.uri);
         let state = load();
         let value: Option<Value> = match reads::parse_resource_uri(&request.uri) {
@@ -1097,6 +1145,37 @@ mod allowlist_tests {
 
     /// The status the card reads back must describe what is actually served,
     /// so the UI cannot report a restriction the router is not applying.
+    #[test]
+    fn resources_honour_the_tool_allowlist() {
+        // No allowlist: everything, including the process-spawning health probe.
+        assert!(resource_permitted(None, "packetbench://packetcode/health"));
+        assert!(resource_permitted(None, "packetbench://memory/project/ws-1"));
+
+        let allowed = allow(&["get_active_flight", "list_workspaces"]);
+        assert!(resource_permitted(Some(&allowed), "packetbench://flights"));
+        assert!(resource_permitted(Some(&allowed), "packetbench://flights/f1"));
+        assert!(resource_permitted(Some(&allowed), "packetbench://workspaces"));
+        for denied in [
+            "packetbench://memory/patterns",
+            "packetbench://memory/project/ws-1",
+            "packetbench://flights/f1/inbox",
+            "packetbench://flights/f1/tasks",
+            "packetbench://reviews",
+            "packetbench://issues",
+            "packetbench://project",
+            "packetbench://packetcode/health",
+            "packetbench://nope",
+        ] {
+            assert!(
+                !resource_permitted(Some(&allowed), denied),
+                "{denied} must be denied under a narrowed allowlist"
+            );
+        }
+        // "Serve no tools" serves no resources either.
+        let none = allow(&[]);
+        assert!(!resource_permitted(Some(&none), "packetbench://flights"));
+    }
+
     #[test]
     fn served_tools_reports_the_effective_list() {
         let allowed = allow(&["ping", "list_workspaces"]);

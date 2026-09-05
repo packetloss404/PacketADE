@@ -94,36 +94,74 @@ pub fn build_router(
     );
 
     let guard = Arc::new(AuthGuard { token });
-    Router::new()
+    // `/health` sits OUTSIDE the bearer layer (a liveness probe must not need
+    // the secret) but INSIDE the Origin layer, so a web page on a real origin
+    // still cannot fingerprint the running app. It reveals nothing a local
+    // process could not learn from the process list.
+    let protected = Router::new()
         .nest_service("/mcp", service)
-        .layer(axum::middleware::from_fn_with_state(guard, auth_layer))
+        .layer(axum::middleware::from_fn_with_state(guard, bearer_layer));
+    Router::new()
+        .route("/health", axum::routing::get(health))
+        .merge(protected)
+        .layer(axum::middleware::from_fn(origin_layer))
+}
+
+/// Liveness probe for the dark period: `curl http://127.0.0.1:<port>/health`.
+async fn health() -> axum::Json<serde_json::Value> {
+    axum::Json(serde_json::json!({
+        "ok": true,
+        "app": crate::core::brand::APP_NAME,
+        "version": env!("CARGO_PKG_VERSION"),
+        "service": "mcp",
+    }))
 }
 
 struct AuthGuard {
     token: String,
 }
 
-/// Reject non-loopback Origins (403) and missing/invalid bearer tokens (401).
-async fn auth_layer(
-    State(guard): State<Arc<AuthGuard>>,
-    req: Request<Body>,
-    next: Next,
-) -> Result<Response, StatusCode> {
+/// Reject any *present* non-loopback Origin (403). Applied to every route.
+async fn origin_layer(req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
     if let Some(origin) = req
         .headers()
         .get(header::ORIGIN)
         .and_then(|v| v.to_str().ok())
     {
         if !origin_is_loopback(origin) {
+            tracing::warn!(
+                target: "packetbench::auth",
+                service = "mcp-server",
+                path = %req.uri().path(),
+                origin = %origin,
+                outcome = "forbidden_origin",
+                "MCP request rejected: non-loopback Origin"
+            );
             return Err(StatusCode::FORBIDDEN);
         }
     }
+    Ok(next.run(req).await)
+}
 
+/// Reject missing/invalid bearer tokens (401). Applied to `/mcp` only.
+async fn bearer_layer(
+    State(guard): State<Arc<AuthGuard>>,
+    req: Request<Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
     let provided = req
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok());
     if !bearer_matches(provided, &guard.token) {
+        tracing::warn!(
+            target: "packetbench::auth",
+            service = "mcp-server",
+            path = %req.uri().path(),
+            method = %req.method(),
+            outcome = if provided.is_some() { "bad_token" } else { "no_token" },
+            "MCP request rejected: bearer token missing or wrong"
+        );
         return Err(StatusCode::UNAUTHORIZED);
     }
 
@@ -251,6 +289,25 @@ mod tests {
             .await
             .expect("request sent");
         assert_eq!(unauthed.status(), StatusCode::UNAUTHORIZED);
+
+        // /health needs no token (liveness probe) …
+        let health = client
+            .get(format!("http://127.0.0.1:{port}/health"))
+            .send()
+            .await
+            .expect("health sent");
+        assert_eq!(health.status(), StatusCode::OK);
+        let body: serde_json::Value = health.json().await.expect("health json");
+        assert_eq!(body["ok"], serde_json::json!(true));
+        assert_eq!(body["app"], serde_json::json!("PacketBench"));
+        // … but is still Origin-guarded so a browser page cannot fingerprint us.
+        let cross_origin = client
+            .get(format!("http://127.0.0.1:{port}/health"))
+            .header(header::ORIGIN, "https://evil.example.com")
+            .send()
+            .await
+            .expect("health sent");
+        assert_eq!(cross_origin.status(), StatusCode::FORBIDDEN);
 
         // With token → passes auth and reaches rmcp (must not be 401).
         let authed = client
