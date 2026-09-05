@@ -9,6 +9,11 @@
     "beforeBuildCommand": "pnpm run prebundle && pnpm run build",
     "frontendDist": "../dist"
   },
+  "plugins": {
+    "shell": {
+      "open": "^((https?://[A-Za-z0-9])|(mailto:[A-Za-z0-9])|(tel:[0-9+])|(vscode://file/)|(cursor://file/)).+"
+    }
+  },
   "app": {
     "windows": [
       {
