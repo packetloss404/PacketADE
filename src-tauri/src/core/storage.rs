@@ -943,6 +943,9 @@ pub fn normalize_custom_compat_base_url(raw: &str) -> Result<String, String> {
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err("Endpoint URL must start with http:// or https://.".to_string());
     }
+    // The optional custom-endpoint API key rides in `Authorization`; a public
+    // plaintext endpoint would leak it. Local/LAN servers may stay http.
+    crate::core::shared::require_https_unless_local(&parsed, "Custom endpoint URL")?;
     if parsed.query().is_some() || parsed.fragment().is_some() {
         return Err("Endpoint URL cannot include query parameters or fragments.".to_string());
     }
@@ -1023,6 +1026,8 @@ pub fn normalize_minimax_base_url(raw: &str) -> Result<String, String> {
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err("MiniMax URL must start with http:// or https://.".to_string());
     }
+    // The MiniMax API key is a bearer secret; never send it over public http.
+    crate::core::shared::require_https_unless_local(&parsed, "MiniMax URL")?;
     if parsed.query().is_some() || parsed.fragment().is_some() {
         return Err("MiniMax URL cannot include query parameters or fragments.".to_string());
     }

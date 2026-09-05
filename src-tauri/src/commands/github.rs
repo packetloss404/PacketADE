@@ -958,6 +958,15 @@ pub async fn git_host_add_connection(
             kind.label()
         ));
     }
+    // The PAT is sent as a bearer/token header on every request to this
+    // origin; a public plaintext origin would expose it. Self-hosted
+    // instances on localhost / a private network may stay http.
+    let parsed = reqwest::Url::parse(base)
+        .map_err(|_| format!("{} base URL is not a valid URL", kind.label()))?;
+    crate::core::shared::require_https_unless_local(
+        &parsed,
+        &format!("{} base URL", kind.label()),
+    )?;
     let token = token.trim();
     if token.is_empty() {
         return Err(format!("{} token cannot be empty", kind.label()));

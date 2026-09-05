@@ -193,6 +193,8 @@ fn build_endpoint(base_url: &str, api_prefix: &str, identity_path: &str) -> Resu
     if !base.username().is_empty() || base.password().is_some() {
         return Err("Remove the username/password from the instance URL.".to_string());
     }
+    // The probe sends the pasted token; never over public plaintext HTTP.
+    crate::core::shared::require_https_unless_local(&base, "Instance URL")?;
 
     for part in [api_prefix, identity_path] {
         if part.is_empty() {
