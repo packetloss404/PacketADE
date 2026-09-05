@@ -13,12 +13,21 @@ Security and correctness audit, 2026-09-04 to 2026-09-05. 25 findings, 17
 patches, each independently applicable and reverse-applicable
 (`docs/audit-2026-09-04.md`, `docs/audit/patches/`).
 
-**No 0.14.0 artifacts have been built yet.** Run `pnpm tauri build` and record
-the hashes here before this goes anywhere.
+Windows artifacts, built 2026-09-05 from `cd276627`, **unsigned**:
 
-The audit's own verification ran against binaries built from `610f3975`, while
-the version still read 0.13.2. Those were **unsigned**, and are kept here as the
-record of what was actually installed and tested rather than as a release:
+| Artifact | SHA-256 |
+| --- | --- |
+| `PacketBench_0.14.0_x64-setup.exe` (NSIS, 85.2 MiB) | `d01692d680dcf6434d8090fef248ad5149d07ddb4324021a75cd57a38d79fc9e` |
+| `PacketBench_0.14.0_x64_en-US.msi` (132.9 MiB) | `f46ab0cffea1ea660b91083d950d556ab6a730625fbdbdeee42042fcb59f61bd` |
+
+`packetbench.exe` inside them reports file version `0.14.0`, and
+`pnpm run release:readiness --skip-gates` detects both: 0 fail.
+
+**These have not been installed or exercised.** The audit's verification —
+including the U05 shell-scope check and the before/after screen comparison —
+ran against binaries built from `610f3975`, while the version still read
+0.13.2. Those were also unsigned, and are kept below as the record of what was
+actually installed and tested rather than as a release:
 
 | Pre-bump artifact (`610f3975`, version string 0.13.2) | SHA-256 |
 | --- | --- |

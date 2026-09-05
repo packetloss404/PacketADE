@@ -21,7 +21,8 @@ only product direction and ordering.
 
 ## Current baseline
 
-- Source is at **0.14.0** (`package.json`, `src-tauri/tauri.conf.json`,
+- Source is at **0.14.0** — bundles built 2026-09-05 from `cd276627` and hashed
+  in `CHANGELOG.md`, not yet installed (`package.json`, `src-tauri/tauri.conf.json`,
   `src-tauri/Cargo.toml`). `v0.10.3` — packaged for Windows from release source
   `61e0669` — is still the newest annotated tag, while `CHANGELOG.md` records
   0.10.4 and 0.10.5 as released, and 0.11.0 through 0.13.2 as built but

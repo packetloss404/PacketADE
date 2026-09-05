@@ -10,7 +10,8 @@ in `CHANGELOG.md`, the State report, and Git rather than being duplicated here.
 
 - Branch: `feat/quality-gates-pty-outcomes-durable-state`, one commit
   (`f7200bfb`) ahead of `main` and not yet merged or pushed.
-- Application version: `0.14.0` (unbuilt; the newest package is 0.13.2); sidecar protocol: `v11`.
+- Application version: `0.14.0` (bundles built, not yet installed; the newest
+  *exercised* package is the pre-bump 0.13.2 build); sidecar protocol: `v11`.
 - Worktree clean apart from that branch. `f7200bfb` carries the local
   quality-gate runner, the four-way PTY exit outcome, the unified CLI launch
   resolver, the durable `packetbench:*` storage mirror, and the Vitest
