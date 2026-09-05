@@ -12,7 +12,8 @@ import {
 } from "@/lib/scout-config";
 import type { PromptTemplate } from "@/types/prompt";
 
-const STORAGE_KEY = "packetbench:prompt-templates";
+import { storageKey } from "@/lib/brand";
+const STORAGE_KEY = storageKey("prompt-templates");
 
 const BUILTIN_TEMPLATES: PromptTemplate[] = [
   {

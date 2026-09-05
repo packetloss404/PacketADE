@@ -26,7 +26,8 @@ import { startCostGuardrailMonitor } from "@/stores/analyticsStore";
 import { sampleWorkspaceAgentsDisplayTopology } from "@/stores/workspaceAgentsDogfoodStore";
 import { hydrateConversations } from "@/stores/agentConversationPersistence";
 
-const PROJECT_PATH_KEY = "packetbench:project-path";
+import { storageKey } from "@/lib/brand";
+const PROJECT_PATH_KEY = storageKey("project-path");
 
 /** App-lifetime listener for Rust's `flight:cost-updated` event, emitted
  *  after every executor cost accumulation (sidecar `turn_summary` handler and

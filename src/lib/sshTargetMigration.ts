@@ -19,7 +19,8 @@ import { loadFromStorage, removeFromStorage } from "@/lib/storage";
 import { logSwallowed } from "@/lib/logSwallowed";
 import { getSshPasswordExists, saveServersSlice } from "@/lib/tauri";
 
-const LEGACY_STORAGE_KEY = "packetbench:ssh-targets";
+import { storageKey } from "@/lib/brand";
+const LEGACY_STORAGE_KEY = storageKey("ssh-targets");
 // Older builds used the pre-rename prefix; check both for safety.
 const LEGACY_PACKETCODE_KEY = "packetcode:ssh-targets";
 

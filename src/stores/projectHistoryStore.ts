@@ -2,8 +2,9 @@ import { create } from "zustand";
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
 import { listSubdirectories } from "@/lib/tauri";
 
-const STORAGE_KEY = "packetbench:project-history";
-const FOLDER_KEY = "packetbench:projects-folder";
+import { storageKey } from "@/lib/brand";
+const STORAGE_KEY = storageKey("project-history");
+const FOLDER_KEY = storageKey("projects-folder");
 
 export interface ProjectHistoryEntry {
   path: string;

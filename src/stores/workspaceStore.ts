@@ -16,6 +16,7 @@ import type { TerminalShellSelection } from "@/types/terminal-shell";
 import { isValidMosaicTree } from "@/lib/mosaicPresets";
 import type { MosaicNode } from "@/types/mosaic";
 
+import { storageKey } from "@/lib/brand";
 export interface WorkspaceSessionConfig {
   prompt?: string;
   modelOverrides?: Record<string, string | null>;
@@ -202,9 +203,9 @@ interface WorkspaceStore {
   hydrateFromBackend: (workspaces?: Workspace[]) => void;
 }
 
-const DEFAULT_BYPASS_KEY = "packetbench:workspace-default-bypass";
-const AUTO_BIND_GITHUB_KEY = "packetbench:workspace-auto-bind-github";
-const ACTIVE_WORKSPACE_KEY = "packetbench:workspace-active-id";
+const DEFAULT_BYPASS_KEY = storageKey("workspace-default-bypass");
+const AUTO_BIND_GITHUB_KEY = storageKey("workspace-auto-bind-github");
+const ACTIVE_WORKSPACE_KEY = storageKey("workspace-active-id");
 
 /**
  * Remember which workspace was open.
@@ -323,7 +324,7 @@ function buildPanes(
   });
 }
 
-const WORKSPACES_CACHE_KEY = "packetbench:workspaces-cache";
+const WORKSPACES_CACHE_KEY = storageKey("workspaces-cache");
 
 /**
  * Historical deterministic wrapper-workspace id for a conversation. New

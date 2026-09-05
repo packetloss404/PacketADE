@@ -250,7 +250,7 @@ cover_rows = [
     ("Exact URL in prod", PROD_URL),
     ("Log file", r"%LOCALAPPDATA%\PacketBench\logs\packetbench.log.<YYYY-MM-DD>"),
     ("Data dir", r"%USERPROFILE%\.packetbench"),
-    ("Audit report", "docs/audit-2026-09-04.md (findings F01-F23, patches P01-P15, unresolved U01-U07)"),
+    ("Audit report", "docs/audit-2026-09-04.md (findings F01-F24, patches P01-P16, unresolved U01-U07)"),
 ]
 t = Table([[P(a, BASE), P(b, BASE)] for a, b in cover_rows], colWidths=[1.9 * inch, W - 1.9 * inch])
 t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.black), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EEEEEE"))]))
@@ -403,6 +403,7 @@ patches = [
     ("P13", "pnpm run release:readiness --skip-gates", "the pnpm run check line reads 'not evaluated because some were not executed', NOT 'cannot be derived'", "Adjacent: bundle artifact detection still passes; summary still 0 fail", "grep -n remoteagents:check scripts/release-readiness.mjs"),
     ("P14", "pnpm run remoteagents:build, then pnpm run lint:src", "exits 0 and lints 7 files under remoteagents/, none of them under a dist/ directory", "Adjacent: src and e2e still linted; eslint remoteagents alone still clean", "npx eslint remoteagents --format json | count the entries"),
     ("P15", "Add a file under src/ that imports @/stores/remoteAgentsSettingsStore, then run pnpm run lint:src", "no-restricted-imports error pointing at @/lib/remoteAgentsGate", "Adjacent: re-add the workspaceStore import to agentTaskStore.ts - the tile-program store-isolation error must still fire", "vitest src/lib/__tests__/remoteAgentsGate.test.ts"),
+    ("P16", "Add const K = \"packetbench:anything\" to any file under src/, then run pnpm test", "scripts/storage-key-brand.test.mjs fails and names the file", "Adjacent: settings, prompts, routing, workspaces and GitHub state all survive an app restart - the keys are unchanged", "vitest scripts/storage-key-brand.test.mjs"),
 ]
 story.append(check_table(["Patch", "Manual test (real values)", "Expected", "Nothing adjacent broke", "Automated / log line"], patches, [0.42 * inch, 2.1 * inch, 1.7 * inch, 1.4 * inch, 1.18 * inch]))
 md_table(["Patch", "Manual test (real values)", "Expected", "Nothing adjacent broke", "Automated / log line"], patches)

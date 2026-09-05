@@ -1,5 +1,6 @@
 import { create } from "zustand";
 
+import { storageKey } from "@/lib/brand";
 interface NotificationPreferences {
   enabled: boolean;
   onlyWhenUnfocused: boolean;
@@ -18,7 +19,7 @@ interface NotificationStore extends NotificationPreferences {
   setOnCostThreshold: (v: boolean) => void;
 }
 
-const STORAGE_KEY = "packetbench:notifications";
+const STORAGE_KEY = storageKey("notifications");
 
 function loadPreferences(): Partial<NotificationPreferences> {
   try {

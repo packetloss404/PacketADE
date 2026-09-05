@@ -1,5 +1,6 @@
 import type { CodeQualityReport } from "@/lib/tauri";
 
+import { storageKey } from "@/lib/brand";
 /**
  * Persistent history of recent Code Quality runs, keyed by the project path
  * so each workspace gets its own ring buffer.
@@ -27,7 +28,7 @@ export interface CodeQualityHistoryEntry {
   report: CodeQualityReport;
 }
 
-const STORAGE_KEY = "packetbench:quality:history";
+const STORAGE_KEY = storageKey("quality:history");
 const MAX_ENTRIES_PER_PROJECT = 5;
 
 interface HistoryShape {

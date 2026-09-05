@@ -5,6 +5,7 @@ import { saveWorkspacesSlice } from "@/lib/tauri";
 import { logSwallowed } from "@/lib/logSwallowed";
 import { isLocalWorkspace } from "@/types/workspace";
 
+import { storageKey } from "@/lib/brand";
 interface LayoutStore {
   panes: PaneConfig[];
   activePaneId: string;
@@ -72,7 +73,10 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
         // a new public action on workspaceStore.
         try {
           if (typeof localStorage !== "undefined") {
-            localStorage.setItem("packetbench:workspaces-cache", JSON.stringify(nextWorkspaces));
+            // Same key as `WORKSPACES_CACHE_KEY` in workspaceStore. Derived from the
+            // brand prefix on both sides rather than cross-importing a store, which
+            // would couple the layout engine to the workspace engine.
+            localStorage.setItem(storageKey("workspaces-cache"), JSON.stringify(nextWorkspaces));
           }
         } catch {
           // quota / storage unavailable — backend persistence below still

@@ -4,6 +4,7 @@ import { useFlightStore } from "@/stores/flightStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { isLocalWorkspace } from "@/types/workspace";
 import { useMemoryStore } from "@/stores/memoryStore";
+import { URI_SCHEME, storageKey } from "@/lib/brand";
 import {
   mcpServerStart,
   mcpServerStop,
@@ -75,7 +76,7 @@ export function reconcileAllowedTools(
 
 // --- Persistence ---
 
-const STORAGE_KEY = "packetbench:mcp-provider";
+const STORAGE_KEY = storageKey("mcp-provider");
 
 /**
  * Bumped when `allowedTools` became a real, enforced restriction. A persisted
@@ -294,13 +295,13 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
     const resources: McpResource[] = [];
 
     resources.push({
-      uri: "packetbench://issues",
+      uri: `${URI_SCHEME}://issues`,
       name: "Issue board",
       description: "Current PacketBench issues and workflow state",
       mimeType: "application/json",
     });
     resources.push({
-      uri: "packetbench://packetcode/health",
+      uri: `${URI_SCHEME}://packetcode/health`,
       name: "PacketCode integration health",
       description: "Availability, doctor status, home, version, and provider summary",
       mimeType: "application/json",
@@ -310,7 +311,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
     const flights = useFlightStore.getState().flights;
     for (const flight of flights) {
       resources.push({
-        uri: `packetbench://flights/${flight.id}`,
+        uri: `${URI_SCHEME}://flights/${flight.id}`,
         name: flight.title,
         description: `Flight [${flight.status}] — ${flight.objective || "No objective"}`,
         mimeType: "application/json",
@@ -320,7 +321,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
       for (const milestone of flight.milestones) {
         for (const task of milestone.tasks) {
           resources.push({
-            uri: `packetbench://flights/${flight.id}/tasks/${task.id}`,
+            uri: `${URI_SCHEME}://flights/${flight.id}/tasks/${task.id}`,
             name: task.title,
             description: `Task [${task.status}] in ${flight.title} / ${milestone.title}`,
             mimeType: "application/json",
@@ -333,7 +334,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
     const patterns = useMemoryStore.getState().patterns;
     if (patterns.length > 0) {
       resources.push({
-        uri: "packetbench://memory/patterns",
+        uri: `${URI_SCHEME}://memory/patterns`,
         name: "Memory Patterns",
         description: `${patterns.length} learned pattern(s)`,
         mimeType: "application/json",
@@ -343,7 +344,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
     for (const workspace of useWorkspaceStore.getState().workspaces) {
       if (!isLocalWorkspace(workspace)) continue;
       resources.push({
-        uri: `packetbench://memory/project/${workspace.id}`,
+        uri: `${URI_SCHEME}://memory/project/${workspace.id}`,
         name: `${workspace.name} Project Memory`,
         description: "Version-controlled-capable Markdown notes",
         mimeType: "application/json",
@@ -354,7 +355,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
     const workspaces = useWorkspaceStore.getState().workspaces;
     for (const ws of workspaces) {
       resources.push({
-        uri: `packetbench://workspaces/${ws.id}`,
+        uri: `${URI_SCHEME}://workspaces/${ws.id}`,
         name: ws.name,
         description: `Workspace — ${ws.panes.length} pane(s)`,
         mimeType: "application/json",

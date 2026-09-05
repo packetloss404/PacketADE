@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
 
+import { storageKey } from "@/lib/brand";
 /**
  * The canonical review surface's store (consensus P1-8).
  *
@@ -21,7 +22,7 @@ import { loadFromStorage, saveToStorage } from "@/lib/storage";
  *    from agentTaskStore's delete/cleanup path.
  */
 
-const VIEWED_STORAGE_KEY = "packetbench:review-viewed-v1";
+const VIEWED_STORAGE_KEY = storageKey("review-viewed-v1");
 
 /** conversationId → path → signature the user marked as viewed. */
 type ViewedMap = Record<string, Record<string, string>>;

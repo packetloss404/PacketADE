@@ -20,7 +20,7 @@ import { create } from "zustand";
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
 import { storageKey, LEGACY_STORAGE_PREFIX } from "@/lib/brand";
 
-const STORAGE_KEY = "packetbench:agent-sidebar-prefs";
+const STORAGE_KEY = storageKey("agent-sidebar-prefs");
 const PROJECT_LABELS_STORAGE_KEY = storageKey("project-labels");
 const LEGACY_PROJECT_LABELS_STORAGE_KEY = `${LEGACY_STORAGE_PREFIX}project-labels`;
 

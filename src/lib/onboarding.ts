@@ -1,3 +1,5 @@
+import { storageKey } from "@/lib/brand";
+
 /**
  * First-run onboarding flag helpers.
  *
@@ -6,7 +8,7 @@
  * chain would be churn for a single boolean.
  */
 
-const KEY = "packetbench:onboarding-complete";
+const KEY = storageKey("onboarding-complete");
 
 export function isOnboardingComplete(): boolean {
   return typeof localStorage !== "undefined" && localStorage.getItem(KEY) === "true";

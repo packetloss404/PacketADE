@@ -1,3 +1,5 @@
+import { storageKey } from "@/lib/brand";
+
 // v0.8.8 quality autofix
 //
 // Tiny localStorage-backed preference: "Auto-fix on next run". The
@@ -6,7 +8,7 @@
 //
 // Keyed under the `packetbench:` namespace per CLAUDE.md.
 
-export const QUALITY_AUTOFIX_STORAGE_KEY = "packetbench:quality-autofix";
+export const QUALITY_AUTOFIX_STORAGE_KEY = storageKey("quality-autofix");
 
 export function normalizeAutoFixProjectPath(projectPath: string): string {
   const trimmed = projectPath.trim();

@@ -6,8 +6,9 @@ import type { TaskType } from "@/types/flight";
 import type { AuxRouteMapping, AuxTaskClass, RouteMapping } from "@/types/routing";
 import { ALL_AUX_TASK_CLASSES, ALL_TASK_TYPES } from "@/types/routing";
 
-const STORAGE_KEY = "packetbench:routing";
-const AUX_STORAGE_KEY = "packetbench:routing-aux";
+import { storageKey } from "@/lib/brand";
+const STORAGE_KEY = storageKey("routing");
+const AUX_STORAGE_KEY = storageKey("routing-aux");
 
 const DEFAULT_AGENT = "claude-code";
 

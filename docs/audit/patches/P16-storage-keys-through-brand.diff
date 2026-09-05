@@ -1,0 +1,557 @@
+diff --git a/scripts/storage-key-brand.test.mjs b/scripts/storage-key-brand.test.mjs
+new file mode 100644
+index 00000000..cf12335f
+--- /dev/null
++++ b/scripts/storage-key-brand.test.mjs
+@@ -0,0 +1,144 @@
++/**
++ * One source of truth for the localStorage prefix.
++ *
++ * `CLAUDE.md` says never to hardcode `"packetbench:"` and to build every key
++ * through `storageKey()` in `src/lib/brand.ts`. That helper has existed since
++ * the PacketCode -> PacketADE rename (`ddfd96fa`, 2026-04-18), but two renames
++ * later exactly half the production files that persist anything still carried
++ * the literal: the PacketADE -> PacketBench rename (`5404fb85`) rewrote the
++ * strings in place instead of converting the call sites.
++ *
++ * Why that matters, and why a fence rather than a comment:
++ *
++ * `storageMirror.ts:158,204` decides what to mirror into
++ * `~/.packetbench/webview-storage-mirror.json` with
++ * `key.startsWith(STORAGE_PREFIX)`, and `storage-migration.ts:74-84` copies the
++ * one previous prefix forward the same way. Those two are the only reason a
++ * bundle-identifier change does not wipe the app's state — which is exactly
++ * what it did at the last rename (`storageMirror.ts:10-18`).
++ *
++ * So a hardcoded key is not a style nit. At the NEXT rename, `STORAGE_PREFIX`
++ * moves, `LEGACY_STORAGE_PREFIX` becomes `packetbench:`, and every hardcoded
++ * store keeps reading and writing a prefix that is no longer mirrored. Their
++ * data quietly stops being backed up, and the following bundle-identifier
++ * change takes it with no migration path, because the migration only knows one
++ * previous prefix. Nothing fails loudly at any point.
++ *
++ * Audit F24 / P16.
++ */
++import { describe, expect, it } from "vitest";
++import { readFileSync, readdirSync } from "node:fs";
++import { extname, join, relative } from "node:path";
++
++const ROOT = process.cwd();
++
++function sourceFiles(root) {
++  const files = [];
++  for (const entry of readdirSync(root, { withFileTypes: true })) {
++    const path = join(root, entry.name);
++    if (entry.isDirectory()) {
++      if (entry.name === "__tests__") continue;
++      files.push(...sourceFiles(path));
++    } else if ([".ts", ".tsx"].includes(extname(entry.name))) {
++      files.push(path);
++    }
++  }
++  return files;
++}
++
++/**
++ * A quoted string that begins with the brand's storage prefix.
++ *
++ * Deliberately matches the literal `packetbench:` rather than importing
++ * `STORAGE_PREFIX`: the point is to catch the hardcoded spelling, so the fence
++ * has to know the spelling. When the product is renamed again, update this
++ * constant in the same change as `brand.ts` — and the fence will then prove the
++ * conversion was complete.
++ */
++const HARDCODED_PREFIX = /["'`]packetbench:/;
++
++/**
++ * Uses of the prefix that are not localStorage keys and are therefore outside
++ * what `storageMirror` cares about. Each is a DOM `CustomEvent` name or an
++ * identifier: both sides of those already share one exported constant, so a
++ * rename cannot desynchronise them the way a storage key can.
++ *
++ * `src/lib/brand.ts` is the definition itself.
++ */
++const ALLOWED = new Set(
++  [
++    "src/lib/brand.ts",
++    "src/components/agents/paneEvents.ts",
++    "src/components/views/tools/SubscriptionsCard.tsx",
++    "src/stores/boundedAutonomyRuntime.ts",
++    // One-shot removal of a key retired before the rename; it must keep naming
++    // the prefix that key was actually written under.
++    "src/lib/bootstrap.ts",
++  ].map((p) => p.replaceAll("/", "\\")),
++);
++
++/** Blank quoted spans out of comments so prose cannot trip the fence. */
++function codeLines(body) {
++  return body
++    .replace(/\/\*[\s\S]*?\*\//g, "")
++    .split(/\r?\n/)
++    .map((line) => line.replace(/\/\/.*/, ""));
++}
++
++const SRC_FILES = sourceFiles(join(ROOT, "src"));
++
++// A filesystem fence, not a unit test: under a full parallel run it contends
++// with the rest of the suite for the disk, and vitest's 5 s default would make
++// it fail for reasons unrelated to what it guards.
++const FENCE_TIMEOUT_MS = 30_000;
++
++describe("localStorage key branding", () => {
++  it(
++    "no production file hardcodes the storage prefix",
++    () => {
++      const offenders = [];
++      for (const file of SRC_FILES) {
++        const rel = relative(ROOT, file);
++        if (ALLOWED.has(rel) || ALLOWED.has(rel.replaceAll("\\", "/"))) continue;
++        for (const line of codeLines(readFileSync(file, "utf8"))) {
++          if (HARDCODED_PREFIX.test(line)) {
++            offenders.push(`${rel}: ${line.trim()}`);
++            break;
++          }
++        }
++      }
++
++      expect(
++        offenders,
++        `Build these with storageKey() from @/lib/brand instead. A hardcoded prefix ` +
++          `survives a rename that STORAGE_PREFIX does not, and storageMirror stops ` +
++          `mirroring it — silently. See the header of this file.`,
++      ).toEqual([]);
++    },
++    FENCE_TIMEOUT_MS,
++  );
++
++  it(
++    "the allowlist has no stale entries",
++    () => {
++      // An allowlisted file that no longer contains the prefix means the
++      // exemption outlived its reason. Drop it, so the list stays honest.
++      const stale = [];
++      for (const rel of ALLOWED) {
++        const path = join(ROOT, rel);
++        let body;
++        try {
++          body = readFileSync(path, "utf8");
++        } catch {
++          stale.push(`${rel} (no longer exists)`);
++          continue;
++        }
++        if (!codeLines(body).some((line) => HARDCODED_PREFIX.test(line))) {
++          stale.push(`${rel} (no longer uses the prefix)`);
++        }
++      }
++      expect(stale).toEqual([]);
++    },
++    FENCE_TIMEOUT_MS,
++  );
++});
+diff --git a/src/components/quality/autoFixPrefs.ts b/src/components/quality/autoFixPrefs.ts
+index 43c76876..8e151bc6 100644
+--- a/src/components/quality/autoFixPrefs.ts
++++ b/src/components/quality/autoFixPrefs.ts
+@@ -1,3 +1,5 @@
++import { storageKey } from "@/lib/brand";
++
+ // v0.8.8 quality autofix
+ //
+ // Tiny localStorage-backed preference: "Auto-fix on next run". The
+@@ -6,7 +8,7 @@
+ //
+ // Keyed under the `packetbench:` namespace per CLAUDE.md.
+ 
+-export const QUALITY_AUTOFIX_STORAGE_KEY = "packetbench:quality-autofix";
++export const QUALITY_AUTOFIX_STORAGE_KEY = storageKey("quality-autofix");
+ 
+ export function normalizeAutoFixProjectPath(projectPath: string): string {
+   const trimmed = projectPath.trim();
+diff --git a/src/components/quality/codeQualityHistory.ts b/src/components/quality/codeQualityHistory.ts
+index 494f63c1..ab219477 100644
+--- a/src/components/quality/codeQualityHistory.ts
++++ b/src/components/quality/codeQualityHistory.ts
+@@ -1,5 +1,6 @@
+ import type { CodeQualityReport } from "@/lib/tauri";
+ 
++import { storageKey } from "@/lib/brand";
+ /**
+  * Persistent history of recent Code Quality runs, keyed by the project path
+  * so each workspace gets its own ring buffer.
+@@ -27,7 +28,7 @@ export interface CodeQualityHistoryEntry {
+   report: CodeQualityReport;
+ }
+ 
+-const STORAGE_KEY = "packetbench:quality:history";
++const STORAGE_KEY = storageKey("quality:history");
+ const MAX_ENTRIES_PER_PROJECT = 5;
+ 
+ interface HistoryShape {
+diff --git a/src/components/views/QualityView.tsx b/src/components/views/QualityView.tsx
+index 19d17862..b6844b57 100644
+--- a/src/components/views/QualityView.tsx
++++ b/src/components/views/QualityView.tsx
+@@ -34,6 +34,7 @@ import { CodeQualityHistoryDropdown } from "@/components/quality/CodeQualityHist
+ import { readAutoFixPref, writeAutoFixPref } from "@/components/quality/autoFixPrefs";
+ import { getPreferredWorkspaceCli } from "@/lib/workspaceCliDefaults";
+ 
++import { storageKey } from "@/lib/brand";
+ type TabKey = "overview" | "languages" | "complexity" | "tests";
+ 
+ const TABS: { key: TabKey; label: string }[] = [
+@@ -43,7 +44,7 @@ const TABS: { key: TabKey; label: string }[] = [
+   { key: "tests", label: "Tests" },
+ ];
+ 
+-const TAB_PREF_KEY = "packetbench:quality:last-tab";
++const TAB_PREF_KEY = storageKey("quality:last-tab");
+ 
+ type FetchState =
+   | { kind: "loading" }
+diff --git a/src/lib/bootstrap.ts b/src/lib/bootstrap.ts
+index 53df7e43..0bf5423b 100644
+--- a/src/lib/bootstrap.ts
++++ b/src/lib/bootstrap.ts
+@@ -26,7 +26,8 @@ import { startCostGuardrailMonitor } from "@/stores/analyticsStore";
+ import { sampleWorkspaceAgentsDisplayTopology } from "@/stores/workspaceAgentsDogfoodStore";
+ import { hydrateConversations } from "@/stores/agentConversationPersistence";
+ 
+-const PROJECT_PATH_KEY = "packetbench:project-path";
++import { storageKey } from "@/lib/brand";
++const PROJECT_PATH_KEY = storageKey("project-path");
+ 
+ /** App-lifetime listener for Rust's `flight:cost-updated` event, emitted
+  *  after every executor cost accumulation (sidecar `turn_summary` handler and
+diff --git a/src/lib/onboarding.ts b/src/lib/onboarding.ts
+index 36beacbd..cbf53114 100644
+--- a/src/lib/onboarding.ts
++++ b/src/lib/onboarding.ts
+@@ -1,3 +1,5 @@
++import { storageKey } from "@/lib/brand";
++
+ /**
+  * First-run onboarding flag helpers.
+  *
+@@ -6,7 +8,7 @@
+  * chain would be churn for a single boolean.
+  */
+ 
+-const KEY = "packetbench:onboarding-complete";
++const KEY = storageKey("onboarding-complete");
+ 
+ export function isOnboardingComplete(): boolean {
+   return typeof localStorage !== "undefined" && localStorage.getItem(KEY) === "true";
+diff --git a/src/lib/sshTargetMigration.ts b/src/lib/sshTargetMigration.ts
+index f16e808a..e13671cd 100644
+--- a/src/lib/sshTargetMigration.ts
++++ b/src/lib/sshTargetMigration.ts
+@@ -19,7 +19,8 @@ import { loadFromStorage, removeFromStorage } from "@/lib/storage";
+ import { logSwallowed } from "@/lib/logSwallowed";
+ import { getSshPasswordExists, saveServersSlice } from "@/lib/tauri";
+ 
+-const LEGACY_STORAGE_KEY = "packetbench:ssh-targets";
++import { storageKey } from "@/lib/brand";
++const LEGACY_STORAGE_KEY = storageKey("ssh-targets");
+ // Older builds used the pre-rename prefix; check both for safety.
+ const LEGACY_PACKETCODE_KEY = "packetcode:ssh-targets";
+ 
+diff --git a/src/stores/agentDraftStore.ts b/src/stores/agentDraftStore.ts
+index 8c8a3432..4b81b9bf 100644
+--- a/src/stores/agentDraftStore.ts
++++ b/src/stores/agentDraftStore.ts
+@@ -14,7 +14,8 @@
+ import { create } from "zustand";
+ import { loadFromStorage, saveToStorage } from "@/lib/storage";
+ 
+-const STORAGE_KEY = "packetbench:agent-drafts";
++import { storageKey } from "@/lib/brand";
++const STORAGE_KEY = storageKey("agent-drafts");
+ 
+ /**
+  * Draft key for the launch composer (the "new agent" box). It has no
+diff --git a/src/stores/agentSidebarPrefsStore.ts b/src/stores/agentSidebarPrefsStore.ts
+index 2faa1a07..6b95f151 100644
+--- a/src/stores/agentSidebarPrefsStore.ts
++++ b/src/stores/agentSidebarPrefsStore.ts
+@@ -20,7 +20,7 @@ import { create } from "zustand";
+ import { loadFromStorage, saveToStorage } from "@/lib/storage";
+ import { storageKey, LEGACY_STORAGE_PREFIX } from "@/lib/brand";
+ 
+-const STORAGE_KEY = "packetbench:agent-sidebar-prefs";
++const STORAGE_KEY = storageKey("agent-sidebar-prefs");
+ const PROJECT_LABELS_STORAGE_KEY = storageKey("project-labels");
+ const LEGACY_PROJECT_LABELS_STORAGE_KEY = `${LEGACY_STORAGE_PREFIX}project-labels`;
+ 
+diff --git a/src/stores/cliOverrideStore.ts b/src/stores/cliOverrideStore.ts
+index fe15179e..bd2d24f2 100644
+--- a/src/stores/cliOverrideStore.ts
++++ b/src/stores/cliOverrideStore.ts
+@@ -11,7 +11,8 @@
+ import { create } from "zustand";
+ import { loadFromStorage, saveToStorage } from "@/lib/storage";
+ 
+-const STORAGE_KEY = "packetbench:cli-overrides";
++import { storageKey } from "@/lib/brand";
++const STORAGE_KEY = storageKey("cli-overrides");
+ 
+ export interface CliOverrideEntry {
+   manualPath: string;
+diff --git a/src/stores/githubStore.ts b/src/stores/githubStore.ts
+index e12f8bee..7bc9f9b5 100644
+--- a/src/stores/githubStore.ts
++++ b/src/stores/githubStore.ts
+@@ -51,8 +51,9 @@ import type {
+ import { loadFromStorage, saveToStorage } from "@/lib/storage";
+ import { logSwallowed } from "@/lib/logSwallowed";
+ 
+-const STORAGE_KEY = "packetbench:github";
+-const SETTINGS_STORAGE_KEY = "packetbench:github:settings";
++import { storageKey } from "@/lib/brand";
++const STORAGE_KEY = storageKey("github");
++const SETTINGS_STORAGE_KEY = storageKey("github:settings");
+ 
+ /** v0.8: persisted GitHub-side defaults the user can tweak in Settings → GitHub. */
+ export type GitHubMergeStrategy = "merge" | "squash" | "rebase";
+diff --git a/src/stores/layoutStore.ts b/src/stores/layoutStore.ts
+index 26af15e6..ba9f636f 100644
+--- a/src/stores/layoutStore.ts
++++ b/src/stores/layoutStore.ts
+@@ -5,6 +5,7 @@ import { saveWorkspacesSlice } from "@/lib/tauri";
+ import { logSwallowed } from "@/lib/logSwallowed";
+ import { isLocalWorkspace } from "@/types/workspace";
+ 
++import { storageKey } from "@/lib/brand";
+ interface LayoutStore {
+   panes: PaneConfig[];
+   activePaneId: string;
+@@ -72,7 +73,10 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
+         // a new public action on workspaceStore.
+         try {
+           if (typeof localStorage !== "undefined") {
+-            localStorage.setItem("packetbench:workspaces-cache", JSON.stringify(nextWorkspaces));
++            // Same key as `WORKSPACES_CACHE_KEY` in workspaceStore. Derived from the
++            // brand prefix on both sides rather than cross-importing a store, which
++            // would couple the layout engine to the workspace engine.
++            localStorage.setItem(storageKey("workspaces-cache"), JSON.stringify(nextWorkspaces));
+           }
+         } catch {
+           // quota / storage unavailable — backend persistence below still
+diff --git a/src/stores/mcpProviderStore.ts b/src/stores/mcpProviderStore.ts
+index b900388a..5e60e320 100644
+--- a/src/stores/mcpProviderStore.ts
++++ b/src/stores/mcpProviderStore.ts
+@@ -4,6 +4,7 @@ import { useFlightStore } from "@/stores/flightStore";
+ import { useWorkspaceStore } from "@/stores/workspaceStore";
+ import { isLocalWorkspace } from "@/types/workspace";
+ import { useMemoryStore } from "@/stores/memoryStore";
++import { URI_SCHEME, storageKey } from "@/lib/brand";
+ import {
+   mcpServerStart,
+   mcpServerStop,
+@@ -75,7 +76,7 @@ export function reconcileAllowedTools(
+ 
+ // --- Persistence ---
+ 
+-const STORAGE_KEY = "packetbench:mcp-provider";
++const STORAGE_KEY = storageKey("mcp-provider");
+ 
+ /**
+  * Bumped when `allowedTools` became a real, enforced restriction. A persisted
+@@ -294,13 +295,13 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
+     const resources: McpResource[] = [];
+ 
+     resources.push({
+-      uri: "packetbench://issues",
++      uri: `${URI_SCHEME}://issues`,
+       name: "Issue board",
+       description: "Current PacketBench issues and workflow state",
+       mimeType: "application/json",
+     });
+     resources.push({
+-      uri: "packetbench://packetcode/health",
++      uri: `${URI_SCHEME}://packetcode/health`,
+       name: "PacketCode integration health",
+       description: "Availability, doctor status, home, version, and provider summary",
+       mimeType: "application/json",
+@@ -310,7 +311,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
+     const flights = useFlightStore.getState().flights;
+     for (const flight of flights) {
+       resources.push({
+-        uri: `packetbench://flights/${flight.id}`,
++        uri: `${URI_SCHEME}://flights/${flight.id}`,
+         name: flight.title,
+         description: `Flight [${flight.status}] — ${flight.objective || "No objective"}`,
+         mimeType: "application/json",
+@@ -320,7 +321,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
+       for (const milestone of flight.milestones) {
+         for (const task of milestone.tasks) {
+           resources.push({
+-            uri: `packetbench://flights/${flight.id}/tasks/${task.id}`,
++            uri: `${URI_SCHEME}://flights/${flight.id}/tasks/${task.id}`,
+             name: task.title,
+             description: `Task [${task.status}] in ${flight.title} / ${milestone.title}`,
+             mimeType: "application/json",
+@@ -333,7 +334,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
+     const patterns = useMemoryStore.getState().patterns;
+     if (patterns.length > 0) {
+       resources.push({
+-        uri: "packetbench://memory/patterns",
++        uri: `${URI_SCHEME}://memory/patterns`,
+         name: "Memory Patterns",
+         description: `${patterns.length} learned pattern(s)`,
+         mimeType: "application/json",
+@@ -343,7 +344,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
+     for (const workspace of useWorkspaceStore.getState().workspaces) {
+       if (!isLocalWorkspace(workspace)) continue;
+       resources.push({
+-        uri: `packetbench://memory/project/${workspace.id}`,
++        uri: `${URI_SCHEME}://memory/project/${workspace.id}`,
+         name: `${workspace.name} Project Memory`,
+         description: "Version-controlled-capable Markdown notes",
+         mimeType: "application/json",
+@@ -354,7 +355,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
+     const workspaces = useWorkspaceStore.getState().workspaces;
+     for (const ws of workspaces) {
+       resources.push({
+-        uri: `packetbench://workspaces/${ws.id}`,
++        uri: `${URI_SCHEME}://workspaces/${ws.id}`,
+         name: ws.name,
+         description: `Workspace — ${ws.panes.length} pane(s)`,
+         mimeType: "application/json",
+diff --git a/src/stores/moduleStore.ts b/src/stores/moduleStore.ts
+index aeff8822..b4ae848d 100644
+--- a/src/stores/moduleStore.ts
++++ b/src/stores/moduleStore.ts
+@@ -3,8 +3,9 @@ import type { ModuleState } from "@/types/modules";
+ import { moduleRegistry } from "@/modules/registry";
+ import { loadFromStorage, saveToStorage, removeFromStorage } from "@/lib/storage";
+ 
+-const STORAGE_KEY = "packetbench:modules";
+-const OLD_STORAGE_KEY = "packetbench:extensions";
++import { storageKey } from "@/lib/brand";
++const STORAGE_KEY = storageKey("modules");
++const OLD_STORAGE_KEY = storageKey("extensions");
+ 
+ interface ModuleStore {
+   states: Record<string, ModuleState>;
+diff --git a/src/stores/notificationStore.ts b/src/stores/notificationStore.ts
+index 69b80465..d6467641 100644
+--- a/src/stores/notificationStore.ts
++++ b/src/stores/notificationStore.ts
+@@ -1,5 +1,6 @@
+ import { create } from "zustand";
+ 
++import { storageKey } from "@/lib/brand";
+ interface NotificationPreferences {
+   enabled: boolean;
+   onlyWhenUnfocused: boolean;
+@@ -18,7 +19,7 @@ interface NotificationStore extends NotificationPreferences {
+   setOnCostThreshold: (v: boolean) => void;
+ }
+ 
+-const STORAGE_KEY = "packetbench:notifications";
++const STORAGE_KEY = storageKey("notifications");
+ 
+ function loadPreferences(): Partial<NotificationPreferences> {
+   try {
+diff --git a/src/stores/projectHistoryStore.ts b/src/stores/projectHistoryStore.ts
+index 60725d6d..e1a82f53 100644
+--- a/src/stores/projectHistoryStore.ts
++++ b/src/stores/projectHistoryStore.ts
+@@ -2,8 +2,9 @@ import { create } from "zustand";
+ import { loadFromStorage, saveToStorage } from "@/lib/storage";
+ import { listSubdirectories } from "@/lib/tauri";
+ 
+-const STORAGE_KEY = "packetbench:project-history";
+-const FOLDER_KEY = "packetbench:projects-folder";
++import { storageKey } from "@/lib/brand";
++const STORAGE_KEY = storageKey("project-history");
++const FOLDER_KEY = storageKey("projects-folder");
+ 
+ export interface ProjectHistoryEntry {
+   path: string;
+diff --git a/src/stores/promptStore.ts b/src/stores/promptStore.ts
+index e21b21cf..08ada30b 100644
+--- a/src/stores/promptStore.ts
++++ b/src/stores/promptStore.ts
+@@ -12,7 +12,8 @@ import {
+ } from "@/lib/scout-config";
+ import type { PromptTemplate } from "@/types/prompt";
+ 
+-const STORAGE_KEY = "packetbench:prompt-templates";
++import { storageKey } from "@/lib/brand";
++const STORAGE_KEY = storageKey("prompt-templates");
+ 
+ const BUILTIN_TEMPLATES: PromptTemplate[] = [
+   {
+diff --git a/src/stores/reviewStore.ts b/src/stores/reviewStore.ts
+index f996a34e..d424483b 100644
+--- a/src/stores/reviewStore.ts
++++ b/src/stores/reviewStore.ts
+@@ -1,6 +1,7 @@
+ import { create } from "zustand";
+ import { loadFromStorage, saveToStorage } from "@/lib/storage";
+ 
++import { storageKey } from "@/lib/brand";
+ /**
+  * The canonical review surface's store (consensus P1-8).
+  *
+@@ -21,7 +22,7 @@ import { loadFromStorage, saveToStorage } from "@/lib/storage";
+  *    from agentTaskStore's delete/cleanup path.
+  */
+ 
+-const VIEWED_STORAGE_KEY = "packetbench:review-viewed-v1";
++const VIEWED_STORAGE_KEY = storageKey("review-viewed-v1");
+ 
+ /** conversationId → path → signature the user marked as viewed. */
+ type ViewedMap = Record<string, Record<string, string>>;
+diff --git a/src/stores/routingStore.ts b/src/stores/routingStore.ts
+index 1ef56598..b81d55e7 100644
+--- a/src/stores/routingStore.ts
++++ b/src/stores/routingStore.ts
+@@ -6,8 +6,9 @@ import type { TaskType } from "@/types/flight";
+ import type { AuxRouteMapping, AuxTaskClass, RouteMapping } from "@/types/routing";
+ import { ALL_AUX_TASK_CLASSES, ALL_TASK_TYPES } from "@/types/routing";
+ 
+-const STORAGE_KEY = "packetbench:routing";
+-const AUX_STORAGE_KEY = "packetbench:routing-aux";
++import { storageKey } from "@/lib/brand";
++const STORAGE_KEY = storageKey("routing");
++const AUX_STORAGE_KEY = storageKey("routing-aux");
+ 
+ const DEFAULT_AGENT = "claude-code";
+ 
+diff --git a/src/stores/workspaceStore.ts b/src/stores/workspaceStore.ts
+index e59b5314..6b6937f3 100644
+--- a/src/stores/workspaceStore.ts
++++ b/src/stores/workspaceStore.ts
+@@ -16,6 +16,7 @@ import type { TerminalShellSelection } from "@/types/terminal-shell";
+ import { isValidMosaicTree } from "@/lib/mosaicPresets";
+ import type { MosaicNode } from "@/types/mosaic";
+ 
++import { storageKey } from "@/lib/brand";
+ export interface WorkspaceSessionConfig {
+   prompt?: string;
+   modelOverrides?: Record<string, string | null>;
+@@ -202,9 +203,9 @@ interface WorkspaceStore {
+   hydrateFromBackend: (workspaces?: Workspace[]) => void;
+ }
+ 
+-const DEFAULT_BYPASS_KEY = "packetbench:workspace-default-bypass";
+-const AUTO_BIND_GITHUB_KEY = "packetbench:workspace-auto-bind-github";
+-const ACTIVE_WORKSPACE_KEY = "packetbench:workspace-active-id";
++const DEFAULT_BYPASS_KEY = storageKey("workspace-default-bypass");
++const AUTO_BIND_GITHUB_KEY = storageKey("workspace-auto-bind-github");
++const ACTIVE_WORKSPACE_KEY = storageKey("workspace-active-id");
+ 
+ /**
+  * Remember which workspace was open.
+@@ -323,7 +324,7 @@ function buildPanes(
+   });
+ }
+ 
+-const WORKSPACES_CACHE_KEY = "packetbench:workspaces-cache";
++const WORKSPACES_CACHE_KEY = storageKey("workspaces-cache");
+ 
+ /**
+  * Historical deterministic wrapper-workspace id for a conversation. New

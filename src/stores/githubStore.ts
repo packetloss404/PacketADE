@@ -51,8 +51,9 @@ import type {
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
 import { logSwallowed } from "@/lib/logSwallowed";
 
-const STORAGE_KEY = "packetbench:github";
-const SETTINGS_STORAGE_KEY = "packetbench:github:settings";
+import { storageKey } from "@/lib/brand";
+const STORAGE_KEY = storageKey("github");
+const SETTINGS_STORAGE_KEY = storageKey("github:settings");
 
 /** v0.8: persisted GitHub-side defaults the user can tweak in Settings → GitHub. */
 export type GitHubMergeStrategy = "merge" | "squash" | "rebase";

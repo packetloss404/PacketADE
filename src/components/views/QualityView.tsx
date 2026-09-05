@@ -34,6 +34,7 @@ import { CodeQualityHistoryDropdown } from "@/components/quality/CodeQualityHist
 import { readAutoFixPref, writeAutoFixPref } from "@/components/quality/autoFixPrefs";
 import { getPreferredWorkspaceCli } from "@/lib/workspaceCliDefaults";
 
+import { storageKey } from "@/lib/brand";
 type TabKey = "overview" | "languages" | "complexity" | "tests";
 
 const TABS: { key: TabKey; label: string }[] = [
@@ -43,7 +44,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "tests", label: "Tests" },
 ];
 
-const TAB_PREF_KEY = "packetbench:quality:last-tab";
+const TAB_PREF_KEY = storageKey("quality:last-tab");
 
 type FetchState =
   | { kind: "loading" }

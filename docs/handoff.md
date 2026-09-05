@@ -112,6 +112,15 @@ fail, the change is wrong, not the test.
   runs at conversation launch (`agentTaskStore.ts:712`) and Flight launch
   (`asyncFlightStore.ts:1366`); mid-conversation turns and the auxiliary LLM
   features (side chat, GitHub AI, memory summaries) are not re-checked.
+- **Never hardcode `"packetbench:"` — build keys with `storageKey()`.**
+  `storageMirror.ts:158,204` mirrors by `key.startsWith(STORAGE_PREFIX)` and
+  `storage-migration.ts:74-84` carries exactly ONE previous prefix forward. A
+  hardcoded key therefore survives a rename that `STORAGE_PREFIX` does not: it
+  keeps working, quietly stops being mirrored, and the next bundle-identifier
+  change takes it with no migration path. Half the stores were in that state
+  through two renames (audit F24/P16). `scripts/storage-key-brand.test.mjs` is
+  the fence; when the product is renamed again, update the prefix in that file
+  in the same change as `brand.ts`.
 - **Remote Agents is gated by `src/lib/remoteAgentsGate.ts`, not by the store.**
   `remoteAgentsSettingsStore` holds user intent only and importing it anywhere
   else is an eslint error. Ask `isRemoteAgentsEnabled()` (or the
