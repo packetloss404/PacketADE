@@ -78,6 +78,29 @@ fn find_agent(tool_name: &str, project_path: &str) -> Option<CustomAgentDef> {
 
 /// Build the tool subset this agent is allowed to call. Empty `allowed_tools`
 /// falls back to the read-only default set.
+/// Strip the tools a sub-agent may never hold (see
+/// `tool_subagent::SUBAGENT_DENIED_TOOLS`) from a definition's requested
+/// list, logging each drop by agent name so a definition that silently lost
+/// `bash` is explainable from the log.
+fn filter_subagent_tools(agent_name: &str, requested: Vec<String>) -> Vec<String> {
+    requested
+        .into_iter()
+        .filter(|name| {
+            let denied = crate::core::tool_subagent::SUBAGENT_DENIED_TOOLS
+                .contains(&name.as_str());
+            if denied {
+                tracing::warn!(
+                    target: "packetbench::auth",
+                    agent = %agent_name,
+                    tool = %name,
+                    "custom agent definition requested a tool sub-agents may not hold; dropped"
+                );
+            }
+            !denied
+        })
+        .collect()
+}
+
 async fn build_allowed_tools(agent: &CustomAgentDef) -> Vec<ToolDefinition> {
     let allowed: Vec<String> = if agent.allowed_tools.is_empty() {
         DEFAULT_READ_ONLY_TOOLS
@@ -85,7 +108,7 @@ async fn build_allowed_tools(agent: &CustomAgentDef) -> Vec<ToolDefinition> {
             .map(|s| s.to_string())
             .collect()
     } else {
-        agent.allowed_tools.clone()
+        filter_subagent_tools(&agent.name, agent.allowed_tools.clone())
     };
 
     let mut tools: Vec<ToolDefinition> = tool_runtime::tool_definitions()
@@ -180,6 +203,20 @@ pub async fn execute_custom_agent(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn custom_agents_cannot_be_granted_execution_tools() {
+        let requested = vec![
+            "read_file".to_string(),
+            "bash".to_string(),
+            "write_file".to_string(),
+            "edit_file".to_string(),
+            "create_pull_request".to_string(),
+            "web_fetch".to_string(),
+        ];
+        let kept = filter_subagent_tools("reviewer", requested);
+        assert_eq!(kept, vec!["read_file".to_string(), "web_fetch".to_string()]);
+    }
 
     #[test]
     fn sanitize_basic() {

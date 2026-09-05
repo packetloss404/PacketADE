@@ -17,6 +17,20 @@ use tokio::sync::mpsc;
 
 const MAX_ITERATIONS: usize = 8;
 
+/// Tools a sub-agent may never hold, whatever its definition asks for. The
+/// sub-agent loop below has no permission prompt, no plan-mode block, and no
+/// pending-edit gate — it dispatches straight into `tool_runtime::execute_tool`
+/// — so anything here would run on the model's authority alone, routing
+/// around every gate the parent session enforces (`commands::api_agent`).
+pub(crate) const SUBAGENT_DENIED_TOOLS: &[&str] =
+    &["bash", "write_file", "edit_file", "create_pull_request"];
+
+/// True when a sub-agent may execute `tool_name` given the tool set it was
+/// handed. The set is the allowlist; the denied list is a floor beneath it.
+pub(crate) fn subagent_tool_permitted(tool_name: &str, tools: &[ToolDefinition]) -> bool {
+    !SUBAGENT_DENIED_TOOLS.contains(&tool_name) && tools.iter().any(|t| t.name == tool_name)
+}
+
 /// The provider/model of the SESSION whose tool loop is currently executing.
 ///
 /// Q2 — sub-agent tools are agentic helpers, not auxiliary tasks: they derive
@@ -221,8 +235,28 @@ pub(crate) async fn run_agent_loop(
         // Dispatch each tool call and collect results into a single tool message.
         let mut result_blocks: Vec<ContentBlock> = Vec::with_capacity(tool_calls.len());
         for call in tool_calls {
+            // The tool list handed to the model is the allowlist; a call
+            // outside it (or to a denied tool) is refused, never executed.
+            // Without this the list was advisory — the model could name
+            // `bash` and this loop would run it with no gate at all.
             // Recurses into execute_tool — the future is boxed at that dispatch.
-            let result = tool_runtime::execute_tool(&call, parent_target).await;
+            let result = if subagent_tool_permitted(&call.name, &tools) {
+                tool_runtime::execute_tool(&call, parent_target).await
+            } else {
+                tracing::warn!(
+                    target: "packetbench::auth",
+                    tool = %call.name,
+                    "sub-agent requested a tool outside its allowlist; refused"
+                );
+                crate::core::llm_types::ToolResult {
+                    tool_call_id: call.id.clone(),
+                    content: format!(
+                        "Error: tool '{}' is not available to this sub-agent.",
+                        call.name
+                    ),
+                    is_error: true,
+                }
+            };
             result_blocks.push(ContentBlock::ToolResult {
                 tool_call_id: result.tool_call_id,
                 content: result.content,
@@ -324,6 +358,40 @@ pub async fn execute_spawn_subagent(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn def(name: &str) -> ToolDefinition {
+        ToolDefinition {
+            name: name.to_string(),
+            description: String::new(),
+            parameters: serde_json::json!({ "type": "object" }),
+        }
+    }
+
+    #[test]
+    fn subagent_allowlist_is_enforced_not_advisory() {
+        let tools = vec![def("read_file"), def("grep")];
+        assert!(subagent_tool_permitted("read_file", &tools));
+        assert!(!subagent_tool_permitted("write_file", &tools), "not in list");
+        assert!(!subagent_tool_permitted("bash", &tools), "not in list");
+        assert!(
+            !subagent_tool_permitted("mcp__x__read", &tools),
+            "unknown tools are refused"
+        );
+    }
+
+    #[test]
+    fn denied_tools_stay_denied_even_when_listed() {
+        // A custom agent definition (possibly repo-supplied) can ask for
+        // `bash`; the floor refuses it regardless of the list.
+        let tools = vec![def("bash"), def("create_pull_request"), def("read_file")];
+        for denied in SUBAGENT_DENIED_TOOLS {
+            assert!(
+                !subagent_tool_permitted(denied, &tools),
+                "{denied} must be refused"
+            );
+        }
+        assert!(subagent_tool_permitted("read_file", &tools));
+    }
 
     /// Proves that SubagentDepthGuard refuses to spawn beyond
     /// MAX_SUBAGENT_DEPTH and recovers the counter via Drop.
