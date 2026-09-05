@@ -1,0 +1,58 @@
+diff --git a/src-tauri/src/core/tool_runtime.rs b/src-tauri/src/core/tool_runtime.rs
+index 52c7eca3..4661bc44 100644
+--- a/src-tauri/src/core/tool_runtime.rs
++++ b/src-tauri/src/core/tool_runtime.rs
+@@ -937,7 +937,17 @@ async fn execute_grep(args: &serde_json::Value, project_path: &str) -> Result<St
+             }
+ 
+             let path = entry.path();
+-            let is_dir = path.is_dir();
++            // Never follow symlinks: `read_file`/`write_file`/`edit_file`
++            // canonicalize and reject an escape, so grep must not be the one
++            // tool that reads through a link pointing outside the workspace.
++            let metadata = match std::fs::symlink_metadata(&path) {
++                Ok(m) => m,
++                Err(_) => continue,
++            };
++            if metadata.file_type().is_symlink() {
++                continue;
++            }
++            let is_dir = metadata.is_dir();
+ 
+             if is_dir {
+                 if skip_dirs.contains(&name.as_str()) {
+@@ -1074,6 +1084,34 @@ mod tests {
+         let _ = std::fs::remove_dir_all(base);
+     }
+ 
++    #[tokio::test]
++    async fn grep_does_not_follow_symlinks_out_of_the_workspace() {
++        let (base, workspace) = temp_workspace("grep-symlink");
++        let outside = base.join("outside");
++        std::fs::create_dir_all(&outside).unwrap();
++        std::fs::write(outside.join("secret.txt"), "TOP_SECRET_MARKER\n").unwrap();
++        std::fs::write(workspace.join("inside.txt"), "TOP_SECRET_MARKER\n").unwrap();
++        let link = workspace.join("link");
++        if symlink_dir(&outside, &link).is_err() {
++            let _ = std::fs::remove_dir_all(base);
++            return;
++        }
++
++        let out = execute_grep(
++            &json!({ "pattern": "TOP_SECRET_MARKER" }),
++            &workspace.to_string_lossy(),
++        )
++        .await
++        .unwrap();
++
++        assert!(out.contains("inside.txt"), "{out}");
++        assert!(
++            !out.contains("secret.txt"),
++            "grep must not read through a symlink that leaves the workspace: {out}"
++        );
++        let _ = std::fs::remove_dir_all(base);
++    }
++
+     /* ------------------------------ edit_file ------------------------------ */
+ 
+     const SAMPLE: &str = "fn main() {\n    let x = 1;\n    println!(\"{}\", x);\n}\n";

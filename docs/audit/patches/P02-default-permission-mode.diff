@@ -1,0 +1,212 @@
+diff --git a/src-tauri/src/commands/api_agent.rs b/src-tauri/src/commands/api_agent.rs
+index 60f0a3aa..e55ef4d6 100644
+--- a/src-tauri/src/commands/api_agent.rs
++++ b/src-tauri/src/commands/api_agent.rs
+@@ -33,9 +33,12 @@ const MAX_TOOL_ITERATIONS: usize = 150;
+ #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+ #[serde(rename_all = "snake_case")]
+ pub enum PermissionMode {
+-    /// Model's implicit authority — no prompts (default, matches prior behavior).
++    /// Model's implicit authority — no prompts. Must be chosen explicitly;
++    /// it is no longer the default (see `Default`).
+     Auto,
+-    /// Prompt the user before running risky tools (bash, write_file).
++    /// Prompt the user before running risky tools (bash, write_file,
++    /// edit_file, create_pull_request). The fail-closed default: a session
++    /// that never states a mode asks before every risky tool.
+     AskForRisky,
+     /// Allow all tools without prompts.
+     AllowAll,
+@@ -45,7 +48,7 @@ pub enum PermissionMode {
+ 
+ impl Default for PermissionMode {
+     fn default() -> Self {
+-        Self::Auto
++        Self::AskForRisky
+     }
+ }
+ 
+@@ -487,6 +490,22 @@ mod tests {
+     use crate::commands::mcp::{McpServerConfig, McpServerEntry};
+     use std::collections::HashMap;
+ 
++    #[test]
++    fn create_pull_request_is_a_risky_tool() {
++        // Pushing a branch and opening a PR is an outward-facing side effect
++        // under the user's GitHub identity; it must go through the same gate
++        // as bash rather than run on the model's authority.
++        assert!(RISKY_TOOLS.contains(&"create_pull_request"));
++        assert!(!PLAN_MODE_ALLOWED.contains(&"create_pull_request"));
++    }
++
++    #[test]
++    fn permission_mode_defaults_to_asking() {
++        assert_eq!(PermissionMode::default(), PermissionMode::AskForRisky);
++        assert_eq!(PermissionMode::parse("auto"), Some(PermissionMode::Auto));
++        assert_eq!(PermissionMode::parse("bogus"), None);
++    }
++
+     /// edit_file mutates files exactly like write_file, so it must sit behind
+     /// the same three gates: risky-tool permission, the pending-edit approval
+     /// gate, and the plan-mode block. A tool that writes without approval
+@@ -1211,7 +1273,8 @@ pub async fn start_api_agent_session(
+     let parsed_permission_mode = match permission_mode.as_deref() {
+         Some(mode) => PermissionMode::parse(mode)
+             .ok_or_else(|| format!("Unknown permission mode: {}", mode))?,
+-        None => PermissionMode::Auto,
++        // Absent mode = ask. `Auto` (unprompted bash/write) is opt-in only.
++        None => PermissionMode::default(),
+     };
+ 
+     let messages = build_start_history(resume_messages, &initial_message);
+@@ -1839,8 +1902,10 @@ async fn finish_cancelled_agent_turn(
+ }
+ 
+ /// Tools that require user permission in `AskForRisky` mode and are refused
+-/// outright in `DenyAll`.
+-const RISKY_TOOLS: &[&str] = &["bash", "write_file", "edit_file"];
++/// outright in `DenyAll`. `create_pull_request` pushes the branch and opens a
++/// PR under the user's GitHub identity — an outward-facing side effect that
++/// must never run on the model's authority alone.
++const RISKY_TOOLS: &[&str] = &["bash", "write_file", "edit_file", "create_pull_request"];
+ /// The only tools allowed while plan mode is active — read-only ones.
+ const PLAN_MODE_ALLOWED: &[&str] = &["read_file", "list_directory", "grep"];
+ /// Tools that mutate file content and therefore must go through the
+@@ -2185,7 +2250,9 @@ async fn run_agent_loop(
+             if let Some(cfg) = configs.get(session_id) {
+                 (cfg.plan_mode, cfg.permission_mode, cfg.approve_writes)
+             } else {
+-                (false, PermissionMode::Auto, false)
++                // A session whose config vanished mid-turn must not fall back
++                // to unprompted execution.
++                (false, PermissionMode::default(), false)
+             }
+         };
+ 
+diff --git a/src/components/agents/AgentChatPane.tsx b/src/components/agents/AgentChatPane.tsx
+index 7b10a55f..90d0e111 100644
+--- a/src/components/agents/AgentChatPane.tsx
++++ b/src/components/agents/AgentChatPane.tsx
+@@ -266,7 +266,7 @@ export function AgentChatPane({
+     if (flags.planMode !== (conversation.planMode ?? false)) {
+       void actions.setPlanMode(conversationId, flags.planMode);
+     }
+-    if (flags.permissionMode !== (conversation.permissionMode ?? "auto")) {
++    if (flags.permissionMode !== (conversation.permissionMode ?? "ask_for_risky")) {
+       void actions.setPermissionMode(conversationId, flags.permissionMode);
+     }
+     if (flags.approveWrites !== (conversation.approveWrites ?? false)) {
+diff --git a/src/components/agents/PlanModeApprovalMenu.tsx b/src/components/agents/PlanModeApprovalMenu.tsx
+index ffcceb91..43660d3c 100644
+--- a/src/components/agents/PlanModeApprovalMenu.tsx
++++ b/src/components/agents/PlanModeApprovalMenu.tsx
+@@ -88,10 +88,12 @@ export function PlanModeApprovalMenu({
+         break;
+       }
+       case "accept-edits": {
++        // The message promises "ask before destructive shell commands"; only
++        // ask_for_risky keeps that promise — "auto" never asks for anything.
+         approvePlan(
+           conversationId,
+           "Plan approved — implement it. Make edits without asking; ask before destructive shell commands.",
+-          { permissionMode: "auto", approveWrites: false },
++          { permissionMode: "ask_for_risky", approveWrites: false },
+         );
+         onProceed?.();
+         break;
+diff --git a/src/components/agents/__tests__/agentModeChipUtils.test.ts b/src/components/agents/__tests__/agentModeChipUtils.test.ts
+index 83aadd06..40d0e3fe 100644
+--- a/src/components/agents/__tests__/agentModeChipUtils.test.ts
++++ b/src/components/agents/__tests__/agentModeChipUtils.test.ts
+@@ -103,8 +103,10 @@ describe("agent mode chip flags", () => {
+     expect(seen).toEqual(new Set(MODE_ORDER));
+   });
+ 
+-  it("treats a conversation with unset flags as default mode", () => {
+-    expect(deriveMode(conversation({}))).toBe("default");
++  it("treats a conversation with unset flags as manual mode (fail-closed default)", () => {
++    // An absent permissionMode means ask_for_risky (agentTaskStore default),
++    // so the chip must say Manual — "Default" would advertise unprompted bash.
++    expect(deriveMode(conversation({}))).toBe("manual");
+   });
+ });
+ 
+diff --git a/src/components/agents/agentModeChipUtils.ts b/src/components/agents/agentModeChipUtils.ts
+index 71b26f7c..4105cbe0 100644
+--- a/src/components/agents/agentModeChipUtils.ts
++++ b/src/components/agents/agentModeChipUtils.ts
+@@ -116,7 +116,9 @@ export function modeDescription(mode: AgentMode, supportsApprovals: boolean): st
+  */
+ export function deriveMode(conv: AgentConversation): AgentMode {
+   if (conv.planMode) return "plan";
+-  switch (conv.permissionMode ?? "auto") {
++  // An absent posture is "ask" (see agentTaskStore's default), so the chip
++  // must label it Manual, not Default.
++  switch (conv.permissionMode ?? "ask_for_risky") {
+     case "allow_all":
+       return "yolo";
+     case "deny_all":
+diff --git a/src/stores/__tests__/agentWorkspaceDecoupling.test.ts b/src/stores/__tests__/agentWorkspaceDecoupling.test.ts
+index 73f86432..6bdeeb17 100644
+--- a/src/stores/__tests__/agentWorkspaceDecoupling.test.ts
++++ b/src/stores/__tests__/agentWorkspaceDecoupling.test.ts
+@@ -151,7 +151,7 @@ describe("agent/workspace store decoupling", () => {
+       null,
+       null,
+       null,
+-      "auto",
++      "ask_for_risky",
+       false,
+       null,
+       undefined,
+@@ -218,7 +218,7 @@ describe("agent/workspace store decoupling", () => {
+       null,
+       null,
+       null,
+-      "auto",
++      "ask_for_risky",
+       false,
+       null,
+       undefined,
+@@ -357,7 +357,7 @@ describe("agent/workspace store decoupling", () => {
+       null,
+       null,
+       null,
+-      "auto",
++      "ask_for_risky",
+       false,
+       null,
+       undefined,
+diff --git a/src/stores/agentTaskStore.ts b/src/stores/agentTaskStore.ts
+index ed07be96..6809b78c 100644
+--- a/src/stores/agentTaskStore.ts
++++ b/src/stores/agentTaskStore.ts
+@@ -787,7 +787,9 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
+       systemPromptOverride: effectiveSystemPrompt,
+       queuedMessages: [],
+       planMode: planMode ?? false,
+-      permissionMode: permissionMode ?? "auto",
++      // Fail closed: a conversation that never chose a posture asks before
++      // every risky tool. "auto" (unprompted bash/write) is an explicit choice.
++      permissionMode: permissionMode ?? "ask_for_risky",
+       approveWrites: approveWrites ?? false,
+       thinkingEnabled: thinkingEnabled ?? false,
+       sshTarget: sshTarget
+@@ -872,7 +874,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
+           null, // resumeToken — fresh start
+           resolvedMcpIds,
+           null,
+-          permissionMode ?? "auto",
++          permissionMode ?? "ask_for_risky",
+           approveWrites ?? false,
+           null, // commandPath — no surviving sidecar provider is CLI-backed
+           undefined,
+@@ -1753,7 +1755,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
+         conv.resumeToken ?? null,
+         conv.enabledMcpServerIds ?? null,
+         resumeMessages,
+-        conv.permissionMode ?? "auto",
++        conv.permissionMode ?? "ask_for_risky",
+         conv.approveWrites ?? false,
+         null, // commandPath — no surviving sidecar provider is CLI-backed
+         undefined,

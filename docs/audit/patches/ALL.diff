@@ -1,0 +1,1822 @@
+diff --git a/.dockerignore b/.dockerignore
+deleted file mode 100644
+index 90dc0d14..00000000
+--- a/.dockerignore
++++ /dev/null
+@@ -1,10 +0,0 @@
+-# The docs image needs only scripts/build-docs.mjs and docs/. Everything else is
+-# noise that would slow the build context transfer and invalidate layer caches.
+-*
+-
+-!scripts/build-docs.mjs
+-!docs/
+-
+-# ...but not these, even inside docs/.
+-docs/**/node_modules
+-docs/**/*.log
+diff --git a/src-tauri/src/commands/api_agent.rs b/src-tauri/src/commands/api_agent.rs
+index 60f0a3aa..e55ef4d6 100644
+--- a/src-tauri/src/commands/api_agent.rs
++++ b/src-tauri/src/commands/api_agent.rs
+@@ -33,9 +33,12 @@ const MAX_TOOL_ITERATIONS: usize = 150;
+ #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+ #[serde(rename_all = "snake_case")]
+ pub enum PermissionMode {
+-    /// Model's implicit authority — no prompts (default, matches prior behavior).
++    /// Model's implicit authority — no prompts. Must be chosen explicitly;
++    /// it is no longer the default (see `Default`).
+     Auto,
+-    /// Prompt the user before running risky tools (bash, write_file).
++    /// Prompt the user before running risky tools (bash, write_file,
++    /// edit_file, create_pull_request). The fail-closed default: a session
++    /// that never states a mode asks before every risky tool.
+     AskForRisky,
+     /// Allow all tools without prompts.
+     AllowAll,
+@@ -45,7 +48,7 @@ pub enum PermissionMode {
+ 
+ impl Default for PermissionMode {
+     fn default() -> Self {
+-        Self::Auto
++        Self::AskForRisky
+     }
+ }
+ 
+@@ -487,6 +490,22 @@ mod tests {
+     use crate::commands::mcp::{McpServerConfig, McpServerEntry};
+     use std::collections::HashMap;
+ 
++    #[test]
++    fn create_pull_request_is_a_risky_tool() {
++        // Pushing a branch and opening a PR is an outward-facing side effect
++        // under the user's GitHub identity; it must go through the same gate
++        // as bash rather than run on the model's authority.
++        assert!(RISKY_TOOLS.contains(&"create_pull_request"));
++        assert!(!PLAN_MODE_ALLOWED.contains(&"create_pull_request"));
++    }
++
++    #[test]
++    fn permission_mode_defaults_to_asking() {
++        assert_eq!(PermissionMode::default(), PermissionMode::AskForRisky);
++        assert_eq!(PermissionMode::parse("auto"), Some(PermissionMode::Auto));
++        assert_eq!(PermissionMode::parse("bogus"), None);
++    }
++
+     /// edit_file mutates files exactly like write_file, so it must sit behind
+     /// the same three gates: risky-tool permission, the pending-edit approval
+     /// gate, and the plan-mode block. A tool that writes without approval
+@@ -722,9 +741,37 @@ mod tests {
+             disabled: true,
+         };
+ 
+-        let merged = merge_mcp_entries_for_sidecar(vec![global, project_disabled], None);
++        let merged =
++            merge_mcp_entries_for_sidecar(vec![global.clone(), project_disabled.clone()], None, true);
+ 
+         assert!(!merged.contains_key("danger"));
++
++        // An UNTRUSTED project's `.mcp.json` can neither add a server nor
++        // shadow the user's global one: the global entry survives untouched.
++        let merged = merge_mcp_entries_for_sidecar(vec![global, project_disabled], None, false);
++        assert!(merged.contains_key("danger"));
++    }
++
++    #[test]
++    fn merge_mcp_entries_for_sidecar_drops_untrusted_project_servers() {
++        let project = McpServerEntry {
++            name: "repo-supplied".to_string(),
++            config: McpServerConfig {
++                command: "node".to_string(),
++                args: vec!["evil.js".to_string()],
++                env: HashMap::new(),
++            },
++            raw_config: serde_json::json!({ "command": "node", "args": ["evil.js"] }),
++            scope: "project".to_string(),
++            disabled: false,
++        };
++        let untrusted = merge_mcp_entries_for_sidecar(vec![project.clone()], None, false);
++        assert!(
++            untrusted.is_empty(),
++            "a repo-supplied stdio server must not be spawned for an untrusted project"
++        );
++        let trusted = merge_mcp_entries_for_sidecar(vec![project], None, true);
++        assert!(trusted.contains_key("repo-supplied"));
+     }
+ 
+     #[tokio::test]
+@@ -918,15 +965,30 @@ async fn build_mcp_config_for_sidecar(
+         }
+     };
+ 
+-    Value::Object(merge_mcp_entries_for_sidecar(entries, filter))
++    // `.mcp.json` is repo-supplied: a stdio entry is a command the sidecar
++    // will spawn. Only a trusted project may contribute (or shadow) entries.
++    let project_trusted = crate::core::project_trust::is_project_trusted(project_path);
++    Value::Object(merge_mcp_entries_for_sidecar(entries, filter, project_trusted))
+ }
+ 
+ fn merge_mcp_entries_for_sidecar(
+     entries: Vec<crate::commands::mcp::McpServerEntry>,
+     filter: Option<&[String]>,
++    project_trusted: bool,
+ ) -> Map<String, Value> {
+     let mut merged: Map<String, Value> = Map::new();
+     for entry in entries {
++        if entry.scope == "project" && !project_trusted {
++            // Untrusted repo: its `.mcp.json` neither adds servers nor
++            // disables the user's global ones. Logged once per entry so a
++            // "my project server never starts" report is diagnosable.
++            warn!(
++                target: "packetbench::trust",
++                server = %entry.name,
++                "project-scope MCP server ignored: project is not in the trusted-projects list"
++            );
++            continue;
++        }
+         if let Some(allowed) = filter {
+             if !allowed.iter().any(|name| name == &entry.name) {
+                 continue;
+@@ -1211,7 +1273,8 @@ pub async fn start_api_agent_session(
+     let parsed_permission_mode = match permission_mode.as_deref() {
+         Some(mode) => PermissionMode::parse(mode)
+             .ok_or_else(|| format!("Unknown permission mode: {}", mode))?,
+-        None => PermissionMode::Auto,
++        // Absent mode = ask. `Auto` (unprompted bash/write) is opt-in only.
++        None => PermissionMode::default(),
+     };
+ 
+     let messages = build_start_history(resume_messages, &initial_message);
+@@ -1839,8 +1902,10 @@ async fn finish_cancelled_agent_turn(
+ }
+ 
+ /// Tools that require user permission in `AskForRisky` mode and are refused
+-/// outright in `DenyAll`.
+-const RISKY_TOOLS: &[&str] = &["bash", "write_file", "edit_file"];
++/// outright in `DenyAll`. `create_pull_request` pushes the branch and opens a
++/// PR under the user's GitHub identity — an outward-facing side effect that
++/// must never run on the model's authority alone.
++const RISKY_TOOLS: &[&str] = &["bash", "write_file", "edit_file", "create_pull_request"];
+ /// The only tools allowed while plan mode is active — read-only ones.
+ const PLAN_MODE_ALLOWED: &[&str] = &["read_file", "list_directory", "grep"];
+ /// Tools that mutate file content and therefore must go through the
+@@ -2185,7 +2250,9 @@ async fn run_agent_loop(
+             if let Some(cfg) = configs.get(session_id) {
+                 (cfg.plan_mode, cfg.permission_mode, cfg.approve_writes)
+             } else {
+-                (false, PermissionMode::Auto, false)
++                // A session whose config vanished mid-turn must not fall back
++                // to unprompted execution.
++                (false, PermissionMode::default(), false)
+             }
+         };
+ 
+diff --git a/src-tauri/src/commands/api_keys.rs b/src-tauri/src/commands/api_keys.rs
+index 42417fa1..4c91e1d7 100644
+--- a/src-tauri/src/commands/api_keys.rs
++++ b/src-tauri/src/commands/api_keys.rs
+@@ -126,11 +126,17 @@ pub fn load_api_key(provider: &str) -> Result<String, String> {
+         .ok_or_else(|| format!("Credential store unavailable for {}", provider))?;
+ 
+     match entry.get_password() {
+-        Ok(key) => Ok(key),
++        Ok(key) => {
++            // Auth-path audit line: which provider's key was loaded, never the
++            // value. `target` lets `RUST_LOG=packetbench::auth=info` isolate it.
++            info!(target: "packetbench::auth", provider = %provider, outcome = "found", "API key loaded from keyring");
++            Ok(key)
++        }
+         Err(keyring::Error::NoEntry) => {
+             // Fall back to the legacy "packetcode" keyring service and migrate on success.
+             if let Some(legacy) = legacy_keyring_entry(provider) {
+                 if let Ok(key) = legacy.get_password() {
++                    info!(target: "packetbench::auth", provider = %provider, outcome = "legacy", "API key found under legacy keyring service");
+                     return migrate_legacy_api_key(
+                         provider,
+                         key,
+@@ -146,12 +152,16 @@ pub fn load_api_key(provider: &str) -> Result<String, String> {
+             if provider == "custom" {
+                 return Ok(String::new());
+             }
++            info!(target: "packetbench::auth", provider = %provider, outcome = "missing", "no API key configured");
+             Err(format!(
+                 "{} {}. Set one in Settings > API Keys.",
+                 NO_API_KEY_PREFIX, provider
+             ))
+         }
+-        Err(e) => Err(format!("Failed to read API key for {}: {}", provider, e)),
++        Err(e) => {
++            warn!(target: "packetbench::auth", provider = %provider, outcome = "store_error", error = %e, "credential store failed while reading an API key");
++            Err(format!("Failed to read API key for {}: {}", provider, e))
++        }
+     }
+ }
+ 
+diff --git a/src-tauri/src/commands/custom_agents.rs b/src-tauri/src/commands/custom_agents.rs
+index ee8fbf16..8848d4cf 100644
+--- a/src-tauri/src/commands/custom_agents.rs
++++ b/src-tauri/src/commands/custom_agents.rs
+@@ -167,7 +167,20 @@ pub fn discover_custom_agents(project_path: &str) -> Vec<CustomAgentDef> {
+     let mut project_agents: Vec<CustomAgentDef> = Vec::new();
+     if !project_path.is_empty() {
+         let dir = PathBuf::from(project_path).join(".claude").join("agents");
+-        scan_dir(&dir, "project", &mut project_agents);
++        // A project agent definition is repo-supplied prompt + tool authority
++        // that gets advertised to the model. Only a trusted project may
++        // contribute one; an untrusted clone falls back to global agents.
++        if dir.is_dir() {
++            if crate::core::project_trust::is_project_trusted(project_path) {
++                scan_dir(&dir, "project", &mut project_agents);
++            } else {
++                warn!(
++                    target: "packetbench::trust",
++                    path = %dir.display(),
++                    "project .claude/agents ignored: project is not in the trusted-projects list"
++                );
++            }
++        }
+     }
+ 
+     // Project overrides global by name.
+diff --git a/src-tauri/src/commands/git_host_probe.rs b/src-tauri/src/commands/git_host_probe.rs
+index d7d4df92..20165c5e 100644
+--- a/src-tauri/src/commands/git_host_probe.rs
++++ b/src-tauri/src/commands/git_host_probe.rs
+@@ -193,6 +193,8 @@ fn build_endpoint(base_url: &str, api_prefix: &str, identity_path: &str) -> Resu
+     if !base.username().is_empty() || base.password().is_some() {
+         return Err("Remove the username/password from the instance URL.".to_string());
+     }
++    // The probe sends the pasted token; never over public plaintext HTTP.
++    crate::core::shared::require_https_unless_local(&base, "Instance URL")?;
+ 
+     for part in [api_prefix, identity_path] {
+         if part.is_empty() {
+diff --git a/src-tauri/src/commands/github.rs b/src-tauri/src/commands/github.rs
+index dd7dc4cf..8973daf9 100644
+--- a/src-tauri/src/commands/github.rs
++++ b/src-tauri/src/commands/github.rs
+@@ -958,6 +958,15 @@ pub async fn git_host_add_connection(
+             kind.label()
+         ));
+     }
++    // The PAT is sent as a bearer/token header on every request to this
++    // origin; a public plaintext origin would expose it. Self-hosted
++    // instances on localhost / a private network may stay http.
++    let parsed = reqwest::Url::parse(base)
++        .map_err(|_| format!("{} base URL is not a valid URL", kind.label()))?;
++    crate::core::shared::require_https_unless_local(
++        &parsed,
++        &format!("{} base URL", kind.label()),
++    )?;
+     let token = token.trim();
+     if token.is_empty() {
+         return Err(format!("{} token cannot be empty", kind.label()));
+diff --git a/src-tauri/src/commands/packet_agent.rs b/src-tauri/src/commands/packet_agent.rs
+index 352fdf14..1e5819c3 100644
+--- a/src-tauri/src/commands/packet_agent.rs
++++ b/src-tauri/src/commands/packet_agent.rs
+@@ -286,11 +286,28 @@ pub async fn packet_agent_request(
+         outgoing = outgoing.json(&payload);
+     }
+ 
+-    let response = outgoing
+-        .send()
+-        .await
+-        .map_err(|error| format!("PacketAgent request failed: {error}"))?;
++    let response = outgoing.send().await.map_err(|error| {
++        tracing::warn!(
++            target: "packetbench::egress",
++            service = "packetagent",
++            operation = %request.operation,
++            method = %method,
++            error = %error,
++            "PacketAgent request failed before a response"
++        );
++        format!("PacketAgent request failed: {error}")
++    })?;
+     let status = response.status();
++    tracing::info!(
++        target: "packetbench::egress",
++        service = "packetagent",
++        operation = %request.operation,
++        method = %method,
++        host = %response.url().host_str().unwrap_or("-"),
++        path = %response.url().path(),
++        status = status.as_u16(),
++        "PacketAgent response"
++    );
+     let etag = response
+         .headers()
+         .get(reqwest::header::ETAG)
+diff --git a/src-tauri/src/commands/pty.rs b/src-tauri/src/commands/pty.rs
+index 4feaa5db..1dae4efa 100644
+--- a/src-tauri/src/commands/pty.rs
++++ b/src-tauri/src/commands/pty.rs
+@@ -1015,6 +1015,54 @@ pub fn read_pty_transcript(session_id: String) -> Result<crate::core::pty::PtyTr
+     crate::core::pty::read_transcript(&session_id)
+ }
+ 
++/// OpenSSH options that make `ssh` execute a LOCAL program or read a local
++/// file of the caller's choosing. The webview builds `ssh_exec` argv itself
++/// (`src/lib/ssh.ts::buildSshExecArgs`) and never uses these, so refusing them
++/// costs nothing and stops a compromised or confused webview from turning a
++/// remote-probe command into local code execution (`-o ProxyCommand=…`).
++const SSH_EXEC_DENIED_OPTIONS: &[&str] = &[
++    "proxycommand",
++    "localcommand",
++    "permitlocalcommand",
++    "knownhostscommand",
++    "proxyusefdpass",
++    "include",
++];
++
++/// Reject argv for `ssh_exec` that names a denied option (any `-o Name=…`,
++/// `-oName=…`, or a bare `Name=…` after `-o`), a custom config file (`-F`,
++/// which can carry every denied option), or a log-file sink (`-E`).
++pub(crate) fn validate_ssh_exec_args(args: &[String]) -> Result<(), String> {
++    let denied_option = |value: &str| {
++        let name = value.split('=').next().unwrap_or("").trim().to_ascii_lowercase();
++        SSH_EXEC_DENIED_OPTIONS.contains(&name.as_str())
++    };
++    let mut expect_option_value = false;
++    for arg in args {
++        if expect_option_value {
++            expect_option_value = false;
++            if denied_option(arg) {
++                return Err(format!("ssh option '{}' is not permitted", arg));
++            }
++            continue;
++        }
++        if arg == "-o" {
++            expect_option_value = true;
++            continue;
++        }
++        if let Some(inline) = arg.strip_prefix("-o") {
++            if denied_option(inline) {
++                return Err(format!("ssh option '{}' is not permitted", arg));
++            }
++            continue;
++        }
++        if arg == "-F" || arg.starts_with("-F") || arg == "-E" || arg.starts_with("-E") {
++            return Err(format!("ssh flag '{}' is not permitted", arg));
++        }
++    }
++    Ok(())
++}
++
+ /// Run an SSH command as a regular process (not PTY). Windows OpenSSH receives
+ /// an optional password over stdin; Unix OpenSSH uses the self-reinvoked
+ /// askpass helper because it never reads a login password from stdin.
+@@ -1026,6 +1074,19 @@ pub async fn ssh_exec(
+     use std::process::Stdio;
+     use tokio::io::AsyncWriteExt;
+ 
++    validate_ssh_exec_args(&command_args)?;
++    info!(
++        target: "packetbench::egress",
++        service = "ssh",
++        argc = command_args.len(),
++        target = %command_args
++            .iter()
++            .find(|a| a.contains('@') && !a.starts_with('-'))
++            .map(String::as_str)
++            .unwrap_or("-"),
++        "ssh_exec"
++    );
++
+     let mut cmd = tokio::process::Command::new("ssh");
+     for arg in &command_args {
+         cmd.arg(arg);
+@@ -1587,6 +1648,22 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn ssh_exec_refuses_local_execution_options() {
++        let ok = |args: &[&str]| validate_ssh_exec_args(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
++        assert!(ok(&["-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=yes", "-p", "22", "u@h", "echo hi"]).is_ok());
++        assert!(ok(&["-o", "ProxyCommand=calc.exe", "u@h"]).is_err());
++        assert!(ok(&["-oProxyCommand=calc.exe", "u@h"]).is_err());
++        assert!(ok(&["-o", "proxycommand = calc", "u@h"]).is_err(), "case/space insensitive");
++        assert!(ok(&["-o", "LocalCommand=rm -rf x", "-o", "PermitLocalCommand=yes", "u@h"]).is_err());
++        assert!(ok(&["-o", "KnownHostsCommand=/tmp/x", "u@h"]).is_err());
++        assert!(ok(&["-F", "/tmp/evil_config", "u@h"]).is_err());
++        assert!(ok(&["-F/tmp/evil_config", "u@h"]).is_err());
++        assert!(ok(&["-E", "/tmp/log", "u@h"]).is_err());
++        // The remote command string is opaque and may mention the words.
++        assert!(ok(&["u@h", "grep ProxyCommand ~/.ssh/config"]).is_ok());
++    }
++
+     #[test]
+     fn shell_probe_allowlist_excludes_arbitrary_programs() {
+         assert!(ALLOWED_SHELL_COMMANDS.contains(&"pwsh"));
+diff --git a/src-tauri/src/core/boot_check.rs b/src-tauri/src/core/boot_check.rs
+new file mode 100644
+index 00000000..d9261ddf
+--- /dev/null
++++ b/src-tauri/src/core/boot_check.rs
+@@ -0,0 +1,197 @@
++//! Boot-time configuration validation.
++//!
++//! PacketBench has no `.env` and almost no required configuration — most
++//! settings are chosen in the UI and stored in the data dir or the OS
++//! keyring. What CAN silently break a fresh install or a dark-period restart
++//! is environmental: an unwritable data dir, a credential store that refuses
++//! every read, a typo'd `PACKETBENCH_*` override, or a developer override that
++//! points at a file that is no longer there. This module checks each once at
++//! startup and logs one line per check under the `packetbench::boot` target,
++//! naming the exact variable or path involved. It never aborts startup: the
++//! app still opens so the user can read the message in the log or the UI.
++//!
++//! Log file: `%LOCALAPPDATA%\PacketBench\logs\packetbench.log.<date>` on
++//! Windows, `~/Library/Application Support/PacketBench/logs/` on macOS,
++//! `$XDG_DATA_HOME/PacketBench/logs/` on Linux (see `lib.rs::dirs_log_dir`).
++
++use tracing::{info, warn};
++
++/// Every `PACKETBENCH_*` variable the desktop binary (not the build scripts)
++/// reads. Anything else with that prefix is almost certainly a typo.
++const KNOWN_ENV_VARS: &[&str] = &[
++    "PACKETBENCH_SIDECAR_PATH",
++    "PACKETBENCH_NODE_PATH",
++    "PACKETBENCH_DEV_SIDECAR",
++    "PACKETBENCH_GITHUB_CLIENT_ID",
++    "PACKETBENCH_REMOTE_NODE_PATH",
++    "PACKETBENCH_REMOTE_SIDECAR_PATH",
++    "PACKETBENCH_REMOTE_SIDECAR",
++    "PACKETBENCH_REMOTE_SIDECAR_READY",
++    "PACKETBENCH_ASKPASS_FILE",
++    "PACKETBENCH_STATUSLINE_HELPER",
++    "PACKETBENCH_STATUSLINE_DIR",
++    "PACKETBENCH_OLLAMA_URL",
++    "PACKETBENCH_OLLAMA_KEEP_ALIVE",
++    "PACKETBENCH_OLLAMA_NUM_CTX_CAP",
++    "PACKETBENCH_MINIMAX_URL",
++    "PACKETBENCH_CUSTOM_COMPAT_URL",
++    "PACKETBENCH_MCP_PROBE_TIMEOUT_MS",
++];
++
++/// Overrides whose value must name an existing file when set.
++const FILE_PATH_ENV_VARS: &[&str] = &["PACKETBENCH_SIDECAR_PATH", "PACKETBENCH_NODE_PATH"];
++
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub struct BootIssue {
++    pub check: &'static str,
++    pub message: String,
++}
++
++/// Pure classification of the process environment; separated from `run` so
++/// it is unit-testable without touching the real environment.
++pub fn classify_env(vars: &[(String, String)], file_exists: &dyn Fn(&str) -> bool) -> Vec<BootIssue> {
++    let mut issues = Vec::new();
++    for (name, value) in vars {
++        if !name.starts_with("PACKETBENCH_") {
++            continue;
++        }
++        if !KNOWN_ENV_VARS.contains(&name.as_str()) {
++            issues.push(BootIssue {
++                check: "env",
++                message: format!(
++                    "{name} is set but is not a variable PacketBench reads (typo? known: {})",
++                    KNOWN_ENV_VARS.join(", ")
++                ),
++            });
++            continue;
++        }
++        if FILE_PATH_ENV_VARS.contains(&name.as_str()) && !file_exists(value) {
++            issues.push(BootIssue {
++                check: "env",
++                message: format!("{name}={value} does not point at an existing file"),
++            });
++        }
++    }
++    issues
++}
++
++fn check_data_dir() -> Vec<BootIssue> {
++    let dir = match crate::core::storage::ensure_data_dir() {
++        Ok(dir) => dir,
++        Err(e) => {
++            return vec![BootIssue {
++                check: "data_dir",
++                message: format!("data dir cannot be created: {e}"),
++            }]
++        }
++    };
++    let probe = dir.join(".boot-write-probe");
++    let result = std::fs::write(&probe, b"ok").and_then(|_| std::fs::remove_file(&probe));
++    match result {
++        Ok(()) => {
++            info!(target: "packetbench::boot", check = "data_dir", path = %dir.display(), "data dir is writable");
++            Vec::new()
++        }
++        Err(e) => vec![BootIssue {
++            check: "data_dir",
++            message: format!(
++                "data dir {} is not writable ({e}); nothing will persist",
++                dir.display()
++            ),
++        }],
++    }
++}
++
++fn check_keyring() -> Vec<BootIssue> {
++    match keyring::Entry::new(crate::core::brand::KEYRING_SERVICE, "boot-probe") {
++        Ok(entry) => match entry.get_password() {
++            Ok(_) | Err(keyring::Error::NoEntry) => {
++                info!(target: "packetbench::boot", check = "keyring", service = crate::core::brand::KEYRING_SERVICE, "OS credential store is reachable");
++                Vec::new()
++            }
++            Err(e) => vec![BootIssue {
++                check: "keyring",
++                message: format!(
++                    "OS credential store failed a read ({e}); API keys, GitHub/Gitea tokens, and SSH passwords will be unreadable"
++                ),
++            }],
++        },
++        Err(e) => vec![BootIssue {
++            check: "keyring",
++            message: format!("OS credential store unavailable ({e})"),
++        }],
++    }
++}
++
++fn check_trust_file() -> Vec<BootIssue> {
++    let path = crate::core::project_trust::trusted_projects_path();
++    if path.is_file() {
++        info!(target: "packetbench::boot", check = "trust", path = %path.display(), "trusted-projects file present");
++    } else {
++        info!(
++            target: "packetbench::boot",
++            check = "trust",
++            path = %path.display(),
++            "no trusted-projects file: repo-supplied hooks, .mcp.json servers, and .claude/agents are disabled for every project until one is created"
++        );
++    }
++    Vec::new()
++}
++
++/// Run every check, log the outcome, and return the issues found.
++pub fn run() -> Vec<BootIssue> {
++    info!(
++        target: "packetbench::boot",
++        app = crate::core::brand::APP_NAME,
++        version = env!("CARGO_PKG_VERSION"),
++        debug_build = cfg!(debug_assertions),
++        rust_log = %std::env::var("RUST_LOG").unwrap_or_else(|_| "<unset, default info>".to_string()),
++        "boot check start"
++    );
++    let mut issues = Vec::new();
++    issues.extend(check_data_dir());
++    issues.extend(check_keyring());
++    issues.extend(check_trust_file());
++    let env: Vec<(String, String)> = std::env::vars().collect();
++    issues.extend(classify_env(&env, &|p| std::path::Path::new(p).is_file()));
++    for issue in &issues {
++        warn!(target: "packetbench::boot", check = issue.check, "{}", issue.message);
++    }
++    info!(target: "packetbench::boot", issues = issues.len(), "boot check done");
++    issues
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn vars(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
++        pairs
++            .iter()
++            .map(|(k, v)| (k.to_string(), v.to_string()))
++            .collect()
++    }
++
++    #[test]
++    fn unknown_prefixed_vars_are_flagged_as_typos() {
++        let issues = classify_env(&vars(&[("PACKETBENCH_SIDECAR_PTH", "x")]), &|_| true);
++        assert_eq!(issues.len(), 1);
++        assert!(issues[0].message.contains("PACKETBENCH_SIDECAR_PTH"));
++        assert!(issues[0].message.contains("typo"));
++    }
++
++    #[test]
++    fn known_path_vars_must_exist() {
++        let missing = classify_env(&vars(&[("PACKETBENCH_SIDECAR_PATH", "/nope/index.js")]), &|_| false);
++        assert_eq!(missing.len(), 1);
++        assert!(missing[0].message.contains("PACKETBENCH_SIDECAR_PATH=/nope/index.js"));
++        let present = classify_env(&vars(&[("PACKETBENCH_SIDECAR_PATH", "/ok")]), &|_| true);
++        assert!(present.is_empty());
++    }
++
++    #[test]
++    fn unrelated_vars_are_ignored() {
++        let issues = classify_env(&vars(&[("PATH", "x"), ("PACKETBENCH_DEV_SIDECAR", "1")]), &|_| false);
++        assert!(issues.is_empty());
++    }
++}
+diff --git a/src-tauri/src/core/git_host.rs b/src-tauri/src/core/git_host.rs
+index 46b50fa6..3039cb7a 100644
+--- a/src-tauri/src/core/git_host.rs
++++ b/src-tauri/src/core/git_host.rs
+@@ -882,6 +882,16 @@ impl GitHost {
+                 .map_err(|e| format!("Invalid header: {}", e))?,
+         );
+ 
++        // Egress audit: every authenticated git-host client is built here, so
++        // this one line records which host a credential is about to reach.
++        tracing::info!(
++            target: "packetbench::egress",
++            service = "git-host",
++            kind = %self.kind.label(),
++            api_base = %self.api_base,
++            "git host client built"
++        );
++
+         reqwest::Client::builder()
+             .default_headers(headers)
+             .build()
+diff --git a/src-tauri/src/core/hooks.rs b/src-tauri/src/core/hooks.rs
+index ea9888d6..6301d3ab 100644
+--- a/src-tauri/src/core/hooks.rs
++++ b/src-tauri/src/core/hooks.rs
+@@ -96,7 +96,23 @@ pub fn load_hooks_with_project(project_path: &str) -> Vec<HookConfig> {
+         let path = PathBuf::from(project_path)
+             .join(".claude")
+             .join("settings.json");
+-        load_hooks_from(&path, &mut out);
++        // Project hooks are repo-supplied shell commands. They run only for a
++        // project the user has listed in `trusted-projects.json`; an untrusted
++        // clone contributes nothing, and the skip is logged so a missing hook
++        // is diagnosable rather than silent.
++        if !path.is_file() {
++            return out;
++        }
++        if crate::core::project_trust::is_project_trusted(project_path) {
++            load_hooks_from(&path, &mut out);
++        } else {
++            warn!(
++                target: "packetbench::trust",
++                path = %path.display(),
++                trust_file = %crate::core::project_trust::trusted_projects_path().display(),
++                "project hooks ignored: project is not in the trusted-projects list"
++            );
++        }
+     }
+     out
+ }
+diff --git a/src-tauri/src/core/llm_anthropic.rs b/src-tauri/src/core/llm_anthropic.rs
+index f526753f..0912c3c0 100644
+--- a/src-tauri/src/core/llm_anthropic.rs
++++ b/src-tauri/src/core/llm_anthropic.rs
+@@ -223,6 +223,13 @@ impl LlmProvider for AnthropicProvider {
+ 
+         let body = build_anthropic_body(&request);
+ 
++        tracing::info!(
++            target: "packetbench::egress",
++            service = "anthropic",
++            model = %request.model,
++            url = ANTHROPIC_API_URL,
++            "LLM request"
++        );
+         let response = client
+             .post(ANTHROPIC_API_URL)
+             .header("x-api-key", api_key)
+@@ -232,6 +239,13 @@ impl LlmProvider for AnthropicProvider {
+             .send()
+             .await
+             .map_err(|e| format!("Anthropic request failed: {}", e))?;
++        tracing::info!(
++            target: "packetbench::egress",
++            service = "anthropic",
++            model = %request.model,
++            status = response.status().as_u16(),
++            "LLM response"
++        );
+ 
+         if !response.status().is_success() {
+             let status = response.status();
+diff --git a/src-tauri/src/core/llm_openai_compat.rs b/src-tauri/src/core/llm_openai_compat.rs
+index 8d44b87f..68b57719 100644
+--- a/src-tauri/src/core/llm_openai_compat.rs
++++ b/src-tauri/src/core/llm_openai_compat.rs
+@@ -523,6 +523,13 @@ pub async fn stream_chat_compat(
+     }
+     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+ 
++    tracing::info!(
++        target: "packetbench::egress",
++        service = "openai-compat",
++        base_url = %config.base_url,
++        model = %request.model,
++        "LLM request"
++    );
+     let response = client
+         .post(&url)
+         .headers(headers.clone())
+@@ -530,6 +537,14 @@ pub async fn stream_chat_compat(
+         .send()
+         .await
+         .map_err(|e| format!("Request failed: {}", e))?;
++    tracing::info!(
++        target: "packetbench::egress",
++        service = "openai-compat",
++        base_url = %config.base_url,
++        model = %request.model,
++        status = response.status().as_u16(),
++        "LLM response"
++    );
+ 
+     let response = if response.status().is_success() {
+         if ollama_usage {
+diff --git a/src-tauri/src/core/mod.rs b/src-tauri/src/core/mod.rs
+index 37c06c43..36c8ba06 100644
+--- a/src-tauri/src/core/mod.rs
++++ b/src-tauri/src/core/mod.rs
+@@ -6,6 +6,7 @@ pub mod agents_md;
+ pub mod aux_context;
+ // WI-1 — the auxiliary LLM seam every non-agentic feature routes through.
+ pub mod aux_llm;
++pub mod boot_check;
+ pub mod brand;
+ pub mod claude_statusline;
+ // v0.8.8 quality ai: hand-authored prompts for the Code Quality AI features
+@@ -39,6 +40,7 @@ pub mod mcp_bridge;
+ pub mod mcp_client;
+ pub mod migration;
+ pub mod orchestrator;
++pub mod project_trust;
+ pub mod provenance;
+ pub mod pty;
+ // One-time reprice of historical cost figures written with the pre-CE2 rates.
+diff --git a/src-tauri/src/core/project_trust.rs b/src-tauri/src/core/project_trust.rs
+new file mode 100644
+index 00000000..7bf1beea
+--- /dev/null
++++ b/src-tauri/src/core/project_trust.rs
+@@ -0,0 +1,248 @@
++//! Project trust: which repositories may supply code that PacketBench runs.
++//!
++//! Three repo-controlled files can cause PacketBench to execute something on
++//! the user's machine the moment a conversation starts in that repo:
++//!
++//! - `<project>/.claude/settings.json` `hooks` — run through `sh -c` /
++//!   `cmd /C` on SessionStart, PreToolUse, PostToolUse, SessionEnd
++//!   (`core::hooks`).
++//! - `<project>/.mcp.json` `mcpServers` — stdio servers spawned by the sidecar
++//!   for Agent SDK sessions (`commands::api_agent::build_mcp_config_for_sidecar`).
++//! - `<project>/.claude/agents/*.md` — sub-agent definitions whose prompt and
++//!   tool list are advertised to the model (`commands::custom_agents`).
++//!
++//! None of those carried a trust decision: cloning an untrusted repository and
++//! opening a conversation was enough. This module is the single fail-closed
++//! gate. A project is trusted only when its canonical path is listed in
++//! `<data dir>/trusted-projects.json`:
++//!
++//! ```json
++//! { "version": 1, "projects": ["D:\\projects\\PacketBench", "/home/me/app"] }
++//! ```
++//!
++//! Anything that cannot be read, parsed, or canonicalized is untrusted. There
++//! is deliberately no environment-variable override: a repo-supplied shell
++//! command is exactly the kind of thing an env var must not be able to enable.
++
++use std::path::{Path, PathBuf};
++
++use serde::{Deserialize, Serialize};
++use tracing::{info, warn};
++
++pub const TRUSTED_PROJECTS_FILE: &str = "trusted-projects.json";
++
++#[derive(Debug, Default, Serialize, Deserialize)]
++struct TrustedProjectsFile {
++    #[serde(default)]
++    version: u32,
++    #[serde(default)]
++    projects: Vec<String>,
++}
++
++/// Absolute path of the trust list. Lives beside `state.v1.json` so a
++/// data-dir backup or restore carries the trust decisions with it.
++pub fn trusted_projects_path() -> PathBuf {
++    crate::core::storage::data_dir().join(TRUSTED_PROJECTS_FILE)
++}
++
++fn canonical(path: &Path) -> Option<PathBuf> {
++    std::fs::canonicalize(path).ok()
++}
++
++fn read_trusted_projects(path: &Path) -> Vec<PathBuf> {
++    let raw = match std::fs::read_to_string(path) {
++        Ok(raw) => raw,
++        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
++        Err(e) => {
++            warn!(
++                target: "packetbench::trust",
++                path = %path.display(),
++                error = %e,
++                "trusted-projects file unreadable; treating every project as untrusted"
++            );
++            return Vec::new();
++        }
++    };
++    let parsed: TrustedProjectsFile = match serde_json::from_str(&raw) {
++        Ok(parsed) => parsed,
++        Err(e) => {
++            warn!(
++                target: "packetbench::trust",
++                path = %path.display(),
++                error = %e,
++                "trusted-projects file is not valid JSON; treating every project as untrusted"
++            );
++            return Vec::new();
++        }
++    };
++    if parsed.version != 1 {
++        warn!(
++            target: "packetbench::trust",
++            path = %path.display(),
++            version = parsed.version,
++            "trusted-projects file has an unsupported version; expected 1"
++        );
++        return Vec::new();
++    }
++    parsed
++        .projects
++        .iter()
++        .filter_map(|entry| {
++            let trimmed = entry.trim();
++            if trimmed.is_empty() {
++                return None;
++            }
++            let path = Path::new(trimmed);
++            if !path.is_absolute() {
++                warn!(
++                    target: "packetbench::trust",
++                    entry = %trimmed,
++                    "trusted-projects entry ignored: not an absolute path"
++                );
++                return None;
++            }
++            match canonical(path) {
++                Some(canonical) => Some(canonical),
++                None => {
++                    warn!(
++                        target: "packetbench::trust",
++                        entry = %trimmed,
++                        "trusted-projects entry ignored: path does not resolve"
++                    );
++                    None
++                }
++            }
++        })
++        .collect()
++}
++
++/// Pure decision: is `project_path` one of the trusted canonical roots?
++/// Comparison is by canonical path so `D:\a\..\b` and a symlink to the same
++/// directory count as the same project. A project inside a trusted root is
++/// NOT trusted by inheritance — a repo cloned under a trusted parent is still
++/// a different repo.
++pub fn is_trusted_in(project_path: &str, trusted: &[PathBuf]) -> bool {
++    if project_path.trim().is_empty() || trusted.is_empty() {
++        return false;
++    }
++    let Some(canonical_project) = canonical(Path::new(project_path)) else {
++        return false;
++    };
++    trusted.iter().any(|root| root == &canonical_project)
++}
++
++/// Whether repo-supplied executables (hooks, `.mcp.json` servers, project
++/// agent definitions) may run for `project_path`. Fail-closed: any read,
++/// parse, or canonicalization failure is `false`.
++pub fn is_project_trusted(project_path: &str) -> bool {
++    let path = trusted_projects_path();
++    let trusted = read_trusted_projects(&path);
++    let decision = is_trusted_in(project_path, &trusted);
++    if !decision {
++        info!(
++            target: "packetbench::trust",
++            project = %project_path,
++            trust_file = %path.display(),
++            "project is not trusted: repo-supplied hooks, .mcp.json servers, and .claude/agents are ignored"
++        );
++    }
++    decision
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn temp_dir(tag: &str) -> PathBuf {
++        let dir = std::env::temp_dir().join(format!(
++            "{}-trust-{}-{}",
++            crate::core::brand::TEMP_DIR_PREFIX,
++            tag,
++            uuid::Uuid::new_v4().simple()
++        ));
++        std::fs::create_dir_all(&dir).unwrap();
++        dir
++    }
++
++    #[test]
++    fn missing_file_trusts_nothing() {
++        let dir = temp_dir("missing");
++        let project = dir.join("repo");
++        std::fs::create_dir_all(&project).unwrap();
++        let trusted = read_trusted_projects(&dir.join("nope.json"));
++        assert!(trusted.is_empty());
++        assert!(!is_trusted_in(project.to_str().unwrap(), &trusted));
++        let _ = std::fs::remove_dir_all(dir);
++    }
++
++    #[test]
++    fn malformed_file_trusts_nothing() {
++        let dir = temp_dir("malformed");
++        let file = dir.join(TRUSTED_PROJECTS_FILE);
++        std::fs::write(&file, "{ not json").unwrap();
++        assert!(read_trusted_projects(&file).is_empty());
++        std::fs::write(&file, r#"{"version": 2, "projects": ["/"]}"#).unwrap();
++        assert!(
++            read_trusted_projects(&file).is_empty(),
++            "unknown version is untrusted"
++        );
++        let _ = std::fs::remove_dir_all(dir);
++    }
++
++    #[test]
++    fn listed_project_is_trusted_and_siblings_are_not() {
++        let dir = temp_dir("listed");
++        let trusted_repo = dir.join("trusted");
++        let other_repo = dir.join("other");
++        let nested = trusted_repo.join("vendor").join("nested-repo");
++        std::fs::create_dir_all(&trusted_repo).unwrap();
++        std::fs::create_dir_all(&other_repo).unwrap();
++        std::fs::create_dir_all(&nested).unwrap();
++        let file = dir.join(TRUSTED_PROJECTS_FILE);
++        std::fs::write(
++            &file,
++            serde_json::to_string(&TrustedProjectsFile {
++                version: 1,
++                projects: vec![
++                    trusted_repo.to_string_lossy().into_owned(),
++                    "relative/path".to_string(),
++                    "   ".to_string(),
++                ],
++            })
++            .unwrap(),
++        )
++        .unwrap();
++        let trusted = read_trusted_projects(&file);
++        assert_eq!(trusted.len(), 1, "relative and blank entries are dropped");
++        assert!(is_trusted_in(trusted_repo.to_str().unwrap(), &trusted));
++        // A non-canonical spelling of the same directory still matches.
++        let dotted = trusted_repo.join("vendor").join("..");
++        assert!(is_trusted_in(dotted.to_str().unwrap(), &trusted));
++        assert!(!is_trusted_in(other_repo.to_str().unwrap(), &trusted));
++        assert!(
++            !is_trusted_in(nested.to_str().unwrap(), &trusted),
++            "trust is per repository, never inherited by a nested clone"
++        );
++        assert!(!is_trusted_in("", &trusted));
++        let _ = std::fs::remove_dir_all(dir);
++    }
++
++    #[test]
++    fn end_to_end_reads_from_the_data_dir() {
++        let dir = temp_dir("e2e");
++        let _guard = crate::core::storage::redirect_data_dir_for_test(dir.clone());
++        let repo = dir.join("repo");
++        std::fs::create_dir_all(&repo).unwrap();
++        assert!(!is_project_trusted(repo.to_str().unwrap()));
++        std::fs::write(
++            trusted_projects_path(),
++            format!(
++                r#"{{"version":1,"projects":[{}]}}"#,
++                serde_json::to_string(repo.to_str().unwrap()).unwrap()
++            ),
++        )
++        .unwrap();
++        assert!(is_project_trusted(repo.to_str().unwrap()));
++        let _ = std::fs::remove_dir_all(dir);
++    }
++}
+diff --git a/src-tauri/src/core/shared.rs b/src-tauri/src/core/shared.rs
+index 71aaa031..5fc1b520 100644
+--- a/src-tauri/src/core/shared.rs
++++ b/src-tauri/src/core/shared.rs
+@@ -27,6 +27,55 @@ pub fn lock_mutex<T>(mutex: &std::sync::Mutex<T>) -> Result<std::sync::MutexGuar
+     })
+ }
+ 
++/// True when a URL's host is one plaintext HTTP is acceptable for: loopback,
++/// `localhost`, RFC 1918 / link-local / unique-local addresses, a single-label
++/// hostname (no dot — LAN mDNS or hosts-file names), or a name under a
++/// private suffix (`.local`, `.lan`, `.internal`, `.home.arpa`, `.localhost`).
++/// Everything else is presumed to cross the public internet.
++pub fn url_host_is_local(url: &reqwest::Url) -> bool {
++    let Some(host) = url.host_str() else {
++        return false;
++    };
++    let host = host.trim_start_matches('[').trim_end_matches(']');
++    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
++        return match ip {
++            std::net::IpAddr::V4(v4) => v4.is_loopback() || v4.is_private() || v4.is_link_local(),
++            std::net::IpAddr::V6(v6) => {
++                let s = v6.segments();
++                v6.is_loopback()
++                    || (s[0] & 0xfe00) == 0xfc00 // fc00::/7 unique-local
++                    || (s[0] & 0xffc0) == 0xfe80 // fe80::/10 link-local
++                    || v6.to_ipv4_mapped().is_some_and(|v4| {
++                        v4.is_loopback() || v4.is_private() || v4.is_link_local()
++                    })
++            }
++        };
++    }
++    let lower = host.to_ascii_lowercase();
++    if lower == "localhost" || !lower.contains('.') {
++        return true;
++    }
++    [".local", ".lan", ".internal", ".home.arpa", ".localhost"]
++        .iter()
++        .any(|suffix| lower.ends_with(suffix))
++}
++
++/// Refuse a plaintext `http://` endpoint unless the host is local. Every
++/// endpoint this guards carries a bearer secret (git-host PAT, MiniMax key,
++/// custom-endpoint key), so a public `http://` URL would put that secret on
++/// the wire in the clear. `what` names the setting in the error.
++pub fn require_https_unless_local(url: &reqwest::Url, what: &str) -> Result<(), String> {
++    match url.scheme() {
++        "https" => Ok(()),
++        "http" if url_host_is_local(url) => Ok(()),
++        "http" => Err(format!(
++            "{} must use https:// — plain http:// is only allowed for localhost, private-network, or .local/.lan/.internal hosts, because the credential would be sent in the clear.",
++            what
++        )),
++        other => Err(format!("{} must use http:// or https:// (got {}://).", what, other)),
++    }
++}
++
+ /// Validate that a project path is a real, existing directory.
+ pub fn validate_project_path(path: &str) -> Result<(), String> {
+     let p = std::path::Path::new(path);
+@@ -75,6 +124,55 @@ pub const MAX_PTY_WRITE_SIZE: usize = 65_536;
+ /// cannot embed the terminator to break out of the heredoc — then the loop
+ /// guarantees the chosen terminator is absent from `content` so the heredoc
+ /// always closes correctly.
++#[cfg(test)]
++mod tls_guard_tests {
++    use super::*;
++
++    fn url(s: &str) -> reqwest::Url {
++        reqwest::Url::parse(s).unwrap()
++    }
++
++    #[test]
++    fn https_is_always_accepted() {
++        assert!(require_https_unless_local(&url("https://api.minimax.io/v1"), "x").is_ok());
++        assert!(require_https_unless_local(&url("https://git.example.com"), "x").is_ok());
++    }
++
++    #[test]
++    fn plaintext_http_is_accepted_only_for_local_hosts() {
++        for ok in [
++            "http://localhost:8000/v1",
++            "http://127.0.0.1:11434",
++            "http://[::1]:8080",
++            "http://10.0.0.5:3000",
++            "http://172.16.4.4",
++            "http://192.168.1.20/api",
++            "http://169.254.1.1",
++            "http://[fd00::1]",
++            "http://[fe80::1]",
++            "http://[::ffff:192.168.1.1]",
++            "http://llm-box",
++            "http://gitea.local",
++            "http://nas.lan/gitea",
++            "http://gw.internal",
++            "http://box.home.arpa",
++        ] {
++            assert!(require_https_unless_local(&url(ok), "x").is_ok(), "{ok}");
++        }
++        for bad in [
++            "http://api.minimax.io/v1",
++            "http://gitea.example.com",
++            "http://8.8.8.8",
++            "http://[2606:4700:4700::1111]",
++            "http://evil.com.local.example.com",
++        ] {
++            let err = require_https_unless_local(&url(bad), "Setting").unwrap_err();
++            assert!(err.contains("Setting must use https://"), "{bad}: {err}");
++        }
++        assert!(require_https_unless_local(&url("ftp://x.local"), "x").is_err());
++    }
++}
++
+ pub fn pick_heredoc_terminator(content: &str, prefix: &str) -> String {
+     use std::hash::{BuildHasher, Hasher};
+     // A fresh RandomState carries per-instance random keys; hashing empty input
+diff --git a/src-tauri/src/core/storage.rs b/src-tauri/src/core/storage.rs
+index 92fa02ac..e5e452f0 100644
+--- a/src-tauri/src/core/storage.rs
++++ b/src-tauri/src/core/storage.rs
+@@ -943,6 +943,9 @@ pub fn normalize_custom_compat_base_url(raw: &str) -> Result<String, String> {
+     if !matches!(parsed.scheme(), "http" | "https") {
+         return Err("Endpoint URL must start with http:// or https://.".to_string());
+     }
++    // The optional custom-endpoint API key rides in `Authorization`; a public
++    // plaintext endpoint would leak it. Local/LAN servers may stay http.
++    crate::core::shared::require_https_unless_local(&parsed, "Custom endpoint URL")?;
+     if parsed.query().is_some() || parsed.fragment().is_some() {
+         return Err("Endpoint URL cannot include query parameters or fragments.".to_string());
+     }
+@@ -1023,6 +1026,8 @@ pub fn normalize_minimax_base_url(raw: &str) -> Result<String, String> {
+     if !matches!(parsed.scheme(), "http" | "https") {
+         return Err("MiniMax URL must start with http:// or https://.".to_string());
+     }
++    // The MiniMax API key is a bearer secret; never send it over public http.
++    crate::core::shared::require_https_unless_local(&parsed, "MiniMax URL")?;
+     if parsed.query().is_some() || parsed.fragment().is_some() {
+         return Err("MiniMax URL cannot include query parameters or fragments.".to_string());
+     }
+diff --git a/src-tauri/src/core/tool_custom_agent.rs b/src-tauri/src/core/tool_custom_agent.rs
+index 5382c6bc..3f49fe3c 100644
+--- a/src-tauri/src/core/tool_custom_agent.rs
++++ b/src-tauri/src/core/tool_custom_agent.rs
+@@ -78,6 +78,29 @@ fn find_agent(tool_name: &str, project_path: &str) -> Option<CustomAgentDef> {
+ 
+ /// Build the tool subset this agent is allowed to call. Empty `allowed_tools`
+ /// falls back to the read-only default set.
++/// Strip the tools a sub-agent may never hold (see
++/// `tool_subagent::SUBAGENT_DENIED_TOOLS`) from a definition's requested
++/// list, logging each drop by agent name so a definition that silently lost
++/// `bash` is explainable from the log.
++fn filter_subagent_tools(agent_name: &str, requested: Vec<String>) -> Vec<String> {
++    requested
++        .into_iter()
++        .filter(|name| {
++            let denied = crate::core::tool_subagent::SUBAGENT_DENIED_TOOLS
++                .contains(&name.as_str());
++            if denied {
++                tracing::warn!(
++                    target: "packetbench::auth",
++                    agent = %agent_name,
++                    tool = %name,
++                    "custom agent definition requested a tool sub-agents may not hold; dropped"
++                );
++            }
++            !denied
++        })
++        .collect()
++}
++
+ async fn build_allowed_tools(agent: &CustomAgentDef) -> Vec<ToolDefinition> {
+     let allowed: Vec<String> = if agent.allowed_tools.is_empty() {
+         DEFAULT_READ_ONLY_TOOLS
+@@ -85,7 +108,7 @@ async fn build_allowed_tools(agent: &CustomAgentDef) -> Vec<ToolDefinition> {
+             .map(|s| s.to_string())
+             .collect()
+     } else {
+-        agent.allowed_tools.clone()
++        filter_subagent_tools(&agent.name, agent.allowed_tools.clone())
+     };
+ 
+     let mut tools: Vec<ToolDefinition> = tool_runtime::tool_definitions()
+@@ -181,6 +204,20 @@ pub async fn execute_custom_agent(
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn custom_agents_cannot_be_granted_execution_tools() {
++        let requested = vec![
++            "read_file".to_string(),
++            "bash".to_string(),
++            "write_file".to_string(),
++            "edit_file".to_string(),
++            "create_pull_request".to_string(),
++            "web_fetch".to_string(),
++        ];
++        let kept = filter_subagent_tools("reviewer", requested);
++        assert_eq!(kept, vec!["read_file".to_string(), "web_fetch".to_string()]);
++    }
++
+     #[test]
+     fn sanitize_basic() {
+         assert_eq!(sanitize_name("code-reviewer"), "code_reviewer");
+diff --git a/src-tauri/src/core/tool_github.rs b/src-tauri/src/core/tool_github.rs
+index fc40eb7b..ecbf46b4 100644
+--- a/src-tauri/src/core/tool_github.rs
++++ b/src-tauri/src/core/tool_github.rs
+@@ -4,8 +4,12 @@
+ //! get issue, list PRs) so agents can browse repos without shelling to `gh`.
+ //!
+ //! Token loading mirrors `commands/github.rs` — new keyring service first, then
+-//! legacy service, then legacy file fallback. Read-only here — migration happens
+-//! in `commands/github.rs` on app startup.
++//! legacy keyring service. Read-only here — migration happens in
++//! `commands/github.rs` on app startup. The old plaintext
++//! `~/.packetbench/github-token` fallback was removed: startup migration
++//! deletes that file once the keyring copy exists, so the only thing the
++//! fallback could ever read is a file someone (or something) re-created — a
++//! path that turned a stray plaintext file back into a live credential.
+ //!
+ //! G14 scope: these `gh_*` agent read-tools are **GitHub-scoped** by design —
+ //! they load the GitHub connection's token directly and have no per-workspace
+@@ -23,10 +27,7 @@
+ use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
+ use tracing::warn;
+ 
+-use crate::core::brand::{
+-    DATA_DIR_NAME, KEYRING_SERVICE, LEGACY_DATA_DIR_NAME, LEGACY_KEYRING_SERVICE,
+-    USER_AGENT as BRAND_USER_AGENT,
+-};
++use crate::core::brand::{KEYRING_SERVICE, LEGACY_KEYRING_SERVICE, USER_AGENT as BRAND_USER_AGENT};
+ use crate::core::llm_types::ToolDefinition;
+ 
+ const MAX_OUTPUT_CHARS: usize = 8000;
+@@ -50,21 +51,7 @@ fn load_github_token() -> Option<String> {
+         }
+     }
+ 
+-    // Legacy file fallback — check both new and old data-dir names.
+-    let home = crate::core::shared::home_dir()?;
+-    let home_path = std::path::PathBuf::from(home);
+-    let candidates = [
+-        home_path.join(DATA_DIR_NAME).join("github-token"),
+-        home_path.join(LEGACY_DATA_DIR_NAME).join("github-token"),
+-    ];
+-    for path in &candidates {
+-        if let Ok(raw) = std::fs::read_to_string(path) {
+-            let trimmed = raw.trim().to_string();
+-            if !trimmed.is_empty() {
+-                return Some(trimmed);
+-            }
+-        }
+-    }
++    // No plaintext-file fallback: see the module doc.
+     None
+ }
+ 
+diff --git a/src-tauri/src/core/tool_runtime.rs b/src-tauri/src/core/tool_runtime.rs
+index 52c7eca3..4661bc44 100644
+--- a/src-tauri/src/core/tool_runtime.rs
++++ b/src-tauri/src/core/tool_runtime.rs
+@@ -937,7 +937,17 @@ async fn execute_grep(args: &serde_json::Value, project_path: &str) -> Result<St
+             }
+ 
+             let path = entry.path();
+-            let is_dir = path.is_dir();
++            // Never follow symlinks: `read_file`/`write_file`/`edit_file`
++            // canonicalize and reject an escape, so grep must not be the one
++            // tool that reads through a link pointing outside the workspace.
++            let metadata = match std::fs::symlink_metadata(&path) {
++                Ok(m) => m,
++                Err(_) => continue,
++            };
++            if metadata.file_type().is_symlink() {
++                continue;
++            }
++            let is_dir = metadata.is_dir();
+ 
+             if is_dir {
+                 if skip_dirs.contains(&name.as_str()) {
+@@ -1074,6 +1084,34 @@ mod tests {
+         let _ = std::fs::remove_dir_all(base);
+     }
+ 
++    #[tokio::test]
++    async fn grep_does_not_follow_symlinks_out_of_the_workspace() {
++        let (base, workspace) = temp_workspace("grep-symlink");
++        let outside = base.join("outside");
++        std::fs::create_dir_all(&outside).unwrap();
++        std::fs::write(outside.join("secret.txt"), "TOP_SECRET_MARKER\n").unwrap();
++        std::fs::write(workspace.join("inside.txt"), "TOP_SECRET_MARKER\n").unwrap();
++        let link = workspace.join("link");
++        if symlink_dir(&outside, &link).is_err() {
++            let _ = std::fs::remove_dir_all(base);
++            return;
++        }
++
++        let out = execute_grep(
++            &json!({ "pattern": "TOP_SECRET_MARKER" }),
++            &workspace.to_string_lossy(),
++        )
++        .await
++        .unwrap();
++
++        assert!(out.contains("inside.txt"), "{out}");
++        assert!(
++            !out.contains("secret.txt"),
++            "grep must not read through a symlink that leaves the workspace: {out}"
++        );
++        let _ = std::fs::remove_dir_all(base);
++    }
++
+     /* ------------------------------ edit_file ------------------------------ */
+ 
+     const SAMPLE: &str = "fn main() {\n    let x = 1;\n    println!(\"{}\", x);\n}\n";
+diff --git a/src-tauri/src/core/tool_subagent.rs b/src-tauri/src/core/tool_subagent.rs
+index f7bd2939..cab496e8 100644
+--- a/src-tauri/src/core/tool_subagent.rs
++++ b/src-tauri/src/core/tool_subagent.rs
+@@ -17,6 +17,20 @@ use tokio::sync::mpsc;
+ 
+ const MAX_ITERATIONS: usize = 8;
+ 
++/// Tools a sub-agent may never hold, whatever its definition asks for. The
++/// sub-agent loop below has no permission prompt, no plan-mode block, and no
++/// pending-edit gate — it dispatches straight into `tool_runtime::execute_tool`
++/// — so anything here would run on the model's authority alone, routing
++/// around every gate the parent session enforces (`commands::api_agent`).
++pub(crate) const SUBAGENT_DENIED_TOOLS: &[&str] =
++    &["bash", "write_file", "edit_file", "create_pull_request"];
++
++/// True when a sub-agent may execute `tool_name` given the tool set it was
++/// handed. The set is the allowlist; the denied list is a floor beneath it.
++pub(crate) fn subagent_tool_permitted(tool_name: &str, tools: &[ToolDefinition]) -> bool {
++    !SUBAGENT_DENIED_TOOLS.contains(&tool_name) && tools.iter().any(|t| t.name == tool_name)
++}
++
+ /// The provider/model of the SESSION whose tool loop is currently executing.
+ ///
+ /// Q2 — sub-agent tools are agentic helpers, not auxiliary tasks: they derive
+@@ -221,8 +235,28 @@ pub(crate) async fn run_agent_loop(
+         // Dispatch each tool call and collect results into a single tool message.
+         let mut result_blocks: Vec<ContentBlock> = Vec::with_capacity(tool_calls.len());
+         for call in tool_calls {
++            // The tool list handed to the model is the allowlist; a call
++            // outside it (or to a denied tool) is refused, never executed.
++            // Without this the list was advisory — the model could name
++            // `bash` and this loop would run it with no gate at all.
+             // Recurses into execute_tool — the future is boxed at that dispatch.
+-            let result = tool_runtime::execute_tool(&call, parent_target).await;
++            let result = if subagent_tool_permitted(&call.name, &tools) {
++                tool_runtime::execute_tool(&call, parent_target).await
++            } else {
++                tracing::warn!(
++                    target: "packetbench::auth",
++                    tool = %call.name,
++                    "sub-agent requested a tool outside its allowlist; refused"
++                );
++                crate::core::llm_types::ToolResult {
++                    tool_call_id: call.id.clone(),
++                    content: format!(
++                        "Error: tool '{}' is not available to this sub-agent.",
++                        call.name
++                    ),
++                    is_error: true,
++                }
++            };
+             result_blocks.push(ContentBlock::ToolResult {
+                 tool_call_id: result.tool_call_id,
+                 content: result.content,
+@@ -325,6 +359,40 @@ pub async fn execute_spawn_subagent(
+ mod tests {
+     use super::*;
+ 
++    fn def(name: &str) -> ToolDefinition {
++        ToolDefinition {
++            name: name.to_string(),
++            description: String::new(),
++            parameters: serde_json::json!({ "type": "object" }),
++        }
++    }
++
++    #[test]
++    fn subagent_allowlist_is_enforced_not_advisory() {
++        let tools = vec![def("read_file"), def("grep")];
++        assert!(subagent_tool_permitted("read_file", &tools));
++        assert!(!subagent_tool_permitted("write_file", &tools), "not in list");
++        assert!(!subagent_tool_permitted("bash", &tools), "not in list");
++        assert!(
++            !subagent_tool_permitted("mcp__x__read", &tools),
++            "unknown tools are refused"
++        );
++    }
++
++    #[test]
++    fn denied_tools_stay_denied_even_when_listed() {
++        // A custom agent definition (possibly repo-supplied) can ask for
++        // `bash`; the floor refuses it regardless of the list.
++        let tools = vec![def("bash"), def("create_pull_request"), def("read_file")];
++        for denied in SUBAGENT_DENIED_TOOLS {
++            assert!(
++                !subagent_tool_permitted(denied, &tools),
++                "{denied} must be refused"
++            );
++        }
++        assert!(subagent_tool_permitted("read_file", &tools));
++    }
++
+     /// Proves that SubagentDepthGuard refuses to spawn beyond
+     /// MAX_SUBAGENT_DEPTH and recovers the counter via Drop.
+     #[test]
+diff --git a/src-tauri/src/core/tool_web.rs b/src-tauri/src/core/tool_web.rs
+index f8b07a84..f7603bc2 100644
+--- a/src-tauri/src/core/tool_web.rs
++++ b/src-tauri/src/core/tool_web.rs
+@@ -119,6 +119,14 @@ link-local, or cloud-metadata address (SSRF guard)",
+         .map_err(|e| format!("Request failed: {}", error_chain(&e)))?;
+ 
+     let status = resp.status();
++    info!(
++        target: "packetbench::egress",
++        service = "web_fetch",
++        host = %resp.url().host_str().unwrap_or("-"),
++        final_url = %resp.url(),
++        status = status.as_u16(),
++        "web_fetch response"
++    );
+     if !status.is_success() {
+         let reason = status.canonical_reason().unwrap_or("Unknown");
+         return Err(format!("HTTP {}: {}", status.as_u16(), reason));
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index 9113f7c8..56c78897 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -161,6 +161,10 @@ pub fn run() {
+     // data dir is resolved; a no-op once the state has no legacy keys.
+     core::migration::migrate_mission_to_flight();
+     commands::crashes::install_panic_hook();
++    // Validate the environment once the data dir has settled: writable data
++    // dir, reachable credential store, trust file, and PACKETBENCH_* typos.
++    // Logs under `packetbench::boot`; never aborts startup.
++    let _boot_issues = core::boot_check::run();
+ 
+     // One-time: rewrite the dollar figures in `usage.jsonl` and in persisted
+     // conversation messages that were computed with the pre-CE2 (wrong) model
+diff --git a/src-tauri/src/mcp_server/mod.rs b/src-tauri/src/mcp_server/mod.rs
+index 9adcc62b..949f087b 100644
+--- a/src-tauri/src/mcp_server/mod.rs
++++ b/src-tauri/src/mcp_server/mod.rs
+@@ -492,6 +492,44 @@ pub struct PacketBenchMcp {
+     /// When false the server is strictly read-only — `append_handoff` is
+     /// rejected. Opt-in so a user who wants read-only keeps that guarantee.
+     allow_writes: bool,
++    /// The per-tool allowlist this session was built with, kept so the
++    /// RESOURCE surface honours the same restriction. `None` = unrestricted.
++    allowed_tools: Option<HashSet<String>>,
++}
++
++/// Which tool a resource route is equivalent to, for allowlist purposes. A
++/// route with no tool equivalent (`project`, `issues`, `reviews`,
++/// `packetcode/health` — the last one spawns a process) is served only when
++/// no allowlist is in force.
++///
++/// FAULT this fixes: the allowlist gated `tools/list` + `tools/call` but every
++/// `resources/read` still answered, so "serve no tools" still served project
++/// memory, review packets, and a process spawn to any bearer holder.
++fn resource_route_tool(route: &reads::ResourceRoute<'_>) -> Option<&'static str> {
++    use reads::ResourceRoute;
++    match route {
++        ResourceRoute::Flights | ResourceRoute::Flight(_) => Some("get_active_flight"),
++        ResourceRoute::FlightTasks(_) => Some("read_task_details"),
++        ResourceRoute::FlightInbox(_) => Some("read_coordination_inbox"),
++        ResourceRoute::MemoryPatterns => Some("read_memory_context"),
++        ResourceRoute::ProjectMemory(_) => Some("read_project_memory"),
++        ResourceRoute::Workspaces => Some("list_workspaces"),
++        ResourceRoute::Project
++        | ResourceRoute::Issues
++        | ResourceRoute::Reviews
++        | ResourceRoute::PacketCodeHealth
++        | ResourceRoute::Unknown => None,
++    }
++}
++
++fn resource_permitted(allowed: Option<&HashSet<String>>, uri: &str) -> bool {
++    let Some(allowed) = allowed else {
++        return true;
++    };
++    match resource_route_tool(&reads::parse_resource_uri(uri)) {
++        Some(tool) => allowed.contains(tool),
++        None => false,
++    }
+ }
+ 
+ #[tool_router]
+@@ -536,6 +574,7 @@ impl PacketBenchMcp {
+             tool_router,
+             audit,
+             allow_writes,
++            allowed_tools: allowed_tools.cloned(),
+         }
+     }
+ 
+@@ -917,6 +956,8 @@ impl ServerHandler for PacketBenchMcp {
+                 ));
+             }
+         }
++        // Advertise only what `read_resource` would actually serve.
++        resources.retain(|r| resource_permitted(self.allowed_tools.as_ref(), &r.uri));
+         Ok(ListResourcesResult::with_all_items(resources))
+     }
+ 
+@@ -926,6 +967,13 @@ impl ServerHandler for PacketBenchMcp {
+         _context: RequestContext<RoleServer>,
+     ) -> Result<ReadResourceResult, McpError> {
+         use reads::ResourceRoute;
++        if !resource_permitted(self.allowed_tools.as_ref(), &request.uri) {
++            self.audit.record("resource-denied", &request.uri);
++            return Err(McpError::invalid_request(
++                "resource is not permitted by this server's tool allowlist",
++                Some(serde_json::json!({ "uri": request.uri })),
++            ));
++        }
+         self.audit.record("resource", &request.uri);
+         let state = load();
+         let value: Option<Value> = match reads::parse_resource_uri(&request.uri) {
+@@ -1097,6 +1145,37 @@ mod allowlist_tests {
+ 
+     /// The status the card reads back must describe what is actually served,
+     /// so the UI cannot report a restriction the router is not applying.
++    #[test]
++    fn resources_honour_the_tool_allowlist() {
++        // No allowlist: everything, including the process-spawning health probe.
++        assert!(resource_permitted(None, "packetbench://packetcode/health"));
++        assert!(resource_permitted(None, "packetbench://memory/project/ws-1"));
++
++        let allowed = allow(&["get_active_flight", "list_workspaces"]);
++        assert!(resource_permitted(Some(&allowed), "packetbench://flights"));
++        assert!(resource_permitted(Some(&allowed), "packetbench://flights/f1"));
++        assert!(resource_permitted(Some(&allowed), "packetbench://workspaces"));
++        for denied in [
++            "packetbench://memory/patterns",
++            "packetbench://memory/project/ws-1",
++            "packetbench://flights/f1/inbox",
++            "packetbench://flights/f1/tasks",
++            "packetbench://reviews",
++            "packetbench://issues",
++            "packetbench://project",
++            "packetbench://packetcode/health",
++            "packetbench://nope",
++        ] {
++            assert!(
++                !resource_permitted(Some(&allowed), denied),
++                "{denied} must be denied under a narrowed allowlist"
++            );
++        }
++        // "Serve no tools" serves no resources either.
++        let none = allow(&[]);
++        assert!(!resource_permitted(Some(&none), "packetbench://flights"));
++    }
++
+     #[test]
+     fn served_tools_reports_the_effective_list() {
+         let allowed = allow(&["ping", "list_workspaces"]);
+diff --git a/src-tauri/src/mcp_server/transport.rs b/src-tauri/src/mcp_server/transport.rs
+index 8d6ca0d9..ed9c8427 100644
+--- a/src-tauri/src/mcp_server/transport.rs
++++ b/src-tauri/src/mcp_server/transport.rs
+@@ -94,36 +94,74 @@ pub fn build_router(
+     );
+ 
+     let guard = Arc::new(AuthGuard { token });
+-    Router::new()
++    // `/health` sits OUTSIDE the bearer layer (a liveness probe must not need
++    // the secret) but INSIDE the Origin layer, so a web page on a real origin
++    // still cannot fingerprint the running app. It reveals nothing a local
++    // process could not learn from the process list.
++    let protected = Router::new()
+         .nest_service("/mcp", service)
+-        .layer(axum::middleware::from_fn_with_state(guard, auth_layer))
++        .layer(axum::middleware::from_fn_with_state(guard, bearer_layer));
++    Router::new()
++        .route("/health", axum::routing::get(health))
++        .merge(protected)
++        .layer(axum::middleware::from_fn(origin_layer))
++}
++
++/// Liveness probe for the dark period: `curl http://127.0.0.1:<port>/health`.
++async fn health() -> axum::Json<serde_json::Value> {
++    axum::Json(serde_json::json!({
++        "ok": true,
++        "app": crate::core::brand::APP_NAME,
++        "version": env!("CARGO_PKG_VERSION"),
++        "service": "mcp",
++    }))
+ }
+ 
+ struct AuthGuard {
+     token: String,
+ }
+ 
+-/// Reject non-loopback Origins (403) and missing/invalid bearer tokens (401).
+-async fn auth_layer(
+-    State(guard): State<Arc<AuthGuard>>,
+-    req: Request<Body>,
+-    next: Next,
+-) -> Result<Response, StatusCode> {
++/// Reject any *present* non-loopback Origin (403). Applied to every route.
++async fn origin_layer(req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
+     if let Some(origin) = req
+         .headers()
+         .get(header::ORIGIN)
+         .and_then(|v| v.to_str().ok())
+     {
+         if !origin_is_loopback(origin) {
++            tracing::warn!(
++                target: "packetbench::auth",
++                service = "mcp-server",
++                path = %req.uri().path(),
++                origin = %origin,
++                outcome = "forbidden_origin",
++                "MCP request rejected: non-loopback Origin"
++            );
+             return Err(StatusCode::FORBIDDEN);
+         }
+     }
++    Ok(next.run(req).await)
++}
+ 
++/// Reject missing/invalid bearer tokens (401). Applied to `/mcp` only.
++async fn bearer_layer(
++    State(guard): State<Arc<AuthGuard>>,
++    req: Request<Body>,
++    next: Next,
++) -> Result<Response, StatusCode> {
+     let provided = req
+         .headers()
+         .get(header::AUTHORIZATION)
+         .and_then(|v| v.to_str().ok());
+     if !bearer_matches(provided, &guard.token) {
++        tracing::warn!(
++            target: "packetbench::auth",
++            service = "mcp-server",
++            path = %req.uri().path(),
++            method = %req.method(),
++            outcome = if provided.is_some() { "bad_token" } else { "no_token" },
++            "MCP request rejected: bearer token missing or wrong"
++        );
+         return Err(StatusCode::UNAUTHORIZED);
+     }
+ 
+@@ -252,6 +290,25 @@ mod tests {
+             .expect("request sent");
+         assert_eq!(unauthed.status(), StatusCode::UNAUTHORIZED);
+ 
++        // /health needs no token (liveness probe) …
++        let health = client
++            .get(format!("http://127.0.0.1:{port}/health"))
++            .send()
++            .await
++            .expect("health sent");
++        assert_eq!(health.status(), StatusCode::OK);
++        let body: serde_json::Value = health.json().await.expect("health json");
++        assert_eq!(body["ok"], serde_json::json!(true));
++        assert_eq!(body["app"], serde_json::json!("PacketBench"));
++        // … but is still Origin-guarded so a browser page cannot fingerprint us.
++        let cross_origin = client
++            .get(format!("http://127.0.0.1:{port}/health"))
++            .header(header::ORIGIN, "https://evil.example.com")
++            .send()
++            .await
++            .expect("health sent");
++        assert_eq!(cross_origin.status(), StatusCode::FORBIDDEN);
++
+         // With token → passes auth and reaches rmcp (must not be 401).
+         let authed = client
+             .post(&base)
+diff --git a/src-tauri/tauri.conf.json b/src-tauri/tauri.conf.json
+index 56a2b123..95ce086c 100644
+--- a/src-tauri/tauri.conf.json
++++ b/src-tauri/tauri.conf.json
+@@ -9,6 +9,11 @@
+     "beforeBuildCommand": "pnpm run prebundle && pnpm run build",
+     "frontendDist": "../dist"
+   },
++  "plugins": {
++    "shell": {
++      "open": "^((https?://[A-Za-z0-9])|(mailto:[A-Za-z0-9])|(tel:[0-9+])|(vscode://file/)|(cursor://file/)).+"
++    }
++  },
+   "app": {
+     "windows": [
+       {
+diff --git a/src/components/agents/AgentChatPane.tsx b/src/components/agents/AgentChatPane.tsx
+index 7b10a55f..90d0e111 100644
+--- a/src/components/agents/AgentChatPane.tsx
++++ b/src/components/agents/AgentChatPane.tsx
+@@ -266,7 +266,7 @@ export function AgentChatPane({
+     if (flags.planMode !== (conversation.planMode ?? false)) {
+       void actions.setPlanMode(conversationId, flags.planMode);
+     }
+-    if (flags.permissionMode !== (conversation.permissionMode ?? "auto")) {
++    if (flags.permissionMode !== (conversation.permissionMode ?? "ask_for_risky")) {
+       void actions.setPermissionMode(conversationId, flags.permissionMode);
+     }
+     if (flags.approveWrites !== (conversation.approveWrites ?? false)) {
+diff --git a/src/components/agents/PlanModeApprovalMenu.tsx b/src/components/agents/PlanModeApprovalMenu.tsx
+index ffcceb91..43660d3c 100644
+--- a/src/components/agents/PlanModeApprovalMenu.tsx
++++ b/src/components/agents/PlanModeApprovalMenu.tsx
+@@ -88,10 +88,12 @@ export function PlanModeApprovalMenu({
+         break;
+       }
+       case "accept-edits": {
++        // The message promises "ask before destructive shell commands"; only
++        // ask_for_risky keeps that promise — "auto" never asks for anything.
+         approvePlan(
+           conversationId,
+           "Plan approved — implement it. Make edits without asking; ask before destructive shell commands.",
+-          { permissionMode: "auto", approveWrites: false },
++          { permissionMode: "ask_for_risky", approveWrites: false },
+         );
+         onProceed?.();
+         break;
+diff --git a/src/components/agents/__tests__/agentModeChipUtils.test.ts b/src/components/agents/__tests__/agentModeChipUtils.test.ts
+index 83aadd06..40d0e3fe 100644
+--- a/src/components/agents/__tests__/agentModeChipUtils.test.ts
++++ b/src/components/agents/__tests__/agentModeChipUtils.test.ts
+@@ -103,8 +103,10 @@ describe("agent mode chip flags", () => {
+     expect(seen).toEqual(new Set(MODE_ORDER));
+   });
+ 
+-  it("treats a conversation with unset flags as default mode", () => {
+-    expect(deriveMode(conversation({}))).toBe("default");
++  it("treats a conversation with unset flags as manual mode (fail-closed default)", () => {
++    // An absent permissionMode means ask_for_risky (agentTaskStore default),
++    // so the chip must say Manual — "Default" would advertise unprompted bash.
++    expect(deriveMode(conversation({}))).toBe("manual");
+   });
+ });
+ 
+diff --git a/src/components/agents/agentModeChipUtils.ts b/src/components/agents/agentModeChipUtils.ts
+index 71b26f7c..4105cbe0 100644
+--- a/src/components/agents/agentModeChipUtils.ts
++++ b/src/components/agents/agentModeChipUtils.ts
+@@ -116,7 +116,9 @@ export function modeDescription(mode: AgentMode, supportsApprovals: boolean): st
+  */
+ export function deriveMode(conv: AgentConversation): AgentMode {
+   if (conv.planMode) return "plan";
+-  switch (conv.permissionMode ?? "auto") {
++  // An absent posture is "ask" (see agentTaskStore's default), so the chip
++  // must label it Manual, not Default.
++  switch (conv.permissionMode ?? "ask_for_risky") {
+     case "allow_all":
+       return "yolo";
+     case "deny_all":
+diff --git a/src/stores/__tests__/agentWorkspaceDecoupling.test.ts b/src/stores/__tests__/agentWorkspaceDecoupling.test.ts
+index 73f86432..6bdeeb17 100644
+--- a/src/stores/__tests__/agentWorkspaceDecoupling.test.ts
++++ b/src/stores/__tests__/agentWorkspaceDecoupling.test.ts
+@@ -151,7 +151,7 @@ describe("agent/workspace store decoupling", () => {
+       null,
+       null,
+       null,
+-      "auto",
++      "ask_for_risky",
+       false,
+       null,
+       undefined,
+@@ -218,7 +218,7 @@ describe("agent/workspace store decoupling", () => {
+       null,
+       null,
+       null,
+-      "auto",
++      "ask_for_risky",
+       false,
+       null,
+       undefined,
+@@ -357,7 +357,7 @@ describe("agent/workspace store decoupling", () => {
+       null,
+       null,
+       null,
+-      "auto",
++      "ask_for_risky",
+       false,
+       null,
+       undefined,
+diff --git a/src/stores/agentTaskStore.ts b/src/stores/agentTaskStore.ts
+index ed07be96..6809b78c 100644
+--- a/src/stores/agentTaskStore.ts
++++ b/src/stores/agentTaskStore.ts
+@@ -787,7 +787,9 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
+       systemPromptOverride: effectiveSystemPrompt,
+       queuedMessages: [],
+       planMode: planMode ?? false,
+-      permissionMode: permissionMode ?? "auto",
++      // Fail closed: a conversation that never chose a posture asks before
++      // every risky tool. "auto" (unprompted bash/write) is an explicit choice.
++      permissionMode: permissionMode ?? "ask_for_risky",
+       approveWrites: approveWrites ?? false,
+       thinkingEnabled: thinkingEnabled ?? false,
+       sshTarget: sshTarget
+@@ -872,7 +874,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
+           null, // resumeToken — fresh start
+           resolvedMcpIds,
+           null,
+-          permissionMode ?? "auto",
++          permissionMode ?? "ask_for_risky",
+           approveWrites ?? false,
+           null, // commandPath — no surviving sidecar provider is CLI-backed
+           undefined,
+@@ -1753,7 +1755,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
+         conv.resumeToken ?? null,
+         conv.enabledMcpServerIds ?? null,
+         resumeMessages,
+-        conv.permissionMode ?? "auto",
++        conv.permissionMode ?? "ask_for_risky",
+         conv.approveWrites ?? false,
+         null, // commandPath — no surviving sidecar provider is CLI-backed
+         undefined,

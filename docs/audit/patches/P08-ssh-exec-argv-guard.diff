@@ -1,0 +1,102 @@
+diff --git a/src-tauri/src/commands/pty.rs b/src-tauri/src/commands/pty.rs
+index 4feaa5db..1dae4efa 100644
+--- a/src-tauri/src/commands/pty.rs
++++ b/src-tauri/src/commands/pty.rs
+@@ -1015,6 +1015,54 @@ pub fn read_pty_transcript(session_id: String) -> Result<crate::core::pty::PtyTr
+     crate::core::pty::read_transcript(&session_id)
+ }
+ 
++/// OpenSSH options that make `ssh` execute a LOCAL program or read a local
++/// file of the caller's choosing. The webview builds `ssh_exec` argv itself
++/// (`src/lib/ssh.ts::buildSshExecArgs`) and never uses these, so refusing them
++/// costs nothing and stops a compromised or confused webview from turning a
++/// remote-probe command into local code execution (`-o ProxyCommand=…`).
++const SSH_EXEC_DENIED_OPTIONS: &[&str] = &[
++    "proxycommand",
++    "localcommand",
++    "permitlocalcommand",
++    "knownhostscommand",
++    "proxyusefdpass",
++    "include",
++];
++
++/// Reject argv for `ssh_exec` that names a denied option (any `-o Name=…`,
++/// `-oName=…`, or a bare `Name=…` after `-o`), a custom config file (`-F`,
++/// which can carry every denied option), or a log-file sink (`-E`).
++pub(crate) fn validate_ssh_exec_args(args: &[String]) -> Result<(), String> {
++    let denied_option = |value: &str| {
++        let name = value.split('=').next().unwrap_or("").trim().to_ascii_lowercase();
++        SSH_EXEC_DENIED_OPTIONS.contains(&name.as_str())
++    };
++    let mut expect_option_value = false;
++    for arg in args {
++        if expect_option_value {
++            expect_option_value = false;
++            if denied_option(arg) {
++                return Err(format!("ssh option '{}' is not permitted", arg));
++            }
++            continue;
++        }
++        if arg == "-o" {
++            expect_option_value = true;
++            continue;
++        }
++        if let Some(inline) = arg.strip_prefix("-o") {
++            if denied_option(inline) {
++                return Err(format!("ssh option '{}' is not permitted", arg));
++            }
++            continue;
++        }
++        if arg == "-F" || arg.starts_with("-F") || arg == "-E" || arg.starts_with("-E") {
++            return Err(format!("ssh flag '{}' is not permitted", arg));
++        }
++    }
++    Ok(())
++}
++
+ /// Run an SSH command as a regular process (not PTY). Windows OpenSSH receives
+ /// an optional password over stdin; Unix OpenSSH uses the self-reinvoked
+ /// askpass helper because it never reads a login password from stdin.
+@@ -1026,6 +1074,19 @@ pub async fn ssh_exec(
+     use std::process::Stdio;
+     use tokio::io::AsyncWriteExt;
+ 
++    validate_ssh_exec_args(&command_args)?;
++    info!(
++        target: "packetbench::egress",
++        service = "ssh",
++        argc = command_args.len(),
++        target = %command_args
++            .iter()
++            .find(|a| a.contains('@') && !a.starts_with('-'))
++            .map(String::as_str)
++            .unwrap_or("-"),
++        "ssh_exec"
++    );
++
+     let mut cmd = tokio::process::Command::new("ssh");
+     for arg in &command_args {
+         cmd.arg(arg);
+@@ -1587,6 +1648,22 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn ssh_exec_refuses_local_execution_options() {
++        let ok = |args: &[&str]| validate_ssh_exec_args(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
++        assert!(ok(&["-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=yes", "-p", "22", "u@h", "echo hi"]).is_ok());
++        assert!(ok(&["-o", "ProxyCommand=calc.exe", "u@h"]).is_err());
++        assert!(ok(&["-oProxyCommand=calc.exe", "u@h"]).is_err());
++        assert!(ok(&["-o", "proxycommand = calc", "u@h"]).is_err(), "case/space insensitive");
++        assert!(ok(&["-o", "LocalCommand=rm -rf x", "-o", "PermitLocalCommand=yes", "u@h"]).is_err());
++        assert!(ok(&["-o", "KnownHostsCommand=/tmp/x", "u@h"]).is_err());
++        assert!(ok(&["-F", "/tmp/evil_config", "u@h"]).is_err());
++        assert!(ok(&["-F/tmp/evil_config", "u@h"]).is_err());
++        assert!(ok(&["-E", "/tmp/log", "u@h"]).is_err());
++        // The remote command string is opaque and may mention the words.
++        assert!(ok(&["u@h", "grep ProxyCommand ~/.ssh/config"]).is_ok());
++    }
++
+     #[test]
+     fn shell_probe_allowlist_excludes_arbitrary_programs() {
+         assert!(ALLOWED_SHELL_COMMANDS.contains(&"pwsh"));

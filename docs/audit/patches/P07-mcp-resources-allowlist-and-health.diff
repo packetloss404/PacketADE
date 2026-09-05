@@ -1,0 +1,231 @@
+diff --git a/src-tauri/src/mcp_server/mod.rs b/src-tauri/src/mcp_server/mod.rs
+index 9adcc62b..949f087b 100644
+--- a/src-tauri/src/mcp_server/mod.rs
++++ b/src-tauri/src/mcp_server/mod.rs
+@@ -492,6 +492,44 @@ pub struct PacketBenchMcp {
+     /// When false the server is strictly read-only — `append_handoff` is
+     /// rejected. Opt-in so a user who wants read-only keeps that guarantee.
+     allow_writes: bool,
++    /// The per-tool allowlist this session was built with, kept so the
++    /// RESOURCE surface honours the same restriction. `None` = unrestricted.
++    allowed_tools: Option<HashSet<String>>,
++}
++
++/// Which tool a resource route is equivalent to, for allowlist purposes. A
++/// route with no tool equivalent (`project`, `issues`, `reviews`,
++/// `packetcode/health` — the last one spawns a process) is served only when
++/// no allowlist is in force.
++///
++/// FAULT this fixes: the allowlist gated `tools/list` + `tools/call` but every
++/// `resources/read` still answered, so "serve no tools" still served project
++/// memory, review packets, and a process spawn to any bearer holder.
++fn resource_route_tool(route: &reads::ResourceRoute<'_>) -> Option<&'static str> {
++    use reads::ResourceRoute;
++    match route {
++        ResourceRoute::Flights | ResourceRoute::Flight(_) => Some("get_active_flight"),
++        ResourceRoute::FlightTasks(_) => Some("read_task_details"),
++        ResourceRoute::FlightInbox(_) => Some("read_coordination_inbox"),
++        ResourceRoute::MemoryPatterns => Some("read_memory_context"),
++        ResourceRoute::ProjectMemory(_) => Some("read_project_memory"),
++        ResourceRoute::Workspaces => Some("list_workspaces"),
++        ResourceRoute::Project
++        | ResourceRoute::Issues
++        | ResourceRoute::Reviews
++        | ResourceRoute::PacketCodeHealth
++        | ResourceRoute::Unknown => None,
++    }
++}
++
++fn resource_permitted(allowed: Option<&HashSet<String>>, uri: &str) -> bool {
++    let Some(allowed) = allowed else {
++        return true;
++    };
++    match resource_route_tool(&reads::parse_resource_uri(uri)) {
++        Some(tool) => allowed.contains(tool),
++        None => false,
++    }
+ }
+ 
+ #[tool_router]
+@@ -536,6 +574,7 @@ impl PacketBenchMcp {
+             tool_router,
+             audit,
+             allow_writes,
++            allowed_tools: allowed_tools.cloned(),
+         }
+     }
+ 
+@@ -917,6 +956,8 @@ impl ServerHandler for PacketBenchMcp {
+                 ));
+             }
+         }
++        // Advertise only what `read_resource` would actually serve.
++        resources.retain(|r| resource_permitted(self.allowed_tools.as_ref(), &r.uri));
+         Ok(ListResourcesResult::with_all_items(resources))
+     }
+ 
+@@ -926,6 +967,13 @@ impl ServerHandler for PacketBenchMcp {
+         _context: RequestContext<RoleServer>,
+     ) -> Result<ReadResourceResult, McpError> {
+         use reads::ResourceRoute;
++        if !resource_permitted(self.allowed_tools.as_ref(), &request.uri) {
++            self.audit.record("resource-denied", &request.uri);
++            return Err(McpError::invalid_request(
++                "resource is not permitted by this server's tool allowlist",
++                Some(serde_json::json!({ "uri": request.uri })),
++            ));
++        }
+         self.audit.record("resource", &request.uri);
+         let state = load();
+         let value: Option<Value> = match reads::parse_resource_uri(&request.uri) {
+@@ -1097,6 +1145,37 @@ mod allowlist_tests {
+ 
+     /// The status the card reads back must describe what is actually served,
+     /// so the UI cannot report a restriction the router is not applying.
++    #[test]
++    fn resources_honour_the_tool_allowlist() {
++        // No allowlist: everything, including the process-spawning health probe.
++        assert!(resource_permitted(None, "packetbench://packetcode/health"));
++        assert!(resource_permitted(None, "packetbench://memory/project/ws-1"));
++
++        let allowed = allow(&["get_active_flight", "list_workspaces"]);
++        assert!(resource_permitted(Some(&allowed), "packetbench://flights"));
++        assert!(resource_permitted(Some(&allowed), "packetbench://flights/f1"));
++        assert!(resource_permitted(Some(&allowed), "packetbench://workspaces"));
++        for denied in [
++            "packetbench://memory/patterns",
++            "packetbench://memory/project/ws-1",
++            "packetbench://flights/f1/inbox",
++            "packetbench://flights/f1/tasks",
++            "packetbench://reviews",
++            "packetbench://issues",
++            "packetbench://project",
++            "packetbench://packetcode/health",
++            "packetbench://nope",
++        ] {
++            assert!(
++                !resource_permitted(Some(&allowed), denied),
++                "{denied} must be denied under a narrowed allowlist"
++            );
++        }
++        // "Serve no tools" serves no resources either.
++        let none = allow(&[]);
++        assert!(!resource_permitted(Some(&none), "packetbench://flights"));
++    }
++
+     #[test]
+     fn served_tools_reports_the_effective_list() {
+         let allowed = allow(&["ping", "list_workspaces"]);
+diff --git a/src-tauri/src/mcp_server/transport.rs b/src-tauri/src/mcp_server/transport.rs
+index 8d6ca0d9..ed9c8427 100644
+--- a/src-tauri/src/mcp_server/transport.rs
++++ b/src-tauri/src/mcp_server/transport.rs
+@@ -94,36 +94,74 @@ pub fn build_router(
+     );
+ 
+     let guard = Arc::new(AuthGuard { token });
+-    Router::new()
++    // `/health` sits OUTSIDE the bearer layer (a liveness probe must not need
++    // the secret) but INSIDE the Origin layer, so a web page on a real origin
++    // still cannot fingerprint the running app. It reveals nothing a local
++    // process could not learn from the process list.
++    let protected = Router::new()
+         .nest_service("/mcp", service)
+-        .layer(axum::middleware::from_fn_with_state(guard, auth_layer))
++        .layer(axum::middleware::from_fn_with_state(guard, bearer_layer));
++    Router::new()
++        .route("/health", axum::routing::get(health))
++        .merge(protected)
++        .layer(axum::middleware::from_fn(origin_layer))
++}
++
++/// Liveness probe for the dark period: `curl http://127.0.0.1:<port>/health`.
++async fn health() -> axum::Json<serde_json::Value> {
++    axum::Json(serde_json::json!({
++        "ok": true,
++        "app": crate::core::brand::APP_NAME,
++        "version": env!("CARGO_PKG_VERSION"),
++        "service": "mcp",
++    }))
+ }
+ 
+ struct AuthGuard {
+     token: String,
+ }
+ 
+-/// Reject non-loopback Origins (403) and missing/invalid bearer tokens (401).
+-async fn auth_layer(
+-    State(guard): State<Arc<AuthGuard>>,
+-    req: Request<Body>,
+-    next: Next,
+-) -> Result<Response, StatusCode> {
++/// Reject any *present* non-loopback Origin (403). Applied to every route.
++async fn origin_layer(req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
+     if let Some(origin) = req
+         .headers()
+         .get(header::ORIGIN)
+         .and_then(|v| v.to_str().ok())
+     {
+         if !origin_is_loopback(origin) {
++            tracing::warn!(
++                target: "packetbench::auth",
++                service = "mcp-server",
++                path = %req.uri().path(),
++                origin = %origin,
++                outcome = "forbidden_origin",
++                "MCP request rejected: non-loopback Origin"
++            );
+             return Err(StatusCode::FORBIDDEN);
+         }
+     }
++    Ok(next.run(req).await)
++}
+ 
++/// Reject missing/invalid bearer tokens (401). Applied to `/mcp` only.
++async fn bearer_layer(
++    State(guard): State<Arc<AuthGuard>>,
++    req: Request<Body>,
++    next: Next,
++) -> Result<Response, StatusCode> {
+     let provided = req
+         .headers()
+         .get(header::AUTHORIZATION)
+         .and_then(|v| v.to_str().ok());
+     if !bearer_matches(provided, &guard.token) {
++        tracing::warn!(
++            target: "packetbench::auth",
++            service = "mcp-server",
++            path = %req.uri().path(),
++            method = %req.method(),
++            outcome = if provided.is_some() { "bad_token" } else { "no_token" },
++            "MCP request rejected: bearer token missing or wrong"
++        );
+         return Err(StatusCode::UNAUTHORIZED);
+     }
+ 
+@@ -252,6 +290,25 @@ mod tests {
+             .expect("request sent");
+         assert_eq!(unauthed.status(), StatusCode::UNAUTHORIZED);
+ 
++        // /health needs no token (liveness probe) …
++        let health = client
++            .get(format!("http://127.0.0.1:{port}/health"))
++            .send()
++            .await
++            .expect("health sent");
++        assert_eq!(health.status(), StatusCode::OK);
++        let body: serde_json::Value = health.json().await.expect("health json");
++        assert_eq!(body["ok"], serde_json::json!(true));
++        assert_eq!(body["app"], serde_json::json!("PacketBench"));
++        // … but is still Origin-guarded so a browser page cannot fingerprint us.
++        let cross_origin = client
++            .get(format!("http://127.0.0.1:{port}/health"))
++            .header(header::ORIGIN, "https://evil.example.com")
++            .send()
++            .await
++            .expect("health sent");
++        assert_eq!(cross_origin.status(), StatusCode::FORBIDDEN);
++
+         // With token → passes auth and reaches rmcp (must not be 401).
+         let authed = client
+             .post(&base)

@@ -1,0 +1,413 @@
+diff --git a/src-tauri/src/commands/api_keys.rs b/src-tauri/src/commands/api_keys.rs
+index 42417fa1..4c91e1d7 100644
+--- a/src-tauri/src/commands/api_keys.rs
++++ b/src-tauri/src/commands/api_keys.rs
+@@ -126,11 +126,17 @@ pub fn load_api_key(provider: &str) -> Result<String, String> {
+         .ok_or_else(|| format!("Credential store unavailable for {}", provider))?;
+ 
+     match entry.get_password() {
+-        Ok(key) => Ok(key),
++        Ok(key) => {
++            // Auth-path audit line: which provider's key was loaded, never the
++            // value. `target` lets `RUST_LOG=packetbench::auth=info` isolate it.
++            info!(target: "packetbench::auth", provider = %provider, outcome = "found", "API key loaded from keyring");
++            Ok(key)
++        }
+         Err(keyring::Error::NoEntry) => {
+             // Fall back to the legacy "packetcode" keyring service and migrate on success.
+             if let Some(legacy) = legacy_keyring_entry(provider) {
+                 if let Ok(key) = legacy.get_password() {
++                    info!(target: "packetbench::auth", provider = %provider, outcome = "legacy", "API key found under legacy keyring service");
+                     return migrate_legacy_api_key(
+                         provider,
+                         key,
+@@ -146,12 +152,16 @@ pub fn load_api_key(provider: &str) -> Result<String, String> {
+             if provider == "custom" {
+                 return Ok(String::new());
+             }
++            info!(target: "packetbench::auth", provider = %provider, outcome = "missing", "no API key configured");
+             Err(format!(
+                 "{} {}. Set one in Settings > API Keys.",
+                 NO_API_KEY_PREFIX, provider
+             ))
+         }
+-        Err(e) => Err(format!("Failed to read API key for {}: {}", provider, e)),
++        Err(e) => {
++            warn!(target: "packetbench::auth", provider = %provider, outcome = "store_error", error = %e, "credential store failed while reading an API key");
++            Err(format!("Failed to read API key for {}: {}", provider, e))
++        }
+     }
+ }
+ 
+diff --git a/src-tauri/src/commands/packet_agent.rs b/src-tauri/src/commands/packet_agent.rs
+index 352fdf14..1e5819c3 100644
+--- a/src-tauri/src/commands/packet_agent.rs
++++ b/src-tauri/src/commands/packet_agent.rs
+@@ -286,11 +286,28 @@ pub async fn packet_agent_request(
+         outgoing = outgoing.json(&payload);
+     }
+ 
+-    let response = outgoing
+-        .send()
+-        .await
+-        .map_err(|error| format!("PacketAgent request failed: {error}"))?;
++    let response = outgoing.send().await.map_err(|error| {
++        tracing::warn!(
++            target: "packetbench::egress",
++            service = "packetagent",
++            operation = %request.operation,
++            method = %method,
++            error = %error,
++            "PacketAgent request failed before a response"
++        );
++        format!("PacketAgent request failed: {error}")
++    })?;
+     let status = response.status();
++    tracing::info!(
++        target: "packetbench::egress",
++        service = "packetagent",
++        operation = %request.operation,
++        method = %method,
++        host = %response.url().host_str().unwrap_or("-"),
++        path = %response.url().path(),
++        status = status.as_u16(),
++        "PacketAgent response"
++    );
+     let etag = response
+         .headers()
+         .get(reqwest::header::ETAG)
+diff --git a/src-tauri/src/core/boot_check.rs b/src-tauri/src/core/boot_check.rs
+new file mode 100644
+index 00000000..d9261ddf
+--- /dev/null
++++ b/src-tauri/src/core/boot_check.rs
+@@ -0,0 +1,197 @@
++//! Boot-time configuration validation.
++//!
++//! PacketBench has no `.env` and almost no required configuration — most
++//! settings are chosen in the UI and stored in the data dir or the OS
++//! keyring. What CAN silently break a fresh install or a dark-period restart
++//! is environmental: an unwritable data dir, a credential store that refuses
++//! every read, a typo'd `PACKETBENCH_*` override, or a developer override that
++//! points at a file that is no longer there. This module checks each once at
++//! startup and logs one line per check under the `packetbench::boot` target,
++//! naming the exact variable or path involved. It never aborts startup: the
++//! app still opens so the user can read the message in the log or the UI.
++//!
++//! Log file: `%LOCALAPPDATA%\PacketBench\logs\packetbench.log.<date>` on
++//! Windows, `~/Library/Application Support/PacketBench/logs/` on macOS,
++//! `$XDG_DATA_HOME/PacketBench/logs/` on Linux (see `lib.rs::dirs_log_dir`).
++
++use tracing::{info, warn};
++
++/// Every `PACKETBENCH_*` variable the desktop binary (not the build scripts)
++/// reads. Anything else with that prefix is almost certainly a typo.
++const KNOWN_ENV_VARS: &[&str] = &[
++    "PACKETBENCH_SIDECAR_PATH",
++    "PACKETBENCH_NODE_PATH",
++    "PACKETBENCH_DEV_SIDECAR",
++    "PACKETBENCH_GITHUB_CLIENT_ID",
++    "PACKETBENCH_REMOTE_NODE_PATH",
++    "PACKETBENCH_REMOTE_SIDECAR_PATH",
++    "PACKETBENCH_REMOTE_SIDECAR",
++    "PACKETBENCH_REMOTE_SIDECAR_READY",
++    "PACKETBENCH_ASKPASS_FILE",
++    "PACKETBENCH_STATUSLINE_HELPER",
++    "PACKETBENCH_STATUSLINE_DIR",
++    "PACKETBENCH_OLLAMA_URL",
++    "PACKETBENCH_OLLAMA_KEEP_ALIVE",
++    "PACKETBENCH_OLLAMA_NUM_CTX_CAP",
++    "PACKETBENCH_MINIMAX_URL",
++    "PACKETBENCH_CUSTOM_COMPAT_URL",
++    "PACKETBENCH_MCP_PROBE_TIMEOUT_MS",
++];
++
++/// Overrides whose value must name an existing file when set.
++const FILE_PATH_ENV_VARS: &[&str] = &["PACKETBENCH_SIDECAR_PATH", "PACKETBENCH_NODE_PATH"];
++
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub struct BootIssue {
++    pub check: &'static str,
++    pub message: String,
++}
++
++/// Pure classification of the process environment; separated from `run` so
++/// it is unit-testable without touching the real environment.
++pub fn classify_env(vars: &[(String, String)], file_exists: &dyn Fn(&str) -> bool) -> Vec<BootIssue> {
++    let mut issues = Vec::new();
++    for (name, value) in vars {
++        if !name.starts_with("PACKETBENCH_") {
++            continue;
++        }
++        if !KNOWN_ENV_VARS.contains(&name.as_str()) {
++            issues.push(BootIssue {
++                check: "env",
++                message: format!(
++                    "{name} is set but is not a variable PacketBench reads (typo? known: {})",
++                    KNOWN_ENV_VARS.join(", ")
++                ),
++            });
++            continue;
++        }
++        if FILE_PATH_ENV_VARS.contains(&name.as_str()) && !file_exists(value) {
++            issues.push(BootIssue {
++                check: "env",
++                message: format!("{name}={value} does not point at an existing file"),
++            });
++        }
++    }
++    issues
++}
++
++fn check_data_dir() -> Vec<BootIssue> {
++    let dir = match crate::core::storage::ensure_data_dir() {
++        Ok(dir) => dir,
++        Err(e) => {
++            return vec![BootIssue {
++                check: "data_dir",
++                message: format!("data dir cannot be created: {e}"),
++            }]
++        }
++    };
++    let probe = dir.join(".boot-write-probe");
++    let result = std::fs::write(&probe, b"ok").and_then(|_| std::fs::remove_file(&probe));
++    match result {
++        Ok(()) => {
++            info!(target: "packetbench::boot", check = "data_dir", path = %dir.display(), "data dir is writable");
++            Vec::new()
++        }
++        Err(e) => vec![BootIssue {
++            check: "data_dir",
++            message: format!(
++                "data dir {} is not writable ({e}); nothing will persist",
++                dir.display()
++            ),
++        }],
++    }
++}
++
++fn check_keyring() -> Vec<BootIssue> {
++    match keyring::Entry::new(crate::core::brand::KEYRING_SERVICE, "boot-probe") {
++        Ok(entry) => match entry.get_password() {
++            Ok(_) | Err(keyring::Error::NoEntry) => {
++                info!(target: "packetbench::boot", check = "keyring", service = crate::core::brand::KEYRING_SERVICE, "OS credential store is reachable");
++                Vec::new()
++            }
++            Err(e) => vec![BootIssue {
++                check: "keyring",
++                message: format!(
++                    "OS credential store failed a read ({e}); API keys, GitHub/Gitea tokens, and SSH passwords will be unreadable"
++                ),
++            }],
++        },
++        Err(e) => vec![BootIssue {
++            check: "keyring",
++            message: format!("OS credential store unavailable ({e})"),
++        }],
++    }
++}
++
++fn check_trust_file() -> Vec<BootIssue> {
++    let path = crate::core::project_trust::trusted_projects_path();
++    if path.is_file() {
++        info!(target: "packetbench::boot", check = "trust", path = %path.display(), "trusted-projects file present");
++    } else {
++        info!(
++            target: "packetbench::boot",
++            check = "trust",
++            path = %path.display(),
++            "no trusted-projects file: repo-supplied hooks, .mcp.json servers, and .claude/agents are disabled for every project until one is created"
++        );
++    }
++    Vec::new()
++}
++
++/// Run every check, log the outcome, and return the issues found.
++pub fn run() -> Vec<BootIssue> {
++    info!(
++        target: "packetbench::boot",
++        app = crate::core::brand::APP_NAME,
++        version = env!("CARGO_PKG_VERSION"),
++        debug_build = cfg!(debug_assertions),
++        rust_log = %std::env::var("RUST_LOG").unwrap_or_else(|_| "<unset, default info>".to_string()),
++        "boot check start"
++    );
++    let mut issues = Vec::new();
++    issues.extend(check_data_dir());
++    issues.extend(check_keyring());
++    issues.extend(check_trust_file());
++    let env: Vec<(String, String)> = std::env::vars().collect();
++    issues.extend(classify_env(&env, &|p| std::path::Path::new(p).is_file()));
++    for issue in &issues {
++        warn!(target: "packetbench::boot", check = issue.check, "{}", issue.message);
++    }
++    info!(target: "packetbench::boot", issues = issues.len(), "boot check done");
++    issues
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn vars(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
++        pairs
++            .iter()
++            .map(|(k, v)| (k.to_string(), v.to_string()))
++            .collect()
++    }
++
++    #[test]
++    fn unknown_prefixed_vars_are_flagged_as_typos() {
++        let issues = classify_env(&vars(&[("PACKETBENCH_SIDECAR_PTH", "x")]), &|_| true);
++        assert_eq!(issues.len(), 1);
++        assert!(issues[0].message.contains("PACKETBENCH_SIDECAR_PTH"));
++        assert!(issues[0].message.contains("typo"));
++    }
++
++    #[test]
++    fn known_path_vars_must_exist() {
++        let missing = classify_env(&vars(&[("PACKETBENCH_SIDECAR_PATH", "/nope/index.js")]), &|_| false);
++        assert_eq!(missing.len(), 1);
++        assert!(missing[0].message.contains("PACKETBENCH_SIDECAR_PATH=/nope/index.js"));
++        let present = classify_env(&vars(&[("PACKETBENCH_SIDECAR_PATH", "/ok")]), &|_| true);
++        assert!(present.is_empty());
++    }
++
++    #[test]
++    fn unrelated_vars_are_ignored() {
++        let issues = classify_env(&vars(&[("PATH", "x"), ("PACKETBENCH_DEV_SIDECAR", "1")]), &|_| false);
++        assert!(issues.is_empty());
++    }
++}
+diff --git a/src-tauri/src/core/git_host.rs b/src-tauri/src/core/git_host.rs
+index 46b50fa6..3039cb7a 100644
+--- a/src-tauri/src/core/git_host.rs
++++ b/src-tauri/src/core/git_host.rs
+@@ -882,6 +882,16 @@ impl GitHost {
+                 .map_err(|e| format!("Invalid header: {}", e))?,
+         );
+ 
++        // Egress audit: every authenticated git-host client is built here, so
++        // this one line records which host a credential is about to reach.
++        tracing::info!(
++            target: "packetbench::egress",
++            service = "git-host",
++            kind = %self.kind.label(),
++            api_base = %self.api_base,
++            "git host client built"
++        );
++
+         reqwest::Client::builder()
+             .default_headers(headers)
+             .build()
+diff --git a/src-tauri/src/core/llm_anthropic.rs b/src-tauri/src/core/llm_anthropic.rs
+index f526753f..0912c3c0 100644
+--- a/src-tauri/src/core/llm_anthropic.rs
++++ b/src-tauri/src/core/llm_anthropic.rs
+@@ -223,6 +223,13 @@ impl LlmProvider for AnthropicProvider {
+ 
+         let body = build_anthropic_body(&request);
+ 
++        tracing::info!(
++            target: "packetbench::egress",
++            service = "anthropic",
++            model = %request.model,
++            url = ANTHROPIC_API_URL,
++            "LLM request"
++        );
+         let response = client
+             .post(ANTHROPIC_API_URL)
+             .header("x-api-key", api_key)
+@@ -232,6 +239,13 @@ impl LlmProvider for AnthropicProvider {
+             .send()
+             .await
+             .map_err(|e| format!("Anthropic request failed: {}", e))?;
++        tracing::info!(
++            target: "packetbench::egress",
++            service = "anthropic",
++            model = %request.model,
++            status = response.status().as_u16(),
++            "LLM response"
++        );
+ 
+         if !response.status().is_success() {
+             let status = response.status();
+diff --git a/src-tauri/src/core/llm_openai_compat.rs b/src-tauri/src/core/llm_openai_compat.rs
+index 8d44b87f..68b57719 100644
+--- a/src-tauri/src/core/llm_openai_compat.rs
++++ b/src-tauri/src/core/llm_openai_compat.rs
+@@ -523,6 +523,13 @@ pub async fn stream_chat_compat(
+     }
+     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+ 
++    tracing::info!(
++        target: "packetbench::egress",
++        service = "openai-compat",
++        base_url = %config.base_url,
++        model = %request.model,
++        "LLM request"
++    );
+     let response = client
+         .post(&url)
+         .headers(headers.clone())
+@@ -530,6 +537,14 @@ pub async fn stream_chat_compat(
+         .send()
+         .await
+         .map_err(|e| format!("Request failed: {}", e))?;
++    tracing::info!(
++        target: "packetbench::egress",
++        service = "openai-compat",
++        base_url = %config.base_url,
++        model = %request.model,
++        status = response.status().as_u16(),
++        "LLM response"
++    );
+ 
+     let response = if response.status().is_success() {
+         if ollama_usage {
+diff --git a/src-tauri/src/core/mod.rs b/src-tauri/src/core/mod.rs
+index 37c06c43..36c8ba06 100644
+--- a/src-tauri/src/core/mod.rs
++++ b/src-tauri/src/core/mod.rs
+@@ -6,6 +6,7 @@ pub mod agents_md;
+ pub mod aux_context;
+ // WI-1 — the auxiliary LLM seam every non-agentic feature routes through.
+ pub mod aux_llm;
++pub mod boot_check;
+ pub mod brand;
+ pub mod claude_statusline;
+ // v0.8.8 quality ai: hand-authored prompts for the Code Quality AI features
+diff --git a/src-tauri/src/core/tool_web.rs b/src-tauri/src/core/tool_web.rs
+index f8b07a84..f7603bc2 100644
+--- a/src-tauri/src/core/tool_web.rs
++++ b/src-tauri/src/core/tool_web.rs
+@@ -119,6 +119,14 @@ link-local, or cloud-metadata address (SSRF guard)",
+         .map_err(|e| format!("Request failed: {}", error_chain(&e)))?;
+ 
+     let status = resp.status();
++    info!(
++        target: "packetbench::egress",
++        service = "web_fetch",
++        host = %resp.url().host_str().unwrap_or("-"),
++        final_url = %resp.url(),
++        status = status.as_u16(),
++        "web_fetch response"
++    );
+     if !status.is_success() {
+         let reason = status.canonical_reason().unwrap_or("Unknown");
+         return Err(format!("HTTP {}: {}", status.as_u16(), reason));
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index 9113f7c8..56c78897 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -161,6 +161,10 @@ pub fn run() {
+     // data dir is resolved; a no-op once the state has no legacy keys.
+     core::migration::migrate_mission_to_flight();
+     commands::crashes::install_panic_hook();
++    // Validate the environment once the data dir has settled: writable data
++    // dir, reachable credential store, trust file, and PACKETBENCH_* typos.
++    // Logs under `packetbench::boot`; never aborts startup.
++    let _boot_issues = core::boot_check::run();
+ 
+     // One-time: rewrite the dollar figures in `usage.jsonl` and in persisted
+     // conversation messages that were computed with the pre-CE2 (wrong) model
