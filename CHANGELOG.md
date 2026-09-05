@@ -7,6 +7,74 @@ For current direction, use [`ROADMAP.md`](./ROADMAP.md). For planning briefs and
 runbooks, use [`dev/README.md`](./dev/README.md). This file is history, not a
 task list.
 
+## [Unreleased]
+
+Security and correctness audit, 2026-09-04 to 2026-09-05. 25 findings, 17
+patches, each independently applicable and reverse-applicable
+(`docs/audit-2026-09-04.md`, `docs/audit/patches/`).
+
+Windows artifacts, rebuilt 2026-09-05 from `610f3975`, **unsigned**:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `PacketBench_0.13.2_x64-setup.exe` (NSIS, 85.2 MiB) | `222138d6b89238a23accc39b6a48b4637457f93a24518e88e6875a455f32be75` |
+| `PacketBench_0.13.2_x64_en-US.msi` (132.9 MiB) | `483014079f5a212e4f94873fdefec532d9d9bdd10f7fdce60e1156a8403cb9e7` |
+
+**These carry the same version string as the 2026-08-30 pair below and are not
+the same binaries.** No version was bumped, because the audit landed as patches
+on top of 0.13.2 rather than as a release. Nothing in the toolchain prevents
+this: `scripts/release-gate.mjs` checks that the three manifests agree with each
+other, not that a version string maps to one artifact. Bump the version before
+any of these reach anyone, or two different builds answer to `0.13.2`.
+
+Gates at `610f3975`: `pnpm gates:fast` all PASS (format, lint, typecheck, and
+the full vitest suite), `cargo test --lib` 983 passed / 0 failed / 2 ignored,
+`node smoke-test.mjs` 5/5, `pnpm run release:readiness --skip-gates` 0 fail.
+
+### Security
+
+Default permission mode is `ask_for_risky`, not `auto` — `bash`, `write_file`,
+`edit_file` and `create_pull_request` now prompt. Repo-supplied hooks,
+`.mcp.json` servers and `.claude/agents` definitions are gated behind an
+explicit trust list (`~/.packetbench/trusted-projects.json`), fail-closed.
+Sub-agents are held to a tool allowlist. `grep` no longer follows symlinks out
+of the workspace. Secret-bearing endpoints require https unless the host is
+local. GitHub agent tools read the token from the keyring only. MCP resources
+honour the tool allowlist, and the server gained a `/health` route.
+`ssh_exec` refuses `ProxyCommand`/`LocalCommand`/`-F`/`-E`.
+
+### Fixed — `pnpm tauri build` deleted the repo's own devDependencies
+
+`scripts/prune-sidecar.js` ran a `--prod` install without `--ignore-workspace`.
+`agent-sidecar` is not a member of `pnpm-workspace.yaml`, so pnpm walked up,
+found the workspace root and installed **that**, stripping `vite`,
+`typescript`, `vitest`, `@tauri-apps/cli` and `eslint`, then aborted. Introduced
+by `d6238633` (2026-09-01), which added the workspace file and fixed
+`sidecar:install` but not this script, which does the same install. The packaged
+build had been impossible for four days and nobody had run one. Recovery from a
+damaged tree is `pnpm install`.
+
+### Fixed — the Remote Agents feature flag now actually fails closed
+
+`README.md` said Remote Agents "remains disabled and fail-closed". It was
+neither: the only control was a store field defaulting to `false` with no
+consumer, so the claim held because nothing existed to enable. One
+`if (settings.remoteAgents.enabled)` in Sprint 1 would have opened it with none
+of the ratified private-beta requirements met. `src/lib/remoteAgentsGate.ts` is
+now the single seam — user intent AND an eleven-item gate list transcribed from
+`dev/remoteagents/04-security.md:385-397`, all of them unmet — and an eslint
+rule stops anything else importing the store.
+
+### Fixed — half the persisted stores would have lost their mirror at a rename
+
+19 files hardcoded the `packetbench:` storage prefix instead of building keys
+with `storageKey()`. `storageMirror` mirrors by prefix and the migration
+carries exactly one previous prefix, so at the next rename those stores would
+have kept working while quietly dropping out of the durable mirror — and the
+next bundle-identifier change would have taken them, which is how the last
+rename lost state. Two regression fences now guard the storage prefix and the
+user-visible product name.
+
 ## [0.13.2] - 2026-08-30
 
 Windows artifacts, built 2026-08-30 from `5b534517`, **unsigned**:
@@ -481,8 +549,11 @@ clean, 801 Rust lib tests (2 ignored) + 31 `acp_stream` passing, `tsc --noEmit`
 0 errors, `pnpm lint` 0 errors, `vitest run` 2372/2372 across 264 files,
 `check:tauri-schema` clean.
 
-> Everything under **[Unreleased]** above landed after `544e4cc6` and is
-> therefore **not in these artifacts**. Accepting that work needs a rebuild.
+> Everything that sat under **[Unreleased]** when this entry was written landed
+> after `544e4cc6` and is therefore **not in these 0.12.0 artifacts**. That work
+> has since been released under [0.13.0] and later, so this note is history —
+> it does **not** refer to the current [Unreleased] section at the top of the
+> file.
 
 ### Fixed — the rename stranded a shared legacy data dir
 
