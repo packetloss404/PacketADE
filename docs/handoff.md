@@ -112,6 +112,14 @@ fail, the change is wrong, not the test.
   runs at conversation launch (`agentTaskStore.ts:712`) and Flight launch
   (`asyncFlightStore.ts:1366`); mid-conversation turns and the auxiliary LLM
   features (side chat, GitHub AI, memory summaries) are not re-checked.
+- **A Flight cannot be created without launching an agent.** The Flight Deck
+  button and `+ New → New Flight` both open `LaunchAsyncFlightModal`, whose only
+  actions are "Plan first" and "Launch agents" — both spend a real LLM turn. That
+  makes any test needing an active Flight (e.g. `smoke-test.mjs`'s
+  `append_handoff` case) cost money or need a hand-written `state.v1.json`
+  record. `get_active_flight` reads `ui.selected_flight_id` from that file
+  (`mcp_server/reads.rs:64-74`), not the webview store. A create-only path would
+  be cheap to add and would make the suite fully runnable.
 - **Copy the user sees says the product name via `APP_NAME`, not literally.**
   `scripts/app-name-brand.test.mjs` is the fence; it reads code, not comments,
   so JSDoc naming the product is fine. Three sites are allowlisted with reasons
