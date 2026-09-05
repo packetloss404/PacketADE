@@ -156,6 +156,22 @@ and the initial PWA under PacketBench's `remoteagents/` workspace. See
   Product passkey/magic-link auth is also not started. Before external beta,
   enable PostgreSQL PITR, schedule volume backups, and pass an offsite logical
   dump restore drill.
+- **P1 - Honour the relay's close codes in every client. NOT STARTED.** The
+  relay has closed with intent-carrying codes since 2026-09-04 (`4000` replaced,
+  `4001` heartbeat timeout, `4002` slow consumer, plus `1001` shutdown and
+  `1008` budget), and the contract is now specified in
+  [`dev/remoteagents/03-protocol.md`](./dev/remoteagents/03-protocol.md). No
+  client implements it yet. **`4000` is the one that bites:** it means another
+  connection has taken this slot, so a client that reconnects on it evicts its
+  own replacement, which reconnects and evicts it back — the two flap
+  indefinitely and the session never settles. `1008` is likewise not a
+  reconnect signal. The Remote Agents PWA has no socket code yet, so the fix is
+  free if it is built this way from the start; the inherited Jarvis-lineage
+  clients (desktop pair, desktop presence, desktop chat JS, mobile chat JS)
+  live outside this repository and each need the same change. Done when every
+  client treats `4000` and `1008` as terminal, reconnects with backoff on
+  everything else including unknown codes, and a reconnect-storm test proves a
+  replaced connection does not fight its replacement.
 
 ## Release and real-environment proof
 

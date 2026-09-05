@@ -378,6 +378,57 @@ legacy WSS smoke passed on 2026-09-01. Both sides must still treat disconnection
 as normal and resume from cursors: mobile networks and backgrounded PWAs force
 reconnects independently of any platform limit.
 
+### Close codes decide whether to reconnect
+
+"Treat disconnection as normal" has exactly one exception, and a client that
+misses it misbehaves rather than merely reconnecting late. As of 2026-09-04 the
+relay closes with a code that says what the client should do, using the
+private-use 4000-4999 range RFC 6455 §7.4.2 reserves for application use,
+because no registered code expresses these:
+
+| Code | Relay reason | Client behaviour |
+| ---: | --- | --- |
+| 1000 | normal | Reconnect if the session should continue |
+| 1001 | `relay shutting down` | Reconnect with backoff; the relay is deploying |
+| 1008 | `message budget exceeded` | **Do not hot-loop.** Fix the send rate first |
+| 4000 | `replaced by a newer connection` | **Do not reconnect.** A newer connection owns this slot |
+| 4001 | `heartbeat timeout` | Reconnect; the socket was silently dead |
+| 4002 | `slow consumer` | Reconnect and drain faster |
+| 1006 | abnormal (no frame) | Reconnect with backoff; a transport failure, not a relay decision |
+
+**4000 is the one that matters.** The relay sends it to a desktop or device
+whose slot a newer connection has taken over — most often the same client after
+a network change, having reconnected before the old socket died. A client that
+reconnects on 4000 evicts the connection that just replaced it, which then
+reconnects and evicts this one, and the two flap indefinitely while the user
+sees a session that never settles. Treat 4000 as terminal for that connection:
+stop, and let whichever connection currently holds the slot keep it.
+
+1008 is not a reconnect signal either. The relay sends it when a connection
+exceeded its inbound message or byte budget, so reconnecting without reducing
+the send rate re-earns the same close.
+
+```ts
+// Reference: the only reconnect decision a client needs.
+const TERMINAL_CLOSE_CODES = new Set([
+  4000, // replaced by a newer connection: another socket owns the slot
+  1008, // budget exceeded: reconnecting without slowing down re-earns it
+]);
+
+socket.addEventListener("close", (event) => {
+  if (TERMINAL_CLOSE_CODES.has(event.code)) {
+    stopReconnecting(event.code, event.reason);
+    return;
+  }
+  reconnectWithBackoff(); // 1000, 1001, 4001, 4002, 1006, and anything new
+});
+```
+
+Default unknown codes to reconnecting with backoff, as above: an unrecognised
+code should degrade to the safe behaviour rather than stranding the session.
+The relay's own close-code table in `packet-relay`'s README is the authority if
+the two ever disagree.
+
 ## Provider Snapshot
 
 ```ts
