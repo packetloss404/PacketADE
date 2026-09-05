@@ -23,11 +23,17 @@ Windows artifacts, built 2026-09-05 from `cd276627`, **unsigned**:
 `packetbench.exe` inside them reports file version `0.14.0`, and
 `pnpm run release:readiness --skip-gates` detects both: 0 fail.
 
-**These have not been installed or exercised.** The audit's verification —
-including the U05 shell-scope check and the before/after screen comparison —
-ran against binaries built from `610f3975`, while the version still read
-0.13.2. Those were also unsigned, and are kept below as the record of what was
-actually installed and tested rather than as a release:
+Installed and exercised 2026-09-05: the installed executable reports file
+version `0.14.0`, and `node smoke-test.mjs` in live mode passes **6 of 7**
+against it — `/health` 200 reporting `"version":"0.14.0"`, no-token 401,
+wrong-token 401, foreign `Origin` 403 on both routes, and bearer `initialize`
+200 with a session id. The 7th case needs an active Flight and this install has
+none, so it did not run; that is the script's precondition, not a defect.
+
+The rest of the audit's runtime verification —
+the U05 shell-scope check and the before/after screen comparison — ran against
+binaries built from `610f3975`, while the version still read 0.13.2. Those were
+also unsigned, and are kept below as the record of what was tested there:
 
 | Pre-bump artifact (`610f3975`, version string 0.13.2) | SHA-256 |
 | --- | --- |
