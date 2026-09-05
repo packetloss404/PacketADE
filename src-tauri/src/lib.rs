@@ -161,6 +161,10 @@ pub fn run() {
     // data dir is resolved; a no-op once the state has no legacy keys.
     core::migration::migrate_mission_to_flight();
     commands::crashes::install_panic_hook();
+    // Validate the environment once the data dir has settled: writable data
+    // dir, reachable credential store, trust file, and PACKETBENCH_* typos.
+    // Logs under `packetbench::boot`; never aborts startup.
+    let _boot_issues = core::boot_check::run();
 
     // One-time: rewrite the dollar figures in `usage.jsonl` and in persisted
     // conversation messages that were computed with the pre-CE2 (wrong) model

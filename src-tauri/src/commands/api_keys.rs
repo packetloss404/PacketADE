@@ -126,11 +126,17 @@ pub fn load_api_key(provider: &str) -> Result<String, String> {
         .ok_or_else(|| format!("Credential store unavailable for {}", provider))?;
 
     match entry.get_password() {
-        Ok(key) => Ok(key),
+        Ok(key) => {
+            // Auth-path audit line: which provider's key was loaded, never the
+            // value. `target` lets `RUST_LOG=packetbench::auth=info` isolate it.
+            info!(target: "packetbench::auth", provider = %provider, outcome = "found", "API key loaded from keyring");
+            Ok(key)
+        }
         Err(keyring::Error::NoEntry) => {
             // Fall back to the legacy "packetcode" keyring service and migrate on success.
             if let Some(legacy) = legacy_keyring_entry(provider) {
                 if let Ok(key) = legacy.get_password() {
+                    info!(target: "packetbench::auth", provider = %provider, outcome = "legacy", "API key found under legacy keyring service");
                     return migrate_legacy_api_key(
                         provider,
                         key,
@@ -146,12 +152,16 @@ pub fn load_api_key(provider: &str) -> Result<String, String> {
             if provider == "custom" {
                 return Ok(String::new());
             }
+            info!(target: "packetbench::auth", provider = %provider, outcome = "missing", "no API key configured");
             Err(format!(
                 "{} {}. Set one in Settings > API Keys.",
                 NO_API_KEY_PREFIX, provider
             ))
         }
-        Err(e) => Err(format!("Failed to read API key for {}: {}", provider, e)),
+        Err(e) => {
+            warn!(target: "packetbench::auth", provider = %provider, outcome = "store_error", error = %e, "credential store failed while reading an API key");
+            Err(format!("Failed to read API key for {}: {}", provider, e))
+        }
     }
 }
 

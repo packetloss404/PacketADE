@@ -882,6 +882,16 @@ impl GitHost {
                 .map_err(|e| format!("Invalid header: {}", e))?,
         );
 
+        // Egress audit: every authenticated git-host client is built here, so
+        // this one line records which host a credential is about to reach.
+        tracing::info!(
+            target: "packetbench::egress",
+            service = "git-host",
+            kind = %self.kind.label(),
+            api_base = %self.api_base,
+            "git host client built"
+        );
+
         reqwest::Client::builder()
             .default_headers(headers)
             .build()

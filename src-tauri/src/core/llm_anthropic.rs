@@ -223,6 +223,13 @@ impl LlmProvider for AnthropicProvider {
 
         let body = build_anthropic_body(&request);
 
+        tracing::info!(
+            target: "packetbench::egress",
+            service = "anthropic",
+            model = %request.model,
+            url = ANTHROPIC_API_URL,
+            "LLM request"
+        );
         let response = client
             .post(ANTHROPIC_API_URL)
             .header("x-api-key", api_key)
@@ -232,6 +239,13 @@ impl LlmProvider for AnthropicProvider {
             .send()
             .await
             .map_err(|e| format!("Anthropic request failed: {}", e))?;
+        tracing::info!(
+            target: "packetbench::egress",
+            service = "anthropic",
+            model = %request.model,
+            status = response.status().as_u16(),
+            "LLM response"
+        );
 
         if !response.status().is_success() {
             let status = response.status();

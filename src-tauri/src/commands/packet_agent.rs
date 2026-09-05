@@ -286,11 +286,28 @@ pub async fn packet_agent_request(
         outgoing = outgoing.json(&payload);
     }
 
-    let response = outgoing
-        .send()
-        .await
-        .map_err(|error| format!("PacketAgent request failed: {error}"))?;
+    let response = outgoing.send().await.map_err(|error| {
+        tracing::warn!(
+            target: "packetbench::egress",
+            service = "packetagent",
+            operation = %request.operation,
+            method = %method,
+            error = %error,
+            "PacketAgent request failed before a response"
+        );
+        format!("PacketAgent request failed: {error}")
+    })?;
     let status = response.status();
+    tracing::info!(
+        target: "packetbench::egress",
+        service = "packetagent",
+        operation = %request.operation,
+        method = %method,
+        host = %response.url().host_str().unwrap_or("-"),
+        path = %response.url().path(),
+        status = status.as_u16(),
+        "PacketAgent response"
+    );
     let etag = response
         .headers()
         .get(reqwest::header::ETAG)

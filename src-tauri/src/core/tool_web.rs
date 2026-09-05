@@ -119,6 +119,14 @@ link-local, or cloud-metadata address (SSRF guard)",
         .map_err(|e| format!("Request failed: {}", error_chain(&e)))?;
 
     let status = resp.status();
+    info!(
+        target: "packetbench::egress",
+        service = "web_fetch",
+        host = %resp.url().host_str().unwrap_or("-"),
+        final_url = %resp.url(),
+        status = status.as_u16(),
+        "web_fetch response"
+    );
     if !status.is_success() {
         let reason = status.canonical_reason().unwrap_or("Unknown");
         return Err(format!("HTTP {}: {}", status.as_u16(), reason));

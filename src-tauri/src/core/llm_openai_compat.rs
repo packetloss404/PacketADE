@@ -523,6 +523,13 @@ pub async fn stream_chat_compat(
     }
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
+    tracing::info!(
+        target: "packetbench::egress",
+        service = "openai-compat",
+        base_url = %config.base_url,
+        model = %request.model,
+        "LLM request"
+    );
     let response = client
         .post(&url)
         .headers(headers.clone())
@@ -530,6 +537,14 @@ pub async fn stream_chat_compat(
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
+    tracing::info!(
+        target: "packetbench::egress",
+        service = "openai-compat",
+        base_url = %config.base_url,
+        model = %request.model,
+        status = response.status().as_u16(),
+        "LLM response"
+    );
 
     let response = if response.status().is_success() {
         if ollama_usage {
