@@ -103,8 +103,10 @@ describe("agent mode chip flags", () => {
     expect(seen).toEqual(new Set(MODE_ORDER));
   });
 
-  it("treats a conversation with unset flags as default mode", () => {
-    expect(deriveMode(conversation({}))).toBe("default");
+  it("treats a conversation with unset flags as manual mode (fail-closed default)", () => {
+    // An absent permissionMode means ask_for_risky (agentTaskStore default),
+    // so the chip must say Manual — "Default" would advertise unprompted bash.
+    expect(deriveMode(conversation({}))).toBe("manual");
   });
 });
 

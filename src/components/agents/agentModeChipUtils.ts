@@ -116,7 +116,9 @@ export function modeDescription(mode: AgentMode, supportsApprovals: boolean): st
  */
 export function deriveMode(conv: AgentConversation): AgentMode {
   if (conv.planMode) return "plan";
-  switch (conv.permissionMode ?? "auto") {
+  // An absent posture is "ask" (see agentTaskStore's default), so the chip
+  // must label it Manual, not Default.
+  switch (conv.permissionMode ?? "ask_for_risky") {
     case "allow_all":
       return "yolo";
     case "deny_all":

@@ -33,9 +33,12 @@ const MAX_TOOL_ITERATIONS: usize = 150;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PermissionMode {
-    /// Model's implicit authority — no prompts (default, matches prior behavior).
+    /// Model's implicit authority — no prompts. Must be chosen explicitly;
+    /// it is no longer the default (see `Default`).
     Auto,
-    /// Prompt the user before running risky tools (bash, write_file).
+    /// Prompt the user before running risky tools (bash, write_file,
+    /// edit_file, create_pull_request). The fail-closed default: a session
+    /// that never states a mode asks before every risky tool.
     AskForRisky,
     /// Allow all tools without prompts.
     AllowAll,
@@ -45,7 +48,7 @@ pub enum PermissionMode {
 
 impl Default for PermissionMode {
     fn default() -> Self {
-        Self::Auto
+        Self::AskForRisky
     }
 }
 
@@ -486,6 +489,22 @@ mod tests {
     use super::*;
     use crate::commands::mcp::{McpServerConfig, McpServerEntry};
     use std::collections::HashMap;
+
+    #[test]
+    fn create_pull_request_is_a_risky_tool() {
+        // Pushing a branch and opening a PR is an outward-facing side effect
+        // under the user's GitHub identity; it must go through the same gate
+        // as bash rather than run on the model's authority.
+        assert!(RISKY_TOOLS.contains(&"create_pull_request"));
+        assert!(!PLAN_MODE_ALLOWED.contains(&"create_pull_request"));
+    }
+
+    #[test]
+    fn permission_mode_defaults_to_asking() {
+        assert_eq!(PermissionMode::default(), PermissionMode::AskForRisky);
+        assert_eq!(PermissionMode::parse("auto"), Some(PermissionMode::Auto));
+        assert_eq!(PermissionMode::parse("bogus"), None);
+    }
 
     /// edit_file mutates files exactly like write_file, so it must sit behind
     /// the same three gates: risky-tool permission, the pending-edit approval
@@ -1254,7 +1273,8 @@ pub async fn start_api_agent_session(
     let parsed_permission_mode = match permission_mode.as_deref() {
         Some(mode) => PermissionMode::parse(mode)
             .ok_or_else(|| format!("Unknown permission mode: {}", mode))?,
-        None => PermissionMode::Auto,
+        // Absent mode = ask. `Auto` (unprompted bash/write) is opt-in only.
+        None => PermissionMode::default(),
     };
 
     let messages = build_start_history(resume_messages, &initial_message);
@@ -1882,8 +1902,10 @@ async fn finish_cancelled_agent_turn(
 }
 
 /// Tools that require user permission in `AskForRisky` mode and are refused
-/// outright in `DenyAll`.
-const RISKY_TOOLS: &[&str] = &["bash", "write_file", "edit_file"];
+/// outright in `DenyAll`. `create_pull_request` pushes the branch and opens a
+/// PR under the user's GitHub identity — an outward-facing side effect that
+/// must never run on the model's authority alone.
+const RISKY_TOOLS: &[&str] = &["bash", "write_file", "edit_file", "create_pull_request"];
 /// The only tools allowed while plan mode is active — read-only ones.
 const PLAN_MODE_ALLOWED: &[&str] = &["read_file", "list_directory", "grep"];
 /// Tools that mutate file content and therefore must go through the
@@ -2228,7 +2250,9 @@ async fn run_agent_loop(
             if let Some(cfg) = configs.get(session_id) {
                 (cfg.plan_mode, cfg.permission_mode, cfg.approve_writes)
             } else {
-                (false, PermissionMode::Auto, false)
+                // A session whose config vanished mid-turn must not fall back
+                // to unprompted execution.
+                (false, PermissionMode::default(), false)
             }
         };
 

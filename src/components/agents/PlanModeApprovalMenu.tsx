@@ -88,10 +88,12 @@ export function PlanModeApprovalMenu({
         break;
       }
       case "accept-edits": {
+        // The message promises "ask before destructive shell commands"; only
+        // ask_for_risky keeps that promise — "auto" never asks for anything.
         approvePlan(
           conversationId,
           "Plan approved — implement it. Make edits without asking; ask before destructive shell commands.",
-          { permissionMode: "auto", approveWrites: false },
+          { permissionMode: "ask_for_risky", approveWrites: false },
         );
         onProceed?.();
         break;

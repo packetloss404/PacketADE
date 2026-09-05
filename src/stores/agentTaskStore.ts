@@ -787,7 +787,9 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       systemPromptOverride: effectiveSystemPrompt,
       queuedMessages: [],
       planMode: planMode ?? false,
-      permissionMode: permissionMode ?? "auto",
+      // Fail closed: a conversation that never chose a posture asks before
+      // every risky tool. "auto" (unprompted bash/write) is an explicit choice.
+      permissionMode: permissionMode ?? "ask_for_risky",
       approveWrites: approveWrites ?? false,
       thinkingEnabled: thinkingEnabled ?? false,
       sshTarget: sshTarget
@@ -872,7 +874,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           null, // resumeToken — fresh start
           resolvedMcpIds,
           null,
-          permissionMode ?? "auto",
+          permissionMode ?? "ask_for_risky",
           approveWrites ?? false,
           null, // commandPath — no surviving sidecar provider is CLI-backed
           undefined,
@@ -1753,7 +1755,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         conv.resumeToken ?? null,
         conv.enabledMcpServerIds ?? null,
         resumeMessages,
-        conv.permissionMode ?? "auto",
+        conv.permissionMode ?? "ask_for_risky",
         conv.approveWrites ?? false,
         null, // commandPath — no surviving sidecar provider is CLI-backed
         undefined,

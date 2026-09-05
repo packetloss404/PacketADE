@@ -266,7 +266,7 @@ export function AgentChatPane({
     if (flags.planMode !== (conversation.planMode ?? false)) {
       void actions.setPlanMode(conversationId, flags.planMode);
     }
-    if (flags.permissionMode !== (conversation.permissionMode ?? "auto")) {
+    if (flags.permissionMode !== (conversation.permissionMode ?? "ask_for_risky")) {
       void actions.setPermissionMode(conversationId, flags.permissionMode);
     }
     if (flags.approveWrites !== (conversation.approveWrites ?? false)) {
