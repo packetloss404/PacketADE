@@ -32,6 +32,7 @@ import {
   CLI_ACCOUNT_LABELS,
 } from "@/types/cliAccount";
 import type { CliAccount, CliAccountCli } from "@/types/cliAccount";
+import { APP_NAME } from "@/lib/brand";
 
 export interface CliAccountsCardProps {
   /**
@@ -225,7 +226,7 @@ export function CliAccountsCard({ onRequestLogin }: CliAccountsCardProps = {}) {
           entityName={`${pendingDelete.label} (${CLI_ACCOUNT_LABELS[pendingDelete.cli] ?? pendingDelete.cli})`}
           description={
             <>
-              is removed from PacketBench, along with any project that defaults to it. The config
+              is removed from {APP_NAME}, along with any project that defaults to it. The config
               directory <span className="font-mono">{pendingDelete.configDir}</span> and the login
               inside it are left untouched on disk — re-add the account to use it again.
             </>

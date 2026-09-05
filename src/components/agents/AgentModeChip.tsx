@@ -12,6 +12,7 @@ import {
 } from "./agentModeChipUtils";
 import { capabilitiesFor } from "@/lib/agentCapabilities";
 import { addPaneControlListener, OPEN_MODE_CHIP_EVENT } from "./paneEvents";
+import { APP_NAME } from "@/lib/brand";
 
 /**
  * Cursor-style five-state agent mode. Derived from the underlying
@@ -90,7 +91,7 @@ const MODE_META: Record<
  * a drop-in move when the files merge.)
  */
 export const RESTRICTED_MODES_HINT =
-  "This provider accepts fewer postures than PacketBench offers — only the ones it will honor are listed.";
+  `This provider accepts fewer postures than ${APP_NAME} offers — only the ones it will honor are listed.`;
 
 /** Label for the chip when no posture can honestly be named. */
 export const PROVIDER_DEFAULT_LABEL = "Provider default";
@@ -238,7 +239,7 @@ export function AgentModeChip({
             <span>
               {PROVIDER_DEFAULT_LABEL}
               <br />
-              PacketBench did not set a posture — the provider chose this one.
+              {APP_NAME} did not set a posture — the provider chose this one.
               {approveWrites && (
                 <>
                   <br />

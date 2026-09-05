@@ -1,6 +1,7 @@
 import { Terminal } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { bypassDefaultCaveat } from "@/lib/bypassFlags";
+import { APP_NAME } from "@/lib/brand";
 
 export function WorkspaceSettingsCard() {
   const defaultBypassPermissions = useWorkspaceStore((s) => s.defaultBypassPermissions);
@@ -39,7 +40,7 @@ export function WorkspaceSettingsCard() {
             self-hosted user read the silence as a broken toggle. */}
         <Row
           title="Auto-detect GitHub repo on workspace creation"
-          description="Run `git remote get-url origin` when creating a workspace and link it to the detected repo. Recognises github.com remotes only — a Gitea, Forgejo, or GitLab origin is left unbound, and you can bind it by hand from the Git pane. Disable if you don't want PacketBench making that call."
+          description={`Run \`git remote get-url origin\` when creating a workspace and link it to the detected repo. Recognises github.com remotes only — a Gitea, Forgejo, or GitLab origin is left unbound, and you can bind it by hand from the Git pane. Disable if you don't want ${APP_NAME} making that call.`}
           checked={autoBindGithubRepo}
           onChange={setAutoBindGithubRepo}
         />

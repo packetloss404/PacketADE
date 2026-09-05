@@ -36,6 +36,7 @@ import { probeGitHostCredential } from "@/lib/gitHostProbe";
 import { descriptorForKind, verdictFor, type WizardVerdict } from "@/lib/gitHostWizard";
 import { FieldError, ScopeList, VerdictCard } from "@/components/gitHost/GitHostVerdict";
 import type { GitHostConnectionInfo, GitHostConnectionUpdate } from "@/lib/tauri";
+import { APP_NAME } from "@/lib/brand";
 
 interface GitHostEditConnectionModalProps {
   connection: GitHostConnectionInfo;
@@ -342,7 +343,7 @@ export function GitHostEditConnectionModal({
         )}
 
         {rotating && !descriptor && (
-          <FieldError message="PacketBench does not know how to verify a token for this host kind, so it will not replace the working one." />
+          <FieldError message={`${APP_NAME} does not know how to verify a token for this host kind, so it will not replace the working one.`} />
         )}
 
         {error && <FieldError message={error} />}

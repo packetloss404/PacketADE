@@ -67,6 +67,7 @@ import { WorktreeLifecycleBar } from "@/components/workspace/WorktreeLifecycleBa
 import { ReviewPacketPanel } from "@/components/workspace/ReviewPacketPanel";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { openConversationInAgents } from "@/stores/sessionGlue";
+import { APP_NAME } from "@/lib/brand";
 
 function statusIcon(status: string) {
   switch (status) {
@@ -898,7 +899,7 @@ export function GitDashboard({
             <div className="text-meta text-text-muted">
               {stagedCount === 0
                 ? "Commits staged files only — stage files above"
-                : "Flight-linked commits receive PacketBench trailers when a task match is found."}
+                : `Flight-linked commits receive ${APP_NAME} trailers when a task match is found.`}
             </div>
           )}
           <textarea

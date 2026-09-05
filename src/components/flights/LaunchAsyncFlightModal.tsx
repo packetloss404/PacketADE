@@ -44,6 +44,7 @@ import { useOllamaModels } from "@/components/agents/hooks/useOllamaModels";
 import { useLiveModels } from "@/components/agents/hooks/useLiveModels";
 import { resolveModelRows } from "@/lib/liveModels";
 import { pathWithinAllowedRoots, validateAutonomyPolicy } from "@/lib/autonomyPolicy";
+import { APP_NAME } from "@/lib/brand";
 
 interface LaunchAsyncFlightModalProps {
   onClose: () => void;
@@ -674,7 +675,7 @@ export function LaunchAsyncFlightModal({
                 <p className="mt-2 text-[10px] leading-relaxed text-text-muted">
                   {autonomyMode === "settings_default"
                     ? "Settings currently resolves this Flight to Assisted mode."
-                    : "PacketBench detects and recommends; you launch, retry, accept, and integrate."}
+                    : `${APP_NAME} detects and recommends; you launch, retry, accept, and integrate.`}
                 </p>
               )}
               {autonomyConfigurationError && (

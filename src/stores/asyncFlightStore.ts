@@ -63,6 +63,7 @@ import {
   validateCooperativeGraph,
 } from "@/lib/cooperativeFlight";
 import type { Task } from "@/types/flight";
+import { APP_NAME } from "@/lib/brand";
 
 export interface AsyncLaunchOptions {
   allowPathCollisions?: boolean;
@@ -557,7 +558,7 @@ async function publishAttemptAsDraftPr(flight: Flight, attempt: Attempt): Promis
   //   preserving extraction — flights and sessions call the same path now).
   let body = flight.objective || flight.prompt || "";
   body = body.slice(0, 60_000);
-  body = `Auto-generated from PacketBench Flight \`${flight.id}\` attempt \`${attempt.id}\`.\n\n${body}`;
+  body = `Auto-generated from ${APP_NAME} Flight \`${flight.id}\` attempt \`${attempt.id}\`.\n\n${body}`;
 
   const title = `[Flight ${flight.title}] Attempt ${attempt.id}`.slice(0, 256);
 

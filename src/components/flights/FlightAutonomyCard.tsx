@@ -12,6 +12,7 @@ import {
   stopFlightAutonomy,
 } from "@/stores/boundedAutonomyRuntime";
 import type { Flight } from "@/types/flight";
+import { APP_NAME } from "@/lib/brand";
 
 function formatCost(value: number): string {
   return `$${Math.max(0, value).toFixed(2)}`;
@@ -69,7 +70,7 @@ export function FlightAutonomyCard({ flight }: { flight: Flight }) {
 
       {!policy ? (
         <p className="mt-1.5 text-[10px] leading-relaxed text-text-muted">
-          PacketBench recommends actions; launches, retries, review acceptance, and integration stay
+          {APP_NAME} recommends actions; launches, retries, review acceptance, and integration stay
           under your control.
         </p>
       ) : (

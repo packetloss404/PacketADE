@@ -1,0 +1,1078 @@
+diff --git a/scripts/app-name-brand.test.mjs b/scripts/app-name-brand.test.mjs
+new file mode 100644
+index 00000000..93629a78
+--- /dev/null
++++ b/scripts/app-name-brand.test.mjs
+@@ -0,0 +1,125 @@
++/**
++ * User-visible copy says the app's name through `APP_NAME`.
++ *
++ * Companion to `storage-key-brand.test.mjs`. That one guards persisted keys,
++ * where a missed call site loses data. This one guards displayed copy, where a
++ * missed call site just leaves the old product name on screen after a rename —
++ * cosmetic, but it is the long tail that made the last two renames a ~400-file
++ * sweep instead of a one-file change (`src/lib/brand.ts` header).
++ *
++ * Scope, deliberately narrow: this fence reads CODE, not comments. Comments and
++ * JSDoc naming the product are documentation for a human, and rewriting them as
++ * `${APP_NAME}` would make them worse, not better.
++ *
++ * Audit F25 / P17.
++ */
++import { describe, expect, it } from "vitest";
++import { readFileSync, readdirSync } from "node:fs";
++import { extname, join, relative } from "node:path";
++
++const ROOT = process.cwd();
++
++function sourceFiles(root) {
++  const files = [];
++  for (const entry of readdirSync(root, { withFileTypes: true })) {
++    const path = join(root, entry.name);
++    if (entry.isDirectory()) {
++      if (entry.name === "__tests__" || entry.name === "test") continue;
++      files.push(...sourceFiles(path));
++    } else if ([".ts", ".tsx"].includes(extname(entry.name))) {
++      files.push(path);
++    }
++  }
++  return files;
++}
++
++/**
++ * Files allowed to spell the product name literally, each for a stated reason.
++ *
++ * These are NOT "not got to yet". Every entry is a string that must survive a
++ * rename unchanged, which is the opposite of what `APP_NAME` does:
++ *
++ * - `src/lib/brand.ts` — the definition.
++ * - The `Run-By:` trailer is a cross-language format contract. The identical
++ *   literal lives in `src-tauri/src/core/orchestrator.rs:10`, is written into
++ *   git commit messages that already exist in history, and is matched by a
++ *   glob inside a generated git hook shell script
++ *   (`src-tauri/src/core/worktree.rs:508,580`). Making only the TypeScript side
++ *   dynamic would let the two halves diverge at the next rename, which is worse
++ *   than leaving both literal. Rename it on both sides, deliberately, or not at
++ *   all.
++ */
++const ALLOWED = new Map([
++  ["src/lib/brand.ts", "defines APP_NAME"],
++  ["src/lib/tauri.ts", "Run-By trailer template — matches orchestrator.rs:10"],
++  ["src/stores/orchestrationSettingsStore.ts", "Run-By trailer template — matches orchestrator.rs:10"],
++]);
++
++/**
++ * Strip comments, then keep only what is inside a quoted span or is JSX text.
++ *
++ * Block comments go first (they can contain stray quotes), then each line's
++ * `//` tail. Anything left that still names the product is either a string
++ * literal or text rendered to the user — both of which should be `APP_NAME`.
++ */
++function codeLines(body) {
++  return body
++    .replace(/\/\*[\s\S]*?\*\//g, "")
++    .split(/\r?\n/)
++    .map((line) => line.replace(/\/\/.*/, ""));
++}
++
++const SRC_FILES = sourceFiles(join(ROOT, "src"));
++
++// A filesystem fence, not a unit test: under a full parallel run it contends
++// with the rest of the suite for the disk, and vitest's 5 s default would make
++// it fail for reasons unrelated to what it guards.
++const FENCE_TIMEOUT_MS = 30_000;
++
++describe("user-visible product name", () => {
++  it(
++    "no production file spells the product name in code",
++    () => {
++      const offenders = [];
++      for (const file of SRC_FILES) {
++        const rel = relative(ROOT, file).replaceAll("\\", "/");
++        if (ALLOWED.has(rel)) continue;
++        for (const line of codeLines(readFileSync(file, "utf8"))) {
++          if (line.includes("PacketBench")) {
++            offenders.push(`${rel}: ${line.trim()}`);
++            break;
++          }
++        }
++      }
++
++      expect(
++        offenders,
++        `Use APP_NAME from @/lib/brand for copy the user sees. If the string must ` +
++          `survive a rename unchanged — a format contract, an external identifier — ` +
++          `add it to ALLOWED in this file with the reason.`,
++      ).toEqual([]);
++    },
++    FENCE_TIMEOUT_MS,
++  );
++
++  it(
++    "the allowlist has no stale entries",
++    () => {
++      const stale = [];
++      for (const [rel, reason] of ALLOWED) {
++        let body;
++        try {
++          body = readFileSync(join(ROOT, rel), "utf8");
++        } catch {
++          stale.push(`${rel} (no longer exists) — was: ${reason}`);
++          continue;
++        }
++        if (!codeLines(body).some((line) => line.includes("PacketBench"))) {
++          stale.push(`${rel} (no longer spells it) — was: ${reason}`);
++        }
++      }
++      expect(stale).toEqual([]);
++    },
++    FENCE_TIMEOUT_MS,
++  );
++});
+diff --git a/src/App.tsx b/src/App.tsx
+index fa0df930..e470088d 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -36,6 +36,7 @@ import {
+ import { initializeApp, persistUiState } from "@/lib/bootstrap";
+ import { requestNotificationPermission } from "@/lib/notifications";
+ import type { AppView } from "@/stores/appStore";
++import { APP_NAME } from "@/lib/brand";
+ 
+ // Lazy-loaded views — split into separate chunks to reduce initial bundle size
+ const IssueBoard = lazy(() =>
+@@ -229,7 +230,7 @@ export default function App() {
+   }, [activeView]);
+ 
+   return (
+-    <ErrorBoundary fallbackMessage="PacketBench encountered an error">
++    <ErrorBoundary fallbackMessage={`${APP_NAME} encountered an error`}>
+       {/* Tile program (P4-S3): mount the in-app Toast host app-wide so the
+           existing Toast infrastructure is a live consumer (e.g. the archive
+           "worktree pending — Review worktree" toast). Wraps the whole shell so
+diff --git a/src/components/agents/AgentModeChip.tsx b/src/components/agents/AgentModeChip.tsx
+index 4fc4abbe..d7bbf1b2 100644
+--- a/src/components/agents/AgentModeChip.tsx
++++ b/src/components/agents/AgentModeChip.tsx
+@@ -12,6 +12,7 @@ import {
+ } from "./agentModeChipUtils";
+ import { capabilitiesFor } from "@/lib/agentCapabilities";
+ import { addPaneControlListener, OPEN_MODE_CHIP_EVENT } from "./paneEvents";
++import { APP_NAME } from "@/lib/brand";
+ 
+ /**
+  * Cursor-style five-state agent mode. Derived from the underlying
+@@ -90,7 +91,7 @@ const MODE_META: Record<
+  * a drop-in move when the files merge.)
+  */
+ export const RESTRICTED_MODES_HINT =
+-  "This provider accepts fewer postures than PacketBench offers — only the ones it will honor are listed.";
++  `This provider accepts fewer postures than ${APP_NAME} offers — only the ones it will honor are listed.`;
+ 
+ /** Label for the chip when no posture can honestly be named. */
+ export const PROVIDER_DEFAULT_LABEL = "Provider default";
+@@ -238,7 +239,7 @@ export function AgentModeChip({
+             <span>
+               {PROVIDER_DEFAULT_LABEL}
+               <br />
+-              PacketBench did not set a posture — the provider chose this one.
++              {APP_NAME} did not set a posture — the provider chose this one.
+               {approveWrites && (
+                 <>
+                   <br />
+diff --git a/src/components/common/CloseConfirmDialog.tsx b/src/components/common/CloseConfirmDialog.tsx
+index bd3cda10..bdc0500a 100644
+--- a/src/components/common/CloseConfirmDialog.tsx
++++ b/src/components/common/CloseConfirmDialog.tsx
+@@ -2,6 +2,7 @@ import { AlertTriangle } from "lucide-react";
+ import { Modal } from "@/components/ui/Modal";
+ import { Button } from "@/components/ui/Button";
+ import { describeLiveWork, type LiveWorkSummary } from "@/lib/liveWork";
++import { APP_NAME } from "@/lib/brand";
+ 
+ interface CloseConfirmDialogProps {
+   summary: LiveWorkSummary;
+@@ -20,7 +21,7 @@ export function CloseConfirmDialog({ summary, onCancel, onConfirm }: CloseConfir
+ 
+   return (
+     <Modal
+-      title="Close PacketBench?"
++      title={`Close ${APP_NAME}?`}
+       icon={<AlertTriangle size={14} className="text-accent-amber" />}
+       onClose={onCancel}
+       closeOnEscape
+diff --git a/src/components/flights/FlightAutonomyCard.tsx b/src/components/flights/FlightAutonomyCard.tsx
+index 37e4f469..4ef1eb3a 100644
+--- a/src/components/flights/FlightAutonomyCard.tsx
++++ b/src/components/flights/FlightAutonomyCard.tsx
+@@ -12,6 +12,7 @@ import {
+   stopFlightAutonomy,
+ } from "@/stores/boundedAutonomyRuntime";
+ import type { Flight } from "@/types/flight";
++import { APP_NAME } from "@/lib/brand";
+ 
+ function formatCost(value: number): string {
+   return `$${Math.max(0, value).toFixed(2)}`;
+@@ -69,7 +70,7 @@ export function FlightAutonomyCard({ flight }: { flight: Flight }) {
+ 
+       {!policy ? (
+         <p className="mt-1.5 text-[10px] leading-relaxed text-text-muted">
+-          PacketBench recommends actions; launches, retries, review acceptance, and integration stay
++          {APP_NAME} recommends actions; launches, retries, review acceptance, and integration stay
+           under your control.
+         </p>
+       ) : (
+diff --git a/src/components/flights/LaunchAsyncFlightModal.tsx b/src/components/flights/LaunchAsyncFlightModal.tsx
+index e5c784df..7da5c7a8 100644
+--- a/src/components/flights/LaunchAsyncFlightModal.tsx
++++ b/src/components/flights/LaunchAsyncFlightModal.tsx
+@@ -44,6 +44,7 @@ import { useOllamaModels } from "@/components/agents/hooks/useOllamaModels";
+ import { useLiveModels } from "@/components/agents/hooks/useLiveModels";
+ import { resolveModelRows } from "@/lib/liveModels";
+ import { pathWithinAllowedRoots, validateAutonomyPolicy } from "@/lib/autonomyPolicy";
++import { APP_NAME } from "@/lib/brand";
+ 
+ interface LaunchAsyncFlightModalProps {
+   onClose: () => void;
+@@ -674,7 +675,7 @@ export function LaunchAsyncFlightModal({
+                 <p className="mt-2 text-[10px] leading-relaxed text-text-muted">
+                   {autonomyMode === "settings_default"
+                     ? "Settings currently resolves this Flight to Assisted mode."
+-                    : "PacketBench detects and recommends; you launch, retry, accept, and integrate."}
++                    : `${APP_NAME} detects and recommends; you launch, retry, accept, and integrate.`}
+                 </p>
+               )}
+               {autonomyConfigurationError && (
+diff --git a/src/components/gitHost/GitHostEditConnectionModal.tsx b/src/components/gitHost/GitHostEditConnectionModal.tsx
+index 17d36281..90a4fd9b 100644
+--- a/src/components/gitHost/GitHostEditConnectionModal.tsx
++++ b/src/components/gitHost/GitHostEditConnectionModal.tsx
+@@ -36,6 +36,7 @@ import { probeGitHostCredential } from "@/lib/gitHostProbe";
+ import { descriptorForKind, verdictFor, type WizardVerdict } from "@/lib/gitHostWizard";
+ import { FieldError, ScopeList, VerdictCard } from "@/components/gitHost/GitHostVerdict";
+ import type { GitHostConnectionInfo, GitHostConnectionUpdate } from "@/lib/tauri";
++import { APP_NAME } from "@/lib/brand";
+ 
+ interface GitHostEditConnectionModalProps {
+   connection: GitHostConnectionInfo;
+@@ -342,7 +343,7 @@ export function GitHostEditConnectionModal({
+         )}
+ 
+         {rotating && !descriptor && (
+-          <FieldError message="PacketBench does not know how to verify a token for this host kind, so it will not replace the working one." />
++          <FieldError message={`${APP_NAME} does not know how to verify a token for this host kind, so it will not replace the working one.`} />
+         )}
+ 
+         {error && <FieldError message={error} />}
+diff --git a/src/components/gitHost/GitHostSetupWizard.tsx b/src/components/gitHost/GitHostSetupWizard.tsx
+index 2a0ab320..2bb37207 100644
+--- a/src/components/gitHost/GitHostSetupWizard.tsx
++++ b/src/components/gitHost/GitHostSetupWizard.tsx
+@@ -56,6 +56,7 @@ import { FieldError, ScopeList, VerdictCard } from "@/components/gitHost/GitHost
+ import { useGitHubStore } from "@/stores/githubStore";
+ import { probeGitHostCredential } from "@/lib/gitHostProbe";
+ import { runDeviceFlowAuthorization } from "@/lib/deviceFlow";
++import { APP_NAME } from "@/lib/brand";
+ import {
+   GIT_HOST_WIZARD_DESCRIPTORS,
+   defaultConnectionLabel,
+@@ -583,7 +584,7 @@ export function GitHostSetupWizard({
+                     </p>
+                   ))}
+                   <p className="mt-1.5 text-[10px] text-text-muted">
+-                    PacketBench appends{" "}
++                    {APP_NAME} appends{" "}
+                     <code className="text-text-secondary">{descriptor.probe.apiPrefix || "/"}</code>{" "}
+                     itself when it calls the API.
+                   </p>
+@@ -727,7 +728,7 @@ export function GitHostSetupWizard({
+                 {useNow
+                   ? "This connection is active now."
+                   : "Your previously active connection is unchanged."}{" "}
+-                When you open a workspace, PacketBench picks the connection whose host matches that
++                When you open a workspace, {APP_NAME} picks the connection whose host matches that
+                 repository&apos;s <code className="text-text-primary">origin</code> remote, so this
+                 choice applies until you switch workspace.
+               </p>
+@@ -834,7 +835,7 @@ function DeviceAuthPanel({
+           </span>
+           <span className="block text-[10px] leading-snug text-text-muted">{spec.blurb}</span>
+           <span className="mt-1 block text-[10px] leading-snug text-text-muted">
+-            It asks for {spec.requestedScopes.join(", ")}. PacketBench checks what was actually
++            It asks for {spec.requestedScopes.join(", ")}. {APP_NAME} checks what was actually
+             granted before it saves anything.
+           </span>
+         </span>
+diff --git a/src/components/layout/StatusStrip.tsx b/src/components/layout/StatusStrip.tsx
+index 3119292c..421b0bdb 100644
+--- a/src/components/layout/StatusStrip.tsx
++++ b/src/components/layout/StatusStrip.tsx
+@@ -8,6 +8,7 @@ import { useDictationStore } from "@/stores/dictationStore";
+ import { useSidecarStatus } from "@/hooks/useSidecarStatus";
+ import { routeStatusLabel } from "@/lib/routeRegistry";
+ import type { SidecarStatus } from "@/lib/tauri";
++import { APP_NAME } from "@/lib/brand";
+ 
+ function StatField({
+   label,
+@@ -166,7 +167,7 @@ export function StatusStrip() {
+ 
+       <span className="flex items-center gap-1.5 text-[10.5px] text-text-muted">
+         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-green" />
+-        PacketBench
++        {APP_NAME}
+       </span>
+     </div>
+   );
+diff --git a/src/components/layout/TitleBar.tsx b/src/components/layout/TitleBar.tsx
+index 7c1e2cef..c3131f6a 100644
+--- a/src/components/layout/TitleBar.tsx
++++ b/src/components/layout/TitleBar.tsx
+@@ -2,6 +2,7 @@ import { useCallback, useEffect } from "react";
+ import { getCurrentWindow } from "@tauri-apps/api/window";
+ import { Minus, Square, Copy, X } from "lucide-react";
+ import { useAppStore } from "@/stores/appStore";
++import { APP_NAME } from "@/lib/brand";
+ 
+ /**
+  * Detect macOS at module scope. The Tauri WebView reports a userAgent that
+@@ -62,9 +63,9 @@ export function TitleBar() {
+       >
+         {/* pointer-events-none so children don't swallow the drag */}
+         <div className="flex items-center gap-2 pointer-events-none">
+-          <img src="/favicon.png" alt="PacketBench" className="w-4 h-4" />
++          <img src="/favicon.png" alt={APP_NAME} className="w-4 h-4" />
+           <span className="text-text-primary text-xs font-semibold tracking-wide">
+-            PacketBench
++            {APP_NAME}
+           </span>
+         </div>
+       </div>
+diff --git a/src/components/onboarding/OnboardingPane.tsx b/src/components/onboarding/OnboardingPane.tsx
+index cd368bd5..ab301444 100644
+--- a/src/components/onboarding/OnboardingPane.tsx
++++ b/src/components/onboarding/OnboardingPane.tsx
+@@ -8,6 +8,7 @@ import { setOnboardingComplete } from "@/lib/onboarding";
+ import { AgentDetectionList } from "./AgentDetectionList";
+ import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
+ import type { WorkspaceAgentSlot } from "@/types/workspace";
++import { APP_NAME } from "@/lib/brand";
+ 
+ interface OnboardingPaneProps {
+   /** Called once the user has finished or skipped onboarding. */
+@@ -96,8 +97,8 @@ export function OnboardingPane({ onComplete }: OnboardingPaneProps) {
+       <div className="w-full max-w-[560px] flex flex-col gap-4">
+         {/* Header */}
+         <div className="flex flex-col items-center text-center mb-2 select-none">
+-          <img src="/favicon.png" alt="PacketBench" className="w-12 h-12 mb-3" />
+-          <h1 className="text-xl font-semibold text-text-primary mb-1">Welcome to PacketBench</h1>
++          <img src="/favicon.png" alt={APP_NAME} className="w-12 h-12 mb-3" />
++          <h1 className="text-xl font-semibold text-text-primary mb-1">Welcome to {APP_NAME}</h1>
+           <p className="text-xs text-text-secondary">Run AI coding agents in tiled terminals.</p>
+         </div>
+ 
+@@ -107,7 +108,7 @@ export function OnboardingPane({ onComplete }: OnboardingPaneProps) {
+             <p className="text-[11px] text-text-secondary font-mono truncate mb-2">{projectPath}</p>
+           ) : (
+             <p className="text-[11px] text-text-muted mb-2">
+-              PacketBench works on a folder. Pick the project you want to start with.
++              {APP_NAME} works on a folder. Pick the project you want to start with.
+             </p>
+           )}
+           <button
+@@ -122,7 +123,7 @@ export function OnboardingPane({ onComplete }: OnboardingPaneProps) {
+         {/* Step 2 — Pick agents */}
+         <StepCard step={2} title="Pick at least one agent" done={step2Done} disabled={!step1Done}>
+           <p className="text-[11px] text-text-muted mb-2">
+-            PacketBench wraps these AI coding CLIs. Click an installed one to select it.
++            {APP_NAME} wraps these AI coding CLIs. Click an installed one to select it.
+           </p>
+           <AgentDetectionList
+             agents={agents}
+diff --git a/src/components/views/MemoryView.tsx b/src/components/views/MemoryView.tsx
+index 35b2e6ef..2a7c5161 100644
+--- a/src/components/views/MemoryView.tsx
++++ b/src/components/views/MemoryView.tsx
+@@ -56,6 +56,7 @@ import {
+ import { TIMELINE_FILTERS, type FilterType } from "./memory/timelineFilters";
+ import type { MemoryEvent, MemoryEventType, PatternCategory, LearnedPattern } from "@/types/memory";
+ import { relativeTime } from "@/lib/time";
++import { APP_NAME } from "@/lib/brand";
+ 
+ type Tab = "patterns" | "timeline" | "project" | "ask";
+ 
+@@ -399,7 +400,7 @@ export function MemoryView() {
+     void file.text().then((text) => {
+       const result = importMemory(text);
+       if (!result) {
+-        window.alert("Import failed: the file is not a valid PacketBench memory export.");
++        window.alert(`Import failed: the file is not a valid ${APP_NAME} memory export.`);
+         return;
+       }
+       window.alert(
+@@ -415,7 +416,7 @@ export function MemoryView() {
+     // Scoped, not path-gated: a remote workspace can save a note too, and it
+     // lands under that workspace's `ssh:` key rather than a bare path.
+     if (!briefScope) return;
+-    const summary = window.prompt("What should PacketBench remember?");
++    const summary = window.prompt(`What should ${APP_NAME} remember?`);
+     if (!summary?.trim()) return;
+     const body = window.prompt("Any detail to go with it? (optional)") ?? "";
+     captureManually({
+@@ -1454,7 +1455,7 @@ function AskTab({
+               value === "all"
+                 ? "All"
+                 : value === "global"
+-                  ? "PacketBench"
++                  ? APP_NAME
+                   : "Project Markdown"
+             }
+             onClick={() => setSource(value)}
+diff --git a/src/components/views/WelcomeScreen.tsx b/src/components/views/WelcomeScreen.tsx
+index 7aea586d..87ae47dd 100644
+--- a/src/components/views/WelcomeScreen.tsx
++++ b/src/components/views/WelcomeScreen.tsx
+@@ -6,6 +6,7 @@ import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreation
+ import { relativeTime } from "@/lib/time";
+ import { getAgentColor } from "@/lib/agentColors";
+ import { ROUTE_REGISTRY } from "@/lib/routeRegistry";
++import { APP_NAME } from "@/lib/brand";
+ 
+ export function WelcomeScreen() {
+   const workspaces = useWorkspaceStore((s) => s.workspaces);
+@@ -26,9 +27,9 @@ export function WelcomeScreen() {
+ 
+   return (
+     <div className="flex flex-col items-center justify-center h-full bg-bg-primary select-none" style={{ animation: 'welcomeFadeIn 200ms cubic-bezier(0.16, 1, 0.3, 1) both' }}>
+-      <img src="/favicon.png" alt="PacketBench" className="w-20 h-20 mb-6" />
++      <img src="/favicon.png" alt={APP_NAME} className="w-20 h-20 mb-6" />
+       <h1 className="text-xl font-semibold text-text-primary mb-1">
+-        PacketBench
++        {APP_NAME}
+       </h1>
+       <p className="text-xs text-text-muted mb-8">
+         Multiple coding agents. Shared context. You stay in control.
+diff --git a/src/components/views/memory/ProjectNotesTab.tsx b/src/components/views/memory/ProjectNotesTab.tsx
+index 97d33ebe..c972dc83 100644
+--- a/src/components/views/memory/ProjectNotesTab.tsx
++++ b/src/components/views/memory/ProjectNotesTab.tsx
+@@ -20,6 +20,7 @@ import {
+ import { useProjectMemoryStore } from "@/stores/projectMemoryStore";
+ import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
+ import type { MemoryEvent } from "@/types/memory";
++import { APP_NAME } from "@/lib/brand";
+ import type {
+   ProjectMemoryChangedEvent,
+   ProjectMemoryNote,
+@@ -378,7 +379,7 @@ export function ProjectNotesTab({
+         {changedExternally && (
+           <div className="flex items-center gap-2 border-b border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-[10.5px] text-accent-amber">
+             <AlertTriangle size={11} />
+-            Files changed outside PacketBench. The list is reloaded; an open
++            Files changed outside {APP_NAME}. The list is reloaded; an open
+             draft still uses its original revision and will not overwrite it.
+             <button
+               type="button"
+diff --git a/src/components/views/tools/CliAccountsCard.tsx b/src/components/views/tools/CliAccountsCard.tsx
+index 25ba1921..014da2fb 100644
+--- a/src/components/views/tools/CliAccountsCard.tsx
++++ b/src/components/views/tools/CliAccountsCard.tsx
+@@ -32,6 +32,7 @@ import {
+   CLI_ACCOUNT_LABELS,
+ } from "@/types/cliAccount";
+ import type { CliAccount, CliAccountCli } from "@/types/cliAccount";
++import { APP_NAME } from "@/lib/brand";
+ 
+ export interface CliAccountsCardProps {
+   /**
+@@ -225,7 +226,7 @@ export function CliAccountsCard({ onRequestLogin }: CliAccountsCardProps = {}) {
+           entityName={`${pendingDelete.label} (${CLI_ACCOUNT_LABELS[pendingDelete.cli] ?? pendingDelete.cli})`}
+           description={
+             <>
+-              is removed from PacketBench, along with any project that defaults to it. The config
++              is removed from {APP_NAME}, along with any project that defaults to it. The config
+               directory <span className="font-mono">{pendingDelete.configDir}</span> and the login
+               inside it are left untouched on disk — re-add the account to use it again.
+             </>
+diff --git a/src/components/views/tools/McpHubCard.tsx b/src/components/views/tools/McpHubCard.tsx
+index 8878de9f..1f13c015 100644
+--- a/src/components/views/tools/McpHubCard.tsx
++++ b/src/components/views/tools/McpHubCard.tsx
+@@ -23,6 +23,7 @@ import { mcpServerId, type McpCatalogManifest, type McpServerEntry } from "@/typ
+ import { McpProviderCard } from "./McpProviderCard";
+ import { McpRootsEditor } from "./McpRootsEditor";
+ import { McpServersCard } from "./McpServersCard";
++import { APP_NAME } from "@/lib/brand";
+ 
+ function catalogServerName(manifest: McpCatalogManifest): string {
+   return manifest.id.replace(/^official-/, "");
+@@ -185,7 +186,7 @@ export function McpHubCard() {
+             </h3>
+             <p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-text-muted">
+               Discover servers, diagnose live capabilities, and freeze read/write/network/root
+-              authority into each PacketBench-managed MCP session. Trust edits never broaden a running
++              authority into each {APP_NAME}-managed MCP session. Trust edits never broaden a running
+               session.
+             </p>
+           </div>
+@@ -540,7 +541,7 @@ function CatalogReviewModal({
+       footer={
+         <div className="flex items-center justify-between gap-3">
+           <span className="text-[9px] text-text-muted">
+-            Nothing runs during install; PacketBench only writes the reviewed config entry.
++            Nothing runs during install; {APP_NAME} only writes the reviewed config entry.
+           </span>
+           <button
+             onClick={onInstall}
+diff --git a/src/components/views/tools/ProjectRulesCard.tsx b/src/components/views/tools/ProjectRulesCard.tsx
+index ca813e5e..00da39f6 100644
+--- a/src/components/views/tools/ProjectRulesCard.tsx
++++ b/src/components/views/tools/ProjectRulesCard.tsx
+@@ -4,10 +4,11 @@ import { useLayoutStore } from "@/stores/layoutStore";
+ import { readFileContents, writeFileContents } from "@/lib/tauri";
+ import { CardHeader } from "./CardHeader";
+ import { formatTime } from "@/lib/time";
++import { APP_NAME } from "@/lib/brand";
+ 
+ const STARTER_TEMPLATE = `# Project Rules
+ 
+-PacketBench writes this file as both \`AGENTS.md\` and \`CLAUDE.md\` so the same
++{APP_NAME} writes this file as both \`AGENTS.md\` and \`CLAUDE.md\` so the same
+ rules apply whether you're using Claude Code, Codex, or another agent that
+ follows the AGENTS.md convention.
+ 
+@@ -214,7 +215,7 @@ export function ProjectRulesCard() {
+       </div>
+ 
+       <p className="text-[10px] text-text-muted mb-3">
+-        Rules saved here apply to every PacketBench conversation in this project,
++        Rules saved here apply to every {APP_NAME} conversation in this project,
+         and to Codex / Claude Code when they read these files directly. Saving
+         writes the same content to both filenames so a single rule set works
+         across tools.
+diff --git a/src/components/views/tools/ProviderRoutingCard.tsx b/src/components/views/tools/ProviderRoutingCard.tsx
+index b12c3598..c3004d94 100644
+--- a/src/components/views/tools/ProviderRoutingCard.tsx
++++ b/src/components/views/tools/ProviderRoutingCard.tsx
+@@ -24,6 +24,7 @@ import { liveModelSource, resolveModelRows } from "@/lib/liveModels";
+ import { useLiveModelStore } from "@/stores/liveModelStore";
+ import { SUBSCRIPTION_OAUTH_AGENTS } from "@/lib/attemptRouting";
+ import type { TaskType } from "@/types/flight";
++import { APP_NAME } from "@/lib/brand";
+ 
+ /**
+  * API executors selectable as a workflow-role default.
+@@ -299,7 +300,7 @@ function AuxRoutingSection() {
+       </div>
+ 
+       <p className="mb-3 text-[10px] text-text-muted">
+-        Short generation tasks PacketBench runs for you.{" "}
++        Short generation tasks {APP_NAME} runs for you.{" "}
+         <span className="text-text-secondary">Auto</span> picks the cheapest provider you have an
+         API key for. No task routed through this table uses a Claude or ChatGPT subscription login —
+         a row flagged below is not routed through it yet and says what it does instead.
+diff --git a/src/components/views/tools/WorkspaceSettingsCard.tsx b/src/components/views/tools/WorkspaceSettingsCard.tsx
+index f4f052a1..ea8dc72b 100644
+--- a/src/components/views/tools/WorkspaceSettingsCard.tsx
++++ b/src/components/views/tools/WorkspaceSettingsCard.tsx
+@@ -1,6 +1,7 @@
+ import { Terminal } from "lucide-react";
+ import { useWorkspaceStore } from "@/stores/workspaceStore";
+ import { bypassDefaultCaveat } from "@/lib/bypassFlags";
++import { APP_NAME } from "@/lib/brand";
+ 
+ export function WorkspaceSettingsCard() {
+   const defaultBypassPermissions = useWorkspaceStore((s) => s.defaultBypassPermissions);
+@@ -39,7 +40,7 @@ export function WorkspaceSettingsCard() {
+             self-hosted user read the silence as a broken toggle. */}
+         <Row
+           title="Auto-detect GitHub repo on workspace creation"
+-          description="Run `git remote get-url origin` when creating a workspace and link it to the detected repo. Recognises github.com remotes only — a Gitea, Forgejo, or GitLab origin is left unbound, and you can bind it by hand from the Git pane. Disable if you don't want PacketBench making that call."
++          description={`Run \`git remote get-url origin\` when creating a workspace and link it to the detected repo. Recognises github.com remotes only — a Gitea, Forgejo, or GitLab origin is left unbound, and you can bind it by hand from the Git pane. Disable if you don't want ${APP_NAME} making that call.`}
+           checked={autoBindGithubRepo}
+           onChange={setAutoBindGithubRepo}
+         />
+diff --git a/src/components/workspace/AddSessionPicker.tsx b/src/components/workspace/AddSessionPicker.tsx
+index b79757cd..3d37780c 100644
+--- a/src/components/workspace/AddSessionPicker.tsx
++++ b/src/components/workspace/AddSessionPicker.tsx
+@@ -30,6 +30,7 @@ import {
+   terminalPlatform,
+ } from "@/lib/terminalShells";
+ import type { TerminalShellProfileId, TerminalShellSelection } from "@/types/terminal-shell";
++import { APP_NAME } from "@/lib/brand";
+ 
+ interface AddSessionPickerProps {
+   workspace: Workspace;
+@@ -532,7 +533,7 @@ function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentPro
+ 
+       {!packetCodeReady && !normalizedFilter && (
+         <div className="border-accent-amber/20 bg-accent-amber/5 mx-2 my-1 rounded border px-2 py-1.5 text-meta text-text-muted">
+-          PacketCode is the recommended PacketBench terminal loop. Use{" "}
++          PacketCode is the recommended {APP_NAME} terminal loop. Use{" "}
+           <button
+             type="button"
+             onClick={openPacketCodeSetup}
+diff --git a/src/components/workspace/GitDashboard.tsx b/src/components/workspace/GitDashboard.tsx
+index 63a69b2c..2cb23222 100644
+--- a/src/components/workspace/GitDashboard.tsx
++++ b/src/components/workspace/GitDashboard.tsx
+@@ -67,6 +67,7 @@ import { WorktreeLifecycleBar } from "@/components/workspace/WorktreeLifecycleBa
+ import { ReviewPacketPanel } from "@/components/workspace/ReviewPacketPanel";
+ import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
+ import { openConversationInAgents } from "@/stores/sessionGlue";
++import { APP_NAME } from "@/lib/brand";
+ 
+ function statusIcon(status: string) {
+   switch (status) {
+@@ -898,7 +899,7 @@ export function GitDashboard({
+             <div className="text-meta text-text-muted">
+               {stagedCount === 0
+                 ? "Commits staged files only — stage files above"
+-                : "Flight-linked commits receive PacketBench trailers when a task match is found."}
++                : `Flight-linked commits receive ${APP_NAME} trailers when a task match is found.`}
+             </div>
+           )}
+           <textarea
+diff --git a/src/components/workspace/WorktreeLifecycleBar.tsx b/src/components/workspace/WorktreeLifecycleBar.tsx
+index 4fc966a3..493f6a6c 100644
+--- a/src/components/workspace/WorktreeLifecycleBar.tsx
++++ b/src/components/workspace/WorktreeLifecycleBar.tsx
+@@ -13,6 +13,7 @@ import { useGitHubStore } from "@/stores/githubStore";
+ import { deriveLegacyWorktree } from "@/stores/agentConversationPersistence";
+ import { mergeConversationBranch } from "@/lib/tauri";
+ import { publishBranchAsPr } from "@/lib/gitPublish";
++import { APP_NAME } from "@/lib/brand";
+ 
+ /**
+  * P2-S3 — the one endings surface for a conversation's worktree, mounted
+@@ -125,8 +126,8 @@ export function WorktreeLifecycleBar({
+     }
+     setBusy("pr");
+     try {
+-      const title = `[PacketBench] ${conversation?.title ?? worktree.branch}`.slice(0, 256);
+-      const body = `Auto-generated from PacketBench conversation \`${conversationId}\`.`;
++      const title = `[${APP_NAME}] ${conversation?.title ?? worktree.branch}`.slice(0, 256);
++      const body = `Auto-generated from ${APP_NAME} conversation \`${conversationId}\`.`;
+       const result = await publishBranchAsPr({
+         worktreePath: worktree.worktreePath,
+         branch: worktree.branch,
+diff --git a/src/lib/autonomyPolicy.ts b/src/lib/autonomyPolicy.ts
+index 8d65377c..88da80e0 100644
+--- a/src/lib/autonomyPolicy.ts
++++ b/src/lib/autonomyPolicy.ts
+@@ -1,3 +1,5 @@
++import { APP_NAME } from "@/lib/brand";
++
+ import type {
+   AutonomyActionKind,
+   AutonomyPolicy,
+@@ -45,7 +47,7 @@ export function pauseAutonomyForRestart(
+     ...runtime,
+     status: "paused",
+     pausedAt: now,
+-    hardStopReason: "Paused after PacketBench restarted. Resume explicitly.",
++    hardStopReason: `Paused after ${APP_NAME} restarted. Resume explicitly.`,
+   };
+ }
+ 
+diff --git a/src/lib/cli-catalog.ts b/src/lib/cli-catalog.ts
+index 866eaa52..f564b609 100644
+--- a/src/lib/cli-catalog.ts
++++ b/src/lib/cli-catalog.ts
+@@ -1,3 +1,5 @@
++import { APP_NAME } from "@/lib/brand";
++
+ /**
+  * CLI catalog metadata for PacketBench's Tier 1 CLI detection grid.
+  *
+@@ -124,7 +126,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
+     binary: "packetcode",
+     iconName: "Terminal",
+     color: "amber",
+-    description: "PacketBench's sibling terminal coding TUI",
++    description: `${APP_NAME}'s sibling terminal coding TUI`,
+     installCommand: packetCodeInstallCommand("stable", false),
+     installCommandWindows: packetCodeInstallCommand("stable", true),
+   },
+@@ -208,7 +210,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
+  */
+ export const CLI_LAUNCH_SOURCE_LABELS: Record<string, string> = {
+   settings: "Settings override",
+-  legacyPin: "legacy PacketBench pin",
++  legacyPin: `legacy ${APP_NAME} pin`,
+   path: "PATH",
+   installerLocation: "official installer location",
+   bareName: "unresolved — the bare command name",
+diff --git a/src/lib/conversationHandoff.ts b/src/lib/conversationHandoff.ts
+index ce4d5511..2818413f 100644
+--- a/src/lib/conversationHandoff.ts
++++ b/src/lib/conversationHandoff.ts
+@@ -1,3 +1,5 @@
++import { APP_NAME } from "@/lib/brand";
++
+ import type {
+   AgentConversation,
+   AgentPlanItem,
+@@ -71,7 +73,7 @@ export function buildHandoffPrompt(
+   const sections: string[] = [];
+ 
+   sections.push(
+-    "You are taking over execution from a planning agent in PacketBench. " +
++    `You are taking over execution from a planning agent in ${APP_NAME}. ` +
+       "The plan below was approved by the user. Execute it step by step; " +
+       "do not re-plan unless blocked.",
+   );
+diff --git a/src/lib/cooperativeFlight.ts b/src/lib/cooperativeFlight.ts
+index e8cc6d74..da3fe48a 100644
+--- a/src/lib/cooperativeFlight.ts
++++ b/src/lib/cooperativeFlight.ts
+@@ -1,5 +1,6 @@
+ import { claimedPathsOverlap, normalizeClaimedPath } from "@/lib/pathCollisions";
+ import type { Attempt, Flight, Task } from "@/types/flight";
++import { APP_NAME } from "@/lib/brand";
+ 
+ export type CooperativeTaskState =
+   | "blocked"
+@@ -224,5 +225,5 @@ ${dependencySummaries || "- none"}
+ Acceptance criteria:
+ ${(milestone?.validationCriteria ?? []).map((criterion) => `- ${criterion}`).join("\n")}
+ 
+-Stay within the owned paths unless a necessary cross-cutting change is explicitly explained. Run appropriate checks and commit all changes before finishing; PacketBench can integrate only a clean committed branch.`;
++Stay within the owned paths unless a necessary cross-cutting change is explicitly explained. Run appropriate checks and commit all changes before finishing; ${APP_NAME} can integrate only a clean committed branch.`;
+ }
+diff --git a/src/lib/env.ts b/src/lib/env.ts
+index d559aab2..42eb11ba 100644
+--- a/src/lib/env.ts
++++ b/src/lib/env.ts
+@@ -1,3 +1,5 @@
++import { APP_NAME } from "@/lib/brand";
++
+ /** Whether the app is running in development mode. */
+ export const isDev = import.meta.env.DEV;
+ 
+@@ -7,6 +9,6 @@ export const isProd = import.meta.env.PROD;
+ /** Log only in development mode. */
+ export function devLog(...args: unknown[]): void {
+   if (isDev) {
+-    console.log("[PacketBench:dev]", ...args);
++    console.log(`[${APP_NAME}:dev]`, ...args);
+   }
+ }
+diff --git a/src/lib/gitHostWizard.ts b/src/lib/gitHostWizard.ts
+index 1826ebc5..052f87d0 100644
+--- a/src/lib/gitHostWizard.ts
++++ b/src/lib/gitHostWizard.ts
+@@ -29,6 +29,7 @@ import {
+   gitHostAddGitea,
+ } from "@/lib/tauri";
+ import { GITHUB_CONNECTION_ID } from "@/lib/git-hosts";
++import { APP_NAME } from "@/lib/brand";
+ import {
+   probePendingDeviceCredential,
+   type GitHostProbeOutcome,
+@@ -245,7 +246,7 @@ const GITHUB_ENTERPRISE_DESCRIPTOR: GitHostWizardDescriptor = {
+   // (`GITHUB_CONNECTION_ID`, no configurable base URL), so there is nowhere to
+   // put an Enterprise origin. Say so rather than offering a dead-end flow.
+   unsupported:
+-    "PacketBench's GitHub connection is fixed to github.com — an Enterprise Server base URL cannot be stored yet.",
++    `${APP_NAME}'s GitHub connection is fixed to github.com — an Enterprise Server base URL cannot be stored yet.`,
+ };
+ 
+ const GITEA_DESCRIPTOR: GitHostWizardDescriptor = {
+@@ -303,7 +304,7 @@ const GITLAB_DESCRIPTOR: GitHostWizardDescriptor = {
+     { id: "api", reason: "Read and write projects, issues, and merge requests." },
+     {
+       id: "read_api",
+-      reason: "Lets PacketBench verify this token's own scopes.",
++      reason: `Lets ${APP_NAME} verify this token's own scopes.`,
+       optional: true,
+     },
+   ],
+@@ -482,7 +483,7 @@ export function normalizeInstanceUrl(
+   );
+   if (strippedApi) {
+     path = path.slice(0, path.length - strippedApi.length).replace(/\/+$/, "");
+-    notes.push(`Removed the ${strippedApi} suffix — PacketBench appends the API path itself.`);
++    notes.push(`Removed the ${strippedApi} suffix — ${APP_NAME} appends the API path itself.`);
+   }
+   if (url.pathname !== "/" && url.pathname !== path && !strippedApi) {
+     notes.push("Removed the trailing slash.");
+@@ -593,7 +594,7 @@ export function verdictFor(
+         code: "not_a_host",
+         title: "That address is not this host's API",
+         detail: result.detail ?? "The address answered with something unexpected.",
+-        remedy: `Check the instance URL. PacketBench requested ${result.endpoint}.`,
++        remedy: `Check the instance URL. ${APP_NAME} requested ${result.endpoint}.`,
+         canSave: false,
+       };
+     case "invalid_token":
+@@ -638,8 +639,8 @@ export function verdictFor(
+         level: "error",
+         code: "unknown",
+         title: "Unexpected response from the host",
+-        detail: result.detail ?? "The host answered in a way PacketBench does not recognise.",
+-        remedy: `Check the instance URL. PacketBench requested ${result.endpoint}.`,
++        detail: result.detail ?? `The host answered in a way ${APP_NAME} does not recognise.`,
++        remedy: `Check the instance URL. ${APP_NAME} requested ${result.endpoint}.`,
+         canSave: false,
+       };
+     case "ok":
+@@ -668,7 +669,7 @@ export function verdictFor(
+       level: "warning",
+       code: "scopes_unknown",
+       title: `Connected as ${result.login ?? "unknown"}`,
+-      detail: `${hostName} does not report which scopes this token was granted, so PacketBench could not check them.`,
++      detail: `${hostName} does not report which scopes this token was granted, so ${APP_NAME} could not check them.`,
+       remedy: "If repository or issue actions fail later, revisit the token's permissions.",
+       canSave: true,
+     };
+diff --git a/src/lib/mcpCatalog.ts b/src/lib/mcpCatalog.ts
+index 178313c0..4989892c 100644
+--- a/src/lib/mcpCatalog.ts
++++ b/src/lib/mcpCatalog.ts
+@@ -1,4 +1,5 @@
+ import type { McpCatalogManifest } from "@/types/mcp";
++import { APP_NAME } from "@/lib/brand";
+ 
+ export const MCP_CATALOG: McpCatalogManifest[] = [
+   {
+@@ -6,7 +7,7 @@ export const MCP_CATALOG: McpCatalogManifest[] = [
+     id: "official-filesystem",
+     name: "Filesystem",
+     description:
+-      "Official local filesystem server. PacketBench scopes it to the active project path in the review step.",
++      `Official local filesystem server. ${APP_NAME} scopes it to the active project path in the review step.`,
+     officialSource: "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+     platforms: ["windows", "macos", "linux"],
+     transport: "stdio",
+diff --git a/src/lib/projectMemoryCapture.ts b/src/lib/projectMemoryCapture.ts
+index 10bb0333..4e098c2e 100644
+--- a/src/lib/projectMemoryCapture.ts
++++ b/src/lib/projectMemoryCapture.ts
+@@ -4,6 +4,7 @@ import type {
+   ProjectMemoryNote,
+ } from "@/types/project-memory";
+ import type { ProvenanceEnvelope } from "@/types/provenance";
++import { APP_NAME } from "@/lib/brand";
+ 
+ export function redactProjectMemoryCapture(value: string): string {
+   return value
+@@ -49,7 +50,7 @@ export function captureFromGlobalMemoryEvent(
+   return buildProjectMemoryCapture({
+     title,
+     body: [
+-      `Captured from PacketBench global memory event \`${event.id}\`.`,
++      `Captured from ${APP_NAME} global memory event \`${event.id}\`.`,
+       "",
+       "```json",
+       JSON.stringify(event.payload, null, 2),
+diff --git a/src/lib/reviewerGate.ts b/src/lib/reviewerGate.ts
+index 96e92a78..e79ff94d 100644
+--- a/src/lib/reviewerGate.ts
++++ b/src/lib/reviewerGate.ts
+@@ -255,7 +255,7 @@ Summary: ${report.summary}
+ Findings:
+ ${findings.length > 0 ? findings.join("\n\n") : "No structured findings were supplied; address the summary and report back."}
+ 
+-This is one user-triggered remediation turn. Make the requested changes, run appropriate checks, and summarize what changed. PacketBench will not automatically repeat this cycle.`;
++This is one user-triggered remediation turn. Make the requested changes, run appropriate checks, and summarize what changed. ${APP_NAME} will not automatically repeat this cycle.`;
+ }
+ 
+ export function reviewerGateAllowsAcceptance(
+diff --git a/src/lib/settingsNavigation.ts b/src/lib/settingsNavigation.ts
+index bea0df15..b1facc0c 100644
+--- a/src/lib/settingsNavigation.ts
++++ b/src/lib/settingsNavigation.ts
+@@ -1,3 +1,5 @@
++import { APP_NAME } from "@/lib/brand";
++
+ import type {
+   SettingsGroup,
+   SettingsScope,
+@@ -211,7 +213,7 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
+         key: "routing",
+         label: "Task Role Defaults",
+         description:
+-          "Desired agent assignments by task role, and the provider for PacketBench's own auxiliary AI tasks.",
++          `Desired agent assignments by task role, and the provider for ${APP_NAME}'s own auxiliary AI tasks.`,
+         scopes: ["App", "New conversations", "New Flights"],
+         keywords: [
+           "routing",
+@@ -267,7 +269,7 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
+       {
+         key: "mcp",
+         label: "MCP",
+-        description: "MCP clients, the PacketBench provider, trust, and diagnostics.",
++        description: `MCP clients, the ${APP_NAME} provider, trust, and diagnostics.`,
+         scopes: ["App", "Project", "New conversations"],
+         keywords: ["model context protocol", "server", "provider", "tools", "trust", "catalog"],
+       },
+@@ -300,7 +302,7 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
+       {
+         key: "modules",
+         label: "Modules",
+-        description: "Enable and configure first-party PacketBench modules.",
++        description: `Enable and configure first-party ${APP_NAME} modules.`,
+         scopes: ["App"],
+         keywords: ["quality", "dictation", "integration", "extension"],
+       },
+diff --git a/src/lib/storage.ts b/src/lib/storage.ts
+index 670e449c..4abfaa39 100644
+--- a/src/lib/storage.ts
++++ b/src/lib/storage.ts
+@@ -1,3 +1,5 @@
++import { APP_NAME } from "@/lib/brand";
++
+ export function loadFromStorage<T>(key: string, fallback: T): T {
+   try {
+     const saved = localStorage.getItem(key);
+@@ -12,7 +14,7 @@ export function saveToStorage(key: string, value: unknown): void {
+   try {
+     localStorage.setItem(key, JSON.stringify(value));
+   } catch (e) {
+-    console.error(`[PacketBench] Failed to save to localStorage key "${key}":`, e);
++    console.error(`[${APP_NAME}] Failed to save to localStorage key "${key}":`, e);
+   }
+ }
+ 
+diff --git a/src/lib/tauri.ts b/src/lib/tauri.ts
+index 2a6e88d5..1b8164b2 100644
+--- a/src/lib/tauri.ts
++++ b/src/lib/tauri.ts
+@@ -347,7 +347,7 @@ export function describePtyExitOutcome(outcome: PtyExitOutcome): string {
+         : `Session ended — exit code ${outcome.exitCode}`;
+     }
+     case "killed":
+-      return "Session stopped by PacketBench";
++      return `Session stopped by ${APP_NAME}`;
+     case "unknown":
+       return "Session ended — exit status could not be read";
+   }
+@@ -3261,6 +3261,7 @@ export async function readPromptHistory(): Promise<string> {
+ 
+ // MCP server management
+ import type { McpServerDiagnostic, McpServerEntry, McpTrustSnapshot } from "@/types/mcp";
++import { APP_NAME } from "@/lib/brand";
+ 
+ export async function readMcpServers(projectPath: string): Promise<McpServerEntry[]> {
+   return invoke<McpServerEntry[]>("read_mcp_servers", { projectPath });
+diff --git a/src/main.tsx b/src/main.tsx
+index cd662650..a91554ca 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -2,15 +2,16 @@ import React from "react";
+ import ReactDOM from "react-dom/client";
+ import { bootPersistedStorage } from "@/lib/storage-boot";
+ import "./index.css";
++import { APP_NAME } from "@/lib/brand";
+ 
+ // Global error handlers — catch unhandled errors and promise rejections
+ window.addEventListener("unhandledrejection", (event) => {
+-  console.error("[PacketBench] Unhandled promise rejection:", event.reason);
++  console.error(`[${APP_NAME}] Unhandled promise rejection:`, event.reason);
+ });
+ 
+ window.addEventListener("error", (event) => {
+   console.error(
+-    "[PacketBench] Unhandled error:",
++    `[${APP_NAME}] Unhandled error:`,
+     event.message,
+     "at",
+     event.filename,
+diff --git a/src/stores/agentTaskStore.ts b/src/stores/agentTaskStore.ts
+index 6809b78c..38c0dd25 100644
+--- a/src/stores/agentTaskStore.ts
++++ b/src/stores/agentTaskStore.ts
+@@ -92,6 +92,7 @@ import {
+   deriveLegacyWorktree,
+ } from "@/stores/agentConversationPersistence";
+ import type { McpTrustSnapshot } from "@/types/mcp";
++import { APP_NAME } from "@/lib/brand";
+ 
+ // `requestConversationSave` was historically defined here; re-export it so
+ // external importers (apiAgentListeners, agentPlanStore, slashCommandHandlers,
+@@ -336,8 +337,8 @@ export function retiredApiAgentNotice(agent: AgentCli): string {
+   const replacement = RETIRED_API_AGENT_REPLACEMENTS[canonical];
+   const base =
+     canonical === "api-openai-codex"
+-      ? "This conversation used the OpenAI (ChatGPT Plus/Pro) provider, which PacketBench no longer offers — it required a ChatGPT subscription login. The transcript is preserved and stays fully readable."
+-      : `This conversation used a provider PacketBench no longer offers (${canonical}). The transcript is preserved and stays fully readable.`;
++      ? `This conversation used the OpenAI (ChatGPT Plus/Pro) provider, which ${APP_NAME} no longer offers — it required a ChatGPT subscription login. The transcript is preserved and stays fully readable.`
++      : `This conversation used a provider ${APP_NAME} no longer offers (${canonical}). The transcript is preserved and stays fully readable.`;
+   return replacement === "api-openai-agents"
+     ? `${base} To continue, switch it to OpenAI Agents SDK (API) — the same OpenAI models, billed to your OpenAI API key.`
+     : base;
+diff --git a/src/stores/asyncFlightStore.ts b/src/stores/asyncFlightStore.ts
+index 870a35b2..4390e343 100644
+--- a/src/stores/asyncFlightStore.ts
++++ b/src/stores/asyncFlightStore.ts
+@@ -63,6 +63,7 @@ import {
+   validateCooperativeGraph,
+ } from "@/lib/cooperativeFlight";
+ import type { Task } from "@/types/flight";
++import { APP_NAME } from "@/lib/brand";
+ 
+ export interface AsyncLaunchOptions {
+   allowPathCollisions?: boolean;
+@@ -557,7 +558,7 @@ async function publishAttemptAsDraftPr(flight: Flight, attempt: Attempt): Promis
+   //   preserving extraction — flights and sessions call the same path now).
+   let body = flight.objective || flight.prompt || "";
+   body = body.slice(0, 60_000);
+-  body = `Auto-generated from PacketBench Flight \`${flight.id}\` attempt \`${attempt.id}\`.\n\n${body}`;
++  body = `Auto-generated from ${APP_NAME} Flight \`${flight.id}\` attempt \`${attempt.id}\`.\n\n${body}`;
+ 
+   const title = `[Flight ${flight.title}] Attempt ${attempt.id}`.slice(0, 256);
+ 
+diff --git a/src/stores/mcpProviderStore.ts b/src/stores/mcpProviderStore.ts
+index 5e60e320..21d0e51b 100644
+--- a/src/stores/mcpProviderStore.ts
++++ b/src/stores/mcpProviderStore.ts
+@@ -4,7 +4,7 @@ import { useFlightStore } from "@/stores/flightStore";
+ import { useWorkspaceStore } from "@/stores/workspaceStore";
+ import { isLocalWorkspace } from "@/types/workspace";
+ import { useMemoryStore } from "@/stores/memoryStore";
+-import { URI_SCHEME, storageKey } from "@/lib/brand";
++import { APP_NAME, URI_SCHEME, storageKey } from "@/lib/brand";
+ import {
+   mcpServerStart,
+   mcpServerStop,
+@@ -297,7 +297,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
+     resources.push({
+       uri: `${URI_SCHEME}://issues`,
+       name: "Issue board",
+-      description: "Current PacketBench issues and workflow state",
++      description: `Current ${APP_NAME} issues and workflow state`,
+       mimeType: "application/json",
+     });
+     resources.push({
+diff --git a/src/stores/memoryStore.ts b/src/stores/memoryStore.ts
+index f3e8d9e0..d593725c 100644
+--- a/src/stores/memoryStore.ts
++++ b/src/stores/memoryStore.ts
+@@ -31,6 +31,7 @@ import type { loadPersistedState } from "@/lib/tauri";
+ import type { ProvenanceEnvelope } from "@/types/provenance";
+ import type { ProjectMemoryNote } from "@/types/project-memory";
+ import { useProjectMemoryStore } from "@/stores/projectMemoryStore";
++import { APP_NAME } from "@/lib/brand";
+ 
+ function normalizePath(path: string): string {
+   return (
+@@ -913,7 +914,7 @@ export function serializeMemoryMarkdown(
+   patterns: LearnedPattern[],
+   options: { labelScope?: (key: string) => string } = {},
+ ): string {
+-  const lines: string[] = ["# PacketBench memory export", ""];
++  const lines: string[] = [`# ${APP_NAME} memory export`, ""];
+   const byType = new Map<string, number>();
+   for (const ev of events) byType.set(ev.type, (byType.get(ev.type) ?? 0) + 1);
+   lines.push(`- Events: ${events.length}`);
+@@ -1910,7 +1911,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
+     }
+ 
+     const lines: string[] = [
+-      "## PacketBench Memory Brief",
++      `## ${APP_NAME} Memory Brief`,
+       "Use this project memory when relevant. Prefer current repository files over stale notes.",
+       "",
+     ];

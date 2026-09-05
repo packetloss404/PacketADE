@@ -1,3 +1,5 @@
+import { APP_NAME } from "@/lib/brand";
+
 import type {
   AgentConversation,
   AgentPlanItem,
@@ -71,7 +73,7 @@ export function buildHandoffPrompt(
   const sections: string[] = [];
 
   sections.push(
-    "You are taking over execution from a planning agent in PacketBench. " +
+    `You are taking over execution from a planning agent in ${APP_NAME}. ` +
       "The plan below was approved by the user. Execute it step by step; " +
       "do not re-plan unless blocked.",
   );

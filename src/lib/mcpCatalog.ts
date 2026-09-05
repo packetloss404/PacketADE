@@ -1,4 +1,5 @@
 import type { McpCatalogManifest } from "@/types/mcp";
+import { APP_NAME } from "@/lib/brand";
 
 export const MCP_CATALOG: McpCatalogManifest[] = [
   {
@@ -6,7 +7,7 @@ export const MCP_CATALOG: McpCatalogManifest[] = [
     id: "official-filesystem",
     name: "Filesystem",
     description:
-      "Official local filesystem server. PacketBench scopes it to the active project path in the review step.",
+      `Official local filesystem server. ${APP_NAME} scopes it to the active project path in the review step.`,
     officialSource: "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
     platforms: ["windows", "macos", "linux"],
     transport: "stdio",

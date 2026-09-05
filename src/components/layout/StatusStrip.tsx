@@ -8,6 +8,7 @@ import { useDictationStore } from "@/stores/dictationStore";
 import { useSidecarStatus } from "@/hooks/useSidecarStatus";
 import { routeStatusLabel } from "@/lib/routeRegistry";
 import type { SidecarStatus } from "@/lib/tauri";
+import { APP_NAME } from "@/lib/brand";
 
 function StatField({
   label,
@@ -166,7 +167,7 @@ export function StatusStrip() {
 
       <span className="flex items-center gap-1.5 text-[10.5px] text-text-muted">
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-green" />
-        PacketBench
+        {APP_NAME}
       </span>
     </div>
   );

@@ -2,6 +2,7 @@ import { useCallback, useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, Copy, X } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
+import { APP_NAME } from "@/lib/brand";
 
 /**
  * Detect macOS at module scope. The Tauri WebView reports a userAgent that
@@ -62,9 +63,9 @@ export function TitleBar() {
       >
         {/* pointer-events-none so children don't swallow the drag */}
         <div className="flex items-center gap-2 pointer-events-none">
-          <img src="/favicon.png" alt="PacketBench" className="w-4 h-4" />
+          <img src="/favicon.png" alt={APP_NAME} className="w-4 h-4" />
           <span className="text-text-primary text-xs font-semibold tracking-wide">
-            PacketBench
+            {APP_NAME}
           </span>
         </div>
       </div>

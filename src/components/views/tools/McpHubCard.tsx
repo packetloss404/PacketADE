@@ -23,6 +23,7 @@ import { mcpServerId, type McpCatalogManifest, type McpServerEntry } from "@/typ
 import { McpProviderCard } from "./McpProviderCard";
 import { McpRootsEditor } from "./McpRootsEditor";
 import { McpServersCard } from "./McpServersCard";
+import { APP_NAME } from "@/lib/brand";
 
 function catalogServerName(manifest: McpCatalogManifest): string {
   return manifest.id.replace(/^official-/, "");
@@ -185,7 +186,7 @@ export function McpHubCard() {
             </h3>
             <p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-text-muted">
               Discover servers, diagnose live capabilities, and freeze read/write/network/root
-              authority into each PacketBench-managed MCP session. Trust edits never broaden a running
+              authority into each {APP_NAME}-managed MCP session. Trust edits never broaden a running
               session.
             </p>
           </div>
@@ -540,7 +541,7 @@ function CatalogReviewModal({
       footer={
         <div className="flex items-center justify-between gap-3">
           <span className="text-[9px] text-text-muted">
-            Nothing runs during install; PacketBench only writes the reviewed config entry.
+            Nothing runs during install; {APP_NAME} only writes the reviewed config entry.
           </span>
           <button
             onClick={onInstall}

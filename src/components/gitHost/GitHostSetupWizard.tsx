@@ -56,6 +56,7 @@ import { FieldError, ScopeList, VerdictCard } from "@/components/gitHost/GitHost
 import { useGitHubStore } from "@/stores/githubStore";
 import { probeGitHostCredential } from "@/lib/gitHostProbe";
 import { runDeviceFlowAuthorization } from "@/lib/deviceFlow";
+import { APP_NAME } from "@/lib/brand";
 import {
   GIT_HOST_WIZARD_DESCRIPTORS,
   defaultConnectionLabel,
@@ -583,7 +584,7 @@ export function GitHostSetupWizard({
                     </p>
                   ))}
                   <p className="mt-1.5 text-[10px] text-text-muted">
-                    PacketBench appends{" "}
+                    {APP_NAME} appends{" "}
                     <code className="text-text-secondary">{descriptor.probe.apiPrefix || "/"}</code>{" "}
                     itself when it calls the API.
                   </p>
@@ -727,7 +728,7 @@ export function GitHostSetupWizard({
                 {useNow
                   ? "This connection is active now."
                   : "Your previously active connection is unchanged."}{" "}
-                When you open a workspace, PacketBench picks the connection whose host matches that
+                When you open a workspace, {APP_NAME} picks the connection whose host matches that
                 repository&apos;s <code className="text-text-primary">origin</code> remote, so this
                 choice applies until you switch workspace.
               </p>
@@ -834,7 +835,7 @@ function DeviceAuthPanel({
           </span>
           <span className="block text-[10px] leading-snug text-text-muted">{spec.blurb}</span>
           <span className="mt-1 block text-[10px] leading-snug text-text-muted">
-            It asks for {spec.requestedScopes.join(", ")}. PacketBench checks what was actually
+            It asks for {spec.requestedScopes.join(", ")}. {APP_NAME} checks what was actually
             granted before it saves anything.
           </span>
         </span>

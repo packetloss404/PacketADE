@@ -36,6 +36,7 @@ import {
 import { initializeApp, persistUiState } from "@/lib/bootstrap";
 import { requestNotificationPermission } from "@/lib/notifications";
 import type { AppView } from "@/stores/appStore";
+import { APP_NAME } from "@/lib/brand";
 
 // Lazy-loaded views — split into separate chunks to reduce initial bundle size
 const IssueBoard = lazy(() =>
@@ -229,7 +230,7 @@ export default function App() {
   }, [activeView]);
 
   return (
-    <ErrorBoundary fallbackMessage="PacketBench encountered an error">
+    <ErrorBoundary fallbackMessage={`${APP_NAME} encountered an error`}>
       {/* Tile program (P4-S3): mount the in-app Toast host app-wide so the
           existing Toast infrastructure is a live consumer (e.g. the archive
           "worktree pending — Review worktree" toast). Wraps the whole shell so

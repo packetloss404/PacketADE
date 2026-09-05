@@ -112,6 +112,13 @@ fail, the change is wrong, not the test.
   runs at conversation launch (`agentTaskStore.ts:712`) and Flight launch
   (`asyncFlightStore.ts:1366`); mid-conversation turns and the auxiliary LLM
   features (side chat, GitHub AI, memory summaries) are not re-checked.
+- **Copy the user sees says the product name via `APP_NAME`, not literally.**
+  `scripts/app-name-brand.test.mjs` is the fence; it reads code, not comments,
+  so JSDoc naming the product is fine. Three sites are allowlisted with reasons
+  — the definition, and the two halves of the `Run-By:` trailer template, which
+  must stay byte-identical to `src-tauri/src/core/orchestrator.rs:10` and to the
+  glob in the generated git hook (`worktree.rs:508,580`). Rename that on both
+  sides deliberately or not at all (audit F25/P17).
 - **Never hardcode `"packetbench:"` — build keys with `storageKey()`.**
   `storageMirror.ts:158,204` mirrors by `key.startsWith(STORAGE_PREFIX)` and
   `storage-migration.ts:74-84` carries exactly ONE previous prefix forward. A

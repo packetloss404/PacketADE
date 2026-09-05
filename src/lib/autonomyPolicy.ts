@@ -1,3 +1,5 @@
+import { APP_NAME } from "@/lib/brand";
+
 import type {
   AutonomyActionKind,
   AutonomyPolicy,
@@ -45,7 +47,7 @@ export function pauseAutonomyForRestart(
     ...runtime,
     status: "paused",
     pausedAt: now,
-    hardStopReason: "Paused after PacketBench restarted. Resume explicitly.",
+    hardStopReason: `Paused after ${APP_NAME} restarted. Resume explicitly.`,
   };
 }
 

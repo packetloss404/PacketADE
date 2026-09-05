@@ -56,6 +56,7 @@ import {
 import { TIMELINE_FILTERS, type FilterType } from "./memory/timelineFilters";
 import type { MemoryEvent, MemoryEventType, PatternCategory, LearnedPattern } from "@/types/memory";
 import { relativeTime } from "@/lib/time";
+import { APP_NAME } from "@/lib/brand";
 
 type Tab = "patterns" | "timeline" | "project" | "ask";
 
@@ -399,7 +400,7 @@ export function MemoryView() {
     void file.text().then((text) => {
       const result = importMemory(text);
       if (!result) {
-        window.alert("Import failed: the file is not a valid PacketBench memory export.");
+        window.alert(`Import failed: the file is not a valid ${APP_NAME} memory export.`);
         return;
       }
       window.alert(
@@ -415,7 +416,7 @@ export function MemoryView() {
     // Scoped, not path-gated: a remote workspace can save a note too, and it
     // lands under that workspace's `ssh:` key rather than a bare path.
     if (!briefScope) return;
-    const summary = window.prompt("What should PacketBench remember?");
+    const summary = window.prompt(`What should ${APP_NAME} remember?`);
     if (!summary?.trim()) return;
     const body = window.prompt("Any detail to go with it? (optional)") ?? "";
     captureManually({
@@ -1454,7 +1455,7 @@ function AskTab({
               value === "all"
                 ? "All"
                 : value === "global"
-                  ? "PacketBench"
+                  ? APP_NAME
                   : "Project Markdown"
             }
             onClick={() => setSource(value)}

@@ -20,6 +20,7 @@ import {
 import { useProjectMemoryStore } from "@/stores/projectMemoryStore";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import type { MemoryEvent } from "@/types/memory";
+import { APP_NAME } from "@/lib/brand";
 import type {
   ProjectMemoryChangedEvent,
   ProjectMemoryNote,
@@ -378,7 +379,7 @@ export function ProjectNotesTab({
         {changedExternally && (
           <div className="flex items-center gap-2 border-b border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-[10.5px] text-accent-amber">
             <AlertTriangle size={11} />
-            Files changed outside PacketBench. The list is reloaded; an open
+            Files changed outside {APP_NAME}. The list is reloaded; an open
             draft still uses its original revision and will not overwrite it.
             <button
               type="button"

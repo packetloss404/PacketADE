@@ -255,7 +255,7 @@ Summary: ${report.summary}
 Findings:
 ${findings.length > 0 ? findings.join("\n\n") : "No structured findings were supplied; address the summary and report back."}
 
-This is one user-triggered remediation turn. Make the requested changes, run appropriate checks, and summarize what changed. PacketBench will not automatically repeat this cycle.`;
+This is one user-triggered remediation turn. Make the requested changes, run appropriate checks, and summarize what changed. ${APP_NAME} will not automatically repeat this cycle.`;
 }
 
 export function reviewerGateAllowsAcceptance(

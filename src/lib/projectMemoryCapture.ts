@@ -4,6 +4,7 @@ import type {
   ProjectMemoryNote,
 } from "@/types/project-memory";
 import type { ProvenanceEnvelope } from "@/types/provenance";
+import { APP_NAME } from "@/lib/brand";
 
 export function redactProjectMemoryCapture(value: string): string {
   return value
@@ -49,7 +50,7 @@ export function captureFromGlobalMemoryEvent(
   return buildProjectMemoryCapture({
     title,
     body: [
-      `Captured from PacketBench global memory event \`${event.id}\`.`,
+      `Captured from ${APP_NAME} global memory event \`${event.id}\`.`,
       "",
       "```json",
       JSON.stringify(event.payload, null, 2),

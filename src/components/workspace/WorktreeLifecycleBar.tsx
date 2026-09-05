@@ -13,6 +13,7 @@ import { useGitHubStore } from "@/stores/githubStore";
 import { deriveLegacyWorktree } from "@/stores/agentConversationPersistence";
 import { mergeConversationBranch } from "@/lib/tauri";
 import { publishBranchAsPr } from "@/lib/gitPublish";
+import { APP_NAME } from "@/lib/brand";
 
 /**
  * P2-S3 — the one endings surface for a conversation's worktree, mounted
@@ -125,8 +126,8 @@ export function WorktreeLifecycleBar({
     }
     setBusy("pr");
     try {
-      const title = `[PacketBench] ${conversation?.title ?? worktree.branch}`.slice(0, 256);
-      const body = `Auto-generated from PacketBench conversation \`${conversationId}\`.`;
+      const title = `[${APP_NAME}] ${conversation?.title ?? worktree.branch}`.slice(0, 256);
+      const body = `Auto-generated from ${APP_NAME} conversation \`${conversationId}\`.`;
       const result = await publishBranchAsPr({
         worktreePath: worktree.worktreePath,
         branch: worktree.branch,

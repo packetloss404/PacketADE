@@ -4,10 +4,11 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { readFileContents, writeFileContents } from "@/lib/tauri";
 import { CardHeader } from "./CardHeader";
 import { formatTime } from "@/lib/time";
+import { APP_NAME } from "@/lib/brand";
 
 const STARTER_TEMPLATE = `# Project Rules
 
-PacketBench writes this file as both \`AGENTS.md\` and \`CLAUDE.md\` so the same
+{APP_NAME} writes this file as both \`AGENTS.md\` and \`CLAUDE.md\` so the same
 rules apply whether you're using Claude Code, Codex, or another agent that
 follows the AGENTS.md convention.
 
@@ -214,7 +215,7 @@ export function ProjectRulesCard() {
       </div>
 
       <p className="text-[10px] text-text-muted mb-3">
-        Rules saved here apply to every PacketBench conversation in this project,
+        Rules saved here apply to every {APP_NAME} conversation in this project,
         and to Codex / Claude Code when they read these files directly. Saving
         writes the same content to both filenames so a single rule set works
         across tools.

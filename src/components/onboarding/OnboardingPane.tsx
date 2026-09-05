@@ -8,6 +8,7 @@ import { setOnboardingComplete } from "@/lib/onboarding";
 import { AgentDetectionList } from "./AgentDetectionList";
 import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
 import type { WorkspaceAgentSlot } from "@/types/workspace";
+import { APP_NAME } from "@/lib/brand";
 
 interface OnboardingPaneProps {
   /** Called once the user has finished or skipped onboarding. */
@@ -96,8 +97,8 @@ export function OnboardingPane({ onComplete }: OnboardingPaneProps) {
       <div className="w-full max-w-[560px] flex flex-col gap-4">
         {/* Header */}
         <div className="flex flex-col items-center text-center mb-2 select-none">
-          <img src="/favicon.png" alt="PacketBench" className="w-12 h-12 mb-3" />
-          <h1 className="text-xl font-semibold text-text-primary mb-1">Welcome to PacketBench</h1>
+          <img src="/favicon.png" alt={APP_NAME} className="w-12 h-12 mb-3" />
+          <h1 className="text-xl font-semibold text-text-primary mb-1">Welcome to {APP_NAME}</h1>
           <p className="text-xs text-text-secondary">Run AI coding agents in tiled terminals.</p>
         </div>
 
@@ -107,7 +108,7 @@ export function OnboardingPane({ onComplete }: OnboardingPaneProps) {
             <p className="text-[11px] text-text-secondary font-mono truncate mb-2">{projectPath}</p>
           ) : (
             <p className="text-[11px] text-text-muted mb-2">
-              PacketBench works on a folder. Pick the project you want to start with.
+              {APP_NAME} works on a folder. Pick the project you want to start with.
             </p>
           )}
           <button
@@ -122,7 +123,7 @@ export function OnboardingPane({ onComplete }: OnboardingPaneProps) {
         {/* Step 2 — Pick agents */}
         <StepCard step={2} title="Pick at least one agent" done={step2Done} disabled={!step1Done}>
           <p className="text-[11px] text-text-muted mb-2">
-            PacketBench wraps these AI coding CLIs. Click an installed one to select it.
+            {APP_NAME} wraps these AI coding CLIs. Click an installed one to select it.
           </p>
           <AgentDetectionList
             agents={agents}

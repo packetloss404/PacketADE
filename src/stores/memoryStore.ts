@@ -31,6 +31,7 @@ import type { loadPersistedState } from "@/lib/tauri";
 import type { ProvenanceEnvelope } from "@/types/provenance";
 import type { ProjectMemoryNote } from "@/types/project-memory";
 import { useProjectMemoryStore } from "@/stores/projectMemoryStore";
+import { APP_NAME } from "@/lib/brand";
 
 function normalizePath(path: string): string {
   return (
@@ -913,7 +914,7 @@ export function serializeMemoryMarkdown(
   patterns: LearnedPattern[],
   options: { labelScope?: (key: string) => string } = {},
 ): string {
-  const lines: string[] = ["# PacketBench memory export", ""];
+  const lines: string[] = [`# ${APP_NAME} memory export`, ""];
   const byType = new Map<string, number>();
   for (const ev of events) byType.set(ev.type, (byType.get(ev.type) ?? 0) + 1);
   lines.push(`- Events: ${events.length}`);
@@ -1910,7 +1911,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     }
 
     const lines: string[] = [
-      "## PacketBench Memory Brief",
+      `## ${APP_NAME} Memory Brief`,
       "Use this project memory when relevant. Prefer current repository files over stale notes.",
       "",
     ];

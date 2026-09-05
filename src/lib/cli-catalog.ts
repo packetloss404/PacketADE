@@ -1,3 +1,5 @@
+import { APP_NAME } from "@/lib/brand";
+
 /**
  * CLI catalog metadata for PacketBench's Tier 1 CLI detection grid.
  *
@@ -124,7 +126,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
     binary: "packetcode",
     iconName: "Terminal",
     color: "amber",
-    description: "PacketBench's sibling terminal coding TUI",
+    description: `${APP_NAME}'s sibling terminal coding TUI`,
     installCommand: packetCodeInstallCommand("stable", false),
     installCommandWindows: packetCodeInstallCommand("stable", true),
   },
@@ -208,7 +210,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
  */
 export const CLI_LAUNCH_SOURCE_LABELS: Record<string, string> = {
   settings: "Settings override",
-  legacyPin: "legacy PacketBench pin",
+  legacyPin: `legacy ${APP_NAME} pin`,
   path: "PATH",
   installerLocation: "official installer location",
   bareName: "unresolved — the bare command name",

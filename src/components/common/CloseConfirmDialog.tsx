@@ -2,6 +2,7 @@ import { AlertTriangle } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { describeLiveWork, type LiveWorkSummary } from "@/lib/liveWork";
+import { APP_NAME } from "@/lib/brand";
 
 interface CloseConfirmDialogProps {
   summary: LiveWorkSummary;
@@ -20,7 +21,7 @@ export function CloseConfirmDialog({ summary, onCancel, onConfirm }: CloseConfir
 
   return (
     <Modal
-      title="Close PacketBench?"
+      title={`Close ${APP_NAME}?`}
       icon={<AlertTriangle size={14} className="text-accent-amber" />}
       onClose={onCancel}
       closeOnEscape

@@ -92,6 +92,7 @@ import {
   deriveLegacyWorktree,
 } from "@/stores/agentConversationPersistence";
 import type { McpTrustSnapshot } from "@/types/mcp";
+import { APP_NAME } from "@/lib/brand";
 
 // `requestConversationSave` was historically defined here; re-export it so
 // external importers (apiAgentListeners, agentPlanStore, slashCommandHandlers,
@@ -336,8 +337,8 @@ export function retiredApiAgentNotice(agent: AgentCli): string {
   const replacement = RETIRED_API_AGENT_REPLACEMENTS[canonical];
   const base =
     canonical === "api-openai-codex"
-      ? "This conversation used the OpenAI (ChatGPT Plus/Pro) provider, which PacketBench no longer offers — it required a ChatGPT subscription login. The transcript is preserved and stays fully readable."
-      : `This conversation used a provider PacketBench no longer offers (${canonical}). The transcript is preserved and stays fully readable.`;
+      ? `This conversation used the OpenAI (ChatGPT Plus/Pro) provider, which ${APP_NAME} no longer offers — it required a ChatGPT subscription login. The transcript is preserved and stays fully readable.`
+      : `This conversation used a provider ${APP_NAME} no longer offers (${canonical}). The transcript is preserved and stays fully readable.`;
   return replacement === "api-openai-agents"
     ? `${base} To continue, switch it to OpenAI Agents SDK (API) — the same OpenAI models, billed to your OpenAI API key.`
     : base;

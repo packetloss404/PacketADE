@@ -1,5 +1,6 @@
 import { claimedPathsOverlap, normalizeClaimedPath } from "@/lib/pathCollisions";
 import type { Attempt, Flight, Task } from "@/types/flight";
+import { APP_NAME } from "@/lib/brand";
 
 export type CooperativeTaskState =
   | "blocked"
@@ -224,5 +225,5 @@ ${dependencySummaries || "- none"}
 Acceptance criteria:
 ${(milestone?.validationCriteria ?? []).map((criterion) => `- ${criterion}`).join("\n")}
 
-Stay within the owned paths unless a necessary cross-cutting change is explicitly explained. Run appropriate checks and commit all changes before finishing; PacketBench can integrate only a clean committed branch.`;
+Stay within the owned paths unless a necessary cross-cutting change is explicitly explained. Run appropriate checks and commit all changes before finishing; ${APP_NAME} can integrate only a clean committed branch.`;
 }

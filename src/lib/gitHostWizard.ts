@@ -29,6 +29,7 @@ import {
   gitHostAddGitea,
 } from "@/lib/tauri";
 import { GITHUB_CONNECTION_ID } from "@/lib/git-hosts";
+import { APP_NAME } from "@/lib/brand";
 import {
   probePendingDeviceCredential,
   type GitHostProbeOutcome,
@@ -245,7 +246,7 @@ const GITHUB_ENTERPRISE_DESCRIPTOR: GitHostWizardDescriptor = {
   // (`GITHUB_CONNECTION_ID`, no configurable base URL), so there is nowhere to
   // put an Enterprise origin. Say so rather than offering a dead-end flow.
   unsupported:
-    "PacketBench's GitHub connection is fixed to github.com — an Enterprise Server base URL cannot be stored yet.",
+    `${APP_NAME}'s GitHub connection is fixed to github.com — an Enterprise Server base URL cannot be stored yet.`,
 };
 
 const GITEA_DESCRIPTOR: GitHostWizardDescriptor = {
@@ -303,7 +304,7 @@ const GITLAB_DESCRIPTOR: GitHostWizardDescriptor = {
     { id: "api", reason: "Read and write projects, issues, and merge requests." },
     {
       id: "read_api",
-      reason: "Lets PacketBench verify this token's own scopes.",
+      reason: `Lets ${APP_NAME} verify this token's own scopes.`,
       optional: true,
     },
   ],
@@ -482,7 +483,7 @@ export function normalizeInstanceUrl(
   );
   if (strippedApi) {
     path = path.slice(0, path.length - strippedApi.length).replace(/\/+$/, "");
-    notes.push(`Removed the ${strippedApi} suffix — PacketBench appends the API path itself.`);
+    notes.push(`Removed the ${strippedApi} suffix — ${APP_NAME} appends the API path itself.`);
   }
   if (url.pathname !== "/" && url.pathname !== path && !strippedApi) {
     notes.push("Removed the trailing slash.");
@@ -593,7 +594,7 @@ export function verdictFor(
         code: "not_a_host",
         title: "That address is not this host's API",
         detail: result.detail ?? "The address answered with something unexpected.",
-        remedy: `Check the instance URL. PacketBench requested ${result.endpoint}.`,
+        remedy: `Check the instance URL. ${APP_NAME} requested ${result.endpoint}.`,
         canSave: false,
       };
     case "invalid_token":
@@ -638,8 +639,8 @@ export function verdictFor(
         level: "error",
         code: "unknown",
         title: "Unexpected response from the host",
-        detail: result.detail ?? "The host answered in a way PacketBench does not recognise.",
-        remedy: `Check the instance URL. PacketBench requested ${result.endpoint}.`,
+        detail: result.detail ?? `The host answered in a way ${APP_NAME} does not recognise.`,
+        remedy: `Check the instance URL. ${APP_NAME} requested ${result.endpoint}.`,
         canSave: false,
       };
     case "ok":
@@ -668,7 +669,7 @@ export function verdictFor(
       level: "warning",
       code: "scopes_unknown",
       title: `Connected as ${result.login ?? "unknown"}`,
-      detail: `${hostName} does not report which scopes this token was granted, so PacketBench could not check them.`,
+      detail: `${hostName} does not report which scopes this token was granted, so ${APP_NAME} could not check them.`,
       remedy: "If repository or issue actions fail later, revisit the token's permissions.",
       canSave: true,
     };

@@ -4,7 +4,7 @@ import { useFlightStore } from "@/stores/flightStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { isLocalWorkspace } from "@/types/workspace";
 import { useMemoryStore } from "@/stores/memoryStore";
-import { URI_SCHEME, storageKey } from "@/lib/brand";
+import { APP_NAME, URI_SCHEME, storageKey } from "@/lib/brand";
 import {
   mcpServerStart,
   mcpServerStop,
@@ -297,7 +297,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
     resources.push({
       uri: `${URI_SCHEME}://issues`,
       name: "Issue board",
-      description: "Current PacketBench issues and workflow state",
+      description: `Current ${APP_NAME} issues and workflow state`,
       mimeType: "application/json",
     });
     resources.push({

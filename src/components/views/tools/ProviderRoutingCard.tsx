@@ -24,6 +24,7 @@ import { liveModelSource, resolveModelRows } from "@/lib/liveModels";
 import { useLiveModelStore } from "@/stores/liveModelStore";
 import { SUBSCRIPTION_OAUTH_AGENTS } from "@/lib/attemptRouting";
 import type { TaskType } from "@/types/flight";
+import { APP_NAME } from "@/lib/brand";
 
 /**
  * API executors selectable as a workflow-role default.
@@ -299,7 +300,7 @@ function AuxRoutingSection() {
       </div>
 
       <p className="mb-3 text-[10px] text-text-muted">
-        Short generation tasks PacketBench runs for you.{" "}
+        Short generation tasks {APP_NAME} runs for you.{" "}
         <span className="text-text-secondary">Auto</span> picks the cheapest provider you have an
         API key for. No task routed through this table uses a Claude or ChatGPT subscription login —
         a row flagged below is not routed through it yet and says what it does instead.

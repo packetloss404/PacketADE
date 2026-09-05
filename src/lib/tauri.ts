@@ -347,7 +347,7 @@ export function describePtyExitOutcome(outcome: PtyExitOutcome): string {
         : `Session ended — exit code ${outcome.exitCode}`;
     }
     case "killed":
-      return "Session stopped by PacketBench";
+      return `Session stopped by ${APP_NAME}`;
     case "unknown":
       return "Session ended — exit status could not be read";
   }
@@ -3261,6 +3261,7 @@ export async function readPromptHistory(): Promise<string> {
 
 // MCP server management
 import type { McpServerDiagnostic, McpServerEntry, McpTrustSnapshot } from "@/types/mcp";
+import { APP_NAME } from "@/lib/brand";
 
 export async function readMcpServers(projectPath: string): Promise<McpServerEntry[]> {
   return invoke<McpServerEntry[]>("read_mcp_servers", { projectPath });

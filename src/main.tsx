@@ -2,15 +2,16 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { bootPersistedStorage } from "@/lib/storage-boot";
 import "./index.css";
+import { APP_NAME } from "@/lib/brand";
 
 // Global error handlers — catch unhandled errors and promise rejections
 window.addEventListener("unhandledrejection", (event) => {
-  console.error("[PacketBench] Unhandled promise rejection:", event.reason);
+  console.error(`[${APP_NAME}] Unhandled promise rejection:`, event.reason);
 });
 
 window.addEventListener("error", (event) => {
   console.error(
-    "[PacketBench] Unhandled error:",
+    `[${APP_NAME}] Unhandled error:`,
     event.message,
     "at",
     event.filename,

@@ -1,3 +1,5 @@
+import { APP_NAME } from "@/lib/brand";
+
 import type {
   SettingsGroup,
   SettingsScope,
@@ -211,7 +213,7 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
         key: "routing",
         label: "Task Role Defaults",
         description:
-          "Desired agent assignments by task role, and the provider for PacketBench's own auxiliary AI tasks.",
+          `Desired agent assignments by task role, and the provider for ${APP_NAME}'s own auxiliary AI tasks.`,
         scopes: ["App", "New conversations", "New Flights"],
         keywords: [
           "routing",
@@ -267,7 +269,7 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
       {
         key: "mcp",
         label: "MCP",
-        description: "MCP clients, the PacketBench provider, trust, and diagnostics.",
+        description: `MCP clients, the ${APP_NAME} provider, trust, and diagnostics.`,
         scopes: ["App", "Project", "New conversations"],
         keywords: ["model context protocol", "server", "provider", "tools", "trust", "catalog"],
       },
@@ -300,7 +302,7 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
       {
         key: "modules",
         label: "Modules",
-        description: "Enable and configure first-party PacketBench modules.",
+        description: `Enable and configure first-party ${APP_NAME} modules.`,
         scopes: ["App"],
         keywords: ["quality", "dictation", "integration", "extension"],
       },

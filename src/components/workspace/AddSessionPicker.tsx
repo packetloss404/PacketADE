@@ -30,6 +30,7 @@ import {
   terminalPlatform,
 } from "@/lib/terminalShells";
 import type { TerminalShellProfileId, TerminalShellSelection } from "@/types/terminal-shell";
+import { APP_NAME } from "@/lib/brand";
 
 interface AddSessionPickerProps {
   workspace: Workspace;
@@ -532,7 +533,7 @@ function PickerContent({ workspace, onClose, onOpenTemplates }: PickerContentPro
 
       {!packetCodeReady && !normalizedFilter && (
         <div className="border-accent-amber/20 bg-accent-amber/5 mx-2 my-1 rounded border px-2 py-1.5 text-meta text-text-muted">
-          PacketCode is the recommended PacketBench terminal loop. Use{" "}
+          PacketCode is the recommended {APP_NAME} terminal loop. Use{" "}
           <button
             type="button"
             onClick={openPacketCodeSetup}
