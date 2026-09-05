@@ -4,8 +4,12 @@
 //! get issue, list PRs) so agents can browse repos without shelling to `gh`.
 //!
 //! Token loading mirrors `commands/github.rs` — new keyring service first, then
-//! legacy service, then legacy file fallback. Read-only here — migration happens
-//! in `commands/github.rs` on app startup.
+//! legacy keyring service. Read-only here — migration happens in
+//! `commands/github.rs` on app startup. The old plaintext
+//! `~/.packetbench/github-token` fallback was removed: startup migration
+//! deletes that file once the keyring copy exists, so the only thing the
+//! fallback could ever read is a file someone (or something) re-created — a
+//! path that turned a stray plaintext file back into a live credential.
 //!
 //! G14 scope: these `gh_*` agent read-tools are **GitHub-scoped** by design —
 //! they load the GitHub connection's token directly and have no per-workspace
@@ -23,10 +27,7 @@
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 use tracing::warn;
 
-use crate::core::brand::{
-    DATA_DIR_NAME, KEYRING_SERVICE, LEGACY_DATA_DIR_NAME, LEGACY_KEYRING_SERVICE,
-    USER_AGENT as BRAND_USER_AGENT,
-};
+use crate::core::brand::{KEYRING_SERVICE, LEGACY_KEYRING_SERVICE, USER_AGENT as BRAND_USER_AGENT};
 use crate::core::llm_types::ToolDefinition;
 
 const MAX_OUTPUT_CHARS: usize = 8000;
@@ -50,21 +51,7 @@ fn load_github_token() -> Option<String> {
         }
     }
 
-    // Legacy file fallback — check both new and old data-dir names.
-    let home = crate::core::shared::home_dir()?;
-    let home_path = std::path::PathBuf::from(home);
-    let candidates = [
-        home_path.join(DATA_DIR_NAME).join("github-token"),
-        home_path.join(LEGACY_DATA_DIR_NAME).join("github-token"),
-    ];
-    for path in &candidates {
-        if let Ok(raw) = std::fs::read_to_string(path) {
-            let trimmed = raw.trim().to_string();
-            if !trimmed.is_empty() {
-                return Some(trimmed);
-            }
-        }
-    }
+    // No plaintext-file fallback: see the module doc.
     None
 }
 
