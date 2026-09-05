@@ -27,9 +27,41 @@
 
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import http from "node:http";
 import path from "node:path";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
+
+// node:http with `agent: false` rather than global fetch: fetch's undici pool
+// keeps sockets alive past the last response, and exiting with those handles
+// still open aborts Node on Windows ("Assertion failed:
+// !(handle->flags & UV_HANDLE_CLOSING), file src\\win\\async.c") — the script
+// would print every PASS and then exit 127. One connection per request, closed
+// on response, exits cleanly.
+function request(urlStr, { method = "GET", headers = {}, body } = {}) {
+  const u = new URL(urlStr);
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: u.hostname,
+        port: u.port || 80,
+        path: `${u.pathname}${u.search}`,
+        method,
+        headers: body ? { ...headers, "content-length": Buffer.byteLength(body) } : headers,
+        agent: false,
+      },
+      (res) => {
+        let data = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => (data += c));
+        res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, text: data }));
+      },
+    );
+    req.on("error", reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
 const results = [];
 function record(name, ok, detail = "") {
   results.push({ name, ok, detail });
@@ -56,48 +88,47 @@ async function live(url, token) {
 
   // 5. health
   try {
-    const r = await fetch(`${base}/health`);
-    const body = await r.json();
-    record("health: GET /health is 200 and names PacketBench", r.status === 200 && body.ok === true && body.app === "PacketBench", `status=${r.status} body=${JSON.stringify(body)}`);
+    const r = await request(`${base}/health`);
+    const body = JSON.parse(r.text);
+    record("health: GET /health is 200 and names PacketBench", r.status === 200 && body.ok === true && body.app === "PacketBench", `status=${r.status} body=${r.text}`);
   } catch (e) {
     record("health: GET /health is 200 and names PacketBench", false, String(e));
   }
 
   // 3. failure paths
-  let r = await fetch(url, { method: "POST", headers: headers(null), body: JSON.stringify(init) });
+  let r = await request(url, { method: "POST", headers: headers(null), body: JSON.stringify(init) });
   record("failure: initialize without a token is 401", r.status === 401, `status=${r.status}`);
-  r = await fetch(url, { method: "POST", headers: headers("not-the-token"), body: JSON.stringify(init) });
+  r = await request(url, { method: "POST", headers: headers("not-the-token"), body: JSON.stringify(init) });
   record("failure: initialize with a wrong token is 401", r.status === 401, `status=${r.status}`);
 
   // 4. origin guard (webhook-signature analogue)
-  r = await fetch(url, {
+  r = await request(url, {
     method: "POST",
     headers: { ...headers(token), origin: "https://evil.example.com" },
     body: JSON.stringify(init),
   });
   record("origin: a non-loopback Origin is 403 even with the right token", r.status === 403, `status=${r.status}`);
-  r = await fetch(`${base}/health`, { headers: { origin: "https://evil.example.com" } });
+  r = await request(`${base}/health`, { headers: { origin: "https://evil.example.com" } });
   record("origin: /health with a non-loopback Origin is 403", r.status === 403, `status=${r.status}`);
 
   // 1. login
-  r = await fetch(url, { method: "POST", headers: headers(token), body: JSON.stringify(init) });
-  const session = r.headers.get("mcp-session-id");
+  r = await request(url, { method: "POST", headers: headers(token), body: JSON.stringify(init) });
+  const session = r.headers["mcp-session-id"];
   record("login: initialize with the bearer token is 200 and issues a session id", r.status === 200 && !!session, `status=${r.status} session=${session ? "yes" : "no"}`);
   if (!session) return;
-  await r.text();
-  await fetch(url, {
+  await request(url, {
     method: "POST",
     headers: { ...headers(token), "mcp-session-id": session },
     body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
   });
 
   const rpc = async (body) => {
-    const res = await fetch(url, {
+    const res = await request(url, {
       method: "POST",
       headers: { ...headers(token), "mcp-session-id": session },
       body: JSON.stringify(body),
     });
-    const text = await res.text();
+    const text = res.text;
     for (const line of text.split("\n")) {
       const rest = line.startsWith("data:") ? line.slice(5).trim() : null;
       if (rest) {
