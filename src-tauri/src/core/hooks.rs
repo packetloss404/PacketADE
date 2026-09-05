@@ -96,7 +96,23 @@ pub fn load_hooks_with_project(project_path: &str) -> Vec<HookConfig> {
         let path = PathBuf::from(project_path)
             .join(".claude")
             .join("settings.json");
-        load_hooks_from(&path, &mut out);
+        // Project hooks are repo-supplied shell commands. They run only for a
+        // project the user has listed in `trusted-projects.json`; an untrusted
+        // clone contributes nothing, and the skip is logged so a missing hook
+        // is diagnosable rather than silent.
+        if !path.is_file() {
+            return out;
+        }
+        if crate::core::project_trust::is_project_trusted(project_path) {
+            load_hooks_from(&path, &mut out);
+        } else {
+            warn!(
+                target: "packetbench::trust",
+                path = %path.display(),
+                trust_file = %crate::core::project_trust::trusted_projects_path().display(),
+                "project hooks ignored: project is not in the trusted-projects list"
+            );
+        }
     }
     out
 }

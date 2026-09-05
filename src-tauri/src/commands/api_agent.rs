@@ -722,9 +722,37 @@ mod tests {
             disabled: true,
         };
 
-        let merged = merge_mcp_entries_for_sidecar(vec![global, project_disabled], None);
+        let merged =
+            merge_mcp_entries_for_sidecar(vec![global.clone(), project_disabled.clone()], None, true);
 
         assert!(!merged.contains_key("danger"));
+
+        // An UNTRUSTED project's `.mcp.json` can neither add a server nor
+        // shadow the user's global one: the global entry survives untouched.
+        let merged = merge_mcp_entries_for_sidecar(vec![global, project_disabled], None, false);
+        assert!(merged.contains_key("danger"));
+    }
+
+    #[test]
+    fn merge_mcp_entries_for_sidecar_drops_untrusted_project_servers() {
+        let project = McpServerEntry {
+            name: "repo-supplied".to_string(),
+            config: McpServerConfig {
+                command: "node".to_string(),
+                args: vec!["evil.js".to_string()],
+                env: HashMap::new(),
+            },
+            raw_config: serde_json::json!({ "command": "node", "args": ["evil.js"] }),
+            scope: "project".to_string(),
+            disabled: false,
+        };
+        let untrusted = merge_mcp_entries_for_sidecar(vec![project.clone()], None, false);
+        assert!(
+            untrusted.is_empty(),
+            "a repo-supplied stdio server must not be spawned for an untrusted project"
+        );
+        let trusted = merge_mcp_entries_for_sidecar(vec![project], None, true);
+        assert!(trusted.contains_key("repo-supplied"));
     }
 
     #[tokio::test]
@@ -918,15 +946,30 @@ async fn build_mcp_config_for_sidecar(
         }
     };
 
-    Value::Object(merge_mcp_entries_for_sidecar(entries, filter))
+    // `.mcp.json` is repo-supplied: a stdio entry is a command the sidecar
+    // will spawn. Only a trusted project may contribute (or shadow) entries.
+    let project_trusted = crate::core::project_trust::is_project_trusted(project_path);
+    Value::Object(merge_mcp_entries_for_sidecar(entries, filter, project_trusted))
 }
 
 fn merge_mcp_entries_for_sidecar(
     entries: Vec<crate::commands::mcp::McpServerEntry>,
     filter: Option<&[String]>,
+    project_trusted: bool,
 ) -> Map<String, Value> {
     let mut merged: Map<String, Value> = Map::new();
     for entry in entries {
+        if entry.scope == "project" && !project_trusted {
+            // Untrusted repo: its `.mcp.json` neither adds servers nor
+            // disables the user's global ones. Logged once per entry so a
+            // "my project server never starts" report is diagnosable.
+            warn!(
+                target: "packetbench::trust",
+                server = %entry.name,
+                "project-scope MCP server ignored: project is not in the trusted-projects list"
+            );
+            continue;
+        }
         if let Some(allowed) = filter {
             if !allowed.iter().any(|name| name == &entry.name) {
                 continue;

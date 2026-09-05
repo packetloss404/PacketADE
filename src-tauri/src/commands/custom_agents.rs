@@ -167,7 +167,20 @@ pub fn discover_custom_agents(project_path: &str) -> Vec<CustomAgentDef> {
     let mut project_agents: Vec<CustomAgentDef> = Vec::new();
     if !project_path.is_empty() {
         let dir = PathBuf::from(project_path).join(".claude").join("agents");
-        scan_dir(&dir, "project", &mut project_agents);
+        // A project agent definition is repo-supplied prompt + tool authority
+        // that gets advertised to the model. Only a trusted project may
+        // contribute one; an untrusted clone falls back to global agents.
+        if dir.is_dir() {
+            if crate::core::project_trust::is_project_trusted(project_path) {
+                scan_dir(&dir, "project", &mut project_agents);
+            } else {
+                warn!(
+                    target: "packetbench::trust",
+                    path = %dir.display(),
+                    "project .claude/agents ignored: project is not in the trusted-projects list"
+                );
+            }
+        }
     }
 
     // Project overrides global by name.

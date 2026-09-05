@@ -39,6 +39,7 @@ pub mod mcp_bridge;
 pub mod mcp_client;
 pub mod migration;
 pub mod orchestrator;
+pub mod project_trust;
 pub mod provenance;
 pub mod pty;
 // One-time reprice of historical cost figures written with the pre-CE2 rates.
