@@ -641,6 +641,44 @@ fn is_ollama_connection_error(message: &str) -> bool {
     message.contains("Ollama not reachable")
 }
 
+/// Delays before each rate-limit retry, longest-tolerable-last.
+///
+/// Two attempts after the first. These are background turns with nobody
+/// waiting on them, so the budget is set by how long a transient limit lasts
+/// rather than by user patience — but not so long that a workspace close keeps
+/// the gate occupied for minutes.
+const RATE_LIMIT_RETRY_DELAYS: [std::time::Duration; 2] = [
+    std::time::Duration::from_secs(2),
+    std::time::Duration::from_secs(6),
+];
+
+/// Does this failure look like provider rate limiting?
+///
+/// Matched on the message because that is all `drive` returns. Both clients
+/// format non-2xx identically — `"{provider} API error ({status}): {body}"`
+/// (`llm_openai_compat.rs`, `llm_anthropic.rs`) — and `StatusCode`'s `Display`
+/// starts with the number, so `"API error (429"` is an exact anchor rather
+/// than a substring that could match a body quoting the digits.
+///
+/// Same idiom as [`is_ollama_connection_error`] above: this file already
+/// classifies transport failures by inspecting the message.
+fn is_rate_limited(message: &str) -> bool {
+    message.contains("API error (429")
+}
+
+/// Deterministic 0-500 ms jitter, derived from the session id.
+///
+/// Two turns hold the gate at once, so without jitter both would retry in
+/// lockstep and hand the provider the same burst that caused the 429. Derived
+/// from the id rather than a random source so no new dependency is needed and
+/// a given turn's timing is reproducible when reading a log.
+fn retry_jitter(session_id: &str) -> std::time::Duration {
+    let spread = session_id
+        .bytes()
+        .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
+    std::time::Duration::from_millis(spread % 500)
+}
+
 /// The Q3 typed, actionable error. NO automatic escalation to a cloud
 /// provider — the task was routed locally on purpose, and silently billing a
 /// cloud key instead would be worse than failing.
@@ -693,13 +731,72 @@ async fn drive_with_local_policy(
     user_turn: &str,
     emit_to: Option<(&tauri::AppHandle, &str)>,
 ) -> Result<AuxTurn, String> {
-    // Held for the whole turn, streaming included. `drive_with_local_policy`
-    // does not recurse — it calls `drive` at most twice, for the one Ollama
-    // retry — so holding a permit across it cannot deadlock.
+    // Held for the whole turn, streaming and rate-limit backoff included.
+    // `drive_with_local_policy` does not recurse — it calls `drive` at most
+    // twice per attempt, for the one Ollama retry — so holding a permit across
+    // it cannot deadlock.
+    //
+    // Holding it through the backoff is deliberate: if the provider is
+    // refusing work, occupying the slot is backpressure rather than waste.
+    // Releasing it would let the next queued turn fire straight into the same
+    // limit.
     let _permit = aux_turn_permits()
         .acquire()
         .await
         .map_err(|_| "aux turn concurrency gate closed".to_string())?;
+
+    let mut attempt = 0usize;
+    loop {
+        match drive_local_route_once(task, route, session_id, system_prompt, user_turn, emit_to)
+            .await
+        {
+            Ok(turn) => return Ok(turn),
+            Err(message) if is_rate_limited(&message) && attempt < RATE_LIMIT_RETRY_DELAYS.len() => {
+                let delay = RATE_LIMIT_RETRY_DELAYS[attempt] + retry_jitter(session_id);
+                warn!(
+                    task = task.id(),
+                    session_id = %session_id,
+                    provider = %route.provider,
+                    attempt = attempt + 1,
+                    of = RATE_LIMIT_RETRY_DELAYS.len(),
+                    delay_ms = delay.as_millis() as u64,
+                    "aux_llm: provider rate limited — backing off and retrying"
+                );
+                tokio::time::sleep(delay).await;
+                attempt += 1;
+            }
+            Err(message) => {
+                if is_rate_limited(&message) {
+                    // Distinct from the per-attempt warning: this is the one
+                    // that says the work was actually dropped.
+                    warn!(
+                        task = task.id(),
+                        session_id = %session_id,
+                        provider = %route.provider,
+                        attempts = attempt + 1,
+                        "aux_llm: giving up after rate-limit retries — this turn is lost"
+                    );
+                }
+                return Err(message);
+            }
+        }
+    }
+}
+
+/// One attempt, including the Ollama local-route retry policy.
+///
+/// Split out of [`drive_with_local_policy`] so the rate-limit backoff can wrap
+/// a whole attempt. Retrying is safe for a streaming caller: a non-2xx fails
+/// before any chunk is emitted, so no partial output reaches the UI to be
+/// duplicated.
+async fn drive_local_route_once(
+    task: AuxTaskClass,
+    route: &AuxRoute,
+    session_id: &str,
+    system_prompt: &str,
+    user_turn: &str,
+    emit_to: Option<(&tauri::AppHandle, &str)>,
+) -> Result<AuxTurn, String> {
     let request = build_request(
         route,
         session_id,
@@ -858,6 +955,63 @@ mod tests {
         drop(third);
         drop(second);
         assert_eq!(gate.available_permits(), MAX_CONCURRENT_AUX_TURNS);
+    }
+
+    /// The classifier must key off the real message both clients produce, not
+    /// a hopeful substring. F26 follow-up.
+    #[test]
+    fn rate_limit_classifier_matches_what_the_clients_actually_format() {
+        // `"{provider} API error ({status}): {body}"` with StatusCode's Display.
+        assert!(is_rate_limited(
+            "minimax API error (429 Too Many Requests): {\"error\":\"rate limited\"}"
+        ));
+        assert!(is_rate_limited(
+            "Anthropic API error (429 Too Many Requests): overloaded"
+        ));
+
+        // Other failures must NOT be retried — a 400 or 401 will fail
+        // identically every time and retrying only wastes the gate.
+        assert!(!is_rate_limited(
+            "minimax API error (400 Bad Request): bad parameter"
+        ));
+        assert!(!is_rate_limited(
+            "minimax API error (401 Unauthorized): bad key"
+        ));
+        assert!(!is_rate_limited("Ollama not reachable"));
+
+        // A body that merely quotes the number is not a 429 status.
+        assert!(!is_rate_limited(
+            "minimax API error (400 Bad Request): max_tokens must be under 429"
+        ));
+    }
+
+    /// Two turns retrying in lockstep would hand the provider the same burst
+    /// that caused the 429 in the first place.
+    #[test]
+    fn retry_jitter_differs_per_session_and_stays_bounded() {
+        let a = retry_jitter("session-summarize-b3ccd130-862d-4db1-b68f-43d8bf90c4f1");
+        let b = retry_jitter("session-summarize-a901d369-a10a-4a16-a860-3476d4c24826");
+        assert_ne!(a, b, "concurrent turns must not back off in lockstep");
+        for id in ["", "x", "session-summarize-4cfd4b33-71b1-4ed2-bed7-c18d5c96ae49"] {
+            assert!(retry_jitter(id) < std::time::Duration::from_millis(500));
+        }
+    }
+
+    /// The budget is what stops a lost summary being silent AND stops a
+    /// rate-limited turn holding the gate for minutes.
+    #[test]
+    fn rate_limit_retry_budget_is_bounded_and_ordered() {
+        assert_eq!(RATE_LIMIT_RETRY_DELAYS.len(), 2, "two attempts after the first");
+        assert!(
+            RATE_LIMIT_RETRY_DELAYS.windows(2).all(|w| w[0] < w[1]),
+            "delays must back off, not stay flat"
+        );
+        let worst: std::time::Duration = RATE_LIMIT_RETRY_DELAYS.iter().sum();
+        assert!(
+            worst <= std::time::Duration::from_secs(10),
+            "a rate-limited turn must not occupy one of only {} slots for long",
+            MAX_CONCURRENT_AUX_TURNS
+        );
     }
 
     fn configured(ids: &[&str]) -> Vec<String> {

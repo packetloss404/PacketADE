@@ -114,9 +114,11 @@ fail, the change is wrong, not the test.
   features (side chat, GitHub AI, memory summaries) are not re-checked.
 - **Aux turns are capped at 2 concurrent** (`MAX_CONCURRENT_AUX_TURNS`,
   `core/aux_llm.rs`). Raising it re-opens F26: 8 `session-summarize` turns fired
-  by one workspace close 429'd a provider and lost every summary. **There is
-  still no retry/backoff on 429**, so a rate-limited aux turn is silently
-  dropped — that is the open follow-up, and it is the reason the cap exists.
+  by one workspace close 429'd a provider and lost every summary. A 429 now
+  backs off and retries twice (2 s, 6 s, jittered) and logs at WARN if it still
+  gives up, so a lost summary is visible rather than silent. The permit is held
+  through the backoff on purpose — that is backpressure, not waste. Raising the
+  cap without thinking about the retry budget re-opens the stampede.
 - **A vitest flake has now appeared twice**, both times only under
   `pnpm gates:fast` contention (`import` time 1500-2200s vs ~110s standalone),
   never in a standalone run, 1 failure out of 2754. It has not been captured by
