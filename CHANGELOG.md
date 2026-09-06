@@ -16,19 +16,24 @@ they are **not in those installers**:
   terminals fired N simultaneous provider calls.
 - F26/P19 — a provider 429 now backs off and retries twice, and a turn that
   exhausts the budget logs at WARN instead of vanishing at INFO.
+- F27/P20 — a broken CLI path override hid the very control that clears it.
+- F27/P21 — a stale pin now reads `pinned path not usable` rather than "not
+  installed", which was sending users to reinstall a CLI they already had. The
+  detection behaviour behind it is deliberate and was left alone; my first
+  reading of it as a bug was wrong.
 - A correction to F26 itself: the stampede did **not** cause the 429s that
   exposed it. Every MiniMax request in the logs has been rejected, isolated ones
   included, so the account is rate-limited or out of quota. P18 removes bad
   behaviour and P19 makes the failure visible; neither would have saved the
   lost summaries.
 
-A rebuild from `539159fb` was installed locally to run against these changes.
-It carries the same `0.14.0` version string as the artifacts below and is a
-different binary — installed exe sha256
-`78c6fa64706771d2b94646fb88332be88dbe6dc7a0375b18fe3cb60000800ba8`, NSIS
-`a4473f0fba31d3873c28425d5ab2302de9f84dee5fb1ee95f4cd743ac1946601`. It is a
-local verification build, not a release; bump the version before shipping
-anything from this section, for exactly the reason recorded under 0.14.0.
+Local verification builds were installed to exercise these, the most recent
+from `087fc57c` — installed exe sha256
+`ca9dde7d5816d625c7333c5464074a5f255f7011d6a7f64c1b545e0651339135`. They carry
+the same `0.14.0` version string as the artifacts below and are different
+binaries. They are verification builds, not releases; bump the version before
+shipping anything from this section, for exactly the reason recorded under
+0.14.0.
 
 ## [0.14.0] - 2026-09-05
 
