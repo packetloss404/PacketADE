@@ -7,6 +7,29 @@ For current direction, use [`ROADMAP.md`](./ROADMAP.md). For planning briefs and
 runbooks, use [`dev/README.md`](./dev/README.md). This file is history, not a
 task list.
 
+## [Unreleased]
+
+Three changes landed after the 0.14.0 artifacts below were built and hashed, so
+they are **not in those installers**:
+
+- F26/P18 — aux turns bounded to 2 concurrent. Closing a workspace with N
+  terminals fired N simultaneous provider calls.
+- F26/P19 — a provider 429 now backs off and retries twice, and a turn that
+  exhausts the budget logs at WARN instead of vanishing at INFO.
+- A correction to F26 itself: the stampede did **not** cause the 429s that
+  exposed it. Every MiniMax request in the logs has been rejected, isolated ones
+  included, so the account is rate-limited or out of quota. P18 removes bad
+  behaviour and P19 makes the failure visible; neither would have saved the
+  lost summaries.
+
+A rebuild from `539159fb` was installed locally to run against these changes.
+It carries the same `0.14.0` version string as the artifacts below and is a
+different binary — installed exe sha256
+`78c6fa64706771d2b94646fb88332be88dbe6dc7a0375b18fe3cb60000800ba8`, NSIS
+`a4473f0fba31d3873c28425d5ab2302de9f84dee5fb1ee95f4cd743ac1946601`. It is a
+local verification build, not a release; bump the version before shipping
+anything from this section, for exactly the reason recorded under 0.14.0.
+
 ## [0.14.0] - 2026-09-05
 
 Security and correctness audit, 2026-09-04 to 2026-09-05. 25 findings, 17
