@@ -112,6 +112,12 @@ fail, the change is wrong, not the test.
   runs at conversation launch (`agentTaskStore.ts:712`) and Flight launch
   (`asyncFlightStore.ts:1366`); mid-conversation turns and the auxiliary LLM
   features (side chat, GitHub AI, memory summaries) are not re-checked.
+- **Check the aux provider before blaming aux code.** On 2026-09-06 every
+  MiniMax request returned 429 — 9 of 9 that day, including isolated ones, and
+  no success anywhere in the egress logs since they began on 2026-09-05. Every
+  aux feature (session summaries, memory briefs) was failing silently. Grep the
+  log for `egress: LLM response` and check the statuses before investigating
+  anything else.
 - **Aux turns are capped at 2 concurrent** (`MAX_CONCURRENT_AUX_TURNS`,
   `core/aux_llm.rs`). Raising it re-opens F26: 8 `session-summarize` turns fired
   by one workspace close 429'd a provider and lost every summary. A 429 now
