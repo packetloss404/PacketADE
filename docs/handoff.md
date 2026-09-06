@@ -112,6 +112,13 @@ fail, the change is wrong, not the test.
   runs at conversation launch (`agentTaskStore.ts:712`) and Flight launch
   (`asyncFlightStore.ts:1366`); mid-conversation turns and the auxiliary LLM
   features (side chat, GitHub AI, memory summaries) are not re-checked.
+- **A broken Settings CLI override cannot be cleared from the UI** (audit F27).
+  The ✕ that clears it renders only when the CLI reads as installed
+  (`CliAgentsCard.tsx:341`), and a broken override is exactly what makes it read
+  as not installed — so the control is hidden precisely when it is needed. The
+  readout is also wrong: the Rust ladder continues past a missing pin and
+  resolves via PATH, so the pane launches a CLI the card calls "not installed".
+  Workaround: Browse… to a valid path, or delete `packetbench:cli-overrides`.
 - **Check the aux provider before blaming aux code.** On 2026-09-06 every
   MiniMax request returned 429 — 9 of 9 that day, including isolated ones, and
   no success anywhere in the egress logs since they began on 2026-09-05. Every
