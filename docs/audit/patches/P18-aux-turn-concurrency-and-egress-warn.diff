@@ -1,0 +1,172 @@
+diff --git a/src-tauri/src/core/aux_llm.rs b/src-tauri/src/core/aux_llm.rs
+index 7ff388dd..ce7050ec 100644
+--- a/src-tauri/src/core/aux_llm.rs
++++ b/src-tauri/src/core/aux_llm.rs
+@@ -653,6 +653,33 @@ fn local_route_unavailable_error(task: AuxTaskClass) -> String {
+     )
+ }
+ 
++/// How many auxiliary turns may be in flight at once.
++///
++/// Aux turns are background work — session summaries, memory briefs, spec
++/// import — and several routinely become due at the same instant. Closing a
++/// workspace with N terminals produces N independent PTY exits, each of which
++/// queues its own `session-summarize` turn.
++///
++/// Observed while dogfooding 2026-09-06: eight fired within 3 ms, the provider
++/// answered 429 to all eight, nothing retried, and all eight summaries were
++/// lost. There is no backoff here yet, so the only defence is not to stampede
++/// in the first place.
++///
++/// Two, deliberately. These are latency-insensitive background turns, so
++/// serialising them costs the user nothing they can perceive, while the
++/// stampede costs them the whole feature.
++const MAX_CONCURRENT_AUX_TURNS: usize = 2;
++
++/// Gate for [`MAX_CONCURRENT_AUX_TURNS`].
++///
++/// Deliberately enforced inside [`drive_with_local_policy`] rather than at the
++/// call sites: both public entry points funnel through it, so a future caller
++/// cannot reintroduce the stampede by forgetting to queue.
++fn aux_turn_permits() -> &'static tokio::sync::Semaphore {
++    static PERMITS: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
++    PERMITS.get_or_init(|| tokio::sync::Semaphore::new(MAX_CONCURRENT_AUX_TURNS))
++}
++
+ /// [`drive`], plus the local-route failure policy: when the route is Ollama
+ /// and the failure is connection-shaped, retry exactly once after
+ /// [`OLLAMA_RETRY_DELAY`]; if it still fails, replace the raw transport error
+@@ -666,6 +693,13 @@ async fn drive_with_local_policy(
+     user_turn: &str,
+     emit_to: Option<(&tauri::AppHandle, &str)>,
+ ) -> Result<AuxTurn, String> {
++    // Held for the whole turn, streaming included. `drive_with_local_policy`
++    // does not recurse — it calls `drive` at most twice, for the one Ollama
++    // retry — so holding a permit across it cannot deadlock.
++    let _permit = aux_turn_permits()
++        .acquire()
++        .await
++        .map_err(|_| "aux turn concurrency gate closed".to_string())?;
+     let request = build_request(
+         route,
+         session_id,
+@@ -793,6 +827,39 @@ pub fn spawn_aux_stream(
+ mod tests {
+     use super::*;
+ 
++    /// The gate that stops a workspace close from stampeding the provider.
++    ///
++    /// Regression fence for the 2026-09-06 dogfooding finding: eight
++    /// `session-summarize` turns fired within 3 ms when a workspace with eight
++    /// terminals was closed, the provider 429'd all eight, and every summary
++    /// was lost. This asserts the third concurrent caller waits instead.
++    #[tokio::test]
++    async fn aux_turns_are_bounded_rather_than_stampeding() {
++        let gate = aux_turn_permits();
++        assert_eq!(
++            gate.available_permits(),
++            MAX_CONCURRENT_AUX_TURNS,
++            "gate should start fully available; another test may be holding permits"
++        );
++
++        let first = gate.acquire().await.expect("gate open");
++        let second = gate.acquire().await.expect("gate open");
++        assert_eq!(gate.available_permits(), 0);
++
++        // The stampede case: a third turn becoming due at the same instant must
++        // queue, not fire.
++        assert!(
++            gate.try_acquire().is_err(),
++            "a third concurrent aux turn must wait, not stampede the provider"
++        );
++
++        drop(first);
++        let third = gate.try_acquire().expect("a permit frees up when a turn finishes");
++        drop(third);
++        drop(second);
++        assert_eq!(gate.available_permits(), MAX_CONCURRENT_AUX_TURNS);
++    }
++
+     fn configured(ids: &[&str]) -> Vec<String> {
+         ids.iter().map(|s| s.to_string()).collect()
+     }
+diff --git a/src-tauri/src/core/llm_anthropic.rs b/src-tauri/src/core/llm_anthropic.rs
+index 0912c3c0..be601a8c 100644
+--- a/src-tauri/src/core/llm_anthropic.rs
++++ b/src-tauri/src/core/llm_anthropic.rs
+@@ -239,13 +239,25 @@ impl LlmProvider for AnthropicProvider {
+             .send()
+             .await
+             .map_err(|e| format!("Anthropic request failed: {}", e))?;
+-        tracing::info!(
+-            target: "packetbench::egress",
+-            service = "anthropic",
+-            model = %request.model,
+-            status = response.status().as_u16(),
+-            "LLM response"
+-        );
++        // See the note in `llm_openai_compat.rs`: a failed call must not log at
++        // the same level as a successful one.
++        if response.status().is_success() {
++            tracing::info!(
++                target: "packetbench::egress",
++                service = "anthropic",
++                model = %request.model,
++                status = response.status().as_u16(),
++                "LLM response"
++            );
++        } else {
++            tracing::warn!(
++                target: "packetbench::egress",
++                service = "anthropic",
++                model = %request.model,
++                status = response.status().as_u16(),
++                "LLM response failed"
++            );
++        }
+ 
+         if !response.status().is_success() {
+             let status = response.status();
+diff --git a/src-tauri/src/core/llm_openai_compat.rs b/src-tauri/src/core/llm_openai_compat.rs
+index 68b57719..b7786dbe 100644
+--- a/src-tauri/src/core/llm_openai_compat.rs
++++ b/src-tauri/src/core/llm_openai_compat.rs
+@@ -537,14 +537,30 @@ pub async fn stream_chat_compat(
+         .send()
+         .await
+         .map_err(|e| format!("Request failed: {}", e))?;
+-    tracing::info!(
+-        target: "packetbench::egress",
+-        service = "openai-compat",
+-        base_url = %config.base_url,
+-        model = %request.model,
+-        status = response.status().as_u16(),
+-        "LLM response"
+-    );
++    // A non-2xx here is a failed call, so it must not log at the same level as
++    // a successful one. Eight 429s in 3 ms read as ordinary traffic while every
++    // session summary was being dropped (dogfooding, 2026-09-06) — a failure
++    // indistinguishable from success in the log is the same defect class this
++    // audit spent its time on.
++    if response.status().is_success() {
++        tracing::info!(
++            target: "packetbench::egress",
++            service = "openai-compat",
++            base_url = %config.base_url,
++            model = %request.model,
++            status = response.status().as_u16(),
++            "LLM response"
++        );
++    } else {
++        tracing::warn!(
++            target: "packetbench::egress",
++            service = "openai-compat",
++            base_url = %config.base_url,
++            model = %request.model,
++            status = response.status().as_u16(),
++            "LLM response failed"
++        );
++    }
+ 
+     let response = if response.status().is_success() {
+         if ollama_usage {

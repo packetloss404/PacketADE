@@ -653,6 +653,33 @@ fn local_route_unavailable_error(task: AuxTaskClass) -> String {
     )
 }
 
+/// How many auxiliary turns may be in flight at once.
+///
+/// Aux turns are background work — session summaries, memory briefs, spec
+/// import — and several routinely become due at the same instant. Closing a
+/// workspace with N terminals produces N independent PTY exits, each of which
+/// queues its own `session-summarize` turn.
+///
+/// Observed while dogfooding 2026-09-06: eight fired within 3 ms, the provider
+/// answered 429 to all eight, nothing retried, and all eight summaries were
+/// lost. There is no backoff here yet, so the only defence is not to stampede
+/// in the first place.
+///
+/// Two, deliberately. These are latency-insensitive background turns, so
+/// serialising them costs the user nothing they can perceive, while the
+/// stampede costs them the whole feature.
+const MAX_CONCURRENT_AUX_TURNS: usize = 2;
+
+/// Gate for [`MAX_CONCURRENT_AUX_TURNS`].
+///
+/// Deliberately enforced inside [`drive_with_local_policy`] rather than at the
+/// call sites: both public entry points funnel through it, so a future caller
+/// cannot reintroduce the stampede by forgetting to queue.
+fn aux_turn_permits() -> &'static tokio::sync::Semaphore {
+    static PERMITS: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+    PERMITS.get_or_init(|| tokio::sync::Semaphore::new(MAX_CONCURRENT_AUX_TURNS))
+}
+
 /// [`drive`], plus the local-route failure policy: when the route is Ollama
 /// and the failure is connection-shaped, retry exactly once after
 /// [`OLLAMA_RETRY_DELAY`]; if it still fails, replace the raw transport error
@@ -666,6 +693,13 @@ async fn drive_with_local_policy(
     user_turn: &str,
     emit_to: Option<(&tauri::AppHandle, &str)>,
 ) -> Result<AuxTurn, String> {
+    // Held for the whole turn, streaming included. `drive_with_local_policy`
+    // does not recurse — it calls `drive` at most twice, for the one Ollama
+    // retry — so holding a permit across it cannot deadlock.
+    let _permit = aux_turn_permits()
+        .acquire()
+        .await
+        .map_err(|_| "aux turn concurrency gate closed".to_string())?;
     let request = build_request(
         route,
         session_id,
@@ -792,6 +826,39 @@ pub fn spawn_aux_stream(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The gate that stops a workspace close from stampeding the provider.
+    ///
+    /// Regression fence for the 2026-09-06 dogfooding finding: eight
+    /// `session-summarize` turns fired within 3 ms when a workspace with eight
+    /// terminals was closed, the provider 429'd all eight, and every summary
+    /// was lost. This asserts the third concurrent caller waits instead.
+    #[tokio::test]
+    async fn aux_turns_are_bounded_rather_than_stampeding() {
+        let gate = aux_turn_permits();
+        assert_eq!(
+            gate.available_permits(),
+            MAX_CONCURRENT_AUX_TURNS,
+            "gate should start fully available; another test may be holding permits"
+        );
+
+        let first = gate.acquire().await.expect("gate open");
+        let second = gate.acquire().await.expect("gate open");
+        assert_eq!(gate.available_permits(), 0);
+
+        // The stampede case: a third turn becoming due at the same instant must
+        // queue, not fire.
+        assert!(
+            gate.try_acquire().is_err(),
+            "a third concurrent aux turn must wait, not stampede the provider"
+        );
+
+        drop(first);
+        let third = gate.try_acquire().expect("a permit frees up when a turn finishes");
+        drop(third);
+        drop(second);
+        assert_eq!(gate.available_permits(), MAX_CONCURRENT_AUX_TURNS);
+    }
 
     fn configured(ids: &[&str]) -> Vec<String> {
         ids.iter().map(|s| s.to_string()).collect()

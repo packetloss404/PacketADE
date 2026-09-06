@@ -537,14 +537,30 @@ pub async fn stream_chat_compat(
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    tracing::info!(
-        target: "packetbench::egress",
-        service = "openai-compat",
-        base_url = %config.base_url,
-        model = %request.model,
-        status = response.status().as_u16(),
-        "LLM response"
-    );
+    // A non-2xx here is a failed call, so it must not log at the same level as
+    // a successful one. Eight 429s in 3 ms read as ordinary traffic while every
+    // session summary was being dropped (dogfooding, 2026-09-06) — a failure
+    // indistinguishable from success in the log is the same defect class this
+    // audit spent its time on.
+    if response.status().is_success() {
+        tracing::info!(
+            target: "packetbench::egress",
+            service = "openai-compat",
+            base_url = %config.base_url,
+            model = %request.model,
+            status = response.status().as_u16(),
+            "LLM response"
+        );
+    } else {
+        tracing::warn!(
+            target: "packetbench::egress",
+            service = "openai-compat",
+            base_url = %config.base_url,
+            model = %request.model,
+            status = response.status().as_u16(),
+            "LLM response failed"
+        );
+    }
 
     let response = if response.status().is_success() {
         if ollama_usage {

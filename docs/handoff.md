@@ -112,6 +112,16 @@ fail, the change is wrong, not the test.
   runs at conversation launch (`agentTaskStore.ts:712`) and Flight launch
   (`asyncFlightStore.ts:1366`); mid-conversation turns and the auxiliary LLM
   features (side chat, GitHub AI, memory summaries) are not re-checked.
+- **Aux turns are capped at 2 concurrent** (`MAX_CONCURRENT_AUX_TURNS`,
+  `core/aux_llm.rs`). Raising it re-opens F26: 8 `session-summarize` turns fired
+  by one workspace close 429'd a provider and lost every summary. **There is
+  still no retry/backoff on 429**, so a rate-limited aux turn is silently
+  dropped — that is the open follow-up, and it is the reason the cap exists.
+- **A vitest flake has now appeared twice**, both times only under
+  `pnpm gates:fast` contention (`import` time 1500-2200s vs ~110s standalone),
+  never in a standalone run, 1 failure out of 2754. It has not been captured by
+  name either time — if you see it, capture the run to a file
+  (`pnpm gates:fast > log 2>&1`) rather than letting it scroll.
 - **A Flight cannot be created without launching an agent.** The Flight Deck
   button and `+ New → New Flight` both open `LaunchAsyncFlightModal`, whose only
   actions are "Plan first" and "Launch agents" — both spend a real LLM turn. That

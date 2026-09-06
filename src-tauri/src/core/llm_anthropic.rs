@@ -239,13 +239,25 @@ impl LlmProvider for AnthropicProvider {
             .send()
             .await
             .map_err(|e| format!("Anthropic request failed: {}", e))?;
-        tracing::info!(
-            target: "packetbench::egress",
-            service = "anthropic",
-            model = %request.model,
-            status = response.status().as_u16(),
-            "LLM response"
-        );
+        // See the note in `llm_openai_compat.rs`: a failed call must not log at
+        // the same level as a successful one.
+        if response.status().is_success() {
+            tracing::info!(
+                target: "packetbench::egress",
+                service = "anthropic",
+                model = %request.model,
+                status = response.status().as_u16(),
+                "LLM response"
+            );
+        } else {
+            tracing::warn!(
+                target: "packetbench::egress",
+                service = "anthropic",
+                model = %request.model,
+                status = response.status().as_u16(),
+                "LLM response failed"
+            );
+        }
 
         if !response.status().is_success() {
             let status = response.status();
