@@ -177,6 +177,9 @@ function commandSummary(agent: AgentConfig): string {
 }
 
 // === Per-card grid component ===
+//
+// Exported for the F27 regression test only; the card grid below is its sole
+// production consumer.
 
 interface CliCatalogCardProps {
   entry: CliCatalogEntry;
@@ -191,7 +194,7 @@ interface CliCatalogCardProps {
   onClearOverride: (entry: CliCatalogEntry) => void;
 }
 
-function CliCatalogCard({
+export function CliCatalogCard({
   entry,
   result,
   selected,
@@ -336,9 +339,17 @@ function CliCatalogCard({
       )}
 
       {/* Manual-path override tag — visible whenever the user has pinned a
-          path AND detection succeeded. The X clears the override and
-          re-runs detection so the card flips back to PATH-based resolution. */}
-      {installed && manualPath && (
+          path. The X clears the override and re-runs detection so the card
+          flips back to PATH-based resolution.
+
+          The `installed` half of this guard was removed (audit F27): a pin at a
+          path that no longer exists is exactly what makes a CLI read as not
+          installed, so gating the clear control on `installed` hid it precisely
+          when it was the only thing that would help. The pin was then
+          unclearable from the card that displayed it — Browse… could replace it
+          but nothing could remove it. A control that undoes a setting must not
+          depend on that setting being healthy. */}
+      {manualPath && (
         <div className="flex items-center gap-1 text-[10px] text-text-faint" onClick={stop}>
           <span
             className="px-1.5 py-0.5 rounded bg-bg-elevated text-text-muted truncate max-w-[180px]"
