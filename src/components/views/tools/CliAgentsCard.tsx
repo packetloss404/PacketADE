@@ -238,6 +238,25 @@ export function CliCatalogCard({
     ) : (
       <span className="text-text-muted">installed</span>
     );
+  } else if ((result?.source === "settings" || result?.source === "legacyPin") && result?.path) {
+    // A pinned path the resolver would not use. `detect_one` short-circuits
+    // here ON PURPOSE (`commands/agent.rs:190`) — it reports the bad pin back
+    // verbatim rather than quietly resolving whatever PATH would have given,
+    // so a stale setting cannot hide behind a working fallback.
+    //
+    // That behaviour is right; the word for it was not. This state used to
+    // render as "not installed", which conflates "this CLI is nowhere on the
+    // machine" with "this CLI is fine, your pin is stale" — the second is what
+    // the user actually has, and reading the first sends them off installing
+    // something they already have (audit F27b).
+    //
+    // Deliberately "not usable" rather than "not found": the DTO cannot
+    // distinguish a missing file from one that exists but did not answer
+    // `--version`, since both arrive as `installed: false` with no version.
+    // Naming only the first would be wrong half the time.
+    versionText = (
+      <span className="italic text-accent-amber">pinned path not usable</span>
+    );
   } else if (variant === "browse-only") {
     versionText = <span className="italic text-text-muted">Locate the executable to use it here.</span>;
   } else if (variant === "installable") {

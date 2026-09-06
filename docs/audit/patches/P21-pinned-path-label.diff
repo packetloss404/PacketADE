@@ -1,0 +1,64 @@
+diff --git a/src/components/views/tools/CliAgentsCard.tsx b/src/components/views/tools/CliAgentsCard.tsx
+index dfb7bc2a..d5990fdc 100644
+--- a/src/components/views/tools/CliAgentsCard.tsx
++++ b/src/components/views/tools/CliAgentsCard.tsx
+@@ -238,6 +238,25 @@ export function CliCatalogCard({
+     ) : (
+       <span className="text-text-muted">installed</span>
+     );
++  } else if ((result?.source === "settings" || result?.source === "legacyPin") && result?.path) {
++    // A pinned path the resolver would not use. `detect_one` short-circuits
++    // here ON PURPOSE (`commands/agent.rs:190`) — it reports the bad pin back
++    // verbatim rather than quietly resolving whatever PATH would have given,
++    // so a stale setting cannot hide behind a working fallback.
++    //
++    // That behaviour is right; the word for it was not. This state used to
++    // render as "not installed", which conflates "this CLI is nowhere on the
++    // machine" with "this CLI is fine, your pin is stale" — the second is what
++    // the user actually has, and reading the first sends them off installing
++    // something they already have (audit F27b).
++    //
++    // Deliberately "not usable" rather than "not found": the DTO cannot
++    // distinguish a missing file from one that exists but did not answer
++    // `--version`, since both arrive as `installed: false` with no version.
++    // Naming only the first would be wrong half the time.
++    versionText = (
++      <span className="italic text-accent-amber">pinned path not usable</span>
++    );
+   } else if (variant === "browse-only") {
+     versionText = <span className="italic text-text-muted">Locate the executable to use it here.</span>;
+   } else if (variant === "installable") {
+diff --git a/src/components/views/tools/__tests__/CliAgentsCardOverride.test.tsx b/src/components/views/tools/__tests__/CliAgentsCardOverride.test.tsx
+index 0f076059..e558403b 100644
+--- a/src/components/views/tools/__tests__/CliAgentsCardOverride.test.tsx
++++ b/src/components/views/tools/__tests__/CliAgentsCardOverride.test.tsx
+@@ -61,6 +61,29 @@ describe("CliCatalogCard manual-path override", () => {
+     expect(screen.getByText(/Override:/)).toBeInTheDocument();
+   });
+ 
++  it("says the pin is unusable rather than claiming the CLI is not installed", () => {
++    // The state a stale pin produces: detect_one short-circuits and reports the
++    // bad pin back with installed:false and no version. Calling that "not
++    // installed" sends the user off installing a CLI they already have (F27b).
++    renderCard({
++      result: {
++        id: "packetcode",
++        installed: false,
++        version: null,
++        path: String.raw`C:\Users\me\Desktop\gone\packetcode.exe`,
++        source: "settings",
++      },
++    });
++
++    expect(screen.getByText("pinned path not usable")).toBeInTheDocument();
++    expect(screen.queryByText("not installed")).toBeNull();
++  });
++
++  it("still says not installed when there is no pin at all", () => {
++    renderCard({ manualPath: null, result: undefined });
++    expect(screen.getByText("not installed")).toBeInTheDocument();
++  });
++
+   it("shows nothing to clear when no override is pinned", () => {
+     renderCard({ manualPath: null });
+     expect(screen.queryByTitle("Clear manual path override")).toBeNull();

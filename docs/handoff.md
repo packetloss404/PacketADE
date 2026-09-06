@@ -112,13 +112,11 @@ fail, the change is wrong, not the test.
   runs at conversation launch (`agentTaskStore.ts:712`) and Flight launch
   (`asyncFlightStore.ts:1366`); mid-conversation turns and the auxiliary LLM
   features (side chat, GitHub AI, memory summaries) are not re-checked.
-- **The CLI Clients card still reports a working CLI as "not installed"** when a
-  Settings path override points at a missing file (audit F27b, open). The Rust
-  ladder continues past a missing pin and resolves via PATH, so the pane
-  launches a CLI the card calls not installed — the readout reports the override
-  rather than what the ladder resolved. The pin itself is now clearable (P20
-  made the ✕ unconditional), so the state is recoverable; the status text is
-  still wrong.
+- **A rejected Settings pin is reported verbatim on purpose** — `detect_one`
+  (`commands/agent.rs:190`) does NOT fall through to whatever PATH would have
+  given, so a stale setting cannot hide behind a working fallback. Do not
+  "fix" that; the card just says `pinned path not usable` now instead of the
+  old, misleading "not installed" (audit F27).
 - **Check the aux provider before blaming aux code.** On 2026-09-06 every
   MiniMax request returned 429 — 9 of 9 that day, including isolated ones, and
   no success anywhere in the egress logs since they began on 2026-09-05. Every

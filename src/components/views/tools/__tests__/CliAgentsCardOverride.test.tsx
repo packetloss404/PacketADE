@@ -61,6 +61,29 @@ describe("CliCatalogCard manual-path override", () => {
     expect(screen.getByText(/Override:/)).toBeInTheDocument();
   });
 
+  it("says the pin is unusable rather than claiming the CLI is not installed", () => {
+    // The state a stale pin produces: detect_one short-circuits and reports the
+    // bad pin back with installed:false and no version. Calling that "not
+    // installed" sends the user off installing a CLI they already have (F27b).
+    renderCard({
+      result: {
+        id: "packetcode",
+        installed: false,
+        version: null,
+        path: String.raw`C:\Users\me\Desktop\gone\packetcode.exe`,
+        source: "settings",
+      },
+    });
+
+    expect(screen.getByText("pinned path not usable")).toBeInTheDocument();
+    expect(screen.queryByText("not installed")).toBeNull();
+  });
+
+  it("still says not installed when there is no pin at all", () => {
+    renderCard({ manualPath: null, result: undefined });
+    expect(screen.getByText("not installed")).toBeInTheDocument();
+  });
+
   it("shows nothing to clear when no override is pinned", () => {
     renderCard({ manualPath: null });
     expect(screen.queryByTitle("Clear manual path override")).toBeNull();
